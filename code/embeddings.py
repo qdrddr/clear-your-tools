@@ -8,10 +8,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
-import yaml
+from configs import (
+    DEFAULT_EMBEDDING_MODEL_NICK,
+    DEFAULT_EMBEDDING_MODEL_TYPE,
+    DEFAULT_LOCAL_MODEL_NAME,
+    load_config,
+)
 from dotenv import load_dotenv
 
 # Load .env so OPENROUTER_API_KEY is available for litellm.
@@ -19,12 +24,6 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).with_name(".env")
 if _env_path.exists():
     load_dotenv(dotenv_path=_env_path, override=False)
-
-
-def _load_config() -> dict[str, Any]:
-    config_path = Path(__file__).with_name("config.yaml")
-    with open(config_path) as f:
-        return cast(dict[str, Any], yaml.safe_load(f))
 
 
 def _resolve_remote_model(config: dict[str, Any], nick: str) -> tuple[str, str | None]:
@@ -43,11 +42,13 @@ class Embedder:
     """Unified embedder with an encode() API compatible with SentenceTransformer."""
 
     def __init__(self) -> None:
-        self._config = _load_config()
+        self._config = load_config()
         defaults = self._config.get("defaults", {})
-        self._model_type = str(defaults.get("embedding_model_type", "inprocess")).lower()
-        self._model_nick = str(defaults.get("embedding_model_nick", "all-MiniLM-L6-v2"))
-        self._local_model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self._model_type = str(
+            defaults.get("embedding_model_type", DEFAULT_EMBEDDING_MODEL_TYPE)
+        ).lower()
+        self._model_nick = str(defaults.get("embedding_model_nick", DEFAULT_EMBEDDING_MODEL_NICK))
+        self._local_model_name = DEFAULT_LOCAL_MODEL_NAME
         self._encoder: Any | None = None
         self._remote_model: str | None = None
         self._remote_api_key_var: str | None = None

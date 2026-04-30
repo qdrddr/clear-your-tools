@@ -1,9 +1,10 @@
 defaults:
   is_persistent: true
-  embedding_model_type: inprocess
-  embedding_model_nick: all-MiniLM-L6-v2
+  embedding_model_type: remote
+  embedding_model_nick: all-minilm
   reranking_model_type: remote
   reranking_model_nick: rerank-qwen3-8b
+  reranking_enabled: true
   intent_router:
     top_k: 10
     threshold: 0.28

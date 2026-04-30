@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
+from configs import load_config
+
 from embeddings import get_embedder
 from vector_store import ToolVectorStore
 
@@ -34,13 +36,16 @@ class IntentRouter:
         self,
         store: ToolVectorStore,
         encoder: Any | None = None,
-        threshold: float = 0.28,
-        top_k: int = 10,
+        threshold: float | None = None,
+        top_k: int | None = None,
     ) -> None:
         self.store: ToolVectorStore = store
         self.encoder: Any = encoder or get_embedder()
-        self.threshold: float = threshold
-        self.top_k: int = top_k
+
+        cfg = load_config()
+        router_defaults = cfg.get("defaults", {}).get("intent_router", {})
+        self.threshold: float = router_defaults.get("threshold")
+        self.top_k: int = router_defaults.get("top_k")
 
     def embed_query(self, query: str) -> np.ndarray:
         vec = self.encoder.encode(  # pyright: ignore[reportUnknownMemberType]  # sentence-transformers overload stubs are incomplete

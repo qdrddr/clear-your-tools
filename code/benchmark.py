@@ -64,7 +64,10 @@ def main() -> int:
     store = ToolVectorStore(dim=384, persist_dir=None)
     store.add_tools(tools, embedder)
     loader = LazySchemaLoader(registry_path=SCHEMAS_DIR)
-    router = IntentRouter(store=store, encoder=embedder, threshold=0.28, top_k=10)
+    router = IntentRouter(
+        store=store,
+        encoder=embedder,
+    )
     ta = ToolAttention(store, loader, router, token_counter=count)
 
     naive_total = naive_schema_tokens(tools)
