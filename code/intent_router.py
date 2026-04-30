@@ -16,7 +16,6 @@ from typing import Any, Callable
 
 import numpy as np
 from configs import load_config
-
 from embeddings import get_embedder
 from vector_store import ToolVectorStore
 

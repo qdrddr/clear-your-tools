@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-# Default fallbacks – single source of truth for hard-coded values
+# Default fallbacks - single source of truth for hard-coded values
 DEFAULT_INTENT_ROUTER_TOP_K: int = 10
 DEFAULT_INTENT_ROUTER_THRESHOLD: float = 0.28
 DEFAULT_EMBEDDING_MODEL_TYPE: str = "inprocess"
@@ -19,7 +19,12 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
     """Recursively merge *overlay* over *base* without mutating either."""
     result: dict[str, Any] = {}
     for key in {*base, *overlay}:
-        if key in base and key in overlay and isinstance(base[key], dict) and isinstance(overlay[key], dict):
+        if (
+            key in base
+            and key in overlay
+            and isinstance(base[key], dict)
+            and isinstance(overlay[key], dict)
+        ):
             result[key] = _deep_merge(base[key], overlay[key])
         elif key in overlay:
             result[key] = overlay[key]
