@@ -45,7 +45,7 @@ class Embedder:
     def __init__(self) -> None:
         self._config = _load_config()
         defaults = self._config.get("defaults", {})
-        self._model_type = str(defaults.get("embedding_model_type", "local")).lower()
+        self._model_type = str(defaults.get("embedding_model_type", "inprocess")).lower()
         self._model_nick = str(defaults.get("embedding_model_nick", "all-MiniLM-L6-v2"))
         self._local_model_name = "sentence-transformers/all-MiniLM-L6-v2"
         self._encoder: Any | None = None
@@ -65,9 +65,9 @@ class Embedder:
     def _init_local(self) -> Any:
         if self._encoder is not None:
             return self._encoder
-        if self._model_type != "local":
+        if self._model_type != "inprocess":
             raise RuntimeError(
-                "_init_local() must only be called when embedding_model_type is 'local'"
+                "_init_local() must only be called when embedding_model_type is 'inprocess'"
             )
         try:
             from sentence_transformers import SentenceTransformer
@@ -98,7 +98,7 @@ class Embedder:
         else:
             was_single = False
 
-        if self._model_type == "local":
+        if self._model_type == "inprocess":
             encoder = self._init_local()
             vectors = encoder.encode(
                 sentences,

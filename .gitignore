@@ -49,3 +49,7 @@ code/.chroma_db/
 .osgrep
 
 .env
+
+*.mdx
+verify_*.py
+test_*.py
