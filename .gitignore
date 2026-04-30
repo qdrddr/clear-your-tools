@@ -56,3 +56,4 @@ test_*.py
 uv.lock
 CLAUDE.md
 AGENTS.md
+.coverage
