@@ -29,7 +29,8 @@ import numpy as np
 from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.api import ClientAPI
 from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
-from sentence_transformers import SentenceTransformer
+
+from embeddings import get_embedder
 
 
 class _SparseVector(Protocol):
@@ -68,7 +69,7 @@ class ToolVectorStore:
     def add_tools(
         self,
         tools: Sequence[Mapping[str, object]],
-        encoder: SentenceTransformer,
+        encoder: Any | None = None,
     ) -> None:
         """Add tools to the index.
 
@@ -77,10 +78,11 @@ class ToolVectorStore:
         """
         if not tools:
             return
+        embedder = encoder or get_embedder()
         summaries: list[str] = [cast(str, t["summary"]) for t in tools]
         ids: list[str] = [cast(str, t["id"]) for t in tools]
         vectors: np.ndarray = np.asarray(
-            encoder.encode(  # pyright: ignore[reportUnknownMemberType]  # sentence-transformers overload stubs are incomplete
+            embedder.encode(  # pyright: ignore[reportUnknownMemberType]
                 summaries, normalize_embeddings=True, show_progress_bar=False
             )
         ).astype("float32")

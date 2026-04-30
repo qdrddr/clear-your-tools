@@ -12,11 +12,11 @@ that queries agent state to enforce auth scopes, milestones, etc.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
+from embeddings import get_embedder
 from vector_store import ToolVectorStore
 
 
@@ -34,13 +34,12 @@ class IntentRouter:
     def __init__(
         self,
         store: ToolVectorStore,
-        encoder: SentenceTransformer | None = None,
-        encoder_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        encoder: Any | None = None,
         threshold: float = 0.28,
         top_k: int = 10,
     ) -> None:
         self.store: ToolVectorStore = store
-        self.encoder: SentenceTransformer = encoder or SentenceTransformer(encoder_name)
+        self.encoder: Any = encoder or get_embedder()
         self.threshold: float = threshold
         self.top_k: int = top_k
 

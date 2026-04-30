@@ -28,8 +28,7 @@ except ImportError:  # pragma: no cover
     print("missing dependency: pip install -r requirements.txt", file=sys.stderr)
     raise
 
-from sentence_transformers import SentenceTransformer
-
+from embeddings import get_embedder
 from intent_router import IntentRouter
 from lazy_loader import LazySchemaLoader
 from tool_attention import ToolAttention
@@ -63,11 +62,11 @@ def main() -> int:
     tools: list[dict[str, object]] = cast(
         list[dict[str, object]], json.loads(CATALOG.read_text())
     )
-    encoder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-    store = ToolVectorStore(dim=384)
-    store.add_tools(tools, encoder)
+    embedder = get_embedder()
+    store = ToolVectorStore(dim=384, persist_dir=None)
+    store.add_tools(tools, embedder)
     loader = LazySchemaLoader(registry_path=SCHEMAS_DIR)
-    router = IntentRouter(store=store, encoder=encoder, threshold=0.28, top_k=10)
+    router = IntentRouter(store=store, encoder=embedder, threshold=0.28, top_k=10)
     ta = ToolAttention(store, loader, router, token_counter=count)
 
     naive_total = naive_schema_tokens(tools)
