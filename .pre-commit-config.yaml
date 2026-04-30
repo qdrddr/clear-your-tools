@@ -1,3 +1,4 @@
+# source .venv/bin/activate && pre-commit run --all-files
 fail_fast: true
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
