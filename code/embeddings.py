@@ -7,23 +7,14 @@ config.yaml, then dispatches to the appropriate backend.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 from configs import (
-    DEFAULT_EMBEDDING_MODEL_NICK,
-    DEFAULT_EMBEDDING_MODEL_TYPE,
     DEFAULT_LOCAL_MODEL_NAME,
     load_config,
+    remote_embedding_api_key,
 )
-from dotenv import load_dotenv
-
-# Load .env so OPENROUTER_API_KEY is available for litellm.
-# Shell environment takes precedence.
-_env_path = Path(__file__).with_name(".env")
-if _env_path.exists():
-    load_dotenv(dotenv_path=_env_path, override=False)
 
 
 def _resolve_remote_model(config: dict[str, Any], nick: str) -> tuple[str, str | None]:
@@ -44,10 +35,8 @@ class Embedder:
     def __init__(self) -> None:
         self._config = load_config()
         defaults = self._config.get("defaults", {})
-        self._model_type = str(
-            defaults.get("embedding_model_type", DEFAULT_EMBEDDING_MODEL_TYPE)
-        ).lower()
-        self._model_nick = str(defaults.get("embedding_model_nick", DEFAULT_EMBEDDING_MODEL_NICK))
+        self._model_type = str(defaults.get("embedding_model_type")).lower()
+        self._model_nick = str(defaults.get("embedding_model_nick"))
         self._local_model_name = DEFAULT_LOCAL_MODEL_NAME
         self._encoder: Any | None = None
         self._remote_model: str | None = None
@@ -76,10 +65,6 @@ class Embedder:
             raise ImportError("sentence-transformers is required for local embeddings") from exc
         self._encoder = SentenceTransformer(self._local_model_name)
         return self._encoder
-
-    def _remote_api_key(self) -> str | None:
-        var = self._remote_api_key_var or "OPENROUTER_API_KEY"
-        return os.getenv(var)
 
     def encode(
         self,
@@ -115,7 +100,7 @@ class Embedder:
         except ImportError as exc:
             raise ImportError("litellm is required for remote embeddings") from exc
 
-        api_key = self._remote_api_key()
+        api_key = remote_embedding_api_key(self._remote_api_key_var)
         response = litellm.embedding(
             model=self._remote_model,
             input=sentences,

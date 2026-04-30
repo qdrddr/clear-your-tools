@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
+
+# Load .env so API keys (e.g. OPENROUTER_API_KEY) are available.
+# Shell environment takes precedence.
+_env_path = Path(__file__).with_name(".env")
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path, override=False)
 
 # Default fallbacks - single source of truth for hard-coded values
 DEFAULT_INTENT_ROUTER_TOP_K: int = 10
@@ -75,3 +83,8 @@ def load_config() -> dict[str, Any]:
             if isinstance(loaded, dict):
                 user_config = loaded
     return _deep_merge(_DEFAULTS, user_config)
+
+
+def remote_embedding_api_key(api_key_var: str | None) -> str | None:
+    var = api_key_var or "OPENROUTER_API_KEY"
+    return os.getenv(var)
