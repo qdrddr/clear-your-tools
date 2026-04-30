@@ -59,9 +59,7 @@ def main() -> int:
         )
         return 2
 
-    tools: list[dict[str, object]] = cast(
-        list[dict[str, object]], json.loads(CATALOG.read_text())
-    )
+    tools: list[dict[str, object]] = cast(list[dict[str, object]], json.loads(CATALOG.read_text()))
     embedder = get_embedder()
     store = ToolVectorStore(dim=384, persist_dir=None)
     store.add_tools(tools, embedder)
@@ -91,9 +89,7 @@ def main() -> int:
         phase1_vals.append(r.phase1_tokens)
         phase2_vals.append(r.phase2_tokens)
         # Simple retrieval baseline: full schemas for top-k (no phase split).
-        retr_totals.append(
-            sum(count(json.dumps(loader.get(rr.tool_id))) for rr in r.active)
-        )
+        retr_totals.append(sum(count(json.dumps(loader.get(rr.tool_id))) for rr in r.active))
 
     def mean(xs: list[int]) -> float:
         return sum(xs) / max(len(xs), 1)
@@ -106,9 +102,7 @@ def main() -> int:
     print(f"Catalog: {len(tools)} tools, {len(queries)} queries, seed={SEED}\n")
     print("| Method                              | tokens/turn |   reduction |")
     print("|-------------------------------------|------------:|------------:|")
-    print(
-        f"| B1 Naive Full-Schema                | {naive_total:>11,} | {0.0:>10.1f}% |"
-    )
+    print(f"| B1 Naive Full-Schema                | {naive_total:>11,} | {0.0:>10.1f}% |")
     print(
         f"| B3 Simple Retrieval (top-k schemas) | {retr_mean:>11,.0f} | {100 * (1 - retr_mean / naive_total):>10.1f}% |"
     )

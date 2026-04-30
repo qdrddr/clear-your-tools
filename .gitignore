@@ -53,3 +53,6 @@ code/.chroma_db/
 *.mdx
 verify_*.py
 test_*.py
+uv.lock
+CLAUDE.md
+AGENTS.md

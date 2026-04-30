@@ -14,8 +14,8 @@ promoted this turn (hallucination gate).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 from intent_router import IntentRouter, RoutingResult
 from lazy_loader import LazySchemaLoader
@@ -92,10 +92,7 @@ class ToolAttention:
             return None
         if requested_tool in active_ids:
             return None
-        return (
-            f"tool_not_available: {requested_tool!r}. "
-            f"Available this turn: {list(active_ids)}"
-        )
+        return f"tool_not_available: {requested_tool!r}. Available this turn: {list(active_ids)}"
 
 
 def _stringify(schema: dict[str, object]) -> str:

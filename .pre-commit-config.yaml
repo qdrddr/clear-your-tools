@@ -1,0 +1,58 @@
+fail_fast: true
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.5
+    hooks:
+      # Run the Ruff formatter.
+      - id: ruff-format
+        name: "Ruff formatter"
+        args: [--config=pyproject.toml]
+        files: '^code/.*\.(py|ipynb)$'
+      # Run the Ruff linter.
+      - id: ruff
+        name: "Ruff linter"
+        args: [--exit-non-zero-on-fix, --fix, --config=pyproject.toml]
+        files: '^code/.*\.(py|ipynb)$'
+  - repo: local
+    hooks:
+      - id: mypy
+        name: MyPy
+        entry: bash -c "source .venv/bin/activate && mypy code"
+        pass_filenames: false
+        language: system
+        files: '^code/.*\.py$'
+  - repo: local
+    hooks:
+      - id: pytest
+        name: Pytest
+        entry: bash -c "source .venv/bin/activate && pytest"
+        pass_filenames: false
+        language: system
+        files: '^code/.*\.py$'
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.8.3
+    hooks:
+      - id: uv-lock
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: check-yaml
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: Ty type checker
+        entry: bash -c 'source .venv/bin/activate && uv run ty check code/'
+        language: system
+        types: [python]
+        pass_filenames: false
+        exclude: |
+          (?x)^(
+            latex/
+            code/catalog/
+            .ruff_cache/
+            .mypy_cache/
+            .venv/
+            __pycache__/
+            code/__pycache__/
+          )

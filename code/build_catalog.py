@@ -16,7 +16,6 @@ import random
 import string
 from pathlib import Path
 
-
 SEED = 42
 HERE = Path(__file__).parent
 OUT = HERE / "catalog"

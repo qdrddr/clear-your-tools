@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import cast
 
 
@@ -39,9 +39,7 @@ class LazySchemaLoader:
             self._cache.move_to_end(tool_id)
             return self._cache[tool_id]
         schema = (
-            self._fetcher(tool_id)
-            if self._fetcher is not None
-            else self._load_from_disk(tool_id)
+            self._fetcher(tool_id) if self._fetcher is not None else self._load_from_disk(tool_id)
         )
         self._cache[tool_id] = schema
         if len(self._cache) > self.capacity:

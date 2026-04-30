@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import yaml
@@ -24,7 +24,7 @@ if _env_path.exists():
 def _load_config() -> dict[str, Any]:
     config_path = Path(__file__).with_name("config.yaml")
     with open(config_path) as f:
-        return yaml.safe_load(f)
+        return cast(dict[str, Any], yaml.safe_load(f))
 
 
 def _resolve_remote_model(config: dict[str, Any], nick: str) -> tuple[str, str | None]:

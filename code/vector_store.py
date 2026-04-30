@@ -20,16 +20,15 @@ Chroma RRF plan shown in the doc comments below.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from collections.abc import Mapping, Sequence
-from typing import Protocol, cast, final
+from pathlib import Path
+from typing import Any, Protocol, cast, final
 
 import chromadb
 import numpy as np
-from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.api import ClientAPI
+from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
-
 from embeddings import get_embedder
 
 
@@ -86,17 +85,14 @@ class ToolVectorStore:
                 summaries, normalize_embeddings=True, show_progress_bar=False
             )
         ).astype("float32")
-        sparse_embeddings: list[_SparseVector] = cast(
-            list[_SparseVector], self._bm25(summaries)
-        )
+        sparse_embeddings: list[_SparseVector] = cast(list[_SparseVector], self._bm25(summaries))
 
         # Persist sparse vectors as ChromaDB metadata so they live in the
         # collection (not just an in-memory sidecar).  Native sparse-vector
         # indexing is unavailable in local/embedded ChromaDB, so we still
         # compute keyword scores manually in search().
         metadatas: list[dict[str, object]] = [
-            {"sparse_indices": sp.indices, "sparse_values": sp.values}
-            for sp in sparse_embeddings
+            {"sparse_indices": sp.indices, "sparse_values": sp.values} for sp in sparse_embeddings
         ]
 
         self.collection.add(
@@ -105,7 +101,7 @@ class ToolVectorStore:
             documents=summaries,
             metadatas=cast(Metadatas, metadatas),
         )
-        for t, sp in zip(tools, sparse_embeddings):
+        for t, sp in zip(tools, sparse_embeddings, strict=False):
             self.tool_ids.append(cast(str, t["id"]))
             self.summaries[cast(str, t["id"])] = cast(str, t["summary"])
             self._sparse[cast(str, t["id"])] = sp
@@ -144,8 +140,7 @@ class ToolVectorStore:
         if query_text and self._sparse:
             query_sparse = self._bm25([query_text])[0]
             sparse_scores = {
-                tid: self._sparse_dot(query_sparse, sp)
-                for tid, sp in self._sparse.items()
+                tid: self._sparse_dot(query_sparse, sp) for tid, sp in self._sparse.items()
             }
             sorted_sparse = sorted(sparse_scores.items(), key=lambda x: -x[1])
             sparse_rank = {tid: rank for rank, (tid, _) in enumerate(sorted_sparse)}
@@ -167,20 +162,21 @@ class ToolVectorStore:
 
         # Fallback to dense-only
         return [
-            (tid, 1.0 / (1.0 + dist)) for tid, dist in zip(dense_ids, dense_distances)
+            (tid, 1.0 / (1.0 + dist)) for tid, dist in zip(dense_ids, dense_distances, strict=False)
         ][:k]
 
     @staticmethod
     def _sparse_dot(a: _SparseVector, b: _SparseVector) -> float:
         """Dot product of two ChromaDB SparseVector objects."""
-        b_dict: dict[int, float] = {idx: val for idx, val in zip(b.indices, b.values)}
-        return sum(val * b_dict.get(idx, 0.0) for idx, val in zip(a.indices, a.values))
+        b_dict: dict[int, float] = dict(zip(b.indices, b.values, strict=False))
+        return sum(
+            val * b_dict.get(idx, 0.0) for idx, val in zip(a.indices, a.values, strict=False)
+        )
 
     def save(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
         sparse_data: dict[str, dict[str, list[int] | list[float]]] = {
-            tid: {"indices": sp.indices, "values": sp.values}
-            for tid, sp in self._sparse.items()
+            tid: {"indices": sp.indices, "values": sp.values} for tid, sp in self._sparse.items()
         }
         _ = (path / "meta.json").write_text(
             json.dumps(
@@ -193,9 +189,7 @@ class ToolVectorStore:
             )
         )
         if self.collection.count() > 0:
-            result = self.collection.get(
-                include=["embeddings", "documents", "metadatas"]
-            )
+            result = self.collection.get(include=["embeddings", "documents", "metadatas"])
             embeddings = result.get("embeddings")
             chroma_data: dict[str, object] = {
                 "ids": result["ids"],
@@ -206,9 +200,7 @@ class ToolVectorStore:
                 "documents": result.get("documents") or [],
                 "metadatas": result.get("metadatas") or [],
             }
-            _ = (path / "chroma_data.json").write_text(
-                json.dumps(chroma_data, indent=2)
-            )
+            _ = (path / "chroma_data.json").write_text(json.dumps(chroma_data, indent=2))
 
     @classmethod
     def load(
@@ -217,7 +209,7 @@ class ToolVectorStore:
         dim: int = 384,
         collection_name: str = "tool_summaries",
         persist_dir: str | None = ".chroma_db",
-    ) -> "ToolVectorStore":
+    ) -> ToolVectorStore:
         from chromadb.base_types import SparseVector
 
         store = cls(dim=dim, collection_name=collection_name, persist_dir=persist_dir)
@@ -256,7 +248,7 @@ class ToolVectorStore:
             )
             # Rebuild in-memory sparse cache from ChromaDB metadata
             # (covers cases where meta.json is missing / stale).
-            for tid, meta in zip(ids, metadatas):
+            for tid, meta in zip(ids, metadatas, strict=False):
                 if tid not in store._sparse and meta:
                     sp_indices = meta.get("sparse_indices")
                     sp_values = meta.get("sparse_values")

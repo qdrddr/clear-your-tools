@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
-
 from embeddings import get_embedder
 from vector_store import ToolVectorStore
 

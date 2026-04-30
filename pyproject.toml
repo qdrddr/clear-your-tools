@@ -1,0 +1,164 @@
+[project]
+name = "tool_attention"
+version = "1.0.0"
+description = "Dynamic Tool Gating and Lazy Schema Loading for Eliminating the MCP/Tools Tax in Scalable Agentic Workflows"
+
+keywords = ["tool-attention", "mcp", "mcp-client"]
+classifiers = [
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",    
+]
+readme = "README.md"
+authors = [
+  { name = "Sadani, Anuj", email = "anuj.k.sadani@gmail.com" },
+]
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "sentence-transformers>=2.7.0",
+    "chromadb==1.5.8",
+    "tiktoken==0.12.0",
+    "numpy==2.4.4",
+    "pydantic==2.12.5",
+    "snowballstemmer==3.0.1",
+    "typing_extensions==4.15.0",
+    "litellm==1.83.14",
+    "python-dotenv==1.2.2",
+]
+
+[dependency-groups]
+# Development tools (linters, type-checkers) and utilities
+dev = [
+    "pre-commit~=4.5",
+    "pytest~=9.0",
+    "pytest-cov>=6.1.1",
+    "pytest-dependency~=0.6",
+    "pytest-durations~=1.6.1",
+    "pytest-xdist~=3.3",
+    "python-semantic-release>=9.0.0",
+    "mypy>=1.4.0",
+    "ruff>=0.0.280",
+]
+
+# Test stack and utilities
+test = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "pytest-xdist>=3.3.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-asyncio>=0.21.0",
+    "mypy>=1.4.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev", "test"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+respect-gitignore = true
+
+[tool.ruff.format]
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "N",    # pep8-naming
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "A",    # flake8-builtins
+  "C4",   # flake8-comprehensions
+  "C90",  # mccabe (complexity)
+  "ANN",  # flake8-annotations
+  "PD",   # pandas-vet
+  "PIE",  # flake8-pie
+  "Q",    # flake8-quotes
+  "RUF",  # Ruff-specific checks
+  "ASYNC" # async
+]
+ignore = [
+  "C408",   # Unnecessary `dict()` call (rewrite as a literal)
+  "E501",   # Line too long, handled by ruff formatter
+  "D107",   # "Missing docstring in __init__",
+  "F401",   # imported but unused; consider using `importlib.util.find_spec` to test for "
+  "F811",   # "redefinition of the same function"
+  "PL",     # Pylint
+  "RUF012", # Mutable Class Attributes
+  "UP006",  # List vs list, etc
+  "UP007",  # Option and Union
+  "UP035",  # `typing.Set` is deprecated, use `set` instead"
+  # "ANN101",  # Missing type annotation for self
+  # "ANN102",  # Missing type annotation for cls
+  "ANN401",  # Dynamically typed expressions (Any)
+]
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = [
+  # Allow Pydantic's `@validator` decorator to trigger class method treatment.
+  "pydantic.validator",
+]
+
+[tool.mypy]
+pretty = true
+python_version = "3.10"
+no_implicit_optional = true
+exclude = ["^site/", "^docs/examples/"]
+plugins = "pydantic.mypy"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "rich.*",
+    "typer.*",
+    "yaml.*",
+    "pandas.*",
+    "networkx.*",
+    "litellm.*",
+    "tiktoken.*",
+    "google.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error",
+    # Ignore ResourceWarnings from unclosed sockets/event loops
+    "ignore::ResourceWarning",
+    # Ignore warnings from external dependencies
+    "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
+    "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
+]
+addopts = "--cov=code --cov-report=term-missing"
+testpaths = ["code"]
+
+[tool.coverage.run]
+source = ["code"]
+omit = ["code/test_*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
