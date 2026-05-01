@@ -25,10 +25,12 @@ from pathlib import Path
 from typing import Any, Protocol, cast, final
 
 import chromadb
+import litellm
 import numpy as np
 from chromadb.api import ClientAPI
 from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
+from configs import load_config, resolve_model
 from embeddings import get_embedder
 
 
@@ -136,6 +138,8 @@ class ToolVectorStore:
         dense_distances = distances[0]
         dense_rank = {tid: rank for rank, tid in enumerate(dense_ids)}
 
+        candidates: list[tuple[str, float]]
+
         # Hybrid: RRF with BM25 sparse keyword search
         if query_text and self._sparse:
             query_sparse = self._bm25([query_text])[0]
@@ -158,12 +162,68 @@ class ToolVectorStore:
             # Normalise to roughly the same scale as cosine similarity [0, 1]
             max_rrf = 2.0 / 60  # two rankings, both at rank 0
             ranked = sorted(rrf_scores.items(), key=lambda x: -x[1])
-            return [(tid, float(score) / max_rrf) for tid, score in ranked[:k]]
+            candidates = [(tid, float(score) / max_rrf) for tid, score in ranked[:n_candidates]]
+        else:
+            # Fallback to dense-only
+            candidates = [
+                (tid, 1.0 / (1.0 + dist))
+                for tid, dist in zip(dense_ids, dense_distances, strict=False)
+            ][:n_candidates]
 
-        # Fallback to dense-only
-        return [
-            (tid, 1.0 / (1.0 + dist)) for tid, dist in zip(dense_ids, dense_distances, strict=False)
-        ][:k]
+        # Optional reranking stage
+        if query_text and candidates:
+            reranked = self._rerank(query_text, candidates)
+            if reranked is not None:
+                candidates = reranked
+
+        return candidates[:k]
+
+    def _rerank(
+        self,
+        query_text: str,
+        candidates: list[tuple[str, float]],
+    ) -> list[tuple[str, float]] | None:
+        """Call an external reranker and return re-sorted candidates, or None."""
+        try:
+            config = load_config()
+            defaults = config.get("defaults", {})
+            if not defaults.get("reranking_enabled"):
+                return None
+            model_nick = defaults.get("reranking_model_nick")
+            model_type = defaults.get("reranking_model_type")
+            if not model_nick or not model_type:
+                return None
+
+            model_name, api_key, base_url = resolve_model(
+                str(model_nick), "rerankers", str(model_type)
+            )
+
+            candidate_ids = [tid for tid, _ in candidates]
+            candidate_docs = [self.summaries[tid] for tid in candidate_ids]
+
+            response = litellm.rerank(
+                model=model_name,
+                query=query_text,
+                documents=candidate_docs,
+                api_key=api_key,
+                base_url=base_url,
+            )
+            reranked_scores: dict[str, float] = {}
+            for item in response.results:
+                idx = item.get("index") if isinstance(item, dict) else getattr(item, "index", None)
+                score = (
+                    item.get("relevance_score")
+                    if isinstance(item, dict)
+                    else getattr(item, "relevance_score", None)
+                )
+                if idx is not None and score is not None:
+                    reranked_scores[candidate_ids[int(idx)]] = float(score)
+
+            if reranked_scores:
+                return sorted(reranked_scores.items(), key=lambda x: -x[1])
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _sparse_dot(a: _SparseVector, b: _SparseVector) -> float:
