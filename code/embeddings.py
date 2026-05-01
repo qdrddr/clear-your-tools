@@ -11,22 +11,9 @@ from typing import Any
 
 import numpy as np
 from configs import (
-    DEFAULT_LOCAL_MODEL_NAME,
     load_config,
-    remote_embedding_api_key,
+    resolve_model,
 )
-
-
-def _resolve_remote_model(config: dict[str, Any], nick: str) -> tuple[str, str | None]:
-    """Return (litellm_model_name, api_key_env_var) for a given nick."""
-    for entry in config.get("models", {}).get("embeddings", {}).get("remote", []):
-        if entry.get("nick") == nick:
-            provider = entry.get("provider", "openrouter")
-            name = entry.get("name")
-            if name:
-                key_var = entry.get("KeyVarName")
-                return f"{provider}/{name}", key_var
-    raise ValueError(f"Unknown remote embedding model nick: {nick}")
 
 
 class Embedder:
@@ -37,20 +24,14 @@ class Embedder:
         defaults = self._config.get("defaults", {})
         self._model_type = str(defaults.get("embedding_model_type")).lower()
         self._model_nick = str(defaults.get("embedding_model_nick"))
-        self._local_model_name = DEFAULT_LOCAL_MODEL_NAME
         self._encoder: Any | None = None
-        self._remote_model: str | None = None
-        self._remote_api_key_var: str | None = None
+        self._model_name: str | None = None
+        self._provider_api_key_var: str | None = None
+        self._provider_base_url: str | None = None
 
-        if self._model_type == "remote":
-            self._remote_model, self._remote_api_key_var = _resolve_remote_model(
-                self._config, self._model_nick
-            )
-        else:
-            for entry in self._config.get("models", {}).get("embeddings", {}).get("inprocess", []):
-                if entry.get("nick") == self._model_nick:
-                    self._local_model_name = entry.get("name", self._local_model_name)
-                    break
+        self._model_name, self._provider_api_key_var, self._provider_base_url = resolve_model(
+            self._model_nick, "embeddings", self._model_type
+        )
 
     def _init_local(self) -> Any:
         if self._encoder is not None:
@@ -63,7 +44,7 @@ class Embedder:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise ImportError("sentence-transformers is required for local embeddings") from exc
-        self._encoder = SentenceTransformer(self._local_model_name)
+        self._encoder = SentenceTransformer(self._model_name)
         return self._encoder
 
     def encode(
@@ -100,11 +81,11 @@ class Embedder:
         except ImportError as exc:
             raise ImportError("litellm is required for remote embeddings") from exc
 
-        api_key = remote_embedding_api_key(self._remote_api_key_var)
         response = litellm.embedding(
-            model=self._remote_model,
+            model=self._model_name,
             input=sentences,
-            api_key=api_key,
+            api_key=self._provider_api_key_var,
+            base_url=self._provider_base_url,
         )
         embeddings = [item["embedding"] for item in response.data]
         arr = np.asarray(embeddings, dtype="float32")

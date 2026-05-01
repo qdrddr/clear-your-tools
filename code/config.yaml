@@ -17,19 +17,19 @@ models:
       - name: qwen/qwen3-embedding-8b
         provider: openrouter
         nick: embed-qwen3-8b
-        #KeyVarName: OPENROUTER_API_KEY
+        key_var_name: OPENROUTER_API_KEY
         #base_url: https://openrouter.ai/api/v1
       - name: all-minilm:33m
         provider: ollama
         nick: all-minilm
-        #KeyVarName: OPENROUTER_API_KEY
+        #key_var_name: OPENROUTER_API_KEY
         #base_url: http://localhost:11434
   rerankers:
     remote:
       - name: Qwen/Qwen3-Reranker-8B
         provider: deepinfra
         nick: rerank-qwen3-8b
-        #KeyVarName: DEEPINFRA_API_KEY
+        key_var_name: DEEPINFRA_API_KEY
         #base_url: https://api.deepinfra.com/v1
 vectordb:
   dir: .chroma_db

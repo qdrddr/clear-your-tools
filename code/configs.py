@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 # Load .env so API keys (e.g. OPENROUTER_API_KEY) are available.
 # Shell environment takes precedence.
@@ -85,6 +85,28 @@ def load_config() -> dict[str, Any]:
     return _deep_merge(_DEFAULTS, user_config)
 
 
-def remote_embedding_api_key(api_key_var: str | None) -> str | None:
-    var = api_key_var or "OPENROUTER_API_KEY"
-    return os.getenv(var)
+def resolve_model(
+    model_nick: str, model_kind: str, model_type: str
+) -> tuple[str, str | None, str | None]:
+    """Return (model_name, api_key, base_url) for a given nick and type."""
+    config = load_config()
+    for entry in config.get("models", {}).get(model_kind, {}).get(model_type, []):
+        if entry.get("nick") == model_nick:
+            provider = entry.get("provider", None)
+            full_model_name = entry.get("name")
+            if model_type == "remote":
+                env_values = dotenv_values(_env_path)
+                key_var_name = entry.get("key_var_name")
+                api_key_value = None
+                if key_var_name in env_values:
+                    api_key_value = env_values[key_var_name]
+                base_url = entry.get("base_url")
+                if provider:
+                    return f"{provider}/{full_model_name}", api_key_value, base_url
+                else:
+                    raise ValueError(
+                        f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format"
+                    )
+            else:
+                return f"{full_model_name}", None, None
+    raise ValueError(f"Unknown model nick: {model_nick}, kind: {model_kind}, type: {model_type}")
