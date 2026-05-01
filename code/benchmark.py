@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
     print("missing dependency: pip install -r requirements.txt", file=sys.stderr)
     raise
 
+from configs import load_config
 from embeddings import get_embedder
 from intent_router import IntentRouter
 from lazy_loader import LazySchemaLoader
@@ -61,7 +62,14 @@ def main() -> int:
 
     tools: list[dict[str, object]] = cast(list[dict[str, object]], json.loads(CATALOG.read_text()))
     embedder = get_embedder()
-    store = ToolVectorStore(dim=384, persist_dir=None)
+    config = load_config()
+    defaults = config.get("defaults", {})
+    persist_dir = (
+        config.get("vectordb", {}).get("dir", ".chroma_db")
+        if defaults.get("is_persistent", True)
+        else None
+    )
+    store = ToolVectorStore(dim=384, persist_dir=persist_dir)
     store.add_tools(tools, embedder)
     loader = LazySchemaLoader(registry_path=SCHEMAS_DIR)
     router = IntentRouter(
