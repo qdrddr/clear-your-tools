@@ -1,7 +1,7 @@
 defaults:
   is_persistent: true
   embedding_model_type: remote
-  embedding_model_nick: all-minilm
+  embedding_model_nick: embed-qwen3-8b
   reranking_model_type: remote
   reranking_model_nick: rerank-qwen3-8b
   reranking_enabled: true

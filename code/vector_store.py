@@ -225,6 +225,7 @@ class ToolVectorStore:
                 metadata=self._fingerprint_to_metadata(self._current_fingerprint),
             )
             entry["chroma_segment_uuid"] = self._resolve_chroma_segment_uuid(temp_col)
+            entry["chroma_collection_id"] = str(getattr(temp_col, "id", ""))
         else:
             self.collection_name = self._current_fingerprint_name(
                 self._base_collection_name, self._current_fingerprint
@@ -234,6 +235,7 @@ class ToolVectorStore:
                 metadata=self._fingerprint_to_metadata(self._current_fingerprint),
             )
             chroma_segment_uuid = self._resolve_chroma_segment_uuid(temp_col)
+            chroma_collection_id = str(getattr(temp_col, "id", ""))
             new_entry = {
                 "model_name": current_fp["model_name"],
                 "model_type": current_fp["model_type"],
@@ -241,6 +243,7 @@ class ToolVectorStore:
                 "dimensions": current_fp["dimensions"],
                 "name": self.collection_name,
                 "chroma_segment_uuid": chroma_segment_uuid,
+                "chroma_collection_id": chroma_collection_id,
             }
             fingerprints.append(new_entry)
             registry["current_fingerprint_name"] = self.collection_name
