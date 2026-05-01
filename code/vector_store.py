@@ -67,24 +67,24 @@ class ToolVectorStore:
 
     def __init__(
         self,
-        dim: int = 384,
+        dim: int | None = None,
         collection_name: str = "tool_summaries",
         persist_dir: str | None = ".chroma_db",
         preserve_old_collections: bool = False,
     ) -> None:
+        if dim is None:
+            raise ValueError("dim must be provided (use embedder.dim to infer it)")
         self.dim: int = dim
         self._base_collection_name: str = collection_name
         self._persist_dir: str | None = persist_dir
         self._preserve_old_collections: bool = preserve_old_collections
         self._current_fingerprint: dict[str, Any] = self._resolve_fingerprint(dim)
-        self.collection_name: str = self._effective_collection_name(
-            collection_name, self._current_fingerprint
-        )
         self.client: ClientAPI = (
             chromadb.PersistentClient(path=persist_dir)
             if persist_dir is not None
             else chromadb.Client()
         )
+        self.collection_name: str = ""
         self._maybe_cleanup_registry()
         metadata = self._fingerprint_to_metadata(self._current_fingerprint)
         self.collection: chromadb.Collection = self.client.get_or_create_collection(
@@ -127,7 +127,7 @@ class ToolVectorStore:
         return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()[:10]
 
     @staticmethod
-    def _effective_collection_name(base_name: str, fingerprint: dict[str, Any]) -> str:
+    def _current_fingerprint_name(base_name: str, fingerprint: dict[str, Any]) -> str:
         return f"{base_name}_{ToolVectorStore._fingerprint_hash(fingerprint)}"
 
     @staticmethod
@@ -161,35 +161,91 @@ class ToolVectorStore:
         path = self._registry_path
         if path is None or not path.exists():
             return None
-        return cast(dict[str, Any], json.loads(path.read_text()))
+        data = cast(dict[str, Any], json.loads(path.read_text()))
+        return data
 
-    def _write_registry(self) -> None:
+    def _write_registry(self, registry: dict[str, Any] | None = None) -> None:
         path = self._registry_path
         if path is None:
             return
-        path.write_text(
-            json.dumps(
-                {
-                    "last_collection_name": self.collection_name,
-                    "last_fingerprint": self._current_fingerprint,
-                }
+        if registry is None:
+            registry = {
+                "current_fingerprint_name": getattr(self, "collection_name", ""),
+                "fingerprints": [],
+            }
+        path.write_text(json.dumps(registry, indent=2))
+
+    def _resolve_chroma_segment_uuid(self, collection: chromadb.Collection) -> str:
+        """Return the vector-segment directory UUID for a collection."""
+        if self._persist_dir is None:
+            return str(getattr(collection, "id", ""))
+        db_path = Path(self._persist_dir) / "chroma.sqlite3"
+        if not db_path.exists():
+            return str(getattr(collection, "id", ""))
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM segments WHERE collection = ? AND scope = 'VECTOR'",
+                (str(getattr(collection, "id", "")),),
             )
-        )
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return str(row[0])
+        except Exception:
+            pass
+        return str(getattr(collection, "id", ""))
 
     def _maybe_cleanup_registry(self) -> None:
         registry = self._read_registry()
         if registry is None:
-            self._write_registry()
-            return
-        old_name = registry.get("last_collection_name", "")
-        old_fp = registry.get("last_fingerprint", {})
-        if old_name and old_name != self.collection_name and old_fp != self._current_fingerprint:
-            if not self._preserve_old_collections:
-                try:
-                    self.client.delete_collection(old_name)
-                except Exception:
-                    pass
-        self._write_registry()
+            registry = {"current_fingerprint_name": "", "fingerprints": []}
+
+        current_fp = self._current_fingerprint
+        fingerprints = cast(list[dict[str, Any]], registry.get("fingerprints", []))
+        entry: dict[str, Any] | None = None
+        for fp in fingerprints:
+            if (
+                fp.get("model_name") == current_fp["model_name"]
+                and fp.get("model_type") == current_fp["model_type"]
+                and fp.get("base_url") == current_fp["base_url"]
+                and fp.get("dimensions") == current_fp["dimensions"]
+            ):
+                entry = fp
+                break
+
+        if entry:
+            self.collection_name = entry["name"]
+            registry["current_fingerprint_name"] = entry["name"]
+            temp_col = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata=self._fingerprint_to_metadata(self._current_fingerprint),
+            )
+            entry["chroma_segment_uuid"] = self._resolve_chroma_segment_uuid(temp_col)
+        else:
+            self.collection_name = self._current_fingerprint_name(
+                self._base_collection_name, self._current_fingerprint
+            )
+            temp_col = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata=self._fingerprint_to_metadata(self._current_fingerprint),
+            )
+            chroma_segment_uuid = self._resolve_chroma_segment_uuid(temp_col)
+            new_entry = {
+                "model_name": current_fp["model_name"],
+                "model_type": current_fp["model_type"],
+                "base_url": current_fp["base_url"],
+                "dimensions": current_fp["dimensions"],
+                "name": self.collection_name,
+                "chroma_segment_uuid": chroma_segment_uuid,
+            }
+            fingerprints.append(new_entry)
+            registry["current_fingerprint_name"] = self.collection_name
+
+        self._write_registry(registry)
 
     def _assert_fingerprint_match(self) -> None:
         stored = self._metadata_to_fingerprint(self.collection.metadata or {})
@@ -398,15 +454,22 @@ class ToolVectorStore:
             }
             _ = (path / "chroma_data.json").write_text(json.dumps(chroma_data, indent=2))
 
+    @staticmethod
+    def _require_dim(dim: int | None) -> int:
+        if dim is None:
+            raise ValueError("dim must be provided (use embedder.dim to infer it)")
+        return dim
+
     @classmethod
     def load(
         cls,
         path: Path,
-        dim: int = 384,
+        dim: int | None = None,
         collection_name: str = "tool_summaries",
         persist_dir: str | None = ".chroma_db",
         preserve_old_collections: bool = False,
     ) -> ToolVectorStore:
+        dim = cls._require_dim(dim)
         from chromadb.base_types import SparseVector
 
         current_fp = cls._resolve_fingerprint(dim)

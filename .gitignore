@@ -45,6 +45,7 @@ tokens-bloat.pdf
 .claude/
 
 code/.chroma_db/
+.chroma_db/
 .qodo
 .osgrep
 

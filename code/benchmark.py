@@ -69,7 +69,7 @@ def main() -> int:
         if defaults.get("is_persistent", True)
         else None
     )
-    store = ToolVectorStore(dim=384, persist_dir=persist_dir)
+    store = ToolVectorStore(dim=embedder.dim, persist_dir=persist_dir)
     store.add_tools(tools, embedder)
     loader = LazySchemaLoader(registry_path=SCHEMAS_DIR)
     router = IntentRouter(

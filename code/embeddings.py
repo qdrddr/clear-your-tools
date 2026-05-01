@@ -28,6 +28,7 @@ class Embedder:
         self._model_name: str | None = None
         self._provider_api_key_var: str | None = None
         self._provider_base_url: str | None = None
+        self._dim: int | None = None
 
         self._model_name, self._provider_api_key_var, self._provider_base_url = resolve_model(
             self._model_nick, "embeddings", self._model_type
@@ -46,6 +47,27 @@ class Embedder:
             raise ImportError("sentence-transformers is required for local embeddings") from exc
         self._encoder = SentenceTransformer(self._model_name)
         return self._encoder
+
+    @property
+    def dim(self) -> int:
+        if self._dim is not None:
+            return self._dim
+        if self._model_type == "inprocess":
+            encoder = self._init_local()
+            self._dim = encoder.get_sentence_embedding_dimension()
+        else:
+            try:
+                import litellm
+            except ImportError as exc:
+                raise ImportError("litellm is required for remote embeddings") from exc
+            response = litellm.embedding(
+                model=self._model_name,
+                input=["test"],
+                api_key=self._provider_api_key_var,
+                base_url=self._provider_base_url,
+            )
+            self._dim = len(response.data[0]["embedding"])
+        return self._dim
 
     def encode(
         self,
