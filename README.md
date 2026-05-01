@@ -31,7 +31,6 @@ payload.
 │   ├── references.bib           # 35-entry bibliography
 │   └── paper.pdf                # 19-page rendered preprint
 └── code/
-    ├── requirements.txt
     ├── vector_store.py          # FAISS-backed tool-summary index
     ├── intent_router.py         # ISO router + state-aware gate
     ├── lazy_loader.py           # LRU-cached full-schema loader
@@ -44,12 +43,12 @@ payload.
 
 ## Installation
 
-Requires Python 3.10+.
+Requires Python 3.11+ (see [`pyproject.toml`](pyproject.toml)).
+
+Dependencies are managed with [`uv`](https://docs.astral.sh/uv/). From the repository root run:
 
 ```bash
-cd code
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
 
 The first run will download the
@@ -60,11 +59,16 @@ encoder (~90 MB).
 
 ## Quick start: reproduce the token-reduction numbers
 
+`pyproject.toml` lives in the repository root, while the scripts are in `code/`.
+You can invoke them directly from the root with `uv run`:
+
 ```bash
-cd code
-python build_catalog.py   # creates catalog/tools.json and catalog/schemas/*.json
-python benchmark.py       # prints the reduction table
+uv run code/build_catalog.py   # creates code/catalog/tools.json and code/catalog/schemas/*.json
+uv run code/benchmark.py       # prints the reduction table
 ```
+
+Or change into `code/` and run `uv run build_catalog.py` / `uv run benchmark.py`
+— `uv` discovers the project root automatically.
 
 Expected output (seed 42, 120 tools, 7 queries):
 
@@ -85,6 +89,9 @@ the first turn.
 ---
 
 ## Minimal library usage
+
+All snippets below assume execution inside the `uv` managed environment
+(e.g., run `uv run python` from the `code/` directory):
 
 ```python
 from pathlib import Path
