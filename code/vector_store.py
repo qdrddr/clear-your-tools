@@ -19,6 +19,7 @@ Chroma RRF plan shown in the doc comments below.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -32,6 +33,25 @@ from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
 from configs import load_config, resolve_model
 from embeddings import get_embedder
+
+_FINGERPRINT_KEYS = (
+    "embedding_model_name",
+    "embedding_model_type",
+    "embedding_base_url",
+    "embedding_dimensions",
+)
+
+
+class EmbeddingModelChangedError(Exception):
+    """Raised when the active embedding model no longer matches the model used to populate the store."""
+
+    def __init__(self, stored: dict[str, Any] | None, current: dict[str, Any]) -> None:
+        self.stored = stored
+        self.current = current
+        super().__init__(
+            f"Embedding model changed. stored={json.dumps(stored, sort_keys=True) if stored else 'None'}, "
+            f"current={json.dumps(current, sort_keys=True)}"
+        )
 
 
 class _SparseVector(Protocol):
@@ -50,22 +70,131 @@ class ToolVectorStore:
         dim: int = 384,
         collection_name: str = "tool_summaries",
         persist_dir: str | None = ".chroma_db",
+        preserve_old_collections: bool = False,
     ) -> None:
         self.dim: int = dim
-        self.collection_name: str = collection_name
+        self._base_collection_name: str = collection_name
+        self._persist_dir: str | None = persist_dir
+        self._preserve_old_collections: bool = preserve_old_collections
+        self._current_fingerprint: dict[str, Any] = self._resolve_fingerprint(dim)
+        self.collection_name: str = self._effective_collection_name(
+            collection_name, self._current_fingerprint
+        )
         self.client: ClientAPI = (
             chromadb.PersistentClient(path=persist_dir)
             if persist_dir is not None
             else chromadb.Client()
         )
+        self._maybe_cleanup_registry()
+        metadata = self._fingerprint_to_metadata(self._current_fingerprint)
         self.collection: chromadb.Collection = self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
+            name=self.collection_name,
+            metadata=metadata,
         )
+        stored_fp = self._metadata_to_fingerprint(self.collection.metadata or {})
+        if stored_fp is None:
+            self.collection.modify(metadata=metadata)
+        elif stored_fp != self._current_fingerprint:
+            raise EmbeddingModelChangedError(stored_fp, self._current_fingerprint)
         self.tool_ids: list[str] = []
         self.summaries: dict[str, str] = {}
         self._sparse: dict[str, _SparseVector] = {}
         self._bm25: ChromaBm25EmbeddingFunction = ChromaBm25EmbeddingFunction()
+
+    @staticmethod
+    def _resolve_fingerprint(dim: int) -> dict[str, Any]:
+        config = load_config()
+        defaults = config.get("defaults", {})
+        model_nick = str(defaults.get("embedding_model_nick", ""))
+        model_type = str(defaults.get("embedding_model_type", ""))
+        if not model_nick or not model_type:
+            return {
+                "model_name": "",
+                "model_type": "",
+                "base_url": None,
+                "dimensions": dim,
+            }
+        model_name, _, base_url = resolve_model(model_nick, "embeddings", model_type)
+        return {
+            "model_name": model_name,
+            "model_type": model_type,
+            "base_url": base_url,
+            "dimensions": dim,
+        }
+
+    @staticmethod
+    def _fingerprint_hash(fingerprint: dict[str, Any]) -> str:
+        return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()[:10]
+
+    @staticmethod
+    def _effective_collection_name(base_name: str, fingerprint: dict[str, Any]) -> str:
+        return f"{base_name}_{ToolVectorStore._fingerprint_hash(fingerprint)}"
+
+    @staticmethod
+    def _fingerprint_to_metadata(fingerprint: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "hnsw:space": "cosine",
+            "embedding_model_name": fingerprint["model_name"],
+            "embedding_model_type": fingerprint["model_type"],
+            "embedding_base_url": fingerprint["base_url"] or "",
+            "embedding_dimensions": fingerprint["dimensions"],
+        }
+
+    @staticmethod
+    def _metadata_to_fingerprint(metadata: dict[str, Any]) -> dict[str, Any] | None:
+        if not all(k in metadata for k in _FINGERPRINT_KEYS):
+            return None
+        return {
+            "model_name": metadata["embedding_model_name"],
+            "model_type": metadata["embedding_model_type"],
+            "base_url": metadata["embedding_base_url"] or None,
+            "dimensions": metadata["embedding_dimensions"],
+        }
+
+    @property
+    def _registry_path(self) -> Path | None:
+        if self._persist_dir is None:
+            return None
+        return Path(self._persist_dir) / ".tool_vector_store_registry.json"
+
+    def _read_registry(self) -> dict[str, Any] | None:
+        path = self._registry_path
+        if path is None or not path.exists():
+            return None
+        return cast(dict[str, Any], json.loads(path.read_text()))
+
+    def _write_registry(self) -> None:
+        path = self._registry_path
+        if path is None:
+            return
+        path.write_text(
+            json.dumps(
+                {
+                    "last_collection_name": self.collection_name,
+                    "last_fingerprint": self._current_fingerprint,
+                }
+            )
+        )
+
+    def _maybe_cleanup_registry(self) -> None:
+        registry = self._read_registry()
+        if registry is None:
+            self._write_registry()
+            return
+        old_name = registry.get("last_collection_name", "")
+        old_fp = registry.get("last_fingerprint", {})
+        if old_name and old_name != self.collection_name and old_fp != self._current_fingerprint:
+            if not self._preserve_old_collections:
+                try:
+                    self.client.delete_collection(old_name)
+                except Exception:
+                    pass
+        self._write_registry()
+
+    def _assert_fingerprint_match(self) -> None:
+        stored = self._metadata_to_fingerprint(self.collection.metadata or {})
+        if stored is not None and stored != self._current_fingerprint:
+            raise EmbeddingModelChangedError(stored, self._current_fingerprint)
 
     def add_tools(
         self,
@@ -77,6 +206,7 @@ class ToolVectorStore:
         `tools` must be a sequence of dicts with at least keys
         'id' (str) and 'summary' (str).
         """
+        self._assert_fingerprint_match()
         if not tools:
             return
         embedder = encoder or get_embedder()
@@ -87,6 +217,10 @@ class ToolVectorStore:
                 summaries, normalize_embeddings=True, show_progress_bar=False
             )
         ).astype("float32")
+        if vectors.shape[1] != self.dim:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}"
+            )
         sparse_embeddings: list[_SparseVector] = cast(list[_SparseVector], self._bm25(summaries))
 
         # Persist sparse vectors as ChromaDB metadata so they live in the
@@ -121,6 +255,7 @@ class ToolVectorStore:
         rankings with BM25 sparse keyword rankings via RRF (k=60,
         equal weights).  Otherwise it falls back to dense-only search.
         """
+        self._assert_fingerprint_match()
         if not self.tool_ids:
             return []
         n_candidates = min(max(k * 4, 20), len(self.tool_ids))
@@ -244,6 +379,7 @@ class ToolVectorStore:
                     "tool_ids": self.tool_ids,
                     "summaries": self.summaries,
                     "sparse_embeddings": sparse_data,
+                    "fingerprint": self._current_fingerprint,
                 },
                 indent=2,
             )
@@ -269,10 +405,26 @@ class ToolVectorStore:
         dim: int = 384,
         collection_name: str = "tool_summaries",
         persist_dir: str | None = ".chroma_db",
+        preserve_old_collections: bool = False,
     ) -> ToolVectorStore:
         from chromadb.base_types import SparseVector
 
-        store = cls(dim=dim, collection_name=collection_name, persist_dir=persist_dir)
+        current_fp = cls._resolve_fingerprint(dim)
+        if (path / "meta.json").exists():
+            meta = cast(
+                dict[str, object],
+                json.loads((path / "meta.json").read_text()),
+            )
+            stored_fp = cast(dict[str, Any] | None, meta.get("fingerprint"))
+            if stored_fp is not None and stored_fp != current_fp:
+                raise EmbeddingModelChangedError(stored_fp, current_fp)
+
+        store = cls(
+            dim=dim,
+            collection_name=collection_name,
+            persist_dir=persist_dir,
+            preserve_old_collections=preserve_old_collections,
+        )
         if (path / "meta.json").exists():
             meta = cast(
                 dict[str, object],
