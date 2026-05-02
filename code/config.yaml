@@ -32,4 +32,4 @@ models:
         key_var_name: DEEPINFRA_API_KEY
         #base_url: https://api.deepinfra.com/v1
 vectordb:
-  dir: .chroma_db
+  dir: .vectordb
