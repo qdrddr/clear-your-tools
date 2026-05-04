@@ -16,11 +16,9 @@ import hashlib
 import json
 import re
 import tempfile
-from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast, final
+from typing import Any, cast, final
 
 import lancedb
 import litellm
@@ -44,21 +42,6 @@ class EmbeddingModelChangedError(Exception):
             f"Embedding model changed. stored={json.dumps(stored, sort_keys=True) if stored else 'None'}, "
             f"current={json.dumps(current, sort_keys=True)}"
         )
-
-
-class _SparseVector(Protocol):
-    """Structural stand-in for sparse vector representation."""
-
-    indices: list[int]
-    values: list[float]
-
-
-@dataclass
-class _SimpleSparseVector:
-    """Simple sparse vector implementation for API compatibility."""
-
-    indices: list[int]
-    values: list[float]
 
 
 @final
@@ -93,8 +76,6 @@ class ToolVectorStore:
                 pa.field("id", pa.string()),
                 pa.field("vector", pa.list_(pa.float32(), dim)),
                 pa.field("summary", pa.string()),
-                pa.field("sparse_indices", pa.list_(pa.int32())),
-                pa.field("sparse_values", pa.list_(pa.float32())),
             ]
         )
         try:
@@ -108,7 +89,6 @@ class ToolVectorStore:
             raise EmbeddingModelChangedError(stored_fp, self._current_fingerprint)
         self.tool_ids: list[str] = []
         self.summaries: dict[str, str] = {}
-        self._sparse: dict[str, _SparseVector] = {}
 
     @staticmethod
     def _resolve_fingerprint(dim: int) -> dict[str, Any]:
@@ -243,28 +223,6 @@ class ToolVectorStore:
         if stored is not None and stored != self._current_fingerprint:
             raise EmbeddingModelChangedError(stored, self._current_fingerprint)
 
-    @staticmethod
-    def _compute_sparse(summaries: list[str]) -> list[_SimpleSparseVector]:
-        """Compute simple sparse term-frequency vectors for API compatibility."""
-        vocab: dict[str, int] = {}
-        docs_tokens: list[list[str]] = []
-        for summary in summaries:
-            tokens = re.findall(r"[a-z]+", summary.lower())
-            docs_tokens.append(tokens)
-            for token in set(tokens):
-                if token not in vocab:
-                    vocab[token] = len(vocab)
-
-        sparse_list: list[_SimpleSparseVector] = []
-        for tokens in docs_tokens:
-            counts = Counter(tokens)
-            pairs = sorted((vocab[token], float(count)) for token, count in counts.items())
-            indices = [i for i, _ in pairs]
-            values = [v for _, v in pairs]
-            sparse_list.append(_SimpleSparseVector(indices, values))
-
-        return sparse_list
-
     def _ensure_indexes(self) -> None:
         """Create vector and FTS indexes when enough data exists."""
         try:
@@ -272,7 +230,7 @@ class ToolVectorStore:
         except Exception:
             pass
         try:
-            self.table.create_fts_index("summary")
+            self.table.create_fts_index("summary", replace=True)
         except Exception:
             pass
 
@@ -299,27 +257,21 @@ class ToolVectorStore:
             raise ValueError(
                 f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}"
             )
-        sparse_embeddings = self._compute_sparse(summaries)
 
         records = []
-        for tid, summary, vector, sp in zip(
-            ids, summaries, vectors.tolist(), sparse_embeddings, strict=False
-        ):
+        for tid, summary, vector in zip(ids, summaries, vectors.tolist(), strict=False):
             records.append(
                 {
                     "id": tid,
                     "vector": vector,
                     "summary": summary,
-                    "sparse_indices": sp.indices,
-                    "sparse_values": sp.values,
                 }
             )
 
         self.table.add(records)
-        for t, sp in zip(tools, sparse_embeddings, strict=False):
+        for t in tools:
             self.tool_ids.append(cast(str, t["id"]))
             self.summaries[cast(str, t["id"])] = cast(str, t["summary"])
-            self._sparse[cast(str, t["id"])] = sp
 
         self._ensure_indexes()
 
@@ -416,25 +368,13 @@ class ToolVectorStore:
             pass
         return None
 
-    @staticmethod
-    def _sparse_dot(a: _SparseVector, b: _SparseVector) -> float:
-        """Dot product of two sparse vector objects."""
-        b_dict: dict[int, float] = dict(zip(b.indices, b.values, strict=False))
-        return sum(
-            val * b_dict.get(idx, 0.0) for idx, val in zip(a.indices, a.values, strict=False)
-        )
-
     def save(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
-        sparse_data: dict[str, dict[str, list[int] | list[float]]] = {
-            tid: {"indices": sp.indices, "values": sp.values} for tid, sp in self._sparse.items()
-        }
         _ = (path / self._META_FILE).write_text(
             json.dumps(
                 {
                     "tool_ids": self.tool_ids,
                     "summaries": self.summaries,
-                    "sparse_embeddings": sparse_data,
                     "fingerprint": self._current_fingerprint,
                 },
                 indent=2,
@@ -448,8 +388,6 @@ class ToolVectorStore:
                         "id": r["id"],
                         "vector": r["vector"],
                         "summary": r["summary"],
-                        "sparse_indices": r["sparse_indices"],
-                        "sparse_values": r["sparse_values"],
                     }
                     for r in records
                 ],
@@ -503,15 +441,6 @@ class ToolVectorStore:
         meta = cast(dict[str, object], json.loads(meta_path.read_text()))
         store.tool_ids = list(cast(list[str], meta["tool_ids"]))
         store.summaries = dict(cast(dict[str, str], meta["summaries"]))
-        sparse_embeddings = cast(
-            dict[str, dict[str, list[int] | list[float]]],
-            meta.get("sparse_embeddings", {}),
-        )
-        for tid, sp_data in sparse_embeddings.items():
-            store._sparse[tid] = _SimpleSparseVector(
-                indices=cast(list[int], sp_data["indices"]),
-                values=cast(list[float], sp_data["values"]),
-            )
 
     @staticmethod
     def _load_lancedb_data(path: Path, store: ToolVectorStore) -> None:
@@ -532,23 +461,10 @@ class ToolVectorStore:
 
         for r in records:
             tid = cast(str, r["id"])
-            sp_indices = r.get("sparse_indices")
-            sp_values = r.get("sparse_values")
-            if sp_indices is not None and sp_values is not None:
-                if tid not in store._sparse:
-                    store._sparse[tid] = _SimpleSparseVector(
-                        indices=cast(list[int], sp_indices),
-                        values=cast(list[float], sp_values),
-                    )
-                if tid not in store.tool_ids:
-                    store.tool_ids.append(tid)
+            if tid not in store.tool_ids:
+                store.tool_ids.append(tid)
 
         store._ensure_indexes()
-
-    @property
-    def sparse_embeddings(self) -> dict[str, _SparseVector]:
-        """Read-only access to the in-memory sparse embedding cache."""
-        return self._sparse
 
     def __len__(self) -> int:
         return int(self.table.count_rows())

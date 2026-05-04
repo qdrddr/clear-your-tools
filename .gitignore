@@ -48,6 +48,7 @@ code/.chroma_db/
 .chroma_db/
 .vectordb/
 .lancedb/
+.test_lancedb/
 .qodo
 .osgrep
 
