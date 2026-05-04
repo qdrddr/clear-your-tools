@@ -164,3 +164,6 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+
+[tool.codespell]
+ignore-words-list = "Bui"

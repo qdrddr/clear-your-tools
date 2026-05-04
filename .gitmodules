@@ -1,0 +1,3 @@
+[submodule "fastmcp"]
+	path = fastmcp
+	url = https://github.com/PrefectHQ/fastmcp.git
