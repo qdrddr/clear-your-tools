@@ -31,15 +31,12 @@ import numpy as np
 from chromadb.api import ClientAPI
 from chromadb.api.types import Metadatas, PyEmbeddings
 from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
-from configs import load_config, resolve_model
-from embeddings import get_embedder
-
-_FINGERPRINT_KEYS = (
-    "embedding_model_name",
-    "embedding_model_type",
-    "embedding_base_url",
-    "embedding_dimensions",
+from configs import (
+    _FINGERPRINT_KEYS,
+    load_config,
+    resolve_model,
 )
+from embeddings import get_embedder
 
 
 class EmbeddingModelChangedError(Exception):

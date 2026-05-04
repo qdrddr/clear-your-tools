@@ -1,5 +1,7 @@
 # source .venv/bin/activate && pre-commit run --all-files
 fail_fast: true
+default_language_version:
+  python: "3.13"
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.5

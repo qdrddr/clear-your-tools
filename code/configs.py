@@ -22,6 +22,13 @@ DEFAULT_EMBEDDING_MODEL_TYPE: str = "inprocess"
 DEFAULT_EMBEDDING_MODEL_NICK: str = "all-MiniLM-L6-v2"
 DEFAULT_LOCAL_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
 
+_FINGERPRINT_KEYS = (
+    "embedding_model_name",
+    "embedding_model_type",
+    "embedding_base_url",
+    "embedding_dimensions",
+)
+
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge *overlay* over *base* without mutating either."""
