@@ -70,7 +70,7 @@ _DEFAULTS: dict[str, Any] = {
         },
     },
     "vectordb": {
-        "dir": ".chroma_db",
+        "dir": ".lancedb",
     },
 }
 

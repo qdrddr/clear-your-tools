@@ -47,6 +47,7 @@ tokens-bloat.pdf
 code/.chroma_db/
 .chroma_db/
 .vectordb/
+.lancedb/
 .qodo
 .osgrep
 
@@ -59,3 +60,5 @@ uv.lock
 CLAUDE.md
 AGENTS.md
 .coverage
+:memory:/
+lat.md/

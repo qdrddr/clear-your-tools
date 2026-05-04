@@ -182,8 +182,8 @@ schemas immediately before the user's current message.
   `BAAI/bge-large-en-v1.5`) and pass it into both `ToolVectorStore.add_tools`
   and `IntentRouter`. Expect ~2–4 pp retrieval improvement on well-named
   catalogs; ~3× latency cost.
-* **Swap the backend**: `ToolVectorStore` can be replaced with a Chroma-
-  backed store implementing the same `add_tools`/`search` surface.
+* **Swap the backend**: `ToolVectorStore` can be replaced with a different
+  vector-store implementation.
 * **Threshold calibration**: collect ≥100 (query, ground-truth-tool) pairs
   and sweep `threshold` in `IntentRouter` to maximise F1. Typical optimum:
   0.22–0.32 for MiniLM-L6.

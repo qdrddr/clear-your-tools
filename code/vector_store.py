@@ -1,36 +1,31 @@
-"""ToolVectorStore: Chroma-backed store of compact tool summaries.
+"""ToolVectorStore: LanceDB-backed store of compact tool summaries.
 
 Companion code for "Tool Attention Is All You Need"
 (Anuj Sadani, 2026). Each summary must be a short natural-language
 sentence (<= 60 tokens under cl100k_base) that reads as a user
 intent (e.g., "Search GitHub issues by label and assignee").
 
-Uses ChromaDB for dense semantic embeddings and ChromaBm25EmbeddingFunction
-for sparse keyword embeddings.  Hybrid search is performed via Reciprocal
-Rank Fusion (RRF) of the dense and sparse rankings.
-
-Note: Local (single-node) ChromaDB does not yet expose the ``Search`` /
-``Knn`` / ``Rrf`` query API, so RRF is implemented manually in Python
-for broad compatibility.  When running against Chroma Cloud or a
-future local release that supports ``collection.search(Search(...))``,
-the dense and sparse ``Knn`` expressions can be replaced with the native
-Chroma RRF plan shown in the doc comments below.
+Uses LanceDB for dense semantic embeddings and native BM25/FTS
+full-text search. Hybrid search is performed via LanceDB's built-in
+hybrid query builder which fuses vector and keyword results.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
+import tempfile
+from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast, final
 
-import chromadb
+import lancedb
 import litellm
 import numpy as np
-from chromadb.api import ClientAPI
-from chromadb.api.types import Metadatas, PyEmbeddings
-from chromadb.utils.embedding_functions import ChromaBm25EmbeddingFunction
+import pyarrow as pa
 from configs import (
     _FINGERPRINT_KEYS,
     load_config,
@@ -52,7 +47,15 @@ class EmbeddingModelChangedError(Exception):
 
 
 class _SparseVector(Protocol):
-    """Structural stand-in for chromadb.base_types.SparseVector."""
+    """Structural stand-in for sparse vector representation."""
+
+    indices: list[int]
+    values: list[float]
+
+
+@dataclass
+class _SimpleSparseVector:
+    """Simple sparse vector implementation for API compatibility."""
 
     indices: list[int]
     values: list[float]
@@ -60,13 +63,15 @@ class _SparseVector(Protocol):
 
 @final
 class ToolVectorStore:
-    """Chroma-backed store with dense semantic + BM25 sparse hybrid search."""
+    """LanceDB-backed store with dense semantic + native BM25/FTS hybrid search."""
+
+    _META_FILE = "meta.json"
 
     def __init__(
         self,
         dim: int | None = None,
         collection_name: str = "tool_summaries",
-        persist_dir: str | None = ".chroma_db",
+        persist_dir: str | None = ".lancedb",
         preserve_old_collections: bool = False,
     ) -> None:
         if dim is None:
@@ -76,27 +81,34 @@ class ToolVectorStore:
         self._persist_dir: str | None = persist_dir
         self._preserve_old_collections: bool = preserve_old_collections
         self._current_fingerprint: dict[str, Any] = self._resolve_fingerprint(dim)
-        self.client: ClientAPI = (
-            chromadb.PersistentClient(path=persist_dir)
-            if persist_dir is not None
-            else chromadb.Client()
-        )
+        if persist_dir is not None:
+            self._db = lancedb.connect(persist_dir)
+        else:
+            self._temp_dir = tempfile.TemporaryDirectory()
+            self._db = lancedb.connect(self._temp_dir.name)
         self.collection_name: str = ""
         self._maybe_cleanup_registry()
-        metadata = self._fingerprint_to_metadata(self._current_fingerprint)
-        self.collection: chromadb.Collection = self.client.get_or_create_collection(
-            name=self.collection_name,
-            metadata=metadata,
+        self._schema = pa.schema(
+            [
+                pa.field("id", pa.string()),
+                pa.field("vector", pa.list_(pa.float32(), dim)),
+                pa.field("summary", pa.string()),
+                pa.field("sparse_indices", pa.list_(pa.int32())),
+                pa.field("sparse_values", pa.list_(pa.float32())),
+            ]
         )
-        stored_fp = self._metadata_to_fingerprint(self.collection.metadata or {})
+        try:
+            self.table = self._db.open_table(self.collection_name)
+        except Exception:
+            self.table = self._db.create_table(self.collection_name, schema=self._schema)
+        stored_fp = self._read_fingerprint()
         if stored_fp is None:
-            self.collection.modify(metadata=metadata)
+            self._write_fingerprint()
         elif stored_fp != self._current_fingerprint:
             raise EmbeddingModelChangedError(stored_fp, self._current_fingerprint)
         self.tool_ids: list[str] = []
         self.summaries: dict[str, str] = {}
         self._sparse: dict[str, _SparseVector] = {}
-        self._bm25: ChromaBm25EmbeddingFunction = ChromaBm25EmbeddingFunction()
 
     @staticmethod
     def _resolve_fingerprint(dim: int) -> dict[str, Any]:
@@ -158,8 +170,7 @@ class ToolVectorStore:
         path = self._registry_path
         if path is None or not path.exists():
             return None
-        data = cast(dict[str, Any], json.loads(path.read_text()))
-        return data
+        return cast(dict[str, Any], json.loads(path.read_text()))
 
     def _write_registry(self, registry: dict[str, Any] | None = None) -> None:
         path = self._registry_path
@@ -171,30 +182,6 @@ class ToolVectorStore:
                 "fingerprints": [],
             }
         path.write_text(json.dumps(registry, indent=2))
-
-    def _resolve_chroma_segment_uuid(self, collection: chromadb.Collection) -> str:
-        """Return the vector-segment directory UUID for a collection."""
-        if self._persist_dir is None:
-            return str(getattr(collection, "id", ""))
-        db_path = Path(self._persist_dir) / "chroma.sqlite3"
-        if not db_path.exists():
-            return str(getattr(collection, "id", ""))
-        try:
-            import sqlite3
-
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id FROM segments WHERE collection = ? AND scope = 'VECTOR'",
-                (str(getattr(collection, "id", "")),),
-            )
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                return str(row[0])
-        except Exception:
-            pass
-        return str(getattr(collection, "id", ""))
 
     def _maybe_cleanup_registry(self) -> None:
         registry = self._read_registry()
@@ -217,40 +204,77 @@ class ToolVectorStore:
         if entry:
             self.collection_name = entry["name"]
             registry["current_fingerprint_name"] = entry["name"]
-            temp_col = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata=self._fingerprint_to_metadata(self._current_fingerprint),
-            )
-            entry["chroma_segment_uuid"] = self._resolve_chroma_segment_uuid(temp_col)
-            entry["chroma_collection_id"] = str(getattr(temp_col, "id", ""))
         else:
             self.collection_name = self._current_fingerprint_name(
                 self._base_collection_name, self._current_fingerprint
             )
-            temp_col = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata=self._fingerprint_to_metadata(self._current_fingerprint),
-            )
-            chroma_segment_uuid = self._resolve_chroma_segment_uuid(temp_col)
-            chroma_collection_id = str(getattr(temp_col, "id", ""))
             new_entry = {
                 "model_name": current_fp["model_name"],
                 "model_type": current_fp["model_type"],
                 "base_url": current_fp["base_url"],
                 "dimensions": current_fp["dimensions"],
                 "name": self.collection_name,
-                "chroma_segment_uuid": chroma_segment_uuid,
-                "chroma_collection_id": chroma_collection_id,
             }
             fingerprints.append(new_entry)
             registry["current_fingerprint_name"] = self.collection_name
 
         self._write_registry(registry)
 
+    @property
+    def _fingerprint_path(self) -> Path | None:
+        if self._persist_dir is None:
+            return None
+        return Path(self._persist_dir) / f".fingerprint_{self.collection_name}.json"
+
+    def _read_fingerprint(self) -> dict[str, Any] | None:
+        path = self._fingerprint_path
+        if path is None or not path.exists():
+            return None
+        return cast(dict[str, Any], json.loads(path.read_text()))
+
+    def _write_fingerprint(self) -> None:
+        path = self._fingerprint_path
+        if path is None:
+            return
+        path.write_text(json.dumps(self._current_fingerprint, indent=2))
+
     def _assert_fingerprint_match(self) -> None:
-        stored = self._metadata_to_fingerprint(self.collection.metadata or {})
+        stored = self._read_fingerprint()
         if stored is not None and stored != self._current_fingerprint:
             raise EmbeddingModelChangedError(stored, self._current_fingerprint)
+
+    @staticmethod
+    def _compute_sparse(summaries: list[str]) -> list[_SimpleSparseVector]:
+        """Compute simple sparse term-frequency vectors for API compatibility."""
+        vocab: dict[str, int] = {}
+        docs_tokens: list[list[str]] = []
+        for summary in summaries:
+            tokens = re.findall(r"[a-z]+", summary.lower())
+            docs_tokens.append(tokens)
+            for token in set(tokens):
+                if token not in vocab:
+                    vocab[token] = len(vocab)
+
+        sparse_list: list[_SimpleSparseVector] = []
+        for tokens in docs_tokens:
+            counts = Counter(tokens)
+            pairs = sorted((vocab[token], float(count)) for token, count in counts.items())
+            indices = [i for i, _ in pairs]
+            values = [v for _, v in pairs]
+            sparse_list.append(_SimpleSparseVector(indices, values))
+
+        return sparse_list
+
+    def _ensure_indexes(self) -> None:
+        """Create vector and FTS indexes when enough data exists."""
+        try:
+            self.table.create_index(metric="cosine")
+        except Exception:
+            pass
+        try:
+            self.table.create_fts_index("summary")
+        except Exception:
+            pass
 
     def add_tools(
         self,
@@ -269,34 +293,35 @@ class ToolVectorStore:
         summaries: list[str] = [cast(str, t["summary"]) for t in tools]
         ids: list[str] = [cast(str, t["id"]) for t in tools]
         vectors: np.ndarray = np.asarray(
-            embedder.encode(  # pyright: ignore[reportUnknownMemberType]
-                summaries, normalize_embeddings=True, show_progress_bar=False
-            )
+            embedder.encode(summaries, normalize_embeddings=True, show_progress_bar=False)
         ).astype("float32")
         if vectors.shape[1] != self.dim:
             raise ValueError(
                 f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}"
             )
-        sparse_embeddings: list[_SparseVector] = cast(list[_SparseVector], self._bm25(summaries))
+        sparse_embeddings = self._compute_sparse(summaries)
 
-        # Persist sparse vectors as ChromaDB metadata so they live in the
-        # collection (not just an in-memory sidecar).  Native sparse-vector
-        # indexing is unavailable in local/embedded ChromaDB, so we still
-        # compute keyword scores manually in search().
-        metadatas: list[dict[str, object]] = [
-            {"sparse_indices": sp.indices, "sparse_values": sp.values} for sp in sparse_embeddings
-        ]
+        records = []
+        for tid, summary, vector, sp in zip(
+            ids, summaries, vectors.tolist(), sparse_embeddings, strict=False
+        ):
+            records.append(
+                {
+                    "id": tid,
+                    "vector": vector,
+                    "summary": summary,
+                    "sparse_indices": sp.indices,
+                    "sparse_values": sp.values,
+                }
+            )
 
-        self.collection.add(
-            ids=ids,
-            embeddings=cast(PyEmbeddings, vectors.tolist()),
-            documents=summaries,
-            metadatas=cast(Metadatas, metadatas),
-        )
+        self.table.add(records)
         for t, sp in zip(tools, sparse_embeddings, strict=False):
             self.tool_ids.append(cast(str, t["id"]))
             self.summaries[cast(str, t["id"])] = cast(str, t["summary"])
             self._sparse[cast(str, t["id"])] = sp
+
+        self._ensure_indexes()
 
     def search(
         self,
@@ -307,61 +332,36 @@ class ToolVectorStore:
     ) -> list[tuple[str, float]]:
         """Return up to `k` (tool_id, score) pairs sorted by score desc.
 
-        When *query_text* is supplied the method fuses dense semantic
-        rankings with BM25 sparse keyword rankings via RRF (k=60,
-        equal weights).  Otherwise it falls back to dense-only search.
+        When *query_text* is supplied the method uses LanceDB's native hybrid
+        search to fuse dense semantic rankings with BM25/FTS keyword rankings.
+        Otherwise it falls back to dense-only search.
         """
         self._assert_fingerprint_match()
         if not self.tool_ids:
             return []
         n_candidates = min(max(k * 4, 20), len(self.tool_ids))
 
-        # Dense semantic search via ChromaDB
-        dense_results = self.collection.query(
-            query_embeddings=[query_vec.tolist()],
-            n_results=n_candidates,
-            include=["distances"],
-        )
-        dense_ids = dense_results["ids"][0]
-        distances = dense_results["distances"]
-        if distances is None:
-            return []
-        dense_distances = distances[0]
-        dense_rank = {tid: rank for rank, tid in enumerate(dense_ids)}
-
-        candidates: list[tuple[str, float]]
-
-        # Hybrid: RRF with BM25 sparse keyword search
-        if query_text and self._sparse:
-            query_sparse = self._bm25([query_text])[0]
-            sparse_scores = {
-                tid: self._sparse_dot(query_sparse, sp) for tid, sp in self._sparse.items()
-            }
-            sorted_sparse = sorted(sparse_scores.items(), key=lambda x: -x[1])
-            sparse_rank = {tid: rank for rank, (tid, _) in enumerate(sorted_sparse)}
-
-            all_ids = set(dense_rank.keys()) | set(sparse_rank.keys())
-            rrf_scores: dict[str, float] = {}
-            for tid in all_ids:
-                score = 0.0
-                if tid in dense_rank:
-                    score += 1.0 / (60 + dense_rank[tid])
-                if tid in sparse_rank:
-                    score += 1.0 / (60 + sparse_rank[tid])
-                rrf_scores[tid] = score
-
-            # Normalise to roughly the same scale as cosine similarity [0, 1]
-            max_rrf = 2.0 / 60  # two rankings, both at rank 0
-            ranked = sorted(rrf_scores.items(), key=lambda x: -x[1])
-            candidates = [(tid, float(score) / max_rrf) for tid, score in ranked[:n_candidates]]
+        if query_text:
+            results = (
+                self.table.search(query_type="hybrid")
+                .vector(query_vec.tolist())
+                .text(query_text)
+                .limit(n_candidates)
+                .to_arrow()
+                .to_pylist()
+            )
+            if not results:
+                return []
+            max_score = max(float(r["_relevance_score"]) for r in results)
+            if max_score == 0:
+                max_score = 1.0
+            candidates = [(r["id"], float(r["_relevance_score"]) / max_score) for r in results]
         else:
-            # Fallback to dense-only
-            candidates = [
-                (tid, 1.0 / (1.0 + dist))
-                for tid, dist in zip(dense_ids, dense_distances, strict=False)
-            ][:n_candidates]
+            results = (
+                self.table.search(query_vec.tolist()).limit(n_candidates).to_arrow().to_pylist()
+            )
+            candidates = [(r["id"], max(0.0, 1.0 - float(r["_distance"]))) for r in results]
 
-        # Optional reranking stage
         if query_text and candidates:
             reranked = self._rerank(query_text, candidates)
             if reranked is not None:
@@ -418,7 +418,7 @@ class ToolVectorStore:
 
     @staticmethod
     def _sparse_dot(a: _SparseVector, b: _SparseVector) -> float:
-        """Dot product of two ChromaDB SparseVector objects."""
+        """Dot product of two sparse vector objects."""
         b_dict: dict[int, float] = dict(zip(b.indices, b.values, strict=False))
         return sum(
             val * b_dict.get(idx, 0.0) for idx, val in zip(a.indices, a.values, strict=False)
@@ -429,7 +429,7 @@ class ToolVectorStore:
         sparse_data: dict[str, dict[str, list[int] | list[float]]] = {
             tid: {"indices": sp.indices, "values": sp.values} for tid, sp in self._sparse.items()
         }
-        _ = (path / "meta.json").write_text(
+        _ = (path / self._META_FILE).write_text(
             json.dumps(
                 {
                     "tool_ids": self.tool_ids,
@@ -440,19 +440,21 @@ class ToolVectorStore:
                 indent=2,
             )
         )
-        if self.collection.count() > 0:
-            result = self.collection.get(include=["embeddings", "documents", "metadatas"])
-            embeddings = result.get("embeddings")
-            chroma_data: dict[str, object] = {
-                "ids": result["ids"],
-                "embeddings": [
-                    e.tolist() if isinstance(e, np.ndarray) else e
-                    for e in (embeddings if embeddings is not None else [])
+        if self.table.count_rows() > 0:
+            records = self.table.to_arrow().to_pylist()
+            lancedb_data: dict[str, object] = {
+                "records": [
+                    {
+                        "id": r["id"],
+                        "vector": r["vector"],
+                        "summary": r["summary"],
+                        "sparse_indices": r["sparse_indices"],
+                        "sparse_values": r["sparse_values"],
+                    }
+                    for r in records
                 ],
-                "documents": result.get("documents") or [],
-                "metadatas": result.get("metadatas") or [],
             }
-            _ = (path / "chroma_data.json").write_text(json.dumps(chroma_data, indent=2))
+            _ = (path / "lancedb_data.json").write_text(json.dumps(lancedb_data, indent=2))
 
     @staticmethod
     def _require_dim(dim: int | None) -> int:
@@ -466,21 +468,11 @@ class ToolVectorStore:
         path: Path,
         dim: int | None = None,
         collection_name: str = "tool_summaries",
-        persist_dir: str | None = ".chroma_db",
+        persist_dir: str | None = ".lancedb",
         preserve_old_collections: bool = False,
     ) -> ToolVectorStore:
         dim = cls._require_dim(dim)
-        from chromadb.base_types import SparseVector
-
-        current_fp = cls._resolve_fingerprint(dim)
-        if (path / "meta.json").exists():
-            meta = cast(
-                dict[str, object],
-                json.loads((path / "meta.json").read_text()),
-            )
-            stored_fp = cast(dict[str, Any] | None, meta.get("fingerprint"))
-            if stored_fp is not None and stored_fp != current_fp:
-                raise EmbeddingModelChangedError(stored_fp, current_fp)
+        cls._validate_load_path(path, cls._resolve_fingerprint(dim))
 
         store = cls(
             dim=dim,
@@ -488,54 +480,70 @@ class ToolVectorStore:
             persist_dir=persist_dir,
             preserve_old_collections=preserve_old_collections,
         )
-        if (path / "meta.json").exists():
-            meta = cast(
-                dict[str, object],
-                json.loads((path / "meta.json").read_text()),
-            )
-            store.tool_ids = list(cast(list[str], meta["tool_ids"]))
-            store.summaries = dict(cast(dict[str, str], meta["summaries"]))
-            sparse_embeddings = cast(
-                dict[str, dict[str, list[int] | list[float]]],
-                meta.get("sparse_embeddings", {}),
-            )
-            for tid, sp_data in sparse_embeddings.items():
-                store._sparse[tid] = cast(
-                    _SparseVector,
-                    SparseVector(
-                        indices=cast(list[int], sp_data["indices"]),
-                        values=cast(list[float], sp_data["values"]),
-                    ),
-                )
-
-        if (path / "chroma_data.json").exists():
-            with open(path / "chroma_data.json") as f:
-                chroma_data = cast(dict[str, object], json.load(f))
-            ids = cast(list[str], chroma_data["ids"])
-            embeddings = cast(list[list[float]], chroma_data["embeddings"])
-            documents = cast(list[str], chroma_data["documents"])
-            metadatas = cast(list[dict[str, object]], chroma_data["metadatas"])
-            store.collection.upsert(
-                ids=ids,
-                embeddings=cast(list[Sequence[float]], embeddings),
-                documents=documents,
-                metadatas=cast(Metadatas, metadatas),
-            )
-            # Rebuild in-memory sparse cache from ChromaDB metadata
-            # (covers cases where meta.json is missing / stale).
-            for tid, meta in zip(ids, metadatas, strict=False):
-                if tid not in store._sparse and meta:
-                    sp_indices = meta.get("sparse_indices")
-                    sp_values = meta.get("sparse_values")
-                    if sp_indices is not None and sp_values is not None:
-                        store._sparse[tid] = SparseVector(
-                            indices=cast(list[int], sp_indices),
-                            values=cast(list[float], sp_values),
-                        )
-                        if tid not in store.tool_ids:
-                            store.tool_ids.append(tid)
+        cls._load_metadata(path, store)
+        cls._load_lancedb_data(path, store)
 
         return store
+
+    @classmethod
+    def _validate_load_path(cls, path: Path, current_fp: dict[str, Any]) -> None:
+        meta_path = path / cls._META_FILE
+        if meta_path.exists():
+            meta = cast(dict[str, object], json.loads(meta_path.read_text()))
+            stored_fp = cast(dict[str, Any] | None, meta.get("fingerprint"))
+            if stored_fp is not None and stored_fp != current_fp:
+                raise EmbeddingModelChangedError(stored_fp, current_fp)
+
+    @staticmethod
+    def _load_metadata(path: Path, store: ToolVectorStore) -> None:
+        meta_path = path / store._META_FILE
+        if not meta_path.exists():
+            return
+
+        meta = cast(dict[str, object], json.loads(meta_path.read_text()))
+        store.tool_ids = list(cast(list[str], meta["tool_ids"]))
+        store.summaries = dict(cast(dict[str, str], meta["summaries"]))
+        sparse_embeddings = cast(
+            dict[str, dict[str, list[int] | list[float]]],
+            meta.get("sparse_embeddings", {}),
+        )
+        for tid, sp_data in sparse_embeddings.items():
+            store._sparse[tid] = _SimpleSparseVector(
+                indices=cast(list[int], sp_data["indices"]),
+                values=cast(list[float], sp_data["values"]),
+            )
+
+    @staticmethod
+    def _load_lancedb_data(path: Path, store: ToolVectorStore) -> None:
+        data_path = path / "lancedb_data.json"
+        if not data_path.exists():
+            return
+
+        with open(data_path) as f:
+            lancedb_data = cast(dict[str, object], json.load(f))
+
+        records = cast(list[dict[str, object]], lancedb_data.get("records", []))
+        if not records:
+            return
+
+        store.table.merge_insert(
+            "id"
+        ).when_matched_update_all().when_not_matched_insert_all().execute(records)
+
+        for r in records:
+            tid = cast(str, r["id"])
+            sp_indices = r.get("sparse_indices")
+            sp_values = r.get("sparse_values")
+            if sp_indices is not None and sp_values is not None:
+                if tid not in store._sparse:
+                    store._sparse[tid] = _SimpleSparseVector(
+                        indices=cast(list[int], sp_indices),
+                        values=cast(list[float], sp_values),
+                    )
+                if tid not in store.tool_ids:
+                    store.tool_ids.append(tid)
+
+        store._ensure_indexes()
 
     @property
     def sparse_embeddings(self) -> dict[str, _SparseVector]:
@@ -543,4 +551,4 @@ class ToolVectorStore:
         return self._sparse
 
     def __len__(self) -> int:
-        return self.collection.count()
+        return int(self.table.count_rows())

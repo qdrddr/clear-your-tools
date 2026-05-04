@@ -65,7 +65,7 @@ def main() -> int:
     config = load_config()
     defaults = config.get("defaults", {})
     persist_dir = (
-        config.get("vectordb", {}).get("dir", ".chroma_db")
+        config.get("vectordb", {}).get("dir", ".lancedb")
         if defaults.get("is_persistent", True)
         else None
     )
