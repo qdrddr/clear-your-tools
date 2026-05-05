@@ -1,7 +1,11 @@
 import asyncio
 import json
 from pathlib import Path
+
+import anyio
+
 from fastmcp import Client
+
 
 async def check() -> None:
     config_path = Path.home() / ".claude.json"
@@ -9,8 +13,7 @@ async def check() -> None:
         print("Config not found")
         return
 
-    with open(config_path) as f:
-        config = json.load(f)
+    config = json.loads(await anyio.Path(config_path).read_text())
 
     mcp_servers = config.get("mcpServers", {})
     client = Client({"mcpServers": mcp_servers})
@@ -28,6 +31,7 @@ async def check() -> None:
             if hasattr(tool, "meta") and tool.meta:
                 print(f"meta keys: {tool.meta.keys() if hasattr(tool.meta, 'keys') else 'no keys'}")
                 print(f"meta content: {tool.meta}")
+
 
 if __name__ == "__main__":
     asyncio.run(check())
