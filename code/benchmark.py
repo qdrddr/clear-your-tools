@@ -39,7 +39,7 @@ SEED = 42
 random.seed(SEED)
 HERE = Path(__file__).parent
 CATALOG = HERE / "catalog" / "tools.json"
-SCHEMAS_DIR = HERE / "catalog" / "schemas"
+SCHEMAS_DIR = HERE / "catalog" / "schemas" / "full"
 QUERIES = HERE / "catalog" / "queries.jsonl"
 ENC = tiktoken.get_encoding("cl100k_base")
 

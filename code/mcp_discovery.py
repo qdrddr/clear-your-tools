@@ -1,7 +1,11 @@
 import asyncio
 import json
 from pathlib import Path
+
+import anyio
+
 from fastmcp import Client
+
 
 async def discover_server_primitives() -> None:
     config_path = Path.home() / ".claude.json"
@@ -9,8 +13,7 @@ async def discover_server_primitives() -> None:
         print(f"Error: {config_path} not found.")
         return
 
-    with open(config_path) as f:
-        full_config = json.load(f)
+    full_config = json.loads(await anyio.Path(config_path).read_text())
 
     mcp_servers_config = full_config.get("mcpServers", {})
     if not mcp_servers_config:
@@ -44,6 +47,7 @@ async def discover_server_primitives() -> None:
         print(f"\n[Resources] ({len(resources)})")
         for resource in resources:
             print(f" - {resource.uri}: {resource.name}")
+
 
 if __name__ == "__main__":
     asyncio.run(discover_server_primitives())

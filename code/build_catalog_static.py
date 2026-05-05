@@ -19,7 +19,7 @@ from pathlib import Path
 SEED = 42
 HERE = Path(__file__).parent
 OUT = HERE / "catalog"
-SCHEMAS_DIR = OUT / "schemas"
+SCHEMAS_DIR = OUT / "schemas" / "full"
 
 # (server, tool_count, avg_schema_tokens_target, verbs, objects, domain_noun)
 SERVERS = [

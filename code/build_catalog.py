@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 HERE = Path(__file__).parent
 OUT = HERE / "catalog"
-SCHEMAS_DIR = OUT / "schemas"
+SCHEMAS_DIR = OUT / "schemas" / "full"
 
 
 def _truncate_description(description: str, max_tokens: int = 60) -> str:
@@ -59,42 +59,57 @@ async def build() -> None:
 
     # Catalog wiping: clear existing schemas
     if SCHEMAS_DIR.exists():
-        for f in SCHEMAS_DIR.glob("*.json"):
-            f.unlink()
-    else:
-        SCHEMAS_DIR.mkdir(parents=True, exist_ok=True)
+        import shutil
 
-    client = Client({"mcpServers": mcp_servers_config})
+        shutil.rmtree(SCHEMAS_DIR)
+    SCHEMAS_DIR.mkdir(parents=True, exist_ok=True)
 
     discovered_tools = []
 
-    try:
-        async with client:
-            tools = await client.list_tools()
-            print(f"Discovered {len(tools)} tools.")
+    for server_name, server_config in mcp_servers_config.items():
+        print(f"Connecting to {server_name}...")
+        client = Client({"mcpServers": {server_name: server_config}})
 
-            for tool in tools:
-                # FastMCP prefixes multi-server tool names as {server_name}_{tool_name}
-                tid = tool.name
+        try:
+            async with client:
+                tools = await client.list_tools()
+                print(f"  Discovered {len(tools)} tools on {server_name}.")
 
-                # Real MCP tool descriptions can be verbose
-                summary = _truncate_description(tool.description or "")
+                for tool in tools:
+                    # tool.name is the actual tool name from the server
+                    tool_name = tool.name
+                    tid = f"{server_name}_{tool_name}"
 
-                # Full schema expected by consumer
-                full_schema = {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.inputSchema,
-                }
+                    # Real MCP tool descriptions can be verbose
+                    summary = _truncate_description(tool.description or "")
 
-                discovered_tools.append({"id": tid, "summary": summary, "full_schema": full_schema})
+                    # Full schema expected by consumer
+                    full_schema = {
+                        "name": tool_name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema,
+                    }
 
-                # Write individual schema file
-                schema_file = SCHEMAS_DIR / f"{tid}.json"
-                schema_file.write_text(json.dumps(full_schema, indent=2))
+                    discovered_tools.append(
+                        {
+                            "id": tid,
+                            "server": server_name,
+                            "tool": tool_name,
+                            "summary": summary,
+                            "full_schema": full_schema,
+                        }
+                    )
 
-    except Exception as e:
-        print(f"Warning: Discovered tools might be incomplete due to error: {e}")
+                    # Write individual schema file in server-specific directory
+                    server_dir = SCHEMAS_DIR / server_name
+                    server_dir.mkdir(exist_ok=True)
+                    schema_file = server_dir / f"{tool_name}.json"
+                    schema_file.write_text(json.dumps(full_schema, indent=2))
+
+        except Exception as e:
+            print(
+                f"Warning: Discovered tools might be incomplete for {server_name} due to error: {e}"
+            )
 
     if not discovered_tools:
         print("No tools discovered.")
