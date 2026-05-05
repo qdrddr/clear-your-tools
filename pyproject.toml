@@ -29,12 +29,14 @@ dependencies = [
     "python-dotenv==1.2.2",
     "lancedb==0.30.2",
     "pyarrow==24.0.0",
+    "fastmcp==3.2.4",
+    "mcp==1.27.0",
 ]
 
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities
 dev = [
-    "pre-commit~=4.5",
+    "prek>=0.2.12",
     "pytest~=9.0",
     "pytest-cov>=6.1.1",
     "pytest-dependency~=0.6",
