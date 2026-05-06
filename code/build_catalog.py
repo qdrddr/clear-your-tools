@@ -302,11 +302,11 @@ def _write_tool_and_property_files(discovered_tools: list) -> None:
             "description": description,
             "inputSchema": filtered,
         }
-        tool_entries.append((SCHEMAS_DIR / "tools" / server_name / f"{tool_id}.json", tool_file))
+        tool_entries.append((SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file))
 
         for path_segments, prop_schema in extractions:
             prop_name = path_segments[-1]["name"]
-            prop_dir = SCHEMAS_DIR / "properties" / server_name / tool_id
+            prop_dir = SCHEMAS_DIR / "decomposed" / server_name / tool_id
 
             for seg in path_segments[:-1]:
                 seg_type = seg["type"]
@@ -353,7 +353,7 @@ async def build() -> None:
     if SCHEMAS_DIR.exists():
         shutil.rmtree(SCHEMAS_DIR)
 
-    for sub_dir in ("enums", "tools", "properties", "full"):
+    for sub_dir in ("enums", "decomposed", "full"):
         (SCHEMAS_DIR / sub_dir).mkdir(parents=True, exist_ok=True)
 
     discovered_tools: list[dict] = []
