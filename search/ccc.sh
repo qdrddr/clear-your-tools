@@ -25,6 +25,7 @@ chunkers:
     module: custom_json_chunker:json_chunker
 EOF
 
+cp code/custom_json_chunker.py code/catalog/custom_json_chunker.py
 
 # ccc --install-completion
 cd code/catalog
