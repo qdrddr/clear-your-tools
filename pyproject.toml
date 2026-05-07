@@ -140,6 +140,7 @@ module = [
     "google.*",
     "lancedb.*",
     "sentence_transformers.*",
+    "cocoindex_code.*",
 ]
 ignore_missing_imports = true
 
