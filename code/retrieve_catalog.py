@@ -5,9 +5,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
-def deep_merge(base: dict, override: dict) -> dict:
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base. Dicts are merged; other values are overwritten."""
     result = dict(base)
     for key, val in override.items():
@@ -28,10 +29,10 @@ def get_root_tool_path(file_path: Path, decomposed_dir: Path) -> Path:
     return decomposed_dir / server / f"{tool_name}.json"
 
 
-def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict:
+def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
     """Load a property file and merge it up through existing parent files until the tool level."""
     with open(leaf_path) as f:
-        current = json.load(f)
+        current: dict[str, Any] = json.load(f)
 
     current_path = leaf_path.parent
 
@@ -46,7 +47,7 @@ def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict:
 
         if parent_file.exists():
             with open(parent_file) as f:
-                parent = json.load(f)
+                parent: dict[str, Any] = json.load(f)
             current = deep_merge(parent, current)
             current_path = parent_dir
         else:

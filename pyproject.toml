@@ -168,4 +168,7 @@ exclude_lines = [
 ]
 
 [tool.codespell]
-ignore-words-list = "Bui"
+ignore-words-list = [
+    "Bui",
+    "fallow",
+]

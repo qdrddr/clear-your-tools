@@ -11,10 +11,14 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.code-review-graph
+.grepai
 
 # Generated benchmark artifacts
 code/catalog/tools.json
-code/catalog/schemas/
+#code/catalog/schemas/decomposed
+#code/catalog/schemas/enums
+code/catalog/schemas/full
 code/catalog/queries.jsonl
 
 # OS / editor

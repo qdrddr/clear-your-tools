@@ -302,7 +302,9 @@ def _write_tool_and_property_files(discovered_tools: list) -> None:
             "description": description,
             "inputSchema": filtered,
         }
-        tool_entries.append((SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file))
+        tool_entries.append(
+            (SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file)
+        )
 
         for path_segments, prop_schema in extractions:
             prop_name = path_segments[-1]["name"]
