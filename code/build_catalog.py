@@ -266,16 +266,16 @@ def _write_enum_files(all_enums: list) -> None:
     enum_entries = []
     for val in unique_enums:
         if isinstance(val, str):
-            filename = f"{val}.json"
+            filename = f"{val}.md"
             content = val
         else:
-            filename = f"{json.dumps(val, sort_keys=True)}.json"
+            filename = f"{json.dumps(val, sort_keys=True)}.md"
             content = json.dumps(val, sort_keys=True)
-        enum_entries.append((SCHEMAS_DIR / "enums" / filename, content))
+        enum_entries.append((SCHEMAS_DIR / "decomposed" / filename, content))
 
     enum_entries.sort(key=lambda x: str(x[0]))
     for path, content in enum_entries:
-        path.write_text(content)
+        path.write_text(json.dumps({"enum": content}))
 
 
 def _write_tool_and_property_files(discovered_tools: list) -> None:
@@ -355,7 +355,7 @@ async def build() -> None:
     if SCHEMAS_DIR.exists():
         shutil.rmtree(SCHEMAS_DIR)
 
-    for sub_dir in ("enums", "decomposed", "full"):
+    for sub_dir in ("decomposed", "full"):
         (SCHEMAS_DIR / sub_dir).mkdir(parents=True, exist_ok=True)
 
     discovered_tools: list[dict] = []

@@ -19,6 +19,8 @@ exclude_patterns:
 - 'full/*'
 include_patterns:
 - '**/*.json'
+- '**/*.md'
+- '*.md'
 
 chunkers:
   - ext: json              # use a custom chunker for .toml files
@@ -30,7 +32,7 @@ cp code/custom_json_chunker.py code/catalog/custom_json_chunker.py
 # ccc --install-completion
 cd code/catalog
 
-COCOINDEX_CODE_EXTRA_EXTENSIONS="json"
+COCOINDEX_CODE_EXTRA_EXTENSIONS="json,md"
 COCOINDEX_CODE_EXCLUDE_PATTERNS='["full/**"]'
 
 ccc daemon status
@@ -39,4 +41,5 @@ ccc init -f
 ccc index
 
 
-ccc search --refresh --limit 100 --path 'schemas/**/*.json' "List of operation IDs" 
+ccc search --refresh --limit 100 --path 'schemas/decomposed/*.md' "parquet" 
+ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs" 
