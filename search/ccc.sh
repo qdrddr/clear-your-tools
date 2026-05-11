@@ -41,5 +41,9 @@ ccc init -f
 ccc index
 
 
-ccc search --refresh --limit 100 --path 'schemas/decomposed/*.md' "parquet" 
-ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs" 
+# Search from another forlder
+export COCOINDEX_CODE_HOST_PATH_MAPPING="${PWD}=${PWD}"
+export COCOINDEX_CODE_HOST_CWD="./code/catalog"
+
+ccc search --refresh --offset 5 --limit 100 --path 'schemas/decomposed/*.md' "parquet"
+ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs"
