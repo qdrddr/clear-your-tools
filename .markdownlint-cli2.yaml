@@ -1,0 +1,13 @@
+# Markdownlint-cli2 configuration
+
+# Ignore specific files
+ignores:
+  - paper.md
+  - code/catalog/schemas/decomposed/
+
+# Global rules - mostly defaults. Dir-specific overrides are in backlog/
+config:
+  MD013:
+    line_length: 120
+    code_blocks: false
+    tables: false

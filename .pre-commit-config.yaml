@@ -39,6 +39,19 @@ repos:
         args: ["--max-line-length", "140"]
         exclude: ^test_data/|bumpity.py$
 
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        args: [--py310-plus]
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.1
+    hooks:
+      - id: markdownlint-cli2
+        language_version: lts
+        args: [--fix]
+        exclude: ^(CLAUDE|AGENTS|GEMINI)\.md$
+        
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.5
     hooks:

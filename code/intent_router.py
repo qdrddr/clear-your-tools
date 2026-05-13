@@ -12,7 +12,8 @@ that queries agent state to enforce auth scopes, milestones, etc.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 from configs import load_config
