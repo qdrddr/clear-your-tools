@@ -47,3 +47,5 @@ export COCOINDEX_CODE_HOST_CWD="./code/catalog"
 
 ccc search --refresh --offset 5 --limit 100 --path 'schemas/decomposed/*.md' "parquet"
 ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs"
+
+uv run code/cs.py -r code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs"

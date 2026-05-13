@@ -1,6 +1,6 @@
 import os
-import sys
 from pathlib import Path
+
 import typer
 from cocoindex_code.cli import app as ccc_app
 
@@ -8,8 +8,9 @@ from cocoindex_code.cli import app as ccc_app
 app = typer.Typer(
     help="Wrapper for cocoindex-code with global --root support.",
     no_args_is_help=True,
-    context_settings={"help_option_names": ["-h", "--help"]}
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
+
 
 @app.callback()
 def main(
@@ -36,10 +37,12 @@ def main(
     if host_cwd:
         try:
             from cocoindex_code.settings import normalize_input_path
+
             target = normalize_input_path(host_cwd)
             os.chdir(target)
         except (ImportError, OSError):
             pass
+
 
 # To silence the UserWarning about ignored callbacks when using add_typer(name=""),
 # we explicitly nullify the sub-app's callback before adding it.

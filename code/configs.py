@@ -92,7 +92,9 @@ def load_config() -> dict[str, Any]:
 
 
 def resolve_model(
-    model_nick: str, model_kind: str, model_type: str,
+    model_nick: str,
+    model_kind: str,
+    model_type: str,
 ) -> tuple[str, str | None, str | None]:
     """Return (model_name, api_key, base_url) for a given nick and type."""
     config = load_config()

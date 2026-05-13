@@ -11,9 +11,9 @@ that queries agent state to enforce auth scopes, milestones, etc.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 import numpy as np
 from configs import load_config
@@ -49,7 +49,9 @@ class IntentRouter:
 
     def embed_query(self, query: str) -> np.ndarray:
         vec = self.encoder.encode(  # pyright: ignore[reportUnknownMemberType]  # sentence-transformers overload stubs are incomplete
-            [query], normalize_embeddings=True, show_progress_bar=False,
+            [query],
+            normalize_embeddings=True,
+            show_progress_bar=False,
         )
         return np.asarray(vec[0], dtype="float32")
 

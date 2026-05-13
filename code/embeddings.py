@@ -30,7 +30,9 @@ class Embedder:
         self._dim: int | None = None
 
         self._model_name, self._provider_api_key_var, self._provider_base_url = resolve_model(
-            self._model_nick, "embeddings", self._model_type,
+            self._model_nick,
+            "embeddings",
+            self._model_type,
         )
 
     def _init_local(self) -> Any:

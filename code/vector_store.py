@@ -185,7 +185,8 @@ class ToolVectorStore:
             registry["current_fingerprint_name"] = entry["name"]
         else:
             self.collection_name = self._current_fingerprint_name(
-                self._base_collection_name, self._current_fingerprint,
+                self._base_collection_name,
+                self._current_fingerprint,
             )
             new_entry = {
                 "model_name": current_fp["model_name"],
@@ -337,7 +338,9 @@ class ToolVectorStore:
                 return None
 
             model_name, api_key, base_url = resolve_model(
-                str(model_nick), "rerankers", str(model_type),
+                str(model_nick),
+                "rerankers",
+                str(model_type),
             )
 
             candidate_ids = [tid for tid, _ in candidates]
