@@ -39,6 +39,28 @@ repos:
         args: ["--max-line-length", "140"]
         exclude: ^test_data/|bumpity.py$
 
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.11.14
+    hooks:
+      - id: uv-export
+        args:
+          [
+            "--frozen",
+            "--quiet",
+            "--project",
+            "app",
+            "--output-file=requirements.txt",
+          ]
+        files: pyproject.toml
+      - id: uv-lock
+        args: ["--project", "."]
+        files: pyproject.toml
+      - id: uv-sync
+        args: ["--project", ".", "--locked", "--all-packages"]
+        files: pyproject.toml
+        additional_dependencies: []
+
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
     hooks:
@@ -51,7 +73,7 @@ repos:
         language_version: lts
         args: [--fix]
         exclude: ^(CLAUDE|AGENTS|GEMINI)\.md$
-        
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.5
     hooks:
@@ -81,10 +103,7 @@ repos:
         pass_filenames: false
         language: system
         files: '^code/.*\.py$'
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.8.3
-    hooks:
-      - id: uv-lock
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -105,6 +124,12 @@ repos:
       # Conflicts with ruff
       #      - id: double-quote-string-fixer
       - id: name-tests-test
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell # See pyproject.toml for args
+        additional_dependencies:
+          - tomli
   - repo: local
     hooks:
       - id: ty-check
@@ -123,10 +148,26 @@ repos:
             __pycache__/
             code/__pycache__/
           )
+      - id: check-filenames
+        name: Check for spaces in all filenames
+        entry: bash
+        args:
+          - -c
+          - |
+            git ls-files \
+              | grep -vE '^"?(postman/|documents/|backlog/|dirs/)' \
+              | grep " " \
+              && echo "Filenames should not contain spaces!" && exit 1 \
+              || exit 0
+        language: system
+        always_run: true
+        pass_filenames: false
+      # Keep `suggestion` last
+      - id: suggestion
+        name: Suggestion
+        entry: bash -c 'echo "To bypass all the pre-commit hooks, add --no-verify to git commit. To skip a specific hook, prefix the commit command with SKIP=<hook-id>."'
+        language: system
+        verbose: true
+        pass_filenames: false
+  # Insert new entries above the `suggestion` entry
 
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
-    hooks:
-      - id: codespell # See pyproject.toml for args
-        additional_dependencies:
-          - tomli
