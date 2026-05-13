@@ -1,0 +1,14 @@
+{
+  "name": "find_related",
+  "inputSchema": {
+    "properties": {
+      "top_k": {
+        "default": 5,
+        "description": "Number of similar chunks to return.",
+        "minimum": 1,
+        "title": "Top K",
+        "type": "integer"
+      }
+    }
+  }
+}

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +64,7 @@ _DEFAULTS: dict[str, Any] = {
                 {
                     "name": DEFAULT_LOCAL_MODEL_NAME,
                     "nick": DEFAULT_EMBEDDING_MODEL_NICK,
-                }
+                },
             ],
         },
     },
@@ -93,7 +92,7 @@ def load_config() -> dict[str, Any]:
 
 
 def resolve_model(
-    model_nick: str, model_kind: str, model_type: str
+    model_nick: str, model_kind: str, model_type: str,
 ) -> tuple[str, str | None, str | None]:
     """Return (model_name, api_key, base_url) for a given nick and type."""
     config = load_config()
@@ -112,7 +111,7 @@ def resolve_model(
                     return f"{provider}/{full_model_name}", api_key_value, base_url
                 else:
                     raise ValueError(
-                        f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format"
+                        f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format",
                     )
             else:
                 return f"{full_model_name}", None, None

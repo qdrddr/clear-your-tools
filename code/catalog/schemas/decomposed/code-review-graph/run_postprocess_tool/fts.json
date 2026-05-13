@@ -1,0 +1,11 @@
+{
+  "name": "run_postprocess_tool",
+  "inputSchema": {
+    "properties": {
+      "fts": {
+        "default": true,
+        "type": "boolean"
+      }
+    }
+  }
+}

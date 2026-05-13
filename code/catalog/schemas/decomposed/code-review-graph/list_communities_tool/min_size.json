@@ -1,0 +1,11 @@
+{
+  "name": "list_communities_tool",
+  "inputSchema": {
+    "properties": {
+      "min_size": {
+        "default": 0,
+        "type": "integer"
+      }
+    }
+  }
+}

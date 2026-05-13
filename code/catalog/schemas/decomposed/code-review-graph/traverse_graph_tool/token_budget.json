@@ -1,0 +1,11 @@
+{
+  "name": "traverse_graph_tool",
+  "inputSchema": {
+    "properties": {
+      "token_budget": {
+        "default": 2000,
+        "type": "integer"
+      }
+    }
+  }
+}

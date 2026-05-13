@@ -1,0 +1,18 @@
+{
+  "name": "search",
+  "description": "Search a codebase with a natural-language or code query.\n\nPass a git URL or local path as `repo` to index it on demand; indexes are cached for the session.\nUse this to find where something is implemented, understand a library, or locate related code.\n",
+  "inputSchema": {
+    "properties": {
+      "query": {
+        "description": "Natural language or code query.",
+        "title": "Query",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "searchArguments",
+    "type": "object"
+  }
+}

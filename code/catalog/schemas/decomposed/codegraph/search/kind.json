@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_search",
+  "inputSchema": {
+    "properties": {
+      "kind": {
+        "type": "string",
+        "description": "Filter by node kind",
+        "enum": []
+      }
+    }
+  }
+}

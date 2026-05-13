@@ -1,0 +1,12 @@
+{
+  "name": "hedl_validate",
+  "inputSchema": {
+    "properties": {
+      "lint": {
+        "type": "boolean",
+        "description": "Run linting rules in addition to parsing",
+        "default": true
+      }
+    }
+  }
+}

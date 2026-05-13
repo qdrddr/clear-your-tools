@@ -1,0 +1,8 @@
+{
+  "name": "list_repos_tool",
+  "description": "List all registered repositories in the multi-repo registry.\n\nReturns the list of repos registered at ~/.code-review-graph/registry.json.\nUse the CLI 'register' command to add repos.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

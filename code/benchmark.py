@@ -115,16 +115,16 @@ def main() -> int:
     print("|-------------------------------------|------------:|------------:|")
     print(f"| B1 Naive Full-Schema                | {naive_total:>11,} | {0.0:>10.1f}% |")
     print(
-        f"| B3 Simple Retrieval (top-k schemas) | {retr_mean:>11,.0f} | {100 * (1 - retr_mean / naive_total):>10.1f}% |"
+        f"| B3 Simple Retrieval (top-k schemas) | {retr_mean:>11,.0f} | {100 * (1 - retr_mean / naive_total):>10.1f}% |",
     )
     print(
-        f"| Tool Attention: Phase-1 only        | {phase1:>11,.0f} | {100 * (1 - phase1 / naive_total):>10.1f}% |"
+        f"| Tool Attention: Phase-1 only        | {phase1:>11,.0f} | {100 * (1 - phase1 / naive_total):>10.1f}% |",
     )
     print(
-        f"| Tool Attention: Phase-2 only        | {phase2:>11,.0f} | {100 * (1 - phase2 / naive_total):>10.1f}% |"
+        f"| Tool Attention: Phase-2 only        | {phase2:>11,.0f} | {100 * (1 - phase2 / naive_total):>10.1f}% |",
     )
     print(
-        f"| Tool Attention: first turn (P1+P2)  | {ta_total:>11,.0f} | {100 * (1 - ta_total / naive_total):>10.1f}% |"
+        f"| Tool Attention: first turn (P1+P2)  | {ta_total:>11,.0f} | {100 * (1 - ta_total / naive_total):>10.1f}% |",
     )
     print()
     print("Notes:")

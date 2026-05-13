@@ -68,14 +68,14 @@ def json_chunker(path: _Path, content: str) -> tuple[str | None, list[Chunk]]:
     total_lines = content.count("\n") + 1
 
     for i in range(0, len(extracted_lines), chunk_size):
-        chunk_lines = extracted_lines[i : i + chunk_size]
+        chunk_lines = extracted_lines[i: i + chunk_size]
         text = "\n".join(chunk_lines)
         chunks.append(
             Chunk(
                 text=text,
                 start=_pos(1),
                 end=_pos(total_lines),
-            )
+            ),
         )
 
     return "json", chunks

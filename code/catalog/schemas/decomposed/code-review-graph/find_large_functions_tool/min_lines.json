@@ -1,0 +1,11 @@
+{
+  "name": "find_large_functions_tool",
+  "inputSchema": {
+    "properties": {
+      "min_lines": {
+        "default": 50,
+        "type": "integer"
+      }
+    }
+  }
+}

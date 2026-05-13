@@ -1,0 +1,13 @@
+{
+  "name": "search_for_pattern",
+  "inputSchema": {
+    "properties": {
+      "paths_include_glob": {
+        "default": "",
+        "title": "Paths Include Glob",
+        "type": "string",
+        "description": "Optional glob pattern specifying files to include in the search.\nMatches against relative file paths from the project root (e.g., \"*.py\", \"src/**/*.ts\").\nSupports standard glob patterns (*, ?, [seq], **, etc.) and brace expansion {a,b,c}.\nOnly matches files, not directories. If left empty, all non-ignored files will be included."
+      }
+    }
+  }
+}

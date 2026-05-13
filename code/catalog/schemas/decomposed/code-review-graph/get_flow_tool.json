@@ -1,0 +1,8 @@
+{
+  "name": "get_flow_tool",
+  "description": "Get detailed information about a single execution flow.\n\nReturns the full call path with each step's function name, file, and\nline numbers. Optionally includes source code snippets for each step.\n\nProvide either flow_id (from list_flows_tool) or flow_name to search by name.\n\nArgs:\n    flow_id: Database ID of the flow.\n    flow_name: Name to search for (partial match). Ignored if flow_id given.\n    include_source: Include source code snippets for each step. Default: False.\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

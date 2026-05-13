@@ -1,0 +1,16 @@
+{
+  "name": "codegraph_callees",
+  "description": "Find all functions/methods that a specific symbol calls. Useful for understanding dependencies and code flow.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "symbol": {
+        "type": "string",
+        "description": "Name of the function, method, or class to find callees for"
+      }
+    },
+    "required": [
+      "symbol"
+    ]
+  }
+}

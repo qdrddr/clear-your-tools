@@ -38,7 +38,7 @@ def _get_tool_id(server_name: str, tool_name: str) -> str:
     """Remove server name prefix from tool name if present."""
     prefix = f"{server_name}_"
     if tool_name.startswith(prefix):
-        return tool_name[len(prefix) :]
+        return tool_name[len(prefix):]
     return tool_name
 
 
@@ -71,14 +71,14 @@ def _truncate_enum(schema: dict) -> None:
 
 
 def _process_items(
-    result: dict, tool_name: str, server_name: str, path: list, extractions: list
+    result: dict, tool_name: str, server_name: str, path: list, extractions: list,
 ) -> None:
     """Process 'items' field in a schema node."""
     if "items" not in result:
         return
     if isinstance(result["items"], dict):
         result["items"] = _process_node(
-            result["items"], tool_name, server_name, [*path, {"type": "items"}], extractions
+            result["items"], tool_name, server_name, [*path, {"type": "items"}], extractions,
         )
     elif isinstance(result["items"], list):
         result["items"] = [
@@ -94,7 +94,7 @@ def _process_items(
 
 
 def _process_patterns(
-    result: dict, tool_name: str, server_name: str, path: list, extractions: list
+    result: dict, tool_name: str, server_name: str, path: list, extractions: list,
 ) -> None:
     """Process 'patternProperties' field in a schema node."""
     if "patternProperties" not in result or not isinstance(result["patternProperties"], dict):
@@ -110,7 +110,7 @@ def _process_patterns(
 
 
 def _process_compositions(
-    result: dict, tool_name: str, server_name: str, path: list, extractions: list
+    result: dict, tool_name: str, server_name: str, path: list, extractions: list,
 ) -> None:
     """Process structural compositions and nested types in a schema node."""
     # Structural compositions (handled like nested objects for recursion)
@@ -118,7 +118,7 @@ def _process_compositions(
         if key in result:
             result[key] = [
                 _process_node(
-                    item, tool_name, server_name, [*path, {"type": key, "index": i}], extractions
+                    item, tool_name, server_name, [*path, {"type": key, "index": i}], extractions,
                 )
                 for i, item in enumerate(result[key])
             ]
@@ -126,12 +126,12 @@ def _process_compositions(
     for key in ("if", "then", "else"):
         if key in result:
             result[key] = _process_node(
-                result[key], tool_name, server_name, [*path, {"type": key}], extractions
+                result[key], tool_name, server_name, [*path, {"type": key}], extractions,
             )
 
     if "not" in result:
         result["not"] = _process_node(
-            result["not"], tool_name, server_name, [*path, {"type": "not"}], extractions
+            result["not"], tool_name, server_name, [*path, {"type": "not"}], extractions,
         )
 
     _process_items(result, tool_name, server_name, path, extractions)
@@ -139,14 +139,14 @@ def _process_compositions(
     for key in ("contains", "propertyNames", "additionalProperties"):
         if key in result and isinstance(result[key], dict):
             result[key] = _process_node(
-                result[key], tool_name, server_name, [*path, {"type": key}], extractions
+                result[key], tool_name, server_name, [*path, {"type": key}], extractions,
             )
 
     _process_patterns(result, tool_name, server_name, path, extractions)
 
 
 def _process_node(
-    node: Any, tool_name: str, server_name: str, path: list, extractions: list
+    node: Any, tool_name: str, server_name: str, path: list, extractions: list,
 ) -> Any:
     """
     Recursively process a schema node.
@@ -173,11 +173,11 @@ def _process_node(
 
             if is_required:
                 filtered_properties[prop_name] = _process_node(
-                    prop_schema, tool_name, server_name, child_path, extractions
+                    prop_schema, tool_name, server_name, child_path, extractions,
                 )
             else:
                 filtered_child = _process_node(
-                    prop_schema, tool_name, server_name, child_path, extractions
+                    prop_schema, tool_name, server_name, child_path, extractions,
                 )
                 prop_file = _build_property_file(tool_name, child_path, filtered_child)
                 extractions.append((child_path, prop_file))
@@ -247,7 +247,7 @@ def _prepare_tool(server_name: str, tool: Any, all_enums: list, discovered_tools
             "tool": tool_name,
             "summary": _truncate_description(tool.description or ""),
             "full_schema": full_schema,
-        }
+        },
     )
 
 
@@ -303,7 +303,7 @@ def _write_tool_and_property_files(discovered_tools: list) -> None:
             "inputSchema": filtered,
         }
         tool_entries.append(
-            (SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file)
+            (SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file),
         )
 
         for path_segments, prop_schema in extractions:

@@ -1,0 +1,8 @@
+{
+  "name": "codegraph_files",
+  "description": "REQUIRED for file/folder exploration. Get the project file structure from the CodeGraph index. Returns a tree view of all indexed files with metadata (language, symbol count). Much faster than Glob/filesystem scanning. Use this FIRST when exploring project structure, finding files, or understanding codebase organization.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

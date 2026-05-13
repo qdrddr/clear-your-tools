@@ -1,0 +1,8 @@
+{
+  "name": "list_communities_tool",
+  "description": "List detected code communities in the codebase.\n\nEach community represents a cluster of related code entities (functions,\nclasses) detected via the Leiden algorithm or file-based grouping.\nUse this to understand the high-level structure of the codebase.\n\nArgs:\n    sort_by: Sort column: size, cohesion, or name.\n    min_size: Minimum community size to include. Default: 0.\n    detail_level: \"standard\" (default) returns full community data;\n                  \"minimal\" returns only name, size, and cohesion\n                  per community.\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

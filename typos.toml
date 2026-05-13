@@ -1,0 +1,6 @@
+[files]
+extend-exclude = ["ui/src/components/creative-tim/blocks/*.tsx"]
+
+[default.extend-words]
+# Don't correct the surname "EIN"
+Bui = "Bui"

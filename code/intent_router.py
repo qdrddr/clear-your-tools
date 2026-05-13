@@ -48,7 +48,7 @@ class IntentRouter:
 
     def embed_query(self, query: str) -> np.ndarray:
         vec = self.encoder.encode(  # pyright: ignore[reportUnknownMemberType]  # sentence-transformers overload stubs are incomplete
-            [query], normalize_embeddings=True, show_progress_bar=False
+            [query], normalize_embeddings=True, show_progress_bar=False,
         )
         return np.asarray(vec[0], dtype="float32")
 

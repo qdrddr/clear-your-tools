@@ -1,0 +1,12 @@
+{
+  "name": "hedl_write",
+  "inputSchema": {
+    "properties": {
+      "validate": {
+        "type": "boolean",
+        "description": "Validate HEDL before writing",
+        "default": true
+      }
+    }
+  }
+}

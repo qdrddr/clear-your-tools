@@ -1,0 +1,15 @@
+{
+  "name": "get_docs_section_tool",
+  "description": "Get a specific section from the LLM-optimized documentation reference.\n\nReturns only the requested section content for minimal token usage.\nUse this before answering any user question about the plugin.\n\nAvailable sections: usage, review-delta, review-pr, commands, legal,\nwatch, embeddings, languages, troubleshooting.\n\nArgs:\n    section_name: The section to retrieve (e.g. \"review-delta\", \"usage\").",
+  "inputSchema": {
+    "properties": {
+      "section_name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "section_name"
+    ],
+    "type": "object"
+  }
+}

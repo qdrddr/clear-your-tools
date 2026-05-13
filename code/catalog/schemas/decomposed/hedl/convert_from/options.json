@@ -1,0 +1,12 @@
+{
+  "name": "hedl_convert_from",
+  "inputSchema": {
+    "properties": {
+      "options": {
+        "type": "object",
+        "description": "Format-specific options",
+        "properties": {}
+      }
+    }
+  }
+}

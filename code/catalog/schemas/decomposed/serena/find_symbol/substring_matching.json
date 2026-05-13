@@ -1,0 +1,13 @@
+{
+  "name": "find_symbol",
+  "inputSchema": {
+    "properties": {
+      "substring_matching": {
+        "default": false,
+        "title": "Substring Matching",
+        "type": "boolean",
+        "description": "If True, use substring matching for the last element of the pattern, such that\n\"Foo/get\" would match \"Foo/getValue\" and \"Foo/getData\"."
+      }
+    }
+  }
+}

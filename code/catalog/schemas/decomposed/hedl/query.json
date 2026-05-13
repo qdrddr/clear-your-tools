@@ -1,0 +1,16 @@
+{
+  "name": "hedl_query",
+  "description": "Query the node registry for entities by type and/or ID. Performs graph-aware lookups on parsed HEDL documents.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hedl": {
+        "type": "string",
+        "description": "HEDL document content to query"
+      }
+    },
+    "required": [
+      "hedl"
+    ]
+  }
+}

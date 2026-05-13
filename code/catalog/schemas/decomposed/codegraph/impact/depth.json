@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_impact",
+  "inputSchema": {
+    "properties": {
+      "depth": {
+        "type": "number",
+        "description": "How many levels of dependencies to traverse (default: 2)",
+        "default": 2
+      }
+    }
+  }
+}

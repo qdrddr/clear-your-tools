@@ -1,0 +1,12 @@
+{
+  "name": "hedl_stream",
+  "inputSchema": {
+    "properties": {
+      "offset": {
+        "type": "integer",
+        "description": "Number of entities to skip",
+        "default": 0
+      }
+    }
+  }
+}

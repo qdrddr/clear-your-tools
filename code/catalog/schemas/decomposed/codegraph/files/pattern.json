@@ -1,0 +1,11 @@
+{
+  "name": "codegraph_files",
+  "inputSchema": {
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "Filter files matching this glob pattern (e.g., \"*.tsx\", \"**/*.test.ts\")"
+      }
+    }
+  }
+}

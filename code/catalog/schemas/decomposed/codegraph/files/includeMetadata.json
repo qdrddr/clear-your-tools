@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_files",
+  "inputSchema": {
+    "properties": {
+      "includeMetadata": {
+        "type": "boolean",
+        "description": "Include file metadata like language and symbol count (default: true)",
+        "default": true
+      }
+    }
+  }
+}

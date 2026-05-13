@@ -1,0 +1,19 @@
+{
+  "name": "query_graph_tool",
+  "description": "Run a predefined graph query to explore code relationships.\n\nAvailable patterns:\n- callers_of: Find functions that call the target\n- callees_of: Find functions called by the target\n- imports_of: Find what the target imports\n- importers_of: Find files that import the target\n- children_of: Find nodes contained in a file or class\n- tests_for: Find tests for the target\n- inheritors_of: Find classes inheriting from the target\n- file_summary: Get all nodes in a file\n\nArgs:\n    pattern: Query pattern name (see above).\n    target: Node name, qualified name, or file path to query.\n    repo_root: Repository root path. Auto-detected if omitted.\n    detail_level: \"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
+  "inputSchema": {
+    "properties": {
+      "pattern": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "pattern",
+      "target"
+    ],
+    "type": "object"
+  }
+}

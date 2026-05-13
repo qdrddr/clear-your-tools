@@ -1,0 +1,11 @@
+{
+  "name": "hedl_query",
+  "inputSchema": {
+    "properties": {
+      "type_name": {
+        "type": "string",
+        "description": "Filter by entity type name (e.g., 'User', 'Product')"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "search_for_pattern",
+  "inputSchema": {
+    "properties": {
+      "context_lines_after": {
+        "default": 0,
+        "title": "Context Lines After",
+        "type": "integer",
+        "description": "Number of lines of context to include after each match."
+      }
+    }
+  }
+}

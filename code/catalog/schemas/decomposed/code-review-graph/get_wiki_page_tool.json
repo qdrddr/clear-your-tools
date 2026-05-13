@@ -1,0 +1,15 @@
+{
+  "name": "get_wiki_page_tool",
+  "description": "Retrieve a specific wiki page by community name.\n\nReturns the markdown content of the wiki page for the given community.\nThe wiki must have been generated first via generate_wiki_tool.\n\nArgs:\n    community_name: Community name to look up.\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {
+      "community_name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "community_name"
+    ],
+    "type": "object"
+  }
+}

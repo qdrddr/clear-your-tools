@@ -1,0 +1,11 @@
+{
+  "name": "cross_repo_search_tool",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "default": 20,
+        "type": "integer"
+      }
+    }
+  }
+}

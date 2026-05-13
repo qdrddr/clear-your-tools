@@ -1,0 +1,11 @@
+{
+  "name": "list_flows_tool",
+  "inputSchema": {
+    "properties": {
+      "sort_by": {
+        "default": "criticality",
+        "type": "string"
+      }
+    }
+  }
+}

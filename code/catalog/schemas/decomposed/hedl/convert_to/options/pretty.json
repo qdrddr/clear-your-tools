@@ -1,0 +1,15 @@
+{
+  "name": "hedl_convert_to",
+  "inputSchema": {
+    "properties": {
+      "options": {
+        "properties": {
+          "pretty": {
+            "type": "boolean",
+            "description": "Pretty-print output (json)"
+          }
+        }
+      }
+    }
+  }
+}

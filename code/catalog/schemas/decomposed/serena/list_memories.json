@@ -1,0 +1,9 @@
+{
+  "name": "list_memories",
+  "description": "Lists available memories, optionally filtered by topic.",
+  "inputSchema": {
+    "properties": {},
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

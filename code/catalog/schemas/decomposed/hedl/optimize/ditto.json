@@ -1,0 +1,12 @@
+{
+  "name": "hedl_optimize",
+  "inputSchema": {
+    "properties": {
+      "ditto": {
+        "type": "boolean",
+        "description": "Enable ditto optimization for repeated values",
+        "default": true
+      }
+    }
+  }
+}

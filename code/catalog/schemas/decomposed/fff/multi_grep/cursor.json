@@ -1,0 +1,14 @@
+{
+  "name": "multi_grep",
+  "inputSchema": {
+    "properties": {
+      "cursor": {
+        "description": "Cursor from previous result.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  }
+}

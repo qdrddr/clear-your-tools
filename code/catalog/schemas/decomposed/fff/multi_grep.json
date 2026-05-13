@@ -1,0 +1,21 @@
+{
+  "name": "multi_grep",
+  "description": "Search file contents for lines matching ANY of multiple patterns (OR logic). IMPORTANT: This returns files where ANY query matches, NOT all patterns. Patterns are literal text \u2014 NEVER escape special characters (no \\( \\) \\. etc). Faster than regex alternation for literal text. See server instructions for constraint syntax.",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "patterns": {
+        "description": "Patterns to match (OR logic). Include all naming conventions: snake_case, PascalCase, camelCase.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "patterns"
+    ],
+    "title": "MultiGrepParams",
+    "type": "object"
+  }
+}

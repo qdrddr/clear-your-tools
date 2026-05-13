@@ -1,0 +1,12 @@
+{
+  "name": "hedl_write",
+  "inputSchema": {
+    "properties": {
+      "format": {
+        "type": "boolean",
+        "description": "Format/canonicalize before writing",
+        "default": false
+      }
+    }
+  }
+}

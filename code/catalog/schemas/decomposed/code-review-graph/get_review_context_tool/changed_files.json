@@ -1,0 +1,21 @@
+{
+  "name": "get_review_context_tool",
+  "inputSchema": {
+    "properties": {
+      "changed_files": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    }
+  }
+}

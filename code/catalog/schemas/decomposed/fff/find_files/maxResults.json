@@ -1,0 +1,15 @@
+{
+  "name": "find_files",
+  "inputSchema": {
+    "properties": {
+      "maxResults": {
+        "description": "Max results (default 20).",
+        "format": "double",
+        "type": [
+          "number",
+          "null"
+        ]
+      }
+    }
+  }
+}

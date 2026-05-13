@@ -1,0 +1,20 @@
+{
+  "name": "batch",
+  "inputSchema": {
+    "properties": {
+      "operations": {
+        "items": {
+          "properties": {
+            "depends_on": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of operation IDs this operation depends on"
+            }
+          }
+        }
+      }
+    }
+  }
+}

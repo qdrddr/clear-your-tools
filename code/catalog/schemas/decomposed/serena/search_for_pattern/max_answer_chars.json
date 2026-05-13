@@ -1,0 +1,13 @@
+{
+  "name": "search_for_pattern",
+  "inputSchema": {
+    "properties": {
+      "max_answer_chars": {
+        "default": -1,
+        "title": "Max Answer Chars",
+        "type": "integer",
+        "description": "If the output is longer than this number of characters,\nno content will be returned.\n-1 means the default value from the config will be used.\nDon't adjust unless there is really no other way to get the content\nrequired for the task. Instead, if the output is too long, you should\nmake a stricter query."
+      }
+    }
+  }
+}

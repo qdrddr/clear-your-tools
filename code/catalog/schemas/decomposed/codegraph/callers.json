@@ -1,0 +1,16 @@
+{
+  "name": "codegraph_callers",
+  "description": "Find all functions/methods that call a specific symbol. Useful for understanding usage patterns and impact of changes.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "symbol": {
+        "type": "string",
+        "description": "Name of the function, method, or class to find callers for"
+      }
+    },
+    "required": [
+      "symbol"
+    ]
+  }
+}

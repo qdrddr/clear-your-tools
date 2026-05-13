@@ -1,0 +1,17 @@
+{
+  "name": "batch",
+  "inputSchema": {
+    "properties": {
+      "operations": {
+        "items": {
+          "properties": {
+            "arguments": {
+              "type": "object",
+              "description": "Tool arguments matching the tool's input schema"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "find_large_functions_tool",
+  "inputSchema": {
+    "properties": {
+      "file_path_pattern": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    }
+  }
+}

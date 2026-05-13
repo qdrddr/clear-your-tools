@@ -1,0 +1,17 @@
+{
+  "name": "read_memory",
+  "description": "Reads the contents of a memory. Should only be used if the information\nis likely to be relevant to the current task, inferring relevance from the memory name.",
+  "inputSchema": {
+    "properties": {
+      "memory_name": {
+        "title": "Memory Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "memory_name"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

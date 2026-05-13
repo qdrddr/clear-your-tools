@@ -1,0 +1,8 @@
+{
+  "name": "list_graph_stats_tool",
+  "description": "Get aggregate statistics about the code knowledge graph.\n\nShows total nodes, edges, languages, files, and last update time.\nUseful for checking if the graph is built and up to date.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

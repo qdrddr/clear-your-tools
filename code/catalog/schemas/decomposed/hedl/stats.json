@@ -1,0 +1,16 @@
+{
+  "name": "hedl_stats",
+  "description": "Get token usage statistics comparing HEDL vs JSON representation. Shows exact token savings for LLM context optimization.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hedl": {
+        "type": "string",
+        "description": "HEDL document content to analyze"
+      }
+    },
+    "required": [
+      "hedl"
+    ]
+  }
+}

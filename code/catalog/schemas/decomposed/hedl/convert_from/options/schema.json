@@ -1,0 +1,18 @@
+{
+  "name": "hedl_convert_from",
+  "inputSchema": {
+    "properties": {
+      "options": {
+        "properties": {
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Column names (csv)"
+          }
+        }
+      }
+    }
+  }
+}

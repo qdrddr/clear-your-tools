@@ -1,0 +1,18 @@
+{
+  "name": "list_flows_tool",
+  "inputSchema": {
+    "properties": {
+      "kind": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    }
+  }
+}

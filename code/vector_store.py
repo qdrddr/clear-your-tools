@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -40,7 +39,7 @@ class EmbeddingModelChangedError(Exception):
         self.current = current
         super().__init__(
             f"Embedding model changed. stored={json.dumps(stored, sort_keys=True) if stored else 'None'}, "
-            f"current={json.dumps(current, sort_keys=True)}"
+            f"current={json.dumps(current, sort_keys=True)}",
         )
 
 
@@ -76,7 +75,7 @@ class ToolVectorStore:
                 pa.field("id", pa.string()),
                 pa.field("vector", pa.list_(pa.float32(), dim)),
                 pa.field("summary", pa.string()),
-            ]
+            ],
         )
         try:
             self.table = self._db.open_table(self.collection_name)
@@ -186,7 +185,7 @@ class ToolVectorStore:
             registry["current_fingerprint_name"] = entry["name"]
         else:
             self.collection_name = self._current_fingerprint_name(
-                self._base_collection_name, self._current_fingerprint
+                self._base_collection_name, self._current_fingerprint,
             )
             new_entry = {
                 "model_name": current_fp["model_name"],
@@ -251,11 +250,11 @@ class ToolVectorStore:
         summaries: list[str] = [cast(str, t["summary"]) for t in tools]
         ids: list[str] = [cast(str, t["id"]) for t in tools]
         vectors: np.ndarray = np.asarray(
-            embedder.encode(summaries, normalize_embeddings=True, show_progress_bar=False)
+            embedder.encode(summaries, normalize_embeddings=True, show_progress_bar=False),
         ).astype("float32")
         if vectors.shape[1] != self.dim:
             raise ValueError(
-                f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}"
+                f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}",
             )
 
         records = []
@@ -265,7 +264,7 @@ class ToolVectorStore:
                     "id": tid,
                     "vector": vector,
                     "summary": summary,
-                }
+                },
             )
 
         self.table.add(records)
@@ -338,7 +337,7 @@ class ToolVectorStore:
                 return None
 
             model_name, api_key, base_url = resolve_model(
-                str(model_nick), "rerankers", str(model_type)
+                str(model_nick), "rerankers", str(model_type),
             )
 
             candidate_ids = [tid for tid, _ in candidates]
@@ -378,7 +377,7 @@ class ToolVectorStore:
                     "fingerprint": self._current_fingerprint,
                 },
                 indent=2,
-            )
+            ),
         )
         if self.table.count_rows() > 0:
             records = self.table.to_arrow().to_pylist()
@@ -456,7 +455,7 @@ class ToolVectorStore:
             return
 
         store.table.merge_insert(
-            "id"
+            "id",
         ).when_matched_update_all().when_not_matched_insert_all().execute(records)
 
         for r in records:

@@ -1,0 +1,8 @@
+{
+  "name": "get_review_context_tool",
+  "description": "Generate a focused, token-efficient review context for code changes.\n\nCombines impact analysis with source snippets and review guidance.\nUse this for comprehensive code reviews.\n\nArgs:\n    changed_files: Files to review. Auto-detected from git diff if omitted.\n    max_depth: Impact radius depth. Default: 2.\n    include_source: Include source code snippets. Default: True.\n    max_lines_per_file: Max source lines per file. Default: 200.\n    repo_root: Repository root path. Auto-detected if omitted.\n    base: Git ref for change detection. Default: HEAD~1.\n    detail_level: \"standard\" for full output, \"minimal\" for\n        token-efficient summary. Default: standard.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

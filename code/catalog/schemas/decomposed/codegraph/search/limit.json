@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_search",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum results (default: 10)",
+        "default": 10
+      }
+    }
+  }
+}

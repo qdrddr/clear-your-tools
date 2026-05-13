@@ -1,0 +1,11 @@
+{
+  "name": "detect_changes_tool",
+  "inputSchema": {
+    "properties": {
+      "detail_level": {
+        "default": "standard",
+        "type": "string"
+      }
+    }
+  }
+}

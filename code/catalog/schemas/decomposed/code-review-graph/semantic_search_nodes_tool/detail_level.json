@@ -1,0 +1,11 @@
+{
+  "name": "semantic_search_nodes_tool",
+  "inputSchema": {
+    "properties": {
+      "detail_level": {
+        "default": "standard",
+        "type": "string"
+      }
+    }
+  }
+}

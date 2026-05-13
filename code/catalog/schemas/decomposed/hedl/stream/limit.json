@@ -1,0 +1,12 @@
+{
+  "name": "hedl_stream",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "type": "integer",
+        "description": "Maximum number of entities to return",
+        "default": 100
+      }
+    }
+  }
+}

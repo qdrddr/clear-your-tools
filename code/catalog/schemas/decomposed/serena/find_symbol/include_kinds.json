@@ -1,0 +1,16 @@
+{
+  "name": "find_symbol",
+  "inputSchema": {
+    "properties": {
+      "include_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Include Kinds",
+        "type": "array",
+        "description": "List of LSP symbol kind integers to include.\nIf not provided, all kinds are included."
+      }
+    }
+  }
+}

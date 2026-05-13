@@ -1,0 +1,12 @@
+{
+  "name": "list_memories",
+  "inputSchema": {
+    "properties": {
+      "topic": {
+        "default": "",
+        "title": "Topic",
+        "type": "string"
+      }
+    }
+  }
+}

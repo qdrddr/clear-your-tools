@@ -1,0 +1,18 @@
+{
+  "name": "get_architecture_overview_tool",
+  "inputSchema": {
+    "properties": {
+      "repo_root": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    }
+  }
+}

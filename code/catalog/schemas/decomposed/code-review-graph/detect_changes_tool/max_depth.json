@@ -1,0 +1,11 @@
+{
+  "name": "detect_changes_tool",
+  "inputSchema": {
+    "properties": {
+      "max_depth": {
+        "default": 2,
+        "type": "integer"
+      }
+    }
+  }
+}

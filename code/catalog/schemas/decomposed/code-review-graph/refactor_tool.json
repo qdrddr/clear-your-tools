@@ -1,0 +1,8 @@
+{
+  "name": "refactor_tool",
+  "description": "Graph-powered refactoring operations.\n\nUnified entry point for rename previews, dead code detection, and\nrefactoring suggestions.\n\nModes:\n- rename: Preview renaming a symbol. Returns an edit list and a refactor_id\n  to pass to apply_refactor_tool. Requires old_name and new_name.\n- dead_code: Find unreferenced functions/classes (no callers, tests, or\n  importers, and not entry points).\n- suggest: Get community-driven refactoring suggestions (move misplaced\n  functions, remove dead code).\n\nArgs:\n    mode: Operation mode: \"rename\", \"dead_code\", or \"suggest\".\n    old_name: (rename) Current symbol name to rename.\n    new_name: (rename) Desired new name for the symbol.\n    kind: (dead_code) Optional filter: Function or Class.\n    file_pattern: (dead_code) Filter by file path substring.\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

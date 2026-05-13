@@ -1,0 +1,15 @@
+{
+  "name": "hedl_convert_from",
+  "inputSchema": {
+    "properties": {
+      "options": {
+        "properties": {
+          "type_name": {
+            "type": "string",
+            "description": "Type name for entities (csv)"
+          }
+        }
+      }
+    }
+  }
+}

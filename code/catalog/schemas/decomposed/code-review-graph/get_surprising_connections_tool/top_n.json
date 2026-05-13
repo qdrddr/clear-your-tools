@@ -1,0 +1,11 @@
+{
+  "name": "get_surprising_connections_tool",
+  "inputSchema": {
+    "properties": {
+      "top_n": {
+        "default": 15,
+        "type": "integer"
+      }
+    }
+  }
+}

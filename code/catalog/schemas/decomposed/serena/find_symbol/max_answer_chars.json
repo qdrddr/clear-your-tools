@@ -1,0 +1,13 @@
+{
+  "name": "find_symbol",
+  "inputSchema": {
+    "properties": {
+      "max_answer_chars": {
+        "default": -1,
+        "title": "Max Answer Chars",
+        "type": "integer",
+        "description": "Max characters for the JSON result. If exceeded, no content is returned.\n-1 means the default value from the config will be used."
+      }
+    }
+  }
+}

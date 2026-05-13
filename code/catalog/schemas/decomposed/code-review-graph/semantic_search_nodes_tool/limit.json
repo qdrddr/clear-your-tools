@@ -1,0 +1,11 @@
+{
+  "name": "semantic_search_nodes_tool",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "default": 20,
+        "type": "integer"
+      }
+    }
+  }
+}

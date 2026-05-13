@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_context",
+  "inputSchema": {
+    "properties": {
+      "includeCode": {
+        "type": "boolean",
+        "description": "Include code snippets for key symbols (default: true)",
+        "default": true
+      }
+    }
+  }
+}

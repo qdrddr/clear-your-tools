@@ -1,0 +1,13 @@
+{
+  "name": "search_for_pattern",
+  "inputSchema": {
+    "properties": {
+      "paths_exclude_glob": {
+        "default": "",
+        "title": "Paths Exclude Glob",
+        "type": "string",
+        "description": "Optional glob pattern specifying files to exclude from the search.\nMatches against relative file paths from the project root (e.g., \"*test*\", \"**/*_generated.py\").\nSupports standard glob patterns (*, ?, [seq], **, etc.) and brace expansion {a,b,c}.\nTakes precedence over paths_include_glob. Only matches files, not directories. If left empty, no files are excluded."
+      }
+    }
+  }
+}

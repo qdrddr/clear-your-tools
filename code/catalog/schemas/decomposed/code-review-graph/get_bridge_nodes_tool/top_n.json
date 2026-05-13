@@ -1,0 +1,11 @@
+{
+  "name": "get_bridge_nodes_tool",
+  "inputSchema": {
+    "properties": {
+      "top_n": {
+        "default": 10,
+        "type": "integer"
+      }
+    }
+  }
+}

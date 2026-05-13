@@ -9,6 +9,36 @@ repos:
       - id: prettier
         types_or: [yaml, json5]
 
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.46.1
+    hooks:
+      - id: typos
+        args: [--force-exclude]
+  - repo: https://github.com/crate-ci/committed
+    rev: v1.1.11
+    hooks:
+      - id: committed
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          [
+            "--exclude-files",
+            "app/migrations/versions/.*|ast-grep/rule-tests/.*|app/tests/test_bm25_migration.py|.env.example",
+          ]
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v4.0.0
+    hooks:
+      - id: add-trailing-comma
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.3.0
+    hooks:
+      - id: flake8
+        args: ["--max-line-length", "140"]
+        exclude: ^test_data/|bumpity.py$
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.5
     hooks:
@@ -50,6 +80,18 @@ repos:
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
+      - id: detect-private-key
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-builtin-literals
+        args: ["--no-allow-dict-kwargs"]
+        exclude: bumpity.py$
+      - id: check-docstring-first
+      - id: debug-statements
+        exclude: bumpity.py$
+      # Conflicts with ruff
+      #      - id: double-quote-string-fixer
+      - id: name-tests-test
   - repo: local
     hooks:
       - id: ty-check

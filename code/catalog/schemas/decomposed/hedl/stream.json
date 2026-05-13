@@ -1,0 +1,16 @@
+{
+  "name": "hedl_stream",
+  "description": "Stream parse a large HEDL document with pagination. Memory-efficient for large files.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hedl": {
+        "type": "string",
+        "description": "HEDL document content to stream parse"
+      }
+    },
+    "required": [
+      "hedl"
+    ]
+  }
+}

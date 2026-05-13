@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_context",
+  "inputSchema": {
+    "properties": {
+      "maxNodes": {
+        "type": "number",
+        "description": "Maximum symbols to include (default: 20)",
+        "default": 20
+      }
+    }
+  }
+}

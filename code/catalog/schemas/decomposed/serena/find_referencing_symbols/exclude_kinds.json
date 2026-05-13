@@ -1,0 +1,16 @@
+{
+  "name": "find_referencing_symbols",
+  "inputSchema": {
+    "properties": {
+      "exclude_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Exclude Kinds",
+        "type": "array",
+        "description": "Same as in the `find_symbol` tool."
+      }
+    }
+  }
+}

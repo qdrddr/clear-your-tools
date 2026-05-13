@@ -1,0 +1,15 @@
+{
+  "name": "apply_refactor_tool",
+  "description": "Apply a previously previewed refactoring to source files.\n\nTakes a refactor_id from a prior refactor_tool(mode=\"rename\") call and\napplies the exact string replacements to the target files. Previews\nexpire after 10 minutes.\n\nSecurity: All edit paths are validated to be within the repo root.\nOnly exact string replacements are performed (no regex, no eval).\n\nArgs:\n    refactor_id: The refactor ID from refactor_tool's response.\n    repo_root: Repository root path. Auto-detected if omitted.\n    dry_run: If True, return a unified diff of what would change\n        without touching any files. The refactor_id remains valid so\n        the same preview can be applied in a follow-up call without\n        dry_run. Use this for a human-in-the-loop review before\n        committing changes to disk. See: #176",
+  "inputSchema": {
+    "properties": {
+      "refactor_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "refactor_id"
+    ],
+    "type": "object"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "generate_wiki_tool",
+  "inputSchema": {
+    "properties": {
+      "force": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  }
+}

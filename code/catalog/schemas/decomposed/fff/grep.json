@@ -1,0 +1,18 @@
+{
+  "name": "grep",
+  "description": "Search file contents. Search for bare identifiers (e.g. 'InProgressQuote', 'ActorAuth'), NOT code syntax or regex. Filter files with constraints (e.g. '*.rs query', 'src/ query'). Use filename, directory (ending with /) or glob expressions to prefilter. See server instructions for constraint syntax and core rules.",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "query": {
+        "description": "Search text or regex query with optional constraint prefixes.\nMatches within single lines only \u2014 use ONE specific term, not multiple words.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "GrepParams",
+    "type": "object"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "find_file",
+  "description": "Finds non-gitignored files matching the given file mask within the given relative path. Returns a JSON object with the list of matching files.",
+  "inputSchema": {
+    "properties": {
+      "file_mask": {
+        "title": "File Mask",
+        "type": "string",
+        "description": "The filename or file mask (using the wildcards * or ?) to search for."
+      },
+      "relative_path": {
+        "title": "Relative Path",
+        "type": "string",
+        "description": "The relative path to the directory to search in; pass \".\" to scan the project root."
+      }
+    },
+    "required": [
+      "file_mask",
+      "relative_path"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

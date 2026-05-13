@@ -1,0 +1,14 @@
+{
+  "name": "multi_grep",
+  "inputSchema": {
+    "properties": {
+      "output_mode": {
+        "description": "Output format (default 'content').",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  }
+}

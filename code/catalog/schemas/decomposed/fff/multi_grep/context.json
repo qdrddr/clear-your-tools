@@ -1,0 +1,15 @@
+{
+  "name": "multi_grep",
+  "inputSchema": {
+    "properties": {
+      "context": {
+        "description": "Context lines before/after each match.",
+        "format": "double",
+        "type": [
+          "number",
+          "null"
+        ]
+      }
+    }
+  }
+}

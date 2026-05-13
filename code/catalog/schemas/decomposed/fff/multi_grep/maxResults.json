@@ -1,0 +1,15 @@
+{
+  "name": "multi_grep",
+  "inputSchema": {
+    "properties": {
+      "maxResults": {
+        "description": "Max matching lines (default 20).",
+        "format": "double",
+        "type": [
+          "number",
+          "null"
+        ]
+      }
+    }
+  }
+}

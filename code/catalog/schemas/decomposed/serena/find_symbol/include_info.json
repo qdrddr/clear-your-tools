@@ -1,0 +1,13 @@
+{
+  "name": "find_symbol",
+  "inputSchema": {
+    "properties": {
+      "include_info": {
+        "default": false,
+        "title": "Include Info",
+        "type": "boolean",
+        "description": "Whether to include additional info (hover-like, typically including docstring and signature),\nabout the symbol (ignored if include_body is True). Info is never included for child symbols.\nNote: Depending on the language, this can be slow (e.g., C/C++)."
+      }
+    }
+  }
+}

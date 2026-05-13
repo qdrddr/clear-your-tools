@@ -1,0 +1,15 @@
+{
+  "name": "hedl_convert_from",
+  "inputSchema": {
+    "properties": {
+      "options": {
+        "properties": {
+          "delimiter": {
+            "type": "string",
+            "description": "Field delimiter (csv)"
+          }
+        }
+      }
+    }
+  }
+}

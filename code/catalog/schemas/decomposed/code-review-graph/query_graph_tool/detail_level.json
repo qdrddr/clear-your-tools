@@ -1,0 +1,11 @@
+{
+  "name": "query_graph_tool",
+  "inputSchema": {
+    "properties": {
+      "detail_level": {
+        "default": "standard",
+        "type": "string"
+      }
+    }
+  }
+}

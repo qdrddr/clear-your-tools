@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_callers",
+  "inputSchema": {
+    "properties": {
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of callers to return (default: 20)",
+        "default": 20
+      }
+    }
+  }
+}

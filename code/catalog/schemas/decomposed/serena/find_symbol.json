@@ -1,0 +1,18 @@
+{
+  "name": "find_symbol",
+  "description": "Retrieves information on all symbols/code entities (classes, methods, etc.) based on the given name path pattern.\nThe returned symbol information can be used for edits or further queries.\nSpecify `depth > 0` to also retrieve children/descendants (e.g., methods of a class).\n\nA name path is a path in the symbol tree *within a source file*.\nFor example, the method `my_method` defined in class `MyClass` would have the name path `MyClass/my_method`.\nIf a symbol is overloaded (e.g., in Java), a 0-based index is appended (e.g. \"MyClass/my_method[0]\") to\nuniquely identify it.\n\nTo search for a symbol, you provide a name path pattern that is used to match against name paths.\nIt can be\n * a simple name (e.g. \"method\"), which will match any symbol with that name\n * a relative path like \"class/method\", which will match any symbol with that name path suffix\n * an absolute name path \"/class/method\" (absolute name path), which requires an exact match of the full name path within the source file.\nAppend an index `[i]` to match a specific overload only, e.g. \"MyClass/my_method[1]\". Returns symbols (with locations) matching the name.",
+  "inputSchema": {
+    "properties": {
+      "name_path_pattern": {
+        "title": "Name Path Pattern",
+        "type": "string",
+        "description": "The name path matching pattern (see above)."
+      }
+    },
+    "required": [
+      "name_path_pattern"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "codegraph_files",
+  "inputSchema": {
+    "properties": {
+      "format": {
+        "type": "string",
+        "description": "Output format: \"tree\" (hierarchical, default), \"flat\" (simple list), \"grouped\" (by language)",
+        "enum": [
+          "tree",
+          "flat",
+          "grouped"
+        ],
+        "default": "tree"
+      }
+    }
+  }
+}

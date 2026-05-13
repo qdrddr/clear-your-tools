@@ -1,0 +1,12 @@
+{
+  "name": "codegraph_node",
+  "inputSchema": {
+    "properties": {
+      "includeCode": {
+        "type": "boolean",
+        "description": "Include full source code (default: false to minimize context)",
+        "default": false
+      }
+    }
+  }
+}

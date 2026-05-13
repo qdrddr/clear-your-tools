@@ -1,0 +1,11 @@
+{
+  "name": "get_community_tool",
+  "inputSchema": {
+    "properties": {
+      "include_members": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  }
+}

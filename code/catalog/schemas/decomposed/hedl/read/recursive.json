@@ -1,0 +1,12 @@
+{
+  "name": "hedl_read",
+  "inputSchema": {
+    "properties": {
+      "recursive": {
+        "type": "boolean",
+        "description": "If path is a directory, whether to search recursively",
+        "default": true
+      }
+    }
+  }
+}

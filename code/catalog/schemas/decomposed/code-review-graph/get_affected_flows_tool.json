@@ -1,0 +1,8 @@
+{
+  "name": "get_affected_flows_tool",
+  "description": "Find execution flows affected by changed files.\n\nIdentifies which execution flows pass through nodes in the changed files.\nUseful during code review to understand which user-facing or critical paths\nare impacted by a change. Auto-detects changed files from git if not specified.\n\nArgs:\n    changed_files: List of changed file paths (relative to repo root). Auto-detected if omitted.\n    base: Git ref for auto-detecting changes. Default: HEAD~1.\n    repo_root: Repository root path. Auto-detected if omitted.",
+  "inputSchema": {
+    "properties": {},
+    "type": "object"
+  }
+}

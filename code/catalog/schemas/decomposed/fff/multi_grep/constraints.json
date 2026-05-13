@@ -1,0 +1,14 @@
+{
+  "name": "multi_grep",
+  "inputSchema": {
+    "properties": {
+      "constraints": {
+        "description": "File constraints (e.g. '*.{ts,tsx} !test/'). ALWAYS provide when possible.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  }
+}

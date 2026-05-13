@@ -1,0 +1,12 @@
+{
+  "name": "hedl_validate",
+  "inputSchema": {
+    "properties": {
+      "strict": {
+        "type": "boolean",
+        "description": "Enable strict validation mode: treat lint warnings as errors",
+        "default": true
+      }
+    }
+  }
+}

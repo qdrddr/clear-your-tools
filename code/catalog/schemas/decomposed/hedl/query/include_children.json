@@ -1,0 +1,12 @@
+{
+  "name": "hedl_query",
+  "inputSchema": {
+    "properties": {
+      "include_children": {
+        "type": "boolean",
+        "description": "Include nested children in results",
+        "default": true
+      }
+    }
+  }
+}

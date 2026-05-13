@@ -1,0 +1,11 @@
+{
+  "name": "get_flow_tool",
+  "inputSchema": {
+    "properties": {
+      "include_source": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  }
+}

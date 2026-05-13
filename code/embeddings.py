@@ -6,7 +6,6 @@ config.yaml, then dispatches to the appropriate backend.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import numpy as np
@@ -31,7 +30,7 @@ class Embedder:
         self._dim: int | None = None
 
         self._model_name, self._provider_api_key_var, self._provider_base_url = resolve_model(
-            self._model_nick, "embeddings", self._model_type
+            self._model_nick, "embeddings", self._model_type,
         )
 
     def _init_local(self) -> Any:
@@ -39,7 +38,7 @@ class Embedder:
             return self._encoder
         if self._model_type != "inprocess":
             raise RuntimeError(
-                "_init_local() must only be called when embedding_model_type is 'inprocess'"
+                "_init_local() must only be called when embedding_model_type is 'inprocess'",
             )
         try:
             from sentence_transformers import SentenceTransformer

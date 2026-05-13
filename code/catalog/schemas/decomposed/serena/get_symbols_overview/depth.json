@@ -1,0 +1,13 @@
+{
+  "name": "get_symbols_overview",
+  "inputSchema": {
+    "properties": {
+      "depth": {
+        "default": 0,
+        "title": "Depth",
+        "type": "integer",
+        "description": "Depth up to which descendants of top-level symbols shall be retrieved\n(e.g. 1 retrieves immediate children). Default 0."
+      }
+    }
+  }
+}

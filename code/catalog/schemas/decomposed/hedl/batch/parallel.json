@@ -1,0 +1,12 @@
+{
+  "name": "batch",
+  "inputSchema": {
+    "properties": {
+      "parallel": {
+        "type": "boolean",
+        "description": "Enable parallel execution for independent operations",
+        "default": true
+      }
+    }
+  }
+}

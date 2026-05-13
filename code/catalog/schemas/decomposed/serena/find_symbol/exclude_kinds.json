@@ -1,0 +1,16 @@
+{
+  "name": "find_symbol",
+  "inputSchema": {
+    "properties": {
+      "exclude_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Exclude Kinds",
+        "type": "array",
+        "description": "Optional. List of LSP symbol kind integers to exclude. Takes precedence over `include_kinds`.\nIf not provided, no kinds are excluded."
+      }
+    }
+  }
+}

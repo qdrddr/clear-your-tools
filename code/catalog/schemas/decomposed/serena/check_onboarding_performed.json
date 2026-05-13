@@ -1,0 +1,9 @@
+{
+  "name": "check_onboarding_performed",
+  "description": "Checks whether project onboarding was already performed.\nYou should always call this tool before beginning to actually work on the project/after activating a project.",
+  "inputSchema": {
+    "properties": {},
+    "title": "applyArguments",
+    "type": "object"
+  }
+}

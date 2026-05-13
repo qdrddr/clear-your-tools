@@ -1,0 +1,11 @@
+{
+  "name": "apply_refactor_tool",
+  "inputSchema": {
+    "properties": {
+      "dry_run": {
+        "default": false,
+        "type": "boolean"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "find_referencing_symbols",
+  "inputSchema": {
+    "properties": {
+      "include_kinds": {
+        "default": [],
+        "items": {
+          "type": "integer"
+        },
+        "title": "Include Kinds",
+        "type": "array",
+        "description": "Same as in the `find_symbol` tool."
+      }
+    }
+  }
+}

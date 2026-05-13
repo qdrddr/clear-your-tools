@@ -1,0 +1,17 @@
+{
+  "name": "delete_memory",
+  "description": "Delete a memory, only call if instructed explicitly or permission was granted by the user.",
+  "inputSchema": {
+    "properties": {
+      "memory_name": {
+        "title": "Memory Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "memory_name"
+    ],
+    "title": "applyArguments",
+    "type": "object"
+  }
+}
