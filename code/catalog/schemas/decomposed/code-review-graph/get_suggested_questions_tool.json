@@ -1,8 +1,0 @@
-{
-  "name": "get_suggested_questions_tool",
-  "description": "Auto-generate review questions from graph analysis.\n\nProduces prioritized questions about: bridge nodes needing tests,\nuntested hub nodes, surprising cross-community coupling, thin\ncommunities, and untested hotspots.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

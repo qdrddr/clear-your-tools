@@ -1,8 +1,0 @@
-{
-  "name": "get_hub_nodes_tool",
-  "description": "Find the most connected nodes in the codebase (architectural hotspots).\n\nHub nodes have the highest total degree (in + out edges). Changes to\nthem have disproportionate blast radius. Excludes File nodes.\n\nArgs:\n    top_n: Number of top hubs to return. Default: 10.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

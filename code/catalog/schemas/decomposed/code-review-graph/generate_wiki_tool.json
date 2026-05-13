@@ -1,8 +1,0 @@
-{
-  "name": "generate_wiki_tool",
-  "description": "Generate a markdown wiki from the code community structure.\n\nCreates a wiki page for each detected community and an index page.\nPages are written to .code-review-graph/wiki/ inside the repository.\nOnly regenerates pages whose content has changed unless force=True.\n\nOffloaded to a thread via ``asyncio.to_thread`` \u2014 on large graphs\nthe page-generation loop touches every community and issues many\nSQLite reads, which would block the MCP event loop. See: #46, #136.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.\n    force: If True, regenerate all pages even if content unchanged. Default: False.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

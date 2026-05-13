@@ -1,8 +1,0 @@
-{
-  "name": "get_bridge_nodes_tool",
-  "description": "Find architectural chokepoints via betweenness centrality.\n\nBridge nodes sit on shortest paths between many node pairs.\nIf they break, multiple code regions lose connectivity.\nUses sampling approximation for graphs > 5000 nodes.\n\nArgs:\n    top_n: Number of top bridges to return. Default: 10.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "name": "get_minimal_context_tool",
-  "description": "Get ultra-compact context for any task (~100 tokens). Always call this first.\n\nReturns graph stats, risk score, top communities/flows, and suggested\nnext tools in a single compact response. Use this as the entry point\nbefore any other graph tool to minimize token usage.\n\nArgs:\n    task: What you are doing (e.g. \"review PR #42\", \"debug login timeout\").\n    changed_files: Explicit list of changed files. Auto-detected if omitted.\n    repo_root: Repository root path. Auto-detected if omitted.\n    base: Git ref for diff comparison. Default: HEAD~1.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

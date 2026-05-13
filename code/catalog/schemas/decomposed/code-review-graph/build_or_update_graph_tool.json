@@ -1,8 +1,0 @@
-{
-  "name": "build_or_update_graph_tool",
-  "description": "Build or incrementally update the code knowledge graph.\n\nCall this first to initialize the graph, or after making changes.\nBy default performs an incremental update (only changed files).\nSet full_rebuild=True to re-parse every file.\n\nRuns the blocking full_build / incremental_update work in a thread\nvia ``asyncio.to_thread`` so the stdio event loop stays responsive.\nWithout this wrapper, long builds deadlocked on Windows because\n``ProcessPoolExecutor`` (used by parallel parsing) interacted badly\nwith the sync handler blocking the only event-loop thread. See:\n#46, #136.\n\nArgs:\n    full_rebuild: If True, re-parse all files. Default: False (incremental).\n    repo_root: Repository root path. Auto-detected from current directory if omitted.\n    base: Git ref to diff against for incremental updates. Default: HEAD~1.\n    postprocess: Post-processing level: \"full\" (default), \"minimal\" (signatures+FTS only),\n                 or \"none\" (skip all post-processing). Use \"minimal\" for faster builds.\n    recurse_submodules: If True, include files from git submodules.\n        When None (default), falls back to CRG_RECURSE_SUBMODULES env var.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

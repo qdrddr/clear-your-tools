@@ -1,8 +1,0 @@
-{
-  "name": "run_postprocess_tool",
-  "description": "Run post-processing on existing graph (flows, communities, FTS index).\n\nUse after building with postprocess=\"none\" or \"minimal\", or to re-run\nexpensive steps independently. Signatures are always computed.\n\nOffloaded to a thread via ``asyncio.to_thread`` so community\ndetection on large graphs doesn't block the MCP event loop. See:\n#46, #136.\n\nArgs:\n    flows: Run flow detection. Default: True.\n    communities: Run community detection. Default: True.\n    fts: Rebuild FTS index. Default: True.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

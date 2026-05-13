@@ -1,1 +1,0 @@
-{"enum": "stop_on_error"}

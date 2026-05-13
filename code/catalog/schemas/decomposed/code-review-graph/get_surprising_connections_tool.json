@@ -1,8 +1,0 @@
-{
-  "name": "get_surprising_connections_tool",
-  "description": "Find unexpected architectural coupling via composite surprise scoring.\n\nScores edges by: cross-community (+0.3), cross-language (+0.2),\nperipheral-to-hub (+0.2), cross-test-boundary (+0.15), and\nunusual edge kinds (+0.15).\n\nArgs:\n    top_n: Number of top surprises to return. Default: 15.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

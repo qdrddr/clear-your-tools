@@ -1,8 +1,0 @@
-{
-  "name": "list_flows_tool",
-  "description": "List execution flows in the codebase, sorted by criticality.\n\nEach flow represents a call chain starting from an entry point\n(HTTP handler, CLI command, test function, etc.). Use this to\nunderstand the main execution paths through the codebase.\n\nArgs:\n    sort_by: Sort column: criticality, depth, node_count, file_count, or name.\n    limit: Maximum flows to return. Default: 50.\n    kind: Optional filter by entry point kind (e.g. \"Test\", \"Function\").\n    detail_level: \"standard\" (default) returns full flow data; \"minimal\"\n                  returns only name, criticality, and node_count per flow.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

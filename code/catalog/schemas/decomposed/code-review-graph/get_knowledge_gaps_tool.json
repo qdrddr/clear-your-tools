@@ -1,8 +1,0 @@
-{
-  "name": "get_knowledge_gaps_tool",
-  "description": "Identify structural weaknesses in the codebase graph.\n\nFinds isolated nodes (disconnected), thin communities (< 3 members),\nuntested hotspots (high-degree nodes without test coverage), and\nsingle-file communities.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

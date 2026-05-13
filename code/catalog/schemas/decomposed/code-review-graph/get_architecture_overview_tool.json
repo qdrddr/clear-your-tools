@@ -1,8 +1,0 @@
-{
-  "name": "get_architecture_overview_tool",
-  "description": "Generate an architecture overview based on community structure.\n\nBuilds a high-level view of the codebase architecture by analyzing\ncommunity boundaries and cross-community coupling. Includes warnings\nfor high coupling between communities.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

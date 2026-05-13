@@ -1,8 +1,0 @@
-{
-  "name": "detect_changes_tool",
-  "description": "Detect changes and produce risk-scored, priority-ordered review guidance.\n\nPrimary tool for code review. Maps git diffs to affected functions,\nflows, communities, and test coverage gaps. Returns risk scores and\nprioritized review items. Replaces get_review_context for change-aware reviews.\n\nOffloaded to a thread via ``asyncio.to_thread`` \u2014 runs `git diff`\nsubprocesses and BFS traversals that can take several seconds on\nlarge repos. See: #46, #136.\n\nArgs:\n    base: Git ref to diff against. Default: HEAD~1.\n    changed_files: List of changed file paths (relative to repo root). Auto-detected if omitted.\n    include_source: Include source code snippets for changed functions. Default: False.\n    max_depth: Impact radius depth for BFS traversal. Default: 2.\n    repo_root: Repository root path. Auto-detected if omitted.\n    detail_level: \"standard\" for full output, \"minimal\" for\n        token-efficient summary. Default: standard.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

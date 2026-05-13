@@ -1,8 +1,0 @@
-{
-  "name": "get_community_tool",
-  "description": "Get detailed information about a single code community.\n\nReturns community metadata including size, cohesion, dominant language,\nand member list. Optionally includes full node details for each member.\n\nProvide either community_id (from list_communities_tool) or community_name\nto search by name.\n\nArgs:\n    community_name: Name to search for (partial match). Ignored if community_id given.\n    community_id: Database ID of the community.\n    include_members: Include full member node details. Default: False.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

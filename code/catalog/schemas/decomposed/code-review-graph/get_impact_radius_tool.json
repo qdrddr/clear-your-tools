@@ -1,8 +1,0 @@
-{
-  "name": "get_impact_radius_tool",
-  "description": "Analyze the blast radius of changed files in the codebase.\n\nShows which functions, classes, and files are impacted by changes.\nAuto-detects changed files from git if not specified.\n\nArgs:\n    changed_files: List of changed file paths (relative to repo root). Auto-detected if omitted.\n    max_depth: Number of hops to traverse in the dependency graph. Default: 2.\n    repo_root: Repository root path. Auto-detected if omitted.\n    base: Git ref for auto-detecting changes. Default: HEAD~1.\n    detail_level: \"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

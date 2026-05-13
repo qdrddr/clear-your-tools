@@ -1,8 +1,0 @@
-{
-  "name": "find_large_functions_tool",
-  "description": "Find functions, classes, or files exceeding a line-count threshold.\n\nUseful for decomposition audits, code quality checks, and enforcing\nsize limits during code review. Results are ordered by line count.\n\nArgs:\n    min_lines: Minimum line count to flag. Default: 50.\n    kind: Optional filter: Function, Class, File, or Test.\n    file_path_pattern: Filter by file path substring (e.g. \"components/\").\n    limit: Maximum results. Default: 50.\n    repo_root: Repository root path. Auto-detected if omitted.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}

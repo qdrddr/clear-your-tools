@@ -1,8 +1,0 @@
-{
-  "name": "embed_graph_tool",
-  "description": "Compute vector embeddings for all graph nodes to enable semantic search.\n\nRequires: pip install code-review-graph[embeddings]\nDefault model: all-MiniLM-L6-v2. Override via `model` param or\nCRG_EMBEDDING_MODEL env var (any sentence-transformers compatible model).\nChanging the model re-embeds all nodes automatically.\n\nAfter running this, semantic_search_nodes_tool will use vector similarity\ninstead of keyword matching for much better results.\n\nRuns the blocking sentence-transformers / Gemini inference in a\nthread via ``asyncio.to_thread`` so the stdio event loop stays\nresponsive \u2014 without this wrapper, embedding a large graph would\nsilently hang the MCP server on Windows. See: #46, #136.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.\n    model: Embedding model name (HuggingFace ID or local path).\n           Falls back to CRG_EMBEDDING_MODEL env var, then all-MiniLM-L6-v2.",
-  "inputSchema": {
-    "properties": {},
-    "type": "object"
-  }
-}
