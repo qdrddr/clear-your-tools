@@ -47,11 +47,14 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
   - repo: local
     hooks:
       - id: ty-check
         name: Ty type checker
-        entry: bash -c 'source .venv/bin/activate && uv run ty check code/'
+        entry: bash -c 'source .venv/bin/activate && uv run ty check code/ --project code/'
         language: system
         types: [python]
         pass_filenames: false

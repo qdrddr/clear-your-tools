@@ -1,5 +1,5 @@
 uv tool install --upgrade 'cocoindex-code[full]' -p 3.13
-uv pip install 'cocoindex-code[full]' 
+uv pip install 'cocoindex-code[full]'
 
 mkdir -p code/catalog/.cocoindex_code/
 cat << EOF > code/catalog/.cocoindex_code/settings.yml
@@ -41,7 +41,7 @@ ccc init -f
 ccc index
 
 
-# Search from another forlder
+# Search from another folder
 export COCOINDEX_CODE_HOST_PATH_MAPPING="${PWD}=${PWD}"
 export COCOINDEX_CODE_HOST_CWD="./code/catalog"
 

@@ -95,5 +95,5 @@ if __name__ == "__main__":
 
     print(f"Ext: {e}")
     for i, ch in enumerate(chs):
-        print(f"--- Chunk {i+1} ---")
+        print(f"--- Chunk {i + 1} ---")
         print(ch.text)

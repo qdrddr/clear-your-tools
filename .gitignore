@@ -70,3 +70,5 @@ lat.md/
 docs/
 fastmcp/
 .codegraph
+node_modules
+fastmcp
