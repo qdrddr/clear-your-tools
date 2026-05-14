@@ -22,12 +22,12 @@ include_patterns:
 - '**/*.md'
 - '*.md'
 
-chunkers:
-  - ext: json              # use a custom chunker for .toml files
-    module: custom_json_chunker:json_chunker
+#chunkers:
+#  - ext: json              # use a custom chunker for .toml files
+#    module: custom_json_chunker:json_chunker
 EOF
 
-cp code/custom_json_chunker.py code/catalog/custom_json_chunker.py
+#cp code/custom_json_chunker.py code/catalog/custom_json_chunker.py
 
 # ccc --install-completion
 cd code/catalog
@@ -50,3 +50,4 @@ ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of 
 
 uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/*.md' "List of operation IDs" --json
 uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs" --json
+uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/' "List of operation IDs" --json

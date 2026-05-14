@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Annotated
 
@@ -11,7 +12,6 @@ from cocoindex_code.cli import (
     _search_with_wait_spinner,
     print_search_results,
     require_project_root,
-    resolve_default_path,
 )
 from cocoindex_code.cli import (
     app as ccc_app,
@@ -51,36 +51,64 @@ def search(
     if refresh:
         _run_index_with_progress(project_root)
 
-    # Default path filter from CWD
-    paths: list[str] | None = None
-    if path is not None:
-        paths = [path]
-    else:
-        default = resolve_default_path(Path(project_root))
-        if default is not None:
-            paths = [default]
+    # Custom dual-search aggregation logic
+    search_path = path if path is not None else "./"
 
-    resp = _search_with_wait_spinner(
-        project_root=project_root,
-        query=query_str,
-        languages=lang_list or None,
-        paths=paths,
-        limit=limit,
-        offset=offset,
-    )
+    def search_md():
+        """Search A: Exhaustive Markdown Search (non-recursive)."""
+        all_results = []
+        current_offset = 0
+        page_limit = limit
+        md_path = f"{search_path.rstrip('/')}/*.md"
+
+        while True:
+            resp = _search_with_wait_spinner(
+                project_root=project_root,
+                query=query_str,
+                languages=lang_list or None,
+                paths=[md_path],
+                limit=page_limit,
+                offset=current_offset,
+            )
+            if not resp.success:
+                break
+            all_results.extend(resp.results)
+            if len(resp.results) < page_limit:
+                break
+            current_offset += page_limit
+        return all_results
+
+    def search_json():
+        """Search B: Recursive JSON Search."""
+        json_path = f"{search_path.rstrip('/')}/**/*.json"
+        resp = _search_with_wait_spinner(
+            project_root=project_root,
+            query=query_str,
+            languages=lang_list or None,
+            paths=[json_path],
+            limit=limit,
+            offset=0,
+        )
+        return resp.results if resp.success else []
+
+    # Run both searches in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_md = executor.submit(search_md)
+        future_json = executor.submit(search_json)
+
+        results_md = future_md.result()
+        results_json = future_json.result()
 
     if json_output:
-        results = []
-        for r in resp.results:
+        output = {"md": [], "json": []}
+
+        for r in results_md:
             content = r.content
             try:
-                # If content is valid JSON, represent it as nested JSON object
-                content_json = json.loads(content)
-                content = content_json
+                content = json.loads(content)
             except (json.JSONDecodeError, TypeError):
                 pass
-
-            results.append(
+            output["md"].append(
                 {
                     "file_path": r.file_path,
                     "score": round(r.score, 3),
@@ -90,9 +118,38 @@ def search(
                     "content": content,
                 },
             )
-        sys.stdout.write(json.dumps({"results": results}, indent=2) + "\n")
+
+        for r in results_json:
+            content = r.content
+            try:
+                content = json.loads(content)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            output["json"].append(
+                {
+                    "file_path": r.file_path,
+                    "score": round(r.score, 3),
+                    "start_line": r.start_line,
+                    "end_line": r.end_line,
+                    "language": r.language,
+                    "content": content,
+                },
+            )
+
+        sys.stdout.write(json.dumps(output, indent=2) + "\n")
     else:
-        print_search_results(resp)
+        # Standard output using SearchResponse protocol
+        from cocoindex_code.protocol import SearchResponse
+
+        combined_results = results_md + results_json
+        final_resp = SearchResponse(
+            success=True,
+            results=combined_results,
+            total_returned=len(combined_results),
+            offset=0,
+            message=None,
+        )
+        print_search_results(final_resp)
 
 
 # Pass-through all other commands from ccc_app
