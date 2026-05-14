@@ -1,4 +1,5 @@
 # uv run prek run --all-files
+# prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
 fail_fast: true
 default_language_version:
   python: "3.13"
@@ -87,22 +88,6 @@ repos:
         name: "Ruff linter"
         args: [--exit-non-zero-on-fix, --fix, --config=pyproject.toml]
         files: '^code/.*\.(py|ipynb)$'
-  - repo: local
-    hooks:
-      - id: mypy
-        name: MyPy
-        entry: bash -c "source .venv/bin/activate && mypy code"
-        pass_filenames: false
-        language: system
-        files: '^code/.*\.py$'
-  - repo: local
-    hooks:
-      - id: pytest
-        name: Pytest
-        entry: bash -c "source .venv/bin/activate && pytest"
-        pass_filenames: false
-        language: system
-        files: '^code/.*\.py$'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -130,11 +115,24 @@ repos:
       - id: codespell # See pyproject.toml for args
         additional_dependencies:
           - tomli
+
   - repo: local
     hooks:
+      - id: mypy
+        name: MyPy
+        entry: bash -c "source .venv/bin/activate && mypy code"
+        pass_filenames: false
+        language: system
+        files: '^code/.*\.py$'
+      - id: pytest
+        name: Pytest
+        entry: bash -c "source .venv/bin/activate && pytest"
+        pass_filenames: false
+        language: system
+        files: '^code/.*\.py$'
       - id: ty-check
         name: Ty type checker
-        entry: bash -c 'source .venv/bin/activate && uv run ty check code/ --project code/'
+        entry: bash -c 'source .venv/bin/activate && uv run ty check code/ --project code/ --output-format concise'
         language: system
         types: [python]
         pass_filenames: false
@@ -170,4 +168,3 @@ repos:
         verbose: true
         pass_filenames: false
   # Insert new entries above the `suggestion` entry
-
