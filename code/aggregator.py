@@ -9,6 +9,8 @@ from typing import Any, Literal, cast
 
 from fastmcp import Client, FastMCP
 
+from recursion import check_self_recursion_protection, is_self_recursion
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -365,42 +367,6 @@ class MCPAggregator:
             logger.exception("Error reading config")
             return {}
 
-    def _is_self_recursion(
-        self,
-        s_name: str,
-        s_config: dict[str, Any],
-        current_script: Path,
-    ) -> bool:
-        if s_name == self.mcp.name or "aggregator" in s_name.lower():
-            logger.warning("Skipping server '%s' - appears to be an aggregator", s_name)
-            return True
-
-        cmd: str | None = s_config.get("command")
-        args_raw: list[str] | str = s_config.get("args", [])
-        parts = [cmd] + (args_raw if isinstance(args_raw, list) else [])
-        for part in parts:
-            if not part or not isinstance(part, str):
-                continue
-            try:
-                p = Path(part)
-                resolved = p.resolve()
-                if resolved == current_script:
-                    return True
-                if (
-                    resolved.is_file()
-                    and resolved.parent == current_script.parent
-                    and "aggregator" in resolved.name.lower()
-                ):
-                    logger.warning(
-                        "Skipping server '%s' - sibling aggregator script: %s",
-                        s_name,
-                        resolved.name,
-                    )
-                    return True
-            except Exception:
-                continue
-        return False
-
     async def _connect_to_server(self, s_name: str, s_config: dict[str, Any]) -> None:
         logger.info("Connecting to %s...", s_name)
         client = Client({"mcpServers": {s_name: s_config}})
@@ -424,10 +390,15 @@ class MCPAggregator:
             logger.info("  Discovered %d tools on %s", len(tools), s_name)
             for tool in tools:
                 self._prepare_tool(s_name, tool)
-        except Exception:
-            logger.exception("Failed to connect to %s", s_name)
+        except Exception as e:
+            logger.error("Failed to connect to %s: %s", s_name, e)
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                pass
 
     async def initialize(self) -> None:
+        check_self_recursion_protection()
         config = self._get_mcp_config()
         if not config:
             return
@@ -437,7 +408,7 @@ class MCPAggregator:
 
         current_script = Path(__file__).resolve()
         for s_name, s_config in config.items():
-            if self._is_self_recursion(s_name, s_config, current_script):
+            if is_self_recursion(s_name, s_config, current_script, self.mcp.name):
                 continue
 
             await self._connect_to_server(s_name, s_config)
