@@ -1,12 +1,13 @@
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 from typing import Any
 
 import psutil
 
 logger = logging.getLogger(__name__)
+
 
 def is_self_recursion(
     s_name: str,
@@ -44,12 +45,14 @@ def is_self_recursion(
             continue
     return False
 
+
 def is_mcp_aggregator_description(description: str, mcp_name: str) -> bool:
     """Check if the MCP server description/name matches 'MCP Aggregator'."""
     if description == mcp_name or description.lower() == "mcp aggregator":
         logger.warning("Detected self-recursion via MCP description: '%s'", description)
         return True
     return False
+
 
 def check_self_recursion_protection() -> None:
     """Check if another aggregator is already running via SCA_AGGREGATOR_PID."""

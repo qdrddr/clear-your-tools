@@ -7,13 +7,13 @@ import types
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from fastmcp import Client, FastMCP
-
 from recursion import (
     check_self_recursion_protection,
     is_mcp_aggregator_description,
     is_self_recursion,
 )
+
+from fastmcp import Client, FastMCP
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
