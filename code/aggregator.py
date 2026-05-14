@@ -354,22 +354,25 @@ class MCPAggregator:
         self._apply_outputs()
         self._prune_stale_files(OUT, set(self.output_map.keys()))
 
-    def _get_mcp_config(self) -> dict[str, dict[str, Any]]:
-        config_path = Path.home() / ".claude.json"
-        if not config_path.exists():
-            logger.error("~/.claude.json not found")
-            return {}
-        try:
-            data = json.loads(config_path.read_text())
-            if not isinstance(data, dict):
-                return {}
-            servers = data.get("mcpServers", {})
-            if not isinstance(servers, dict):
-                return {}
-            return servers
-        except Exception:
-            logger.exception("Error reading config")
-            return {}
+    def _get_mcp_config(self, config_paths: list[Path]) -> dict[str, dict[str, Any]]:
+        combined_servers: dict[str, dict[str, Any]] = {}
+        for config_path in config_paths:
+            if not config_path.exists():
+                logger.warning("Config file %s not found", config_path)
+                continue
+            try:
+                data = json.loads(config_path.read_text())
+                if not isinstance(data, dict):
+                    logger.warning("Config file %s is not a JSON object", config_path)
+                    continue
+                servers = data.get("mcpServers", {})
+                if not isinstance(servers, dict):
+                    logger.warning("mcpServers in %s is not an object", config_path)
+                    continue
+                combined_servers.update(servers)
+            except Exception:
+                logger.exception("Error reading config from %s", config_path)
+        return combined_servers
 
     async def _connect_to_server(self, s_name: str, s_config: dict[str, Any]) -> None:
         logger.info("Connecting to %s...", s_name)
@@ -425,9 +428,9 @@ class MCPAggregator:
                     pass
         return valid_configs
 
-    async def initialize(self) -> None:
+    async def initialize(self, config_paths: list[Path]) -> None:
         check_self_recursion_protection()
-        config = self._get_mcp_config()
+        config = self._get_mcp_config(config_paths)
         if not config:
             return
 
@@ -489,10 +492,11 @@ class MCPAggregator:
 
     async def run(
         self,
+        config_paths: list[Path],
         transport: Literal["stdio", "http", "sse", "streamable-http"] = "http",
     ) -> None:
         try:
-            await self.initialize()
+            await self.initialize(config_paths)
             logger.info("Starting SCA on %s transport...", transport)
             await self.mcp.run_async(transport=transport)
         finally:
@@ -506,10 +510,25 @@ class MCPAggregator:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MCP Aggregator")
     parser.add_argument("--transport", choices=["stdio", "http"], default="http")
+    parser.add_argument(
+        "--servers",
+        nargs="+",
+        help="Path(s) to MCP JSON config files. Merges mcpServers keys.",
+    )
     cmd_args = parser.parse_args()
+
+    if cmd_args.servers:
+        config_paths = [Path(p).expanduser().resolve() for p in cmd_args.servers]
+    else:
+        default_paths = [
+            Path.home() / ".claude.json",
+            Path(".mcp.json").resolve(),
+        ]
+        config_paths = [p for p in default_paths if p.exists()]
     aggregator = MCPAggregator()
     asyncio.run(
         aggregator.run(
+            config_paths=config_paths,
             transport=cast(Literal["stdio", "http", "sse", "streamable-http"], cmd_args.transport),
         ),
     )
