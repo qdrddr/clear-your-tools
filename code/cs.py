@@ -89,8 +89,8 @@ def _search_with_retry(
     paths: list[str] | None = None,
     limit: int = 10,
     offset: int = 0,
-    max_retries: int = 5,
-    initial_delay: float = 0.15,
+    max_retries: int = 6,
+    initial_delay: float = 0.05,
 ) -> SearchResponse:
     """Wrapper for _search_with_wait_spinner that retries on ConnectionRefusedError."""
     last_err = None
