@@ -187,9 +187,9 @@ def _process_node(
     """
     Recursively process a schema node.
 
-    Returns the filtered node (optional properties removed, large enums
-    truncated).  Populates *extractions* with (path_segments, property_schema)
-    tuples for every optional property encountered.
+    Returns the filtered node (optional properties removed). Populates
+    *extractions* with (path_segments, property_schema) tuples for every
+    optional property encountered.
     """
     if not isinstance(node, dict):
         return node
@@ -227,10 +227,6 @@ def _process_node(
                 extractions.append((child_path, prop_file))
 
         result["properties"] = filtered_properties
-        _truncate_enum(result)
-    elif "enum" in result:
-        _truncate_enum(result)
-
     return result
 
 
