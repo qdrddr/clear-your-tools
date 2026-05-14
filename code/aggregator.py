@@ -9,7 +9,11 @@ from typing import Any, Literal, cast
 
 from fastmcp import Client, FastMCP
 
-from recursion import check_self_recursion_protection, is_self_recursion
+from recursion import (
+    check_self_recursion_protection,
+    is_mcp_aggregator_description,
+    is_self_recursion,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -372,19 +376,6 @@ class MCPAggregator:
         client = Client({"mcpServers": {s_name: s_config}})
         try:
             await client.__aenter__()
-            remote_info = client.initialize_result
-            if remote_info:
-                remote_name = remote_info.serverInfo.name
-                if remote_name == self.mcp.name or "aggregator" in remote_name.lower():
-                    logger.warning(
-                        "Skipping server '%s' - matches aggregator identity: '%s'",
-                        s_name,
-                        remote_name,
-                    )
-                    await client.__aexit__(None, None, None)
-                    return
-                logger.info("Server '%s' reported name: '%s'", s_name, remote_name)
-
             self.clients[s_name] = client
             tools = await client.list_tools()
             logger.info("  Discovered %d tools on %s", len(tools), s_name)
@@ -394,8 +385,45 @@ class MCPAggregator:
             logger.error("Failed to connect to %s: %s", s_name, e)
             try:
                 await client.__aexit__(None, None, None)
-            except Exception:
+            except (Exception, BaseException):
                 pass
+
+    async def _discover_and_filter_servers(
+        self,
+        config: dict[str, dict[str, Any]],
+        current_script: Path,
+    ) -> dict[str, dict[str, Any]]:
+        """Identify servers that are not aggregators by temporarily connecting to them."""
+        valid_configs: dict[str, dict[str, Any]] = {}
+        for s_name, s_config in config.items():
+            if is_self_recursion(s_name, s_config, current_script, self.mcp.name):
+                continue
+
+            logger.info("Discovering server info for %s...", s_name)
+            client = Client({"mcpServers": {s_name: s_config}})
+            try:
+                await client.__aenter__()
+                remote_info = client.initialize_result
+                if remote_info:
+                    remote_name = remote_info.serverInfo.name
+                    logger.info("Server '%s' reports as '%s'", s_name, remote_name)
+                    if is_mcp_aggregator_description(remote_name, self.mcp.name):
+                        logger.warning(
+                            "Excluding server '%s' - matches aggregator description",
+                            s_name,
+                        )
+                    else:
+                        valid_configs[s_name] = s_config
+            except Exception as e:
+                logger.error("Failed discovery for %s: %s", s_name, e)
+            finally:
+                try:
+                    await asyncio.sleep(0.1)  # Brief grace period for stdio tasks
+                    await client.__aexit__(None, None, None)
+                except BaseException:
+                    # During discovery, ignore all errors on exit to prevent ExceptionGroup crashes
+                    pass
+        return valid_configs
 
     async def initialize(self) -> None:
         check_self_recursion_protection()
@@ -407,10 +435,12 @@ class MCPAggregator:
         SCHEMAS_DIR.mkdir(exist_ok=True, parents=True)
 
         current_script = Path(__file__).resolve()
-        for s_name, s_config in config.items():
-            if is_self_recursion(s_name, s_config, current_script, self.mcp.name):
-                continue
 
+        # Step 1-3: Discover, stop all, and check for self-recursion
+        filtered_config = await self._discover_and_filter_servers(config, current_script)
+
+        # Step 4: Re-connect to valid survivors
+        for s_name, s_config in filtered_config.items():
             await self._connect_to_server(s_name, s_config)
 
         self._write_catalog_files()
@@ -469,7 +499,7 @@ class MCPAggregator:
             for client in self.clients.values():
                 try:
                     await client.__aexit__(None, None, None)
-                except Exception:
+                except BaseException:
                     pass
 
 
