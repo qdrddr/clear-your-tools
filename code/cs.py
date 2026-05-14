@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from cocoindex_code.cli import app as ccc_app
@@ -14,17 +17,19 @@ app = typer.Typer(
 
 @app.callback()
 def main(
-    root: Path = typer.Option(
-        None,
-        "--root",
-        "-r",
-        help="Specify the project root directory. MUST be placed before the command (e.g. cs -r path search).",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
-    ),
-):
+    root: Annotated[
+        Path | None,
+        typer.Option(
+            "--root",
+            "-r",
+            help="Specify the project root directory. MUST be placed before the command (e.g. cs -r path search).",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            resolve_path=True,
+        ),
+    ] = None,
+) -> None:
     """
     CocoIndex Code Wrapper.
     """

@@ -25,29 +25,36 @@ def _pos(line: int) -> TextPosition:
     return TextPosition(byte_offset=0, char_offset=0, line=line, column=0)
 
 
-def extract_semantic_lines(obj: Any, is_root: bool = False) -> list[str]:
+def _extract_dict_lines(obj: dict, is_root: bool) -> list[str]:
     lines = []
-    if isinstance(obj, dict):
-        if is_root and "description" in obj:
-            if isinstance(obj["description"], str):
-                lines.append(obj["description"])
+    if is_root and "description" in obj:
+        if isinstance(obj["description"], str):
+            lines.append(obj["description"])
 
-        for key, value in obj.items():
-            if key == "properties" and isinstance(value, dict):
-                for prop_name, prop_val in value.items():
-                    lines.append(prop_name)
-                    lines.extend(extract_semantic_lines(prop_val))
-            elif key in ("description", "default") and not (is_root and key == "description"):
-                if isinstance(value, str):
-                    lines.append(value)
-                elif isinstance(value, (int, float, bool)):
-                    lines.append(str(value))
-            elif key not in ("properties", "description", "default"):
-                lines.extend(extract_semantic_lines(value))
-    elif isinstance(obj, list):
+    for key, value in obj.items():
+        if key == "properties" and isinstance(value, dict):
+            for prop_name, prop_val in value.items():
+                lines.append(prop_name)
+                lines.extend(extract_semantic_lines(prop_val))
+        elif key in ("description", "default") and not (is_root and key == "description"):
+            if isinstance(value, str):
+                lines.append(value)
+            elif isinstance(value, int | float | bool):
+                lines.append(str(value))
+        elif key not in ("properties", "description", "default"):
+            lines.extend(extract_semantic_lines(value))
+    return lines
+
+
+def extract_semantic_lines(obj: Any, is_root: bool = False) -> list[str]:
+    if isinstance(obj, dict):
+        return _extract_dict_lines(obj, is_root)
+    if isinstance(obj, list):
+        lines = []
         for item in obj:
             lines.extend(extract_semantic_lines(item))
-    return lines
+        return lines
+    return []
 
 
 def json_chunker(path: _Path, content: str) -> tuple[str | None, list[Chunk]]:
