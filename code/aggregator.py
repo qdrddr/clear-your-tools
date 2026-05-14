@@ -51,9 +51,13 @@ class MCPAggregator:
         if not root.exists():
             return
         for path in root.rglob("*"):
+            if any(p.startswith(".") for p in path.relative_to(root).parts):
+                continue
             if path.is_file() and path.absolute() not in expected_paths:
                 path.unlink()
         for path in sorted(root.rglob("*"), key=lambda x: len(str(x)), reverse=True):
+            if any(p.startswith(".") for p in path.relative_to(root).parts):
+                continue
             if path.is_dir() and not any(path.iterdir()):
                 path.rmdir()
 
@@ -367,8 +371,8 @@ class MCPAggregator:
         s_config: dict[str, Any],
         current_script: Path,
     ) -> bool:
-        if s_name == self.mcp.name:
-            logger.warning("Skipping server '%s' - matches aggregator name", s_name)
+        if s_name == self.mcp.name or "aggregator" in s_name.lower():
+            logger.warning("Skipping server '%s' - appears to be an aggregator", s_name)
             return True
 
         cmd: str | None = s_config.get("command")
@@ -379,9 +383,19 @@ class MCPAggregator:
                 continue
             try:
                 p = Path(part)
-                if p.is_file() and p.resolve() == current_script:
+                resolved = p.resolve()
+                if resolved == current_script:
                     return True
-                if p.is_dir() and p.resolve() == current_script.parent and "aggregator" in part:
+                if (
+                    resolved.is_file()
+                    and resolved.parent == current_script.parent
+                    and "aggregator" in resolved.name.lower()
+                ):
+                    logger.warning(
+                        "Skipping server '%s' - sibling aggregator script: %s",
+                        s_name,
+                        resolved.name,
+                    )
                     return True
             except Exception:
                 continue
@@ -393,10 +407,17 @@ class MCPAggregator:
         try:
             await client.__aenter__()
             remote_info = client.initialize_result
-            if remote_info and remote_info.serverInfo.name == self.mcp.name:
-                logger.warning("Skipping server '%s' - name matches: '%s'", s_name, self.mcp.name)
-                await client.__aexit__(None, None, None)
-                return
+            if remote_info:
+                remote_name = remote_info.serverInfo.name
+                if remote_name == self.mcp.name or "aggregator" in remote_name.lower():
+                    logger.warning(
+                        "Skipping server '%s' - matches aggregator identity: '%s'",
+                        s_name,
+                        remote_name,
+                    )
+                    await client.__aexit__(None, None, None)
+                    return
+                logger.info("Server '%s' reported name: '%s'", s_name, remote_name)
 
             self.clients[s_name] = client
             tools = await client.list_tools()
