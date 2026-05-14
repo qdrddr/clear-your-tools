@@ -2,7 +2,6 @@ import asyncio
 import copy
 import json
 import logging
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,40 @@ logger = logging.getLogger(__name__)
 HERE = Path(__file__).parent
 OUT = HERE / "catalog"
 SCHEMAS_DIR = OUT / "schemas"
+
+
+def _smart_write(path: Path, content: str, output_map: dict[Path, str]) -> None:
+    """Collect output in memory for later idempotent writing."""
+    output_map[path.absolute()] = content
+
+
+def _apply_outputs(output_map: dict[Path, str]) -> None:
+    """Idempotently write all collected files to disk."""
+    for path, content in output_map.items():
+        if path.exists():
+            try:
+                if path.read_text() == content:
+                    continue
+            except Exception:
+                pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+
+def _prune_stale_files(root: Path, expected_paths: set[Path]) -> None:
+    """Remove files in root that are not in expected_paths, and empty dirs."""
+    if not root.exists():
+        return
+
+    # Remove stale files
+    for path in list(root.rglob("*")):
+        if path.is_file() and path.absolute() not in expected_paths:
+            path.unlink()
+
+    # Remove empty directories (bottom-up)
+    for path in sorted(list(root.rglob("*")), key=lambda x: len(str(x)), reverse=True):
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
 
 
 def _truncate_description(description: str, max_tokens: int = 60) -> str:
@@ -259,7 +292,13 @@ def _build_property_file(tool_name: str, path: list, leaf_schema: dict) -> dict:
     return {"name": tool_name, "inputSchema": current}
 
 
-def _prepare_tool(server_name: str, tool: Any, all_enums: list, discovered_tools: list) -> None:
+def _prepare_tool(
+    server_name: str,
+    tool: Any,
+    all_enums: list,
+    discovered_tools: list,
+    output_map: dict[Path, str],
+) -> None:
     """Prepare tool schema, collect enums, and add to discovered tools."""
     tool_name = tool.name
     tid = f"{server_name}_{tool_name}"
@@ -274,11 +313,9 @@ def _prepare_tool(server_name: str, tool: Any, all_enums: list, discovered_tools
 
     _collect_enums(input_schema, all_enums)
 
-    # Write full schema file
-    server_full_dir = SCHEMAS_DIR / "full" / server_name
-    server_full_dir.mkdir(exist_ok=True)
-    full_file = server_full_dir / f"{tool_name}.json"
-    full_file.write_text(json.dumps(full_schema, indent=2))
+    # Collect full schema file in memory
+    full_file = SCHEMAS_DIR / "full" / server_name / f"{tool_name}.json"
+    _smart_write(full_file, json.dumps(full_schema, indent=2), output_map)
 
     discovered_tools.append(
         {
@@ -291,8 +328,8 @@ def _prepare_tool(server_name: str, tool: Any, all_enums: list, discovered_tools
     )
 
 
-def _write_enum_files(all_enums: list) -> None:
-    """Write unique enums to files."""
+def _write_enum_files(all_enums: list, output_map: dict[Path, str]) -> None:
+    """Collect unique enums in memory."""
     seen = set()
     unique_enums = []
     for val in all_enums:
@@ -303,26 +340,18 @@ def _write_enum_files(all_enums: list) -> None:
 
     unique_enums.sort(key=lambda x: json.dumps(x, sort_keys=True))
 
-    enum_entries = []
     for val in unique_enums:
-        if isinstance(val, str):
-            filename = f"{val}.md"
-            content = val
-        else:
-            filename = f"{val}.md"
-            content = val
-        enum_entries.append((SCHEMAS_DIR / "decomposed" / filename, content))
-
-    enum_entries.sort(key=lambda x: str(x[0]))
-    for path, content in enum_entries:
-        path.write_text(content)
+        filename = f"{val}.md"
+        content = val
+        _smart_write(
+            SCHEMAS_DIR / "decomposed" / filename,
+            content,
+            output_map,
+        )
 
 
-def _write_tool_and_property_files(discovered_tools: list) -> None:
-    """Generate and write tool and property files."""
-    tool_entries = []
-    property_entries = []
-
+def _write_tool_and_property_files(discovered_tools: list, output_map: dict[Path, str]) -> None:
+    """Generate and collect tool and property files in memory."""
     for tool_info in discovered_tools:
         server_name = tool_info["server"]
         tool_name = tool_info["tool"]
@@ -342,8 +371,10 @@ def _write_tool_and_property_files(discovered_tools: list) -> None:
             "description": description,
             "inputSchema": filtered,
         }
-        tool_entries.append(
-            (SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json", tool_file),
+        _smart_write(
+            SCHEMAS_DIR / "decomposed" / server_name / f"{tool_id}.json",
+            json.dumps(tool_file, indent=2),
+            output_map,
         )
 
         for path_segments, prop_schema in extractions:
@@ -357,19 +388,11 @@ def _write_tool_and_property_files(discovered_tools: list) -> None:
                 elif seg_type == "patternProperties":
                     prop_dir = prop_dir / seg["pattern"]
 
-            property_entries.append((prop_dir / f"{prop_name}.json", prop_schema))
-
-    # Write tool files in lexicographic order
-    tool_entries.sort(key=lambda x: str(x[0]))
-    for path, tool_content in tool_entries:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(tool_content, indent=2))
-
-    # Write property files in lexicographic order
-    property_entries.sort(key=lambda x: str(x[0]))
-    for path, prop_content in property_entries:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(prop_content, indent=2))
+            _smart_write(
+                prop_dir / f"{prop_name}.json",
+                json.dumps(prop_schema, indent=2),
+                output_map,
+            )
 
 
 async def build() -> None:
@@ -392,16 +415,14 @@ async def build() -> None:
     print(f"Connecting to {len(mcp_servers_config)} servers...")
 
     OUT.mkdir(exist_ok=True)
-    if SCHEMAS_DIR.exists():
-        shutil.rmtree(SCHEMAS_DIR)
+    SCHEMAS_DIR.mkdir(exist_ok=True)
 
-    for sub_dir in ("decomposed", "full"):
-        (SCHEMAS_DIR / sub_dir).mkdir(parents=True, exist_ok=True)
+    output_map: dict[Path, str] = {}
+    discovered_tools: list[dict[str, Any]] = []
+    all_enums: list[Any] = []
 
-    discovered_tools: list[dict] = []
-    all_enums: list = []
-
-    for server_name, server_config in mcp_servers_config.items():
+    mcp_servers_dict: dict[str, Any] = mcp_servers_config
+    for server_name, server_config in mcp_servers_dict.items():
         print(f"Connecting to {server_name}...")
         client = Client({"mcpServers": {server_name: server_config}})
 
@@ -410,7 +431,7 @@ async def build() -> None:
                 tools = await client.list_tools()
                 print(f"  Discovered {len(tools)} tools on {server_name}.")
                 for tool in tools:
-                    _prepare_tool(server_name, tool, all_enums, discovered_tools)
+                    _prepare_tool(server_name, tool, all_enums, discovered_tools, output_map)
         except Exception as e:
             print(f"Warning: Tools might be incomplete for {server_name}: {e}")
 
@@ -418,10 +439,22 @@ async def build() -> None:
         print("No tools discovered.")
         return
 
-    _write_enum_files(all_enums)
-    _write_tool_and_property_files(discovered_tools)
+    _write_enum_files(all_enums, output_map)
+    _write_tool_and_property_files(discovered_tools, output_map)
 
-    (OUT / "tools.json").write_text(json.dumps(discovered_tools, indent=2))
+    # Add tools.json to the output map as well
+    _smart_write(
+        OUT / "tools.json",
+        json.dumps(discovered_tools, indent=2),
+        output_map,
+    )
+
+    # Apply all outputs idempotently
+    _apply_outputs(output_map)
+
+    # Prune stale files from the output directory
+    _prune_stale_files(OUT, set(output_map.keys()))
+
     print(f"Successfully wrote {len(discovered_tools)} tools to {OUT / 'tools.json'}")
 
 
