@@ -118,7 +118,7 @@ def _search_with_retry(
 def search(
     query: Annotated[list[str], typer.Argument(help="Search query")],
     lang: Annotated[list[str] | None, typer.Option("--lang", help="Filter by language")] = None,
-    path: Annotated[str | None, typer.Option("--path", help="Filter by file path glob")] = None,
+    path: Annotated[str, typer.Option("--path", help="Filter by file path glob")] = "schemas/decomposed/",
     offset: Annotated[int, typer.Option("--offset", help="Number of results to skip")] = 0,
     limit: Annotated[int, typer.Option("--limit", help="Maximum results to return")] = 10,
     refresh: Annotated[
@@ -145,7 +145,7 @@ def search(
         _run_index_with_progress(project_root)
 
     # Custom dual-search aggregation logic
-    search_path = path if path is not None else "./"
+    search_path = path
 
     def search_md() -> list[SearchResult]:
         """Search A: Exhaustive Markdown Search (non-recursive)."""
