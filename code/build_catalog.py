@@ -313,13 +313,13 @@ def _write_enum_files(all_enums: list) -> None:
             filename = f"{val}.md"
             content = val
         else:
-            filename = f"{json.dumps(val, sort_keys=True)}.md"
-            content = json.dumps(val, sort_keys=True)
+            filename = f"{val}.md"
+            content = val
         enum_entries.append((SCHEMAS_DIR / "decomposed" / filename, content))
 
     enum_entries.sort(key=lambda x: str(x[0]))
     for path, content in enum_entries:
-        path.write_text(json.dumps({"enum": content}))
+        path.write_text(content)
 
 
 def _write_tool_and_property_files(discovered_tools: list) -> None:
