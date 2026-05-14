@@ -74,3 +74,5 @@ node_modules
 fastmcp
 code/catalog
 cocoindex-code
+# CocoIndex Code (ccc)
+/.cocoindex_code/
