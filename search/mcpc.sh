@@ -1,5 +1,5 @@
 mcpc
-mcpc close mymcp-stdio
+mcpc close @mymcp-stdio
 mcpc clean
 mcpc connect ~/.claude/claude.json:mymcp-stdio
 mcpc @mymcp-stdio tools-list
