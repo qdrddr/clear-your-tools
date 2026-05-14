@@ -50,4 +50,6 @@ ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of 
 
 uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/*.md' "List of operation IDs" --json
 uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs" --json
-uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/' "List of operation IDs" --json
+
+# --path is optional. defaults to 'schemas/decomposed/'
+uv run code/cs.py --root code/catalog/ search --refresh --limit 100 "List of operation IDs" --json
