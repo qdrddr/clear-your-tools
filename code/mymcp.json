@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mymcp-stdio": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "code/aggregator.py"],
+      "env": {}
+    }
+  }
+}
