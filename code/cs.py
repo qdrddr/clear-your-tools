@@ -97,7 +97,9 @@ def search(
 
 # Pass-through all other commands from ccc_app
 for command in ccc_app.registered_commands:
-    name = command.name or (command.callback.__name__ if command.callback else None)
+    name = command.name or (
+        getattr(command.callback, "__name__", None) if command.callback else None
+    )
     if name != "search":
         app.registered_commands.append(command)
 

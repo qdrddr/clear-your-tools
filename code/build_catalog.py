@@ -45,7 +45,7 @@ def _prune_stale_files(root: Path, expected_paths: set[Path]) -> None:
             path.unlink()
 
     # Remove empty directories (bottom-up)
-    for path in sorted(list(root.rglob("*")), key=lambda x: len(str(x)), reverse=True):
+    for path in sorted(root.rglob("*"), key=lambda x: len(str(x)), reverse=True):
         if path.is_dir() and not any(path.iterdir()):
             path.rmdir()
 
