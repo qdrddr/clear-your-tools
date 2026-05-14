@@ -3,7 +3,7 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from cocoindex_code.cli import (
@@ -16,8 +16,69 @@ from cocoindex_code.cli import (
 from cocoindex_code.cli import (
     app as ccc_app,
 )
+from cocoindex_code.protocol import SearchResponse, SearchResult
 
 app = typer.Typer(help="Code search wrapper.")
+
+
+def _format_json_output(
+    results_md: list[SearchResult],
+    results_json: list[SearchResult],
+) -> None:
+    """Format and print search results in JSON format."""
+    output: dict[str, list[dict[str, Any]]] = {"md": [], "json": []}
+
+    for r in results_md:
+        content = r.content
+        try:
+            content = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        output["md"].append(
+            {
+                "file_path": r.file_path,
+                "score": round(r.score, 3),
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+                "language": r.language,
+                "content": content,
+            },
+        )
+
+    for r in results_json:
+        content = r.content
+        try:
+            content = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        output["json"].append(
+            {
+                "file_path": r.file_path,
+                "score": round(r.score, 3),
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+                "language": r.language,
+                "content": content,
+            },
+        )
+
+    sys.stdout.write(json.dumps(output, indent=2) + "\n")
+
+
+def _print_standard_results(
+    results_md: list[SearchResult],
+    results_json: list[SearchResult],
+) -> None:
+    """Print search results using the standard format."""
+    combined_results = results_md + results_json
+    final_resp = SearchResponse(
+        success=True,
+        results=combined_results,
+        total_returned=len(combined_results),
+        offset=0,
+        message=None,
+    )
+    print_search_results(final_resp)
 
 
 @app.command()
@@ -54,7 +115,7 @@ def search(
     # Custom dual-search aggregation logic
     search_path = path if path is not None else "./"
 
-    def search_md():
+    def search_md() -> list[SearchResult]:
         """Search A: Exhaustive Markdown Search (non-recursive)."""
         all_results = []
         current_offset = 0
@@ -78,7 +139,7 @@ def search(
             current_offset += page_limit
         return all_results
 
-    def search_json():
+    def search_json() -> list[SearchResult]:
         """Search B: Recursive JSON Search."""
         json_path = f"{search_path.rstrip('/')}/**/*.json"
         resp = _search_with_wait_spinner(
@@ -100,56 +161,9 @@ def search(
         results_json = future_json.result()
 
     if json_output:
-        output = {"md": [], "json": []}
-
-        for r in results_md:
-            content = r.content
-            try:
-                content = json.loads(content)
-            except (json.JSONDecodeError, TypeError):
-                pass
-            output["md"].append(
-                {
-                    "file_path": r.file_path,
-                    "score": round(r.score, 3),
-                    "start_line": r.start_line,
-                    "end_line": r.end_line,
-                    "language": r.language,
-                    "content": content,
-                },
-            )
-
-        for r in results_json:
-            content = r.content
-            try:
-                content = json.loads(content)
-            except (json.JSONDecodeError, TypeError):
-                pass
-            output["json"].append(
-                {
-                    "file_path": r.file_path,
-                    "score": round(r.score, 3),
-                    "start_line": r.start_line,
-                    "end_line": r.end_line,
-                    "language": r.language,
-                    "content": content,
-                },
-            )
-
-        sys.stdout.write(json.dumps(output, indent=2) + "\n")
+        _format_json_output(results_md, results_json)
     else:
-        # Standard output using SearchResponse protocol
-        from cocoindex_code.protocol import SearchResponse
-
-        combined_results = results_md + results_json
-        final_resp = SearchResponse(
-            success=True,
-            results=combined_results,
-            total_returned=len(combined_results),
-            offset=0,
-            message=None,
-        )
-        print_search_results(final_resp)
+        _print_standard_results(results_md, results_json)
 
 
 # Pass-through all other commands from ccc_app
