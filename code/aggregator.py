@@ -293,8 +293,7 @@ class MCPAggregator:
             },
         )
 
-    def _write_catalog_files(self) -> None:
-        # Enums
+    def _write_enums(self) -> None:
         seen: set[str] = set()
         unique_enums: list[Any] = []
         for val in self.all_enums:
@@ -306,7 +305,7 @@ class MCPAggregator:
         for val in unique_enums:
             self._smart_write(SCHEMAS_DIR / "decomposed" / f"{val}.md", str(val))
 
-        # Tools and properties
+    def _write_tool_schemas(self) -> None:
         for tool_info in self.discovered_tools:
             s_name: str = tool_info["server"]
             t_name: str = tool_info["tool"]
@@ -338,6 +337,9 @@ class MCPAggregator:
                         prop_dir = prop_dir / seg["pattern"]
                 self._smart_write(prop_dir / f"{prop_name}.json", json.dumps(prop_schema, indent=2))
 
+    def _write_catalog_files(self) -> None:
+        self._write_enums()
+        self._write_tool_schemas()
         self._smart_write(OUT / "tools.json", json.dumps(self.discovered_tools, indent=2))
         self._apply_outputs()
         self._prune_stale_files(OUT, set(self.output_map.keys()))
