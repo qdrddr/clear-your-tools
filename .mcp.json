@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "mymcp-stdio": {
+    "sca-stdio": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "code/aggregator.py"],
+      "args": ["run", "code/aggregator.py", "--transport", "stdio"],
       "env": {}
     }
   }
