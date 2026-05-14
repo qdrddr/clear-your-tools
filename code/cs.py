@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Annotated, Any
@@ -81,6 +82,37 @@ def _print_standard_results(
     print_search_results(final_resp)
 
 
+def _search_with_retry(
+    project_root: str,
+    query: str,
+    languages: list[str] | None = None,
+    paths: list[str] | None = None,
+    limit: int = 10,
+    offset: int = 0,
+    max_retries: int = 5,
+    initial_delay: float = 0.15,
+) -> SearchResponse:
+    """Wrapper for _search_with_wait_spinner that retries on ConnectionRefusedError."""
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            return _search_with_wait_spinner(
+                project_root=project_root,
+                query=query,
+                languages=languages,
+                paths=paths,
+                limit=limit,
+                offset=offset,
+            )
+        except ConnectionRefusedError as e:
+            last_err = e
+            if attempt < max_retries - 1:
+                delay = initial_delay * (2**attempt)
+                time.sleep(delay)
+            continue
+    raise last_err or ConnectionRefusedError("Max retries reached")
+
+
 @app.command()
 @_catch_daemon_start_error
 def search(
@@ -123,7 +155,7 @@ def search(
         md_path = f"{search_path.rstrip('/')}/*.md"
 
         while True:
-            resp = _search_with_wait_spinner(
+            resp = _search_with_retry(
                 project_root=project_root,
                 query=query_str,
                 languages=lang_list or None,
@@ -142,7 +174,7 @@ def search(
     def search_json() -> list[SearchResult]:
         """Search B: Recursive JSON Search."""
         json_path = f"{search_path.rstrip('/')}/**/*.json"
-        resp = _search_with_wait_spinner(
+        resp = _search_with_retry(
             project_root=project_root,
             query=query_str,
             languages=lang_list or None,
