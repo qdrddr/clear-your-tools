@@ -494,11 +494,12 @@ class MCPAggregator:
         self,
         config_paths: list[Path],
         transport: Literal["stdio", "http", "sse", "streamable-http"] = "http",
+        port: int | None = None,
     ) -> None:
         try:
             await self.initialize(config_paths)
             logger.info("Starting SCA on %s transport...", transport)
-            await self.mcp.run_async(transport=transport)
+            await self.mcp.run_async(transport=transport, port=port)
         finally:
             for client in self.clients.values():
                 try:
@@ -510,6 +511,7 @@ class MCPAggregator:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MCP Aggregator")
     parser.add_argument("--transport", choices=["stdio", "http"], default="http")
+    parser.add_argument("--port", type=int, help="HTTP port to listen on (overrides default 8000)")
     parser.add_argument(
         "--servers",
         nargs="+",
@@ -526,9 +528,15 @@ if __name__ == "__main__":
         ]
         config_paths = [p for p in default_paths if p.exists()]
     aggregator = MCPAggregator()
+    transport = cast(Literal["stdio", "http", "sse", "streamable-http"], cmd_args.transport)
+    port = cast(int | None, cmd_args.port)
+    if port:
+        transport = "http"
+
     asyncio.run(
         aggregator.run(
             config_paths=config_paths,
-            transport=cast(Literal["stdio", "http", "sse", "streamable-http"], cmd_args.transport),
+            transport=transport,
+            port=port,
         ),
     )
