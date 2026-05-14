@@ -2,6 +2,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from cocoindex_code.cli import (
@@ -22,13 +23,19 @@ app = typer.Typer(help="Code search wrapper.")
 @app.command()
 @_catch_daemon_start_error
 def search(
-    query: list[str] = typer.Argument(..., help="Search query"),
-    lang: list[str] = typer.Option([], "--lang", help="Filter by language"),
-    path: str | None = typer.Option(None, "--path", help="Filter by file path glob"),
-    offset: int = typer.Option(0, "--offset", help="Number of results to skip"),
-    limit: int = typer.Option(10, "--limit", help="Maximum results to return"),
-    refresh: bool = typer.Option(False, "--refresh", help="Refresh index before searching"),
-    json_output: bool = typer.Option(False, "--json", help="Output results in JSON format"),
+    query: Annotated[list[str], typer.Argument(help="Search query")],
+    lang: Annotated[list[str] | None, typer.Option("--lang", help="Filter by language")] = None,
+    path: Annotated[str | None, typer.Option("--path", help="Filter by file path glob")] = None,
+    offset: Annotated[int, typer.Option("--offset", help="Number of results to skip")] = 0,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum results to return")] = 10,
+    refresh: Annotated[
+        bool,
+        typer.Option("--refresh", help="Refresh index before searching"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
 ) -> None:
     """Semantic search across the codebase."""
     # Respect --root via environment variable set in main callback
@@ -39,6 +46,7 @@ def search(
         project_root = str(require_project_root())
 
     query_str = " ".join(query)
+    lang_list = lang or []
 
     if refresh:
         _run_index_with_progress(project_root)
@@ -55,7 +63,7 @@ def search(
     resp = _search_with_wait_spinner(
         project_root=project_root,
         query=query_str,
-        languages=lang or None,
+        languages=lang_list or None,
         paths=paths,
         limit=limit,
         offset=offset,
@@ -97,12 +105,14 @@ for command in ccc_app.registered_commands:
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    root: Path = typer.Option(
-        None,
-        "--root",
-        help="Root directory for the project.",
-    ),
-):
+    root: Annotated[
+        Path | None,
+        typer.Option(
+            "--root",
+            help="Root directory for the project.",
+        ),
+    ] = None,
+) -> None:
     """
     Code search wrapper.
     """
