@@ -59,34 +59,61 @@ def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
     return current
 
 
-def parse_json_input(data: Any) -> tuple[list[str], dict[str, float]]:
-    """Extract file paths and scores from various JSON formats."""
-    input_files = []
+def _extract_scores(data: Any) -> dict[str, float]:
+    """Extract scores from the 'md' root key if it exists."""
     scores = {}
-
-    # Handle 'md' root key for scores if it exists
     if isinstance(data, dict) and "md" in data:
         for entry in data["md"]:
             if isinstance(entry, dict) and "content" in entry and "score" in entry:
                 scores[entry["content"]] = float(entry["score"])
+    return scores
 
-    # The format could be a list of objects or a dict of lists of objects
+
+def _extract_from_dict(data: dict[str, Any]) -> list[str]:
+    """Helper to extract file paths from a dictionary."""
+    input_files = []
+    for key, value in data.items():
+        if key == "md":
+            continue
+        if isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict) and "file_path" in entry:
+                    input_files.append(entry["file_path"])
+        elif isinstance(value, dict) and "file_path" in value:
+            input_files.append(value["file_path"])
+    return input_files
+
+
+def _extract_input_files(data: Any) -> list[str]:
+    """Extract file paths from various JSON formats."""
     if isinstance(data, dict):
-        for key, value in data.items():
-            if key == "md":
-                continue
-            if isinstance(value, list):
-                for entry in value:
-                    if isinstance(entry, dict) and "file_path" in entry:
-                        input_files.append(entry["file_path"])
-            elif isinstance(value, dict) and "file_path" in value:
-                input_files.append(value["file_path"])
-    elif isinstance(data, list):
-        for entry in data:
-            if isinstance(entry, dict) and "file_path" in entry:
-                input_files.append(entry["file_path"])
+        return _extract_from_dict(data)
+    if isinstance(data, list):
+        return [
+            entry["file_path"] for entry in data if isinstance(entry, dict) and "file_path" in entry
+        ]
+    return []
 
-    return input_files, scores
+
+def parse_json_input(data: Any) -> tuple[list[str], dict[str, float]]:
+    """Extract file paths and scores from various JSON formats."""
+    return _extract_input_files(data), _extract_scores(data)
+
+
+def _filter_items(items_with_scores: list[tuple[Any, float]]) -> list[Any]:
+    """Apply the filtering logic to the sorted items."""
+    # 1. check if first 3 are >= 0.2
+    # 2. if yes, remove all < 0.2
+    # 3. otherwise keep first 3
+    first_3_above_threshold = True
+    for i in range(min(3, len(items_with_scores))):
+        if items_with_scores[i][1] < 0.2:
+            first_3_above_threshold = False
+            break
+
+    if first_3_above_threshold:
+        return [item for item, score in items_with_scores if score >= 0.2]
+    return [item for item, score in items_with_scores[:3]]
 
 
 def filter_and_sort_enums(schema: Any, scores: dict[str, float]) -> None:
@@ -95,30 +122,12 @@ def filter_and_sort_enums(schema: Any, scores: dict[str, float]) -> None:
         for key, value in schema.items():
             if key == "enum" and isinstance(value, list):
                 # Process enum list
-                items_with_scores = []
-                for item in value:
-                    score = scores.get(str(item), 0.0)
-                    items_with_scores.append((item, score))
+                items_with_scores = [(item, scores.get(str(item), 0.0)) for item in value]
 
                 # Sort by score descending
                 items_with_scores.sort(key=lambda x: x[1], reverse=True)
 
-                # Filtering logic:
-                # 1. check if first 3 are >= 0.2
-                # 2. if yes, remove all < 0.2
-                # 3. otherwise keep first 3
-                first_3_above_threshold = True
-                for i in range(min(3, len(items_with_scores))):
-                    if items_with_scores[i][1] < 0.2:
-                        first_3_above_threshold = False
-                        break
-
-                if first_3_above_threshold:
-                    result_items = [item for item, score in items_with_scores if score >= 0.2]
-                else:
-                    result_items = [item for item, score in items_with_scores[:3]]
-
-                schema[key] = result_items
+                schema[key] = _filter_items(items_with_scores)
             else:
                 filter_and_sort_enums(value, scores)
     elif isinstance(schema, list):
@@ -126,26 +135,10 @@ def filter_and_sort_enums(schema: Any, scores: dict[str, float]) -> None:
             filter_and_sort_enums(item, scores)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Retrieve and merge decomposed tool schemas.")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--json-file",
-        help="JSON file containing list of decomposed schema files to merge",
-    )
-    group.add_argument(
-        "--json-string",
-        help="JSON string containing list of decomposed schema files to merge",
-    )
-    group.add_argument(
-        "--files",
-        nargs="+",
-        help="List of decomposed schema files to merge",
-    )
-    args = parser.parse_args()
-
-    input_files = []
-    scores = {}
+def _handle_input(args: argparse.Namespace) -> tuple[list[str], dict[str, float]]:
+    """Determine input files and scores from command line arguments."""
+    input_files: list[str] = []
+    scores: dict[str, float] = {}
 
     if args.json_file:
         try:
@@ -169,12 +162,14 @@ def main() -> None:
         print("Error: No files provided or failed to extract paths from JSON.", file=sys.stderr)
         sys.exit(1)
 
-    decomposed_dir = Path("code/catalog/schemas/decomposed")
-    if not decomposed_dir.exists():
-        print(f"Error: {decomposed_dir} does not exist.", file=sys.stderr)
-        sys.exit(1)
+    return input_files, scores
 
-    # Resolve paths and categorize
+
+def _group_files(
+    input_files: list[str],
+    decomposed_dir: Path,
+) -> tuple[dict[Path, list[Path]], set[Path]]:
+    """Group input files by their root tool and identify standalone tool files."""
     groups: dict[Path, list[Path]] = {}
     tool_files: set[Path] = set()
 
@@ -187,7 +182,6 @@ def main() -> None:
         try:
             rel = p.relative_to(decomposed_dir)
         except ValueError:
-            # File is not under decomposed_dir
             continue
 
         parts = rel.parts
@@ -195,21 +189,28 @@ def main() -> None:
 
         root_tool = get_root_tool_path(p, decomposed_dir)
         if root_tool is None:
-            # Skip files directly in decomposed_dir that aren't part of a tool structure
             continue
 
         if is_tool:
             tool_files.add(p)
 
         groups.setdefault(root_tool, []).append(p)
+    return groups, tool_files
 
-    # Process each tool group
+
+def _process_groups(
+    groups: dict[Path, list[Path]],
+    tool_files: set[Path],
+    scores: dict[str, float],
+    decomposed_dir: Path,
+) -> None:
+    """Merge and print the resulting schemas for each tool group."""
     for root_tool, files in groups.items():
         if not root_tool.exists():
             print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
             continue
-        with open(root_tool) as f:
-            base_tool = json.load(f)
+        with open(root_tool) as root_f:
+            base_tool = json.load(root_f)
 
         server_name = root_tool.parent.name
         tool_name_in_schema = base_tool.get("name", root_tool.stem)
@@ -222,12 +223,36 @@ def main() -> None:
 
         base_tool["name"] = f"{server_name}_{tool_name_in_schema}"
 
-        # Apply enum filtering and sorting if scores are available
         if scores:
             filter_and_sort_enums(base_tool, scores)
 
         print(json.dumps(base_tool, indent=2))
         print()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Retrieve and merge decomposed tool schemas.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--json-file",
+        help="JSON file containing list of decomposed schema files to merge",
+    )
+    group.add_argument(
+        "--json-string",
+        help="JSON string containing list of decomposed schema files to merge",
+    )
+    group.add_argument("--files", nargs="+", help="List of decomposed schema files to merge")
+    args = parser.parse_args()
+
+    input_files, scores = _handle_input(args)
+
+    decomposed_dir = Path("code/catalog/schemas/decomposed")
+    if not decomposed_dir.exists():
+        print(f"Error: {decomposed_dir} does not exist.", file=sys.stderr)
+        sys.exit(1)
+
+    groups, tool_files = _group_files(input_files, decomposed_dir)
+    _process_groups(groups, tool_files, scores, decomposed_dir)
 
 
 if __name__ == "__main__":
