@@ -133,54 +133,22 @@ def _search_with_retry(
     raise last_err or ConnectionRefusedError("Max retries reached")
 
 
-@app.command()
-@_catch_daemon_start_error
-def search(
-    query: Annotated[list[str], typer.Argument(help="Search query")],
-    lang: Annotated[list[str] | None, typer.Option("--lang", help="Filter by language")] = None,
-    path: Annotated[
-        str,
-        typer.Option("--path", help="Filter by file path glob"),
-    ] = "schemas/decomposed/",
-    offset: Annotated[int, typer.Option("--offset", help="Number of results to skip")] = 0,
-    limit: Annotated[int, typer.Option("--limit", help="Maximum results to return")] = 10,
-    refresh: Annotated[
-        bool,
-        typer.Option("--refresh", help="Refresh index before searching"),
-    ] = False,
-    json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Output results in JSON format"),
-    ] = False,
-    file_only: Annotated[
-        str | None,
-        typer.Option(
-            "--file-only",
-            help="Print only file paths with optional separator.",
-            show_default=False,
-        ),
-    ] = None,
-) -> None:
-    """Semantic search across the codebase."""
-    if json_output and file_only is not None:
-        typer.secho("Error: --json and --file-only cannot be used together.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-
-    # Respect --root via environment variable set in main callback
+def _get_project_root() -> str:
+    """Determine the project root from environment or file system."""
     project_root_env = os.environ.get("COCOINDEX_PROJECT_ROOT")
     if project_root_env:
-        project_root = str(Path(project_root_env).absolute())
-    else:
-        project_root = str(require_project_root())
+        return str(Path(project_root_env).absolute())
+    return str(require_project_root())
 
-    query_str = " ".join(query)
-    lang_list = lang or []
 
-    if refresh:
-        _run_index_with_progress(project_root)
-
-    # Custom dual-search aggregation logic
-    search_path = path
+def _perform_dual_search(
+    project_root: str,
+    query_str: str,
+    lang_list: list[str],
+    search_path: str,
+    limit: int,
+) -> tuple[list[SearchResult], list[SearchResult]]:
+    """Execute dual-search aggregation logic in parallel."""
 
     def search_md() -> list[SearchResult]:
         """Search A: Exhaustive Markdown Search (non-recursive)."""
@@ -219,15 +187,17 @@ def search(
         )
         return resp.results if resp.success else []
 
-    # Run both searches in parallel
     with ThreadPoolExecutor(max_workers=2) as executor:
         future_md = executor.submit(search_md)
         future_json = executor.submit(search_json)
+        return future_md.result(), future_json.result()
 
-        results_md = future_md.result()
-        results_json = future_json.result()
 
-    # Prepend original root if it was specified
+def _apply_root_prefix(
+    results_md: list[SearchResult],
+    results_json: list[SearchResult],
+) -> None:
+    """Prepend original root prefix to file paths if specified in environment."""
     root_prefix = os.environ.get("SCA_ROOT_STR")
     if root_prefix:
         for r in results_md:
@@ -235,19 +205,75 @@ def search(
         for r in results_json:
             r.file_path = f"{root_prefix}{r.file_path}"
 
+
+def _handle_search_output(
+    results_md: list[SearchResult],
+    results_json: list[SearchResult],
+    json_output: bool,
+    file_only: str | None,
+) -> None:
+    """Handle different output formats for search results."""
     if json_output:
         _format_json_output(results_md, results_json)
     elif file_only is not None:
-        # Default to space if no value provided (file_only is empty string if --file-only passed without value)
         sep = file_only if file_only else " "
         try:
-            # Handle escape sequences like \n, \t, etc.
             sep = codecs.decode(sep, "unicode_escape")
         except Exception:
             pass
         _print_file_only_results(results_md, results_json, sep)
     else:
         _print_standard_results(results_md, results_json)
+
+
+@app.command()
+@_catch_daemon_start_error
+def search(
+    query: Annotated[list[str], typer.Argument(help="Search query")],
+    lang: Annotated[list[str] | None, typer.Option("--lang", help="Filter by language")] = None,
+    path: Annotated[
+        str,
+        typer.Option("--path", help="Filter by file path glob"),
+    ] = "schemas/decomposed/",
+    offset: Annotated[int, typer.Option("--offset", help="Number of results to skip")] = 0,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum results to return")] = 10,
+    refresh: Annotated[
+        bool,
+        typer.Option("--refresh", help="Refresh index before searching"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output results in JSON format"),
+    ] = False,
+    file_only: Annotated[
+        str | None,
+        typer.Option(
+            "--file-only",
+            help="Print only file paths with optional separator.",
+            show_default=False,
+        ),
+    ] = None,
+) -> None:
+    """Semantic search across the codebase."""
+    if json_output and file_only is not None:
+        typer.secho(
+            "Error: --json and --file-only cannot be used together.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    project_root = _get_project_root()
+    query_str = " ".join(query)
+    lang_list = lang or []
+
+    if refresh:
+        _run_index_with_progress(project_root)
+
+    results_md, results_json = _perform_dual_search(project_root, query_str, lang_list, path, limit)
+
+    _apply_root_prefix(results_md, results_json)
+    _handle_search_output(results_md, results_json, json_output, file_only)
 
 
 # Pass-through all other commands from ccc_app
