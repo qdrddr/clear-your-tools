@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from litellm import rerank
 
 DECOMPOSED_SCORE: float = 0.5
-ENUM_SCORE: float = 0.2
 RERANK_ENUMS: bool = True
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
 
