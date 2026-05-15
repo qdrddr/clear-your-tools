@@ -19,9 +19,11 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return result
 
 
-def get_root_tool_path(file_path: Path, decomposed_dir: Path) -> Path:
+def get_root_tool_path(file_path: Path, decomposed_dir: Path) -> Path | None:
     """Given any file under decomposed_dir, return its root tool file path."""
     rel = file_path.relative_to(decomposed_dir)
+    if len(rel.parts) < 2:
+        return None
     server = rel.parts[0]
     tool_name = rel.parts[1]
     if tool_name.endswith(".json"):
@@ -57,15 +59,66 @@ def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
     return current
 
 
+def parse_json_input(data: Any) -> list[str]:
+    """Extract file paths from various JSON formats."""
+    input_files = []
+    # The format could be a list of objects or a dict of lists of objects
+    if isinstance(data, dict):
+        for value in data.values():
+            if isinstance(value, list):
+                for entry in value:
+                    if isinstance(entry, dict) and "file_path" in entry:
+                        input_files.append(entry["file_path"])
+            elif isinstance(value, dict) and "file_path" in value:
+                input_files.append(value["file_path"])
+    elif isinstance(data, list):
+        for entry in data:
+            if isinstance(entry, dict) and "file_path" in entry:
+                input_files.append(entry["file_path"])
+    return input_files
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Retrieve and merge decomposed tool schemas.")
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--json-file",
+        help="JSON file containing list of decomposed schema files to merge",
+    )
+    group.add_argument(
+        "--json-string",
+        help="JSON string containing list of decomposed schema files to merge",
+    )
+    group.add_argument(
         "--files",
         nargs="+",
-        required=True,
         help="List of decomposed schema files to merge",
     )
     args = parser.parse_args()
+
+    input_files = []
+
+    if args.json_file:
+        try:
+            with open(args.json_file) as f:
+                data = json.load(f)
+                input_files = parse_json_input(data)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"Error reading JSON file: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.json_string:
+        try:
+            data = json.loads(args.json_string)
+            input_files = parse_json_input(data)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON string: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.files:
+        input_files = args.files
+
+    if not input_files:
+        print("Error: No files provided or failed to extract paths from JSON.", file=sys.stderr)
+        sys.exit(1)
 
     decomposed_dir = Path("code/catalog/schemas/decomposed")
     if not decomposed_dir.exists():
@@ -76,7 +129,7 @@ def main() -> None:
     groups: dict[Path, list[Path]] = {}
     tool_files: set[Path] = set()
 
-    for f in args.files:
+    for f in input_files:
         p = Path(f)
         if not p.exists():
             print(f"Error: File not found: {p}", file=sys.stderr)
@@ -87,6 +140,9 @@ def main() -> None:
         is_tool = len(parts) == 2 and parts[1].endswith(".json")
 
         root_tool = get_root_tool_path(p, decomposed_dir)
+        if root_tool is None:
+            # Skip files directly in decomposed_dir that aren't part of a tool structure
+            continue
 
         if is_tool:
             tool_files.add(p)

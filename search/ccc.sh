@@ -58,3 +58,4 @@ uv run code/cs.py --root ${MY_WORK_DIR} search --refresh --limit 100 "List of op
 
 # need to add code/catalog/
 uv run code/retrieve_catalog.py --files code/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json code/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json code/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json
+uv run code/retrieve_catalog.py 
