@@ -132,8 +132,8 @@ def main() -> None:
     for f in input_files:
         p = Path(f)
         if not p.exists():
-            print(f"Error: File not found: {p}", file=sys.stderr)
-            sys.exit(1)
+            print(f"Warning: File not found: {p}", file=sys.stderr)
+            continue
 
         rel = p.relative_to(decomposed_dir)
         parts = rel.parts

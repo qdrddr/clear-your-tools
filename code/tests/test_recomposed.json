@@ -1,0 +1,2180 @@
+{
+  "md": [
+    {
+      "file_path": "code/catalog/schemas/decomposed/function.md",
+      "score": 0.558,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "function"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/method.md",
+      "score": 0.48,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "method"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/stop_on_error.md",
+      "score": 0.455,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "stop_on_error"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semantic.md",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "semantic"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/continue_on_error.md",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "continue_on_error"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/grouped.md",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "grouped"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/route.md",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "route"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/type.md",
+      "score": 0.443,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "type"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/variable.md",
+      "score": 0.427,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "variable"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hybrid.md",
+      "score": 0.423,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "hybrid"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/cypher.md",
+      "score": 0.422,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "cypher"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/toon.md",
+      "score": 0.419,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "toon"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/literal.md",
+      "score": 0.419,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "literal"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/simple.md",
+      "score": 0.403,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "simple"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/class.md",
+      "score": 0.401,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "class"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/json.md",
+      "score": 0.396,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "json"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/tree.md",
+      "score": 0.394,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "tree"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/xml.md",
+      "score": 0.387,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "xml"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/regex.md",
+      "score": 0.384,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "regex"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/component.md",
+      "score": 0.38,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "component"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/yaml.md",
+      "score": 0.379,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "yaml"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/flat.md",
+      "score": 0.367,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "flat"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/bm25.md",
+      "score": 0.364,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "bm25"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/fts.md",
+      "score": 0.02,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "fts"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/interface.md",
+      "score": 0.363,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "interface"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/parquet.md",
+      "score": 0.361,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "parquet"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/csv.md",
+      "score": 0.357,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "csv"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/cl100k.md",
+      "score": 0.338,
+      "start_line": 1,
+      "end_line": 1,
+      "language": "markdown",
+      "content": "cl100k"
+    }
+  ],
+  "json": [
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/operations/depends_on.json",
+      "score": 0.585,
+      "start_line": 1,
+      "end_line": 20,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "operations": {
+              "items": {
+                "properties": {
+                  "depends_on": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "List of operation IDs this operation depends on"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/check_onboarding_performed.json",
+      "score": 0.551,
+      "start_line": 1,
+      "end_line": 9,
+      "language": "json",
+      "content": {
+        "name": "check_onboarding_performed",
+        "description": "Checks whether project onboarding was already performed.\nYou should always call this tool before beginning to actually work on the project/after activating a project.",
+        "inputSchema": {
+          "properties": {},
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch.json",
+      "score": 0.544,
+      "start_line": 1,
+      "end_line": 33,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "description": "Execute multiple operations in a single request. Supports dependency resolution, parallel execution, and transaction semantics.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "tool"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Unique identifier for this operation"
+                  },
+                  "tool": {
+                    "type": "string",
+                    "description": "Tool name to execute (e.g., 'hedl_validate', 'hedl_format')"
+                  }
+                }
+              },
+              "description": "List of operations to execute"
+            }
+          },
+          "required": [
+            "operations"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/activate_project.json",
+      "score": 0.532,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "activate_project",
+        "description": "Activates the project with the given name or path.",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "title": "Project",
+              "type": "string",
+              "description": "The name of a registered project to activate or a path to a project directory."
+            }
+          },
+          "required": [
+            "project"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/initial_instructions.json",
+      "score": 0.524,
+      "start_line": 1,
+      "end_line": 9,
+      "language": "json",
+      "content": {
+        "name": "initial_instructions",
+        "description": "Provides the 'Serena Instructions Manual', which contains essential information on how to use the Serena toolbox.\nIMPORTANT: If you have not yet read the manual, call this tool immediately after you are given your task by the user,\nas it will critically inform you!.",
+        "inputSchema": {
+          "properties": {},
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/timeout.json",
+      "score": 0.523,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "timeout": {
+              "type": "integer",
+              "description": "Maximum execution time in seconds (1-3600)",
+              "minimum": 1,
+              "maximum": 3600
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern.json",
+      "score": 0.518,
+      "start_line": 3,
+      "end_line": 18,
+      "language": "json",
+      "content": ",\n  \"inputSchema\": {\n    \"properties\": {\n      \"substring_pattern\": {\n        \"title\": \"Substring Pattern\",\n        \"type\": \"string\",\n        \"description\": \"Regular expression for a substring pattern to search for.\"\n      }\n    },\n    \"required\": [\n      \"substring_pattern\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/parallel.json",
+      "score": 0.515,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "parallel": {
+              "type": "boolean",
+              "description": "Enable parallel execution for independent operations",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/read_memory.json",
+      "score": 0.509,
+      "start_line": 1,
+      "end_line": 17,
+      "language": "json",
+      "content": {
+        "name": "read_memory",
+        "description": "Reads the contents of a memory. Should only be used if the information\nis likely to be relevant to the current task, inferring relevance from the memory name.",
+        "inputSchema": {
+          "properties": {
+            "memory_name": {
+              "title": "Memory Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_name"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/onboarding.json",
+      "score": 0.508,
+      "start_line": 1,
+      "end_line": 9,
+      "language": "json",
+      "content": {
+        "name": "onboarding",
+        "description": "Call this tool if onboarding was not performed yet.\nYou will call this tool at most once per conversation. Returns instructions on how to create the onboarding information.",
+        "inputSchema": {
+          "properties": {},
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/fts.json",
+      "score": 0.507,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "run_postprocess_tool",
+        "inputSchema": {
+          "properties": {
+            "fts": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/search/top_k.json",
+      "score": 0.502,
+      "start_line": 1,
+      "end_line": 14,
+      "language": "json",
+      "content": {
+        "name": "search",
+        "inputSchema": {
+          "properties": {
+            "top_k": {
+              "default": 5,
+              "description": "Number of results to return.",
+              "minimum": 1,
+              "title": "Top K",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/communities.json",
+      "score": 0.5,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "run_postprocess_tool",
+        "inputSchema": {
+          "properties": {
+            "communities": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol.json",
+      "score": 0.496,
+      "start_line": 3,
+      "end_line": 18,
+      "language": "json",
+      "content": ",\n  \"inputSchema\": {\n    \"properties\": {\n      \"name_path_pattern\": {\n        \"title\": \"Name Path Pattern\",\n        \"type\": \"string\",\n        \"description\": \"The name path matching pattern (see above).\"\n      }\n    },\n    \"required\": [\n      \"name_path_pattern\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/explore.json",
+      "score": 0.495,
+      "start_line": 4,
+      "end_line": 16,
+      "language": "json",
+      "content": "  \"inputSchema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"query\": {\n        \"type\": \"string\",\n        \"description\": \"Symbol names, file names, or short code terms to explore (e.g., \\\"AuthService loginUser session-manager\\\", \\\"GraphTraverser BFS impact traversal.ts\\\"). Use codegraph_search first to find relevant names.\"\n      }\n    },\n    \"required\": [\n      \"query\"\n    ]\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/flows.json",
+      "score": 0.494,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "run_postprocess_tool",
+        "inputSchema": {
+          "properties": {
+            "flows": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/context7/resolve-library-id.json",
+      "score": 0.493,
+      "start_line": 3,
+      "end_line": 22,
+      "language": "json",
+      "content": ",\n  \"inputSchema\": {\n    \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n    \"type\": \"object\",\n    \"properties\": {\n      \"query\": {\n        \"type\": \"string\",\n        \"description\": \"The question or task you need help with. This is used to rank library results by relevance to what the user is trying to accomplish. The query is sent to the Context7 API for processing. Do not include any sensitive or confidential information such as API keys, passwords, credentials, personal data, or proprietary code in your query.\"\n      },\n      \"libraryName\": {\n        \"type\": \"string\",\n        \"description\": \"Library name to search for and retrieve a Context7-compatible library ID. Use the official library name with proper punctuation \\u2014 e.g., 'Next.js' instead of 'nextjs', 'Customer.io' instead of 'customerio', 'Three.js' instead of 'threejs'.\"\n      }\n    },\n    \"required\": [\n      \"query\",\n      \"libraryName\"\n    ]\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/repo_root.json",
+      "score": 0.491,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "run_postprocess_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/transaction.json",
+      "score": 0.491,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "transaction": {
+              "type": "boolean",
+              "description": "All-or-nothing transaction semantics",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/use_merge.json",
+      "score": 0.49,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_to",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "properties": {
+                "use_merge": {
+                  "type": "boolean",
+                  "description": "Use MERGE vs CREATE (cypher)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/operations/arguments.json",
+      "score": 0.489,
+      "start_line": 1,
+      "end_line": 17,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "operations": {
+              "items": {
+                "properties": {
+                  "arguments": {
+                    "type": "object",
+                    "description": "Tool arguments matching the tool's input schema"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/delete_memory.json",
+      "score": 0.486,
+      "start_line": 1,
+      "end_line": 17,
+      "language": "json",
+      "content": {
+        "name": "delete_memory",
+        "description": "Delete a memory, only call if instructed explicitly or permission was granted by the user.",
+        "inputSchema": {
+          "properties": {
+            "memory_name": {
+              "title": "Memory Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_name"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/search/projectPath.json",
+      "score": 0.485,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_search",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/optimize/ditto.json",
+      "score": 0.483,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "hedl_optimize",
+        "inputSchema": {
+          "properties": {
+            "ditto": {
+              "type": "boolean",
+              "description": "Enable ditto optimization for repeated values",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/rename_memory.json",
+      "score": 0.481,
+      "start_line": 1,
+      "end_line": 22,
+      "language": "json",
+      "content": {
+        "name": "rename_memory",
+        "description": "Rename or move a memory, use \"/\" in the name to organize into topics.\nThe \"global\" topic should only be used if explicitly instructed.",
+        "inputSchema": {
+          "properties": {
+            "old_name": {
+              "title": "Old Name",
+              "type": "string"
+            },
+            "new_name": {
+              "title": "New Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "old_name",
+            "new_name"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/list_dir.json",
+      "score": 0.481,
+      "start_line": 1,
+      "end_line": 24,
+      "language": "json",
+      "content": {
+        "name": "list_dir",
+        "description": "Lists files and directories in the given directory (optionally with recursion). Returns a JSON object with the names of directories and files within the given directory.",
+        "inputSchema": {
+          "properties": {
+            "relative_path": {
+              "title": "Relative Path",
+              "type": "string",
+              "description": "The relative path to the directory to list; pass \".\" to scan the project root."
+            },
+            "recursive": {
+              "title": "Recursive",
+              "type": "boolean",
+              "description": "Whether to scan subdirectories recursively."
+            }
+          },
+          "required": [
+            "relative_path",
+            "recursive"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/read.json",
+      "score": 0.48,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_read",
+        "description": "Read and parse HEDL files from a directory. Returns parsed document structure with entities and relationships.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path to a HEDL file or directory containing .hedl files"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/optimize.json",
+      "score": 0.479,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_optimize",
+        "description": "Convert JSON to optimized HEDL format. Reduces token usage by 40-60% while preserving all data and relationships.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "json": {
+              "type": "string",
+              "description": "JSON content to convert to HEDL"
+            }
+          },
+          "required": [
+            "json"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/batch/mode.json",
+      "score": 0.478,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "batch",
+        "inputSchema": {
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "continue_on_error",
+                "stop_on_error"
+              ],
+              "description": "Execution mode",
+              "default": "continue_on_error"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/get_current_config.json",
+      "score": 0.477,
+      "start_line": 1,
+      "end_line": 9,
+      "language": "json",
+      "content": {
+        "name": "get_current_config",
+        "description": "Print the current configuration of the agent, including the active and available projects, tools, contexts, and modes.",
+        "inputSchema": {
+          "properties": {},
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/search/mode.json",
+      "score": 0.476,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "search",
+        "inputSchema": {
+          "properties": {
+            "mode": {
+              "default": "hybrid",
+              "description": "Search mode. 'hybrid' is best for most queries.",
+              "enum": [
+                "hybrid",
+                "semantic",
+                "bm25",
+                "fts"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/search/repo.json",
+      "score": 0.476,
+      "start_line": 1,
+      "end_line": 20,
+      "language": "json",
+      "content": {
+        "name": "search",
+        "inputSchema": {
+          "properties": {
+            "repo": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Git URL (e.g. https://github.com/org/repo) or local path to index and search. Required when no default index was configured at startup. The index is cached after the first call, so repeat queries are fast.",
+              "title": "Repo"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/status/projectPath.json",
+      "score": 0.475,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_status",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/list_repos_tool.json",
+      "score": 0.474,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "list_repos_tool",
+        "description": "List all registered repositories in the multi-repo registry.\n\nReturns the list of repos registered at ~/.code-review-graph/registry.json.\nUse the CLI 'register' command to add repos.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol/relative_path.json",
+      "score": 0.474,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "find_symbol",
+        "inputSchema": {
+          "properties": {
+            "relative_path": {
+              "default": "",
+              "title": "Relative Path",
+              "type": "string",
+              "description": "Optional. Restrict search to this file or directory. If None, searches entire codebase.\nIf a directory is passed, the search will be restricted to the files in that directory.\nIf a file is passed, the search will be restricted to that file.\nIf you have some knowledge about the codebase, you should use this parameter, as it will significantly\nspeed up the search as well as reduce the number of results."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_flow_tool.json",
+      "score": 0.471,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "get_flow_tool",
+        "description": "Get detailed information about a single execution flow.\n\nReturns the full call path with each step's function name, file, and\nline numbers. Optionally includes source code snippets for each step.\n\nProvide either flow_id (from list_flows_tool) or flow_name to search by name.\n\nArgs:\n    flow_id: Database ID of the flow.\n    flow_name: Name to search for (partial match). Ignored if flow_id given.\n    include_source: Include source code snippets for each step. Default: False.\n    repo_root: Repository root path. Auto-detected if omitted.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/edit_memory/allow_multiple_occurrences.json",
+      "score": 0.47,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "edit_memory",
+        "inputSchema": {
+          "properties": {
+            "allow_multiple_occurrences": {
+              "default": false,
+              "title": "Allow Multiple Occurrences",
+              "type": "boolean",
+              "description": "Whether to allow matching and replacing multiple occurrences.\nIf false and multiple occurrences are found, an error will be returned."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/relative_path.json",
+      "score": 0.47,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "search_for_pattern",
+        "inputSchema": {
+          "properties": {
+            "relative_path": {
+              "default": "",
+              "title": "Relative Path",
+              "type": "string",
+              "description": "Only subpaths of this path (relative to the repo root) will be analyzed. If a path to a single\nfile is passed, only that will be searched. The path must exist, otherwise a `FileNotFoundError` is raised."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/list_memories.json",
+      "score": 0.47,
+      "start_line": 1,
+      "end_line": 9,
+      "language": "json",
+      "content": {
+        "name": "list_memories",
+        "description": "Lists available memories, optionally filtered by topic.",
+        "inputSchema": {
+          "properties": {},
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options.json",
+      "score": 0.469,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_to",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "type": "object",
+              "description": "Format-specific options",
+              "properties": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_file.json",
+      "score": 0.468,
+      "start_line": 1,
+      "end_line": 24,
+      "language": "json",
+      "content": {
+        "name": "find_file",
+        "description": "Finds non-gitignored files matching the given file mask within the given relative path. Returns a JSON object with the list of matching files.",
+        "inputSchema": {
+          "properties": {
+            "file_mask": {
+              "title": "File Mask",
+              "type": "string",
+              "description": "The filename or file mask (using the wildcards * or ?) to search for."
+            },
+            "relative_path": {
+              "title": "Relative Path",
+              "type": "string",
+              "description": "The relative path to the directory to search in; pass \".\" to scan the project root."
+            }
+          },
+          "required": [
+            "file_mask",
+            "relative_path"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol/include_body.json",
+      "score": 0.467,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "find_symbol",
+        "inputSchema": {
+          "properties": {
+            "include_body": {
+              "default": false,
+              "title": "Include Body",
+              "type": "boolean",
+              "description": "Whether to include the symbol's source code. Use judiciously."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/detect_changes_tool.json",
+      "score": 0.466,
+      "start_line": 1,
+      "end_line": 3,
+      "language": "json",
+      "content": "{\n  \"name\": \"detect_changes_tool\",\n  \"description\": \"Detect changes and produce risk-scored, priority-ordered review guidance.\\n\\nPrimary tool for code review. Maps git diffs to affected functions,\\nflows, communities, and test coverage gaps. Returns risk scores and\\nprioritized review items. Replaces get_review_context for change-aware reviews."
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/fff/grep/cursor.json",
+      "score": 0.466,
+      "start_line": 1,
+      "end_line": 14,
+      "language": "json",
+      "content": {
+        "name": "grep",
+        "inputSchema": {
+          "properties": {
+            "cursor": {
+              "description": "Cursor from previous result. Only use if previous results weren't sufficient.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
+      "score": 0.465,
+      "start_line": 1,
+      "end_line": 3,
+      "language": "json",
+      "content": "{\n  \"name\": \"find_referencing_symbols\",\n  \"description\": \"Finds references to the symbol at the given `name_path`. The result will contain metadata about the referencing symbols\\nas well as a short code snippet around the reference. Returns a list of JSON objects with the symbols referencing the requested symbol.\","
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/dry_run.json",
+      "score": 0.464,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "apply_refactor_tool",
+        "inputSchema": {
+          "properties": {
+            "dry_run": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_from/options.json",
+      "score": 0.464,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_from",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "type": "object",
+              "description": "Format-specific options",
+              "properties": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/search.json",
+      "score": 0.463,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "search",
+        "description": "Search a codebase with a natural-language or code query.\n\nPass a git URL or local path as `repo` to index it on demand; indexes are cached for the session.\nUse this to find where something is implemented, understand a library, or locate related code.\n",
+        "inputSchema": {
+          "properties": {
+            "query": {
+              "description": "Natural language or code query.",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "title": "searchArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/explore/projectPath.json",
+      "score": 0.463,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_explore",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool.json",
+      "score": 0.46,
+      "start_line": 3,
+      "end_line": 15,
+      "language": "json",
+      "content": "\\n        dry_run. Use this for a human-in-the-loop review before\\n        committing changes to disk. See: #176\",\n  \"inputSchema\": {\n    \"properties\": {\n      \"refactor_id\": {\n        \"type\": \"string\"\n      }\n    },\n    \"required\": [\n      \"refactor_id\"\n    ],\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/list_memories/topic.json",
+      "score": 0.459,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "list_memories",
+        "inputSchema": {
+          "properties": {
+            "topic": {
+              "default": "",
+              "title": "Topic",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/read/recursive.json",
+      "score": 0.459,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "hedl_read",
+        "inputSchema": {
+          "properties": {
+            "recursive": {
+              "type": "boolean",
+              "description": "If path is a directory, whether to search recursively",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/stream/offset.json",
+      "score": 0.459,
+      "start_line": 1,
+      "end_line": 12,
+      "language": "json",
+      "content": {
+        "name": "hedl_stream",
+        "inputSchema": {
+          "properties": {
+            "offset": {
+              "type": "integer",
+              "description": "Number of entities to skip",
+              "default": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/stream/type_filter.json",
+      "score": 0.458,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "hedl_stream",
+        "inputSchema": {
+          "properties": {
+            "type_filter": {
+              "type": "string",
+              "description": "Only return entities of this type"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/repo_root.json",
+      "score": 0.458,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "apply_refactor_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_after.json",
+      "score": 0.458,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "search_for_pattern",
+        "inputSchema": {
+          "properties": {
+            "context_lines_after": {
+              "default": 0,
+              "title": "Context Lines After",
+              "type": "integer",
+              "description": "Number of lines of context to include after each match."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/files/projectPath.json",
+      "score": 0.457,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_files",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_before.json",
+      "score": 0.457,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "search_for_pattern",
+        "inputSchema": {
+          "properties": {
+            "context_lines_before": {
+              "default": 0,
+              "title": "Context Lines Before",
+              "type": "integer",
+              "description": "Number of lines of context to include before each match."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/fff/grep/maxResults.json",
+      "score": 0.457,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "grep",
+        "inputSchema": {
+          "properties": {
+            "maxResults": {
+              "description": "Max matching lines (default 20).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/list_flows_tool.json",
+      "score": 0.457,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "list_flows_tool",
+        "description": "List execution flows in the codebase, sorted by criticality.\n\nEach flow represents a call chain starting from an entry point\n(HTTP handler, CLI command, test function, etc.). Use this to\nunderstand the main execution paths through the codebase.\n\nArgs:\n    sort_by: Sort column: criticality, depth, node_count, file_count, or name.\n    limit: Maximum flows to return. Default: 50.\n    kind: Optional filter by entry point kind (e.g. \"Test\", \"Function\").\n    detail_level: \"standard\" (default) returns full flow data; \"minimal\"\n                  returns only name, criticality, and node_count per flow.\n    repo_root: Repository root path. Auto-detected if omitted.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/impact/projectPath.json",
+      "score": 0.456,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_impact",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool.json",
+      "score": 0.456,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "run_postprocess_tool",
+        "description": "Run post-processing on existing graph (flows, communities, FTS index).\n\nUse after building with postprocess=\"none\" or \"minimal\", or to re-run\nexpensive steps independently. Signatures are always computed.\n\nOffloaded to a thread via ``asyncio.to_thread`` so community\ndetection on large graphs doesn't block the MCP event loop. See:\n#46, #136.\n\nArgs:\n    flows: Run flow detection. Default: True.\n    communities: Run community detection. Default: True.\n    fts: Rebuild FTS index. Default: True.\n    repo_root: Repository root path. Auto-detected if omitted.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/insert_before_symbol.json",
+      "score": 0.456,
+      "start_line": 4,
+      "end_line": 30,
+      "language": "json",
+      "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"Name path of the symbol before which to insert content (definitions in the `find_symbol` tool apply).\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol.\"\n      },\n      \"body\": {\n        \"title\": \"Body\",\n        \"type\": \"string\",\n        \"description\": \"The body/content to be inserted before the line in which the referenced symbol is defined.\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\",\n      \"body\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/get_symbols_overview/depth.json",
+      "score": 0.455,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "get_symbols_overview",
+        "inputSchema": {
+          "properties": {
+            "depth": {
+              "default": 0,
+              "title": "Depth",
+              "type": "integer",
+              "description": "Depth up to which descendants of top-level symbols shall be retrieved\n(e.g. 1 retrieves immediate children). Default 0."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/rename_symbol.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 3,
+      "language": "json",
+      "content": "{\n  \"name\": \"rename_symbol\",\n  \"description\": \"Renames the symbol with the given `name_path` to `new_name` throughout the entire codebase.\\nNote: for languages with method overloading, like Java, name_path may have to include a method's\\nsignature to uniquely identify a method. Returns result summary indicating success or failure.\","
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_flow_tool/repo_root.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "get_flow_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/context/projectPath.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_context",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/include_constraints.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_to",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "properties": {
+                "include_constraints": {
+                  "type": "boolean",
+                  "description": "Include constraints (cypher)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/node/projectPath.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_node",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/stream.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_stream",
+        "description": "Stream parse a large HEDL document with pagination. Memory-efficient for large files.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "hedl": {
+              "type": "string",
+              "description": "HEDL document content to stream parse"
+            }
+          },
+          "required": [
+            "hedl"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/stats.json",
+      "score": 0.454,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_stats",
+        "description": "Get token usage statistics comparing HEDL vs JSON representation. Shows exact token savings for LLM context optimization.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "hedl": {
+              "type": "string",
+              "description": "HEDL document content to analyze"
+            }
+          },
+          "required": [
+            "hedl"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/callees/projectPath.json",
+      "score": 0.453,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_callees",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/refactor_tool/repo_root.json",
+      "score": 0.453,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "refactor_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/fff/grep/output_mode.json",
+      "score": 0.453,
+      "start_line": 1,
+      "end_line": 14,
+      "language": "json",
+      "content": {
+        "name": "grep",
+        "inputSchema": {
+          "properties": {
+            "output_mode": {
+              "description": "Output format (default 'content').",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/format.json",
+      "score": 0.453,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_format",
+        "description": "Format HEDL to canonical form. Normalizes whitespace, ordering, and applies ditto optimization.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "hedl": {
+              "type": "string",
+              "description": "HEDL document content to format"
+            }
+          },
+          "required": [
+            "hedl"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/status.json",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "codegraph_status",
+        "description": "Get the status of the CodeGraph index, including statistics about indexed files, nodes, and edges.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/search.json",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "codegraph_search",
+        "description": "Quick symbol search by name. Returns locations only (no code). Use codegraph_context instead for comprehensive task context.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Symbol name or partial name (e.g., \"auth\", \"signIn\", \"UserService\")"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/base.json",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "get_affected_flows_tool",
+        "inputSchema": {
+          "properties": {
+            "base": {
+              "default": "HEAD~1",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/stats/tokenizer.json",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 16,
+      "language": "json",
+      "content": {
+        "name": "hedl_stats",
+        "inputSchema": {
+          "properties": {
+            "tokenizer": {
+              "type": "string",
+              "enum": [
+                "cl100k",
+                "simple"
+              ],
+              "description": "Tokenizer to use (cl100k for GPT-4, simple for approximate count)",
+              "default": "simple"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_minimal_context_tool/task.json",
+      "score": 0.452,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "get_minimal_context_tool",
+        "inputSchema": {
+          "properties": {
+            "task": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/rename_symbol.json",
+      "score": 0.451,
+      "start_line": 4,
+      "end_line": 30,
+      "language": "json",
+      "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"Name path of the symbol to rename (definitions in the `find_symbol` tool apply).\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol to rename.\"\n      },\n      \"new_name\": {\n        \"title\": \"New Name\",\n        \"type\": \"string\",\n        \"description\": \"The new name for the symbol.\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\",\n      \"new_name\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/repo_root.json",
+      "score": 0.451,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "get_affected_flows_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/find_large_functions_tool/repo_root.json",
+      "score": 0.451,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "find_large_functions_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_architecture_overview_tool.json",
+      "score": 0.45,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "get_architecture_overview_tool",
+        "description": "Generate an architecture overview based on community structure.\n\nBuilds a high-level view of the codebase architecture by analyzing\ncommunity boundaries and cross-community coupling. Includes warnings\nfor high coupling between communities.\n\nArgs:\n    repo_root: Repository root path. Auto-detected if omitted.",
+        "inputSchema": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/include_headers.json",
+      "score": 0.45,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_to",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "properties": {
+                "include_headers": {
+                  "type": "boolean",
+                  "description": "Include headers (csv)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
+      "score": 0.449,
+      "start_line": 4,
+      "end_line": 24,
+      "language": "json",
+      "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"For finding the symbol to find references for, same logic as in the `find_symbol` tool.\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol for which to find references.\\nNote: for external dependencies, this must be an identifier starting with `<ext` that you have received\\nearlier (don't try to guess!).\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/callers/projectPath.json",
+      "score": 0.448,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "codegraph_callers",
+        "inputSchema": {
+          "properties": {
+            "projectPath": {
+              "type": "string",
+              "description": "Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_wiki_page_tool.json",
+      "score": 0.448,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "get_wiki_page_tool",
+        "description": "Retrieve a specific wiki page by community name.\n\nReturns the markdown content of the wiki page for the given community.\nThe wiki must have been generated first via generate_wiki_tool.\n\nArgs:\n    community_name: Community name to look up.\n    repo_root: Repository root path. Auto-detected if omitted.",
+        "inputSchema": {
+          "properties": {
+            "community_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "community_name"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/pretty.json",
+      "score": 0.448,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_to",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "properties": {
+                "pretty": {
+                  "type": "boolean",
+                  "description": "Pretty-print output (json)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/get_symbols_overview.json",
+      "score": 0.448,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "get_symbols_overview",
+        "description": "Use this tool to get a high-level understanding of the code symbols in a file.\nThis should be the first tool to call when you want to understand a new file, unless you already know\nwhat you are looking for. Returns a JSON object containing symbols grouped by kind in a compact format.",
+        "inputSchema": {
+          "properties": {
+            "relative_path": {
+              "title": "Relative Path",
+              "type": "string",
+              "description": "The relative path to the file to get the overview of."
+            }
+          },
+          "required": [
+            "relative_path"
+          ],
+          "title": "applyArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/find_related/repo.json",
+      "score": 0.448,
+      "start_line": 1,
+      "end_line": 20,
+      "language": "json",
+      "content": {
+        "name": "find_related",
+        "inputSchema": {
+          "properties": {
+            "repo": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Git URL (e.g. https://github.com/org/repo) or local path to index and search. Required when no default index was configured at startup. The index is cached after the first call, so repeat queries are fast.",
+              "title": "Repo"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json",
+      "score": 0.447,
+      "start_line": 1,
+      "end_line": 15,
+      "language": "json",
+      "content": {
+        "name": "hedl_convert_from",
+        "inputSchema": {
+          "properties": {
+            "options": {
+              "properties": {
+                "delimiter": {
+                  "type": "string",
+                  "description": "Field delimiter (csv)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/codegraph/files.json",
+      "score": 0.447,
+      "start_line": 1,
+      "end_line": 8,
+      "language": "json",
+      "content": {
+        "name": "codegraph_files",
+        "description": "REQUIRED for file/folder exploration. Get the project file structure from the CodeGraph index. Returns a tree view of all indexed files with metadata (language, symbol count). Much faster than Glob/filesystem scanning. Use this FIRST when exploring project structure, finding files, or understanding codebase organization.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/fff/multi_grep/cursor.json",
+      "score": 0.447,
+      "start_line": 1,
+      "end_line": 14,
+      "language": "json",
+      "content": {
+        "name": "multi_grep",
+        "inputSchema": {
+          "properties": {
+            "cursor": {
+              "description": "Cursor from previous result.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/hedl/query/id.json",
+      "score": 0.446,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "hedl_query",
+        "inputSchema": {
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Filter by entity ID"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/context7/query-docs.json",
+      "score": 0.446,
+      "start_line": 1,
+      "end_line": 6,
+      "language": "json",
+      "content": "{\n  \"name\": \"query-docs\",\n  \"description\": \"Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.\\n\\nYou must call 'Resolve Context7 Library ID' tool first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\\n\\nDo not call this tool more than 3 times per question.\",\n  \"inputSchema\": {\n    \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n    \"type\": \"object\","
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/semble/find_related.json",
+      "score": 0.446,
+      "start_line": 1,
+      "end_line": 24,
+      "language": "json",
+      "content": {
+        "name": "find_related",
+        "description": "Find code chunks semantically similar to a specific location in a file.\n\nUse after `search` to explore related implementations or callers.\nPass file_path and line from a prior search result.\n",
+        "inputSchema": {
+          "properties": {
+            "file_path": {
+              "description": "Path to the file as stored in the index (use file_path from a search result).",
+              "title": "File Path",
+              "type": "string"
+            },
+            "line": {
+              "description": "Line number (1-indexed).",
+              "title": "Line",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "file_path",
+            "line"
+          ],
+          "title": "find_relatedArguments",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/serena/replace_content/allow_multiple_occurrences.json",
+      "score": 0.446,
+      "start_line": 1,
+      "end_line": 13,
+      "language": "json",
+      "content": {
+        "name": "replace_content",
+        "inputSchema": {
+          "properties": {
+            "allow_multiple_occurrences": {
+              "default": false,
+              "title": "Allow Multiple Occurrences",
+              "type": "boolean",
+              "description": "Whether to allow matching and replacing multiple occurrences.\nIf false and multiple occurrences are found, an error will be returned."
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json",
+      "score": 0.445,
+      "start_line": 1,
+      "end_line": 11,
+      "language": "json",
+      "content": {
+        "name": "cross_repo_search_tool",
+        "inputSchema": {
+          "properties": {
+            "limit": {
+              "default": 20,
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json",
+      "score": 0.445,
+      "start_line": 1,
+      "end_line": 18,
+      "language": "json",
+      "content": {
+        "name": "get_community_tool",
+        "inputSchema": {
+          "properties": {
+            "repo_root": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        }
+      }
+    }
+  ]
+}
