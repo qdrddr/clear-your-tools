@@ -156,7 +156,7 @@ repos:
         always_run: true
         pass_filenames: false
       - id: mypy
-        name: MyPy
+        name: mypy
         entry: bash -c "source .venv/bin/activate && mypy code"
         pass_filenames: false
         language: system

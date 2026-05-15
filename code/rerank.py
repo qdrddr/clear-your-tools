@@ -92,7 +92,8 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
             continue
 
     for i, score in enumerate(new_scores):
-        items[i]["score"] = score
+        # Store as string with 20 decimal places to avoid scientific notation in JSON
+        items[i]["score"] = f"{score:.20f}"
 
 
 def main() -> None:
@@ -145,7 +146,8 @@ def main() -> None:
         )
 
         process_response(response, valid_indices, items)
-        items.sort(key=lambda x: x["score"], reverse=True)
+        # Sort using float to ensure correct numerical order
+        items.sort(key=lambda x: float(x["score"]), reverse=True)
         print(json.dumps(data, indent=2))
 
     except Exception as e:
