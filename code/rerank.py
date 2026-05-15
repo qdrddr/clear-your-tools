@@ -8,6 +8,9 @@ from typing import Any
 from dotenv import load_dotenv
 from litellm import rerank
 
+DECOMPOSED_SCORE: float = 0.5
+ENUM_SCORE: float = 0.2
+RERANK_ENUMS: bool = False
 
 def extract_level_info(data: Any) -> list[str]:
     """
@@ -148,6 +151,8 @@ def main() -> None:
         process_response(response, valid_indices, items)
         # Sort using float to ensure correct numerical order
         items.sort(key=lambda x: float(x["score"]), reverse=True)
+        # Exclude items with score less than DECOMPOSED_SCORE
+        data["json"] = [item for item in items if float(item["score"]) >= DECOMPOSED_SCORE]
         print(json.dumps(data, indent=2))
 
     except Exception as e:
