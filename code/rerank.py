@@ -3,11 +3,13 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, List, Optional
-from litellm import rerank
-from dotenv import load_dotenv
+from typing import Any
 
-def extract_level_info(data: Any) -> List[str]:
+from dotenv import load_dotenv
+from litellm import rerank
+
+
+def extract_level_info(data: Any) -> list[str]:
     """
     Recursively searches for description, default, and enum keys at all levels.
     Returns a list of formatted strings, one for each level where at least a description is found.
@@ -39,7 +41,8 @@ def extract_level_info(data: Any) -> List[str]:
 
     return results
 
-def extract_document_text(item_content: Any) -> Optional[str]:
+
+def extract_document_text(item_content: Any) -> str | None:
     """
     Combines information from all levels, with each level on its own newline.
     """
@@ -48,13 +51,51 @@ def extract_document_text(item_content: Any) -> Optional[str]:
         return None
     return "\n".join(level_lines)
 
-def load_env():
+
+def load_env() -> None:
     """Load environment variables from code/.env if it exists."""
     env_path = Path("code/.env")
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 
-def main():
+
+def process_response(response: Any, valid_indices: list[int], items: list[dict[str, Any]]) -> None:
+    """Processes the rerank response and updates item scores."""
+    new_scores = [0.0] * len(items)
+
+    # LiteLLM's rerank response usually has a 'results' attribute or key
+    results_list = []
+    if hasattr(response, "results"):
+        results_list = response.results
+    elif isinstance(response, dict) and "results" in response:
+        results_list = response["results"]
+    else:
+        # Fallback if it's already a list
+        results_list = response
+
+    for result in results_list:
+        try:
+            # Try attribute access first
+            doc_idx = getattr(result, "index", None)
+            relevance_score = getattr(result, "relevance_score", None)
+
+            # Fallback to dictionary access
+            if doc_idx is None:
+                doc_idx = result["index"]
+            if relevance_score is None:
+                relevance_score = result["relevance_score"]
+
+            original_idx = valid_indices[doc_idx]
+            new_scores[original_idx] = relevance_score
+        except (KeyError, TypeError, IndexError) as e:
+            print(f"Debug: Error processing result {result}: {e}", file=sys.stderr)
+            continue
+
+    for i, score in enumerate(new_scores):
+        items[i]["score"] = score
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Rerank JSON items using DeepInfra and LiteLLM.")
     parser.add_argument("--json", required=True, help="Input JSON file path")
     parser.add_argument("command", choices=["search"], help="Command to run")
@@ -66,7 +107,7 @@ def main():
     api_key = os.environ.get("DEEPINFRA_API_KEY")
 
     try:
-        with open(args.json, "r") as f:
+        with open(args.json) as f:
             data = json.load(f)
     except Exception as e:
         print(f"Error reading JSON: {e}", file=sys.stderr)
@@ -81,7 +122,6 @@ def main():
     valid_indices = []
 
     for i, item in enumerate(items):
-        # We look for description, enum, default across the hierarchy on all levels of the item
         doc_text = extract_document_text(item)
         if doc_text:
             documents.append(doc_text)
@@ -101,51 +141,17 @@ def main():
             model="deepinfra/Qwen/Qwen3-Reranker-8B",
             query=args.query,
             documents=documents,
-            api_key=api_key
+            api_key=api_key,
         )
 
-        # print(f"Debug: Response type: {type(response)}", file=sys.stderr)
-        # print(f"Debug: Response: {response}", file=sys.stderr)
-
-        new_scores = [0.0] * len(items)
-
-        # LiteLLM's rerank response usually has a 'results' attribute or key
-        results_list = []
-        if hasattr(response, 'results'):
-            results_list = response.results
-        elif isinstance(response, dict) and 'results' in response:
-            results_list = response['results']
-        else:
-            # Fallback if it's already a list
-            results_list = response
-
-        for result in results_list:
-            try:
-                # Try attribute access first
-                doc_idx = getattr(result, 'index', None)
-                relevance_score = getattr(result, 'relevance_score', None)
-
-                # Fallback to dictionary access
-                if doc_idx is None:
-                    doc_idx = result['index']
-                if relevance_score is None:
-                    relevance_score = result['relevance_score']
-
-                original_idx = valid_indices[doc_idx]
-                new_scores[original_idx] = relevance_score
-            except (KeyError, TypeError, IndexError) as e:
-                print(f"Debug: Error processing result {result}: {e}", file=sys.stderr)
-                continue
-
-        for i, score in enumerate(new_scores):
-            items[i]["score"] = score
-
+        process_response(response, valid_indices, items)
         items.sort(key=lambda x: x["score"], reverse=True)
         print(json.dumps(data, indent=2))
 
     except Exception as e:
         print(f"Error during reranking: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

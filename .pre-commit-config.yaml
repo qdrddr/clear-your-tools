@@ -82,12 +82,12 @@ repos:
     hooks:
       # Run the Ruff formatter.
       - id: ruff-format
-        name: "Ruff formatter"
+        name: "ruff-format"
         args: [--config=pyproject.toml]
         files: '^code/.*\.(py|ipynb)$'
       # Run the Ruff linter.
       - id: ruff
-        name: "Ruff linter"
+        name: "ruff"
         args:
           [
             --exit-non-zero-on-fix,
@@ -122,6 +122,7 @@ repos:
       # Conflicts with ruff
       #      - id: double-quote-string-fixer
       - id: name-tests-test
+
   - repo: local
     hooks:
       - id: ty-check
@@ -154,9 +155,6 @@ repos:
         language: system
         always_run: true
         pass_filenames: false
-
-  - repo: local
-    hooks:
       - id: mypy
         name: MyPy
         entry: bash -c "source .venv/bin/activate && mypy code"
@@ -164,11 +162,14 @@ repos:
         language: system
         files: '^code/.*\.py$'
       - id: pytest
-        name: Pytest
+        name: pytest
         entry: bash -c "source .venv/bin/activate && pytest"
         pass_filenames: false
         language: system
         files: '^code/.*\.py$'
+
+  - repo: local
+    hooks:
       # Keep `suggestion` last
       - id: suggestion
         name: Suggestion
