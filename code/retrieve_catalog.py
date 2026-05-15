@@ -64,7 +64,7 @@ def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
 
 def _extract_scores(data: Any) -> dict[str, float]:
     """Extract scores from the 'md' and 'json' root keys."""
-    scores = {}
+    scores: dict[str, float] = {}
     if not isinstance(data, dict):
         return scores
     if "md" in data:
