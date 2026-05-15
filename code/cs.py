@@ -79,7 +79,7 @@ def _print_file_only_results(
     seen = set()
     for p in paths:
         if p not in seen:
-            unique_paths.append(p)
+            unique_paths.append(f'"{p}"')
             seen.add(p)
 
     if unique_paths:
