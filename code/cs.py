@@ -195,6 +195,14 @@ def search(
         results_md = future_md.result()
         results_json = future_json.result()
 
+    # Prepend original root if it was specified
+    root_prefix = os.environ.get("SCA_ROOT_STR")
+    if root_prefix:
+        for r in results_md:
+            r.file_path = f"{root_prefix}{r.file_path}"
+        for r in results_json:
+            r.file_path = f"{root_prefix}{r.file_path}"
+
     if json_output:
         _format_json_output(results_md, results_json)
     else:
@@ -225,6 +233,10 @@ def main(
     Code search wrapper.
     """
     if root:
+        root_str = str(root)
+        if not root_str.endswith("/"):
+            root_str += "/"
+        os.environ["SCA_ROOT_STR"] = root_str
         os.environ["COCOINDEX_PROJECT_ROOT"] = str(root.absolute())
     elif "COCOINDEX_PROJECT_ROOT" not in os.environ:
         os.environ["COCOINDEX_PROJECT_ROOT"] = os.getcwd()

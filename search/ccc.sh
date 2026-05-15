@@ -52,4 +52,8 @@ uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'sche
 uv run code/cs.py --root code/catalog/ search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs" --json
 
 # --path is optional. defaults to 'schemas/decomposed/'
-uv run code/cs.py --root code/catalog/ search --refresh --limit 100 "List of operation IDs" --json
+MY_WORK_DIR=code/catalog/
+uv run code/cs.py --root ${MY_WORK_DIR} search --refresh --limit 100 "List of operation IDs" --json
+
+# need to add code/catalog/
+uv run code/retrieve_catalog.py --files ${MY_WORK_DIR}schemas/decomposed/code-review-graph/get_community_tool/repo_root.json ${MY_WORK_DIR}schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json ${MY_WORK_DIR}schemas/decomposed/hedl/convert_from/options/delimiter.json
