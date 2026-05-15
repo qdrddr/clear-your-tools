@@ -1,3 +1,4 @@
+import codecs
 import json
 import os
 import sys
@@ -66,6 +67,25 @@ def _format_json_output(
     sys.stdout.write(json.dumps(output, indent=2) + "\n")
 
 
+def _print_file_only_results(
+    results_md: list[SearchResult],
+    results_json: list[SearchResult],
+    separator: str,
+) -> None:
+    """Print only file paths separated by the given separator."""
+    paths = [r.file_path for r in results_md] + [r.file_path for r in results_json]
+    # Maintain order but remove duplicates
+    unique_paths: list[str] = []
+    seen = set()
+    for p in paths:
+        if p not in seen:
+            unique_paths.append(p)
+            seen.add(p)
+
+    if unique_paths:
+        sys.stdout.write(separator.join(unique_paths) + "\n")
+
+
 def _print_standard_results(
     results_md: list[SearchResult],
     results_json: list[SearchResult],
@@ -132,8 +152,20 @@ def search(
         bool,
         typer.Option("--json", help="Output results in JSON format"),
     ] = False,
+    file_only: Annotated[
+        str | None,
+        typer.Option(
+            "--file-only",
+            help="Print only file paths with optional separator.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     """Semantic search across the codebase."""
+    if json_output and file_only is not None:
+        typer.secho("Error: --json and --file-only cannot be used together.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
     # Respect --root via environment variable set in main callback
     project_root_env = os.environ.get("COCOINDEX_PROJECT_ROOT")
     if project_root_env:
@@ -205,6 +237,15 @@ def search(
 
     if json_output:
         _format_json_output(results_md, results_json)
+    elif file_only is not None:
+        # Default to space if no value provided (file_only is empty string if --file-only passed without value)
+        sep = file_only if file_only else " "
+        try:
+            # Handle escape sequences like \n, \t, etc.
+            sep = codecs.decode(sep, "unicode_escape")
+        except Exception:
+            pass
+        _print_file_only_results(results_md, results_json, sep)
     else:
         _print_standard_results(results_md, results_json)
 
