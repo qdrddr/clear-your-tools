@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+DECOMPOSED_SCORE: float = 0.5
+ENUM_SCORE: float = 0.2
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base. Dicts are merged; other values are overwritten."""
@@ -60,12 +62,18 @@ def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
 
 
 def _extract_scores(data: Any) -> dict[str, float]:
-    """Extract scores from the 'md' root key if it exists."""
+    """Extract scores from the 'md' and 'json' root keys."""
     scores = {}
-    if isinstance(data, dict) and "md" in data:
+    if not isinstance(data, dict):
+        return scores
+    if "md" in data:
         for entry in data["md"]:
             if isinstance(entry, dict) and "content" in entry and "score" in entry:
                 scores[entry["content"]] = float(entry["score"])
+    if "json" in data:
+        for entry in data["json"]:
+            if isinstance(entry, dict) and "file_path" in entry and "score" in entry:
+                scores[entry["file_path"]] = float(entry["score"])
     return scores
 
 
@@ -78,6 +86,11 @@ def _extract_from_dict(data: dict[str, Any]) -> list[str]:
         if isinstance(value, list):
             for entry in value:
                 if isinstance(entry, dict) and "file_path" in entry:
+                    # Filter 'json' array items by score > DECOMPOSED_PROPERTY_SCORE
+                    if key == "json":
+                        score = float(entry.get("score", 0))
+                        if score <= DECOMPOSED_SCORE:
+                            continue
                     input_files.append(entry["file_path"])
         elif isinstance(value, dict) and "file_path" in value:
             input_files.append(value["file_path"])
@@ -102,17 +115,17 @@ def parse_json_input(data: Any) -> tuple[list[str], dict[str, float]]:
 
 def _filter_items(items_with_scores: list[tuple[Any, float]]) -> list[Any]:
     """Apply the filtering logic to the sorted items."""
-    # 1. check if first 3 are >= 0.2
-    # 2. if yes, remove all < 0.2
+    # 1. check if first 3 are >= ENUM_SCORE
+    # 2. if yes, remove all < ENUM_SCORE
     # 3. otherwise keep first 3
     first_3_above_threshold = True
     for i in range(min(3, len(items_with_scores))):
-        if items_with_scores[i][1] < 0.2:
+        if items_with_scores[i][1] < ENUM_SCORE:
             first_3_above_threshold = False
             break
 
     if first_3_above_threshold:
-        return [item for item, score in items_with_scores if score >= 0.2]
+        return [item for item, score in items_with_scores if score >= ENUM_SCORE]
     return [item for item, score in items_with_scores[:3]]
 
 
@@ -203,8 +216,9 @@ def _process_groups(
     tool_files: set[Path],
     scores: dict[str, float],
     decomposed_dir: Path,
-) -> None:
-    """Merge and print the resulting schemas for each tool group."""
+) -> list[dict[str, Any]]:
+    """Merge and return the resulting schemas for each tool group."""
+    tools: list[dict[str, Any]] = []
     for root_tool, files in groups.items():
         if not root_tool.exists():
             print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
@@ -221,13 +235,14 @@ def _process_groups(
             climbed = climb_and_merge(f, decomposed_dir)
             base_tool = deep_merge(base_tool, climbed)
 
-        base_tool["name"] = f"{server_name}_{tool_name_in_schema}"
+        base_tool["name"] = f"mcp__{server_name}_{tool_name_in_schema}"
 
         if scores:
             filter_and_sort_enums(base_tool, scores)
 
-        print(json.dumps(base_tool, indent=2))
-        print()
+        tools.append(base_tool)
+
+    return tools
 
 
 def main() -> None:
@@ -252,7 +267,8 @@ def main() -> None:
         sys.exit(1)
 
     groups, tool_files = _group_files(input_files, decomposed_dir)
-    _process_groups(groups, tool_files, scores, decomposed_dir)
+    tools = _process_groups(groups, tool_files, scores, decomposed_dir)
+    print(json.dumps({"tools": tools}, indent=2))
 
 
 if __name__ == "__main__":

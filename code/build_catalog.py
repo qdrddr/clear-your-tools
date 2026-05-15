@@ -301,7 +301,7 @@ def _prepare_tool(
 ) -> None:
     """Prepare tool schema, collect enums, and add to discovered tools."""
     tool_name = tool.name
-    tid = f"{server_name}_{tool_name}"
+    tid = f"mcp__{server_name}_{tool_name}"
 
     # Preserve the full schema unchanged for the catalog file
     input_schema = copy.deepcopy(tool.inputSchema)
