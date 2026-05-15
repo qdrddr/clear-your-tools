@@ -10,7 +10,9 @@ from litellm import rerank
 
 DECOMPOSED_SCORE: float = 0.5
 ENUM_SCORE: float = 0.2
-RERANK_ENUMS: bool = False
+RERANK_ENUMS: bool = True
+RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
+
 
 def extract_level_info(data: Any) -> list[str]:
     """
@@ -99,6 +101,44 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
         items[i]["score"] = f"{score:.20f}"
 
 
+def rerank_items(
+    query: str,
+    items: list[dict[str, Any]],
+    api_key: str | None,
+    extract_fn: Any,
+    min_score: float | None = None,
+) -> list[dict[str, Any]]:
+    """Generic reranking logic for both json and md items."""
+    documents = []
+    valid_indices = []
+
+    for i, item in enumerate(items):
+        doc_text = extract_fn(item)
+        if doc_text:
+            documents.append(doc_text)
+            valid_indices.append(i)
+
+    if not documents:
+        return items
+
+    try:
+        response = rerank(
+            model=RERANK_MODEL,
+            query=query,
+            documents=documents,
+            api_key=api_key,
+        )
+        process_response(response, valid_indices, items)
+        # Sort using float to ensure correct numerical order
+        items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
+        if min_score is not None:
+            return [item for item in items if float(item.get("score", 0)) >= min_score]
+    except Exception as e:
+        print(f"Error during reranking: {e}", file=sys.stderr)
+
+    return items
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rerank JSON items using DeepInfra and LiteLLM.")
     parser.add_argument("--json", required=True, help="Input JSON file path")
@@ -117,47 +157,32 @@ def main() -> None:
         print(f"Error reading JSON: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not isinstance(data, dict) or "json" not in data or not isinstance(data["json"], list):
-        print("Error: JSON must contain a 'json' key with an array of items.", file=sys.stderr)
-        sys.exit(1)
-
-    items = data["json"]
-    documents = []
-    valid_indices = []
-
-    for i, item in enumerate(items):
-        doc_text = extract_document_text(item)
-        if doc_text:
-            documents.append(doc_text)
-            valid_indices.append(i)
-
-    if not api_key:
-        print("Error: DEEPINFRA_API_KEY not found in environment or code/.env", file=sys.stderr)
-        sys.exit(1)
-
-    if not documents:
-        print("No valid documents found for reranking.", file=sys.stderr)
-        print(json.dumps(data, indent=2))
-        return
-
-    try:
-        response = rerank(
-            model="deepinfra/Qwen/Qwen3-Reranker-8B",
-            query=args.query,
-            documents=documents,
-            api_key=api_key,
+    # Process "json" key if present
+    if "json" in data and isinstance(data["json"], list):
+        data["json"] = rerank_items(
+            args.query,
+            data["json"],
+            api_key,
+            extract_document_text,
+            DECOMPOSED_SCORE,
         )
 
-        process_response(response, valid_indices, items)
-        # Sort using float to ensure correct numerical order
-        items.sort(key=lambda x: float(x["score"]), reverse=True)
-        # Exclude items with score less than DECOMPOSED_SCORE
-        data["json"] = [item for item in items if float(item["score"]) >= DECOMPOSED_SCORE]
-        print(json.dumps(data, indent=2))
+    # Process "md" key (enums) if RERANK_ENUMS is true and "md" exists
+    if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
 
-    except Exception as e:
-        print(f"Error during reranking: {e}", file=sys.stderr)
-        sys.exit(1)
+        def extract_md_content(item: dict[str, Any]) -> str | None:
+            content = item.get("content")
+            return str(content) if content else None
+
+        data["md"] = rerank_items(
+            args.query,
+            data["md"],
+            api_key,
+            extract_md_content,
+            None,  # Not filtering enums by score based on original logic
+        )
+
+    print(json.dumps(data, indent=2))
 
 
 if __name__ == "__main__":
