@@ -10,6 +10,7 @@ from typing import Any
 DECOMPOSED_SCORE: float = 0.5
 ENUM_SCORE: float = 0.2
 
+
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base. Dicts are merged; other values are overwritten."""
     result = dict(base)

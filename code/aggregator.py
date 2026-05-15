@@ -277,7 +277,9 @@ class MCPAggregator:
     def _prepare_tool(self, server_name: str, tool: Any) -> None:
         tool_name: str = tool.name
         prefix = f"{server_name}_"
-        base_frontend_name = tool_name if tool_name.startswith(prefix) else f"{server_name}_{tool_name}"
+        base_frontend_name = (
+            tool_name if tool_name.startswith(prefix) else f"{server_name}_{tool_name}"
+        )
         frontend_name = f"mcp__{base_frontend_name}"
 
         self.tool_mapping[frontend_name] = (server_name, tool_name)
