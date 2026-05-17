@@ -3,7 +3,7 @@
     "sca-stdio": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "code/aggregator.py", "--transport", "stdio"],
+      "args": ["run", "src/aggregator.py", "--transport", "stdio"],
       "env": {}
     }
   }

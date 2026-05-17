@@ -1,7 +1,7 @@
 {
   "json": [
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/search/mode.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/search/mode.json",
       "score": 0.476,
       "start_line": 1,
       "end_line": 18,
@@ -29,27 +29,27 @@
   ],
   "md": [
     {
-      "file_path": "code/catalog/schemas/decomposed/hybrid.md",
+      "file_path": "src/catalog/schemas/decomposed/hybrid.md",
       "score": 0.423,
       "content": "hybrid"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semantic.md",
+      "file_path": "src/catalog/schemas/decomposed/semantic.md",
       "score": 0.454,
       "content": "semantic"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/bm25.md",
+      "file_path": "src/catalog/schemas/decomposed/bm25.md",
       "score": 0.25,
       "content": "bm25"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fts.md",
+      "file_path": "src/catalog/schemas/decomposed/fts.md",
       "score": 0.02,
       "content": "fts"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/function.md",
+      "file_path": "src/catalog/schemas/decomposed/function.md",
       "score": 0.558,
       "content": "function"
     }

@@ -57,8 +57,8 @@ def extract_document_text(item_content: Any) -> str | None:
 
 
 def load_env() -> None:
-    """Load environment variables from code/.env if it exists."""
-    env_path = Path("code/.env")
+    """Load environment variables from src/.env if it exists."""
+    env_path = Path("src/.env")
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 

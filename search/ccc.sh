@@ -1,8 +1,8 @@
 uv tool install --upgrade 'cocoindex-code[full]' -p 3.13
 uv pip install 'cocoindex-code[full]'
 
-mkdir -p code/catalog/.cocoindex_code/
-cat << EOF > code/catalog/.cocoindex_code/settings.yml
+mkdir -p src/catalog/.cocoindex_code/
+cat << EOF > src/catalog/.cocoindex_code/settings.yml
 exclude_patterns:
 - '**/.*'
 - '**/__pycache__'
@@ -27,10 +27,10 @@ include_patterns:
 #    module: custom_json_chunker:json_chunker
 EOF
 
-#cp code/custom_json_chunker.py code/catalog/custom_json_chunker.py
+#cp src/custom_json_chunker.py src/catalog/custom_json_chunker.py
 
 # ccc --install-completion
-cd code/catalog
+cd src/catalog
 
 COCOINDEX_CODE_EXTRA_EXTENSIONS="json,md"
 COCOINDEX_CODE_EXCLUDE_PATTERNS='["full/**"]'
@@ -43,7 +43,7 @@ ccc index
 
 # Search from another folder
 export COCOINDEX_CODE_HOST_PATH_MAPPING="${PWD}=${PWD}"
-export COCOINDEX_CODE_HOST_CWD="./code/catalog"
+export COCOINDEX_CODE_HOST_CWD="./src/catalog"
 
 ccc search --refresh --offset 5 --limit 100 --path 'schemas/decomposed/*.md' "parquet"
 ccc search --refresh --limit 100 --path 'schemas/decomposed/**/*.json' "List of operation IDs"

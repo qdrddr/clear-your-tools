@@ -3,7 +3,7 @@
 # Ignore specific files
 ignores:
   - paper.md
-  - code/catalog/schemas/decomposed/
+  - src/catalog/schemas/decomposed/
 
 # Global rules - mostly defaults. Dir-specific overrides are in backlog/
 config:

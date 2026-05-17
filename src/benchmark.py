@@ -28,12 +28,12 @@ except ImportError:  # pragma: no cover
     print("missing dependency: pip install -r requirements.txt", file=sys.stderr)
     raise
 
-from configs import load_config
-from embeddings import get_embedder
-from intent_router import IntentRouter
-from lazy_loader import LazySchemaLoader
-from tool_attention import ToolAttention
-from vector_store import ToolVectorStore
+from src.configs import load_config
+from src.embeddings import get_embedder
+from src.intent_router import IntentRouter
+from src.lazy_loader import LazySchemaLoader
+from src.tool_attention import ToolAttention
+from src.vector_store import ToolVectorStore
 
 SEED = 42
 random.seed(SEED)

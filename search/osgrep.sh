@@ -3,8 +3,8 @@ npm install -g osgrep
 #osgrep setup
 
 cat << EOF > .osgrepignore
-!code/catalog/schemas/decomposed
-!code/catalog/schemas/enums
+!src/catalog/schemas/decomposed
+!src/catalog/schemas/enums
 *.py
 *.md
 *.yaml

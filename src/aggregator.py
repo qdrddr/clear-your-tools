@@ -4,14 +4,13 @@ import copy
 import json
 import logging
 import types
-from pathlib import Path
-from typing import Any, Literal, cast
-
-from recursion import (
+from src.recursion import (
     check_self_recursion_protection,
     is_mcp_aggregator_description,
     is_self_recursion,
 )
+from pathlib import Path
+from typing import Any, Literal, cast, final
 
 from fastmcp import Client, FastMCP
 
@@ -24,10 +23,11 @@ OUT = HERE / "catalog"
 SCHEMAS_DIR = OUT / "schemas"
 
 
+@final
 class MCPAggregator:
     def __init__(self) -> None:
         self.mcp = FastMCP("MCP Aggregator")
-        self.clients: dict[str, Client] = {}
+        self.clients: dict[str, Client[Any]] = {}
         self.tool_mapping: dict[
             str,
             tuple[str, str],
@@ -50,7 +50,7 @@ class MCPAggregator:
                 except Exception:
                     pass
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
+            _ = path.write_text(content)
 
     def _prune_stale_files(self, root: Path, expected_paths: set[Path]) -> None:
         """Remove files in root that are not in expected_paths, and empty dirs."""
@@ -379,7 +379,7 @@ class MCPAggregator:
 
     async def _connect_to_server(self, s_name: str, s_config: dict[str, Any]) -> None:
         logger.info("Connecting to %s...", s_name)
-        client = Client({"mcpServers": {s_name: s_config}})
+        client: Client[Any] = Client({"mcpServers": {s_name: s_config}})
         try:
             await client.__aenter__()
             self.clients[s_name] = client
@@ -406,7 +406,7 @@ class MCPAggregator:
                 continue
 
             logger.info("Discovering server info for %s...", s_name)
-            client = Client({"mcpServers": {s_name: s_config}})
+            client: Client[Any] = Client({"mcpServers": {s_name: s_config}})
             try:
                 await client.__aenter__()
                 remote_info = client.initialize_result

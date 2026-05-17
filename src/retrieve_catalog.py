@@ -262,7 +262,7 @@ def main() -> None:
 
     input_files, scores = _handle_input(args)
 
-    decomposed_dir = Path("code/catalog/schemas/decomposed")
+    decomposed_dir = Path("src/catalog/schemas/decomposed")
     if not decomposed_dir.exists():
         print(f"Error: {decomposed_dir} does not exist.", file=sys.stderr)
         sys.exit(1)

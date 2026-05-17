@@ -2,8 +2,9 @@ import asyncio
 import copy
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import Client
 
@@ -31,7 +32,7 @@ def _apply_outputs(output_map: dict[Path, str]) -> None:
             except Exception:
                 pass
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        _ = path.write_text(content)
 
 
 def _prune_stale_files(root: Path, expected_paths: set[Path]) -> None:
@@ -75,11 +76,11 @@ def _get_tool_id(server_name: str, tool_name: str) -> str:
     return tool_name
 
 
-def _collect_enums(schema: Any, enums: list) -> None:
+def _collect_enums(schema: Any, enums: list[object]) -> None:
     """Recursively collect all enum values from a schema tree."""
     if isinstance(schema, dict):
         if "enum" in schema and isinstance(schema["enum"], list):
-            enums.extend(schema["enum"])
+            enums.extend(cast(list[object], schema["enum"]))
         for val in schema.values():
             if isinstance(val, dict | list):
                 _collect_enums(val, enums)
@@ -89,12 +90,12 @@ def _collect_enums(schema: Any, enums: list) -> None:
                 _collect_enums(item, enums)
 
 
-def _truncate_enum(schema: dict) -> None:
+def _truncate_enum(schema: dict[str, object]) -> None:
     """Replace enum arrays with >3 distinct values with an empty list."""
     if "enum" in schema and isinstance(schema["enum"], list):
-        seen = set()
-        distinct = []
-        for val in schema["enum"]:
+        seen: set[str] = set()
+        distinct: list[object] = []
+        for val in cast(list[object], schema["enum"]):
             key = json.dumps(val, sort_keys=True)
             if key not in seen:
                 seen.add(key)
@@ -104,76 +105,79 @@ def _truncate_enum(schema: dict) -> None:
 
 
 def _process_items(
-    result: dict,
+    result: dict[str, object],
     tool_name: str,
     server_name: str,
-    path: list,
-    extractions: list,
+    path: Sequence[dict[str, object]],
+    extractions: list[tuple[Sequence[dict[str, object]], dict[str, object]]],
 ) -> None:
     """Process 'items' field in a schema node."""
     if "items" not in result:
         return
-    if isinstance(result["items"], dict):
+    items = result["items"]
+    if isinstance(items, dict):
         result["items"] = _process_node(
-            result["items"],
+            items,
             tool_name,
             server_name,
-            [*path, {"type": "items"}],
+            [*list(path), {"type": "items"}],
             extractions,
         )
-    elif isinstance(result["items"], list):
+    elif isinstance(items, list):
         result["items"] = [
             _process_node(
                 item,
                 tool_name,
                 server_name,
-                [*path, {"type": "items", "index": i}],
+                [*list(path), {"type": "items", "index": i}],
                 extractions,
             )
-            for i, item in enumerate(result["items"])
+            for i, item in enumerate(cast(list[object], items))
         ]
 
 
 def _process_patterns(
-    result: dict,
+    result: dict[str, object],
     tool_name: str,
     server_name: str,
-    path: list,
-    extractions: list,
+    path: Sequence[dict[str, object]],
+    extractions: list[tuple[Sequence[dict[str, object]], dict[str, object]]],
 ) -> None:
     """Process 'patternProperties' field in a schema node."""
     if "patternProperties" not in result or not isinstance(result["patternProperties"], dict):
         return
-    for pat, sub in list(result["patternProperties"].items()):
-        result["patternProperties"][pat] = _process_node(
+    pattern_properties = cast(dict[str, object], result["patternProperties"])
+    for pat, sub in list(pattern_properties.items()):
+        pattern_properties[pat] = _process_node(
             sub,
             tool_name,
             server_name,
-            [*path, {"type": "patternProperties", "pattern": pat}],
+            [*list(path), {"type": "patternProperties", "pattern": pat}],
             extractions,
         )
 
 
 def _process_compositions(
-    result: dict,
+    result: dict[str, object],
     tool_name: str,
     server_name: str,
-    path: list,
-    extractions: list,
+    path: Sequence[dict[str, object]],
+    extractions: list[tuple[Sequence[dict[str, object]], dict[str, object]]],
 ) -> None:
     """Process structural compositions and nested types in a schema node."""
     # Structural compositions (handled like nested objects for recursion)
     for key in ("allOf", "anyOf", "oneOf"):
-        if key in result:
+        if key in result and isinstance(result[key], list):
+            comp_items = cast(list[object], result[key])
             result[key] = [
                 _process_node(
                     item,
                     tool_name,
                     server_name,
-                    [*path, {"type": key, "index": i}],
+                    [*list(path), {"type": key, "index": i}],
                     extractions,
                 )
-                for i, item in enumerate(result[key])
+                for i, item in enumerate(comp_items)
             ]
 
     for key in ("if", "then", "else"):
@@ -182,7 +186,7 @@ def _process_compositions(
                 result[key],
                 tool_name,
                 server_name,
-                [*path, {"type": key}],
+                [*list(path), {"type": key}],
                 extractions,
             )
 
@@ -191,7 +195,7 @@ def _process_compositions(
             result["not"],
             tool_name,
             server_name,
-            [*path, {"type": "not"}],
+            [*list(path), {"type": "not"}],
             extractions,
         )
 
@@ -199,11 +203,12 @@ def _process_compositions(
 
     for key in ("contains", "propertyNames", "additionalProperties"):
         if key in result and isinstance(result[key], dict):
+            prop_items = cast(dict[str, object], result[key])
             result[key] = _process_node(
-                result[key],
+                prop_items,
                 tool_name,
                 server_name,
-                [*path, {"type": key}],
+                [*list(path), {"type": key}],
                 extractions,
             )
 
@@ -211,12 +216,12 @@ def _process_compositions(
 
 
 def _process_node(
-    node: Any,
+    node: object,
     tool_name: str,
     server_name: str,
-    path: list,
-    extractions: list,
-) -> Any:
+    path: Sequence[dict[str, object]],
+    extractions: list[tuple[Sequence[dict[str, object]], dict[str, object]]],
+) -> object:
     """
     Recursively process a schema node.
 
@@ -227,18 +232,19 @@ def _process_node(
     if not isinstance(node, dict):
         return node
 
-    result = dict(node)
-    _process_compositions(result, tool_name, server_name, path, extractions)
+    result: dict[str, object] = cast(dict[str, object], node).copy()
+    _process_compositions(result, tool_name, server_name, list(path), extractions)
 
     # Property extraction
     if "properties" in result and isinstance(result["properties"], dict):
+        properties = cast(dict[str, object], result["properties"])
         raw_required = result.get("required")
         req_props = set(raw_required) if isinstance(raw_required, list) else set()
-        filtered_properties = {}
+        filtered_properties: dict[str, object] = {}
 
-        for prop_name, prop_schema in result["properties"].items():
+        for prop_name, prop_schema in properties.items():
             is_required = prop_name in req_props
-            child_path = [*path, {"type": "properties", "name": prop_name}]
+            child_path: list[dict[str, object]] = [*path, {"type": "properties", "name": prop_name}]
 
             if is_required:
                 filtered_properties[prop_name] = _process_node(
@@ -256,23 +262,32 @@ def _process_node(
                     child_path,
                     extractions,
                 )
-                prop_file = _build_property_file(tool_name, child_path, filtered_child)
+                prop_file = _build_property_file(
+                    tool_name,
+                    child_path,
+                    cast(dict[str, object], filtered_child),
+                )
                 extractions.append((child_path, prop_file))
 
         result["properties"] = filtered_properties
     return result
 
 
-def _build_property_file(tool_name: str, path: list, leaf_schema: dict) -> dict:
+def _build_property_file(
+    tool_name: str,
+    path: Sequence[dict[str, object]],
+    leaf_schema: dict[str, object],
+) -> dict[str, object]:
     """
     Wrap *leaf_schema* so the JSON tree mirrors the structural path from the
     root ``inputSchema`` down to the extracted property.
     """
-    current = leaf_schema
+    current: object = leaf_schema
     for segment in reversed(path):
         seg_type = segment["type"]
         if seg_type == "properties":
-            current = {"properties": {segment["name"]: current}}
+            name = cast(str, segment["name"])
+            current = {"properties": {name: current}}
         elif seg_type == "items":
             if "index" in segment:
                 current = {"items": [current]}
@@ -283,7 +298,8 @@ def _build_property_file(tool_name: str, path: list, leaf_schema: dict) -> dict:
         elif seg_type == "additionalProperties":
             current = {"additionalProperties": current}
         elif seg_type == "patternProperties":
-            current = {"patternProperties": {segment["pattern"]: current}}
+            pattern = cast(str, segment["pattern"])
+            current = {"patternProperties": {pattern: current}}
         elif seg_type in ("if", "then", "else", "not", "contains", "propertyNames"):
             current = {seg_type: current}
         else:
@@ -295,12 +311,12 @@ def _build_property_file(tool_name: str, path: list, leaf_schema: dict) -> dict:
 def _prepare_tool(
     server_name: str,
     tool: Any,
-    all_enums: list,
-    discovered_tools: list,
+    all_enums: list[object],
+    discovered_tools: list[dict[str, object]],
     output_map: dict[Path, str],
 ) -> None:
     """Prepare tool schema, collect enums, and add to discovered tools."""
-    tool_name = tool.name
+    tool_name: str = tool.name
     tid = f"mcp__{server_name}_{tool_name}"
 
     # Preserve the full schema unchanged for the catalog file
@@ -328,10 +344,10 @@ def _prepare_tool(
     )
 
 
-def _write_enum_files(all_enums: list, output_map: dict[Path, str]) -> None:
+def _write_enum_files(all_enums: list[object], output_map: dict[Path, str]) -> None:
     """Collect unique enums in memory."""
-    seen = set()
-    unique_enums = []
+    seen: set[str] = set()
+    unique_enums: list[object] = []
     for val in all_enums:
         key = json.dumps(val, sort_keys=True)
         if key not in seen:
@@ -342,7 +358,7 @@ def _write_enum_files(all_enums: list, output_map: dict[Path, str]) -> None:
 
     for val in unique_enums:
         filename = f"{val}.md"
-        content = val
+        content = str(val)
         _smart_write(
             SCHEMAS_DIR / "decomposed" / filename,
             content,
@@ -350,21 +366,23 @@ def _write_enum_files(all_enums: list, output_map: dict[Path, str]) -> None:
         )
 
 
-def _write_tool_and_property_files(discovered_tools: list, output_map: dict[Path, str]) -> None:
+def _write_tool_and_property_files(
+    discovered_tools: list[dict[str, object]],
+    output_map: dict[Path, str],
+) -> None:
     """Generate and collect tool and property files in memory."""
     for tool_info in discovered_tools:
-        server_name = tool_info["server"]
-        tool_name = tool_info["tool"]
+        server_name = cast(str, tool_info["server"])
+        tool_name = cast(str, tool_info["tool"])
         tool_id = _get_tool_id(server_name, tool_name)
-        description = tool_info["full_schema"]["description"]
+        full_schema = cast(dict[str, object], tool_info["full_schema"])
+        description = cast(str, full_schema["description"])
 
-        input_schema = copy.deepcopy(tool_info["full_schema"]["inputSchema"])
-        extractions: list[tuple[list, dict]] = []
+        input_schema = cast(dict[str, object], copy.deepcopy(full_schema["inputSchema"]))
+        extractions: list[tuple[Sequence[dict[str, object]], dict[str, object]]] = []
 
-        if isinstance(input_schema, dict):
-            filtered = _process_node(input_schema, tool_name, server_name, [], extractions)
-        else:
-            filtered = input_schema
+        _ = _process_node(input_schema, tool_name, server_name, [], extractions)
+        filtered = input_schema
 
         tool_file = {
             "name": tool_name,
@@ -378,15 +396,15 @@ def _write_tool_and_property_files(discovered_tools: list, output_map: dict[Path
         )
 
         for path_segments, prop_schema in extractions:
-            prop_name = path_segments[-1]["name"]
+            prop_name = cast(str, path_segments[-1]["name"])
             prop_dir = SCHEMAS_DIR / "decomposed" / server_name / tool_id
 
             for seg in path_segments[:-1]:
                 seg_type = seg["type"]
                 if seg_type == "properties":
-                    prop_dir = prop_dir / seg["name"]
+                    prop_dir = prop_dir / cast(str, seg["name"])
                 elif seg_type == "patternProperties":
-                    prop_dir = prop_dir / seg["pattern"]
+                    prop_dir = prop_dir / cast(str, seg["pattern"])
 
             _smart_write(
                 prop_dir / f"{prop_name}.json",

@@ -470,7 +470,7 @@ In the spirit of arXiv's guidance that significant use of text-to-text generativ
 
 ## Appendix A: Reference Implementation
 
-The complete runnable implementation accompanying this paper is released as a companion code bundle (see `code/` directory in the GitHub appendix). The core modules are reproduced here; `requirements.txt`, the synthetic tool catalog, and the benchmark harness are available in the repository.
+The complete runnable implementation accompanying this paper is released as a companion code bundle (see `src/` directory in the GitHub appendix). The core modules are reproduced here; `requirements.txt`, the synthetic tool catalog, and the benchmark harness are available in the repository.
 
 ### A.1 `intent_router.py`
 

@@ -6,13 +6,13 @@ config.yaml, then dispatches to the appropriate backend.
 
 from __future__ import annotations
 
-from typing import Any
-
-import numpy as np
-from configs import (
+from src.configs import (
     load_config,
     resolve_model,
 )
+from typing import Any
+
+import numpy as np
 
 
 class Embedder:

@@ -31,7 +31,7 @@ payload.
 │   ├── paper.tex                # arXiv-style LaTeX source
 │   ├── references.bib           # 35-entry bibliography
 │   └── paper.pdf                # 19-page rendered preprint
-└── code/
+└── src/
     ├── vector_store.py          # FAISS-backed tool-summary index
     ├── intent_router.py         # ISO router + state-aware gate
     ├── lazy_loader.py           # LRU-cached full-schema loader
@@ -60,15 +60,15 @@ encoder (~90 MB).
 
 ## Quick start: reproduce the token-reduction numbers
 
-`pyproject.toml` lives in the repository root, while the scripts are in `code/`.
+`pyproject.toml` lives in the repository root, while the scripts are in `src/`.
 You can invoke them directly from the root with `uv run`:
 
 ```bash
-uv run code/build_catalog.py   # creates code/catalog/tools.json and code/catalog/schemas/*.json
-uv run code/benchmark.py       # prints the reduction table
+uv run src/build_catalog.py   # creates src/catalog/tools.json and src/catalog/schemas/*.json
+uv run src/benchmark.py       # prints the reduction table
 ```
 
-Or change into `code/` and run `uv run build_catalog.py` / `uv run benchmark.py`
+Or change into `src/` and run `uv run build_catalog.py` / `uv run benchmark.py`
 — `uv` discovers the project root automatically.
 
 Expected output (seed 42, 120 tools, 7 queries):
@@ -92,7 +92,7 @@ the first turn.
 ## Minimal library usage
 
 All snippets below assume execution inside the `uv` managed environment
-(e.g., run `uv run python` from the `code/` directory):
+(e.g., run `uv run python` from the `src/` directory):
 
 ```python
 from pathlib import Path

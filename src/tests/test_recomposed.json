@@ -1,7 +1,7 @@
 {
   "md": [
     {
-      "file_path": "code/catalog/schemas/decomposed/function.md",
+      "file_path": "src/catalog/schemas/decomposed/function.md",
       "score": 0.558,
       "start_line": 1,
       "end_line": 1,
@@ -9,7 +9,7 @@
       "content": "function"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/method.md",
+      "file_path": "src/catalog/schemas/decomposed/method.md",
       "score": 0.48,
       "start_line": 1,
       "end_line": 1,
@@ -17,7 +17,7 @@
       "content": "method"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/stop_on_error.md",
+      "file_path": "src/catalog/schemas/decomposed/stop_on_error.md",
       "score": 0.455,
       "start_line": 1,
       "end_line": 1,
@@ -25,7 +25,7 @@
       "content": "stop_on_error"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semantic.md",
+      "file_path": "src/catalog/schemas/decomposed/semantic.md",
       "score": 0.454,
       "start_line": 1,
       "end_line": 1,
@@ -33,7 +33,7 @@
       "content": "semantic"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/continue_on_error.md",
+      "file_path": "src/catalog/schemas/decomposed/continue_on_error.md",
       "score": 0.452,
       "start_line": 1,
       "end_line": 1,
@@ -41,7 +41,7 @@
       "content": "continue_on_error"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/grouped.md",
+      "file_path": "src/catalog/schemas/decomposed/grouped.md",
       "score": 0.452,
       "start_line": 1,
       "end_line": 1,
@@ -49,7 +49,7 @@
       "content": "grouped"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/route.md",
+      "file_path": "src/catalog/schemas/decomposed/route.md",
       "score": 0.452,
       "start_line": 1,
       "end_line": 1,
@@ -57,7 +57,7 @@
       "content": "route"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/type.md",
+      "file_path": "src/catalog/schemas/decomposed/type.md",
       "score": 0.443,
       "start_line": 1,
       "end_line": 1,
@@ -65,7 +65,7 @@
       "content": "type"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/variable.md",
+      "file_path": "src/catalog/schemas/decomposed/variable.md",
       "score": 0.427,
       "start_line": 1,
       "end_line": 1,
@@ -73,7 +73,7 @@
       "content": "variable"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hybrid.md",
+      "file_path": "src/catalog/schemas/decomposed/hybrid.md",
       "score": 0.423,
       "start_line": 1,
       "end_line": 1,
@@ -81,7 +81,7 @@
       "content": "hybrid"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/cypher.md",
+      "file_path": "src/catalog/schemas/decomposed/cypher.md",
       "score": 0.022,
       "start_line": 1,
       "end_line": 1,
@@ -89,7 +89,7 @@
       "content": "cypher"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/toon.md",
+      "file_path": "src/catalog/schemas/decomposed/toon.md",
       "score": 0.419,
       "start_line": 1,
       "end_line": 1,
@@ -97,7 +97,7 @@
       "content": "toon"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/literal.md",
+      "file_path": "src/catalog/schemas/decomposed/literal.md",
       "score": 0.419,
       "start_line": 1,
       "end_line": 1,
@@ -105,7 +105,7 @@
       "content": "literal"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/simple.md",
+      "file_path": "src/catalog/schemas/decomposed/simple.md",
       "score": 0.403,
       "start_line": 1,
       "end_line": 1,
@@ -113,7 +113,7 @@
       "content": "simple"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/class.md",
+      "file_path": "src/catalog/schemas/decomposed/class.md",
       "score": 0.401,
       "start_line": 1,
       "end_line": 1,
@@ -121,7 +121,7 @@
       "content": "class"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/json.md",
+      "file_path": "src/catalog/schemas/decomposed/json.md",
       "score": 0.396,
       "start_line": 1,
       "end_line": 1,
@@ -129,7 +129,7 @@
       "content": "json"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/tree.md",
+      "file_path": "src/catalog/schemas/decomposed/tree.md",
       "score": 0.394,
       "start_line": 1,
       "end_line": 1,
@@ -137,7 +137,7 @@
       "content": "tree"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/xml.md",
+      "file_path": "src/catalog/schemas/decomposed/xml.md",
       "score": 0.387,
       "start_line": 1,
       "end_line": 1,
@@ -145,7 +145,7 @@
       "content": "xml"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/regex.md",
+      "file_path": "src/catalog/schemas/decomposed/regex.md",
       "score": 0.384,
       "start_line": 1,
       "end_line": 1,
@@ -153,7 +153,7 @@
       "content": "regex"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/component.md",
+      "file_path": "src/catalog/schemas/decomposed/component.md",
       "score": 0.38,
       "start_line": 1,
       "end_line": 1,
@@ -161,7 +161,7 @@
       "content": "component"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/yaml.md",
+      "file_path": "src/catalog/schemas/decomposed/yaml.md",
       "score": 0.379,
       "start_line": 1,
       "end_line": 1,
@@ -169,7 +169,7 @@
       "content": "yaml"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/flat.md",
+      "file_path": "src/catalog/schemas/decomposed/flat.md",
       "score": 0.367,
       "start_line": 1,
       "end_line": 1,
@@ -177,7 +177,7 @@
       "content": "flat"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/bm25.md",
+      "file_path": "src/catalog/schemas/decomposed/bm25.md",
       "score": 0.364,
       "start_line": 1,
       "end_line": 1,
@@ -185,7 +185,7 @@
       "content": "bm25"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fts.md",
+      "file_path": "src/catalog/schemas/decomposed/fts.md",
       "score": 0.02,
       "start_line": 1,
       "end_line": 1,
@@ -193,7 +193,7 @@
       "content": "fts"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/interface.md",
+      "file_path": "src/catalog/schemas/decomposed/interface.md",
       "score": 0.363,
       "start_line": 1,
       "end_line": 1,
@@ -201,7 +201,7 @@
       "content": "interface"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/parquet.md",
+      "file_path": "src/catalog/schemas/decomposed/parquet.md",
       "score": 0.361,
       "start_line": 1,
       "end_line": 1,
@@ -209,7 +209,7 @@
       "content": "parquet"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/csv.md",
+      "file_path": "src/catalog/schemas/decomposed/csv.md",
       "score": 0.357,
       "start_line": 1,
       "end_line": 1,
@@ -217,7 +217,7 @@
       "content": "csv"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/cl100k.md",
+      "file_path": "src/catalog/schemas/decomposed/cl100k.md",
       "score": 0.338,
       "start_line": 1,
       "end_line": 1,
@@ -227,7 +227,7 @@
   ],
   "json": [
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/operations/depends_on.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/operations/depends_on.json",
       "score": 0.585,
       "start_line": 1,
       "end_line": 20,
@@ -254,7 +254,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/check_onboarding_performed.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/check_onboarding_performed.json",
       "score": 0.551,
       "start_line": 1,
       "end_line": 9,
@@ -270,7 +270,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch.json",
       "score": 0.544,
       "start_line": 1,
       "end_line": 33,
@@ -310,7 +310,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/activate_project.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/activate_project.json",
       "score": 0.532,
       "start_line": 1,
       "end_line": 18,
@@ -335,7 +335,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/initial_instructions.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/initial_instructions.json",
       "score": 0.524,
       "start_line": 1,
       "end_line": 9,
@@ -351,7 +351,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/timeout.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/timeout.json",
       "score": 0.523,
       "start_line": 1,
       "end_line": 13,
@@ -371,7 +371,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/search_for_pattern.json",
       "score": 0.518,
       "start_line": 3,
       "end_line": 18,
@@ -379,7 +379,7 @@
       "content": ",\n  \"inputSchema\": {\n    \"properties\": {\n      \"substring_pattern\": {\n        \"title\": \"Substring Pattern\",\n        \"type\": \"string\",\n        \"description\": \"Regular expression for a substring pattern to search for.\"\n      }\n    },\n    \"required\": [\n      \"substring_pattern\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/parallel.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/parallel.json",
       "score": 0.515,
       "start_line": 1,
       "end_line": 12,
@@ -398,7 +398,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/read_memory.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/read_memory.json",
       "score": 0.509,
       "start_line": 1,
       "end_line": 17,
@@ -422,7 +422,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/onboarding.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/onboarding.json",
       "score": 0.508,
       "start_line": 1,
       "end_line": 9,
@@ -438,7 +438,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/fts.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/fts.json",
       "score": 0.507,
       "start_line": 1,
       "end_line": 11,
@@ -456,7 +456,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/search/top_k.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/search/top_k.json",
       "score": 0.502,
       "start_line": 1,
       "end_line": 14,
@@ -477,7 +477,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/communities.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/communities.json",
       "score": 0.5,
       "start_line": 1,
       "end_line": 11,
@@ -495,7 +495,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_symbol.json",
       "score": 0.496,
       "start_line": 3,
       "end_line": 18,
@@ -503,7 +503,7 @@
       "content": ",\n  \"inputSchema\": {\n    \"properties\": {\n      \"name_path_pattern\": {\n        \"title\": \"Name Path Pattern\",\n        \"type\": \"string\",\n        \"description\": \"The name path matching pattern (see above).\"\n      }\n    },\n    \"required\": [\n      \"name_path_pattern\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/explore.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/explore.json",
       "score": 0.495,
       "start_line": 4,
       "end_line": 16,
@@ -511,7 +511,7 @@
       "content": "  \"inputSchema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"query\": {\n        \"type\": \"string\",\n        \"description\": \"Symbol names, file names, or short code terms to explore (e.g., \\\"AuthService loginUser session-manager\\\", \\\"GraphTraverser BFS impact traversal.ts\\\"). Use codegraph_search first to find relevant names.\"\n      }\n    },\n    \"required\": [\n      \"query\"\n    ]\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/flows.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/flows.json",
       "score": 0.494,
       "start_line": 1,
       "end_line": 11,
@@ -529,7 +529,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/context7/resolve-library-id.json",
+      "file_path": "src/catalog/schemas/decomposed/context7/resolve-library-id.json",
       "score": 0.493,
       "start_line": 3,
       "end_line": 22,
@@ -537,7 +537,7 @@
       "content": ",\n  \"inputSchema\": {\n    \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n    \"type\": \"object\",\n    \"properties\": {\n      \"query\": {\n        \"type\": \"string\",\n        \"description\": \"The question or task you need help with. This is used to rank library results by relevance to what the user is trying to accomplish. The query is sent to the Context7 API for processing. Do not include any sensitive or confidential information such as API keys, passwords, credentials, personal data, or proprietary code in your query.\"\n      },\n      \"libraryName\": {\n        \"type\": \"string\",\n        \"description\": \"Library name to search for and retrieve a Context7-compatible library ID. Use the official library name with proper punctuation \\u2014 e.g., 'Next.js' instead of 'nextjs', 'Customer.io' instead of 'customerio', 'Three.js' instead of 'threejs'.\"\n      }\n    },\n    \"required\": [\n      \"query\",\n      \"libraryName\"\n    ]\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool/repo_root.json",
       "score": 0.491,
       "start_line": 1,
       "end_line": 18,
@@ -562,7 +562,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/transaction.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/transaction.json",
       "score": 0.491,
       "start_line": 1,
       "end_line": 12,
@@ -581,7 +581,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/use_merge.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_to/options/use_merge.json",
       "score": 0.49,
       "start_line": 1,
       "end_line": 15,
@@ -603,7 +603,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/operations/arguments.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/operations/arguments.json",
       "score": 0.489,
       "start_line": 1,
       "end_line": 17,
@@ -627,7 +627,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/delete_memory.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/delete_memory.json",
       "score": 0.486,
       "start_line": 1,
       "end_line": 17,
@@ -651,7 +651,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/search/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/search/projectPath.json",
       "score": 0.485,
       "start_line": 1,
       "end_line": 11,
@@ -669,7 +669,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/optimize/ditto.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/optimize/ditto.json",
       "score": 0.483,
       "start_line": 1,
       "end_line": 12,
@@ -688,7 +688,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/rename_memory.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/rename_memory.json",
       "score": 0.481,
       "start_line": 1,
       "end_line": 22,
@@ -717,7 +717,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/list_dir.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/list_dir.json",
       "score": 0.481,
       "start_line": 1,
       "end_line": 24,
@@ -748,7 +748,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/read.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/read.json",
       "score": 0.48,
       "start_line": 1,
       "end_line": 16,
@@ -771,7 +771,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/optimize.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/optimize.json",
       "score": 0.479,
       "start_line": 1,
       "end_line": 16,
@@ -794,7 +794,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/batch/mode.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/batch/mode.json",
       "score": 0.478,
       "start_line": 1,
       "end_line": 16,
@@ -817,7 +817,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/get_current_config.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/get_current_config.json",
       "score": 0.477,
       "start_line": 1,
       "end_line": 9,
@@ -833,7 +833,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/search/mode.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/search/mode.json",
       "score": 0.476,
       "start_line": 1,
       "end_line": 18,
@@ -859,7 +859,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/search/repo.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/search/repo.json",
       "score": 0.476,
       "start_line": 1,
       "end_line": 20,
@@ -886,7 +886,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/status/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/status/projectPath.json",
       "score": 0.475,
       "start_line": 1,
       "end_line": 11,
@@ -904,7 +904,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/list_repos_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/list_repos_tool.json",
       "score": 0.474,
       "start_line": 1,
       "end_line": 8,
@@ -919,7 +919,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol/relative_path.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_symbol/relative_path.json",
       "score": 0.474,
       "start_line": 1,
       "end_line": 13,
@@ -939,7 +939,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_flow_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_flow_tool.json",
       "score": 0.471,
       "start_line": 1,
       "end_line": 8,
@@ -954,7 +954,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/edit_memory/allow_multiple_occurrences.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/edit_memory/allow_multiple_occurrences.json",
       "score": 0.47,
       "start_line": 1,
       "end_line": 13,
@@ -974,7 +974,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/relative_path.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/search_for_pattern/relative_path.json",
       "score": 0.47,
       "start_line": 1,
       "end_line": 13,
@@ -994,7 +994,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/list_memories.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/list_memories.json",
       "score": 0.47,
       "start_line": 1,
       "end_line": 9,
@@ -1010,7 +1010,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_to/options.json",
       "score": 0.469,
       "start_line": 1,
       "end_line": 12,
@@ -1029,7 +1029,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_file.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_file.json",
       "score": 0.468,
       "start_line": 1,
       "end_line": 24,
@@ -1060,7 +1060,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_symbol/include_body.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_symbol/include_body.json",
       "score": 0.467,
       "start_line": 1,
       "end_line": 13,
@@ -1080,7 +1080,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/detect_changes_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/detect_changes_tool.json",
       "score": 0.466,
       "start_line": 1,
       "end_line": 3,
@@ -1088,7 +1088,7 @@
       "content": "{\n  \"name\": \"detect_changes_tool\",\n  \"description\": \"Detect changes and produce risk-scored, priority-ordered review guidance.\\n\\nPrimary tool for code review. Maps git diffs to affected functions,\\nflows, communities, and test coverage gaps. Returns risk scores and\\nprioritized review items. Replaces get_review_context for change-aware reviews."
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fff/grep/cursor.json",
+      "file_path": "src/catalog/schemas/decomposed/fff/grep/cursor.json",
       "score": 0.466,
       "start_line": 1,
       "end_line": 14,
@@ -1109,7 +1109,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
       "score": 0.465,
       "start_line": 1,
       "end_line": 3,
@@ -1117,7 +1117,7 @@
       "content": "{\n  \"name\": \"find_referencing_symbols\",\n  \"description\": \"Finds references to the symbol at the given `name_path`. The result will contain metadata about the referencing symbols\\nas well as a short code snippet around the reference. Returns a list of JSON objects with the symbols referencing the requested symbol.\","
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/dry_run.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/dry_run.json",
       "score": 0.464,
       "start_line": 1,
       "end_line": 11,
@@ -1135,7 +1135,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_from/options.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_from/options.json",
       "score": 0.464,
       "start_line": 1,
       "end_line": 12,
@@ -1154,7 +1154,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/search.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/search.json",
       "score": 0.463,
       "start_line": 1,
       "end_line": 18,
@@ -1179,7 +1179,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/explore/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/explore/projectPath.json",
       "score": 0.463,
       "start_line": 1,
       "end_line": 11,
@@ -1197,7 +1197,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool.json",
       "score": 0.46,
       "start_line": 3,
       "end_line": 15,
@@ -1205,7 +1205,7 @@
       "content": "\\n        dry_run. Use this for a human-in-the-loop review before\\n        committing changes to disk. See: #176\",\n  \"inputSchema\": {\n    \"properties\": {\n      \"refactor_id\": {\n        \"type\": \"string\"\n      }\n    },\n    \"required\": [\n      \"refactor_id\"\n    ],\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/list_memories/topic.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/list_memories/topic.json",
       "score": 0.459,
       "start_line": 1,
       "end_line": 12,
@@ -1224,7 +1224,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/read/recursive.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/read/recursive.json",
       "score": 0.459,
       "start_line": 1,
       "end_line": 12,
@@ -1243,7 +1243,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/stream/offset.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/stream/offset.json",
       "score": 0.459,
       "start_line": 1,
       "end_line": 12,
@@ -1262,7 +1262,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/stream/type_filter.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/stream/type_filter.json",
       "score": 0.458,
       "start_line": 1,
       "end_line": 11,
@@ -1280,7 +1280,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/apply_refactor_tool/repo_root.json",
       "score": 0.458,
       "start_line": 1,
       "end_line": 18,
@@ -1305,7 +1305,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_after.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_after.json",
       "score": 0.458,
       "start_line": 1,
       "end_line": 13,
@@ -1325,7 +1325,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/files/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/files/projectPath.json",
       "score": 0.457,
       "start_line": 1,
       "end_line": 11,
@@ -1343,7 +1343,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_before.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/search_for_pattern/context_lines_before.json",
       "score": 0.457,
       "start_line": 1,
       "end_line": 13,
@@ -1363,7 +1363,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fff/grep/maxResults.json",
+      "file_path": "src/catalog/schemas/decomposed/fff/grep/maxResults.json",
       "score": 0.457,
       "start_line": 1,
       "end_line": 15,
@@ -1385,7 +1385,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/list_flows_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/list_flows_tool.json",
       "score": 0.457,
       "start_line": 1,
       "end_line": 8,
@@ -1400,7 +1400,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/impact/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/impact/projectPath.json",
       "score": 0.456,
       "start_line": 1,
       "end_line": 11,
@@ -1418,7 +1418,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/run_postprocess_tool.json",
       "score": 0.456,
       "start_line": 1,
       "end_line": 8,
@@ -1433,7 +1433,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/insert_before_symbol.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/insert_before_symbol.json",
       "score": 0.456,
       "start_line": 4,
       "end_line": 30,
@@ -1441,7 +1441,7 @@
       "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"Name path of the symbol before which to insert content (definitions in the `find_symbol` tool apply).\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol.\"\n      },\n      \"body\": {\n        \"title\": \"Body\",\n        \"type\": \"string\",\n        \"description\": \"The body/content to be inserted before the line in which the referenced symbol is defined.\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\",\n      \"body\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/get_symbols_overview/depth.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/get_symbols_overview/depth.json",
       "score": 0.455,
       "start_line": 1,
       "end_line": 13,
@@ -1461,7 +1461,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/rename_symbol.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/rename_symbol.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 3,
@@ -1469,7 +1469,7 @@
       "content": "{\n  \"name\": \"rename_symbol\",\n  \"description\": \"Renames the symbol with the given `name_path` to `new_name` throughout the entire codebase.\\nNote: for languages with method overloading, like Java, name_path may have to include a method's\\nsignature to uniquely identify a method. Returns result summary indicating success or failure.\","
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_flow_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_flow_tool/repo_root.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 18,
@@ -1494,7 +1494,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/context/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/context/projectPath.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 11,
@@ -1512,7 +1512,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/include_constraints.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_to/options/include_constraints.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 15,
@@ -1534,7 +1534,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/node/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/node/projectPath.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 11,
@@ -1552,7 +1552,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/stream.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/stream.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 16,
@@ -1575,7 +1575,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/stats.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/stats.json",
       "score": 0.454,
       "start_line": 1,
       "end_line": 16,
@@ -1598,7 +1598,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/callees/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/callees/projectPath.json",
       "score": 0.453,
       "start_line": 1,
       "end_line": 11,
@@ -1616,7 +1616,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/refactor_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/refactor_tool/repo_root.json",
       "score": 0.453,
       "start_line": 1,
       "end_line": 18,
@@ -1641,7 +1641,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fff/grep/output_mode.json",
+      "file_path": "src/catalog/schemas/decomposed/fff/grep/output_mode.json",
       "score": 0.453,
       "start_line": 1,
       "end_line": 14,
@@ -1662,7 +1662,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/format.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/format.json",
       "score": 0.453,
       "start_line": 1,
       "end_line": 16,
@@ -1685,7 +1685,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/status.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/status.json",
       "score": 0.452,
       "start_line": 1,
       "end_line": 8,
@@ -1700,7 +1700,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/search.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/search.json",
       "score": 0.452,
       "start_line": 1,
       "end_line": 16,
@@ -1723,7 +1723,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/base.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/base.json",
       "score": 0.452,
       "start_line": 1,
       "end_line": 11,
@@ -1741,7 +1741,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/stats/tokenizer.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/stats/tokenizer.json",
       "score": 0.452,
       "start_line": 1,
       "end_line": 16,
@@ -1764,7 +1764,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_minimal_context_tool/task.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_minimal_context_tool/task.json",
       "score": 0.452,
       "start_line": 1,
       "end_line": 11,
@@ -1782,7 +1782,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/rename_symbol.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/rename_symbol.json",
       "score": 0.451,
       "start_line": 4,
       "end_line": 30,
@@ -1790,7 +1790,7 @@
       "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"Name path of the symbol to rename (definitions in the `find_symbol` tool apply).\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol to rename.\"\n      },\n      \"new_name\": {\n        \"title\": \"New Name\",\n        \"type\": \"string\",\n        \"description\": \"The new name for the symbol.\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\",\n      \"new_name\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_affected_flows_tool/repo_root.json",
       "score": 0.451,
       "start_line": 1,
       "end_line": 18,
@@ -1815,7 +1815,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/find_large_functions_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/find_large_functions_tool/repo_root.json",
       "score": 0.451,
       "start_line": 1,
       "end_line": 18,
@@ -1840,7 +1840,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_architecture_overview_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_architecture_overview_tool.json",
       "score": 0.45,
       "start_line": 1,
       "end_line": 8,
@@ -1855,7 +1855,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/include_headers.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_to/options/include_headers.json",
       "score": 0.45,
       "start_line": 1,
       "end_line": 15,
@@ -1877,7 +1877,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/find_referencing_symbols.json",
       "score": 0.449,
       "start_line": 4,
       "end_line": 24,
@@ -1885,7 +1885,7 @@
       "content": "  \"inputSchema\": {\n    \"properties\": {\n      \"name_path\": {\n        \"title\": \"Name Path\",\n        \"type\": \"string\",\n        \"description\": \"For finding the symbol to find references for, same logic as in the `find_symbol` tool.\"\n      },\n      \"relative_path\": {\n        \"title\": \"Relative Path\",\n        \"type\": \"string\",\n        \"description\": \"The relative path to the file containing the symbol for which to find references.\\nNote: for external dependencies, this must be an identifier starting with `<ext` that you have received\\nearlier (don't try to guess!).\"\n      }\n    },\n    \"required\": [\n      \"name_path\",\n      \"relative_path\"\n    ],\n    \"title\": \"applyArguments\",\n    \"type\": \"object\"\n  }\n}"
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/callers/projectPath.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/callers/projectPath.json",
       "score": 0.448,
       "start_line": 1,
       "end_line": 11,
@@ -1903,7 +1903,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_wiki_page_tool.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_wiki_page_tool.json",
       "score": 0.448,
       "start_line": 1,
       "end_line": 15,
@@ -1925,7 +1925,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_to/options/pretty.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_to/options/pretty.json",
       "score": 0.448,
       "start_line": 1,
       "end_line": 15,
@@ -1947,7 +1947,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/get_symbols_overview.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/get_symbols_overview.json",
       "score": 0.448,
       "start_line": 1,
       "end_line": 18,
@@ -1972,7 +1972,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/find_related/repo.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/find_related/repo.json",
       "score": 0.448,
       "start_line": 1,
       "end_line": 20,
@@ -1999,7 +1999,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json",
       "score": 0.447,
       "start_line": 1,
       "end_line": 15,
@@ -2021,7 +2021,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/codegraph/files.json",
+      "file_path": "src/catalog/schemas/decomposed/codegraph/files.json",
       "score": 0.447,
       "start_line": 1,
       "end_line": 8,
@@ -2036,7 +2036,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/fff/multi_grep/cursor.json",
+      "file_path": "src/catalog/schemas/decomposed/fff/multi_grep/cursor.json",
       "score": 0.447,
       "start_line": 1,
       "end_line": 14,
@@ -2057,7 +2057,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/hedl/query/id.json",
+      "file_path": "src/catalog/schemas/decomposed/hedl/query/id.json",
       "score": 0.446,
       "start_line": 1,
       "end_line": 11,
@@ -2075,7 +2075,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/context7/query-docs.json",
+      "file_path": "src/catalog/schemas/decomposed/context7/query-docs.json",
       "score": 0.446,
       "start_line": 1,
       "end_line": 6,
@@ -2083,7 +2083,7 @@
       "content": "{\n  \"name\": \"query-docs\",\n  \"description\": \"Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.\\n\\nYou must call 'Resolve Context7 Library ID' tool first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\\n\\nDo not call this tool more than 3 times per question.\",\n  \"inputSchema\": {\n    \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n    \"type\": \"object\","
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/semble/find_related.json",
+      "file_path": "src/catalog/schemas/decomposed/semble/find_related.json",
       "score": 0.446,
       "start_line": 1,
       "end_line": 24,
@@ -2114,7 +2114,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/serena/replace_content/allow_multiple_occurrences.json",
+      "file_path": "src/catalog/schemas/decomposed/serena/replace_content/allow_multiple_occurrences.json",
       "score": 0.446,
       "start_line": 1,
       "end_line": 13,
@@ -2134,7 +2134,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json",
       "score": 0.445,
       "start_line": 1,
       "end_line": 11,
@@ -2152,7 +2152,7 @@
       }
     },
     {
-      "file_path": "code/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json",
+      "file_path": "src/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json",
       "score": 0.445,
       "start_line": 1,
       "end_line": 18,

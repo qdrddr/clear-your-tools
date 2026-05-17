@@ -14,12 +14,11 @@ promoted this turn (hallucination gate).
 
 from __future__ import annotations
 
+from src.intent_router import IntentRouter, RoutingResult
+from src.lazy_loader import LazySchemaLoader
+from src.vector_store import ToolVectorStore
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-
-from intent_router import IntentRouter, RoutingResult
-from lazy_loader import LazySchemaLoader
-from vector_store import ToolVectorStore
 
 
 @dataclass

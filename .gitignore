@@ -15,11 +15,11 @@ env/
 .grepai
 
 # Generated benchmark artifacts
-code/catalog/tools.json
-#code/catalog/schemas/decomposed
-#code/catalog/schemas/enums
-code/catalog/schemas/full
-code/catalog/queries.jsonl
+src/catalog/tools.json
+#src/catalog/schemas/decomposed
+#src/catalog/schemas/enums
+src/catalog/schemas/full
+src/catalog/queries.jsonl
 
 # OS / editor
 .DS_Store
@@ -48,7 +48,7 @@ tokens-bloat.pdf
 # Claude Code local settings
 .claude/
 
-code/.chroma_db/
+src/.chroma_db/
 .chroma_db/
 .vectordb/
 .lancedb/
@@ -72,7 +72,7 @@ fastmcp/
 .codegraph
 node_modules
 fastmcp
-code/catalog
+src/catalog
 cocoindex-code
 # CocoIndex Code (ccc)
 /.cocoindex_code/
