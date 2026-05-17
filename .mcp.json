@@ -5,6 +5,13 @@
       "command": "uv",
       "args": ["run", "src/aggregator.py", "--transport", "stdio"],
       "env": {}
+    },
+    "sca-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:8081/mcp",
+      "headers": {
+        "X-Claude-Session-Id": "${CLAUDE_SESSION_ID}"
+      }
     }
   }
 }
