@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, TypeVar
 
+import tiktoken
 from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
@@ -183,6 +184,7 @@ def process_results(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Filter JSON items using an LLM on OpenRouter.")
     parser.add_argument("--json", required=True, help="Input JSON file path")
+    parser.add_argument("--output-json", help="Optional output JSON file path")
     parser.add_argument("query", help="User search query")
 
     args = parser.parse_args()
@@ -190,13 +192,34 @@ def main() -> None:
     api_key = get_api_key()
     data = read_json_input(args.json)
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
-    all_chunks_text = "\n\n".join(formatted_chunks)
+
+    system_prompt = (
+        'These are MCP tools and their enums and optional properties in a "decomposed" state. '
+        "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
+        "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
+        "The goal is to return chunk ids that match the user query the most. "
+        "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
+        "to save on tokens by removing the irrelevant to user query noise."
+    )
 
     try:
-        parsed_response = call_llm(api_key, args.query, all_chunks_text)
-        selected_ids = set(parsed_response.ids)
+        from src.split_bulks import split_chunks_into_bulks
+        bulks = split_chunks_into_bulks(args.query, system_prompt, formatted_chunks)
+        selected_ids = set()
+
+        for bulk_text in bulks:
+            parsed_response = call_llm(api_key, args.query, bulk_text)
+            selected_ids.update(parsed_response.ids)
+
         result = process_results(data, item_metadata_storage, selected_ids, list_keys)
-        print(json.dumps(result, indent=2))
+
+        output_data = json.dumps(result, indent=2)
+        if args.output_json:
+            with open(args.output_json, "w") as f:
+                f.write(output_data)
+            print(f"Results saved to {args.output_json}")
+        else:
+            print(output_data)
     except Exception as e:
         print(f"Error during LLM processing: {e}", file=sys.stderr)
         sys.exit(1)

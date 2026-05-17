@@ -1,10 +1,13 @@
 defaults:
   is_persistent: true
-  embedding_model_type: remote
-  embedding_model_nick: embed-qwen3-8b
-  reranking_model_type: remote
-  reranking_model_nick: rerank-qwen3-8b
+  remote: 
+    embedding_model_nick: embed-qwen3-8b
+    reranking_model_nick: rerank-qwen3-8b
+    llm_model_nick: llm-mercury-2
+  inprocess: []
+
   reranking_enabled: true
+  embedding_enabled: true
   intent_router:
     top_k: 10
     threshold: 0.28
@@ -18,18 +21,27 @@ models:
         provider: openrouter
         nick: embed-qwen3-8b
         key_var_name: OPENROUTER_API_KEY
-        #base_url: https://openrouter.ai/api/v1
+        # base_url: https://openrouter.ai/api/v1
       - name: all-minilm:33m
         provider: ollama
         nick: all-minilm
-        #key_var_name: OPENROUTER_API_KEY
-        #base_url: http://localhost:11434
+        # key_var_name: OPENROUTER_API_KEY
+        # base_url: http://localhost:11434
   rerankers:
     remote:
       - name: Qwen/Qwen3-Reranker-8B
         provider: deepinfra
         nick: rerank-qwen3-8b
         key_var_name: DEEPINFRA_API_KEY
-        #base_url: https://api.deepinfra.com/v1
+        max_tokens: 32000
+        # base_url: https://api.deepinfra.com/v1
+  llm:
+    remote:
+      - name: inception/mercury-2
+        provider: openrouter
+        nick: llm-mercury-2
+        # key_var_name: OPENROUTER_API_KEY
+        max_tokens: 128000
+        # base_url: https://openrouter.ai/api/v1
 vectordb:
   dir: .vectordb
