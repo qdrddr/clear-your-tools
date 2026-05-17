@@ -21,10 +21,24 @@ models:
         provider: openrouter
         nick: embed-qwen3-8b
         key_var_name: OPENROUTER_API_KEY
+        max_tokens: 32000
         # base_url: https://openrouter.ai/api/v1
       - name: all-minilm:33m
         provider: ollama
         nick: all-minilm
+        max_tokens: 512
+        # key_var_name: OPENROUTER_API_KEY
+        # base_url: http://localhost:11434
+      - name: nomic-embed-text:137m-v1.5-fp16
+        provider: ollama
+        nick: nomic-embed-text
+        max_tokens: 2000
+        # key_var_name: OPENROUTER_API_KEY
+        # base_url: http://localhost:11434
+      - name: qwen3-embedding:8b
+        provider: ollama
+        nick: qwen3-embedding-8b
+        max_tokens: 32000
         # key_var_name: OPENROUTER_API_KEY
         # base_url: http://localhost:11434
   rerankers:

@@ -7,6 +7,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from litellm import rerank
+from src.split_bulks import count_tokens, split_into_bulks
 
 DECOMPOSED_SCORE: float = 0.5
 RERANK_ENUMS: bool = True
@@ -65,8 +66,6 @@ def load_env() -> None:
 
 def process_response(response: Any, valid_indices: list[int], items: list[dict[str, Any]]) -> None:
     """Processes the rerank response and updates item scores."""
-    new_scores = [0.0] * len(items)
-
     # LiteLLM's rerank response usually has a 'results' attribute or key
     results_list = []
     if hasattr(response, "results"):
@@ -90,14 +89,11 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
                 relevance_score = result["relevance_score"]
 
             original_idx = valid_indices[doc_idx]
-            new_scores[original_idx] = relevance_score
+            # Store as string with 20 decimal places to avoid scientific notation in JSON
+            items[original_idx]["score"] = f"{relevance_score:.20f}"
         except (KeyError, TypeError, IndexError) as e:
             print(f"Debug: Error processing result {result}: {e}", file=sys.stderr)
             continue
-
-    for i, score in enumerate(new_scores):
-        # Store as string with 20 decimal places to avoid scientific notation in JSON
-        items[i]["score"] = f"{score:.20f}"
 
 
 def rerank_items(
@@ -112,6 +108,7 @@ def rerank_items(
     valid_indices = []
 
     for i, item in enumerate(items):
+        item["score"] = f"{0.0:.20f}"
         doc_text = extract_fn(item)
         if doc_text:
             documents.append(doc_text)
@@ -120,14 +117,31 @@ def rerank_items(
     if not documents:
         return items
 
+    # Calculate base overhead (query)
+    base_tokens = count_tokens(query) + 200  # buffer for wrapper tokens
+
+    # Zip indices and documents to keep them together during splitting
+    indexed_docs = list(zip(valid_indices, documents))
+
     try:
-        response = rerank(
-            model=RERANK_MODEL,
-            query=query,
-            documents=documents,
-            api_key=api_key,
+        bulks = split_into_bulks(
+            items=indexed_docs,
+            transform_fn=lambda x: x[1],  # text is the document
+            base_tokens=base_tokens
         )
-        process_response(response, valid_indices, items)
+
+        for bulk in bulks:
+            bulk_indices = [x[0] for x in bulk]
+            bulk_docs = [x[1] for x in bulk]
+
+            response = rerank(
+                model=RERANK_MODEL,
+                query=query,
+                documents=bulk_docs,
+                api_key=api_key,
+            )
+            process_response(response, bulk_indices, items)
+
         # Sort using float to ensure correct numerical order
         items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
         if min_score is not None:

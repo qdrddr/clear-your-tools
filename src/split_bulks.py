@@ -1,10 +1,52 @@
 import tiktoken
-from typing import Any
+from typing import Any, Callable, TypeVar
+
+T = TypeVar("T")
 
 def count_tokens(text: str, model: str = "cl100k_base") -> int:
     """Return the number of tokens in a string."""
-    encoding = tiktoken.get_encoding(model)
+    try:
+        encoding = tiktoken.get_encoding(model)
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
     return len(encoding.encode(text))
+
+def split_into_bulks(
+    items: list[T],
+    transform_fn: Callable[[T], str],
+    base_tokens: int,
+    max_tokens: int = 32000,
+    model: str = "cl100k_base"
+) -> list[list[T]]:
+    """Generic splitter that returns list of lists (bulks of items)."""
+    bulks = []
+    current_bulk: list[T] = []
+    current_tokens = base_tokens
+
+    for item in items:
+        text = transform_fn(item)
+        item_tokens = count_tokens(text, model)
+
+        # If a single item is too big to fit in any bulk, we skip it or handle it.
+        # For now, we skip but warn if it exceeds the absolute limit.
+        if base_tokens + item_tokens > max_tokens:
+            print(f"Warning: Item tokens ({item_tokens}) + base tokens ({base_tokens}) exceeds max_tokens ({max_tokens}). Skipping item.", flush=True)
+            continue
+
+        if current_tokens + item_tokens > max_tokens:
+            # Finish current bulk
+            if current_bulk:
+                bulks.append(current_bulk)
+            current_bulk = [item]
+            current_tokens = base_tokens + item_tokens
+        else:
+            current_bulk.append(item)
+            current_tokens += item_tokens
+
+    if current_bulk:
+        bulks.append(current_bulk)
+
+    return bulks
 
 def split_chunks_into_bulks(
     query: str,
@@ -12,7 +54,10 @@ def split_chunks_into_bulks(
     formatted_chunks: list[str],
     max_tokens: int = 32000
 ) -> list[str]:
-    """Split formatted chunks into bulks that fit within max_tokens."""
+    """
+    Split formatted chunks into bulks that fit within max_tokens.
+    Maintained for backward compatibility with llm.py.
+    """
     # Base tokens for every bulk (system prompt + query prefix)
     base_text = f"System: {system_prompt}\nUser Query: {query}\n\nAvailable Chunks:\n\n"
     base_tokens = count_tokens(base_text)
@@ -20,32 +65,13 @@ def split_chunks_into_bulks(
     if base_tokens >= max_tokens:
         raise ValueError(f"System prompt and query are too long ({base_tokens} tokens) for max_tokens={max_tokens}")
 
-    bulks: list[str] = []
-    current_chunk_texts: list[str] = []
-    current_tokens = base_tokens
+    # Use the new generic splitter
+    bulks_of_chunks = split_into_bulks(
+        items=formatted_chunks,
+        transform_fn=lambda x: x,
+        base_tokens=base_tokens,
+        max_tokens=max_tokens
+    )
 
-    for chunk in formatted_chunks:
-        chunk_tokens = count_tokens(chunk)
-
-        # If a single chunk is too big, we might have to truncate it or error
-        # For now, let's just warn or handle it by adding it alone if possible
-        if base_tokens + chunk_tokens > max_tokens:
-            print(f"Warning: Chunk is too large ({chunk_tokens} tokens) to fit in any bulk with the query. Attempting to fit what we can.", flush=True)
-            # If it's the only thing in the list, we have to skip or truncate
-            if not current_chunk_texts:
-                # Just skip for now to avoid infinite loops, but in reality we should truncate
-                continue
-
-        if current_tokens + chunk_tokens > max_tokens:
-            # Finish current bulk
-            bulks.append("\n\n".join(current_chunk_texts))
-            current_chunk_texts = [chunk]
-            current_tokens = base_tokens + chunk_tokens
-        else:
-            current_chunk_texts.append(chunk)
-            current_tokens += chunk_tokens
-
-    if current_chunk_texts:
-        bulks.append("\n\n".join(current_chunk_texts))
-
-    return bulks
+    # Convert back to the list of strings format expected by llm.py
+    return ["\n\n".join(bulk) for bulk in bulks_of_chunks]
