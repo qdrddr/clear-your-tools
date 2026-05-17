@@ -15,12 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
-from src.configs import (
+from configs import (
     _FINGERPRINT_KEYS,
     load_config,
     resolve_model,
 )
-from src.embeddings import get_embedder
+from embeddings import get_embedder
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast, final

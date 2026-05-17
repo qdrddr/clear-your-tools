@@ -10,7 +10,7 @@
       "type": "http",
       "url": "http://127.0.0.1:8081/mcp",
       "headers": {
-        "X-Claude-Session-Id": "${CLAUDE_SESSION_ID}"
+        "X-Claude-Session-Id": "${CLAUDE_CODE_SESSION_ID}"
       }
     }
   }

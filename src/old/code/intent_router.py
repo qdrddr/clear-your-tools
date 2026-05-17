@@ -11,9 +11,9 @@ that queries agent state to enforce auth scopes, milestones, etc.
 
 from __future__ import annotations
 
-from src.configs import load_config
-from src.embeddings import get_embedder
-from src.vector_store import ToolVectorStore
+from configs import load_config
+from embeddings import get_embedder
+from vector_store import ToolVectorStore
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any

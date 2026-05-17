@@ -6,7 +6,7 @@ config.yaml, then dispatches to the appropriate backend.
 
 from __future__ import annotations
 
-from src.configs import (
+from configs import (
     load_config,
     resolve_model,
 )
