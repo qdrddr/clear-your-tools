@@ -17,6 +17,8 @@ from fastmcp import Client, FastMCP, Context
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.transforms.visibility import save_visibility_rules
 from fastmcp.server.middleware import Middleware, MiddlewareContext, CallNext
+from starlette.responses import JSONResponse
+from starlette.requests import Request
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -33,9 +35,59 @@ class MCPAggregator:
             tuple[str, str],
         ] = {}  # frontend_name -> (server_name, backend_name)
         self.catalog = CatalogBuilder()
-        self.session_allowed_tools: dict[str, list[str]] = {}  # session_id -> [tool_names]
+        self.sessions: dict[str, dict[str, Any]] = {}  # session_id -> {"query": str, "allowed_tools": [str]}
         self._setup_middleware()
         self._setup_orchestrator_tools()
+        self._setup_custom_routes()
+
+    def _setup_custom_routes(self) -> None:
+        @self.mcp.custom_route("/session/{session_id}", methods=["POST"])
+        async def session_endpoint(request: Request) -> JSONResponse:
+            session_id = request.path_params.get("session_id")
+            if not session_id:
+                return JSONResponse({"error": "session_id is required"}, status_code=400)
+
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+
+            query = data.get("query", "").lower()
+
+            # Simple keyword filtering for demonstration/testing
+            # In production this could use the reranker
+            all_tools = self.catalog.discovered_tools
+            if query:
+                allowed_tools_info = [
+                    t for t in all_tools
+                    if query in t["id"].lower() or query in t.get("summary", "").lower()
+                ]
+                allowed_tool_names = [t["id"] for t in allowed_tools_info]
+                logger.info("Filtered tools for query '%s': %d/%d", query, len(allowed_tool_names), len(all_tools))
+            else:
+                allowed_tool_names = [t["id"] for t in all_tools]
+
+            logger.info("Registering session %s with query: %s", session_id, query)
+            self.sessions[session_id] = {
+                "query": query,
+                "allowed_tools": allowed_tool_names
+            }
+
+            # Attempt to notify client that tools changed if session was already active
+            try:
+                await self.mcp._mcp_server.send_notification(
+                    "notifications/tools/list_changed",
+                    None
+                )
+            except Exception as e:
+                logger.debug("Could not send tools/list_changed notification: %s", e)
+
+            return JSONResponse({
+                "status": "ok",
+                "session_id": session_id,
+                "query": query,
+                "tool_count": len(allowed_tool_names)
+            })
 
     def _setup_middleware(self) -> None:
         aggregator_self = self
@@ -51,37 +103,26 @@ class MCPAggregator:
                 if request:
                     claude_session_id = request.headers.get("X-Claude-Session-Id")
 
-                # Log on initialization
-                if context.method == "tools/list":
-                    logger.info(
-                        "New MCP client session initialization. X-Claude-Session-Id: %s",
-                        claude_session_id or "MISSING",
-                    )
-                elif claude_session_id:
-                    logger.debug(
-                        "Captured X-Claude-Session-Id: %s for method: %s",
-                        claude_session_id,
-                        context.method,
-                    )
-
                 # Store session_id in context state
                 if context.fastmcp_context:
                     await context.fastmcp_context.set_state(
                         "claude_session_id", claude_session_id, serializable=False
                     )
 
-                    # Update visibility rules
-                    if claude_session_id:
-                        allowed = aggregator_self.session_allowed_tools.get(claude_session_id)
-                        if allowed is not None:
-                            rules = [
-                                {"enabled": False, "match_all": True},
-                                {"enabled": True, "names": allowed, "components": ["tool"]},
-                            ]
-                        else:
-                            rules = [{"enabled": False, "match_all": True}]
+                    # Update visibility rules based on registered session
+                    if claude_session_id and claude_session_id in aggregator_self.sessions:
+                        session_data = aggregator_self.sessions[claude_session_id]
+                        allowed = session_data.get("allowed_tools", [])
+
+                        logger.debug("Applying session filtering for %s: %d tools", claude_session_id, len(allowed))
+
+                        rules = [
+                            {"enabled": False, "match_all": True},
+                            {"enabled": True, "names": allowed, "components": ["tool"]},
+                        ]
                         await save_visibility_rules(context.fastmcp_context, rules)
                     else:
+                        # Fallback: if session not set or not registered, show everything
                         await save_visibility_rules(context.fastmcp_context, [])
 
                 return await call_next(context)
@@ -97,7 +138,11 @@ class MCPAggregator:
         @self.mcp.tool()
         async def set_allowed_tools(claude_session_id: str, tool_names: list[str]) -> str:
             """Set the list of tools allowed for a specific Claude session."""
-            self.session_allowed_tools[claude_session_id] = tool_names
+            if claude_session_id not in self.sessions:
+                self.sessions[claude_session_id] = {"query": "", "allowed_tools": tool_names}
+            else:
+                self.sessions[claude_session_id]["allowed_tools"] = tool_names
+
             logger.info(
                 "Updated allowed tools for session %s: %s", claude_session_id, tool_names
             )
