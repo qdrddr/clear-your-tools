@@ -15,4 +15,4 @@ uv run src/retrieve_catalog.py --json-file src/tests/temp_recomposed.json > temp
 
 rtk uv run src/rerank.py --json src/tests/test_recomposed.json search "List of operation IDs" > temp_rerank.json
 
-rtk uv run src/llm.py --json src/tests/temp_recomposed.json "find code graph tools" > temp_llm.json
+rtk uv run src/llm.py --json src/tests/temp_recomposed.json "find code graph tools" --output-json temp_llm.json
