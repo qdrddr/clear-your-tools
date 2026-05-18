@@ -7,8 +7,75 @@ import sys
 from pathlib import Path
 from typing import Any
 
+JSON_EXT = ".json"
+MD_EXT = ".md"
+
 DECOMPOSED_SCORE: float = 0.5
 ENUM_SCORE: float = 0.2
+
+
+def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
+    """
+    Recursively walk the directory, read every *.json and *.md file,
+    and build a dictionary structure matching the input for rerank/llm.
+    """
+    root = Path(dir_path)
+    if not root.is_dir():
+        raise FileNotFoundError(f"Directory not found: {dir_path}")
+
+    md_entries: list[dict[str, Any]] = []
+    json_entries: list[dict[str, Any]] = []
+
+    # Use rglob to recursively find all files
+    for file_path in root.rglob("*"):
+        if not file_path.is_file():
+            continue
+
+        rel_path = str(file_path)
+        suffix = file_path.suffix.lower()
+
+        if suffix == MD_EXT:
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                md_entries.append({
+                    "file_path": rel_path,
+                    "score": 0.0,
+                    "start_line": 1,
+                    "end_line": 1,
+                    "language": "markdown",
+                    "content": content
+                })
+            except Exception as e:
+                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+        elif suffix == JSON_EXT:
+            try:
+                raw_text = file_path.read_text(encoding="utf-8")
+                content = json.loads(raw_text)
+                # count lines for end_line
+                line_count = len(raw_text.splitlines())
+                json_entries.append({
+                    "file_path": rel_path,
+                    "score": 0.0,
+                    "start_line": 1,
+                    "end_line": line_count,
+                    "language": "json",
+                    "content": content
+                })
+            except json.JSONDecodeError as exc:
+                # Requirement: Log the file path and raise a json.JSONDecodeError
+                raise json.JSONDecodeError(
+                    f"Invalid JSON in {file_path}: {exc.msg}",
+                    exc.doc,
+                    exc.pos
+                )
+            except Exception as e:
+                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+    if not md_entries and not json_entries:
+        print(f"Warning: No .json or .md files found in {dir_path}", file=sys.stderr)
+
+    return {"md": md_entries, "json": json_entries}
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

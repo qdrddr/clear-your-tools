@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from litellm import rerank
 from src.split_bulks import count_tokens, split_into_bulks
 
-DECOMPOSED_SCORE: float = 0.5
+RERANK_SCORE: float = 0
 RERANK_ENUMS: bool = True
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
 
@@ -154,8 +154,11 @@ def rerank_items(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rerank JSON items using DeepInfra and LiteLLM.")
-    parser.add_argument("--json", required=True, help="Input JSON file path")
-    parser.add_argument("command", choices=["search"], help="Command to run")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--json", help="Input JSON file path")
+    group.add_argument("--dir", help="Path to the directory containing decomposed tool files")
+    parser.add_argument("--output-json", help="Optional output JSON file path")
+    parser.add_argument("command", choices=["search"], nargs="?", default="search", help="Command to run (default: search)")
     parser.add_argument("query", help="Search query")
 
     args = parser.parse_args()
@@ -163,12 +166,21 @@ def main() -> None:
     load_env()
     api_key = os.environ.get("DEEPINFRA_API_KEY")
 
-    try:
-        with open(args.json) as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"Error reading JSON: {e}", file=sys.stderr)
-        sys.exit(1)
+    if args.json:
+        try:
+            with open(args.json) as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"Error reading JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Use load_catalog from src.retrieve_catalog
+        from src.retrieve_catalog import load_catalog
+        try:
+            data = load_catalog(args.dir)
+        except Exception as e:
+            print(f"Error loading catalog directory: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Process "json" key if present
     if "json" in data and isinstance(data["json"], list):
@@ -177,7 +189,7 @@ def main() -> None:
             data["json"],
             api_key,
             extract_document_text,
-            DECOMPOSED_SCORE,
+            RERANK_SCORE,
         )
 
     # Process "md" key (enums) if RERANK_ENUMS is true and "md" exists
@@ -195,7 +207,13 @@ def main() -> None:
             None,  # Not filtering enums by score based on original logic
         )
 
-    print(json.dumps(data, indent=2))
+    output_data = json.dumps(data, indent=2)
+    if args.output_json:
+        with open(args.output_json, "w") as f:
+            f.write(output_data)
+        print(f"Results saved to {args.output_json}")
+    else:
+        print(output_data)
 
 
 if __name__ == "__main__":

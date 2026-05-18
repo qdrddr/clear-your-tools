@@ -183,14 +183,26 @@ def process_results(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Filter JSON items using an LLM on OpenRouter.")
-    parser.add_argument("--json", required=True, help="Input JSON file path")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--json", help="Input JSON file path")
+    group.add_argument("--dir", help="Path to the directory containing decomposed tool files")
     parser.add_argument("--output-json", help="Optional output JSON file path")
     parser.add_argument("query", help="User search query")
 
     args = parser.parse_args()
 
     api_key = get_api_key()
-    data = read_json_input(args.json)
+
+    if args.json:
+        data = read_json_input(args.json)
+    else:
+        from src.retrieve_catalog import load_catalog
+        try:
+            data = load_catalog(args.dir)
+        except Exception as e:
+            print(f"Error loading catalog directory: {e}", file=sys.stderr)
+            sys.exit(1)
+
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 
     system_prompt = (
