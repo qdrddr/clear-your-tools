@@ -1,17 +1,142 @@
 #!/usr/bin/env python3
 """Reconstruct tool schemas from decomposed property files."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from build_index import CatalogIndex
 
 JSON_EXT = ".json"
 MD_EXT = ".md"
+DECOMPOSED_ROOT = Path("schemas/decomposed")
 
 DECOMPOSED_SCORE: float = 0.5
 ENUM_SCORE: float = 0.2
+
+
+def to_decomposed_key(file_path: str) -> str | None:
+    """Normalize a file path to schemas/decomposed/... form."""
+    parts = Path(file_path).parts
+    for i in range(len(parts) - 1):
+        if parts[i] == "schemas" and parts[i + 1] == "decomposed":
+            return str(Path(*parts[i:]))
+    return None
+
+
+def get_root_tool_key(file_path: str) -> str | None:
+    """Given any decomposed file path, return its root tool file key."""
+    key = to_decomposed_key(file_path)
+    if key is None:
+        return None
+
+    rel = Path(key).relative_to(DECOMPOSED_ROOT)
+    if len(rel.parts) < 2:
+        return None
+
+    server = rel.parts[0]
+    tool_name = rel.parts[1]
+    if tool_name.endswith(JSON_EXT):
+        tool_name = tool_name[: -len(JSON_EXT)]
+    return str(DECOMPOSED_ROOT / server / f"{tool_name}{JSON_EXT}")
+
+
+@dataclass
+class DecomposedCatalog:
+    """Disk-backed or in-memory access to decomposed catalog JSON files."""
+
+    decomposed_dir: Path | None = None
+    _json_files: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @classmethod
+    def from_directory(cls, decomposed_dir: Path | str) -> DecomposedCatalog:
+        return cls(decomposed_dir=Path(decomposed_dir))
+
+    @classmethod
+    def from_catalog_index(cls, index: CatalogIndex) -> DecomposedCatalog:
+        json_files: dict[str, dict[str, Any]] = {}
+        for rel_path, content in index.files.items():
+            if rel_path.startswith("schemas/decomposed/") and rel_path.endswith(JSON_EXT):
+                json_files[rel_path] = json.loads(content)
+        return cls(_json_files=json_files)
+
+    @classmethod
+    def from_catalog_dict(cls, data: dict[str, Any]) -> DecomposedCatalog:
+        """Build from cs.py / rerank.py / llm.py catalog dict format."""
+        json_files: dict[str, dict[str, Any]] = {}
+        for entry in data.get("json", []):
+            if not isinstance(entry, dict):
+                continue
+            file_path = entry.get("file_path")
+            content = entry.get("content")
+            if not isinstance(file_path, str) or not isinstance(content, dict):
+                continue
+            key = to_decomposed_key(file_path)
+            if key is not None:
+                json_files[key] = content
+        return cls(_json_files=json_files)
+
+    def resolve_key(self, file_path: str) -> str | None:
+        """Resolve an external path to an internal decomposed key, if present."""
+        candidates: list[str] = []
+        normalized = to_decomposed_key(file_path)
+        if normalized is not None:
+            candidates.append(normalized)
+        candidates.append(file_path)
+
+        if self.decomposed_dir is not None:
+            path = Path(file_path)
+            if path.is_absolute():
+                try:
+                    rel = path.relative_to(self.decomposed_dir)
+                    candidates.append(str(DECOMPOSED_ROOT / rel))
+                except ValueError:
+                    pass
+            elif path.exists():
+                try:
+                    rel = path.relative_to(self.decomposed_dir)
+                    candidates.append(str(DECOMPOSED_ROOT / rel))
+                except ValueError:
+                    pass
+
+        for candidate in candidates:
+            if self.has_json(candidate):
+                return candidate
+        return None
+
+    def has_json(self, key: str) -> bool:
+        if key in self._json_files:
+            return True
+        if self.decomposed_dir is not None:
+            try:
+                rel = Path(key).relative_to(DECOMPOSED_ROOT)
+            except ValueError:
+                return False
+            return (self.decomposed_dir / rel).is_file()
+        return False
+
+    def get_json(self, key: str) -> dict[str, Any] | None:
+        if key in self._json_files:
+            return self._json_files[key]
+        if self.decomposed_dir is not None:
+            try:
+                rel = Path(key).relative_to(DECOMPOSED_ROOT)
+            except ValueError:
+                return None
+            path = self.decomposed_dir / rel
+            if not path.is_file():
+                return None
+            with path.open(encoding="utf-8") as f:
+                loaded: Any = json.load(f)
+                if isinstance(loaded, dict):
+                    return loaded
+        return None
 
 
 def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
@@ -26,7 +151,6 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
     md_entries: list[dict[str, Any]] = []
     json_entries: list[dict[str, Any]] = []
 
-    # Use rglob to recursively find all files
     for file_path in root.rglob("*"):
         if not file_path.is_file():
             continue
@@ -37,14 +161,16 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
         if suffix == MD_EXT:
             try:
                 content = file_path.read_text(encoding="utf-8")
-                md_entries.append({
-                    "file_path": rel_path,
-                    "score": 0.0,
-                    "start_line": 1,
-                    "end_line": 1,
-                    "language": "markdown",
-                    "content": content
-                })
+                md_entries.append(
+                    {
+                        "file_path": rel_path,
+                        "score": 0.0,
+                        "start_line": 1,
+                        "end_line": 1,
+                        "language": "markdown",
+                        "content": content,
+                    },
+                )
             except Exception as e:
                 print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
 
@@ -52,23 +178,23 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
             try:
                 raw_text = file_path.read_text(encoding="utf-8")
                 content = json.loads(raw_text)
-                # count lines for end_line
                 line_count = len(raw_text.splitlines())
-                json_entries.append({
-                    "file_path": rel_path,
-                    "score": 0.0,
-                    "start_line": 1,
-                    "end_line": line_count,
-                    "language": "json",
-                    "content": content
-                })
+                json_entries.append(
+                    {
+                        "file_path": rel_path,
+                        "score": 0.0,
+                        "start_line": 1,
+                        "end_line": line_count,
+                        "language": "json",
+                        "content": content,
+                    },
+                )
             except json.JSONDecodeError as exc:
-                # Requirement: Log the file path and raise a json.JSONDecodeError
                 raise json.JSONDecodeError(
                     f"Invalid JSON in {file_path}: {exc.msg}",
                     exc.doc,
-                    exc.pos
-                )
+                    exc.pos,
+                ) from exc
             except Exception as e:
                 print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
 
@@ -91,39 +217,39 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
 
 def get_root_tool_path(file_path: Path, decomposed_dir: Path) -> Path | None:
     """Given any file under decomposed_dir, return its root tool file path."""
-    rel = file_path.relative_to(decomposed_dir)
-    if len(rel.parts) < 2:
+    key = get_root_tool_key(str(file_path))
+    if key is None:
         return None
-    server = rel.parts[0]
-    tool_name = rel.parts[1]
-    if tool_name.endswith(".json"):
-        tool_name = tool_name[:-5]
-    return decomposed_dir / server / f"{tool_name}.json"
+    rel = Path(key).relative_to(DECOMPOSED_ROOT)
+    return decomposed_dir / rel
 
 
-def climb_and_merge(leaf_path: Path, decomposed_dir: Path) -> dict[str, Any]:
-    """Load a property file and merge it up through existing parent files until the tool level."""
-    with open(leaf_path) as f:
-        current: dict[str, Any] = json.load(f)
+def climb_and_merge(leaf_path: Path | str, catalog: DecomposedCatalog | Path) -> dict[str, Any]:
+    """Load a property file and merge it up through parent files until the tool level."""
+    if isinstance(catalog, Path):
+        catalog = DecomposedCatalog.from_directory(catalog)
 
-    current_path = leaf_path.parent
+    leaf_key = catalog.resolve_key(str(leaf_path)) if not isinstance(leaf_path, str) else leaf_path
+    if leaf_key is None:
+        leaf_key = to_decomposed_key(str(leaf_path)) or str(leaf_path)
+
+    current = catalog.get_json(leaf_key)
+    if current is None:
+        return {}
+
+    current_path = Path(leaf_key).parent
 
     while True:
         parent_dir = current_path.parent
-
-        # Stop when we would step outside the decomposed directory
-        if parent_dir == decomposed_dir or not str(parent_dir).startswith(str(decomposed_dir)):
+        if parent_dir == DECOMPOSED_ROOT or not str(parent_dir).startswith(str(DECOMPOSED_ROOT)):
             break
 
-        parent_file = parent_dir / (current_path.name + ".json")
-
-        if parent_file.exists():
-            with open(parent_file) as f:
-                parent: dict[str, Any] = json.load(f)
+        parent_key = str(parent_dir / f"{current_path.name}{JSON_EXT}")
+        parent = catalog.get_json(parent_key)
+        if parent is not None:
             current = deep_merge(parent, current)
             current_path = parent_dir
         else:
-            # Parent file doesn't exist; keep current and move up
             current_path = parent_dir
 
     return current
@@ -147,14 +273,13 @@ def _extract_scores(data: Any) -> dict[str, float]:
 
 def _extract_from_dict(data: dict[str, Any]) -> list[str]:
     """Helper to extract file paths from a dictionary."""
-    input_files = []
+    input_files: list[str] = []
     for key, value in data.items():
         if key == "md":
             continue
         if isinstance(value, list):
             for entry in value:
                 if isinstance(entry, dict) and "file_path" in entry:
-                    # Filter 'json' array items by score > DECOMPOSED_PROPERTY_SCORE
                     if key == "json":
                         score = float(entry.get("score", 0))
                         if score <= DECOMPOSED_SCORE:
@@ -183,9 +308,6 @@ def parse_json_input(data: Any) -> tuple[list[str], dict[str, float]]:
 
 def _filter_items(items_with_scores: list[tuple[Any, float]]) -> list[Any]:
     """Apply the filtering logic to the sorted items."""
-    # 1. check if first 3 are >= ENUM_SCORE
-    # 2. if yes, remove all < ENUM_SCORE
-    # 3. otherwise keep first 3
     first_3_above_threshold = True
     for i in range(min(3, len(items_with_scores))):
         if items_with_scores[i][1] < ENUM_SCORE:
@@ -202,18 +324,136 @@ def filter_and_sort_enums(schema: Any, scores: dict[str, float]) -> None:
     if isinstance(schema, dict):
         for key, value in schema.items():
             if key == "enum" and isinstance(value, list):
-                # Process enum list
                 items_with_scores = [(item, scores.get(str(item), 0.0)) for item in value]
-
-                # Sort by score descending
                 items_with_scores.sort(key=lambda x: x[1], reverse=True)
-
                 schema[key] = _filter_items(items_with_scores)
             else:
                 filter_and_sort_enums(value, scores)
     elif isinstance(schema, list):
         for item in schema:
             filter_and_sort_enums(item, scores)
+
+
+def group_files(
+    input_files: list[str],
+    catalog: DecomposedCatalog,
+) -> tuple[dict[str, list[str]], set[str]]:
+    """Group input files by their root tool and identify standalone tool files."""
+    groups: dict[str, list[str]] = {}
+    tool_files: set[str] = set()
+
+    for file_path in input_files:
+        key = catalog.resolve_key(file_path)
+        if key is None:
+            print(f"Warning: File not found: {file_path}", file=sys.stderr)
+            continue
+
+        rel = Path(key).relative_to(DECOMPOSED_ROOT)
+        parts = rel.parts
+        is_tool = len(parts) == 2 and parts[1].endswith(JSON_EXT)
+
+        root_tool = get_root_tool_key(key)
+        if root_tool is None:
+            continue
+
+        if is_tool:
+            tool_files.add(key)
+
+        groups.setdefault(root_tool, []).append(key)
+
+    return groups, tool_files
+
+
+def process_groups(
+    groups: dict[str, list[str]],
+    tool_files: set[str],
+    scores: dict[str, float],
+    catalog: DecomposedCatalog,
+) -> list[dict[str, Any]]:
+    """Merge and return the resulting schemas for each tool group."""
+    tools: list[dict[str, Any]] = []
+
+    for root_tool, files in groups.items():
+        base_tool = catalog.get_json(root_tool)
+        if base_tool is None:
+            print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
+            continue
+
+        server_name = Path(root_tool).parts[-2]
+        tool_name_in_schema = base_tool.get("name", Path(root_tool).stem)
+
+        for file_key in files:
+            if file_key in tool_files:
+                continue
+            climbed = climb_and_merge(file_key, catalog)
+            base_tool = deep_merge(base_tool, climbed)
+
+        base_tool["name"] = f"mcp__{server_name}_{tool_name_in_schema}"
+
+        if scores:
+            filter_and_sort_enums(base_tool, scores)
+
+        tools.append(base_tool)
+
+    return tools
+
+
+def retrieve_tools(
+    data: Any,
+    *,
+    catalog: DecomposedCatalog | CatalogIndex | None = None,
+    decomposed_dir: Path | str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Reconstruct merged tool schemas from search/rerank/llm output.
+
+    Provide one of:
+    - catalog: DecomposedCatalog or CatalogIndex (in-memory)
+    - decomposed_dir: path to schemas/decomposed on disk
+    """
+    if catalog is None:
+        if decomposed_dir is None:
+            decomposed_dir = Path("src/catalog/schemas/decomposed")
+        store = DecomposedCatalog.from_directory(decomposed_dir)
+    elif isinstance(catalog, DecomposedCatalog):
+        store = catalog
+    else:
+        from build_index import CatalogIndex
+
+        if isinstance(catalog, CatalogIndex):
+            store = DecomposedCatalog.from_catalog_index(catalog)
+        else:
+            raise TypeError("catalog must be DecomposedCatalog, CatalogIndex, or None")
+
+    input_files, scores = parse_json_input(data)
+    groups, tool_files = group_files(input_files, store)
+    return process_groups(groups, tool_files, scores, store)
+
+
+def _group_files(
+    input_files: list[str],
+    decomposed_dir: Path,
+) -> tuple[dict[Path, list[Path]], set[Path]]:
+    """Backward-compatible wrapper around group_files using disk paths."""
+    catalog = DecomposedCatalog.from_directory(decomposed_dir)
+    groups, tool_files = group_files(input_files, catalog)
+    return (
+        {Path(k): [Path(f) for f in files] for k, files in groups.items()},
+        {Path(t) for t in tool_files},
+    )
+
+
+def _process_groups(
+    groups: dict[Path, list[Path]],
+    tool_files: set[Path],
+    scores: dict[str, float],
+    decomposed_dir: Path,
+) -> list[dict[str, Any]]:
+    """Backward-compatible wrapper around process_groups using disk paths."""
+    catalog = DecomposedCatalog.from_directory(decomposed_dir)
+    str_groups = {str(k): [str(f) for f in files] for k, files in groups.items()}
+    str_tool_files = {str(t) for t in tool_files}
+    return process_groups(str_groups, str_tool_files, scores, catalog)
 
 
 def _handle_input(args: argparse.Namespace) -> tuple[list[str], dict[str, float]]:
@@ -223,7 +463,7 @@ def _handle_input(args: argparse.Namespace) -> tuple[list[str], dict[str, float]
 
     if args.json_file:
         try:
-            with open(args.json_file) as f:
+            with open(args.json_file, encoding="utf-8") as f:
                 data = json.load(f)
                 input_files, scores = parse_json_input(data)
         except (json.JSONDecodeError, OSError) as e:
@@ -244,73 +484,6 @@ def _handle_input(args: argparse.Namespace) -> tuple[list[str], dict[str, float]
         sys.exit(1)
 
     return input_files, scores
-
-
-def _group_files(
-    input_files: list[str],
-    decomposed_dir: Path,
-) -> tuple[dict[Path, list[Path]], set[Path]]:
-    """Group input files by their root tool and identify standalone tool files."""
-    groups: dict[Path, list[Path]] = {}
-    tool_files: set[Path] = set()
-
-    for f in input_files:
-        p = Path(f)
-        if not p.exists():
-            print(f"Warning: File not found: {p}", file=sys.stderr)
-            continue
-
-        try:
-            rel = p.relative_to(decomposed_dir)
-        except ValueError:
-            continue
-
-        parts = rel.parts
-        is_tool = len(parts) == 2 and parts[1].endswith(".json")
-
-        root_tool = get_root_tool_path(p, decomposed_dir)
-        if root_tool is None:
-            continue
-
-        if is_tool:
-            tool_files.add(p)
-
-        groups.setdefault(root_tool, []).append(p)
-    return groups, tool_files
-
-
-def _process_groups(
-    groups: dict[Path, list[Path]],
-    tool_files: set[Path],
-    scores: dict[str, float],
-    decomposed_dir: Path,
-) -> list[dict[str, Any]]:
-    """Merge and return the resulting schemas for each tool group."""
-    tools: list[dict[str, Any]] = []
-    for root_tool, files in groups.items():
-        if not root_tool.exists():
-            print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
-            continue
-        with open(root_tool) as root_f:
-            base_tool = json.load(root_f)
-
-        server_name = root_tool.parent.name
-        tool_name_in_schema = base_tool.get("name", root_tool.stem)
-
-        for f in files:
-            if f in tool_files:
-                continue
-            climbed = climb_and_merge(f, decomposed_dir)
-            base_tool = deep_merge(base_tool, climbed)
-
-        base_tool["name"] = f"mcp__{server_name}_{tool_name_in_schema}"
-
-        if scores:
-            filter_and_sort_enums(base_tool, scores)
-
-        tools.append(base_tool)
-
-    return tools
 
 
 def main() -> None:
@@ -334,8 +507,9 @@ def main() -> None:
         print(f"Error: {decomposed_dir} does not exist.", file=sys.stderr)
         sys.exit(1)
 
-    groups, tool_files = _group_files(input_files, decomposed_dir)
-    tools = _process_groups(groups, tool_files, scores, decomposed_dir)
+    catalog = DecomposedCatalog.from_directory(decomposed_dir)
+    groups, tool_files = group_files(input_files, catalog)
+    tools = process_groups(groups, tool_files, scores, catalog)
     print(json.dumps({"tools": tools}, indent=2))
 
 
