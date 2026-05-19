@@ -54,7 +54,7 @@ def is_mcp_aggregator_description(description: str, mcp_name: str) -> bool:
     return False
 
 
-def check_self_recursion_protection() -> None:
+def check_self_recursion_protection() -> bool:
     """Check if another aggregator is already running via SCA_AGGREGATOR_PID."""
     agg_pid_str = os.environ.get("SCA_AGGREGATOR_PID")
     if agg_pid_str:
@@ -66,13 +66,14 @@ def check_self_recursion_protection() -> None:
                 proc_desc = " ".join(proc.cmdline()).lower()
                 if "aggregator" in proc_desc or "aggregator" in proc.name().lower():
                     logger.warning(
-                        "Another aggregator (PID %d) is already running. Exiting to prevent self-recursion.",
+                        "Another aggregator (PID %d) is already running.",
                         agg_pid,
                     )
-                    sys.exit(0)
+                    return True
         except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied):
             # PID is invalid or process already dead
             pass
 
     os.environ["SCA_AGGREGATOR_PID"] = str(os.getpid())
     logger.info("Registered current aggregator PID: %d", os.getpid())
+    return False

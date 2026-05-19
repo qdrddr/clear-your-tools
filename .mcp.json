@@ -1,17 +1,26 @@
 {
   "mcpServers": {
-    "sca-stdio": {
+    "sca-stdio-proj": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "src/aggregator.py", "--transport", "stdio"],
-      "env": {}
+      "args": [
+        "run",
+        "src/aggregator.py",
+        "--port",
+        "8123",
+        "--servers",
+        "temp_mcp_config.json"
+      ]
     },
     "sca-http": {
       "type": "http",
-      "url": "http://127.0.0.1:8081/mcp",
-      "headers": {
-        "X-Claude-Session-Id": "${CLAUDE_CODE_SESSION_ID}"
-      }
+      "url": "http://127.0.0.1:8081/mcp"
+    },
+    "fff": {
+      "type": "stdio",
+      "command": "fff-mcp",
+      "args": [],
+      "env": {}
     }
   }
 }

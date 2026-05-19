@@ -18,3 +18,7 @@ rtk uv run src/rerank.py --dir src/catalog/schemas/decomposed --output-json temp
 
 rtk uv run src/llm.py --json temp_embedings.json "find code graph tools" --output-json temp_llm.json
 rtk uv run src/llm.py --dir src/catalog/schemas/decomposed "find code graph tools" --output-json temp_llm2.json
+
+
+rtk uv run src/aggregator.py --debug --only-relay --port 8123
+rtk uv run src/aggregator.py --debug --port 8123 --servers temp_empty_config.json

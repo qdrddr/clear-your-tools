@@ -7,7 +7,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from litellm import rerank
-from src.split_bulks import count_tokens, split_into_bulks
+from split_bulks import count_tokens, split_into_bulks
 
 RERANK_SCORE: float = 0
 RERANK_ENUMS: bool = True
@@ -58,7 +58,7 @@ def extract_document_text(item_content: Any) -> str | None:
 
 
 def load_env() -> None:
-    """Load environment variables from src/.env if it exists."""
+    """Load environment variables from .env if it exists."""
     env_path = Path("src/.env")
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
@@ -174,8 +174,8 @@ def main() -> None:
             print(f"Error reading JSON: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Use load_catalog from src.retrieve_catalog
-        from src.retrieve_catalog import load_catalog
+        # Use load_catalog from retrieve_catalog
+        from retrieve_catalog import load_catalog
         try:
             data = load_catalog(args.dir)
         except Exception as e:

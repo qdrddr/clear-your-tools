@@ -196,7 +196,7 @@ def main() -> None:
     if args.json:
         data = read_json_input(args.json)
     else:
-        from src.retrieve_catalog import load_catalog
+        from retrieve_catalog import load_catalog
         try:
             data = load_catalog(args.dir)
         except Exception as e:
@@ -215,7 +215,7 @@ def main() -> None:
     )
 
     try:
-        from src.split_bulks import split_chunks_into_bulks
+        from split_bulks import split_chunks_into_bulks
         bulks = split_chunks_into_bulks(args.query, system_prompt, formatted_chunks)
         selected_ids = set()
 
