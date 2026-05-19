@@ -81,58 +81,84 @@ class MCPAggregator:
             return self.catalog.discovered_tools
 
     async def run_filtering_pipeline(self, prompt: str) -> list[dict[str, Any]]:
-        decomposed_dir = "src/catalog/schemas/decomposed"
-        # 1. Load raw objects
-        data = load_catalog(decomposed_dir)
+        # 1. Select the relevant tools via cs.py
+        import src.cs as cs
+        from src.retrieve_catalog import parse_json_input, _group_files, _process_groups
 
-        # 2. Rerank
-        deepinfra_key = os.environ.get("DEEPINFRA_API_KEY")
-        if deepinfra_key:
-            data["json"] = rerank_items(prompt, data["json"], deepinfra_key, extract_document_text)
+        import io
+        from contextlib import redirect_stdout
 
-        # 3. LLM Selection
-        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-        if openrouter_key:
-            formatted_chunks, metadata, list_keys = prepare_chunks(data)
-
+        f = io.StringIO()
+        with redirect_stdout(f):
             try:
-                from split_bulks import split_chunks_into_bulks
-                system_prompt = (
-                    'These are MCP tools and their enums and optional properties in a "decomposed" state. '
-                    "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
-                    "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
-                    "The goal is to return chunk ids that match the user query the most. "
-                    "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
-                    "to save on tokens by removing the irrelevant to user query noise."
-                )
-                bulks = split_chunks_into_bulks(prompt, system_prompt, formatted_chunks)
-                selected_ids = set()
-                for bulk_text in bulks:
-                    parsed_response = call_llm(openrouter_key, prompt, bulk_text)
-                    selected_ids.update(parsed_response.ids)
-
-                data = process_results(data, metadata, selected_ids, list_keys)
+                # Based on src/cs.py, the search function takes query as a list of strings
+                cs.search(query=[prompt], json_output=True)
+            except SystemExit:
+                # Typer commands might call sys.exit(0) on success
+                pass
             except Exception as e:
-                logger.error("Error during LLM filtering: %s", e)
+                logger.error("Error running cs.search: %s", e)
+                return []
 
-        # 4. Reconstruct
+        # Find the JSON part in the output (in case there's other text)
+        output = f.getvalue()
+        try:
+            # Look for the last valid JSON block in output
+            # cs.py search writes JSON followed by \n
+            start_idx = output.find('{')
+            if start_idx == -1:
+                logger.error("No JSON found in cs.py output: %s", output)
+                return []
+            json_str = output[start_idx:]
+            data = json.loads(json_str)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse cs.py output as JSON: %s", output)
+            return []
+
+        # 2. Reconstruct tool schemas via retrieve_catalog
         input_files, scores = parse_json_input(data)
-        decomposed_path = Path(decomposed_dir)
-        groups, tool_files = _group_files(input_files, decomposed_path)
-        final_tools = _process_groups(groups, tool_files, scores, decomposed_path)
+        decomposed_dir = Path("src/catalog/schemas/decomposed")
+
+        # Ensure decomposed_dir exists relative to current working directory
+        # If gwr.py is run from root, src/catalog/schemas/decomposed should be correct
+        if not decomposed_dir.exists():
+             # Try absolute path based on file location
+             decomposed_dir = Path(__file__).parent / "catalog" / "schemas" / "decomposed"
+
+        groups, tool_files = _group_files(input_files, decomposed_dir)
+        final_tools = _process_groups(groups, tool_files, scores, decomposed_dir)
 
         return final_tools
 
     async def _handle_events(self, relay_url: str) -> None:
-        session_id = self.current_session_id
-        if not session_id:
+        ppid = self.current_session_id
+        if not ppid:
             logger.warning("PPID not set; Gateway Runtime will not receive events.")
             return
 
-        logger.info("Subscribing to Relay events for ppid: %s", session_id)
+        # 1. Query Relay for pending events on startup
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(f"{relay_url}/list_sessions")
+                if resp.status_code == 200:
+                    sessions = resp.json()
+                    for session in sessions:
+                        if session.get("ppid") == ppid:
+                            pending_events = session.get("events", [])
+                            for event in pending_events:
+                                if not event.get("ack") and event.get("type") == "search":
+                                    prompt = event.get("prompt")
+                                    if prompt:
+                                        logger.info("Processing pending event: %s", prompt)
+                                        await self._refresh_tools(prompt, relay_url)
+            except Exception as e:
+                logger.error("Error fetching pending events: %s", e)
+
+        # 2. Subscribe to SSE
+        logger.info("Subscribing to Relay events for ppid: %s", ppid)
         async with httpx.AsyncClient(timeout=None) as client:
             try:
-                async with client.stream("GET", f"{relay_url}/events/{session_id}") as response:
+                async with client.stream("GET", f"{relay_url}/events/{ppid}") as response:
                     async for line in response.aiter_lines():
                         if line.startswith("data: "):
                             event_data = json.loads(line[6:])
@@ -140,26 +166,38 @@ class MCPAggregator:
                                 prompt = event_data.get("prompt") or event_data.get("query")
                                 logger.info("Received search event: %s", prompt)
                                 if prompt:
-                                    await self._refresh_tools(prompt)
+                                    await self._refresh_tools(prompt, relay_url)
             except Exception as e:
                 logger.error("Error in event stream: %s", e)
 
-    async def _refresh_tools(self, prompt: str) -> None:
+    async def _refresh_tools(self, prompt: str, relay_url: str | None = None) -> None:
         filtered_tools = await self.run_filtering_pipeline(prompt)
         new_tool_names = [t["name"] for t in filtered_tools]
 
         # Compare with existing tools for session
         old_tool_names = self.session_tools.get(self.current_session_id, [])
 
-        # In this task, "differ" means full definition change, but name list change is a good proxy
-        # for whether we need to notify. Real implementation should compare full JSON.
+        # Trigger if anything is different (simple comparison for now)
         if set(new_tool_names) != set(old_tool_names):
-            logger.info("Tools list changed for session %s. Emitting tools/list_changed.", self.current_session_id)
+            logger.info("Tools list changed for PPID %s. Emitting tools/list_changed with %d tools.", self.current_session_id, len(filtered_tools))
             self.session_tools[self.current_session_id] = new_tool_names
             try:
-                await self.mcp._mcp_server.send_notification("notifications/tools/list_changed", None)
+                # Emit tools/list_changed via STDIO to the connected MCP Client
+                # Include the filtered list of tools in the event payload as requested.
+                await self.mcp._mcp_server.send_notification(
+                    "notifications/tools/list_changed",
+                    {"tools": filtered_tools}
+                )
             except Exception as e:
                 logger.debug("Failed to send tools/list_changed: %s", e)
+
+        # 3. Acknowledge the event
+        if relay_url:
+            async with httpx.AsyncClient() as client:
+                try:
+                    await client.post(f"{relay_url}/ack/ppid/{self.current_session_id}")
+                except Exception as e:
+                    logger.error("Failed to acknowledge event: %s", e)
 
     async def initialize(self, config_paths: list[Path]) -> None:
         if check_self_recursion_protection():

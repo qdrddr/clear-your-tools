@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import psutil
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -9,35 +10,52 @@ from fastapi.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 RELAY_IDENTITY = "sca-aggregator-relay-server-helper"
-RELAY_VERSION = "1.0.0"
+RELAY_VERSION = "1.1.0"
 
 class RelayServer:
     def __init__(self, debug: bool = False, only_relay: bool = False) -> None:
         self.app = FastAPI()
-        # Primary storage: ppid -> event queue
+        # Primary storage: ppid -> event queue for SSE
         self.sessions: dict[str, asyncio.Queue] = {}
-        # Mapping: ppid -> {"created": datetime, "updated": datetime, "data": dict}
+        # Mapping: ppid -> {"created": datetime, "updated": datetime, "data": dict, "events": list}
         self.session_timestamps: dict[str, dict] = {}
         self.debug = debug
         self.only_relay = only_relay
-        self.fallback_session_id = os.environ.get("PPID")
         self._setup_routes()
+        # Start liveness check
+        asyncio.create_task(self._liveness_check_loop())
+
+    async def _liveness_check_loop(self) -> None:
+        """Background task to check if PPIDs are still alive every 10 minutes."""
+        while True:
+            await asyncio.sleep(600)  # 10 minutes
+            logger.info("Running PPID liveness check...")
+            dead_ppids = []
+            for ppid in list(self.sessions.keys()):
+                try:
+                    if not psutil.pid_exists(int(ppid)):
+                        dead_ppids.append(ppid)
+                except (ValueError, TypeError):
+                    # If ppid is not a valid int, treat as dead or invalid
+                    dead_ppids.append(ppid)
+
+            for ppid in dead_ppids:
+                logger.info("PPID %s is dead, removing session.", ppid)
+                self.sessions.pop(ppid, None)
+                self.session_timestamps.pop(ppid, None)
 
     async def _get_queue_by_ppid(self, ppid: str) -> asyncio.Queue:
         """Resolves a ppid to its event queue."""
         if ppid not in self.sessions:
-            if self.only_relay and self.debug:
-                # Reuse fallback if ppid matches or we have a registered fallback
-                if self.fallback_session_id and self.fallback_session_id in self.sessions:
-                     logger.info("Reusing fallback session queue for %s", ppid)
-                     return self.sessions[self.fallback_session_id]
-                logger.warning("Unregistered ppid %s in debug+relay mode", ppid)
-                raise HTTPException(status_code=404, detail=f"PPID {ppid} is not registered.")
-
             # Implicit registration
             now = datetime.now(timezone.utc).isoformat()
             self.sessions[ppid] = asyncio.Queue()
-            self.session_timestamps[ppid] = {"created": now, "updated": now, "data": {}}
+            self.session_timestamps[ppid] = {
+                "created": now,
+                "updated": now,
+                "data": {},
+                "events": []
+            }
             logger.info("Implicitly registered ppid: %s", ppid)
 
         return self.sessions[ppid]
@@ -48,10 +66,12 @@ class RelayServer:
             results = []
             for ppid, ts in self.session_timestamps.items():
                 data = ts.get("data", {})
+                events = ts.get("events", [])
                 results.append({
                     "ppid": ppid,
                     "created": ts.get("created"),
                     "updated": ts.get("updated"),
+                    "events": events,
                     **data
                 })
             return results
@@ -62,39 +82,37 @@ class RelayServer:
 
         @self.app.post("/set/ppid/{ppid}")
         async def register_ppid(ppid: str, request: Request):
-            logger.info("RelayServer: Registering PPID: %s", ppid)
+            logger.info("RelayServer: Registering/Updating PPID: %s", ppid)
             try:
                 data = await request.json()
             except Exception:
                 data = {}
 
-            # Treat PPID as primary key.
+            prompt = data.get("prompt")
+            # Validate prompt is not empty if provided
+            if "prompt" in data and (not prompt or not str(prompt).strip()):
+                raise HTTPException(status_code=400, detail="prompt cannot be empty")
+
             now = datetime.now(timezone.utc).isoformat()
             if ppid not in self.sessions:
                 self.sessions[ppid] = asyncio.Queue()
                 self.session_timestamps[ppid] = {
                     "created": now,
                     "updated": now,
-                    "data": data
+                    "data": data,
+                    "events": []
                 }
                 logger.info("RelayServer: Registered new PPID queue: %s", ppid)
             else:
-                if ppid in self.session_timestamps:
-                    self.session_timestamps[ppid]["updated"] = now
-                    # Update metadata
-                    self.session_timestamps[ppid]["data"].update(data)
-                else:
-                    self.session_timestamps[ppid] = {
-                        "created": now,
-                        "updated": now,
-                        "data": data
-                    }
+                self.session_timestamps[ppid]["updated"] = now
+                self.session_timestamps[ppid]["data"].update(data)
 
-            prompt = data.get("prompt")
             if prompt:
+                event = {"type": "search", "prompt": prompt, "timestamp": now, "ack": False}
+                self.session_timestamps[ppid].setdefault("events", []).append(event)
                 queue = self.sessions[ppid]
                 logger.info("Delivering search event for PPID %s: %s", ppid, prompt)
-                await queue.put({"type": "search", "prompt": prompt})
+                await queue.put(event)
 
             return {"status": "ok"}
 
@@ -117,10 +135,27 @@ class RelayServer:
                             continue
                 except asyncio.CancelledError:
                     pass
-                finally:
-                    pass
 
             return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+        @self.app.post("/ack/ppid/{ppid}")
+        async def acknowledge_event(ppid: str):
+            """Acknowledge events for a PPID."""
+            if ppid not in self.session_timestamps:
+                raise HTTPException(status_code=404, detail="PPID not found")
+
+            events = self.session_timestamps[ppid].get("events", [])
+            if not events:
+                return {"status": "no events to ack"}
+
+            # For simplicity, ack the latest unacknowledged event
+            for event in reversed(events):
+                if not event.get("ack"):
+                    event["ack"] = True
+                    logger.info("Acknowledged event for PPID %s", ppid)
+                    return {"status": "ok", "event": event}
+
+            return {"status": "already acknowledged"}
 
         @self.app.post("/set/ppid/{ppid}/search")
         async def search(ppid: str, request: Request):
@@ -130,14 +165,18 @@ class RelayServer:
                 raise HTTPException(status_code=400, detail="Invalid JSON")
 
             prompt = data.get("prompt") or data.get("query")
-            if not prompt:
-                raise HTTPException(status_code=400, detail="prompt or query is required")
+            if not prompt or not str(prompt).strip():
+                raise HTTPException(status_code=400, detail="prompt or query is required and cannot be empty")
 
             queue = await self._get_queue_by_ppid(ppid)
+            now = datetime.now(timezone.utc).isoformat()
             if ppid in self.session_timestamps:
-                self.session_timestamps[ppid]["updated"] = datetime.now(timezone.utc).isoformat()
+                self.session_timestamps[ppid]["updated"] = now
                 self.session_timestamps[ppid]["data"].update(data)
 
+            event = {"type": "search", "prompt": prompt, "timestamp": now, "ack": False}
+            self.session_timestamps[ppid].setdefault("events", []).append(event)
+
             logger.info("Delivering search event for ppid %s: %s", ppid, prompt)
-            await queue.put({"type": "search", "prompt": prompt})
+            await queue.put(event)
             return {"status": "delivered"}
