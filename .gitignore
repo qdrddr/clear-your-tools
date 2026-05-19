@@ -13,6 +13,8 @@ env/
 .ruff_cache/
 .code-review-graph
 .grepai
+.cursor
+.temp
 
 # Generated benchmark artifacts
 src/catalog/tools.json

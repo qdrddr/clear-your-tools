@@ -4,5 +4,6 @@ network:
     upstreams:
       - upstream: anthropic
         url: https://api.novita.ai/anthropic
+        kind: anthropic
     endpoints:
       - anthropic
