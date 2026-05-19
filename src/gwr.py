@@ -128,6 +128,13 @@ class MCPAggregator:
         groups, tool_files = _group_files(input_files, decomposed_dir)
         final_tools = _process_groups(groups, tool_files, scores, decomposed_dir)
 
+        # Investigate why /ack has false; Save results to troubleshooting file
+        try:
+            with open("temp_cs_found_tools.json", "w") as tf:
+                json.dump(final_tools, tf, indent=2)
+        except Exception as e:
+            logger.error("Failed to save troubleshooting file: %s", e)
+
         return final_tools
 
     async def _handle_events(self, relay_url: str) -> None:
@@ -144,13 +151,21 @@ class MCPAggregator:
                     sessions = resp.json()
                     for session in sessions:
                         if session.get("ppid") == ppid:
+                            # Requirement 3: If session already has "tools" metadata, use it
+                            existing_tools = session.get("tools")
+                            if existing_tools:
+                                logger.info("Found existing tools in session metadata for PPID %s", ppid)
+                                await self._refresh_tools(prompt="", relay_url=relay_url, tools=existing_tools)
+
                             pending_events = session.get("events", [])
                             for event in pending_events:
                                 if not event.get("ack") and event.get("type") == "search":
                                     prompt = event.get("prompt")
-                                    if prompt:
-                                        logger.info("Processing pending event: %s", prompt)
-                                        await self._refresh_tools(prompt, relay_url)
+                                    # Check if the event itself has pre-selected tools
+                                    tools = event.get("tools")
+                                    if prompt or tools:
+                                        logger.info("Processing pending event: %s (has_tools=%s)", prompt, tools is not None)
+                                        await self._refresh_tools(prompt or "", relay_url, tools=tools)
             except Exception as e:
                 logger.error("Error fetching pending events: %s", e)
 
@@ -164,14 +179,23 @@ class MCPAggregator:
                             event_data = json.loads(line[6:])
                             if event_data.get("type") == "search":
                                 prompt = event_data.get("prompt") or event_data.get("query")
-                                logger.info("Received search event: %s", prompt)
-                                if prompt:
-                                    await self._refresh_tools(prompt, relay_url)
+                                tools = event_data.get("tools")
+                                logger.info("Received search event: %s (has_tools=%s)", prompt, tools is not None)
+                                if prompt or tools:
+                                    await self._refresh_tools(prompt or "", relay_url, tools=tools)
             except Exception as e:
                 logger.error("Error in event stream: %s", e)
 
-    async def _refresh_tools(self, prompt: str, relay_url: str | None = None) -> None:
-        filtered_tools = await self.run_filtering_pipeline(prompt)
+    async def _refresh_tools(self, prompt: str, relay_url: str | None = None, tools: list[dict[str, Any]] | None = None) -> None:
+        if tools is not None and len(tools) > 0:
+            logger.info("Using provided tool list for PPID %s (skipping pipeline)", self.current_session_id)
+            filtered_tools = tools
+        else:
+            if not prompt:
+                logger.warning("No prompt and no tools provided for refresh, skipping.")
+                return
+            filtered_tools = await self.run_filtering_pipeline(prompt)
+
         new_tool_names = [t["name"] for t in filtered_tools]
 
         # Compare with existing tools for session
@@ -183,7 +207,6 @@ class MCPAggregator:
             self.session_tools[self.current_session_id] = new_tool_names
             try:
                 # Emit tools/list_changed via STDIO to the connected MCP Client
-                # Include the filtered list of tools in the event payload as requested.
                 await self.mcp._mcp_server.send_notification(
                     "notifications/tools/list_changed",
                     {"tools": filtered_tools}
@@ -191,11 +214,14 @@ class MCPAggregator:
             except Exception as e:
                 logger.debug("Failed to send tools/list_changed: %s", e)
 
-        # 3. Acknowledge the event
+        # 3. Acknowledge the event and store the tool list in the Relay
         if relay_url:
             async with httpx.AsyncClient() as client:
                 try:
-                    await client.post(f"{relay_url}/ack/ppid/{self.current_session_id}")
+                    await client.post(
+                        f"{relay_url}/ack/ppid/{self.current_session_id}",
+                        json={"tools": filtered_tools}
+                    )
                 except Exception as e:
                     logger.error("Failed to acknowledge event: %s", e)
 
@@ -340,8 +366,22 @@ class MCPAggregator:
                             # Read response if needed or just log
                             data = await resp.json()
                             logger.info("Aggregator: Session registration response: %s %s", resp.status_code, data)
+
+                            # Requirement: If prompt exists in the existing session and tools are empty, trigger a refresh
+                            # list_sessions returns a list of sessions
+                            resp_list = await client.get(f"{relay_url}/list_sessions")
+                            if resp_list.status_code == 200:
+                                sessions = resp_list.json()
+                                for session in sessions:
+                                    if session.get("ppid") == self.current_session_id:
+                                        prompt = session.get("prompt")
+                                        tools = session.get("tools")
+                                        if prompt and (not tools or len(tools) == 0):
+                                            logger.info("Initial registration found prompt but no tools. Triggering extraction.")
+                                            asyncio.create_task(self._refresh_tools(prompt, relay_url))
+                                        break
                     except Exception as e:
-                        logger.error("Aggregator: Failed to register session: %s", e)
+                        logger.error("Aggregator: Failed to register and check initial state: %s", e)
             else:
                 logger.warning("Aggregator: No current_session_id found in environment, skipping registration.")
 

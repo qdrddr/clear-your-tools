@@ -108,11 +108,11 @@ class RelayServer:
                 self.session_timestamps[ppid]["data"].update(data)
 
             if prompt:
-                event = {"type": "search", "prompt": prompt, "timestamp": now, "ack": False}
+                event = {"type": "search", "timestamp": now, "ack": False}
                 self.session_timestamps[ppid].setdefault("events", []).append(event)
                 queue = self.sessions[ppid]
                 logger.info("Delivering search event for PPID %s: %s", ppid, prompt)
-                await queue.put(event)
+                await queue.put({"type": "search", "prompt": prompt, "timestamp": now, "ack": False})
 
             return {"status": "ok"}
 
@@ -139,23 +139,50 @@ class RelayServer:
             return StreamingResponse(event_generator(), media_type="text/event-stream")
 
         @self.app.post("/ack/ppid/{ppid}")
-        async def acknowledge_event(ppid: str):
-            """Acknowledge events for a PPID."""
+        async def acknowledge_event(ppid: str, request: Request):
+            """Acknowledge events for a PPID and optionally store the filtered tool list."""
             if ppid not in self.session_timestamps:
                 raise HTTPException(status_code=404, detail="PPID not found")
 
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+
+            tools = data.get("tools")
+            now = datetime.now(timezone.utc).isoformat()
+            self.session_timestamps[ppid]["updated"] = now
+            if tools is not None:
+                # Store tools in the session data so it shows up in list_sessions
+                self.session_timestamps[ppid].setdefault("data", {})["tools"] = tools
+                logger.info("Stored %d tools for PPID %s during ack", len(tools), ppid)
+
             events = self.session_timestamps[ppid].get("events", [])
             if not events:
-                return {"status": "no events to ack"}
+                return {"status": "ok", "message": "no events to ack", "tools_stored": tools is not None}
 
             # For simplicity, ack the latest unacknowledged event
             for event in reversed(events):
                 if not event.get("ack"):
                     event["ack"] = True
+                    event["updated"] = now
+                    if tools is not None:
+                        event["tools"] = tools
                     logger.info("Acknowledged event for PPID %s", ppid)
                     return {"status": "ok", "event": event}
 
-            return {"status": "already acknowledged"}
+            return {"status": "already acknowledged", "tools_stored": tools is not None}
+
+        @self.app.delete("/del/ppid/{ppid}")
+        async def delete_ppid(ppid: str):
+            """Delete session and queue for a PPID."""
+            logger.info("RelayServer: Deleting PPID: %s", ppid)
+            if ppid in self.sessions:
+                self.sessions.pop(ppid)
+                self.session_timestamps.pop(ppid, None)
+                return {"status": "ok", "message": f"PPID {ppid} deleted"}
+            else:
+                raise HTTPException(status_code=404, detail="PPID not found")
 
         @self.app.post("/set/ppid/{ppid}/search")
         async def search(ppid: str, request: Request):
@@ -174,9 +201,9 @@ class RelayServer:
                 self.session_timestamps[ppid]["updated"] = now
                 self.session_timestamps[ppid]["data"].update(data)
 
-            event = {"type": "search", "prompt": prompt, "timestamp": now, "ack": False}
+            event = {"type": "search", "timestamp": now, "ack": False}
             self.session_timestamps[ppid].setdefault("events", []).append(event)
 
             logger.info("Delivering search event for ppid %s: %s", ppid, prompt)
-            await queue.put(event)
+            await queue.put({"type": "search", "prompt": prompt, "timestamp": now, "ack": False})
             return {"status": "delivered"}
