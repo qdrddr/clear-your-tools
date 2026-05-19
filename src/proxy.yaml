@@ -1,0 +1,8 @@
+network:
+  proxy:
+    port: 8834
+    upstreams:
+      - upstream: anthropic
+        url: https://api.novita.ai/anthropic
+    endpoints:
+      - anthropic

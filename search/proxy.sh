@@ -1,0 +1,1 @@
+uv run src/proxy.py --port 1234
