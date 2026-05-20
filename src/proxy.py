@@ -125,6 +125,73 @@ def _pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     return pipeline
 
 
+def _catalog_file_paths(catalog: dict[str, Any], key: str) -> list[str]:
+    items = catalog.get(key)
+    if not isinstance(items, list):
+        return []
+    paths: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            path = item.get("file_path")
+            if path:
+                paths.append(str(path))
+    return sorted(paths)
+
+
+def _format_decomposed_table_lines(pruning: dict[str, Any]) -> list[str]:
+    """Table of json vs enum (md) counts per pipeline stage."""
+    breakdown = pruning.get("decomposed_breakdown") or {}
+    decomposed = pruning.get("decomposed") or {}
+    stage_order = ("build_index", "rerank", "llm")
+    stages = [s for s in stage_order if s in breakdown or s in decomposed]
+    if not stages:
+        return ["Decomposed items: (none)"]
+
+    rows: list[tuple[str, str, str]] = []
+    for stage in stages:
+        if stage in breakdown:
+            counts = breakdown[stage]
+            json_n = str(counts.get("json", 0))
+            md_n = str(counts.get("md", 0))
+        else:
+            total = decomposed.get(stage, "-")
+            json_n = str(total)
+            md_n = "-"
+        rows.append((stage, json_n, md_n))
+
+    col_stage = max(len("stage"), max(len(r[0]) for r in rows))
+    col_json = max(len("json"), max(len(r[1]) for r in rows))
+    col_md = max(len("enum (md)"), max(len(r[2]) for r in rows))
+    header = f"{'stage':<{col_stage}}  {'json':>{col_json}}  {'enum (md)':>{col_md}}"
+    sep = f"{'-' * col_stage}  {'-' * col_json}  {'-' * col_md}"
+    body = [f"{stage:<{col_stage}}  {json_n:>{col_json}}  {md_n:>{col_md}}" for stage, json_n, md_n in rows]
+    return ["Decomposed items:", header, sep, *body]
+
+
+def _format_decomposed_paths_lines(pruning: dict[str, Any]) -> list[str]:
+    """List file_path values per stage, json and enum (md) printed separately."""
+    catalog_by_stage = pruning.get("decomposed_catalog")
+    if not isinstance(catalog_by_stage, dict) or not catalog_by_stage:
+        return []
+
+    lines: list[str] = [""]
+    stage_order = ("build_index", "rerank", "llm")
+    for stage in stage_order:
+        catalog = catalog_by_stage.get(stage)
+        if not isinstance(catalog, dict):
+            continue
+        json_paths = _catalog_file_paths(catalog, "json")
+        md_paths = _catalog_file_paths(catalog, "md")
+        lines.append(f"{stage} json ({len(json_paths)}):")
+        lines.extend(f"  {p}" for p in json_paths)
+        lines.append(f"{stage} enum (md) ({len(md_paths)}):")
+        lines.extend(f"  {p}" for p in md_paths)
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
     """Print pruning summary to the terminal (uvicorn hides app logger.info by default)."""
     lines: list[str] = [""]
@@ -135,15 +202,8 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
         lines.extend(["user query:", ""])
         lines.append(query if query else "(none extracted)")
         lines.append("")
-        decomposed = pruning.get("decomposed") or {}
-        lines.extend(
-            [
-                "Decomposed items:",
-                f"build_index: {decomposed.get('build_index', '-')}",
-                f"rerank: {decomposed.get('rerank', '-')}",
-                f"llm: {decomposed.get('llm', '-')}",
-            ],
-        )
+        lines.extend(_format_decomposed_table_lines(pruning))
+        lines.extend(_format_decomposed_paths_lines(pruning))
         status = pruning.get("status")
         if status:
             tools_in = pruning.get("tools_in")
@@ -161,6 +221,7 @@ async def transform_request_body(
     content_type: str | None,
     kind: str | None,
     pruning_pipeline: list[str] | None = None,
+    debug: bool = False,
 ) -> tuple[bytes, dict[str, Any] | None]:
     if kind != "anthropic" or not body:
         return body, None
@@ -174,6 +235,7 @@ async def transform_request_body(
             transform_anthropic_request,
             payload,
             pruning_pipeline,
+            capture_decomposed_catalog=debug,
         )
         pruning_meta = pruning.to_dict() if pruning is not None else None
         return json.dumps(transformed).encode(), pruning_meta
@@ -211,6 +273,7 @@ def create_app(
             content_type,
             kind,
             pruning_pipeline,
+            debug,
         )
         forward_headers = filter_headers(request.headers)
 

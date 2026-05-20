@@ -42,9 +42,11 @@ class PruneResult:
     tools_out: int | None
     error: str | None
     decomposed: dict[str, int] = field(default_factory=dict)
+    decomposed_breakdown: dict[str, dict[str, int]] = field(default_factory=dict)
+    decomposed_catalog: dict[str, dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "status": self.status,
             "query": self.query,
             "tools_in": self.tools_in,
@@ -53,6 +55,11 @@ class PruneResult:
             "error": self.error,
             "decomposed": self.decomposed,
         }
+        if self.decomposed_breakdown:
+            out["decomposed_breakdown"] = self.decomposed_breakdown
+        if self.decomposed_catalog is not None:
+            out["decomposed_catalog"] = self.decomposed_catalog
+        return out
 
 
 def _is_junk_text(text: str) -> bool:
@@ -235,38 +242,77 @@ def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, A
 
 
 def _count_catalog_items(data: dict[str, Any]) -> int:
-    total = 0
-    for value in data.values():
-        if isinstance(value, list):
-            total += len(value)
-    return total
+    json_n, md_n = _count_json_md(data)
+    return json_n + md_n
+
+
+def _count_json_md(data: dict[str, Any]) -> tuple[int, int]:
+    json_items = data.get("json")
+    md_items = data.get("md")
+    json_n = len(json_items) if isinstance(json_items, list) else 0
+    md_n = len(md_items) if isinstance(md_items, list) else 0
+    return json_n, md_n
+
+
+def _breakdown_entry(data: dict[str, Any]) -> dict[str, int]:
+    json_n, md_n = _count_json_md(data)
+    return {"json": json_n, "md": md_n}
+
+
+def _snapshot_catalog(data: dict[str, Any]) -> dict[str, Any]:
+    return copy.deepcopy(data)
 
 
 def _run_pruning_pipeline(
     data: dict[str, Any],
     query: str,
     pruning_pipeline: list[str],
-) -> tuple[dict[str, Any], dict[str, int], dict[str, Any] | None, list[dict[str, Any]] | None]:
-    decomposed: dict[str, int] = {"build_index": _count_catalog_items(data)}
+    capture_catalog: bool = False,
+) -> tuple[
+    dict[str, Any],
+    dict[str, int],
+    dict[str, dict[str, int]],
+    dict[str, Any] | None,
+    list[dict[str, Any]] | None,
+    dict[str, dict[str, Any]] | None,
+]:
+    decomposed_breakdown: dict[str, dict[str, int]] = {
+        "build_index": _breakdown_entry(data),
+    }
+    decomposed: dict[str, int] = {
+        "build_index": decomposed_breakdown["build_index"]["json"] + decomposed_breakdown["build_index"]["md"],
+    }
+    snapshots: dict[str, dict[str, Any]] | None = {} if capture_catalog else None
     post_rerank: dict[str, Any] | None = None
     pre_rerank_json: list[dict[str, Any]] | None = None
+
+    if capture_catalog and snapshots is not None:
+        snapshots["build_index"] = _snapshot_catalog(data)
 
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
             pre_rerank_json = copy.deepcopy(data.get("json", []))
             data = rerank_catalog_dict(data, query)
-            decomposed["rerank"] = _count_catalog_items(data)
+            decomposed_breakdown["rerank"] = _breakdown_entry(data)
+            decomposed["rerank"] = (
+                decomposed_breakdown["rerank"]["json"] + decomposed_breakdown["rerank"]["md"]
+            )
+            if capture_catalog and snapshots is not None:
+                snapshots["rerank"] = _snapshot_catalog(data)
             if "llm" in pruning_pipeline[i + 1 :]:
                 post_rerank = copy.deepcopy(data)
         elif stage == "llm":
             if i > 0 and pruning_pipeline[i - 1] == "rerank":
                 data = trim_catalog_dict(data)
             data = llm_catalog_dict(data, query)
-            decomposed["llm"] = _count_catalog_items(data)
+            decomposed_breakdown["llm"] = _breakdown_entry(data)
+            decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
+            if capture_catalog and snapshots is not None:
+                snapshots["llm"] = _snapshot_catalog(data)
         else:
             raise ValueError(f"unknown pruning stage: {stage}")
 
-    return data, decomposed, post_rerank, pre_rerank_json
+    return data, decomposed, decomposed_breakdown, post_rerank, pre_rerank_json, snapshots
 
 
 def _json_entries_for_recompose(
@@ -313,6 +359,7 @@ def filter_tools_for_query(
     original_tools: list[dict[str, Any]],
     query: str,
     pruning_pipeline: list[str] | None = None,
+    capture_decomposed_catalog: bool = False,
 ) -> PruneResult:
     tools_in = len(original_tools)
     mcp_tools_in = sum(1 for t in original_tools if str(t.get("name", "")).startswith("mcp__"))
@@ -341,13 +388,19 @@ def filter_tools_for_query(
         )
 
     pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
+    decomposed: dict[str, int] = {}
+    decomposed_breakdown: dict[str, dict[str, int]] = {}
+    decomposed_catalog: dict[str, dict[str, Any]] | None = None
     try:
         index = build_catalog_index(entries, enums)
         data = index.to_catalog_dict()
-        data, decomposed, post_rerank, pre_rerank_json = _run_pruning_pipeline(
-            data,
-            query,
-            pipeline,
+        data, decomposed, decomposed_breakdown, post_rerank, pre_rerank_json, decomposed_catalog = (
+            _run_pruning_pipeline(
+                data,
+                query,
+                pipeline,
+                capture_catalog=capture_decomposed_catalog,
+            )
         )
         recompose_data = _recompose_catalog_data(data, post_rerank, pre_rerank_json)
         merged = retrieve_tools(
@@ -365,6 +418,9 @@ def filter_tools_for_query(
             mcp_tools_in=mcp_tools_in,
             tools_out=None,
             error=str(exc),
+            decomposed=decomposed,
+            decomposed_breakdown=decomposed_breakdown,
+            decomposed_catalog=decomposed_catalog,
         )
 
     if not merged:
@@ -377,6 +433,8 @@ def filter_tools_for_query(
             tools_out=None,
             error="pruned catalog produced no tools",
             decomposed=decomposed,
+            decomposed_breakdown=decomposed_breakdown,
+            decomposed_catalog=decomposed_catalog,
         )
 
     pruned = _merged_tools_to_anthropic(merged)
@@ -389,12 +447,15 @@ def filter_tools_for_query(
         tools_out=len(pruned),
         error=None,
         decomposed=decomposed,
+        decomposed_breakdown=decomposed_breakdown,
+        decomposed_catalog=decomposed_catalog,
     )
 
 
 def transform_anthropic_request(
     body: dict[str, Any],
     pruning_pipeline: list[str] | None = None,
+    capture_decomposed_catalog: bool = False,
 ) -> tuple[dict[str, Any], PruneResult | None]:
     """Return body (tools replaced when pruning applied) and pruning metadata."""
     original = copy.deepcopy(body)
@@ -417,7 +478,12 @@ def transform_anthropic_request(
             error="no user query extracted",
         )
 
-    result = filter_tools_for_query(tools, query, pruning_pipeline)
+    result = filter_tools_for_query(
+        tools,
+        query,
+        pruning_pipeline,
+        capture_decomposed_catalog=capture_decomposed_catalog,
+    )
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
             logger.warning("tool pruning failed: %s", result.error)
