@@ -1,22 +1,14 @@
-import tiktoken
 from typing import Any, Callable, TypeVar
 
-T = TypeVar("T")
+from build_index import count_tokens
 
-def count_tokens(text: str, model: str = "cl100k_base") -> int:
-    """Return the number of tokens in a string."""
-    try:
-        encoding = tiktoken.get_encoding(model)
-    except Exception:
-        encoding = tiktoken.get_encoding("cl100k_base")
-    return len(encoding.encode(text))
+T = TypeVar("T")
 
 def split_into_bulks(
     items: list[T],
     transform_fn: Callable[[T], str],
     base_tokens: int,
     max_tokens: int = 32000,
-    model: str = "cl100k_base"
 ) -> list[list[T]]:
     """Generic splitter that returns list of lists (bulks of items)."""
     bulks = []
@@ -25,7 +17,7 @@ def split_into_bulks(
 
     for item in items:
         text = transform_fn(item)
-        item_tokens = count_tokens(text, model)
+        item_tokens = count_tokens(text)
 
         # If a single item is too big to fit in any bulk, we skip it or handle it.
         # For now, we skip but warn if it exceeds the absolute limit.

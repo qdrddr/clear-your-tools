@@ -5,7 +5,40 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import tiktoken
+
 logger = logging.getLogger(__name__)
+
+_TIKTOKEN_ENCODING: tiktoken.Encoding | None = None
+
+
+def _tiktoken_encoding() -> tiktoken.Encoding:
+    global _TIKTOKEN_ENCODING
+    if _TIKTOKEN_ENCODING is None:
+        _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    return _TIKTOKEN_ENCODING
+
+
+def compact_json(obj: Any) -> str:
+    """Serialize JSON without indentation (stable token accounting)."""
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+
+
+def count_tokens(text: str) -> int:
+    """Return tiktoken count for text under cl100k_base."""
+    return len(_tiktoken_encoding().encode(text))
+
+
+def count_json_tokens(obj: Any) -> int:
+    """Compact-serialize obj and return its token count."""
+    return count_tokens(compact_json(obj))
+
+
+def log_token_usage(label: str, tokens: int) -> None:
+    """Print and log a token count line (console + logger)."""
+    msg = f"{label}: {tokens} tokens"
+    logger.info(msg)
+    print(msg, flush=True)
 
 HERE = Path(__file__).parent
 OUT = HERE / "catalog"

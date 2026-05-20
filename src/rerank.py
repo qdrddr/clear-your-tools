@@ -1,13 +1,17 @@
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
+from build_index import count_tokens, log_token_usage
 from dotenv import load_dotenv
 from litellm import rerank
-from split_bulks import count_tokens, split_into_bulks
+from split_bulks import split_into_bulks
+
+logger = logging.getLogger(__name__)
 
 RERANK_SCORE: float = 0.001
 RERANK_ENUMS: bool = True
@@ -105,16 +109,22 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
             continue
 
 
+def count_rerank_request_tokens(query: str, documents: list[str]) -> int:
+    """Estimate input tokens sent to the rerank API for one request."""
+    return count_tokens(query) + sum(count_tokens(doc) for doc in documents)
+
+
 def rerank_items(
     query: str,
     items: list[dict[str, Any]],
     api_key: str | None,
     extract_fn: Any,
     min_score: float | None = None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     """Generic reranking logic for both json and md items."""
     documents = []
     valid_indices = []
+    tokens_consumed = 0
 
     for i, item in enumerate(items):
         item["score"] = f"{0.0:.20f}"
@@ -124,7 +134,7 @@ def rerank_items(
             valid_indices.append(i)
 
     if not documents:
-        return items
+        return items, 0
 
     # Calculate base overhead (query)
     base_tokens = count_tokens(query) + 200  # buffer for wrapper tokens
@@ -144,6 +154,13 @@ def rerank_items(
         for bulk in bulks:
             bulk_indices = [x[0] for x in bulk]
             bulk_docs = [x[1] for x in bulk]
+            bulk_tokens = count_rerank_request_tokens(query, bulk_docs)
+            tokens_consumed += bulk_tokens
+            logger.info(
+                "rerank request tokens: %d (query + %d documents)",
+                bulk_tokens,
+                len(bulk_docs),
+            )
 
             try:
                 response = rerank(
@@ -166,13 +183,13 @@ def rerank_items(
         # Sort using float to ensure correct numerical order
         items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
         if min_score is not None:
-            return [item for item in items if float(item.get("score", 0)) >= min_score]
+            return [item for item in items if float(item.get("score", 0)) >= min_score], tokens_consumed
     except RuntimeError:
         raise
     except Exception as e:
         print(f"Error during reranking: {e}", file=sys.stderr)
 
-    return items
+    return items, tokens_consumed
 
 
 def _extract_md_content(item: dict[str, Any]) -> str | None:
@@ -203,33 +220,39 @@ def rerank_catalog_dict(
     query: str,
     *,
     prune: bool = True,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
     load_env()
     key = os.environ.get("DEEPINFRA_API_KEY")
+    tokens_consumed = 0
 
     if "json" in data and isinstance(data["json"], list):
-        data["json"] = rerank_items(
+        data["json"], json_tokens = rerank_items(
             query,
             data["json"],
             key,
             _extract_json_catalog_document,
             None,
         )
+        tokens_consumed += json_tokens
 
     if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
-        data["md"] = rerank_items(
+        data["md"], md_tokens = rerank_items(
             query,
             data["md"],
             key,
             _extract_md_content,
             None,
         )
+        tokens_consumed += md_tokens
+
+    if tokens_consumed:
+        log_token_usage("pruning model tokens (rerank)", tokens_consumed)
 
     if prune:
         data = prune_reranked_catalog(data)
 
-    return data
+    return data, tokens_consumed
 
 
 def main() -> None:
@@ -262,7 +285,7 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    data = rerank_catalog_dict(data, args.query)
+    data, _tokens = rerank_catalog_dict(data, args.query)
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:

@@ -209,6 +209,26 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
             tools_in = pruning.get("tools_in")
             tools_out = pruning.get("tools_out")
             lines.append(f"pruning status: {status} (tools {tools_in} -> {tools_out})")
+        tokens_in = pruning.get("tokens_in")
+        if tokens_in is not None:
+            tokens_out = pruning.get("tokens_out")
+            tokens_saved = pruning.get("tokens_saved")
+            if tokens_out is not None and tokens_saved is not None:
+                pct = (100.0 * tokens_saved / tokens_in) if tokens_in else 0.0
+                lines.append(
+                    f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} "
+                    f"(saved {tokens_saved}, {pct:.1f}%)",
+                )
+            else:
+                lines.append(f"tool tokens (compact JSON): input={tokens_in}")
+        pruning_model_tokens = pruning.get("pruning_model_tokens") or {}
+        if pruning_model_tokens:
+            parts = ", ".join(
+                f"{stage}={pruning_model_tokens[stage]}"
+                for stage in ("rerank", "llm")
+                if stage in pruning_model_tokens
+            )
+            lines.append(f"pruning model tokens: {parts}")
         error = pruning.get("error")
         if error:
             lines.append(f"pruning error: {error}")

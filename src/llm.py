@@ -1,14 +1,17 @@
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, TypeVar
 
-import tiktoken
+from build_index import count_tokens, log_token_usage
 from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -143,6 +146,12 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
     return formatted_chunks, item_metadata_storage, list_keys
 
 
+def count_llm_request_tokens(query: str, chunks_text: str) -> int:
+    """Estimate input tokens sent to the LLM selector for one request."""
+    user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+    return count_tokens(SELECTOR_SYSTEM_PROMPT) + count_tokens(user_message)
+
+
 def call_llm(api_key: str, query: str, chunks_text: str) -> RelevantChunkIds:
     user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
 
@@ -222,7 +231,7 @@ def process_results(
     return data
 
 
-def llm_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
+def llm_catalog_dict(data: dict[str, Any], query: str) -> tuple[dict[str, Any], int]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     api_key = get_api_key()
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
@@ -231,12 +240,19 @@ def llm_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
 
     bulks = split_chunks_into_bulks(query, SELECTOR_SYSTEM_PROMPT, formatted_chunks)
     selected_ids: set[int] = set()
+    tokens_consumed = 0
 
     for bulk_text in bulks:
+        bulk_tokens = count_llm_request_tokens(query, bulk_text)
+        tokens_consumed += bulk_tokens
+        logger.info("llm request tokens: %d", bulk_tokens)
         parsed_response = call_llm(api_key, query, bulk_text)
         selected_ids.update(parsed_response.ids)
 
-    return process_results(data, item_metadata_storage, selected_ids, list_keys)
+    if tokens_consumed:
+        log_token_usage("pruning model tokens (llm)", tokens_consumed)
+
+    return process_results(data, item_metadata_storage, selected_ids, list_keys), tokens_consumed
 
 
 def main() -> None:
@@ -260,7 +276,7 @@ def main() -> None:
             sys.exit(1)
 
     try:
-        result = llm_catalog_dict(data, args.query)
+        result, _tokens = llm_catalog_dict(data, args.query)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
             with open(args.output_json, "w") as f:
