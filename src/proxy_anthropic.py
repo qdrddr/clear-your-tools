@@ -4,15 +4,55 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
 from build_index import build_catalog_index, collect_enums, prepare_tool_entry
+from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import rerank_catalog_dict
+from retrieve_catalog import parse_json_input, retrieve_tools
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
+
 SYSTEM_REMINDER_PREFIX = "<system-reminder>"
+
+_META_QUERY_PATTERNS = (
+    re.compile(r"stepped away", re.IGNORECASE),
+    re.compile(r"coming back", re.IGNORECASE),
+    re.compile(r"recap in under \d+ words", re.IGNORECASE),
+)
+
+_ERROR_QUERY_PATTERNS = (
+    re.compile(r"malformed and could not be parsed", re.IGNORECASE),
+    re.compile(r"please retry\.?$", re.IGNORECASE),
+)
+
+
+@dataclass
+class PruneResult:
+    tools: list[dict[str, Any]] | None
+    status: str
+    query: str | None
+    tools_in: int
+    mcp_tools_in: int
+    tools_out: int | None
+    error: str | None
+    decomposed: dict[str, int] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "query": self.query,
+            "tools_in": self.tools_in,
+            "mcp_tools_in": self.mcp_tools_in,
+            "tools_out": self.tools_out,
+            "error": self.error,
+            "decomposed": self.decomposed,
+        }
 
 
 def _is_junk_text(text: str) -> bool:
@@ -85,24 +125,73 @@ def _user_message_has_text(msg: dict[str, Any]) -> bool:
     return False
 
 
+def _text_from_user_message(msg: dict[str, Any]) -> str | None:
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "text":
+                continue
+            text = block.get("text", "")
+            if isinstance(text, str) and not _is_junk_text(text):
+                parts.append(text.strip())
+        if parts:
+            return "\n".join(parts)
+    return None
+
+
+def _is_meta_user_query(text: str) -> bool:
+    for pattern in _META_QUERY_PATTERNS:
+        if pattern.search(text):
+            return True
+    if "recap" in text.lower() and "words" in text.lower() and len(text) < 200:
+        return True
+    return False
+
+
+def _is_error_user_query(text: str) -> bool:
+    for pattern in _ERROR_QUERY_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+
+def _is_junk_user_query(text: str) -> bool:
+    return _is_meta_user_query(text) or _is_error_user_query(text)
+
+
+def _query_rank(text: str) -> tuple[int, int]:
+    """Higher sorts first: prefer real tasks over errors/recap boilerplate."""
+    if _is_junk_user_query(text):
+        return (-1, len(text))
+    rank = 0
+    if "src/" in text or ".py" in text or ".ts" in text:
+        rank += 1000
+    if len(text) > 80:
+        rank += 500
+    return (rank, len(text))
+
+
 def extract_user_query(cleaned_messages: list[dict[str, Any]]) -> str | None:
-    """Walk user messages in reverse; return first non-junk type:text (or string content)."""
+    """Pick the best substantive user query, skipping recap/meta/error turns when possible."""
+    candidates: list[str] = []
     for msg in reversed(cleaned_messages):
         if msg.get("role") != "user":
             continue
         if not _user_message_has_text(msg):
             continue
-        content = msg.get("content")
-        if isinstance(content, str):
-            return content.strip()
-        if isinstance(content, list):
-            for block in reversed(content):
-                if not isinstance(block, dict) or block.get("type") != "text":
-                    continue
-                text = block.get("text", "")
-                if isinstance(text, str) and not _is_junk_text(text):
-                    return text.strip()
-    return None
+        text = _text_from_user_message(msg)
+        if text:
+            candidates.append(text)
+
+    if not candidates:
+        return None
+
+    non_junk = [text for text in candidates if not _is_junk_user_query(text)]
+    pool = non_junk if non_junk else candidates
+    return max(pool, key=_query_rank)
 
 
 def anthropic_tools_to_catalog_entries(
@@ -145,45 +234,194 @@ def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
+def _count_catalog_items(data: dict[str, Any]) -> int:
+    total = 0
+    for value in data.values():
+        if isinstance(value, list):
+            total += len(value)
+    return total
+
+
+def _run_pruning_pipeline(
+    data: dict[str, Any],
+    query: str,
+    pruning_pipeline: list[str],
+) -> tuple[dict[str, Any], dict[str, int], dict[str, Any] | None, list[dict[str, Any]] | None]:
+    decomposed: dict[str, int] = {"build_index": _count_catalog_items(data)}
+    post_rerank: dict[str, Any] | None = None
+    pre_rerank_json: list[dict[str, Any]] | None = None
+
+    for i, stage in enumerate(pruning_pipeline):
+        if stage == "rerank":
+            pre_rerank_json = copy.deepcopy(data.get("json", []))
+            data = rerank_catalog_dict(data, query)
+            decomposed["rerank"] = _count_catalog_items(data)
+            if "llm" in pruning_pipeline[i + 1 :]:
+                post_rerank = copy.deepcopy(data)
+        elif stage == "llm":
+            if i > 0 and pruning_pipeline[i - 1] == "rerank":
+                data = trim_catalog_dict(data)
+            data = llm_catalog_dict(data, query)
+            decomposed["llm"] = _count_catalog_items(data)
+        else:
+            raise ValueError(f"unknown pruning stage: {stage}")
+
+    return data, decomposed, post_rerank, pre_rerank_json
+
+
+def _json_entries_for_recompose(
+    data: dict[str, Any],
+    post_rerank: dict[str, Any] | None,
+    pre_rerank_json: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
+    json_paths, _ = parse_json_input(data, apply_decomposed_score_filter=False)
+    if json_paths:
+        json_items = data.get("json", [])
+        return json_items if isinstance(json_items, list) else []
+
+    if post_rerank is not None:
+        post_json = post_rerank.get("json", [])
+        if isinstance(post_json, list) and post_json:
+            return post_json
+
+    if pre_rerank_json:
+        return pre_rerank_json
+
+    return []
+
+
+def _recompose_catalog_data(
+    data: dict[str, Any],
+    post_rerank: dict[str, Any] | None,
+    pre_rerank_json: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Build catalog dict for retrieve_tools after LLM.
+
+    retrieve_catalog.reconstruct needs json file_path entries plus md scores.
+    The LLM stage often keeps only md (enum) chunks and drops all json paths; rerank may
+    also filter out every json chunk for weak queries. Fall back to post-rerank, then
+    pre-rerank json snapshots so decomposed selections still recompile into tools.
+    """
+    return {
+        "json": _json_entries_for_recompose(data, post_rerank, pre_rerank_json),
+        "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
+    }
+
+
 def filter_tools_for_query(
     original_tools: list[dict[str, Any]],
     query: str,
-) -> list[dict[str, Any]] | None:
+    pruning_pipeline: list[str] | None = None,
+) -> PruneResult:
+    tools_in = len(original_tools)
+    mcp_tools_in = sum(1 for t in original_tools if str(t.get("name", "")).startswith("mcp__"))
+
     if not query or not original_tools:
-        return None
+        return PruneResult(
+            tools=None,
+            status="skipped",
+            query=query or None,
+            tools_in=tools_in,
+            mcp_tools_in=mcp_tools_in,
+            tools_out=None,
+            error="no query or no tools",
+        )
+
     entries, enums = anthropic_tools_to_catalog_entries(original_tools)
     if not entries:
-        return None
+        return PruneResult(
+            tools=None,
+            status="skipped",
+            query=query,
+            tools_in=tools_in,
+            mcp_tools_in=mcp_tools_in,
+            tools_out=None,
+            error="no mcp__ tools in request",
+        )
+
+    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
     try:
         index = build_catalog_index(entries, enums)
         data = index.to_catalog_dict()
-        data = rerank_catalog_dict(data, query)
-        merged = index.pruned_tools_from_reranked(data)
+        data, decomposed, post_rerank, pre_rerank_json = _run_pruning_pipeline(
+            data,
+            query,
+            pipeline,
+        )
+        recompose_data = _recompose_catalog_data(data, post_rerank, pre_rerank_json)
+        merged = retrieve_tools(
+            recompose_data,
+            catalog=index,
+            apply_decomposed_score_filter=False,
+        )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
-        return None
+        return PruneResult(
+            tools=None,
+            status="failed",
+            query=query,
+            tools_in=tools_in,
+            mcp_tools_in=mcp_tools_in,
+            tools_out=None,
+            error=str(exc),
+        )
+
     if not merged:
-        return None
-    return _merged_tools_to_anthropic(merged)
+        return PruneResult(
+            tools=None,
+            status="failed",
+            query=query,
+            tools_in=tools_in,
+            mcp_tools_in=mcp_tools_in,
+            tools_out=None,
+            error="pruned catalog produced no tools",
+            decomposed=decomposed,
+        )
+
+    pruned = _merged_tools_to_anthropic(merged)
+    return PruneResult(
+        tools=pruned,
+        status="applied",
+        query=query,
+        tools_in=tools_in,
+        mcp_tools_in=mcp_tools_in,
+        tools_out=len(pruned),
+        error=None,
+        decomposed=decomposed,
+    )
 
 
-def transform_anthropic_request(body: dict[str, Any]) -> dict[str, Any]:
-    """Return body with only tools replaced when pruning succeeds; else unchanged."""
+def transform_anthropic_request(
+    body: dict[str, Any],
+    pruning_pipeline: list[str] | None = None,
+) -> tuple[dict[str, Any], PruneResult | None]:
+    """Return body (tools replaced when pruning applied) and pruning metadata."""
     original = copy.deepcopy(body)
     messages = original.get("messages") or []
     tools = original.get("tools") or []
     if not tools:
-        return original
+        return original, None
 
     cleaned = clean_messages(messages)
     query = extract_user_query(cleaned)
     if not query:
         logger.warning("no user query extracted; forwarding original tools")
-        return original
+        return original, PruneResult(
+            tools=None,
+            status="skipped",
+            query=None,
+            tools_in=len(tools),
+            mcp_tools_in=sum(1 for t in tools if str(t.get("name", "")).startswith("mcp__")),
+            tools_out=None,
+            error="no user query extracted",
+        )
 
-    pruned = filter_tools_for_query(tools, query)
-    if pruned is None:
-        return original
+    result = filter_tools_for_query(tools, query, pruning_pipeline)
+    if result.status != "applied" or result.tools is None:
+        if result.status == "failed":
+            logger.warning("tool pruning failed: %s", result.error)
+        return original, result
 
-    original["tools"] = pruned
-    return original
+    original["tools"] = result.tools
+    return original, result

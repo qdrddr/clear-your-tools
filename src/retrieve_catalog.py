@@ -271,7 +271,11 @@ def _extract_scores(data: Any) -> dict[str, float]:
     return scores
 
 
-def _extract_from_dict(data: dict[str, Any]) -> list[str]:
+def _extract_from_dict(
+    data: dict[str, Any],
+    *,
+    apply_decomposed_score_filter: bool = True,
+) -> list[str]:
     """Helper to extract file paths from a dictionary."""
     input_files: list[str] = []
     for key, value in data.items():
@@ -280,7 +284,7 @@ def _extract_from_dict(data: dict[str, Any]) -> list[str]:
         if isinstance(value, list):
             for entry in value:
                 if isinstance(entry, dict) and "file_path" in entry:
-                    if key == "json":
+                    if key == "json" and apply_decomposed_score_filter:
                         score = float(entry.get("score", 0))
                         if score <= DECOMPOSED_SCORE:
                             continue
@@ -290,10 +294,14 @@ def _extract_from_dict(data: dict[str, Any]) -> list[str]:
     return input_files
 
 
-def _extract_input_files(data: Any) -> list[str]:
+def _extract_input_files(
+    data: Any,
+    *,
+    apply_decomposed_score_filter: bool = True,
+) -> list[str]:
     """Extract file paths from various JSON formats."""
     if isinstance(data, dict):
-        return _extract_from_dict(data)
+        return _extract_from_dict(data, apply_decomposed_score_filter=apply_decomposed_score_filter)
     if isinstance(data, list):
         return [
             entry["file_path"] for entry in data if isinstance(entry, dict) and "file_path" in entry
@@ -301,9 +309,16 @@ def _extract_input_files(data: Any) -> list[str]:
     return []
 
 
-def parse_json_input(data: Any) -> tuple[list[str], dict[str, float]]:
+def parse_json_input(
+    data: Any,
+    *,
+    apply_decomposed_score_filter: bool = True,
+) -> tuple[list[str], dict[str, float]]:
     """Extract file paths and scores from various JSON formats."""
-    return _extract_input_files(data), _extract_scores(data)
+    return (
+        _extract_input_files(data, apply_decomposed_score_filter=apply_decomposed_score_filter),
+        _extract_scores(data),
+    )
 
 
 def _filter_items(items_with_scores: list[tuple[Any, float]]) -> list[Any]:
@@ -388,7 +403,7 @@ def process_groups(
             climbed = climb_and_merge(file_key, catalog)
             base_tool = deep_merge(base_tool, climbed)
 
-        base_tool["name"] = f"mcp__{server_name}_{tool_name_in_schema}"
+        base_tool["name"] = f"mcp__{server_name}__{tool_name_in_schema}"
 
         if scores:
             filter_and_sort_enums(base_tool, scores)
@@ -403,6 +418,7 @@ def retrieve_tools(
     *,
     catalog: DecomposedCatalog | CatalogIndex | None = None,
     decomposed_dir: Path | str | None = None,
+    apply_decomposed_score_filter: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Reconstruct merged tool schemas from search/rerank/llm output.
@@ -425,7 +441,10 @@ def retrieve_tools(
         else:
             raise TypeError("catalog must be DecomposedCatalog, CatalogIndex, or None")
 
-    input_files, scores = parse_json_input(data)
+    input_files, scores = parse_json_input(
+        data,
+        apply_decomposed_score_filter=apply_decomposed_score_filter,
+    )
     groups, tool_files = group_files(input_files, store)
     return process_groups(groups, tool_files, scores, store)
 

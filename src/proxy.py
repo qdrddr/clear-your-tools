@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 import httpx
 import uvicorn
 import yaml
+from dotenv import load_dotenv
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -64,13 +67,45 @@ def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]
 def resolve_upstream(
     path: str,
     routes: dict[str, tuple[str, str | None]],
-) -> tuple[str, str, str | None] | None:
+) -> tuple[str, str, str | None, str] | None:
     for prefix in sorted(routes, key=len, reverse=True):
         if path == prefix or path.startswith(prefix + "/"):
             suffix = path[len(prefix) :] if path != prefix else ""
             upstream_base, kind = routes[prefix]
-            return upstream_base, suffix, kind
+            endpoint_name = prefix.lstrip("/")
+            return upstream_base, suffix, kind, endpoint_name
     return None
+
+
+def _debug_log_path(endpoint_name: str) -> Path:
+    return Path(f"{endpoint_name}.log")
+
+
+def _body_for_snapshot(body: bytes, content_type: str | None) -> Any:
+    if not body:
+        return None
+    if content_type and "json" in content_type.lower():
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            pass
+    return {"_base64": base64.b64encode(body).decode("ascii")}
+
+
+def _append_debug_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
+    timestamp = datetime.now(UTC).isoformat()
+    block = f"--- {timestamp} ---\n{json.dumps(snapshot, indent=2)}\n"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
+async def _save_debug_snapshot(
+    endpoint_name: str,
+    snapshot: dict[str, Any],
+) -> Path:
+    path = _debug_log_path(endpoint_name)
+    await asyncio.to_thread(_append_debug_snapshot, path, snapshot)
+    return path
 
 
 def filter_headers(headers: httpx.Headers) -> dict[str, str]:
@@ -81,29 +116,80 @@ def filter_headers(headers: httpx.Headers) -> dict[str, str]:
     }
 
 
+def _pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
+    pipeline = config.get("pruning_pipeline")
+    if pipeline is None:
+        return ["rerank"]
+    if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
+        raise ValueError("pruning_pipeline must be a list of stage names")
+    return pipeline
+
+
+def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
+    """Print pruning summary to the terminal (uvicorn hides app logger.info by default)."""
+    lines: list[str] = [""]
+    if pruning is None:
+        lines.extend(["user query:", "(none — body was not transformed)", ""])
+    else:
+        query = pruning.get("query")
+        lines.extend(["user query:", ""])
+        lines.append(query if query else "(none extracted)")
+        lines.append("")
+        decomposed = pruning.get("decomposed") or {}
+        lines.extend(
+            [
+                "Decomposed items:",
+                f"build_index: {decomposed.get('build_index', '-')}",
+                f"rerank: {decomposed.get('rerank', '-')}",
+                f"llm: {decomposed.get('llm', '-')}",
+            ],
+        )
+        status = pruning.get("status")
+        if status:
+            tools_in = pruning.get("tools_in")
+            tools_out = pruning.get("tools_out")
+            lines.append(f"pruning status: {status} (tools {tools_in} -> {tools_out})")
+        error = pruning.get("error")
+        if error:
+            lines.append(f"pruning error: {error}")
+    lines.append("")
+    print("\n".join(lines), flush=True)
+
+
 async def transform_request_body(
     body: bytes,
     content_type: str | None,
     kind: str | None,
-) -> bytes:
+    pruning_pipeline: list[str] | None = None,
+) -> tuple[bytes, dict[str, Any] | None]:
     if kind != "anthropic" or not body:
-        return body
+        return body, None
     if not content_type or "json" not in content_type.lower():
-        return body
+        return body, None
     try:
         from proxy_anthropic import transform_anthropic_request
 
         payload = json.loads(body)
-        transformed = await asyncio.to_thread(transform_anthropic_request, payload)
-        return json.dumps(transformed).encode()
+        transformed, pruning = await asyncio.to_thread(
+            transform_anthropic_request,
+            payload,
+            pruning_pipeline,
+        )
+        pruning_meta = pruning.to_dict() if pruning is not None else None
+        return json.dumps(transformed).encode(), pruning_meta
     except json.JSONDecodeError:
-        return body
+        return body, None
     except Exception as exc:
         logger.warning("anthropic transform failed: %s", exc)
-        return body
+        return body, {"status": "failed", "error": str(exc)}
 
 
-def create_app(routes: dict[str, tuple[str, str | None]]) -> Starlette:
+def create_app(
+    routes: dict[str, tuple[str, str | None]],
+    pruning_pipeline: list[str] | None = None,
+    debug: bool = False,
+    debug_strict: bool = False,
+) -> Starlette:
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
@@ -112,19 +198,59 @@ def create_app(routes: dict[str, tuple[str, str | None]]) -> Starlette:
         if match is None:
             return Response("Not Found", status_code=404)
 
-        upstream_base, path_suffix, kind = match
+        upstream_base, path_suffix, kind, endpoint_name = match
         query = request.url.query
         target_url = f"{upstream_base}{path_suffix}"
         if query:
             target_url = f"{target_url}?{query}"
 
         body = await request.body()
-        body = await transform_request_body(
+        content_type = request.headers.get("content-type")
+        body, pruning_meta = await transform_request_body(
             body,
-            request.headers.get("content-type"),
+            content_type,
             kind,
+            pruning_pipeline,
         )
         forward_headers = filter_headers(request.headers)
+
+        if debug:
+            if pruning_meta and pruning_meta.get("status") != "applied":
+                logger.warning(
+                    "pruning %s: %s",
+                    pruning_meta.get("status"),
+                    pruning_meta.get("error"),
+                )
+            _print_debug_pruning(pruning_meta)
+            snapshot = {
+                "method": request.method,
+                "path": request.url.path,
+                "query": query or None,
+                "target_url": target_url,
+                "headers": forward_headers,
+                "body": _body_for_snapshot(body, content_type),
+                "pruning": pruning_meta,
+            }
+            saved_to = await _save_debug_snapshot(endpoint_name, snapshot)
+            logger.info("debug snapshot appended: endpoint=%s path=%s", endpoint_name, request.url.path)
+            if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
+                return JSONResponse(
+                    {
+                        "debug": True,
+                        "error": "pruning not applied",
+                        "pruning": pruning_meta,
+                        "saved_to": str(saved_to),
+                    },
+                    status_code=502,
+                )
+            return JSONResponse(
+                {
+                    "debug": True,
+                    "saved_to": str(saved_to),
+                    "bytes": len(body),
+                    "pruning": pruning_meta,
+                },
+            )
 
         client = httpx.AsyncClient(timeout=None)
         try:
@@ -182,13 +308,40 @@ def main() -> None:
         default=None,
         help="Path to proxy.yaml",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Do not call upstream; append request snapshots to {endpoint}.log",
+    )
+    parser.add_argument(
+        "--debug-strict",
+        action="store_true",
+        help="With --debug, return 502 when tool pruning did not apply",
+    )
     args = parser.parse_args()
+
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+
+    if args.debug:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s:%(name)s: %(message)s",
+            force=True,
+        )
 
     config = load_proxy_config(args.config)
     proxy_cfg = config["network"]["proxy"]
     routes = build_routes(proxy_cfg)
+    pruning_pipeline = _pruning_pipeline_from_config(config)
     port = resolve_port(config, args.port)
-    app = create_app(routes)
+    app = create_app(
+        routes,
+        pruning_pipeline,
+        debug=args.debug,
+        debug_strict=args.debug_strict,
+    )
 
     uvicorn.run(app, host="0.0.0.0", port=port)
 

@@ -73,7 +73,11 @@ class CatalogIndex:
         """Rebuild merged tool schemas from a reranked catalog dict (in-memory only)."""
         from retrieve_catalog import retrieve_tools
 
-        return retrieve_tools(data, catalog=self)
+        return retrieve_tools(
+            data,
+            catalog=self,
+            apply_decomposed_score_filter=False,
+        )
 
 
 # ------------------------------------------------------------------ #

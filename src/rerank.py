@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import count_tokens, split_into_bulks
 
-RERANK_SCORE: float = 0
+RERANK_SCORE: float = 0.2
 RERANK_ENUMS: bool = True
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
 
@@ -58,8 +58,8 @@ def extract_document_text(item_content: Any) -> str | None:
 
 
 def load_env() -> None:
-    """Load environment variables from .env if it exists."""
-    env_path = Path("src/.env")
+    """Load environment variables from src/.env next to this module."""
+    env_path = Path(__file__).resolve().parent / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 
@@ -130,22 +130,36 @@ def rerank_items(
             base_tokens=base_tokens
         )
 
+        bulk_errors: list[Exception] = []
+        any_success = False
         for bulk in bulks:
             bulk_indices = [x[0] for x in bulk]
             bulk_docs = [x[1] for x in bulk]
 
-            response = rerank(
-                model=RERANK_MODEL,
-                query=query,
-                documents=bulk_docs,
-                api_key=api_key,
-            )
-            process_response(response, bulk_indices, items)
+            try:
+                response = rerank(
+                    model=RERANK_MODEL,
+                    query=query,
+                    documents=bulk_docs,
+                    api_key=api_key,
+                )
+                process_response(response, bulk_indices, items)
+                any_success = True
+            except Exception as bulk_exc:
+                bulk_errors.append(bulk_exc)
+                print(f"Error during reranking bulk: {bulk_exc}", file=sys.stderr)
+
+        if not any_success and bulk_errors:
+            raise RuntimeError(
+                f"All rerank bulks failed ({len(bulk_errors)}): {bulk_errors[-1]}",
+            ) from bulk_errors[-1]
 
         # Sort using float to ensure correct numerical order
         items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
         if min_score is not None:
             return [item for item in items if float(item.get("score", 0)) >= min_score]
+    except RuntimeError:
+        raise
     except Exception as e:
         print(f"Error during reranking: {e}", file=sys.stderr)
 
@@ -157,15 +171,10 @@ def _extract_md_content(item: dict[str, Any]) -> str | None:
     return str(content) if content else None
 
 
-def rerank_catalog_dict(
-    data: dict[str, Any],
-    query: str,
-    *,
-    api_key: str | None = None,
-) -> dict[str, Any]:
+def rerank_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
     """Score in-place data['json'] and optionally data['md']; return data."""
     load_env()
-    key = api_key if api_key is not None else os.environ.get("DEEPINFRA_API_KEY")
+    key = os.environ.get("DEEPINFRA_API_KEY")
 
     if "json" in data and isinstance(data["json"], list):
         data["json"] = rerank_items(
@@ -218,7 +227,7 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    data = rerank_catalog_dict(data, args.query, api_key=api_key)
+    data = rerank_catalog_dict(data, args.query)
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:

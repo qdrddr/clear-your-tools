@@ -41,6 +41,7 @@ latex/*.log
 latex/*.out
 latex/*.toc
 latex/*.synctex.gz
+*.log
 
 # Source research notes (excluded from public repo per author preference)
 LLM Tool Schema Optimization.md

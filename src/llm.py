@@ -14,6 +14,20 @@ T = TypeVar("T")
 
 LLM_MCP_SELECTOR_MODEL: str = "openrouter/inception/mercury-2"
 
+LLM_TRIM_TOP_K_JSON: int = 40
+LLM_TRIM_MIN_JSON_SCORE: float = 0.0
+
+LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
+
+SELECTOR_SYSTEM_PROMPT = (
+    'These are MCP tools and their enums and optional properties in a "decomposed" state. '
+    "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
+    "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
+    "The goal is to return chunk ids that match the user query the most. "
+    "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
+    "to save on tokens by removing the irrelevant to user query noise."
+)
+
 
 class RelevantChunkIds(BaseModel):
     ids: list[int]
@@ -25,7 +39,7 @@ def load_env() -> None:
     if "OPENROUTER_API_KEY" in os.environ:
         return
 
-    env_path = Path("src/.env")
+    env_path = Path(__file__).resolve().parent / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 
@@ -52,12 +66,46 @@ def read_json_input(path: str) -> dict[str, Any]:
         sys.exit(1)
 
 
+def _json_item_score(item: dict[str, Any]) -> float:
+    score = item.get("score")
+    if score is None:
+        return 0.0
+    try:
+        return float(score)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Cap json entries after rerank; strip fields irrelevant to the LLM selector."""
+    json_items = data.get("json")
+    if not isinstance(json_items, list):
+        return data
+
+    filtered: list[dict[str, Any]] = []
+    for item in json_items:
+        if not isinstance(item, dict):
+            continue
+        if _json_item_score(item) < LLM_TRIM_MIN_JSON_SCORE:
+            continue
+        filtered.append(item)
+
+    filtered.sort(key=lambda x: str(x.get("file_path", "")))
+
+    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
+    for item in trimmed:
+        for field in LLM_TRIM_FIELDS:
+            item.pop(field, None)
+
+    data["json"] = trimmed
+    return data
+
+
 def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], list[str]]:
     list_keys = [k for k, v in data.items() if isinstance(v, list)]
 
     if not list_keys:
-        print("Error: No list found in JSON root.", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError("No list found in JSON root.")
 
     formatted_chunks: list[str] = []
     item_metadata_storage: dict[int, Any] = {}
@@ -94,22 +142,13 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
 
 
 def call_llm(api_key: str, query: str, chunks_text: str) -> RelevantChunkIds:
-    system_prompt = (
-        'These are MCP tools and their enums and optional properties in a "decomposed" state. '
-        "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
-        "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
-        "The goal is to return chunk ids that match the user query the most. "
-        "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
-        "to save on tokens by removing the irrelevant to user query noise."
-    )
-
     user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
 
     # litellm.completion returns a ModelResponse object but it's often treated as Any
     response: Any = completion(
         model=LLM_MCP_SELECTOR_MODEL,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": SELECTOR_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
         api_key=api_key,
@@ -181,6 +220,23 @@ def process_results(
     return data
 
 
+def llm_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
+    """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
+    api_key = get_api_key()
+    formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
+
+    from split_bulks import split_chunks_into_bulks
+
+    bulks = split_chunks_into_bulks(query, SELECTOR_SYSTEM_PROMPT, formatted_chunks)
+    selected_ids: set[int] = set()
+
+    for bulk_text in bulks:
+        parsed_response = call_llm(api_key, query, bulk_text)
+        selected_ids.update(parsed_response.ids)
+
+    return process_results(data, item_metadata_storage, selected_ids, list_keys)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Filter JSON items using an LLM on OpenRouter.")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -190,8 +246,6 @@ def main() -> None:
     parser.add_argument("query", help="User search query")
 
     args = parser.parse_args()
-
-    api_key = get_api_key()
 
     if args.json:
         data = read_json_input(args.json)
@@ -203,28 +257,8 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
-
-    system_prompt = (
-        'These are MCP tools and their enums and optional properties in a "decomposed" state. '
-        "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
-        "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
-        "The goal is to return chunk ids that match the user query the most. "
-        "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
-        "to save on tokens by removing the irrelevant to user query noise."
-    )
-
     try:
-        from split_bulks import split_chunks_into_bulks
-        bulks = split_chunks_into_bulks(args.query, system_prompt, formatted_chunks)
-        selected_ids = set()
-
-        for bulk_text in bulks:
-            parsed_response = call_llm(api_key, args.query, bulk_text)
-            selected_ids.update(parsed_response.ids)
-
-        result = process_results(data, item_metadata_storage, selected_ids, list_keys)
-
+        result = llm_catalog_dict(data, args.query)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
             with open(args.output_json, "w") as f:
