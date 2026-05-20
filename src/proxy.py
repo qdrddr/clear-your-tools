@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
-    config_path = path or Path(__file__).with_name("proxy.yaml")
+    config_path = path or Path(__file__).with_name("config.yaml")
     with config_path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
@@ -383,13 +383,13 @@ def main() -> None:
         "--port",
         type=int,
         default=None,
-        help=f"Listen port (overrides proxy.yaml; default {DEFAULT_PORT})",
+        help=f"Listen port (overrides config.yaml; default {DEFAULT_PORT})",
     )
     parser.add_argument(
         "--config",
         type=Path,
         default=None,
-        help="Path to proxy.yaml",
+        help="Path to config.yaml",
     )
     parser.add_argument(
         "--debug",

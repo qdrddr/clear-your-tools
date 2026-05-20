@@ -59,3 +59,16 @@ models:
         # base_url: https://openrouter.ai/api/v1
 vectordb:
   dir: .vectordb
+
+pruning_pipeline:
+  - rerank
+#  - llm
+network:
+  proxy:
+    port: 8834
+    upstreams:
+      - upstream: anthropic
+        url: https://api.novita.ai/anthropic
+        kind: anthropic
+    endpoints:
+      - anthropic
