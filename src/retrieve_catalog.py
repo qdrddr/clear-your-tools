@@ -37,14 +37,14 @@ def get_root_tool_key(file_path: str) -> str | None:
         return None
 
     rel = Path(key).relative_to(DECOMPOSED_ROOT)
-    if len(rel.parts) < 2:
+    if not rel.parts:
         return None
 
-    server = rel.parts[0]
-    tool_name = rel.parts[1]
-    if tool_name.endswith(JSON_EXT):
-        tool_name = tool_name[: -len(JSON_EXT)]
-    return str(DECOMPOSED_ROOT / server / f"{tool_name}{JSON_EXT}")
+    if len(rel.parts) == 1 and rel.parts[0].endswith(JSON_EXT):
+        return key
+
+    tool_id = rel.parts[0]
+    return str(DECOMPOSED_ROOT / f"{tool_id}{JSON_EXT}")
 
 
 @dataclass
@@ -144,6 +144,8 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
     Recursively walk the directory, read every *.json and *.md file,
     and build a dictionary structure matching the input for rerank/llm.
     """
+    from build_index import tool_id_from_decomposed_rel
+
     root = Path(dir_path)
     if not root.is_dir():
         raise FileNotFoundError(f"Directory not found: {dir_path}")
@@ -163,6 +165,7 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
                 content = file_path.read_text(encoding="utf-8")
                 md_entries.append(
                     {
+                        "id": file_path.stem,
                         "file_path": rel_path,
                         "score": 0.0,
                         "start_line": 1,
@@ -179,8 +182,13 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
                 raw_text = file_path.read_text(encoding="utf-8")
                 content = json.loads(raw_text)
                 line_count = len(raw_text.splitlines())
+                decomposed_key = to_decomposed_key(rel_path)
+                entry_id = content.get("id") if isinstance(content, dict) else None
+                if not entry_id and decomposed_key is not None:
+                    entry_id = tool_id_from_decomposed_rel(decomposed_key)
                 json_entries.append(
                     {
+                        "id": entry_id or file_path.stem,
                         "file_path": rel_path,
                         "score": 0.0,
                         "start_line": 1,
@@ -365,7 +373,7 @@ def group_files(
 
         rel = Path(key).relative_to(DECOMPOSED_ROOT)
         parts = rel.parts
-        is_tool = len(parts) == 2 and parts[1].endswith(JSON_EXT)
+        is_tool = len(parts) == 1 and parts[0].endswith(JSON_EXT)
 
         root_tool = get_root_tool_key(key)
         if root_tool is None:
@@ -394,7 +402,6 @@ def process_groups(
             print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
             continue
 
-        server_name = Path(root_tool).parts[-2]
         tool_name_in_schema = base_tool.get("name", Path(root_tool).stem)
 
         for file_key in files:
@@ -403,7 +410,9 @@ def process_groups(
             climbed = climb_and_merge(file_key, catalog)
             base_tool = deep_merge(base_tool, climbed)
 
-        base_tool["name"] = f"mcp__{server_name}__{tool_name_in_schema}"
+        tool_name = base_tool.get("name") or tool_name_in_schema or Path(root_tool).stem
+        base_tool["name"] = tool_name
+        base_tool.pop("id", None)
 
         if scores:
             filter_and_sort_enums(base_tool, scores)

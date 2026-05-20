@@ -20,7 +20,19 @@ from cocoindex_code.cli import (
 )
 from cocoindex_code.protocol import SearchResponse, SearchResult
 
+from build_index import tool_id_from_decomposed_rel
+from retrieve_catalog import to_decomposed_key
+
 app = typer.Typer(help="Code search wrapper.")
+
+
+def _entry_id_from_result(file_path: str, content: Any, *, is_json: bool) -> str:
+    if is_json and isinstance(content, dict) and content.get("id"):
+        return str(content["id"])
+    decomposed_key = to_decomposed_key(file_path)
+    if decomposed_key is not None:
+        return tool_id_from_decomposed_rel(decomposed_key)
+    return Path(file_path).stem
 
 
 def _format_json_output(
@@ -38,6 +50,7 @@ def _format_json_output(
             pass
         output["md"].append(
             {
+                "id": _entry_id_from_result(r.file_path, content, is_json=False),
                 "file_path": r.file_path,
                 "score": round(r.score, 3),
                 "start_line": r.start_line,
@@ -55,6 +68,7 @@ def _format_json_output(
             pass
         output["json"].append(
             {
+                "id": _entry_id_from_result(r.file_path, content, is_json=True),
                 "file_path": r.file_path,
                 "score": round(r.score, 3),
                 "start_line": r.start_line,

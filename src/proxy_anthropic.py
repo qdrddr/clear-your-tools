@@ -208,20 +208,15 @@ def anthropic_tools_to_catalog_entries(
     all_enums: list[Any] = []
     for tool in tools:
         name = tool.get("name", "")
-        if not name.startswith("mcp__"):
+        if not name:
             continue
-        rest = name[5:]
-        parts = rest.split("__", 1)
-        if len(parts) < 2:
-            continue
-        server_name, tool_name = parts[0], parts[1]
         input_schema = tool.get("input_schema") or tool.get("inputSchema") or {}
         tool_obj = SimpleNamespace(
-            name=tool_name,
+            name=name,
             description=tool.get("description", "") or "",
             inputSchema=copy.deepcopy(input_schema),
         )
-        entry = prepare_tool_entry(server_name, tool_obj)
+        entry = prepare_tool_entry("", tool_obj)
         all_enums.extend(collect_enums(entry["full_schema"]["inputSchema"]))
         entries.append(entry)
     return entries, all_enums
@@ -231,9 +226,10 @@ def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, A
     out: list[dict[str, Any]] = []
     for tool in merged:
         schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+        tool_name = tool.get("name", "")
         out.append(
             {
-                "name": tool.get("name", ""),
+                "name": tool_name,
                 "description": tool.get("description", ""),
                 "input_schema": schema,
             },
@@ -363,7 +359,7 @@ def filter_tools_for_query(
     capture_decomposed_catalog: bool = False,
 ) -> PruneResult:
     tools_in = len(original_tools)
-    mcp_tools_in = sum(1 for t in original_tools if str(t.get("name", "")).startswith("mcp__"))
+    catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
     if not query or not original_tools:
         return PruneResult(
@@ -371,7 +367,7 @@ def filter_tools_for_query(
             status="skipped",
             query=query or None,
             tools_in=tools_in,
-            mcp_tools_in=mcp_tools_in,
+            mcp_tools_in=catalog_tools_in,
             tools_out=None,
             error="no query or no tools",
         )
@@ -383,9 +379,9 @@ def filter_tools_for_query(
             status="skipped",
             query=query,
             tools_in=tools_in,
-            mcp_tools_in=mcp_tools_in,
+            mcp_tools_in=catalog_tools_in,
             tools_out=None,
-            error="no mcp__ tools in request",
+            error="no tools in request",
         )
 
     pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
@@ -416,7 +412,7 @@ def filter_tools_for_query(
             status="failed",
             query=query,
             tools_in=tools_in,
-            mcp_tools_in=mcp_tools_in,
+            mcp_tools_in=catalog_tools_in,
             tools_out=None,
             error=str(exc),
             decomposed=decomposed,
@@ -430,7 +426,7 @@ def filter_tools_for_query(
             status="failed",
             query=query,
             tools_in=tools_in,
-            mcp_tools_in=mcp_tools_in,
+            mcp_tools_in=catalog_tools_in,
             tools_out=None,
             error="pruned catalog produced no tools",
             decomposed=decomposed,
@@ -444,7 +440,7 @@ def filter_tools_for_query(
         status="applied",
         query=query,
         tools_in=tools_in,
-        mcp_tools_in=mcp_tools_in,
+        mcp_tools_in=catalog_tools_in,
         tools_out=len(pruned),
         error=None,
         decomposed=decomposed,
@@ -474,7 +470,7 @@ def transform_anthropic_request(
             status="skipped",
             query=None,
             tools_in=len(tools),
-            mcp_tools_in=sum(1 for t in tools if str(t.get("name", "")).startswith("mcp__")),
+            mcp_tools_in=sum(1 for t in tools if t.get("name")),
             tools_out=None,
             error="no user query extracted",
         )

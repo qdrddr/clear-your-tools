@@ -16,6 +16,21 @@ MD_EXT = ".md"
 DECOMPOSED_PREFIX = "schemas/decomposed/"
 
 
+def tool_id_from_decomposed_rel(rel_path: str) -> str:
+    """Return the tool id encoded in a decomposed catalog relative path."""
+    if rel_path.startswith(DECOMPOSED_PREFIX):
+        rel = rel_path[len(DECOMPOSED_PREFIX) :]
+    else:
+        rel = rel_path
+    parts = Path(rel).parts
+    if not parts:
+        return Path(rel).stem
+    first = parts[0]
+    if first.endswith(JSON_EXT):
+        return first[: -len(JSON_EXT)]
+    return first
+
+
 # ------------------------------------------------------------------ #
 # Data types
 # ------------------------------------------------------------------ #
@@ -45,6 +60,7 @@ class CatalogIndex:
             if suffix == MD_EXT:
                 md_entries.append(
                     {
+                        "id": Path(rel_path).stem,
                         "file_path": file_path,
                         "score": 1.0,
                         "start_line": 1,
@@ -56,8 +72,10 @@ class CatalogIndex:
             elif suffix == JSON_EXT:
                 parsed = json.loads(content)
                 line_count = len(content.splitlines())
+                entry_id = parsed.get("id") or tool_id_from_decomposed_rel(rel_path)
                 json_entries.append(
                     {
+                        "id": entry_id,
                         "file_path": file_path,
                         "score": 1.0,
                         "start_line": 1,
@@ -115,13 +133,6 @@ def _prune_stale_files(root: Path, expected_paths: set[Path]) -> None:
 # ------------------------------------------------------------------ #
 # Schema processing helpers
 # ------------------------------------------------------------------ #
-def get_tool_id(server_name: str, tool_name: str) -> str:
-    prefix = f"{server_name}_"
-    if tool_name.startswith(prefix):
-        return tool_name[len(prefix):]
-    return tool_name
-
-
 def truncate_description(description: str | None, max_tokens: int = 60) -> str:
     if not description:
         return ""
@@ -180,7 +191,7 @@ def _build_property_file(
             current = {"patternProperties": {segment["pattern"]: current}}
         elif seg_type in ("if", "then", "else", "not", "contains", "propertyNames"):
             current = {seg_type: current}
-    return {"name": tool_name, "inputSchema": current}
+    return {"id": tool_name, "name": tool_name, "inputSchema": current}
 
 
 def _process_node(
@@ -306,27 +317,25 @@ def decompose_tool_schema(
     tool_info: dict[str, Any],
 ) -> tuple[dict[str, Any], list[tuple[list[dict[str, Any]], dict[str, Any]]]]:
     """Decompose one tool schema into a filtered root schema and extracted property files."""
-    s_name: str = tool_info["server"]
-    t_name: str = tool_info["tool"]
+    tool_id: str = tool_info["id"]
     t_desc: str = tool_info["full_schema"]["description"]
     t_schema: Any = copy.deepcopy(tool_info["full_schema"]["inputSchema"])
     extractions: list[tuple[list[dict[str, Any]], dict[str, Any]]] = []
     filtered = (
-        _process_node(t_schema, t_name, s_name, [], extractions)
+        _process_node(t_schema, tool_id, tool_info.get("server", ""), [], extractions)
         if isinstance(t_schema, dict)
         else t_schema
     )
-    root_schema = {"name": t_name, "description": t_desc, "inputSchema": filtered}
+    root_schema = {"id": tool_id, "name": tool_id, "description": t_desc, "inputSchema": filtered}
     return root_schema, extractions
 
 
 def _property_relative_path(
-    server_name: str,
     tool_id: str,
     path_segments: list[dict[str, Any]],
     prop_name: str,
 ) -> str:
-    parts = [DECOMPOSED_PREFIX.rstrip("/"), server_name, tool_id]
+    parts = [DECOMPOSED_PREFIX.rstrip("/"), tool_id]
     for seg in path_segments[:-1]:
         if seg["type"] == "properties":
             parts.append(seg["name"])
@@ -338,24 +347,20 @@ def _property_relative_path(
 
 def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:
     """Build one tool catalog entry without any file I/O."""
-    tool_name: str = tool.name
-    prefix = f"{server_name}_"
-    base_frontend_name = (
-        tool_name if tool_name.startswith(prefix) else f"{server_name}_{tool_name}"
-    )
-    frontend_name = f"mcp__{base_frontend_name}"
+    tool_id: str = tool.name
 
     input_schema = copy.deepcopy(tool.inputSchema)
     full_schema = {
-        "name": tool_name,
+        "id": tool_id,
+        "name": tool_id,
         "description": tool.description,
         "inputSchema": input_schema,
     }
 
     return {
-        "id": frontend_name,
+        "id": tool_id,
         "server": server_name,
-        "tool": tool_name,
+        "tool": tool_id,
         "summary": truncate_description(tool.description or ""),
         "full_schema": full_schema,
     }
@@ -369,25 +374,22 @@ def build_catalog_index(
     files: dict[str, str] = {}
 
     for tool_info in tools:
-        s_name: str = tool_info["server"]
-        t_name: str = tool_info["tool"]
+        tool_id: str = tool_info["id"]
         full_schema = tool_info["full_schema"]
-        files[f"schemas/full/{s_name}/{t_name}.json"] = json.dumps(full_schema, indent=2)
+        files[f"schemas/full/{tool_id}.json"] = json.dumps(full_schema, indent=2)
 
     for val in dedupe_enums(all_enums):
         files[f"{DECOMPOSED_PREFIX}{val}.md"] = str(val)
 
     for tool_info in tools:
-        s_name = tool_info["server"]
-        t_name = tool_info["tool"]
-        t_id = get_tool_id(s_name, t_name)
+        tool_id = tool_info["id"]
         root_schema, extractions = decompose_tool_schema(tool_info)
 
-        files[f"{DECOMPOSED_PREFIX}{s_name}/{t_id}.json"] = json.dumps(root_schema, indent=2)
+        files[f"{DECOMPOSED_PREFIX}{tool_id}.json"] = json.dumps(root_schema, indent=2)
 
         for path_segments, prop_schema in extractions:
             prop_name: str = path_segments[-1]["name"]
-            rel_path = _property_relative_path(s_name, t_id, path_segments, prop_name)
+            rel_path = _property_relative_path(tool_id, path_segments, prop_name)
             files[rel_path] = json.dumps(prop_schema, indent=2)
 
     files["tools.json"] = json.dumps(tools, indent=2)

@@ -15,9 +15,10 @@ T = TypeVar("T")
 LLM_MCP_SELECTOR_MODEL: str = "openrouter/inception/mercury-2"
 
 LLM_TRIM_TOP_K_JSON: int = 40
-LLM_TRIM_MIN_JSON_SCORE: float = 0.0
+LLM_TRIM_MIN_JSON_SCORE: float = 0.11
 
 LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
+LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id")
 
 SELECTOR_SYSTEM_PROMPT = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
@@ -109,7 +110,8 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
 
     formatted_chunks: list[str] = []
     item_metadata_storage: dict[int, Any] = {}
-    keys_to_remove = ["score", "start_line", "end_line", "language"]
+    keys_to_remove = list(LLM_TRIM_FIELDS)
+    model_excluded_fields = set(LLM_MODEL_EXCLUDED_FIELDS)
     global_chunk_id = 1
 
     for target_key in list_keys:
@@ -131,7 +133,7 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
                 }
 
                 item_for_llm = item.copy()
-                for k in keys_to_remove:
+                for k in model_excluded_fields:
                     item_for_llm.pop(k, None)
 
                 compact_json = json.dumps(item_for_llm, separators=(",", ":"))

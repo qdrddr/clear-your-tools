@@ -58,6 +58,14 @@ def extract_document_text(item_content: Any) -> str | None:
     return "\n".join(level_lines)
 
 
+def _extract_json_catalog_document(item: dict[str, Any]) -> str | None:
+    """Build rerank document text from schema content only (exclude catalog metadata like id)."""
+    content = item.get("content")
+    if content is None:
+        return None
+    return extract_document_text(content)
+
+
 def load_env() -> None:
     """Load environment variables from src/.env next to this module."""
     env_path = Path(__file__).resolve().parent / ".env"
@@ -205,7 +213,7 @@ def rerank_catalog_dict(
             query,
             data["json"],
             key,
-            extract_document_text,
+            _extract_json_catalog_document,
             None,
         )
 
