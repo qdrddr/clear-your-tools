@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
+import logging
 from pathlib import Path
 from typing import Any
 import httpx
@@ -30,6 +33,8 @@ HOP_BY_HOP = frozenset(
 )
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
+logger = logging.getLogger(__name__)
+
 
 def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
     config_path = path or Path(__file__).with_name("proxy.yaml")
@@ -40,26 +45,31 @@ def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
-def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, str]:
+def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]:
     upstreams = {
-        item["upstream"]: item["url"].rstrip("/")
-        for item in proxy_cfg.get("upstreams", [])
+        item["upstream"]: item for item in proxy_cfg.get("upstreams", [])
     }
-    routes: dict[str, str] = {}
+    routes: dict[str, tuple[str, str | None]] = {}
     for endpoint in proxy_cfg.get("endpoints", []):
         if endpoint not in upstreams:
             raise ValueError(f"No upstream configured for endpoint: {endpoint}")
-        routes[f"/{endpoint}"] = upstreams[endpoint]
+        entry = upstreams[endpoint]
+        kind = entry.get("kind")
+        routes[f"/{endpoint}"] = (entry["url"].rstrip("/"), kind)
     if not routes:
         raise ValueError("No proxy endpoints configured")
     return routes
 
 
-def resolve_upstream(path: str, routes: dict[str, str]) -> tuple[str, str] | None:
+def resolve_upstream(
+    path: str,
+    routes: dict[str, tuple[str, str | None]],
+) -> tuple[str, str, str | None] | None:
     for prefix in sorted(routes, key=len, reverse=True):
         if path == prefix or path.startswith(prefix + "/"):
             suffix = path[len(prefix) :] if path != prefix else ""
-            return routes[prefix], suffix
+            upstream_base, kind = routes[prefix]
+            return upstream_base, suffix, kind
     return None
 
 
@@ -71,11 +81,29 @@ def filter_headers(headers: httpx.Headers) -> dict[str, str]:
     }
 
 
-async def transform_request_body(body: bytes, content_type: str | None) -> bytes:
-    return body
+async def transform_request_body(
+    body: bytes,
+    content_type: str | None,
+    kind: str | None,
+) -> bytes:
+    if kind != "anthropic" or not body:
+        return body
+    if not content_type or "json" not in content_type.lower():
+        return body
+    try:
+        from proxy_anthropic import transform_anthropic_request
+
+        payload = json.loads(body)
+        transformed = await asyncio.to_thread(transform_anthropic_request, payload)
+        return json.dumps(transformed).encode()
+    except json.JSONDecodeError:
+        return body
+    except Exception as exc:
+        logger.warning("anthropic transform failed: %s", exc)
+        return body
 
 
-def create_app(routes: dict[str, str]) -> Starlette:
+def create_app(routes: dict[str, tuple[str, str | None]]) -> Starlette:
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
@@ -84,7 +112,7 @@ def create_app(routes: dict[str, str]) -> Starlette:
         if match is None:
             return Response("Not Found", status_code=404)
 
-        upstream_base, path_suffix = match
+        upstream_base, path_suffix, kind = match
         query = request.url.query
         target_url = f"{upstream_base}{path_suffix}"
         if query:
@@ -92,7 +120,9 @@ def create_app(routes: dict[str, str]) -> Starlette:
 
         body = await request.body()
         body = await transform_request_body(
-            body, request.headers.get("content-type")
+            body,
+            request.headers.get("content-type"),
+            kind,
         )
         forward_headers = filter_headers(request.headers)
 

@@ -69,6 +69,12 @@ class CatalogIndex:
 
         return {"md": md_entries, "json": json_entries}
 
+    def pruned_tools_from_reranked(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Rebuild merged tool schemas from a reranked catalog dict (in-memory only)."""
+        from retrieve_catalog import retrieve_tools
+
+        return retrieve_tools(data, catalog=self)
+
 
 # ------------------------------------------------------------------ #
 # File-system helpers

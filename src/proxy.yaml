@@ -1,3 +1,6 @@
+pruning_pipeline:
+  - rerank
+  - llm
 network:
   proxy:
     port: 8834

@@ -152,6 +152,42 @@ def rerank_items(
     return items
 
 
+def _extract_md_content(item: dict[str, Any]) -> str | None:
+    content = item.get("content")
+    return str(content) if content else None
+
+
+def rerank_catalog_dict(
+    data: dict[str, Any],
+    query: str,
+    *,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """Score in-place data['json'] and optionally data['md']; return data."""
+    load_env()
+    key = api_key if api_key is not None else os.environ.get("DEEPINFRA_API_KEY")
+
+    if "json" in data and isinstance(data["json"], list):
+        data["json"] = rerank_items(
+            query,
+            data["json"],
+            key,
+            extract_document_text,
+            RERANK_SCORE,
+        )
+
+    if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
+        data["md"] = rerank_items(
+            query,
+            data["md"],
+            key,
+            _extract_md_content,
+            None,
+        )
+
+    return data
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rerank JSON items using DeepInfra and LiteLLM.")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -182,30 +218,7 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Process "json" key if present
-    if "json" in data and isinstance(data["json"], list):
-        data["json"] = rerank_items(
-            args.query,
-            data["json"],
-            api_key,
-            extract_document_text,
-            RERANK_SCORE,
-        )
-
-    # Process "md" key (enums) if RERANK_ENUMS is true and "md" exists
-    if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
-
-        def extract_md_content(item: dict[str, Any]) -> str | None:
-            content = item.get("content")
-            return str(content) if content else None
-
-        data["md"] = rerank_items(
-            args.query,
-            data["md"],
-            api_key,
-            extract_md_content,
-            None,  # Not filtering enums by score based on original logic
-        )
+    data = rerank_catalog_dict(data, args.query, api_key=api_key)
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:
