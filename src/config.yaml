@@ -1,4 +1,5 @@
 defaults:
+  system_tool_policy: prune_optional
   is_persistent: true
   remote: 
     embedding_model_nick: embed-qwen3-8b

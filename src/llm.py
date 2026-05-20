@@ -10,6 +10,12 @@ from build_index import count_tokens, log_token_usage
 from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
+from tool_policies import (
+    SYSTEM_TOOL_POLICY,
+    SystemToolPolicy,
+    merge_catalog,
+    partition_catalog,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,9 +237,19 @@ def process_results(
     return data
 
 
-def llm_catalog_dict(data: dict[str, Any], query: str) -> tuple[dict[str, Any], int]:
+def llm_catalog_dict(
+    data: dict[str, Any],
+    query: str,
+    *,
+    policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    merge_pinned: bool = True,
+) -> tuple[dict[str, Any], int]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     api_key = get_api_key()
+    pinned: dict[str, Any] = {}
+    if policy is not None and policy != "prune_all":
+        data, pinned = partition_catalog(data, policy)
+
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 
     from split_bulks import split_chunks_into_bulks
@@ -252,7 +268,10 @@ def llm_catalog_dict(data: dict[str, Any], query: str) -> tuple[dict[str, Any], 
     if tokens_consumed:
         log_token_usage("pruning model tokens (llm)", tokens_consumed)
 
-    return process_results(data, item_metadata_storage, selected_ids, list_keys), tokens_consumed
+    result = process_results(data, item_metadata_storage, selected_ids, list_keys)
+    if merge_pinned and pinned:
+        result = merge_catalog(result, pinned)
+    return result, tokens_consumed
 
 
 def main() -> None:

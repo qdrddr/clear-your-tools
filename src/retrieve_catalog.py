@@ -186,9 +186,11 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
                 entry_id = content.get("id") if isinstance(content, dict) else None
                 if not entry_id and decomposed_key is not None:
                     entry_id = tool_id_from_decomposed_rel(decomposed_key)
+                chunk_id = entry_id or file_path.stem
                 json_entries.append(
                     {
-                        "id": entry_id or file_path.stem,
+                        "id": chunk_id,
+                        "name": chunk_id,
                         "file_path": rel_path,
                         "score": 0.0,
                         "start_line": 1,
@@ -342,19 +344,30 @@ def _filter_items(items_with_scores: list[tuple[Any, float]]) -> list[Any]:
     return [item for item, score in items_with_scores[:3]]
 
 
-def filter_and_sort_enums(schema: Any, scores: dict[str, float]) -> None:
+def filter_and_sort_enums(
+    schema: Any,
+    scores: dict[str, float],
+    preserve_values: frozenset[str] | None = None,
+) -> None:
     """Recursively find 'enum' arrays in schema and apply filtering/sorting by score."""
     if isinstance(schema, dict):
         for key, value in schema.items():
             if key == "enum" and isinstance(value, list):
-                items_with_scores = [(item, scores.get(str(item), 0.0)) for item in value]
+                preserved: list[Any] = []
+                prunable: list[Any] = []
+                for item in value:
+                    if preserve_values and str(item) in preserve_values:
+                        preserved.append(item)
+                    else:
+                        prunable.append(item)
+                items_with_scores = [(item, scores.get(str(item), 0.0)) for item in prunable]
                 items_with_scores.sort(key=lambda x: x[1], reverse=True)
-                schema[key] = _filter_items(items_with_scores)
+                schema[key] = preserved + _filter_items(items_with_scores)
             else:
-                filter_and_sort_enums(value, scores)
+                filter_and_sort_enums(value, scores, preserve_values=preserve_values)
     elif isinstance(schema, list):
         for item in schema:
-            filter_and_sort_enums(item, scores)
+            filter_and_sort_enums(item, scores, preserve_values=preserve_values)
 
 
 def group_files(
@@ -392,6 +405,8 @@ def process_groups(
     tool_files: set[str],
     scores: dict[str, float],
     catalog: DecomposedCatalog,
+    *,
+    preserve_values: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Merge and return the resulting schemas for each tool group."""
     tools: list[dict[str, Any]] = []
@@ -415,7 +430,10 @@ def process_groups(
         base_tool.pop("id", None)
 
         if scores:
-            filter_and_sort_enums(base_tool, scores)
+            from tool_policies import is_system_tool_id
+
+            enum_preserve = preserve_values if is_system_tool_id(tool_name) else None
+            filter_and_sort_enums(base_tool, scores, preserve_values=enum_preserve)
 
         tools.append(base_tool)
 
@@ -428,6 +446,7 @@ def retrieve_tools(
     catalog: DecomposedCatalog | CatalogIndex | None = None,
     decomposed_dir: Path | str | None = None,
     apply_decomposed_score_filter: bool = True,
+    preserve_values: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Reconstruct merged tool schemas from search/rerank/llm output.
@@ -454,8 +473,13 @@ def retrieve_tools(
         data,
         apply_decomposed_score_filter=apply_decomposed_score_filter,
     )
+    if preserve_values is None and isinstance(data, dict):
+        raw_preserve = data.get("system_required_enum_values")
+        if isinstance(raw_preserve, list):
+            preserve_values = frozenset(str(x) for x in raw_preserve)
+
     groups, tool_files = group_files(input_files, store)
-    return process_groups(groups, tool_files, scores, store)
+    return process_groups(groups, tool_files, scores, store, preserve_values=preserve_values)
 
 
 def _group_files(

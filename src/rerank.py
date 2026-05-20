@@ -10,6 +10,12 @@ from build_index import count_tokens, log_token_usage
 from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import split_into_bulks
+from tool_policies import (
+    SYSTEM_TOOL_POLICY,
+    SystemToolPolicy,
+    merge_catalog,
+    partition_catalog,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +226,16 @@ def rerank_catalog_dict(
     query: str,
     *,
     prune: bool = True,
+    policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], int]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
     load_env()
     key = os.environ.get("DEEPINFRA_API_KEY")
     tokens_consumed = 0
+    pinned: dict[str, Any] = {}
+    if policy is not None and policy != "prune_all":
+        data, pinned = partition_catalog(data, policy)
 
     if "json" in data and isinstance(data["json"], list):
         data["json"], json_tokens = rerank_items(
@@ -251,6 +262,9 @@ def rerank_catalog_dict(
 
     if prune:
         data = prune_reranked_catalog(data)
+
+    if merge_pinned and pinned:
+        data = merge_catalog(data, pinned)
 
     return data, tokens_consumed
 

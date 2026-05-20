@@ -13,6 +13,16 @@ from build_index import build_catalog_index, collect_enums, count_json_tokens, p
 from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
 from retrieve_catalog import parse_json_input, retrieve_tools
+from tool_policies import (
+    SYSTEM_TOOL_POLICY,
+    SystemToolPolicy,
+    entries_for_policy,
+    merge_catalog,
+    partition_catalog,
+    restore_system_tools,
+    split_anthropic_tools,
+    stash_system_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +283,7 @@ def _run_pruning_pipeline(
     query: str,
     pruning_pipeline: list[str],
     capture_catalog: bool = False,
+    policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -296,10 +307,20 @@ def _run_pruning_pipeline(
     if capture_catalog and snapshots is not None:
         snapshots["build_index"] = _snapshot_catalog(data)
 
+    pinned: dict[str, Any] = {}
+    if policy == "prune_optional":
+        data, pinned = partition_catalog(data, policy)
+
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
             pre_rerank_json = copy.deepcopy(data.get("json", []))
-            data, rerank_tokens = rerank_catalog_dict(data, query, prune=False)
+            data, rerank_tokens = rerank_catalog_dict(
+                data,
+                query,
+                prune=False,
+                policy=None,
+                merge_pinned=False,
+            )
             pruning_model_tokens["rerank"] = rerank_tokens
             if capture_catalog and snapshots is not None:
                 snapshots["rerank"] = _snapshot_catalog(data)
@@ -313,7 +334,12 @@ def _run_pruning_pipeline(
         elif stage == "llm":
             if i > 0 and pruning_pipeline[i - 1] == "rerank":
                 data = trim_catalog_dict(data)
-            data, llm_tokens = llm_catalog_dict(data, query)
+            data, llm_tokens = llm_catalog_dict(
+                data,
+                query,
+                policy=None,
+                merge_pinned=False,
+            )
             pruning_model_tokens["llm"] = llm_tokens
             decomposed_breakdown["llm"] = _breakdown_entry(data)
             decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
@@ -321,6 +347,9 @@ def _run_pruning_pipeline(
                 snapshots["llm"] = _snapshot_catalog(data)
         else:
             raise ValueError(f"unknown pruning stage: {stage}")
+
+    if pinned:
+        data = merge_catalog(data, pinned)
 
     if pruning_model_tokens:
         parts = ", ".join(
@@ -391,6 +420,7 @@ def filter_tools_for_query(
     query: str,
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
+    policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -406,8 +436,30 @@ def filter_tools_for_query(
             error="no query or no tools",
         )
 
-    entries, enums = anthropic_tools_to_catalog_entries(original_tools)
+    tokens_in = count_json_tokens(original_tools)
+
+    non_system_tools, system_tools = split_anthropic_tools(original_tools)
+    system_stash = stash_system_tools(system_tools) if policy == "always_include" else []
+
+    catalog_source = non_system_tools if policy == "always_include" else original_tools
+    entries, enums = anthropic_tools_to_catalog_entries(catalog_source)
+    entries = entries_for_policy(entries, policy)
     if not entries:
+        if policy == "always_include" and system_stash:
+            restored = restore_system_tools(system_stash)
+            tokens_out = count_json_tokens(restored)
+            return PruneResult(
+                tools=restored,
+                status="applied",
+                query=query,
+                tools_in=tools_in,
+                mcp_tools_in=catalog_tools_in,
+                tools_out=len(restored),
+                error=None,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                tokens_saved=tokens_in - tokens_out,
+            )
         return PruneResult(
             tools=None,
             status="skipped",
@@ -417,8 +469,6 @@ def filter_tools_for_query(
             tools_out=None,
             error="no tools in request",
         )
-
-    tokens_in = count_json_tokens(original_tools)
     _log_tool_token_counts(tokens_in, None)
 
     pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
@@ -442,6 +492,7 @@ def filter_tools_for_query(
             query,
             pipeline,
             capture_catalog=capture_decomposed_catalog,
+            policy=policy,
         )
         recompose_data = _recompose_catalog_data(data, post_rerank, pre_rerank_json)
         merged = retrieve_tools(
@@ -483,6 +534,8 @@ def filter_tools_for_query(
         )
 
     pruned = _merged_tools_to_anthropic(merged)
+    if policy == "always_include":
+        pruned = pruned + restore_system_tools(system_stash)
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
     _log_tool_token_counts(tokens_in, tokens_out)

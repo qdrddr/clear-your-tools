@@ -109,6 +109,7 @@ class CatalogIndex:
                 json_entries.append(
                     {
                         "id": entry_id,
+                        "name": entry_id,
                         "file_path": file_path,
                         "score": 1.0,
                         "start_line": 1,
@@ -118,7 +119,7 @@ class CatalogIndex:
                     },
                 )
 
-        return {"md": md_entries, "json": json_entries}
+        return {"md": md_entries, "json": json_entries, "tools": self.tools}
 
     def pruned_tools_from_reranked(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         """Rebuild merged tool schemas from a reranked catalog dict (in-memory only)."""
@@ -379,7 +380,7 @@ def _property_relative_path(
 
 
 def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:
-    """Build one tool catalog entry without any file I/O."""
+    """Build one non-system (mcp__ id) or generic tool catalog entry without file I/O."""
     tool_id: str = tool.name
 
     input_schema = copy.deepcopy(tool.inputSchema)
@@ -397,6 +398,11 @@ def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:
         "summary": truncate_description(tool.description or ""),
         "full_schema": full_schema,
     }
+
+
+def prepare_system_tool_entry(tool: Any) -> dict[str, Any]:
+    """Build a system tool entry (id does not use mcp__ prefix)."""
+    return prepare_tool_entry("", tool)
 
 
 def build_catalog_index(
