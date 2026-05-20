@@ -9,8 +9,9 @@ from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import count_tokens, split_into_bulks
 
-RERANK_SCORE: float = 0.2
+RERANK_SCORE: float = 0.01
 RERANK_ENUMS: bool = True
+RERANK_ENUM_SCORE: float = 0.01
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
 
 
@@ -191,7 +192,7 @@ def rerank_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
             data["md"],
             key,
             _extract_md_content,
-            None,
+            RERANK_ENUM_SCORE,
         )
 
     return data

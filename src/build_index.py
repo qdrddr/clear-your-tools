@@ -46,7 +46,7 @@ class CatalogIndex:
                 md_entries.append(
                     {
                         "file_path": file_path,
-                        "score": 0.0,
+                        "score": 1.0,
                         "start_line": 1,
                         "end_line": 1,
                         "language": "markdown",
@@ -59,7 +59,7 @@ class CatalogIndex:
                 json_entries.append(
                     {
                         "file_path": file_path,
-                        "score": 0.0,
+                        "score": 1.0,
                         "start_line": 1,
                         "end_line": line_count,
                         "language": "json",
