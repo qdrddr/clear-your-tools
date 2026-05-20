@@ -11,7 +11,7 @@ from typing import Any
 
 from build_index import build_catalog_index, collect_enums, prepare_tool_entry
 from llm import llm_catalog_dict, trim_catalog_dict
-from rerank import rerank_catalog_dict
+from rerank import prune_reranked_catalog, rerank_catalog_dict
 from retrieve_catalog import parse_json_input, retrieve_tools
 
 logger = logging.getLogger(__name__)
@@ -292,13 +292,14 @@ def _run_pruning_pipeline(
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
             pre_rerank_json = copy.deepcopy(data.get("json", []))
-            data = rerank_catalog_dict(data, query)
+            data = rerank_catalog_dict(data, query, prune=False)
+            if capture_catalog and snapshots is not None:
+                snapshots["rerank"] = _snapshot_catalog(data)
+            data = prune_reranked_catalog(data)
             decomposed_breakdown["rerank"] = _breakdown_entry(data)
             decomposed["rerank"] = (
                 decomposed_breakdown["rerank"]["json"] + decomposed_breakdown["rerank"]["md"]
             )
-            if capture_catalog and snapshots is not None:
-                snapshots["rerank"] = _snapshot_catalog(data)
             if "llm" in pruning_pipeline[i + 1 :]:
                 post_rerank = copy.deepcopy(data)
         elif stage == "llm":

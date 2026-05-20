@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import count_tokens, split_into_bulks
 
-RERANK_SCORE: float = 0.01
+RERANK_SCORE: float = 0.001
 RERANK_ENUMS: bool = True
-RERANK_ENUM_SCORE: float = 0.01
+RERANK_ENUM_SCORE: float = 0.0001
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
 
 
@@ -172,8 +172,31 @@ def _extract_md_content(item: dict[str, Any]) -> str | None:
     return str(content) if content else None
 
 
-def rerank_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
-    """Score in-place data['json'] and optionally data['md']; return data."""
+def prune_reranked_catalog(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop catalog items below RERANK_SCORE / RERANK_ENUM_SCORE after rerank_items scored them."""
+    json_items = data.get("json")
+    if isinstance(json_items, list):
+        data["json"] = [
+            item for item in json_items if float(item.get("score", 0)) >= RERANK_SCORE
+        ]
+
+    if RERANK_ENUMS:
+        md_items = data.get("md")
+        if isinstance(md_items, list):
+            data["md"] = [
+                item for item in md_items if float(item.get("score", 0)) >= RERANK_ENUM_SCORE
+            ]
+
+    return data
+
+
+def rerank_catalog_dict(
+    data: dict[str, Any],
+    query: str,
+    *,
+    prune: bool = True,
+) -> dict[str, Any]:
+    """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
     load_env()
     key = os.environ.get("DEEPINFRA_API_KEY")
 
@@ -183,7 +206,7 @@ def rerank_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
             data["json"],
             key,
             extract_document_text,
-            RERANK_SCORE,
+            None,
         )
 
     if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
@@ -192,8 +215,11 @@ def rerank_catalog_dict(data: dict[str, Any], query: str) -> dict[str, Any]:
             data["md"],
             key,
             _extract_md_content,
-            RERANK_ENUM_SCORE,
+            None,
         )
+
+    if prune:
+        data = prune_reranked_catalog(data)
 
     return data
 
