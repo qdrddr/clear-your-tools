@@ -70,8 +70,8 @@ pruning:
     mcp__fff__multi_grep: always_include
 
   pipeline:
-    - rerank
-#    - llm
+#    - rerank
+    - llm
 
 network:
   proxy:

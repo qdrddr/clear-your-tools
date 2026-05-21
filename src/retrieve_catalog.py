@@ -479,7 +479,6 @@ def retrieve_tools(
     from tool_policies import (
         MCP_TOOL_POLICY,
         SYSTEM_TOOL_POLICY,
-        catalog_needs_pruned_recompose,
         mcp_required_enum_values,
         required_enum_values_by_tool,
         system_required_enum_values,
@@ -506,9 +505,9 @@ def retrieve_tools(
 
     catalog_dict = data if isinstance(data, dict) else {}
     survivor_store = DecomposedCatalog.from_catalog_dict(catalog_dict)
-    if survivor_store._json_files and catalog_needs_pruned_recompose(catalog_dict):
-        store = survivor_store
-    elif survivor_store._json_files:
+    if survivor_store._json_files:
+        # Keep the full decomposed catalog for climb_and_merge ancestors; overlay
+        # LLM/rerank survivor chunk content on top of index files.
         store._json_files.update(survivor_store._json_files)
 
     input_files, scores = parse_json_input(

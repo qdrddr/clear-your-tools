@@ -15,32 +15,44 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
+    agent_debug_log,
     catalog_needs_partition,
     configure_policies_from_config,
+    debug_paths_for_tool,
     full_pass_through,
     merge_catalog,
     partition_catalog,
+    root_tool_id_from_chunk,
 )
+
+_BATCH_TOOL = "mcp__hedl__batch"
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-LLM_MCP_SELECTOR_MODEL: str = "openrouter/inception/mercury-2"
+# LLM_MCP_SELECTOR_MODEL: str = "openrouter/inception/mercury-2"
+LLM_MCP_SELECTOR_MODEL: str = "openrouter/openai/gpt-oss-120b"
 
-LLM_TRIM_TOP_K_JSON: int = 40
+# Top_k may exclude relevant items, should not be capping by top_k, but by score only.
+# LLM_TRIM_TOP_K_JSON: int = 40
 LLM_TRIM_MIN_JSON_SCORE: float = 0.11
 
 LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
 LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id")
 
+# Only decomposed catalog lists are selectable; ``tools`` is metadata, not a chunk.
+LLM_CATALOG_LIST_KEYS: tuple[str, ...] = ("json", "md")
+
 SELECTOR_SYSTEM_PROMPT = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
     "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
-    "Later on the results will re-compile MCP tools into their full definitions based on your selection. "
-    "The goal is to return chunk ids that match the user query the most. "
-    "It will be used as a hint for another LLM to use only these relevant tools, enums an doptional properties "
+    "Later on the results will re-compile MCP tools into their full normal definitions based on your selection. "
+    "The goal is to return chunk IDs that match the user query the most. "
+    "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
     "to save on tokens by removing the irrelevant to user query noise."
+    "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
+    "potentially be usefull for the request. "
 )
 
 
@@ -107,20 +119,23 @@ def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
 
     filtered.sort(key=lambda x: str(x.get("file_path", "")))
 
-    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
-    for item in trimmed:
-        for field in LLM_TRIM_FIELDS:
-            item.pop(field, None)
-
-    data["json"] = trimmed
+#    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
+#    for item in trimmed:
+#        for field in LLM_TRIM_FIELDS:
+#            item.pop(field, None)
+#
+#    data["json"] = trimmed
+    data["json"] = filtered
     return data
 
 
 def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], list[str]]:
-    list_keys = [k for k, v in data.items() if isinstance(v, list)]
+    list_keys = [
+        k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)
+    ]
 
     if not list_keys:
-        raise ValueError("No list found in JSON root.")
+        raise ValueError("No json/md catalog lists found in JSON root.")
 
     formatted_chunks: list[str] = []
     item_metadata_storage: dict[int, Any] = {}
@@ -145,6 +160,9 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
                     "item": item,
                     "metadata": {k: item.get(k) for k in keys_to_remove},
                 }
+
+                if target_key == "json" and not str(item.get("file_path", "")).strip():
+                    continue
 
                 item_for_llm = item.copy()
                 for k in model_excluded_fields:
@@ -282,6 +300,31 @@ def llm_catalog_dict(
         log_token_usage("pruning model tokens (llm)", tokens_consumed)
 
     result = process_results(data, item_metadata_storage, selected_ids, list_keys)
+    batch_selected: list[dict[str, str]] = []
+    batch_offered: list[dict[str, str]] = []
+    for chunk_id, storage in item_metadata_storage.items():
+        item = storage.get("item")
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("file_path", ""))
+        if not path or root_tool_id_from_chunk(item) != _BATCH_TOOL:
+            continue
+        entry = {"chunk_id": str(chunk_id), "list_key": str(storage.get("key", "")), "file_path": path}
+        batch_offered.append(entry)
+        if chunk_id in selected_ids:
+            batch_selected.append(entry)
+    json_after = result.get("json") if isinstance(result.get("json"), list) else []
+    agent_debug_log(
+        hypothesis_id="H1",
+        location="llm.py:llm_catalog_dict",
+        message="llm selection for batch tool",
+        data={
+            "selected_chunk_count": len(selected_ids),
+            "batch_chunks_offered": batch_offered,
+            "batch_chunks_selected": batch_selected,
+            "batch_paths_in_result": debug_paths_for_tool(json_after, _BATCH_TOOL),
+        },
+    )
     if merge_pinned and pinned:
         result = merge_catalog(result, pinned)
     return result, tokens_consumed

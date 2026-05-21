@@ -51,8 +51,10 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
+    agent_debug_log,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
+    debug_paths_for_tool,
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
@@ -64,6 +66,8 @@ from tool_policies import (
     tool_pass_through,
     tools_for_catalog,
 )
+
+_BATCH_TOOL = "mcp__hedl__batch"
 
 logger = logging.getLogger(__name__)
 
@@ -449,20 +453,52 @@ def _json_entries_for_recompose(
         _append_unique(pinned.get("json"))
     if catalog_needs_pruned_recompose(data) and post_rerank is not None:
         _append_unique(post_rerank.get("json"))
-    _append_unique(data.get("json") if isinstance(data.get("json"), list) else None)
+    llm_json = data.get("json") if isinstance(data.get("json"), list) else None
+    _append_unique(llm_json)
+    llm_selected_paths = {
+        str(item.get("file_path", ""))
+        for item in (llm_json or [])
+        if isinstance(item, dict) and item.get("file_path")
+    }
+
+    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
+    agent_debug_log(
+        hypothesis_id="H4",
+        location="proxy_anthropic.py:_json_entries_for_recompose",
+        message="recompose entry merge before filter",
+        data={
+            "pipeline": pipeline,
+            "post_rerank_is_none": post_rerank is None,
+            "batch_paths_merged": debug_paths_for_tool(entries, _BATCH_TOOL),
+            "batch_policy": None,
+        },
+    )
 
     filtered = filter_recompose_json_entries(
         entries,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
+        llm_selected_paths=llm_selected_paths,
     )
-    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
-    return mitigate_empty_optional_properties(
+    agent_debug_log(
+        hypothesis_id="H3",
+        location="proxy_anthropic.py:_json_entries_for_recompose",
+        message="after filter_recompose_json_entries",
+        data={"batch_paths_filtered": debug_paths_for_tool(filtered, _BATCH_TOOL)},
+    )
+    mitigated = mitigate_empty_optional_properties(
         filtered,
         catalog_index=catalog_index,
         post_rerank_scored=post_rerank_scored,
         pipeline=pipeline,
     )
+    agent_debug_log(
+        hypothesis_id="H2",
+        location="proxy_anthropic.py:_json_entries_for_recompose",
+        message="after mitigate_empty_optional_properties",
+        data={"batch_paths_mitigated": debug_paths_for_tool(mitigated, _BATCH_TOOL)},
+    )
+    return mitigated
 
 
 def _recompose_catalog_data(
@@ -613,6 +649,18 @@ def filter_tools_for_query(
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
+        json_after_pipeline = data.get("json") if isinstance(data.get("json"), list) else []
+        agent_debug_log(
+            hypothesis_id="H1",
+            location="proxy_anthropic.py:filter_tools_for_query",
+            message="after pruning pipeline",
+            data={
+                "pipeline": pipeline,
+                "query_preview": (query or "")[:120],
+                "batch_paths_in_llm_output": debug_paths_for_tool(json_after_pipeline, _BATCH_TOOL),
+                "batch_chunk_count": len(debug_paths_for_tool(json_after_pipeline, _BATCH_TOOL)),
+            },
+        )
         recompose_data = _recompose_catalog_data(
             data,
             post_rerank,
@@ -630,7 +678,30 @@ def filter_tools_for_query(
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
+        agent_debug_log(
+            hypothesis_id="H5",
+            location="proxy_anthropic.py:filter_tools_for_query",
+            message="after retrieve_tools before drop_empty",
+            data={
+                "batch_in_merged": any(
+                    str(t.get("name", "")) == _BATCH_TOOL for t in merged if isinstance(t, dict)
+                ),
+                "merged_tool_names": sorted(
+                    str(t.get("name", "")) for t in merged if isinstance(t, dict) and t.get("name")
+                )[:30],
+            },
+        )
         merged = drop_recomposed_tools_with_empty_properties(merged, index)
+        agent_debug_log(
+            hypothesis_id="H5",
+            location="proxy_anthropic.py:filter_tools_for_query",
+            message="after drop_recomposed_tools_with_empty_properties",
+            data={
+                "batch_in_merged": any(
+                    str(t.get("name", "")) == _BATCH_TOOL for t in merged if isinstance(t, dict)
+                ),
+            },
+        )
         # #region agent log
         for tool in merged:
             if str(tool.get("name", "")) != "AskUserQuestion":
@@ -694,6 +765,26 @@ def filter_tools_for_query(
         if name:
             pruned_by_name[name] = tool
     pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
+    agent_debug_log(
+        hypothesis_id="H6",
+        location="proxy_anthropic.py:filter_tools_for_query",
+        message="final pruned tool names",
+        data={
+            "pruned_tool_names": [
+                str(t.get("name", "")) for t in pruned if isinstance(t, dict) and t.get("name")
+            ],
+            "batch_in_pruned": _BATCH_TOOL in {str(t.get("name", "")) for t in pruned if isinstance(t, dict)},
+            "batch_has_parallel": any(
+                "parallel"
+                in json.dumps(
+                    (t.get("input_schema") or t.get("inputSchema") or {}),
+                    default=str,
+                ).lower()
+                for t in pruned
+                if isinstance(t, dict) and str(t.get("name", "")) == _BATCH_TOOL
+            ),
+        },
+    )
     # #region agent log
     for tool in pruned:
         if str(tool.get("name", "")) != "AskUserQuestion":

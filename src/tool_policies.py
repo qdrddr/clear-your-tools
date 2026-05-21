@@ -4,11 +4,43 @@ from __future__ import annotations
 
 import copy
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from build_index import DECOMPOSED_PREFIX, collect_enums, tool_id_from_decomposed_rel
 from retrieve_catalog import DECOMPOSED_ROOT, get_root_tool_key, to_decomposed_key
+
+_DEBUG_LOG_PATH = (
+    Path(__file__).resolve().parent.parent / ".cursor" / "debug-5f0fe7.log"
+)
+_DEBUG_SESSION_ID = "5f0fe7"
+
+
+def agent_debug_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": _DEBUG_SESSION_ID,
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, default=str) + "\n")
+    except OSError:
+        pass
+    # #endregion
 
 # Keep in sync with rerank.RERANK_SCORE (avoid circular import: rerank imports tool_policies).
 RERANK_SCORE: float = 0.003
@@ -20,8 +52,8 @@ SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
-SYSTEM_TOOL_POLICY: SystemToolPolicy = "always_include"
-MCP_TOOL_POLICY: MCPToolPolicy = "prune_optional"
+SYSTEM_TOOL_POLICY: SystemToolPolicy = "prune_all"
+MCP_TOOL_POLICY: MCPToolPolicy = "prune_all"
 PER_TOOL_POLICIES: dict[str, ToolPolicy] = {}
 
 
@@ -62,6 +94,17 @@ def root_tool_id_from_chunk(item: dict[str, Any]) -> str:
     if root_key is not None:
         return tool_id_from_decomposed_rel(root_key)
     return chunk_tool_id(item)
+
+
+def debug_paths_for_tool(items: list[Any], tool_id: str) -> list[str]:
+    paths: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if root_tool_id_from_chunk(item) != tool_id:
+            continue
+        paths.append(str(item.get("file_path", "")))
+    return sorted(paths)
 
 
 def request_pass_through(tools: list[dict[str, Any]]) -> bool:
@@ -507,11 +550,15 @@ def optional_leaf_survived_rerank(
     system_policy: SystemToolPolicy | None = None,
     mcp_policy: MCPToolPolicy | None = None,
     rerank_score: float = RERANK_SCORE,
+    llm_selected_paths: set[str] | None = None,
 ) -> bool:
     """Whether an optional property leaf should be merged (then climbed) on recompose."""
     del system_policy, mcp_policy
     if not is_decomposed_optional_property_chunk(item):
         return False
+    file_path = str(item.get("file_path", ""))
+    if llm_selected_paths is not None and file_path in llm_selected_paths:
+        return True
     policy = effective_policy(root_tool_id_from_chunk(item))
     if policy == "prune_all":
         return True
@@ -526,8 +573,9 @@ def filter_recompose_json_entries(
     system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
     rerank_score: float = RERANK_SCORE,
+    llm_selected_paths: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Tool roots always; optional leaves that survived rerank (policy-specific)."""
+    """Tool roots always; optional leaves that survived rerank and/or LLM selection."""
     del system_policy, mcp_policy
     filtered: list[dict[str, Any]] = []
     for item in json_list:
@@ -535,7 +583,11 @@ def filter_recompose_json_entries(
             continue
         if is_decomposed_tool_root_chunk(item):
             filtered.append(item)
-        elif optional_leaf_survived_rerank(item, rerank_score=rerank_score):
+        elif optional_leaf_survived_rerank(
+            item,
+            rerank_score=rerank_score,
+            llm_selected_paths=llm_selected_paths,
+        ):
             filtered.append(item)
     return filtered
 
@@ -668,6 +720,7 @@ def mitigate_empty_optional_properties(
     result = list(entries)
     seen_paths = {item.get("file_path") for item in result if isinstance(item, dict)}
     tools_to_drop: set[str] = set()
+    _BATCH_TOOL = "mcp__hedl__batch"
 
     for tool_id, root_item in roots_by_tool.items():
         if not uses_pruned_recompose(effective_policy(tool_id)):
@@ -676,15 +729,29 @@ def mitigate_empty_optional_properties(
             continue
         if not root_chunk_properties_empty(root_item):
             continue
-        if direct_root_optional_chunks_for_tool(result, tool_id):
+        if optional_chunks_for_tool(result, tool_id):
             continue
+
+        if tool_id == _BATCH_TOOL:
+            agent_debug_log(
+                hypothesis_id="H2",
+                location="tool_policies.py:mitigate_empty_optional_properties",
+                message="batch tool empty-root mitigation branch",
+                data={
+                    "last_stage": last_stage,
+                    "root_properties_empty": root_chunk_properties_empty(root_item),
+                    "needs_mitigation": needs_empty_optional_mitigation(catalog_index, tool_id),
+                    "all_batch_paths_in_result": debug_paths_for_tool(result, tool_id),
+                    "post_rerank_scored_available": bool(scored_json),
+                },
+            )
 
         if last_stage == "llm":
             tools_to_drop.add(tool_id)
             continue
 
         if last_stage == "rerank" and scored_json:
-            candidates = direct_root_optional_chunks_for_tool(scored_json, tool_id)
+            candidates = optional_chunks_for_tool(scored_json, tool_id)
             candidates.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
             for chunk in candidates[:EMPTY_OPTIONAL_FALLBACK_K]:
                 file_path = chunk.get("file_path")
@@ -694,6 +761,13 @@ def mitigate_empty_optional_properties(
                 result.append(copy.deepcopy(chunk))
 
     if tools_to_drop:
+        if _BATCH_TOOL in tools_to_drop:
+            agent_debug_log(
+                hypothesis_id="H2",
+                location="tool_policies.py:mitigate_empty_optional_properties",
+                message="batch tool dropped by mitigate",
+                data={"tools_to_drop": sorted(tools_to_drop)},
+            )
         result = [
             item
             for item in result
