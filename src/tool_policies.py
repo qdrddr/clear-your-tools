@@ -8,6 +8,8 @@ from typing import Any, Literal
 from build_index import collect_enums, tool_id_from_decomposed_rel
 from retrieve_catalog import get_root_tool_key, to_decomposed_key
 
+from rerank import RERANK_SCORE
+
 SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
@@ -15,6 +17,9 @@ ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 SYSTEM_TOOL_POLICY: SystemToolPolicy = "always_include"
 MCP_TOOL_POLICY: MCPToolPolicy = "prune_optional"
 PER_TOOL_POLICIES: dict[str, ToolPolicy] = {}
+
+
+
 
 CatalogDict = dict[str, Any]
 PinnedCatalog = dict[str, Any]
@@ -490,16 +495,12 @@ def required_enum_values_by_tool(data: CatalogDict) -> dict[str, frozenset[str]]
     }
 
 
-# Match rerank.py RERANK_SCORE — chunks below this are dropped by rerank prune.
-RERANK_SURVIVOR_SCORE: float = 0.001
-
-
 def optional_leaf_survived_rerank(
     item: dict[str, Any],
     *,
     system_policy: SystemToolPolicy | None = None,
     mcp_policy: MCPToolPolicy | None = None,
-    rerank_score: float = RERANK_SURVIVOR_SCORE,
+    rerank_score: float = RERANK_SCORE,
 ) -> bool:
     """Whether an optional property leaf should be merged (then climbed) on recompose."""
     del system_policy, mcp_policy
@@ -518,7 +519,7 @@ def filter_recompose_json_entries(
     *,
     system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
-    rerank_score: float = RERANK_SURVIVOR_SCORE,
+    rerank_score: float = RERANK_SCORE,
 ) -> list[dict[str, Any]]:
     """Tool roots always; optional leaves that survived rerank (policy-specific)."""
     del system_policy, mcp_policy
