@@ -58,6 +58,7 @@ from tool_policies import (
     merge_tools_preserving_order,
     mcp_tools_pass_through,
     needs_partition,
+    needs_pruned_recompose,
     partition_catalog,
     restore_mcp_tools,
     restore_system_tools,
@@ -418,51 +419,32 @@ def _json_entries_for_recompose(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
-    json_paths, _ = parse_json_input(data, apply_decomposed_score_filter=False)
-    if json_paths:
-        json_items = data.get("json", [])
-        entries = json_items if isinstance(json_items, list) else []
-    else:
-        # Fall back to post-rerank survivors plus pinned roots — never pre-rerank snapshots,
-        # which include optional property chunks before score pruning.
-        entries = []
-        if post_rerank is not None:
-            post_json = post_rerank.get("json", [])
-            if isinstance(post_json, list):
-                entries.extend(post_json)
+    entries: list[dict[str, Any]] = []
+    seen_paths: set[Any] = set()
 
-        pinned_json = pinned.get("json") if isinstance(pinned, dict) else None
-        if isinstance(pinned_json, list):
-            seen_paths = {e.get("file_path") for e in entries if isinstance(e, dict)}
-            for item in pinned_json:
-                if isinstance(item, dict) and item.get("file_path") not in seen_paths:
-                    entries.append(item)
+    def _append_unique(items: Any) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            file_path = item.get("file_path")
+            if file_path in seen_paths:
+                continue
+            seen_paths.add(file_path)
+            entries.append(copy.deepcopy(item))
 
-    filtered = filter_recompose_json_entries(
+    if isinstance(pinned, dict):
+        _append_unique(pinned.get("json"))
+    if needs_pruned_recompose(system_policy, mcp_policy) and post_rerank is not None:
+        _append_unique(post_rerank.get("json"))
+    _append_unique(data.get("json") if isinstance(data.get("json"), list) else None)
+
+    return filter_recompose_json_entries(
         entries,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
     )
-    # #region agent log
-    ask_paths = [
-        e.get("file_path")
-        for e in filtered
-        if isinstance(e, dict) and str(e.get("id", "")) == "AskUserQuestion"
-    ]
-    _agent_debug_log(
-        hypothesis_id="E",
-        location="proxy_anthropic.py:_json_entries_for_recompose",
-        message="recompose json entry sources",
-        data={
-            "entries_in": len(entries),
-            "filtered_out": len(filtered),
-            "used_post_rerank": post_rerank is not None,
-            "used_pinned": bool(pinned),
-            "ask_user_question_paths": ask_paths,
-        },
-    )
-    # #endregion
-    return filtered
 
 
 def _recompose_catalog_data(
@@ -473,13 +455,11 @@ def _recompose_catalog_data(
     system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> dict[str, Any]:
-    """Build catalog dict for retrieve_tools after LLM.
+    """Build catalog dict for retrieve_tools after pruning.
 
-    retrieve_catalog.reconstruct needs json file_path entries plus md scores.
-    The LLM stage often keeps only md (enum) chunks and drops all json paths; rerank may
-    also filter out every json chunk for weak queries. Fall back to post-rerank survivors
-    plus pinned roots — never pre-rerank snapshots (those predate score pruning).
-    Optional property chunks recompose only when they survived rerank/llm scoring.
+    Merges pinned roots, post-rerank json (scores), and final pipeline json, then keeps
+    roots plus optional leaves that passed ``optional_leaf_survived_rerank``. Each surviving
+    leaf is climbed unconditionally in ``process_groups``.
     """
     recompose: dict[str, Any] = {
         "json": _json_entries_for_recompose(

@@ -235,7 +235,12 @@ def get_root_tool_path(file_path: Path, decomposed_dir: Path) -> Path | None:
 
 
 def climb_and_merge(leaf_path: Path | str, catalog: DecomposedCatalog | Path) -> dict[str, Any]:
-    """Load a property file and merge it up through parent files until the tool level."""
+    """Merge a surviving optional leaf up through ancestor property files in ``catalog``.
+
+    Called for every optional leaf that passed ``optional_leaf_survived_rerank``. Ancestors
+    present in the survivor store are merged in; missing ancestors are skipped (the leaf
+    file already embeds its decomposition path).
+    """
     if isinstance(catalog, Path):
         catalog = DecomposedCatalog.from_directory(catalog)
 
@@ -400,6 +405,13 @@ def group_files(
     return groups, tool_files
 
 
+def _tool_shell_from_root_key(root_tool: str) -> dict[str, Any]:
+    return {
+        "name": Path(root_tool).stem,
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+
+
 def process_groups(
     groups: dict[str, list[str]],
     tool_files: set[str],
@@ -415,18 +427,13 @@ def process_groups(
     tools: list[dict[str, Any]] = []
 
     for root_tool, files in groups.items():
-        base_tool = catalog.get_json(root_tool)
-        if base_tool is None:
-            print(f"Warning: Root tool file not found: {root_tool}", file=sys.stderr)
-            continue
-
+        base_tool = catalog.get_json(root_tool) or _tool_shell_from_root_key(root_tool)
         tool_name_in_schema = base_tool.get("name", Path(root_tool).stem)
 
         for file_key in files:
             if file_key in tool_files:
                 continue
-            climbed = climb_and_merge(file_key, catalog)
-            base_tool = deep_merge(base_tool, climbed)
+            base_tool = deep_merge(base_tool, climb_and_merge(file_key, catalog))
 
         tool_name = base_tool.get("name") or tool_name_in_schema or Path(root_tool).stem
         base_tool["name"] = tool_name
@@ -468,6 +475,7 @@ def retrieve_tools(
         MCP_TOOL_POLICY,
         SYSTEM_TOOL_POLICY,
         mcp_required_enum_values,
+        needs_pruned_recompose,
         system_required_enum_values,
     )
 
@@ -493,11 +501,7 @@ def retrieve_tools(
     # Overlay rerank/llm survivor and pinned chunk content so recompose uses pruned
     # schemas — not the full decomposed catalog (which still has all optional properties).
     survivor_store = DecomposedCatalog.from_catalog_dict(data) if isinstance(data, dict) else DecomposedCatalog()
-    use_survivor_only = bool(survivor_store._json_files) and (
-        system_policy == "prune_optional" or mcp_policy == "prune_optional"
-    )
-
-    if use_survivor_only:
+    if survivor_store._json_files and needs_pruned_recompose(system_policy, mcp_policy):
         store = survivor_store
     elif survivor_store._json_files:
         store._json_files.update(survivor_store._json_files)

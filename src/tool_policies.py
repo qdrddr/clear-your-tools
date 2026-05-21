@@ -3,40 +3,7 @@
 from __future__ import annotations
 
 import copy
-import json
-import time
 from typing import Any, Literal
-
-_DEBUG_LOG_PATH = (
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/asadani/tool-attention"
-    "/.cursor/debug-b955fa.log"
-)
-
-
-def _agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "b955fa",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, default=str) + "\n")
-    except OSError:
-        pass
-    # #endregion
 
 from build_index import collect_enums
 from retrieve_catalog import get_root_tool_key, to_decomposed_key
@@ -120,6 +87,30 @@ def needs_partition(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> bool:
     return system_policy == "prune_optional" or mcp_policy == "prune_optional"
+
+
+def uses_pruned_recompose(policy: SystemToolPolicy | MCPToolPolicy) -> bool:
+    return policy in ("prune_optional", "prune_all")
+
+
+def needs_pruned_recompose(
+    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
+) -> bool:
+    return uses_pruned_recompose(system_policy) or uses_pruned_recompose(mcp_policy)
+
+
+def chunk_policy(
+    item: dict[str, Any],
+    *,
+    system_policy: SystemToolPolicy,
+    mcp_policy: MCPToolPolicy,
+) -> SystemToolPolicy | MCPToolPolicy | None:
+    if is_system_chunk(item):
+        return system_policy
+    if is_non_system_chunk(item):
+        return mcp_policy
+    return None
 
 
 def system_tools_pass_through(
@@ -408,6 +399,26 @@ def mcp_required_enum_values(data: CatalogDict) -> frozenset[str]:
 RERANK_SURVIVOR_SCORE: float = 0.001
 
 
+def optional_leaf_survived_rerank(
+    item: dict[str, Any],
+    *,
+    system_policy: SystemToolPolicy,
+    mcp_policy: MCPToolPolicy,
+    rerank_score: float = RERANK_SURVIVOR_SCORE,
+) -> bool:
+    """Whether an optional property leaf should be merged (then climbed) on recompose."""
+    if not is_decomposed_optional_property_chunk(item):
+        return False
+    policy = chunk_policy(item, system_policy=system_policy, mcp_policy=mcp_policy)
+    if policy is None:
+        return False
+    if policy == "prune_all":
+        return True
+    if policy == "prune_optional":
+        return float(item.get("score", 0)) >= rerank_score
+    return False
+
+
 def filter_recompose_json_entries(
     json_list: list[dict[str, Any]],
     *,
@@ -415,55 +426,18 @@ def filter_recompose_json_entries(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
     rerank_score: float = RERANK_SURVIVOR_SCORE,
 ) -> list[dict[str, Any]]:
-    """Keep pinned roots always; optional property chunks only if they survived rerank scoring."""
+    """Tool roots always; optional leaves that survived rerank (policy-specific)."""
     filtered: list[dict[str, Any]] = []
-    optional_decisions: list[dict[str, Any]] = []
     for item in json_list:
         if not isinstance(item, dict):
             continue
         if is_decomposed_tool_root_chunk(item):
             filtered.append(item)
-            continue
-        if not is_decomposed_optional_property_chunk(item):
-            continue
-        score = float(item.get("score", 0))
-        kept = False
-        if is_system_chunk(item):
-            if system_policy == "prune_all":
-                filtered.append(item)
-                kept = True
-            elif system_policy == "prune_optional" and score >= rerank_score:
-                filtered.append(item)
-                kept = True
-        elif is_non_system_chunk(item):
-            if mcp_policy == "prune_all":
-                filtered.append(item)
-                kept = True
-            elif mcp_policy == "prune_optional" and score >= rerank_score:
-                filtered.append(item)
-                kept = True
-        tool_id = chunk_tool_id(item)
-        optional_decisions.append(
-            {
-                "tool_id": tool_id,
-                "is_mcp": is_non_system_chunk(item),
-                "file_path": item.get("file_path"),
-                "score": score,
-                "kept": kept,
-                "rerank_score": rerank_score,
-                "system_policy": system_policy,
-                "mcp_policy": mcp_policy,
-            }
-        )
-    if optional_decisions:
-        _agent_debug_log(
-            hypothesis_id="A",
-            location="tool_policies.py:filter_recompose_json_entries",
-            message="optional chunk recompose filter",
-            data={
-                "in_count": len(json_list),
-                "out_count": len(filtered),
-                "decisions": optional_decisions,
-            },
-        )
+        elif optional_leaf_survived_rerank(
+            item,
+            system_policy=system_policy,
+            mcp_policy=mcp_policy,
+            rerank_score=rerank_score,
+        ):
+            filtered.append(item)
     return filtered
