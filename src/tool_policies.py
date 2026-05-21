@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Literal
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
-from build_index import collect_enums, tool_id_from_decomposed_rel
-from retrieve_catalog import get_root_tool_key, to_decomposed_key
+from build_index import DECOMPOSED_PREFIX, collect_enums, tool_id_from_decomposed_rel
+from retrieve_catalog import DECOMPOSED_ROOT, get_root_tool_key, to_decomposed_key
 
-from rerank import RERANK_SCORE
+# Keep in sync with rerank.RERANK_SCORE (avoid circular import: rerank imports tool_policies).
+RERANK_SCORE: float = 0.003
+
+if TYPE_CHECKING:
+    from build_index import CatalogIndex
 
 SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
@@ -532,3 +538,190 @@ def filter_recompose_json_entries(
         elif optional_leaf_survived_rerank(item, rerank_score=rerank_score):
             filtered.append(item)
     return filtered
+
+
+EMPTY_OPTIONAL_FALLBACK_K = 3
+
+
+def is_direct_root_optional_property_chunk(item: dict[str, Any]) -> bool:
+    """Optional leaf at schemas/decomposed/{tool_id}/{prop}.json (one segment under tool id)."""
+    if not is_decomposed_optional_property_chunk(item):
+        return False
+    file_path = str(item.get("file_path", ""))
+    key = to_decomposed_key(file_path)
+    if key is None:
+        return False
+    rel = Path(key).relative_to(DECOMPOSED_ROOT)
+    return len(rel.parts) == 2 and rel.parts[1].endswith(".json")
+
+
+def _chunk_input_schema(item: dict[str, Any]) -> dict[str, Any]:
+    content = item.get("content")
+    if isinstance(content, dict):
+        schema = content.get("inputSchema") or content.get("input_schema")
+        if isinstance(schema, dict):
+            return schema
+    return {}
+
+
+def root_chunk_properties_empty(item: dict[str, Any]) -> bool:
+    if not is_decomposed_tool_root_chunk(item):
+        return False
+    props = _chunk_input_schema(item).get("properties")
+    return not props
+
+
+def tool_id_has_empty_decomposed_root(catalog_index: CatalogIndex, tool_id: str) -> bool:
+    rel = f"{DECOMPOSED_PREFIX}{tool_id}.json"
+    raw = catalog_index.files.get(rel)
+    if raw is None:
+        return False
+    parsed = json.loads(raw)
+    schema = parsed.get("inputSchema") or parsed.get("input_schema") or {}
+    if not isinstance(schema, dict):
+        return True
+    return not schema.get("properties")
+
+
+def _original_tool_input_schema(catalog_index: CatalogIndex, tool_id: str) -> dict[str, Any]:
+    full_rel = f"schemas/full/{tool_id}.json"
+    raw = catalog_index.files.get(full_rel)
+    if raw is not None:
+        parsed = json.loads(raw)
+        schema = parsed.get("inputSchema") or parsed.get("input_schema")
+        if isinstance(schema, dict):
+            return schema
+    for entry in catalog_index.tools:
+        if str(entry.get("id", "")) != tool_id:
+            continue
+        full_schema = entry.get("full_schema")
+        if isinstance(full_schema, dict):
+            schema = full_schema.get("inputSchema") or full_schema.get("input_schema")
+            if isinstance(schema, dict):
+                return schema
+    return {}
+
+
+def tool_id_had_empty_original_root_properties(catalog_index: CatalogIndex, tool_id: str) -> bool:
+    """True when the pre-decomposition tool already had no root-level properties."""
+    return not _original_tool_input_schema(catalog_index, tool_id).get("properties")
+
+
+def needs_empty_optional_mitigation(catalog_index: CatalogIndex, tool_id: str) -> bool:
+    """Mitigate only when optional props were decomposed away, not originally absent."""
+    return (
+        tool_id_has_empty_decomposed_root(catalog_index, tool_id)
+        and not tool_id_had_empty_original_root_properties(catalog_index, tool_id)
+    )
+
+
+def optional_chunks_for_tool(items: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and is_decomposed_optional_property_chunk(item)
+        and root_tool_id_from_chunk(item) == tool_id
+    ]
+
+
+def direct_root_optional_chunks_for_tool(
+    items: list[dict[str, Any]],
+    tool_id: str,
+) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in optional_chunks_for_tool(items, tool_id)
+        if is_direct_root_optional_property_chunk(item)
+    ]
+
+
+def mitigate_empty_optional_properties(
+    entries: list[dict[str, Any]],
+    *,
+    catalog_index: CatalogIndex,
+    post_rerank_scored: dict[str, Any] | None,
+    pipeline: list[str],
+) -> list[dict[str, Any]]:
+    """Avoid recomposed tools with empty root properties when all props were optional."""
+    if not pipeline or not entries:
+        return entries
+
+    last_stage = pipeline[-1]
+    if last_stage not in ("rerank", "llm"):
+        return entries
+
+    roots_by_tool: dict[str, dict[str, Any]] = {}
+    for item in entries:
+        if isinstance(item, dict) and is_decomposed_tool_root_chunk(item):
+            roots_by_tool[root_tool_id_from_chunk(item)] = item
+
+    if not roots_by_tool:
+        return entries
+
+    scored_json: list[dict[str, Any]] = []
+    if isinstance(post_rerank_scored, dict):
+        raw_json = post_rerank_scored.get("json")
+        if isinstance(raw_json, list):
+            scored_json = [x for x in raw_json if isinstance(x, dict)]
+
+    result = list(entries)
+    seen_paths = {item.get("file_path") for item in result if isinstance(item, dict)}
+    tools_to_drop: set[str] = set()
+
+    for tool_id, root_item in roots_by_tool.items():
+        if not uses_pruned_recompose(effective_policy(tool_id)):
+            continue
+        if not needs_empty_optional_mitigation(catalog_index, tool_id):
+            continue
+        if not root_chunk_properties_empty(root_item):
+            continue
+        if direct_root_optional_chunks_for_tool(result, tool_id):
+            continue
+
+        if last_stage == "llm":
+            tools_to_drop.add(tool_id)
+            continue
+
+        if last_stage == "rerank" and scored_json:
+            candidates = direct_root_optional_chunks_for_tool(scored_json, tool_id)
+            candidates.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
+            for chunk in candidates[:EMPTY_OPTIONAL_FALLBACK_K]:
+                file_path = chunk.get("file_path")
+                if file_path in seen_paths:
+                    continue
+                seen_paths.add(file_path)
+                result.append(copy.deepcopy(chunk))
+
+    if tools_to_drop:
+        result = [
+            item
+            for item in result
+            if isinstance(item, dict) and root_tool_id_from_chunk(item) not in tools_to_drop
+        ]
+    return result
+
+
+def drop_recomposed_tools_with_empty_properties(
+    tools: list[dict[str, Any]],
+    catalog_index: CatalogIndex,
+) -> list[dict[str, Any]]:
+    """Post-recompose safety net: omit tools that still have empty root properties."""
+    kept: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        name = str(tool.get("name", ""))
+        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        if props:
+            kept.append(tool)
+            continue
+        if (
+            name
+            and uses_pruned_recompose(effective_policy(name))
+            and needs_empty_optional_mitigation(catalog_index, name)
+        ):
+            continue
+        kept.append(tool)
+    return kept

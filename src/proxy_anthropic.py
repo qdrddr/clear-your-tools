@@ -42,7 +42,7 @@ def _agent_debug_log(
         pass
     # #endregion
 
-from build_index import build_catalog_index, collect_enums, count_json_tokens, prepare_tool_entry
+from build_index import CatalogIndex, build_catalog_index, collect_enums, count_json_tokens, prepare_tool_entry
 from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
 from retrieve_catalog import parse_json_input, retrieve_tools
@@ -53,10 +53,12 @@ from tool_policies import (
     SystemToolPolicy,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
+    drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
     merge_catalog,
     merge_tools_preserving_order,
+    mitigate_empty_optional_properties,
     partition_catalog,
     request_pass_through,
     tool_pass_through,
@@ -329,6 +331,7 @@ def _run_pruning_pipeline(
     dict[str, int],
     dict[str, dict[str, int]],
     dict[str, Any] | None,
+    dict[str, Any] | None,
     dict[str, Any],
     dict[str, dict[str, Any]] | None,
     dict[str, int],
@@ -342,6 +345,7 @@ def _run_pruning_pipeline(
     pruning_model_tokens: dict[str, int] = {}
     snapshots: dict[str, dict[str, Any]] | None = {} if capture_catalog else None
     post_rerank: dict[str, Any] | None = None
+    post_rerank_scored: dict[str, Any] | None = None
 
     if capture_catalog and snapshots is not None:
         snapshots["build_index"] = _snapshot_catalog(data)
@@ -363,6 +367,7 @@ def _run_pruning_pipeline(
             pruning_model_tokens["rerank"] = rerank_tokens
             if capture_catalog and snapshots is not None:
                 snapshots["rerank"] = _snapshot_catalog(data)
+            post_rerank_scored = copy.deepcopy(data)
             data = prune_reranked_catalog(data)
             post_rerank = copy.deepcopy(data)
             decomposed_breakdown["rerank"] = _breakdown_entry(data)
@@ -401,7 +406,16 @@ def _run_pruning_pipeline(
             logger.info(breakdown_msg)
             print(breakdown_msg, flush=True)
 
-    return data, decomposed, decomposed_breakdown, post_rerank, pinned, snapshots, pruning_model_tokens
+    return (
+        data,
+        decomposed,
+        decomposed_breakdown,
+        post_rerank,
+        post_rerank_scored,
+        pinned,
+        snapshots,
+        pruning_model_tokens,
+    )
 
 
 def _json_entries_for_recompose(
@@ -409,6 +423,9 @@ def _json_entries_for_recompose(
     post_rerank: dict[str, Any] | None,
     pinned: dict[str, Any] | None,
     *,
+    catalog_index: CatalogIndex,
+    post_rerank_scored: dict[str, Any] | None = None,
+    pruning_pipeline: list[str] | None = None,
     system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> list[dict[str, Any]]:
@@ -434,10 +451,17 @@ def _json_entries_for_recompose(
         _append_unique(post_rerank.get("json"))
     _append_unique(data.get("json") if isinstance(data.get("json"), list) else None)
 
-    return filter_recompose_json_entries(
+    filtered = filter_recompose_json_entries(
         entries,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
+    )
+    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
+    return mitigate_empty_optional_properties(
+        filtered,
+        catalog_index=catalog_index,
+        post_rerank_scored=post_rerank_scored,
+        pipeline=pipeline,
     )
 
 
@@ -446,6 +470,9 @@ def _recompose_catalog_data(
     post_rerank: dict[str, Any] | None,
     pinned: dict[str, Any] | None,
     *,
+    catalog_index: CatalogIndex,
+    post_rerank_scored: dict[str, Any] | None = None,
+    pruning_pipeline: list[str] | None = None,
     system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> dict[str, Any]:
@@ -460,6 +487,9 @@ def _recompose_catalog_data(
             data,
             post_rerank,
             pinned,
+            catalog_index=catalog_index,
+            post_rerank_scored=post_rerank_scored,
+            pruning_pipeline=pruning_pipeline,
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         ),
@@ -571,6 +601,7 @@ def filter_tools_for_query(
             decomposed,
             decomposed_breakdown,
             post_rerank,
+            post_rerank_scored,
             pinned,
             decomposed_catalog,
             pruning_model_tokens,
@@ -586,6 +617,9 @@ def filter_tools_for_query(
             data,
             post_rerank,
             pinned,
+            catalog_index=index,
+            post_rerank_scored=post_rerank_scored,
+            pruning_pipeline=pipeline,
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
@@ -596,6 +630,7 @@ def filter_tools_for_query(
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
+        merged = drop_recomposed_tools_with_empty_properties(merged, index)
         # #region agent log
         for tool in merged:
             if str(tool.get("name", "")) != "AskUserQuestion":
