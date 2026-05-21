@@ -15,9 +15,10 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
+    catalog_needs_partition,
+    configure_policies_from_config,
     full_pass_through,
     merge_catalog,
-    needs_partition,
     partition_catalog,
 )
 
@@ -246,11 +247,7 @@ def rerank_catalog_dict(
     key = os.environ.get("DEEPINFRA_API_KEY")
     tokens_consumed = 0
     pinned: dict[str, Any] = {}
-    if (
-        system_policy is not None
-        and mcp_policy is not None
-        and needs_partition(system_policy, mcp_policy)
-    ):
+    if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     if "json" in data and isinstance(data["json"], list):
@@ -296,6 +293,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    configure_policies_from_config()
     load_env()
     api_key = os.environ.get("DEEPINFRA_API_KEY")
 

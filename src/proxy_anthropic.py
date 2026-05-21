@@ -51,21 +51,15 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
-    filter_recompose_json_entries,
+    catalog_needs_partition,
+    catalog_needs_pruned_recompose,
     entries_for_policy,
-    full_pass_through,
+    filter_recompose_json_entries,
     merge_catalog,
     merge_tools_preserving_order,
-    mcp_tools_pass_through,
-    needs_partition,
-    needs_pruned_recompose,
     partition_catalog,
-    restore_mcp_tools,
-    restore_system_tools,
-    split_anthropic_tools,
-    stash_mcp_tools,
-    stash_system_tools,
-    system_tools_pass_through,
+    request_pass_through,
+    tool_pass_through,
     tools_for_catalog,
 )
 
@@ -353,7 +347,7 @@ def _run_pruning_pipeline(
         snapshots["build_index"] = _snapshot_catalog(data)
 
     pinned: dict[str, Any] = {}
-    if needs_partition(system_policy, mcp_policy):
+    if catalog_needs_partition(data):
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     for i, stage in enumerate(pruning_pipeline):
@@ -436,7 +430,7 @@ def _json_entries_for_recompose(
 
     if isinstance(pinned, dict):
         _append_unique(pinned.get("json"))
-    if needs_pruned_recompose(system_policy, mcp_policy) and post_rerank is not None:
+    if catalog_needs_pruned_recompose(data) and post_rerank is not None:
         _append_unique(post_rerank.get("json"))
     _append_unique(data.get("json") if isinstance(data.get("json"), list) else None)
 
@@ -471,9 +465,11 @@ def _recompose_catalog_data(
         ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
-    for key in ("system_required_enum_values", "mcp_required_enum_values"):
+    for key in ("system_required_enum_values", "mcp_required_enum_values", "required_enum_values_by_tool"):
         if key in data:
             recompose[key] = data[key]
+        elif isinstance(pinned, dict) and key in pinned:
+            recompose[key] = pinned[key]
     return recompose
 
 
@@ -498,7 +494,7 @@ def filter_tools_for_query(
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
-    if full_pass_through(system_policy, mcp_policy) and original_tools:
+    if request_pass_through(original_tools):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
             tools=original_tools,
@@ -526,19 +522,16 @@ def filter_tools_for_query(
 
     tokens_in = count_json_tokens(original_tools)
 
-    non_system_tools, system_tools = split_anthropic_tools(original_tools)
-    system_stash = stash_system_tools(system_tools) if system_tools_pass_through(system_policy) else []
-    mcp_stash = stash_mcp_tools(non_system_tools) if mcp_tools_pass_through(mcp_policy) else []
+    stashed_by_name: dict[str, dict[str, Any]] = {
+        name: copy.deepcopy(tool)
+        for tool in original_tools
+        if isinstance(tool, dict) and (name := str(tool.get("name", ""))) and tool_pass_through(name)
+    }
 
     catalog_source = tools_for_catalog(original_tools, system_policy, mcp_policy)
     entries, enums = anthropic_tools_to_catalog_entries(catalog_source)
     entries = entries_for_policy(entries, system_policy, mcp_policy)
     if not entries:
-        stashed_by_name: dict[str, dict[str, Any]] = {}
-        for tool in restore_system_tools(system_stash) + restore_mcp_tools(mcp_stash):
-            name = str(tool.get("name", ""))
-            if name:
-                stashed_by_name[name] = tool
         restored = merge_tools_preserving_order(original_tools, {}, stashed_by_name)
         if restored:
             tokens_out = count_json_tokens(restored)
@@ -665,11 +658,6 @@ def filter_tools_for_query(
         name = str(tool.get("name", ""))
         if name:
             pruned_by_name[name] = tool
-    stashed_by_name = {}
-    for tool in restore_system_tools(system_stash) + restore_mcp_tools(mcp_stash):
-        name = str(tool.get("name", ""))
-        if name:
-            stashed_by_name[name] = tool
     pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
     # #region agent log
     for tool in pruned:
@@ -730,7 +718,7 @@ def transform_anthropic_request(
     if not tools:
         return original, None
 
-    if full_pass_through():
+    if request_pass_through(tools):
         tokens_in = count_json_tokens(tools)
         return original, PruneResult(
             tools=None,

@@ -420,10 +420,14 @@ def process_groups(
     *,
     system_preserve: frozenset[str] | None = None,
     mcp_preserve: frozenset[str] | None = None,
+    required_by_tool: dict[str, frozenset[str]] | None = None,
     system_policy: str = "prune_optional",
     mcp_policy: str = "prune_all",
 ) -> list[dict[str, Any]]:
     """Merge and return the resulting schemas for each tool group."""
+    from tool_policies import effective_policy
+
+    del system_policy, mcp_policy
     tools: list[dict[str, Any]] = []
 
     for root_tool, files in groups.items():
@@ -440,13 +444,14 @@ def process_groups(
         base_tool.pop("id", None)
 
         if scores:
-            from tool_policies import is_non_system_tool_id, is_system_tool_id
-
             enum_preserve: frozenset[str] | None = None
-            if is_system_tool_id(tool_name) and system_policy == "prune_optional":
-                enum_preserve = system_preserve
-            elif is_non_system_tool_id(tool_name) and mcp_policy == "prune_optional":
-                enum_preserve = mcp_preserve
+            if effective_policy(tool_name) == "prune_optional":
+                if required_by_tool and tool_name in required_by_tool:
+                    enum_preserve = required_by_tool[tool_name]
+                elif system_preserve:
+                    enum_preserve = system_preserve
+                elif mcp_preserve:
+                    enum_preserve = mcp_preserve
             filter_and_sort_enums(base_tool, scores, preserve_values=enum_preserve)
 
         tools.append(base_tool)
@@ -474,8 +479,9 @@ def retrieve_tools(
     from tool_policies import (
         MCP_TOOL_POLICY,
         SYSTEM_TOOL_POLICY,
+        catalog_needs_pruned_recompose,
         mcp_required_enum_values,
-        needs_pruned_recompose,
+        required_enum_values_by_tool,
         system_required_enum_values,
     )
 
@@ -498,10 +504,9 @@ def retrieve_tools(
         else:
             raise TypeError("catalog must be DecomposedCatalog, CatalogIndex, or None")
 
-    # Overlay rerank/llm survivor and pinned chunk content so recompose uses pruned
-    # schemas — not the full decomposed catalog (which still has all optional properties).
-    survivor_store = DecomposedCatalog.from_catalog_dict(data) if isinstance(data, dict) else DecomposedCatalog()
-    if survivor_store._json_files and needs_pruned_recompose(system_policy, mcp_policy):
+    catalog_dict = data if isinstance(data, dict) else {}
+    survivor_store = DecomposedCatalog.from_catalog_dict(catalog_dict)
+    if survivor_store._json_files and catalog_needs_pruned_recompose(catalog_dict):
         store = survivor_store
     elif survivor_store._json_files:
         store._json_files.update(survivor_store._json_files)
@@ -510,8 +515,9 @@ def retrieve_tools(
         data,
         apply_decomposed_score_filter=apply_decomposed_score_filter,
     )
-    system_preserve = system_required_enum_values(data) if isinstance(data, dict) else frozenset()
-    mcp_preserve = mcp_required_enum_values(data) if isinstance(data, dict) else frozenset()
+    system_preserve = system_required_enum_values(catalog_dict)
+    mcp_preserve = mcp_required_enum_values(catalog_dict)
+    required_by_tool = required_enum_values_by_tool(catalog_dict)
     if preserve_values is not None and not system_preserve:
         system_preserve = preserve_values
 
@@ -523,6 +529,7 @@ def retrieve_tools(
         store,
         system_preserve=system_preserve or None,
         mcp_preserve=mcp_preserve or None,
+        required_by_tool=required_by_tool or None,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
     )

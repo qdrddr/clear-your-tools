@@ -15,9 +15,10 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
+    catalog_needs_partition,
+    configure_policies_from_config,
     full_pass_through,
     merge_catalog,
-    needs_partition,
     partition_catalog,
 )
 
@@ -259,11 +260,7 @@ def llm_catalog_dict(
 
     api_key = get_api_key()
     pinned: dict[str, Any] = {}
-    if (
-        system_policy is not None
-        and mcp_policy is not None
-        and needs_partition(system_policy, mcp_policy)
-    ):
+    if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
@@ -299,6 +296,8 @@ def main() -> None:
     parser.add_argument("query", help="User search query")
 
     args = parser.parse_args()
+
+    configure_policies_from_config()
 
     if args.json:
         data = read_json_input(args.json)

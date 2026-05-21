@@ -5,14 +5,16 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
-from build_index import collect_enums
+from build_index import collect_enums, tool_id_from_decomposed_rel
 from retrieve_catalog import get_root_tool_key, to_decomposed_key
 
 SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
+ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
 SYSTEM_TOOL_POLICY: SystemToolPolicy = "always_include"
 MCP_TOOL_POLICY: MCPToolPolicy = "prune_optional"
+PER_TOOL_POLICIES: dict[str, ToolPolicy] = {}
 
 CatalogDict = dict[str, Any]
 PinnedCatalog = dict[str, Any]
@@ -29,6 +31,33 @@ def is_system_tool_id(tool_id: str) -> bool:
 def chunk_tool_id(item: dict[str, Any]) -> str:
     raw = item.get("id") or item.get("name") or ""
     return str(raw)
+
+
+def effective_policy(tool_id: str) -> ToolPolicy:
+    if tool_id in PER_TOOL_POLICIES:
+        return PER_TOOL_POLICIES[tool_id]
+    if is_system_tool_id(tool_id):
+        return SYSTEM_TOOL_POLICY
+    return MCP_TOOL_POLICY
+
+
+def tool_pass_through(tool_id: str) -> bool:
+    return effective_policy(tool_id) == "always_include"
+
+
+def root_tool_id_from_chunk(item: dict[str, Any]) -> str:
+    file_path = str(item.get("file_path", ""))
+    root_key = get_root_tool_key(file_path)
+    if root_key is not None:
+        return tool_id_from_decomposed_rel(root_key)
+    return chunk_tool_id(item)
+
+
+def request_pass_through(tools: list[dict[str, Any]]) -> bool:
+    named = [t for t in tools if isinstance(t, dict) and str(t.get("name", ""))]
+    if not named:
+        return True
+    return all(tool_pass_through(str(t.get("name", ""))) for t in named)
 
 
 def is_non_system_chunk(item: dict[str, Any]) -> bool:
@@ -134,8 +163,8 @@ def full_pass_through(
 
 
 def configure_policies_from_config(config: dict[str, Any] | None = None) -> None:
-    """Apply defaults.system_tool_policy / mcp_tool_policy from config.yaml."""
-    global SYSTEM_TOOL_POLICY, MCP_TOOL_POLICY
+    """Apply defaults.system_tool_policy / mcp_tool_policy / pruning.per_tool from config.yaml."""
+    global SYSTEM_TOOL_POLICY, MCP_TOOL_POLICY, PER_TOOL_POLICIES
     if config is None:
         from configs import load_config
 
@@ -147,6 +176,17 @@ def configure_policies_from_config(config: dict[str, Any] | None = None) -> None
         SYSTEM_TOOL_POLICY = system
     if mcp in ("always_include", "prune_optional", "prune_all"):
         MCP_TOOL_POLICY = mcp
+    pruning = config.get("pruning")
+    per_tool = pruning.get("per_tool") if isinstance(pruning, dict) else None
+    PER_TOOL_POLICIES.clear()
+    if isinstance(per_tool, dict):
+        PER_TOOL_POLICIES.update(
+            {
+                str(tool_id): policy
+                for tool_id, policy in per_tool.items()
+                if policy in ("always_include", "prune_optional", "prune_all")
+            }
+        )
 
 
 def collect_enum_values_from_chunks(chunks: list[dict[str, Any]]) -> frozenset[str]:
@@ -171,16 +211,47 @@ def _copy_list(items: Any) -> list[dict[str, Any]]:
         return []
     return [copy.deepcopy(x) for x in items if isinstance(x, dict)]
 
-def _should_pin_json_chunk(
-    item: dict[str, Any],
-    *,
-    system_policy: SystemToolPolicy,
-    mcp_policy: MCPToolPolicy,
-) -> bool:
-    if is_system_chunk(item):
-        return system_policy == "prune_optional" and is_system_root_chunk(item)
-    if is_non_system_chunk(item):
-        return mcp_policy == "prune_optional" and is_mcp_root_chunk(item)
+def _should_pin_json_chunk(item: dict[str, Any]) -> bool:
+    if not is_decomposed_tool_root_chunk(item):
+        return False
+    return effective_policy(root_tool_id_from_chunk(item)) == "prune_optional"
+
+
+def catalog_needs_partition(data: CatalogDict) -> bool:
+    if needs_partition(SYSTEM_TOOL_POLICY, MCP_TOOL_POLICY):
+        return True
+    json_items = data.get("json")
+    if not isinstance(json_items, list):
+        return False
+    seen: set[str] = set()
+    for item in json_items:
+        if not isinstance(item, dict):
+            continue
+        tool_id = root_tool_id_from_chunk(item)
+        if tool_id in seen:
+            continue
+        seen.add(tool_id)
+        if effective_policy(tool_id) == "prune_optional":
+            return True
+    return False
+
+
+def catalog_needs_pruned_recompose(data: CatalogDict) -> bool:
+    if needs_pruned_recompose(SYSTEM_TOOL_POLICY, MCP_TOOL_POLICY):
+        return True
+    json_items = data.get("json")
+    if not isinstance(json_items, list):
+        return False
+    seen: set[str] = set()
+    for item in json_items:
+        if not isinstance(item, dict):
+            continue
+        tool_id = root_tool_id_from_chunk(item)
+        if tool_id in seen:
+            continue
+        seen.add(tool_id)
+        if uses_pruned_recompose(effective_policy(tool_id)):
+            return True
     return False
 
 
@@ -190,7 +261,8 @@ def partition_catalog(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> tuple[CatalogDict, PinnedCatalog]:
     """Split catalog into processable (rerank/llm) and pinned (restored after pruning)."""
-    if not needs_partition(system_policy, mcp_policy):
+    del system_policy, mcp_policy  # per-tool effective_policy drives pinning
+    if not catalog_needs_partition(data):
         return copy.deepcopy(data), {}
 
     json_items = data.get("json")
@@ -198,30 +270,41 @@ def partition_catalog(
     json_list = json_items if isinstance(json_items, list) else []
     md_list = md_items if isinstance(md_items, list) else []
 
+    metadata_keys = (
+        "json",
+        "md",
+        "system_required_enum_values",
+        "mcp_required_enum_values",
+        "required_enum_values_by_tool",
+    )
     processable: CatalogDict = {
         k: copy.deepcopy(v)
         for k, v in data.items()
-        if k not in ("json", "md", "system_required_enum_values", "mcp_required_enum_values")
+        if k not in metadata_keys
     }
     pinned: PinnedCatalog = {
         "json": [],
         "md": [],
         "system_required_enum_values": [],
         "mcp_required_enum_values": [],
+        "required_enum_values_by_tool": {},
     }
 
     pinned_json: list[dict[str, Any]] = []
     processable_json: list[dict[str, Any]] = []
     system_required_enums: set[str] = set()
     mcp_required_enums: set[str] = set()
+    required_enums_by_tool: dict[str, set[str]] = {}
 
     for item in json_list:
         if not isinstance(item, dict):
             continue
-        if _should_pin_json_chunk(item, system_policy=system_policy, mcp_policy=mcp_policy):
+        if _should_pin_json_chunk(item):
             copy_item = copy.deepcopy(item)
             pinned_json.append(copy_item)
+            tool_id = root_tool_id_from_chunk(item)
             enum_vals = collect_enum_values_from_chunks([copy_item])
+            required_enums_by_tool.setdefault(tool_id, set()).update(enum_vals)
             if is_system_chunk(item):
                 system_required_enums.update(enum_vals)
             elif is_non_system_chunk(item):
@@ -230,10 +313,8 @@ def partition_catalog(
             processable_json.append(copy.deepcopy(item))
 
     pinned_enum_values: frozenset[str] = frozenset()
-    if system_policy == "prune_optional":
-        pinned_enum_values = pinned_enum_values | frozenset(system_required_enums)
-    if mcp_policy == "prune_optional":
-        pinned_enum_values = pinned_enum_values | frozenset(mcp_required_enums)
+    for vals in required_enums_by_tool.values():
+        pinned_enum_values = pinned_enum_values | frozenset(vals)
 
     processable_md: list[dict[str, Any]] = []
     pinned_md: list[dict[str, Any]] = []
@@ -253,6 +334,9 @@ def partition_catalog(
     pinned["md"] = pinned_md
     pinned["system_required_enum_values"] = sorted(system_required_enums)
     pinned["mcp_required_enum_values"] = sorted(mcp_required_enums)
+    pinned["required_enum_values_by_tool"] = {
+        tool_id: sorted(vals) for tool_id, vals in required_enums_by_tool.items()
+    }
     return processable, pinned
 
 
@@ -273,6 +357,8 @@ def merge_catalog(processed: CatalogDict, pinned: PinnedCatalog) -> CatalogDict:
         merged["system_required_enum_values"] = list(pinned["system_required_enum_values"])
     if pinned.get("mcp_required_enum_values") is not None:
         merged["mcp_required_enum_values"] = list(pinned["mcp_required_enum_values"])
+    if pinned.get("required_enum_values_by_tool") is not None:
+        merged["required_enum_values_by_tool"] = copy.deepcopy(pinned["required_enum_values_by_tool"])
     return merged
 
 
@@ -351,12 +437,11 @@ def entries_for_policy(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> list[dict[str, Any]]:
     """Catalog build_index entries to decompose for the pruning pipeline."""
+    del system_policy, mcp_policy
     result: list[dict[str, Any]] = []
     for entry in all_entries:
         tool_id = str(entry.get("id", ""))
-        if is_system_tool_id(tool_id) and system_tools_pass_through(system_policy):
-            continue
-        if is_non_system_tool_id(tool_id) and mcp_tools_pass_through(mcp_policy):
+        if tool_id and tool_pass_through(tool_id):
             continue
         result.append(entry)
     return result
@@ -368,14 +453,13 @@ def tools_for_catalog(
     mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> list[dict[str, Any]]:
     """Anthropic tools to decompose, excluding always_include stashes."""
+    del system_policy, mcp_policy
     result: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict):
             continue
         name = str(tool.get("name", ""))
-        if is_system_tool_id(name) and system_tools_pass_through(system_policy):
-            continue
-        if is_non_system_tool_id(name) and mcp_tools_pass_through(mcp_policy):
+        if name and tool_pass_through(name):
             continue
         result.append(tool)
     return result
@@ -395,6 +479,17 @@ def mcp_required_enum_values(data: CatalogDict) -> frozenset[str]:
     return frozenset(str(x) for x in raw)
 
 
+def required_enum_values_by_tool(data: CatalogDict) -> dict[str, frozenset[str]]:
+    raw = data.get("required_enum_values_by_tool")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(tool_id): frozenset(str(x) for x in values)
+        for tool_id, values in raw.items()
+        if isinstance(values, list)
+    }
+
+
 # Match rerank.py RERANK_SCORE — chunks below this are dropped by rerank prune.
 RERANK_SURVIVOR_SCORE: float = 0.001
 
@@ -402,16 +497,15 @@ RERANK_SURVIVOR_SCORE: float = 0.001
 def optional_leaf_survived_rerank(
     item: dict[str, Any],
     *,
-    system_policy: SystemToolPolicy,
-    mcp_policy: MCPToolPolicy,
+    system_policy: SystemToolPolicy | None = None,
+    mcp_policy: MCPToolPolicy | None = None,
     rerank_score: float = RERANK_SURVIVOR_SCORE,
 ) -> bool:
     """Whether an optional property leaf should be merged (then climbed) on recompose."""
+    del system_policy, mcp_policy
     if not is_decomposed_optional_property_chunk(item):
         return False
-    policy = chunk_policy(item, system_policy=system_policy, mcp_policy=mcp_policy)
-    if policy is None:
-        return False
+    policy = effective_policy(root_tool_id_from_chunk(item))
     if policy == "prune_all":
         return True
     if policy == "prune_optional":
@@ -427,17 +521,13 @@ def filter_recompose_json_entries(
     rerank_score: float = RERANK_SURVIVOR_SCORE,
 ) -> list[dict[str, Any]]:
     """Tool roots always; optional leaves that survived rerank (policy-specific)."""
+    del system_policy, mcp_policy
     filtered: list[dict[str, Any]] = []
     for item in json_list:
         if not isinstance(item, dict):
             continue
         if is_decomposed_tool_root_chunk(item):
             filtered.append(item)
-        elif optional_leaf_survived_rerank(
-            item,
-            system_policy=system_policy,
-            mcp_policy=mcp_policy,
-            rerank_score=rerank_score,
-        ):
+        elif optional_leaf_survived_rerank(item, rerank_score=rerank_score):
             filtered.append(item)
     return filtered
