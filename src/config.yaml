@@ -1,5 +1,6 @@
 defaults:
-  system_tool_policy: prune_optional
+#  system_tool_policy: prune_optional
+#  mcp_tool_policy: prune_all
   is_persistent: true
   remote: 
     embedding_model_nick: embed-qwen3-8b
@@ -61,9 +62,16 @@ models:
 vectordb:
   dir: .vectordb
 
-pruning_pipeline:
-  - rerank
-#  - llm
+pruning:
+  pipeline:
+    - rerank
+#    - llm
+
+  per_tool:
+    mcp__hedl__hedl_convert_from: prune_optional
+    mcp__hedl__batch: prune_all
+    mcp__fff__multi_grep: always_include
+
 network:
   proxy:
     port: 8834

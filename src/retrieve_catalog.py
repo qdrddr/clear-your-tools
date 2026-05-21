@@ -406,7 +406,10 @@ def process_groups(
     scores: dict[str, float],
     catalog: DecomposedCatalog,
     *,
-    preserve_values: frozenset[str] | None = None,
+    system_preserve: frozenset[str] | None = None,
+    mcp_preserve: frozenset[str] | None = None,
+    system_policy: str = "prune_optional",
+    mcp_policy: str = "prune_all",
 ) -> list[dict[str, Any]]:
     """Merge and return the resulting schemas for each tool group."""
     tools: list[dict[str, Any]] = []
@@ -430,9 +433,13 @@ def process_groups(
         base_tool.pop("id", None)
 
         if scores:
-            from tool_policies import is_system_tool_id
+            from tool_policies import is_non_system_tool_id, is_system_tool_id
 
-            enum_preserve = preserve_values if is_system_tool_id(tool_name) else None
+            enum_preserve: frozenset[str] | None = None
+            if is_system_tool_id(tool_name) and system_policy == "prune_optional":
+                enum_preserve = system_preserve
+            elif is_non_system_tool_id(tool_name) and mcp_policy == "prune_optional":
+                enum_preserve = mcp_preserve
             filter_and_sort_enums(base_tool, scores, preserve_values=enum_preserve)
 
         tools.append(base_tool)
@@ -447,6 +454,8 @@ def retrieve_tools(
     decomposed_dir: Path | str | None = None,
     apply_decomposed_score_filter: bool = True,
     preserve_values: frozenset[str] | None = None,
+    system_policy: str | None = None,
+    mcp_policy: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Reconstruct merged tool schemas from search/rerank/llm output.
@@ -455,6 +464,18 @@ def retrieve_tools(
     - catalog: DecomposedCatalog or CatalogIndex (in-memory)
     - decomposed_dir: path to schemas/decomposed on disk
     """
+    from tool_policies import (
+        MCP_TOOL_POLICY,
+        SYSTEM_TOOL_POLICY,
+        mcp_required_enum_values,
+        system_required_enum_values,
+    )
+
+    if system_policy is None:
+        system_policy = SYSTEM_TOOL_POLICY
+    if mcp_policy is None:
+        mcp_policy = MCP_TOOL_POLICY
+
     if catalog is None:
         if decomposed_dir is None:
             decomposed_dir = Path("src/catalog/schemas/decomposed")
@@ -469,17 +490,38 @@ def retrieve_tools(
         else:
             raise TypeError("catalog must be DecomposedCatalog, CatalogIndex, or None")
 
+    # Overlay rerank/llm survivor and pinned chunk content so recompose uses pruned
+    # schemas — not the full decomposed catalog (which still has all optional properties).
+    survivor_store = DecomposedCatalog.from_catalog_dict(data) if isinstance(data, dict) else DecomposedCatalog()
+    use_survivor_only = bool(survivor_store._json_files) and (
+        system_policy == "prune_optional" or mcp_policy == "prune_optional"
+    )
+
+    if use_survivor_only:
+        store = survivor_store
+    elif survivor_store._json_files:
+        store._json_files.update(survivor_store._json_files)
+
     input_files, scores = parse_json_input(
         data,
         apply_decomposed_score_filter=apply_decomposed_score_filter,
     )
-    if preserve_values is None and isinstance(data, dict):
-        raw_preserve = data.get("system_required_enum_values")
-        if isinstance(raw_preserve, list):
-            preserve_values = frozenset(str(x) for x in raw_preserve)
+    system_preserve = system_required_enum_values(data) if isinstance(data, dict) else frozenset()
+    mcp_preserve = mcp_required_enum_values(data) if isinstance(data, dict) else frozenset()
+    if preserve_values is not None and not system_preserve:
+        system_preserve = preserve_values
 
     groups, tool_files = group_files(input_files, store)
-    return process_groups(groups, tool_files, scores, store, preserve_values=preserve_values)
+    return process_groups(
+        groups,
+        tool_files,
+        scores,
+        store,
+        system_preserve=system_preserve or None,
+        mcp_preserve=mcp_preserve or None,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+    )
 
 
 def _group_files(

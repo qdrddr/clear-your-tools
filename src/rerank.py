@@ -11,9 +11,13 @@ from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import split_into_bulks
 from tool_policies import (
+    MCP_TOOL_POLICY,
     SYSTEM_TOOL_POLICY,
+    MCPToolPolicy,
     SystemToolPolicy,
+    full_pass_through,
     merge_catalog,
+    needs_partition,
     partition_catalog,
 )
 
@@ -226,16 +230,28 @@ def rerank_catalog_dict(
     query: str,
     *,
     prune: bool = True,
-    policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], int]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
+    if (
+        system_policy is not None
+        and mcp_policy is not None
+        and full_pass_through(system_policy, mcp_policy)
+    ):
+        return data, 0
+
     load_env()
     key = os.environ.get("DEEPINFRA_API_KEY")
     tokens_consumed = 0
     pinned: dict[str, Any] = {}
-    if policy is not None and policy != "prune_all":
-        data, pinned = partition_catalog(data, policy)
+    if (
+        system_policy is not None
+        and mcp_policy is not None
+        and needs_partition(system_policy, mcp_policy)
+    ):
+        data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     if "json" in data and isinstance(data["json"], list):
         data["json"], json_tokens = rerank_items(

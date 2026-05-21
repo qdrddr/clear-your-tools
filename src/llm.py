@@ -11,9 +11,13 @@ from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
 from tool_policies import (
+    MCP_TOOL_POLICY,
     SYSTEM_TOOL_POLICY,
+    MCPToolPolicy,
     SystemToolPolicy,
+    full_pass_through,
     merge_catalog,
+    needs_partition,
     partition_catalog,
 )
 
@@ -241,14 +245,26 @@ def llm_catalog_dict(
     data: dict[str, Any],
     query: str,
     *,
-    policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], int]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
+    if (
+        system_policy is not None
+        and mcp_policy is not None
+        and full_pass_through(system_policy, mcp_policy)
+    ):
+        return data, 0
+
     api_key = get_api_key()
     pinned: dict[str, Any] = {}
-    if policy is not None and policy != "prune_all":
-        data, pinned = partition_catalog(data, policy)
+    if (
+        system_policy is not None
+        and mcp_policy is not None
+        and needs_partition(system_policy, mcp_policy)
+    ):
+        data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 

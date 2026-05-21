@@ -1,4 +1,4 @@
-# Required for pruning_pipeline: [rerank, llm] (keys in src/.env or exported)
+# Required for pruning.pipeline: [rerank, llm] (keys in src/.env or exported)
 export DEEPINFRA_API_KEY="..."      # rerank stage
 export OPENROUTER_API_KEY="..."    # llm stage
 

@@ -117,11 +117,12 @@ def filter_headers(headers: httpx.Headers) -> dict[str, str]:
 
 
 def _pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
-    pipeline = config.get("pruning_pipeline")
+    pruning = config.get("pruning")
+    pipeline = pruning.get("pipeline") if isinstance(pruning, dict) else None
     if pipeline is None:
         return ["rerank"]
     if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
-        raise ValueError("pruning_pipeline must be a list of stage names")
+        raise ValueError("pruning.pipeline must be a list of stage names")
     return pipeline
 
 
@@ -415,6 +416,9 @@ def main() -> None:
         )
 
     config = load_proxy_config(args.config)
+    from tool_policies import configure_policies_from_config
+
+    configure_policies_from_config(config)
     proxy_cfg = config["network"]["proxy"]
     routes = build_routes(proxy_cfg)
     pruning_pipeline = _pruning_pipeline_from_config(config)

@@ -14,14 +14,25 @@ from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
 from retrieve_catalog import parse_json_input, retrieve_tools
 from tool_policies import (
+    MCP_TOOL_POLICY,
     SYSTEM_TOOL_POLICY,
+    MCPToolPolicy,
     SystemToolPolicy,
+    filter_recompose_json_entries,
     entries_for_policy,
+    full_pass_through,
     merge_catalog,
+    merge_tools_preserving_order,
+    mcp_tools_pass_through,
+    needs_partition,
     partition_catalog,
+    restore_mcp_tools,
     restore_system_tools,
     split_anthropic_tools,
+    stash_mcp_tools,
     stash_system_tools,
+    system_tools_pass_through,
+    tools_for_catalog,
 )
 
 logger = logging.getLogger(__name__)
@@ -283,13 +294,14 @@ def _run_pruning_pipeline(
     query: str,
     pruning_pipeline: list[str],
     capture_catalog: bool = False,
-    policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
     dict[str, dict[str, int]],
     dict[str, Any] | None,
-    list[dict[str, Any]] | None,
+    dict[str, Any],
     dict[str, dict[str, Any]] | None,
     dict[str, int],
 ]:
@@ -302,42 +314,41 @@ def _run_pruning_pipeline(
     pruning_model_tokens: dict[str, int] = {}
     snapshots: dict[str, dict[str, Any]] | None = {} if capture_catalog else None
     post_rerank: dict[str, Any] | None = None
-    pre_rerank_json: list[dict[str, Any]] | None = None
 
     if capture_catalog and snapshots is not None:
         snapshots["build_index"] = _snapshot_catalog(data)
 
     pinned: dict[str, Any] = {}
-    if policy == "prune_optional":
-        data, pinned = partition_catalog(data, policy)
+    if needs_partition(system_policy, mcp_policy):
+        data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
-            pre_rerank_json = copy.deepcopy(data.get("json", []))
             data, rerank_tokens = rerank_catalog_dict(
                 data,
                 query,
                 prune=False,
-                policy=None,
+                system_policy=None,
+                mcp_policy=None,
                 merge_pinned=False,
             )
             pruning_model_tokens["rerank"] = rerank_tokens
             if capture_catalog and snapshots is not None:
                 snapshots["rerank"] = _snapshot_catalog(data)
             data = prune_reranked_catalog(data)
+            post_rerank = copy.deepcopy(data)
             decomposed_breakdown["rerank"] = _breakdown_entry(data)
             decomposed["rerank"] = (
                 decomposed_breakdown["rerank"]["json"] + decomposed_breakdown["rerank"]["md"]
             )
-            if "llm" in pruning_pipeline[i + 1 :]:
-                post_rerank = copy.deepcopy(data)
         elif stage == "llm":
             if i > 0 and pruning_pipeline[i - 1] == "rerank":
                 data = trim_catalog_dict(data)
             data, llm_tokens = llm_catalog_dict(
                 data,
                 query,
-                policy=None,
+                system_policy=None,
+                mcp_policy=None,
                 merge_pinned=False,
             )
             pruning_model_tokens["llm"] = llm_tokens
@@ -362,47 +373,75 @@ def _run_pruning_pipeline(
             logger.info(breakdown_msg)
             print(breakdown_msg, flush=True)
 
-    return data, decomposed, decomposed_breakdown, post_rerank, pre_rerank_json, snapshots, pruning_model_tokens
+    return data, decomposed, decomposed_breakdown, post_rerank, pinned, snapshots, pruning_model_tokens
 
 
 def _json_entries_for_recompose(
     data: dict[str, Any],
     post_rerank: dict[str, Any] | None,
-    pre_rerank_json: list[dict[str, Any]] | None,
+    pinned: dict[str, Any] | None,
+    *,
+    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
     json_paths, _ = parse_json_input(data, apply_decomposed_score_filter=False)
     if json_paths:
         json_items = data.get("json", [])
-        return json_items if isinstance(json_items, list) else []
+        entries = json_items if isinstance(json_items, list) else []
+    else:
+        # Fall back to post-rerank survivors plus pinned roots — never pre-rerank snapshots,
+        # which include optional property chunks before score pruning.
+        entries = []
+        if post_rerank is not None:
+            post_json = post_rerank.get("json", [])
+            if isinstance(post_json, list):
+                entries.extend(post_json)
 
-    if post_rerank is not None:
-        post_json = post_rerank.get("json", [])
-        if isinstance(post_json, list) and post_json:
-            return post_json
+        pinned_json = pinned.get("json") if isinstance(pinned, dict) else None
+        if isinstance(pinned_json, list):
+            seen_paths = {e.get("file_path") for e in entries if isinstance(e, dict)}
+            for item in pinned_json:
+                if isinstance(item, dict) and item.get("file_path") not in seen_paths:
+                    entries.append(item)
 
-    if pre_rerank_json:
-        return pre_rerank_json
-
-    return []
+    return filter_recompose_json_entries(
+        entries,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+    )
 
 
 def _recompose_catalog_data(
     data: dict[str, Any],
     post_rerank: dict[str, Any] | None,
-    pre_rerank_json: list[dict[str, Any]] | None,
+    pinned: dict[str, Any] | None,
+    *,
+    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> dict[str, Any]:
     """Build catalog dict for retrieve_tools after LLM.
 
     retrieve_catalog.reconstruct needs json file_path entries plus md scores.
     The LLM stage often keeps only md (enum) chunks and drops all json paths; rerank may
-    also filter out every json chunk for weak queries. Fall back to post-rerank, then
-    pre-rerank json snapshots so decomposed selections still recompile into tools.
+    also filter out every json chunk for weak queries. Fall back to post-rerank survivors
+    plus pinned roots — never pre-rerank snapshots (those predate score pruning).
+    Optional property chunks recompose only when they survived rerank/llm scoring.
     """
-    return {
-        "json": _json_entries_for_recompose(data, post_rerank, pre_rerank_json),
+    recompose: dict[str, Any] = {
+        "json": _json_entries_for_recompose(
+            data,
+            post_rerank,
+            pinned,
+            system_policy=system_policy,
+            mcp_policy=mcp_policy,
+        ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
+    for key in ("system_required_enum_values", "mcp_required_enum_values"):
+        if key in data:
+            recompose[key] = data[key]
+    return recompose
 
 
 def _log_tool_token_counts(tokens_in: int, tokens_out: int | None) -> None:
@@ -420,10 +459,26 @@ def filter_tools_for_query(
     query: str,
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
-    policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
+    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
+
+    if full_pass_through(system_policy, mcp_policy) and original_tools:
+        tokens_in = count_json_tokens(original_tools)
+        return PruneResult(
+            tools=original_tools,
+            status="pass_through",
+            query=query or None,
+            tools_in=tools_in,
+            mcp_tools_in=catalog_tools_in,
+            tools_out=tools_in,
+            error=None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_in,
+            tokens_saved=0,
+        )
 
     if not query or not original_tools:
         return PruneResult(
@@ -439,14 +494,20 @@ def filter_tools_for_query(
     tokens_in = count_json_tokens(original_tools)
 
     non_system_tools, system_tools = split_anthropic_tools(original_tools)
-    system_stash = stash_system_tools(system_tools) if policy == "always_include" else []
+    system_stash = stash_system_tools(system_tools) if system_tools_pass_through(system_policy) else []
+    mcp_stash = stash_mcp_tools(non_system_tools) if mcp_tools_pass_through(mcp_policy) else []
 
-    catalog_source = non_system_tools if policy == "always_include" else original_tools
+    catalog_source = tools_for_catalog(original_tools, system_policy, mcp_policy)
     entries, enums = anthropic_tools_to_catalog_entries(catalog_source)
-    entries = entries_for_policy(entries, policy)
+    entries = entries_for_policy(entries, system_policy, mcp_policy)
     if not entries:
-        if policy == "always_include" and system_stash:
-            restored = restore_system_tools(system_stash)
+        stashed_by_name: dict[str, dict[str, Any]] = {}
+        for tool in restore_system_tools(system_stash) + restore_mcp_tools(mcp_stash):
+            name = str(tool.get("name", ""))
+            if name:
+                stashed_by_name[name] = tool
+        restored = merge_tools_preserving_order(original_tools, {}, stashed_by_name)
+        if restored:
             tokens_out = count_json_tokens(restored)
             return PruneResult(
                 tools=restored,
@@ -484,7 +545,7 @@ def filter_tools_for_query(
             decomposed,
             decomposed_breakdown,
             post_rerank,
-            pre_rerank_json,
+            pinned,
             decomposed_catalog,
             pruning_model_tokens,
         ) = _run_pruning_pipeline(
@@ -492,13 +553,22 @@ def filter_tools_for_query(
             query,
             pipeline,
             capture_catalog=capture_decomposed_catalog,
-            policy=policy,
+            system_policy=system_policy,
+            mcp_policy=mcp_policy,
         )
-        recompose_data = _recompose_catalog_data(data, post_rerank, pre_rerank_json)
+        recompose_data = _recompose_catalog_data(
+            data,
+            post_rerank,
+            pinned,
+            system_policy=system_policy,
+            mcp_policy=mcp_policy,
+        )
         merged = retrieve_tools(
             recompose_data,
             catalog=index,
             apply_decomposed_score_filter=False,
+            system_policy=system_policy,
+            mcp_policy=mcp_policy,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
@@ -533,9 +603,17 @@ def filter_tools_for_query(
             decomposed_catalog=decomposed_catalog,
         )
 
-    pruned = _merged_tools_to_anthropic(merged)
-    if policy == "always_include":
-        pruned = pruned + restore_system_tools(system_stash)
+    pruned_by_name: dict[str, dict[str, Any]] = {}
+    for tool in _merged_tools_to_anthropic(merged):
+        name = str(tool.get("name", ""))
+        if name:
+            pruned_by_name[name] = tool
+    stashed_by_name = {}
+    for tool in restore_system_tools(system_stash) + restore_mcp_tools(mcp_stash):
+        name = str(tool.get("name", ""))
+        if name:
+            stashed_by_name[name] = tool
+    pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
     _log_tool_token_counts(tokens_in, tokens_out)
@@ -569,6 +647,21 @@ def transform_anthropic_request(
     if not tools:
         return original, None
 
+    if full_pass_through():
+        tokens_in = count_json_tokens(tools)
+        return original, PruneResult(
+            tools=None,
+            status="pass_through",
+            query=None,
+            tools_in=len(tools),
+            mcp_tools_in=sum(1 for t in tools if t.get("name")),
+            tools_out=len(tools),
+            error=None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_in,
+            tokens_saved=0,
+        )
+
     cleaned = clean_messages(messages)
     query = extract_user_query(cleaned)
     if not query:
@@ -592,7 +685,9 @@ def transform_anthropic_request(
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
             logger.warning("tool pruning failed: %s", result.error)
-        return original, result
+        if result.status != "pass_through":
+            return original, result
 
-    original["tools"] = result.tools
+    if result.tools is not None:
+        original["tools"] = result.tools
     return original, result
