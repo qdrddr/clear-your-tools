@@ -45,7 +45,7 @@ SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
 SYSTEM_TOOL_POLICY: SystemToolPolicy = "always_include"
-MCP_TOOL_POLICY: MCPToolPolicy = "prune_optional"
+MCP_TOOL_POLICY: MCPToolPolicy = "prune_all"
 
 CatalogDict = dict[str, Any]
 PinnedCatalog = dict[str, Any]

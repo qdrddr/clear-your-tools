@@ -63,14 +63,15 @@ vectordb:
   dir: .vectordb
 
 pruning:
+  per_tool:
+    mcp__hedl__hedl_convert_from: prune_optional
+    Agent: prune_optional
+    mcp__hedl__batch: prune_all
+    mcp__fff__multi_grep: always_include
+
   pipeline:
     - rerank
 #    - llm
-
-  per_tool:
-    mcp__hedl__hedl_convert_from: prune_optional
-    mcp__hedl__batch: prune_all
-    mcp__fff__multi_grep: always_include
 
 network:
   proxy:
