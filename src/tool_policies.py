@@ -44,8 +44,8 @@ from retrieve_catalog import get_root_tool_key, to_decomposed_key
 SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
-SYSTEM_TOOL_POLICY: SystemToolPolicy = "prune_optional"
-MCP_TOOL_POLICY: MCPToolPolicy = "prune_all"
+SYSTEM_TOOL_POLICY: SystemToolPolicy = "always_include"
+MCP_TOOL_POLICY: MCPToolPolicy = "prune_optional"
 
 CatalogDict = dict[str, Any]
 PinnedCatalog = dict[str, Any]
@@ -443,17 +443,18 @@ def filter_recompose_json_entries(
                 filtered.append(item)
                 kept = True
         tool_id = chunk_tool_id(item)
-        if tool_id == "AskUserQuestion" or "preview" in str(item.get("file_path", "")):
-            optional_decisions.append(
-                {
-                    "tool_id": tool_id,
-                    "file_path": item.get("file_path"),
-                    "score": score,
-                    "kept": kept,
-                    "rerank_score": rerank_score,
-                    "system_policy": system_policy,
-                }
-            )
+        optional_decisions.append(
+            {
+                "tool_id": tool_id,
+                "is_mcp": is_non_system_chunk(item),
+                "file_path": item.get("file_path"),
+                "score": score,
+                "kept": kept,
+                "rerank_score": rerank_score,
+                "system_policy": system_policy,
+                "mcp_policy": mcp_policy,
+            }
+        )
     if optional_decisions:
         _agent_debug_log(
             hypothesis_id="A",

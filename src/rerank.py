@@ -23,7 +23,7 @@ from tool_policies import (
 
 logger = logging.getLogger(__name__)
 
-RERANK_SCORE: float = 0.001
+RERANK_SCORE: float = 0.01
 RERANK_ENUMS: bool = True
 RERANK_ENUM_SCORE: float = 0.0001
 RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
