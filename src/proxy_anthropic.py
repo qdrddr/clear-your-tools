@@ -3,11 +3,44 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
+
+_DEBUG_LOG_PATH = (
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/asadani/tool-attention"
+    "/.cursor/debug-b955fa.log"
+)
+
+
+def _agent_debug_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "b955fa",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, default=str) + "\n")
+    except OSError:
+        pass
+    # #endregion
 
 from build_index import build_catalog_index, collect_enums, count_json_tokens, prepare_tool_entry
 from llm import llm_catalog_dict, trim_catalog_dict
@@ -405,11 +438,31 @@ def _json_entries_for_recompose(
                 if isinstance(item, dict) and item.get("file_path") not in seen_paths:
                     entries.append(item)
 
-    return filter_recompose_json_entries(
+    filtered = filter_recompose_json_entries(
         entries,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
     )
+    # #region agent log
+    ask_paths = [
+        e.get("file_path")
+        for e in filtered
+        if isinstance(e, dict) and str(e.get("id", "")) == "AskUserQuestion"
+    ]
+    _agent_debug_log(
+        hypothesis_id="E",
+        location="proxy_anthropic.py:_json_entries_for_recompose",
+        message="recompose json entry sources",
+        data={
+            "entries_in": len(entries),
+            "filtered_out": len(filtered),
+            "used_post_rerank": post_rerank is not None,
+            "used_pinned": bool(pinned),
+            "ask_user_question_paths": ask_paths,
+        },
+    )
+    # #endregion
+    return filtered
 
 
 def _recompose_catalog_data(
@@ -570,6 +623,30 @@ def filter_tools_for_query(
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
+        # #region agent log
+        for tool in merged:
+            if str(tool.get("name", "")) != "AskUserQuestion":
+                continue
+            schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+            props = (
+                schema.get("properties", {})
+                .get("questions", {})
+                .get("items", {})
+                .get("properties", {})
+                .get("options", {})
+                .get("items", {})
+                .get("properties", {})
+            )
+            _agent_debug_log(
+                hypothesis_id="C",
+                location="proxy_anthropic.py:filter_tools_for_query",
+                message="AskUserQuestion recomposed option properties",
+                data={
+                    "option_property_keys": sorted(props.keys()) if isinstance(props, dict) else [],
+                    "has_preview": isinstance(props, dict) and "preview" in props,
+                },
+            )
+        # #endregion
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
         return PruneResult(
@@ -614,6 +691,32 @@ def filter_tools_for_query(
         if name:
             stashed_by_name[name] = tool
     pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
+    # #region agent log
+    for tool in pruned:
+        if str(tool.get("name", "")) != "AskUserQuestion":
+            continue
+        schema = tool.get("input_schema") or tool.get("inputSchema") or {}
+        props = (
+            schema.get("properties", {})
+            .get("questions", {})
+            .get("items", {})
+            .get("properties", {})
+            .get("options", {})
+            .get("items", {})
+            .get("properties", {})
+        )
+        _agent_debug_log(
+            hypothesis_id="B",
+            location="proxy_anthropic.py:filter_tools_for_query",
+            message="AskUserQuestion final merged tool",
+            data={
+                "from_stash": "AskUserQuestion" in stashed_by_name,
+                "from_pruned": "AskUserQuestion" in pruned_by_name,
+                "option_property_keys": sorted(props.keys()) if isinstance(props, dict) else [],
+                "has_preview": isinstance(props, dict) and "preview" in props,
+            },
+        )
+    # #endregion
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
     _log_tool_token_counts(tokens_in, tokens_out)
