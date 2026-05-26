@@ -22,6 +22,8 @@ src/catalog/tools.json
 #src/catalog/schemas/enums
 src/catalog/schemas/full
 src/catalog/queries.jsonl
+src/crt/
+crt/
 
 # OS / editor
 .DS_Store
