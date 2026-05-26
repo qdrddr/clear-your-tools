@@ -56,6 +56,30 @@ The first run will download the
 [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
 encoder (~90 MB).
 
+### Self-signed TLS certificates (HTTP/2 proxy)
+
+HTTP/2 serving requires TLS. Generate a local cert/key pair into `src/crt/` (gitignored):
+
+```bash
+mkdir -p src/crt
+openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
+  -keyout src/crt/key.pem \
+  -out src/crt/cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+Point the proxy at them in `src/config.yaml` (uncomment `network.proxy.http2`) or pass CLI flags:
+
+```bash
+uv run src/proxy.py serve --http2-serve \
+  --ssl-keyfile src/crt/key.pem \
+  --ssl-certfile src/crt/cert.pem
+```
+
+Ensure to add the self-signed cert.pem to your system so it could be trusted.
+In macOS > Keychain Access > System > drag & drop the cert.pem > open localhost added just now > expand "Trust" Dropdown > in the "When Using this certificate" select "Always Trust" and close.
+
 ---
 
 ## Quick start: reproduce the token-reduction numbers
@@ -237,79 +261,44 @@ pruning:
 
 ### Where can I see how many tools and parameters an MCP server has?
 
-The [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its **Tools** tab you can see 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters in total.
+A very popular [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its **Tools** tab you can see 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters in total.
 
 If the user asks to fetch the Markdown of a webpage, `prune_all` typically keeps only the **Fetch Markdown** tool: its required parameter plus any optional parameters that look relevant. That shrinks the payload from 4 tools and 16 parameters to roughly 1 tool and 1–2 parameters. Unrelated tools (for example, **Read file**) are dropped entirely.
 
----
 
-## LangGraph / LangChain 1.0 middleware
+## Proxy
 
-The `before_model` and `after_model` methods match the LangGraph middleware
-contract. A minimal wiring:
+You may run proxy in HTTP/2 compatible mode (requires TLS):
 
-```python
-from langgraph.graph import StateGraph
-# ... build graph ...
-graph.add_middleware(before_model=ta.before_model, after_model=ta.after_model)
+```shell
+uv pip install h2
+uv pip install 'hypercorn[h2]'
+openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+# Add src/crt/cert.pem to your system trusted certificates (otherwise observe error "Proxy uses self-signed certificate")
+
+uv run src/proxy.py serve --http2-serve \
+  --ssl-keyfile src/crt/key.pem \
+  --ssl-certfile src/crt/cert.pem \
+  --port 8834
 ```
 
-The Phase-1 summary pool should be placed in the **stable prefix** of the
-prompt (so it stays inside the prompt-cache boundary), and Phase-2 full
-schemas immediately before the user's current message.
+No TLS:
+`uv run src/proxy.py --port 8834`
 
----
+### Claude Code
 
-## Extending
+```shell
+export ANTHROPIC_API_KEY=""
+# security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
+# export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+export OPENROUTER_API_KEY="sk-..."
+export ANTHROPIC_AUTH_TOKEN=${OPENROUTER_API_KEY}
 
-* **Swap the encoder**: instantiate a different `SentenceTransformer` (e.g.
-  `BAAI/bge-large-en-v1.5`) and pass it into both `ToolVectorStore.add_tools`
-  and `IntentRouter`. Expect ~2–4 pp retrieval improvement on well-named
-  catalogs; ~3× latency cost.
-* **Swap the backend**: `ToolVectorStore` can be replaced with a different
-  vector-store implementation.
-* **Threshold calibration**: collect ≥100 (query, ground-truth-tool) pairs
-  and sweep `threshold` in `IntentRouter` to maximise F1. Typical optimum:
-  0.22–0.32 for MiniLM-L6.
-* **Remote schemas**: pass a `fetcher` callable into `LazySchemaLoader` that
-  calls an MCP server's `tools/list` on demand instead of loading from disk.
+# No TLS, use http://
+export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
+# With HTTP/2 & TLS, add httpS://
+export ANTHROPIC_BASE_URL="https://localhost:8834/anthropic"
 
----
-
-## Reproducibility
-
-All experiments in the paper use `seed=42`. The synthetic catalog, the
-threshold, and the top-\(k\) are all deterministic. `build_catalog.py`
-regenerates the same 120-tool testbed byte-for-byte across runs.
-
----
-
-## Citation
-
-If you build on this work, please cite:
-
-```bibtex
-@misc{sadani2026toolattention,
-  title        = {Tool Attention Is All You Need: Dynamic Tool Gating and
-                  Lazy Schema Loading for Eliminating the MCP/Tools Tax in
-                  Scalable Agentic Workflows},
-  author       = {Sadani, Anuj},
-  year         = {2026},
-  eprint       = {2604.21816},
-  archivePrefix = {arXiv},
-  primaryClass = {cs.AI},
-  url          = {https://arxiv.org/abs/2604.21816}
-}
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="google/gemini-3-flash-preview"
+$HOME/.local/bin/claude --model haiku 'say hi' -p
 ```
-
----
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).
-
----
-
-## Contact
-
-Anuj Sadani — `anuj.k.sadani@gmail.com`

@@ -7,9 +7,13 @@ import asyncio
 import base64
 import json
 import logging
+import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 import httpx
 import uvicorn
 import yaml
@@ -18,7 +22,19 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp
 
+
+"""
+# run in http/2 mode (requires h2 package and TLS)
+uv pip install h2
+uv pip install 'hypercorn[h2]'
+openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+
+uv run src/proxy.py serve --http2-serve \
+        --ssl-keyfile src/crt/key.pem \
+        --ssl-certfile src/crt/cert.pem
+"""
 DEFAULT_PORT = 8000
 HOP_BY_HOP = frozenset(
     {
@@ -35,8 +51,169 @@ HOP_BY_HOP = frozenset(
     }
 )
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 logger = logging.getLogger(__name__)
+
+
+def _http2_package_available() -> bool:
+    try:
+        import h2  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _needs_request_buffer(
+    *,
+    kind: str | None,
+    method: str,
+    debug: bool,
+) -> bool:
+    """Anthropic pruning and debug snapshots require a full request body."""
+    if debug:
+        return True
+    if kind != "anthropic":
+        return False
+    return method.upper() in BODY_METHODS
+
+
+async def _iter_request_body(request: Request) -> AsyncIterator[bytes]:
+    async for chunk in request.stream():
+        yield chunk
+
+
+async def _forward_upstream(
+    client: httpx.AsyncClient,
+    *,
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    body: bytes | None,
+    stream_request: bool,
+    request: Request | None = None,
+) -> Response:
+    if stream_request:
+        if request is None:
+            raise ValueError("request is required when stream_request=True")
+        content: bytes | AsyncIterator[bytes] = _iter_request_body(request)
+    else:
+        content = body if body else None
+
+    upstream_req = client.build_request(
+        method,
+        url,
+        headers=headers,
+        content=content,
+    )
+    try:
+        upstream_resp = await client.send(upstream_req, stream=True)
+    except httpx.HTTPError as exc:
+        return Response(f"Upstream error: {exc}", status_code=502)
+
+    async def response_stream() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in upstream_resp.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream_resp.aclose()
+
+    return StreamingResponse(
+        response_stream(),
+        status_code=upstream_resp.status_code,
+        headers=filter_headers(upstream_resp.headers),
+    )
+
+
+def _proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
+    proxy_cfg = config.get("network", {}).get("proxy", {})
+    http2_cfg = proxy_cfg.get("http2")
+    if isinstance(http2_cfg, bool):
+        return {
+            "http2_upstream": http2_cfg,
+            "http2_serve": False,
+            "ssl_keyfile": None,
+            "ssl_certfile": None,
+        }
+    if not isinstance(http2_cfg, dict):
+        http2_cfg = {}
+    ssl_cfg = http2_cfg.get("ssl") if isinstance(http2_cfg.get("ssl"), dict) else {}
+    return {
+        "http2_upstream": bool(http2_cfg.get("upstream", False)),
+        "http2_serve": bool(http2_cfg.get("serve", False)),
+        "ssl_keyfile": ssl_cfg.get("keyfile") or http2_cfg.get("ssl_keyfile"),
+        "ssl_certfile": ssl_cfg.get("certfile") or http2_cfg.get("ssl_certfile"),
+    }
+
+
+def _run_hypercorn(
+    app: ASGIApp,
+    *,
+    host: str,
+    port: int,
+    ssl_keyfile: str | None,
+    ssl_certfile: str | None,
+) -> None:
+    try:
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config as HypercornConfig
+    except ImportError as exc:
+        print(
+            "HTTP/2 server requires hypercorn with h2 support: "
+            "pip install 'hypercorn[h2]'",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+    if not _http2_package_available():
+        print(
+            "HTTP/2 server requires the h2 package: pip install h2",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    cfg = HypercornConfig()
+    cfg.bind = [f"{host}:{port}"]
+    if ssl_keyfile and ssl_certfile:
+        cfg.keyfile = ssl_keyfile
+        cfg.certfile = ssl_certfile
+        cfg.alpn_protocols = ["h2", "http/1.1"]
+    else:
+        print(
+            "HTTP/2 (serve) requires TLS; set network.proxy.http2.ssl keyfile/certfile "
+            "or pass --ssl-keyfile / --ssl-certfile",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    asyncio.run(serve(app, cfg))
+
+
+def run_proxy_server(
+    app: Starlette,
+    *,
+    host: str,
+    port: int,
+    http2_serve: bool,
+    ssl_keyfile: str | None,
+    ssl_certfile: str | None,
+) -> None:
+    if http2_serve:
+        _run_hypercorn(
+            app,
+            host=host,
+            port=port,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+        )
+        return
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile,
+    )
 
 
 def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
@@ -342,7 +519,23 @@ def create_app(
     stats_db: Any | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
+    http2_upstream: bool = False,
 ) -> Starlette:
+    use_http2_upstream = http2_upstream and _http2_package_available()
+    if http2_upstream and not use_http2_upstream:
+        logger.warning(
+            "http2 upstream requested but h2 is not installed; using HTTP/1.1 (pip install h2)",
+        )
+
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        client = httpx.AsyncClient(timeout=None, http2=use_http2_upstream)
+        _app.state.http_client = client
+        try:
+            yield
+        finally:
+            await client.aclose()
+
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
@@ -357,22 +550,29 @@ def create_app(
         if query:
             target_url = f"{target_url}?{query}"
 
-        body = await request.body()
         content_type = request.headers.get("content-type")
+        buffer_body = _needs_request_buffer(
+            kind=kind,
+            method=request.method,
+            debug=debug,
+        )
+        body = await request.body() if buffer_body else b""
         upstream_model: str | None = None
-        if body and content_type and "json" in content_type.lower():
+        if buffer_body and body and content_type and "json" in content_type.lower():
             try:
                 upstream_model = json.loads(body).get("model")
             except json.JSONDecodeError:
                 pass
 
-        body, pruning = await transform_request_body(
-            body,
-            content_type,
-            kind,
-            pruning_pipeline,
-            debug,
-        )
+        pruning = None
+        if buffer_body:
+            body, pruning = await transform_request_body(
+                body,
+                content_type,
+                kind,
+                pruning_pipeline,
+                debug,
+            )
         pruning_meta = pruning.to_dict() if pruning is not None else None
 
         if stats_db is not None and pruning is not None:
@@ -426,38 +626,23 @@ def create_app(
                 },
             )
 
-        client = httpx.AsyncClient(timeout=None)
-        try:
-            upstream_req = client.build_request(
-                request.method,
-                target_url,
-                headers=forward_headers,
-                content=body if body else None,
-            )
-            upstream_resp = await client.send(upstream_req, stream=True)
-        except httpx.HTTPError as exc:
-            await client.aclose()
-            return Response(f"Upstream error: {exc}", status_code=502)
-
-        async def stream() -> Any:
-            try:
-                async for chunk in upstream_resp.aiter_bytes():
-                    yield chunk
-            finally:
-                await upstream_resp.aclose()
-                await client.aclose()
-
-        return StreamingResponse(
-            stream(),
-            status_code=upstream_resp.status_code,
-            headers=filter_headers(upstream_resp.headers),
+        client: httpx.AsyncClient = request.app.state.http_client
+        return await _forward_upstream(
+            client,
+            method=request.method,
+            url=target_url,
+            headers=forward_headers,
+            body=body if buffer_body else None,
+            stream_request=not buffer_body,
+            request=request if not buffer_body else None,
         )
 
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/{path:path}", proxy, methods=METHODS),
-        ]
+        ],
+        lifespan=lifespan,
     )
 
 
@@ -525,6 +710,30 @@ def main() -> None:
         "--debug-strict",
         action="store_true",
         help="With --debug, return 502 when tool pruning did not apply",
+    )
+    serve_parser.add_argument(
+        "--http2-upstream",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use HTTP/2 for upstream requests (requires h2; overrides config)",
+    )
+    serve_parser.add_argument(
+        "--http2-serve",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Listen with HTTP/2 via Hypercorn (requires hypercorn[h2] and TLS)",
+    )
+    serve_parser.add_argument(
+        "--ssl-keyfile",
+        type=Path,
+        default=None,
+        help="TLS key for --http2-serve (or HTTPS uvicorn)",
+    )
+    serve_parser.add_argument(
+        "--ssl-certfile",
+        type=Path,
+        default=None,
+        help="TLS certificate for --http2-serve (or HTTPS uvicorn)",
     )
 
     stats_parser = subparsers.add_parser("stats", help="Query persisted proxy stats")
@@ -604,6 +813,28 @@ def main() -> None:
         except Exception as exc:
             logger.warning("stats database unavailable: %s", exc)
 
+    http2_settings = _proxy_http2_settings(config)
+    http2_upstream = (
+        args.http2_upstream
+        if hasattr(args, "http2_upstream") and args.http2_upstream is not None
+        else http2_settings["http2_upstream"]
+    )
+    http2_serve = (
+        args.http2_serve
+        if hasattr(args, "http2_serve") and args.http2_serve is not None
+        else http2_settings["http2_serve"]
+    )
+    ssl_keyfile = (
+        str(args.ssl_keyfile)
+        if getattr(args, "ssl_keyfile", None) is not None
+        else http2_settings["ssl_keyfile"]
+    )
+    ssl_certfile = (
+        str(args.ssl_certfile)
+        if getattr(args, "ssl_certfile", None) is not None
+        else http2_settings["ssl_certfile"]
+    )
+
     app = create_app(
         routes,
         pruning_pipeline,
@@ -612,9 +843,17 @@ def main() -> None:
         stats_db=stats_db,
         store_full_tools=store_full_tools,
         config=config,
+        http2_upstream=http2_upstream,
     )
 
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    run_proxy_server(
+        app,
+        host="0.0.0.0",
+        port=port,
+        http2_serve=http2_serve,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile,
+    )
 
 
 if __name__ == "__main__":

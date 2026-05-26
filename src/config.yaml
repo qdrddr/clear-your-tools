@@ -106,6 +106,12 @@ pruning:
 network:
   proxy:
     port: 8834
+    http2:
+      upstream: true   # uv pip install h2
+      serve: false     # uv pip install 'hypercorn[h2]' + TLS below
+      ssl:
+        keyfile: src/crt/key.pem
+        certfile: src/crt/cert.pem
     upstreams:
       - upstream: anthropic
         url: https://openrouter.ai/api
