@@ -72,7 +72,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
 Point the proxy at them in `src/config.yaml` (uncomment `network.proxy.http2`) or pass CLI flags:
 
 ```bash
-uv run src/proxy.py serve --http2-serve \
+uv run src/proxy_reverse.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem
 ```
@@ -276,14 +276,14 @@ uv pip install 'hypercorn[h2]'
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 # Add src/crt/cert.pem to your system trusted certificates (otherwise observe error "Proxy uses self-signed certificate")
 
-uv run src/proxy.py serve --http2-serve \
+uv run src/proxy_reverse.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
   --port 8834
 ```
 
 No TLS:
-`uv run src/proxy.py --port 8834`
+`uv run src/proxy_reverse.py --port 8834`
 
 ### Claude Code
 

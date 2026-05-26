@@ -31,7 +31,7 @@ uv pip install h2
 uv pip install 'hypercorn[h2]'
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 
-uv run src/proxy.py serve --http2-serve \
+uv run src/proxy_reverse.py serve --http2-serve \
         --ssl-keyfile src/crt/key.pem \
         --ssl-certfile src/crt/cert.pem
 """
