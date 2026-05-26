@@ -354,6 +354,29 @@ class StatsDB:
             return None
         return now - delta
 
+    def query_stage_model_tokens(self, period: str = "all") -> list[tuple[str, str | None, str, int]]:
+        """Return (stage, model_name, token_type, token_count) for pruning stages."""
+        cutoff = self._period_cutoff_ms(period)
+        where = "WHERE p.ts_ms >= ?" if cutoff is not None else ""
+        params: tuple[Any, ...] = (cutoff,) if cutoff is not None else ()
+        rows = self._conn.execute(
+            f"""
+            SELECT m.stage, m.model_name, t.type, COALESCE(SUM(t.tokens), 0)
+            FROM tokens t
+            JOIN model_request m ON t.model_request_id = m.id
+            JOIN proxy_request p ON m.proxy_request_id = p.id
+            {where}
+            AND m.stage IN ('llm', 'rerank')
+            AND t.is_saved = 0
+            GROUP BY m.stage, m.model_name, t.type
+            """,
+            params,
+        ).fetchall()
+        return [
+            (str(row[0]), row[1], str(row[2]), int(row[3] or 0))
+            for row in rows
+        ]
+
     def query_totals(self, period: str = "all") -> dict[str, int]:
         cutoff = self._period_cutoff_ms(period)
         where = "WHERE p.ts_ms >= ?" if cutoff is not None else ""
@@ -511,7 +534,7 @@ def empty_totals() -> dict[str, int]:
     }
 
 
-def format_totals(totals: dict[str, int]) -> str:
+def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
     lines = [
         f"events:              {totals.get('events', 0)}",
         "",
@@ -519,26 +542,37 @@ def format_totals(totals: dict[str, int]) -> str:
         f"  tools accepted:      {totals.get('tools_accepted', 0)}",
         f"  tools sent:          {totals.get('tools_sent_upstream', 0)}",
         f"  tools saved:         {totals.get('tools_saved', 0)}",
-        "",
-        "extra pruning cost:",
-        f"  llm input:           {totals.get('llm_input', 0)}",
-        f"  llm output:          {totals.get('llm_output', 0)}",
-        f"  rerank input:        {totals.get('rerank_input', 0)}",
-        f"  rerank output:       {totals.get('rerank_output', 0)}",
     ]
-    pruning_cost = (
-        totals.get("llm_input", 0)
-        + totals.get("llm_output", 0)
-        + totals.get("rerank_input", 0)
-        + totals.get("rerank_output", 0)
-    )
-    net = totals.get("tools_saved", 0) - pruning_cost
-    lines.extend(
-        [
-            "",
-            f"net token savings:     {net}  (tools saved − pruning cost)",
-        ],
-    )
+    if costs is not None:
+        from pricing import format_usd
+
+        lines.extend(
+            [
+                "",
+                f"tool savings (strong model input @ {costs.strong_model}):",
+                f"  {format_usd(costs.tools_saved_usd)}",
+                "",
+                "pruning cost:",
+                f"  llm input:           {totals.get('llm_input', 0)}  ({format_usd(costs.llm_input_usd)})",
+                f"  llm output:          {totals.get('llm_output', 0)}  ({format_usd(costs.llm_output_usd)})",
+                f"  rerank input:        {totals.get('rerank_input', 0)}  ({format_usd(costs.rerank_input_usd)})",
+                f"  rerank output:       {totals.get('rerank_output', 0)}  ({format_usd(costs.rerank_output_usd)})",
+                f"  total pruning:       {format_usd(costs.pruning_total_usd)}",
+                "",
+                f"net savings:           {format_usd(costs.net_savings_usd)}",
+            ],
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "extra pruning cost (tokens):",
+                f"  llm input:           {totals.get('llm_input', 0)}",
+                f"  llm output:          {totals.get('llm_output', 0)}",
+                f"  rerank input:        {totals.get('rerank_input', 0)}",
+                f"  rerank output:       {totals.get('rerank_output', 0)}",
+            ],
+        )
     return "\n".join(lines)
 
 

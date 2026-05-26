@@ -662,6 +662,7 @@ def _stats_db_path(config: dict[str, Any]) -> str:
 
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     from db import StatsDB, empty_totals, format_events, format_totals
+    from pricing import compute_stats_costs, empty_costs
 
     db_path = _stats_db_path(config)
     db = StatsDB.open_for_query(db_path)
@@ -669,10 +670,20 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
         if args.stats_command == "totals":
             period = getattr(args, "period", "all")
             totals = db.query_totals(period) if db is not None else empty_totals()
-            print(format_totals(totals))
+            costs = (
+                compute_stats_costs(totals, db.query_stage_model_tokens(period), config)
+                if db is not None
+                else empty_costs(config)
+            )
+            print(format_totals(totals, costs))
         elif args.stats_command == "summary":
             totals = db.query_summary(args.period) if db is not None else empty_totals()
-            print(format_totals(totals))
+            costs = (
+                compute_stats_costs(totals, db.query_stage_model_tokens(args.period), config)
+                if db is not None
+                else empty_costs(config)
+            )
+            print(format_totals(totals, costs))
         elif args.stats_command == "events":
             events = db.query_events(args.limit) if db is not None else []
             if args.json:

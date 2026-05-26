@@ -24,7 +24,7 @@ models:
         pricing:
           # match_litellm: "openrouter/openai/gpt-oss-120b"
           input_cost_per_token: 1.5e-07
-          output_cost_per_token": 6e-07
+          output_cost_per_token: 6e-07
         # base_url: https://openrouter.ai/api/v1
       - name: inception/mercury-2
         provider: openrouter
@@ -34,7 +34,7 @@ models:
         pricing:
           # match_litellm: 
           input_cost_per_token: 2.5e-07
-          output_cost_per_token": 7.5e-07
+          output_cost_per_token: 7.5e-07
         # base_url: https://openrouter.ai/api/v1
       - name: google/gemini-3-flash-preview
         provider: openrouter
@@ -45,7 +45,7 @@ models:
         pricing:
           # match_litellm: 
           input_cost_per_token: 2.5e-07
-          output_cost_per_token": 7.5e-07
+          output_cost_per_token: 7.5e-07
         # base_url: https://openrouter.ai/api/v1
   embeddings:
     inprocess:
@@ -116,11 +116,16 @@ network:
       - upstream: anthropic
         url: https://openrouter.ai/api
         kind: anthropic
+      - upstream: cursor
+        url: https://api2.cursor.sh
+        kind: cursor
     endpoints:
       - anthropic
+      - cursor
 
 stats:
   enabled: true
   store_full_tools: false
+  strong_model: google/gemini-3-flash-preview
   database:
     path: ~/.configs/sca/stats.db
