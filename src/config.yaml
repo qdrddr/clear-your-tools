@@ -105,13 +105,13 @@ pruning:
 
 network:
   proxy:
-    http2:
-      upstream: true   # uv pip install h2
-      serve: false     # uv pip install 'hypercorn[h2]' + TLS below
-      ssl:
-        keyfile: src/crt/key.pem
-        certfile: src/crt/cert.pem
     reverse:
+      http2:
+        upstream: true   # uv pip install h2
+        serve: false     # uv pip install 'hypercorn[h2]' + TLS belows
+        ssl:
+          keyfile: src/crt/key.pem
+          certfile: src/crt/cert.pem
       port: 8834
       upstreams:
         - upstream: anthropic
@@ -124,7 +124,12 @@ network:
         - anthropic
         - cursor
     forward:
+      enabled: true
       port: 8835
+      host: 127.0.0.1
+      mitm:
+        ca_cert: src/crt/mitm-ca.pem
+        ca_key: src/crt/mitm-ca-key.pem
 
 stats:
   enabled: true

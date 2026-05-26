@@ -127,7 +127,10 @@ async def _forward_upstream(
 
 def _proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
     proxy_cfg = config.get("network", {}).get("proxy", {})
-    http2_cfg = proxy_cfg.get("http2")
+    reverse_cfg = _reverse_proxy_cfg(proxy_cfg)
+    http2_cfg = reverse_cfg.get("http2")
+    if http2_cfg is None:
+        http2_cfg = proxy_cfg.get("http2")
     if isinstance(http2_cfg, bool):
         return {
             "http2_upstream": http2_cfg,
@@ -180,8 +183,8 @@ def _run_hypercorn(
         cfg.alpn_protocols = ["h2", "http/1.1"]
     else:
         print(
-            "HTTP/2 (serve) requires TLS; set network.proxy.http2.ssl keyfile/certfile "
-            "or pass --ssl-keyfile / --ssl-certfile",
+            "HTTP/2 (serve) requires TLS; set network.proxy.reverse.http2.ssl "
+            "keyfile/certfile or pass --ssl-keyfile / --ssl-certfile",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -737,13 +740,13 @@ def main() -> None:
         "--http2-upstream",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Use HTTP/2 for upstream requests (requires h2; overrides config)",
+        help="HTTP/2 upstream (overrides network.proxy.reverse.http2.upstream)",
     )
     serve_parser.add_argument(
         "--http2-serve",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Listen with HTTP/2 via Hypercorn (requires hypercorn[h2] and TLS)",
+        help="HTTP/2 serve via Hypercorn (overrides network.proxy.reverse.http2.serve)",
     )
     serve_parser.add_argument(
         "--ssl-keyfile",
