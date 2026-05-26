@@ -112,16 +112,17 @@ network:
       ssl:
         keyfile: src/crt/key.pem
         certfile: src/crt/cert.pem
-    upstreams:
-      - upstream: anthropic
-        url: https://openrouter.ai/api
-        kind: anthropic
-      - upstream: cursor
-        url: https://api2.cursor.sh
-        kind: cursor
-    endpoints:
-      - anthropic
-      - cursor
+    reverse:
+      upstreams:
+        - upstream: anthropic
+          url: https://openrouter.ai/api
+          kind: anthropic
+        - upstream: cursor
+          url: https://api2.cursor.sh
+          kind: cursor
+      endpoints:
+        - anthropic
+        - cursor
 
 stats:
   enabled: true

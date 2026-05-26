@@ -225,12 +225,22 @@ def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
+def _reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
+    reverse = proxy_cfg.get("reverse")
+    if isinstance(reverse, dict):
+        return reverse
+    if proxy_cfg.get("upstreams") or proxy_cfg.get("endpoints"):
+        return proxy_cfg
+    raise ValueError("network.proxy.reverse must be configured")
+
+
 def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]:
+    reverse_cfg = _reverse_proxy_cfg(proxy_cfg)
     upstreams = {
-        item["upstream"]: item for item in proxy_cfg.get("upstreams", [])
+        item["upstream"]: item for item in reverse_cfg.get("upstreams", [])
     }
     routes: dict[str, tuple[str, str | None]] = {}
-    for endpoint in proxy_cfg.get("endpoints", []):
+    for endpoint in reverse_cfg.get("endpoints", []):
         if endpoint not in upstreams:
             raise ValueError(f"No upstream configured for endpoint: {endpoint}")
         entry = upstreams[endpoint]
