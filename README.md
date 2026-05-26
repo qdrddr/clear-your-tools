@@ -235,6 +235,12 @@ pruning:
 - **`prune_optional`** — tool is always included; only irrelevant optional properties are removed (moderate savings about 45%)
 - **`prune_all`** — tool may be dropped entirely when irrelevant (most aggressive, saves about 95%)
 
+### Where can I see how many tools and parameters an MCP server has?
+
+The [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its **Tools** tab you can see 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters in total.
+
+If the user asks to fetch the Markdown of a webpage, `prune_all` typically keeps only the **Fetch Markdown** tool: its required parameter plus any optional parameters that look relevant. That shrinks the payload from 4 tools and 16 parameters to roughly 1 tool and 1–2 parameters. Unrelated tools (for example, **Read file**) are dropped entirely.
+
 ---
 
 ## LangGraph / LangChain 1.0 middleware
