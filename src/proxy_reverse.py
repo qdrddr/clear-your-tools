@@ -660,7 +660,8 @@ def resolve_port(config: dict[str, Any], cli_port: int | None) -> int:
     if cli_port is not None:
         return cli_port
     proxy_cfg = config.get("network", {}).get("proxy", {})
-    return int(proxy_cfg.get("port", DEFAULT_PORT))
+    reverse_cfg = _reverse_proxy_cfg(proxy_cfg)
+    return int(reverse_cfg.get("port", DEFAULT_PORT))
 
 
 def _stats_db_path(config: dict[str, Any]) -> str:
@@ -714,7 +715,7 @@ def main() -> None:
         "--port",
         type=int,
         default=None,
-        help=f"Listen port (overrides config.yaml; default {DEFAULT_PORT})",
+        help=f"Listen port (overrides network.proxy.reverse.port; default {DEFAULT_PORT})",
     )
     serve_parser.add_argument(
         "--config",
