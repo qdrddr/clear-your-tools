@@ -1,0 +1,6 @@
+id: should_to_expect_genericShouldBe
+language: TypeScript
+rule:
+  pattern: $NAME.should.be.$PROP
+fix: |-
+  expect($NAME).to.be.$PROP

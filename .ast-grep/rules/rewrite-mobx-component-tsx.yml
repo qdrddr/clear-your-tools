@@ -1,0 +1,7 @@
+id: rewrite-mobx-component
+language: typescript
+rule:
+  pattern: export const $COMP = observer($FUNC)
+fix: |-
+  const Base$COMP = $FUNC
+  export const $COMP = observer(Base$COMP)

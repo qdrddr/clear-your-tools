@@ -1,0 +1,14 @@
+id: find-import-usage
+language: typescript
+rule:
+  kind: identifier # ast-grep requires a kind
+  pattern: $MOD   # the identifier to find
+  inside: # find the root
+    stopBy: end
+    kind: program
+    has: # and has the import statement
+      kind: import_statement
+      has: # look for the matching identifier
+        stopBy: end
+        kind: import_specifier
+        pattern: $MOD # same pattern as the usage is enforced here

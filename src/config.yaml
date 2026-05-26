@@ -14,6 +14,39 @@ defaults:
     top_k: 10
     threshold: 0.28
 models:
+  llm:
+    remote:
+      - name: openai/gpt-oss-120b
+        provider: openrouter
+        nick: gpt-oss-120b
+        key_var_name: OPENROUTER_API_KEY
+        max_tokens: 128000
+        pricing:
+          # match_litellm: "openrouter/openai/gpt-oss-120b"
+          input_cost_per_token: 1.5e-07
+          output_cost_per_token": 6e-07
+        # base_url: https://openrouter.ai/api/v1
+      - name: inception/mercury-2
+        provider: openrouter
+        nick: mercury-2
+        key_var_name: OPENROUTER_API_KEY
+        max_tokens: 1280000
+        pricing:
+          # match_litellm: 
+          input_cost_per_token: 2.5e-07
+          output_cost_per_token": 7.5e-07
+        # base_url: https://openrouter.ai/api/v1
+      - name: google/gemini-3-flash-preview
+        provider: openrouter
+        nick: gemini-3-flash
+        key_var_name: OPENROUTER_API_KEY
+        max_tokens: 10000000
+        domain_match: ["openrouter.ai"]
+        pricing:
+          # match_litellm: 
+          input_cost_per_token: 2.5e-07
+          output_cost_per_token": 7.5e-07
+        # base_url: https://openrouter.ai/api/v1
   embeddings:
     inprocess:
       - name: sentence-transformers/all-MiniLM-L6-v2
@@ -51,14 +84,11 @@ models:
         key_var_name: DEEPINFRA_API_KEY
         max_tokens: 32000
         # base_url: https://api.deepinfra.com/v1
-  llm:
-    remote:
-      - name: inception/mercury-2
-        provider: openrouter
-        nick: llm-mercury-2
-        # key_var_name: OPENROUTER_API_KEY
-        max_tokens: 128000
-        # base_url: https://openrouter.ai/api/v1
+        pricing:
+          input_cost_per_token: 5e-08
+          # output_cost_per_token": 5e-08
+          # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
+
 vectordb:
   dir: .vectordb
 
@@ -78,7 +108,13 @@ network:
     port: 8834
     upstreams:
       - upstream: anthropic
-        url: https://api.novita.ai/anthropic
+        url: https://openrouter.ai/api
         kind: anthropic
     endpoints:
       - anthropic
+
+stats:
+  enabled: true
+  store_full_tools: false
+  database:
+    path: ~/.configs/sca/stats.db

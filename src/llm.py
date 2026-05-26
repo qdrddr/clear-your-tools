@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from build_index import count_tokens, log_token_usage
+from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
@@ -181,8 +182,33 @@ def count_llm_request_tokens(query: str, chunks_text: str) -> int:
     return count_tokens(SELECTOR_SYSTEM_PROMPT) + count_tokens(user_message)
 
 
-def call_llm(api_key: str, query: str, chunks_text: str) -> RelevantChunkIds:
+def _usage_from_litellm_response(response: Any, fallback_output_text: str) -> StageTokenUsage:
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        prompt = getattr(usage, "prompt_tokens", None)
+        completion = getattr(usage, "completion_tokens", None)
+        if prompt is not None or completion is not None:
+            return StageTokenUsage(
+                input_tokens=int(prompt or 0),
+                output_tokens=int(completion or 0),
+                usage_source="provider",
+                request_id=getattr(response, "id", None),
+                model_name=LLM_MCP_SELECTOR_MODEL,
+                provider_dns_name="openrouter.ai",
+                provider="openrouter",
+            )
+    return StageTokenUsage(
+        output_tokens=count_tokens(fallback_output_text),
+        usage_source=TIKTOKEN_CL100K,
+        model_name=LLM_MCP_SELECTOR_MODEL,
+        provider_dns_name="openrouter.ai",
+        provider="openrouter",
+    )
+
+
+def call_llm(api_key: str, query: str, chunks_text: str) -> tuple[RelevantChunkIds, StageTokenUsage]:
     user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+    input_tokens = count_llm_request_tokens(query, chunks_text)
 
     # litellm.completion returns a ModelResponse object but it's often treated as Any
     response: Any = completion(
@@ -200,14 +226,39 @@ def call_llm(api_key: str, query: str, chunks_text: str) -> RelevantChunkIds:
         raise ValueError(f"Unexpected response content type: {type(content_val)}")
 
     try:
-        return RelevantChunkIds.model_validate_json(content_val)
+        parsed = RelevantChunkIds.model_validate_json(content_val)
     except Exception:
         import re
 
         json_match = re.search(r"\{.*\}", content_val, re.DOTALL)
         if json_match:
-            return RelevantChunkIds.model_validate_json(json_match.group(0))
-        raise ValueError(f"Could not parse LLM response: {content_val}") from None
+            parsed = RelevantChunkIds.model_validate_json(json_match.group(0))
+        else:
+            raise ValueError(f"Could not parse LLM response: {content_val}") from None
+
+    usage = _usage_from_litellm_response(response, content_val)
+    if usage.usage_source == TIKTOKEN_CL100K:
+        usage = StageTokenUsage(
+            input_tokens=input_tokens,
+            output_tokens=usage.output_tokens,
+            usage_source=TIKTOKEN_CL100K,
+            request_id=getattr(response, "id", None),
+            model_name=LLM_MCP_SELECTOR_MODEL,
+            provider_dns_name="openrouter.ai",
+            provider="openrouter",
+        )
+    elif usage.input_tokens == 0:
+        usage = StageTokenUsage(
+            input_tokens=input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=usage.reasoning_tokens,
+            usage_source=usage.usage_source,
+            request_id=usage.request_id,
+            model_name=usage.model_name,
+            provider_dns_name=usage.provider_dns_name,
+            provider=usage.provider,
+        )
+    return parsed, usage
 
 
 def score_item(item: dict[str, Any], is_selected: bool) -> None:
@@ -267,14 +318,14 @@ def llm_catalog_dict(
     system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
     merge_pinned: bool = True,
-) -> tuple[dict[str, Any], int]:
+) -> tuple[dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     if (
         system_policy is not None
         and mcp_policy is not None
         and full_pass_through(system_policy, mcp_policy)
     ):
-        return data, 0
+        return data, empty_usage()
 
     api_key = get_api_key()
     pinned: dict[str, Any] = {}
@@ -287,17 +338,30 @@ def llm_catalog_dict(
 
     bulks = split_chunks_into_bulks(query, SELECTOR_SYSTEM_PROMPT, formatted_chunks)
     selected_ids: set[int] = set()
-    tokens_consumed = 0
+    total_usage = empty_usage()
 
     for bulk_text in bulks:
         bulk_tokens = count_llm_request_tokens(query, bulk_text)
-        tokens_consumed += bulk_tokens
         logger.info("llm request tokens: %d", bulk_tokens)
-        parsed_response = call_llm(api_key, query, bulk_text)
+        parsed_response, bulk_usage = call_llm(api_key, query, bulk_text)
+        if bulk_usage.input_tokens == 0:
+            bulk_usage = StageTokenUsage(
+                input_tokens=bulk_tokens,
+                output_tokens=bulk_usage.output_tokens,
+                usage_source=bulk_usage.usage_source,
+                request_id=bulk_usage.request_id,
+                model_name=bulk_usage.model_name,
+                provider_dns_name=bulk_usage.provider_dns_name,
+                provider=bulk_usage.provider,
+            )
+        total_usage = total_usage.merge(bulk_usage)
         selected_ids.update(parsed_response.ids)
 
-    if tokens_consumed:
-        log_token_usage("pruning model tokens (llm)", tokens_consumed)
+    if total_usage.input_tokens or total_usage.output_tokens:
+        log_token_usage(
+            "pruning model tokens (llm)",
+            total_usage.input_tokens + total_usage.output_tokens,
+        )
 
     result = process_results(data, item_metadata_storage, selected_ids, list_keys)
     batch_selected: list[dict[str, str]] = []
@@ -327,7 +391,7 @@ def llm_catalog_dict(
     )
     if merge_pinned and pinned:
         result = merge_catalog(result, pinned)
-    return result, tokens_consumed
+    return result, total_usage
 
 
 def main() -> None:

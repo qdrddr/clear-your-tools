@@ -1,0 +1,10 @@
+id: do-what-brooooooklyn-said
+language: tsx
+rule:
+  kind: jsx_expression
+  has:
+    pattern: $A && $B
+  not:
+    inside:
+      kind: jsx_attribute
+fix: "{$A ? $B : null}"

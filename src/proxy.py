@@ -243,13 +243,13 @@ async def transform_request_body(
     kind: str | None,
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
-) -> tuple[bytes, dict[str, Any] | None]:
+) -> tuple[bytes, Any | None]:
     if kind != "anthropic" or not body:
         return body, None
     if not content_type or "json" not in content_type.lower():
         return body, None
     try:
-        from proxy_anthropic import transform_anthropic_request
+        from proxy_anthropic import PruneResult, transform_anthropic_request
 
         payload = json.loads(body)
         transformed, pruning = await asyncio.to_thread(
@@ -258,13 +258,80 @@ async def transform_request_body(
             pruning_pipeline,
             capture_decomposed_catalog=debug,
         )
-        pruning_meta = pruning.to_dict() if pruning is not None else None
-        return json.dumps(transformed).encode(), pruning_meta
+        return json.dumps(transformed).encode(), pruning
     except json.JSONDecodeError:
         return body, None
     except Exception as exc:
         logger.warning("anthropic transform failed: %s", exc)
-        return body, {"status": "failed", "error": str(exc)}
+        from proxy_anthropic import PruneResult
+
+        return body, PruneResult(
+            tools=None,
+            status="failed",
+            query=None,
+            tools_in=0,
+            mcp_tools_in=0,
+            tools_out=None,
+            error=str(exc),
+        )
+
+
+def build_stats_record(
+    *,
+    endpoint: str,
+    target_url: str,
+    upstream_model: str | None,
+    pruning_pipeline: list[str] | None,
+    pruning: Any,
+    config: dict[str, Any],
+    store_full_tools: bool,
+) -> Any:
+    from db import ProxyRequestRecord, lookup_model_provider, provider_dns_from_url
+
+    provider, provider_dns = lookup_model_provider(upstream_model, config)
+    if not provider_dns:
+        provider_dns = provider_dns_from_url(target_url)
+
+    tools_accepted_json: str | None = None
+    tools_final_json: str | None = None
+    if store_full_tools and pruning.tools_accepted is not None:
+        from build_index import compact_json
+
+        tools_accepted_json = compact_json(pruning.tools_accepted)
+    if store_full_tools and pruning.tools_final is not None:
+        from build_index import compact_json
+
+        tools_final_json = compact_json(pruning.tools_final)
+
+    return ProxyRequestRecord(
+        endpoint=endpoint,
+        tools_in=pruning.tokens_in or 0,
+        tool_count_in=pruning.tools_in,
+        tool_properties_count_in=pruning.tool_properties_count_in or 0,
+        tools_out=pruning.tokens_out or 0,
+        tool_count_out=pruning.tools_out or 0,
+        tool_properties_count_out=pruning.tool_properties_count_out or 0,
+        prune_status=pruning.status,
+        pipeline=pruning_pipeline or [],
+        upstream_model_name=upstream_model,
+        upstream_provider_dns=provider_dns,
+        upstream_provider=provider,
+        query=pruning.query,
+        error=pruning.error,
+        tools_accepted_json=tools_accepted_json,
+        tools_final_json=tools_final_json,
+        pruning_stages=dict(pruning.pruning_token_usage),
+    )
+
+
+def _record_stats_async(
+    stats_db: Any,
+    record: Any,
+) -> None:
+    try:
+        stats_db.record_proxy_request(record)
+    except Exception as exc:
+        logger.warning("stats record failed: %s", exc)
 
 
 def create_app(
@@ -272,6 +339,9 @@ def create_app(
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
     debug_strict: bool = False,
+    stats_db: Any | None = None,
+    store_full_tools: bool = False,
+    config: dict[str, Any] | None = None,
 ) -> Starlette:
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
@@ -289,13 +359,33 @@ def create_app(
 
         body = await request.body()
         content_type = request.headers.get("content-type")
-        body, pruning_meta = await transform_request_body(
+        upstream_model: str | None = None
+        if body and content_type and "json" in content_type.lower():
+            try:
+                upstream_model = json.loads(body).get("model")
+            except json.JSONDecodeError:
+                pass
+
+        body, pruning = await transform_request_body(
             body,
             content_type,
             kind,
             pruning_pipeline,
             debug,
         )
+        pruning_meta = pruning.to_dict() if pruning is not None else None
+
+        if stats_db is not None and pruning is not None:
+            record = build_stats_record(
+                endpoint=endpoint_name,
+                target_url=target_url,
+                upstream_model=upstream_model,
+                pruning_pipeline=pruning_pipeline,
+                pruning=pruning,
+                config=config or {},
+                store_full_tools=store_full_tools or debug,
+            )
+            asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
         forward_headers = filter_headers(request.headers)
 
         if debug:
@@ -378,31 +468,109 @@ def resolve_port(config: dict[str, Any], cli_port: int | None) -> int:
     return int(proxy_cfg.get("port", DEFAULT_PORT))
 
 
+def _stats_db_path(config: dict[str, Any]) -> str:
+    stats_cfg = config.get("stats", {})
+    db_cfg = stats_cfg.get("database", {}) if isinstance(stats_cfg, dict) else {}
+    path = db_cfg.get("path", "~/.configs/sca/stats.db")
+    return str(Path(path).expanduser())
+
+
+def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    from db import StatsDB, empty_totals, format_events, format_totals
+
+    db_path = _stats_db_path(config)
+    db = StatsDB.open_for_query(db_path)
+    try:
+        if args.stats_command == "totals":
+            period = getattr(args, "period", "all")
+            totals = db.query_totals(period) if db is not None else empty_totals()
+            print(format_totals(totals))
+        elif args.stats_command == "summary":
+            totals = db.query_summary(args.period) if db is not None else empty_totals()
+            print(format_totals(totals))
+        elif args.stats_command == "events":
+            events = db.query_events(args.limit) if db is not None else []
+            if args.json:
+                print(json.dumps(events, indent=2))
+            else:
+                print(format_events(events))
+    finally:
+        if db is not None:
+            db.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Transparent LLM HTTP proxy")
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    serve_parser = subparsers.add_parser("serve", help="Run the HTTP proxy (default)")
+    serve_parser.add_argument(
         "--port",
         type=int,
         default=None,
         help=f"Listen port (overrides config.yaml; default {DEFAULT_PORT})",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--config",
         type=Path,
         default=None,
         help="Path to config.yaml",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--debug",
         action="store_true",
         help="Do not call upstream; append request snapshots to {endpoint}.log",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--debug-strict",
         action="store_true",
         help="With --debug, return 502 when tool pruning did not apply",
     )
+
+    stats_parser = subparsers.add_parser("stats", help="Query persisted proxy stats")
+    stats_sub = stats_parser.add_subparsers(dest="stats_command", required=True)
+
+    stats_totals = stats_sub.add_parser("totals", help="Aggregate token totals")
+    stats_totals.add_argument(
+        "--period",
+        choices=["day", "week", "month", "all"],
+        default="all",
+    )
+    stats_totals.add_argument("--config", type=Path, default=None)
+
+    stats_summary = stats_sub.add_parser("summary", help="Summary for a time period")
+    stats_summary.add_argument(
+        "--period",
+        choices=["day", "week", "month", "all"],
+        default="day",
+    )
+    stats_summary.add_argument("--config", type=Path, default=None)
+
+    stats_events = stats_sub.add_parser("events", help="Recent proxy events")
+    stats_events.add_argument("--limit", type=int, default=20)
+    stats_events.add_argument("--json", action="store_true")
+    stats_events.add_argument("--config", type=Path, default=None)
+
+    # Legacy: flags without subcommand still start the proxy
+    parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--debug-strict", action="store_true", help=argparse.SUPPRESS)
+
     args = parser.parse_args()
+
+    if args.command == "stats":
+        config = load_proxy_config(getattr(args, "config", None))
+        _run_stats_cli(args, config)
+        return
+
+    # Default to serve when no subcommand (backward compatible)
+    if args.command is None:
+        args.command = "serve"
+        if not hasattr(args, "debug"):
+            args.debug = False
+        if not hasattr(args, "debug_strict"):
+            args.debug_strict = False
 
     env_path = Path(__file__).resolve().parent / ".env"
     if env_path.exists():
@@ -423,11 +591,27 @@ def main() -> None:
     routes = build_routes(proxy_cfg)
     pruning_pipeline = _pruning_pipeline_from_config(config)
     port = resolve_port(config, args.port)
+
+    stats_cfg = config.get("stats", {})
+    stats_enabled = isinstance(stats_cfg, dict) and stats_cfg.get("enabled", False)
+    store_full_tools = isinstance(stats_cfg, dict) and stats_cfg.get("store_full_tools", False)
+    stats_db = None
+    if stats_enabled:
+        try:
+            from db import StatsDB
+
+            stats_db = StatsDB.init(_stats_db_path(config))
+        except Exception as exc:
+            logger.warning("stats database unavailable: %s", exc)
+
     app = create_app(
         routes,
         pruning_pipeline,
         debug=args.debug,
         debug_strict=args.debug_strict,
+        stats_db=stats_db,
+        store_full_tools=store_full_tools,
+        config=config,
     )
 
     uvicorn.run(app, host="0.0.0.0", port=port)

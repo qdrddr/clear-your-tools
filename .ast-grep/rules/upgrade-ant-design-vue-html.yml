@@ -1,0 +1,24 @@
+id: upgrade-ant-design-vue
+language: HTML
+utils:
+  inside-tag:
+    # find the enclosing element of the attribute
+    inside:
+      kind: element
+      stopBy: { kind: element } # only the closest element
+      # find the tag name and store it in metavar
+      has:
+        stopBy: { kind: tag_name }
+        kind: tag_name
+        pattern: $TAG_NAME
+rule:
+  # find the target attribute_name
+  kind: attribute_name
+  regex: :visible
+  # find the element
+  matches: inside-tag
+# ensure it only matches modal/tooltip but not tag
+constraints:
+  TAG_NAME:
+    regex: a-modal|a-tooltip
+fix: :open

@@ -158,6 +158,83 @@ if err:
     pass
 ```
 
+## FAQ
+
+### Doesn't pruning burn more tokens than it saves?
+
+The reranker and LLM used for pruning are **much cheaper per token** than the main model (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you save on the main request.
+
+**Example pricing (input tokens):**
+
+| Model | Cost per 1M input tokens |
+|-------|-------------------------|
+| Claude Sonnet 4.6 | $3.00 |
+| Inception Mercury 2 | $0.25 |
+| Qwen-Reranker-8B | $0.050 |
+
+Mercury 2 also returns only the IDs of tools to keep, so its output stays extreamly small. While Rerankers do not count output tokens and usually much cheaper vs. strong LLM.
+
+**Rule of thumb:** saving 1M Sonnet input tokens is still worthwhile even if pruning uses up to ~10M Mercury tokens — roughly a 1:10 cost ratio. While Reranker has 1:60 cost ratio.
+
+In practice, pruning usually adds a modest overhead. Worst case (no tools pruned), you might pay ~$3.30 instead of $3.00. With typical pruning (40–95% of tool tokens removed), tool-schema cost drops from ~$3.00 to roughly **$0.15–$1.80**, plus ~$0.30 for pruning with Mercury Model — about **$0.45–$2.10 total** for the tool pruning. That is roughly **30–85% savings on tool-related cost**, depending on how aggressive your policy is set.
+
+### Why don't I see 30–85% savings on my total request?
+
+Those numbers apply to **tool schemas only**, not the full prompt (system message, conversation history, user message, etc.). This app is only prunes tools based on the user request, the rest of the request reamins unchanged.
+
+How much you save overall depends on:
+
+- **How many tools you have** — more MCP servers and tools mean a larger share of the request is tool schemas.
+- **Which pruning policy you use** — see the next section.
+
+To estimate total savings on a real request:
+
+```bash
+uv run count_request_tokens.py \
+  --tool-savings-percent 85 \
+  --requestfile temp_example_claude_call.json
+```
+
+With ~100 tools and `prune_all`, expect **~85-85% savings on tool tokens** and typically more than **~30% savings on the full request**.
+
+### What are the pruning policies, and how do I maximize savings?
+
+There are two tool categories:
+
+| Category | Default Policy | Examples | Typical prefix |
+|----------|----------|----------|----------------|
+| **System tools** | `prune_optional` | `Read`, `Write`, `Agent` | (no `mcp__` prefix) |
+| **MCP tools** | `prune_all` | Tools from MCP servers | `mcp__…` |
+
+Set defaults in `config.yaml` under `defaults.system_tool_policy` and `defaults.mcp_tool_policy`.
+
+**Policy options:**
+
+| Policy | What it does |
+|--------|--------------|
+| `always_include` | No pruning — the tool and full tool schema every turn included. |
+| `prune_optional` | Keep the tool, but drop optional properties that look irrelevant to the query. Required properties are always kept. |
+| `prune_all` | Most aggressive — entire tools can be removed if they look irrelevant. If a tool is kept, its required properties are always included; optional ones are trimmed when irrelevant to the query. |
+
+`prune_all` saves the most tokens. With ~100 tools, expect up to **~95% reduction in tool-schema tokens**.
+
+### Can I override pruning for specific tools?
+
+Yes. Per-tool policies in `config.yaml` override the system/MCP defaults:
+
+```yaml
+pruning:
+  per_tool:
+    mcp__hedl__hedl_convert_from: prune_optional   # this tool always inc;luded; trim optional fields if irrelevant to the user query
+    Agent: prune_optional
+    mcp__hedl__batch: prune_all                    # may be removed entirely
+    mcp__fff__multi_grep: always_include           # never prune, entier tool and its full definitions always remains unchenged
+```
+
+- **`always_include`** — tool is never pruned (no savings)
+- **`prune_optional`** — tool is always included; only irrelevant optional properties are removed (moderate savings about 45%)
+- **`prune_all`** — tool may be dropped entirely when irrelevant (most aggressive, saves about 95%)
+
 ---
 
 ## LangGraph / LangChain 1.0 middleware

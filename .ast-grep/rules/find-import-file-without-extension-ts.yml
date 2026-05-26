@@ -1,0 +1,17 @@
+id: find-import-file
+message: Local file imports should include file extensions (.ts, .js, etc). Exclude npm packages.
+language: js
+severity: info
+rule:
+  regex: "^\\./[^.]+[^/]$"
+  kind: string_fragment
+  any:
+    - inside:
+        stopBy: end
+        kind: import_statement
+    - inside:
+        stopBy: end
+        kind: call_expression
+        has:
+          field: function
+          regex: "^import$"

@@ -1,0 +1,8 @@
+id: no-nested-links
+language: tsx
+severity: error
+rule:
+  pattern: <a $$$>$$$A</a>
+  has:
+    pattern: <a $$$>$$$</a>
+    stopBy: end

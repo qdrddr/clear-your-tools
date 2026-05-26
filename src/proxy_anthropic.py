@@ -42,7 +42,8 @@ def _agent_debug_log(
         pass
     # #endregion
 
-from build_index import CatalogIndex, build_catalog_index, collect_enums, count_json_tokens, prepare_tool_entry
+from build_index import CatalogIndex, build_catalog_index, collect_enums, compact_json, count_json_tokens, prepare_tool_entry
+from token_usage import StageTokenUsage
 from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
 from retrieve_catalog import parse_json_input, retrieve_tools
@@ -61,6 +62,7 @@ from tool_policies import (
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
+    is_decomposed_optional_property_chunk,
     partition_catalog,
     request_pass_through,
     tool_pass_through,
@@ -99,7 +101,12 @@ class PruneResult:
     tokens_in: int | None = None
     tokens_out: int | None = None
     tokens_saved: int | None = None
+    tool_properties_count_in: int | None = None
+    tool_properties_count_out: int | None = None
+    tools_accepted: list[dict[str, Any]] | None = None
+    tools_final: list[dict[str, Any]] | None = None
     pruning_model_tokens: dict[str, int] = field(default_factory=dict)
+    pruning_token_usage: dict[str, StageTokenUsage] = field(default_factory=dict)
     decomposed: dict[str, int] = field(default_factory=dict)
     decomposed_breakdown: dict[str, dict[str, int]] = field(default_factory=dict)
     decomposed_catalog: dict[str, dict[str, Any]] | None = None
@@ -114,6 +121,8 @@ class PruneResult:
             "tokens_in": self.tokens_in,
             "tokens_out": self.tokens_out,
             "tokens_saved": self.tokens_saved,
+            "tool_properties_count_in": self.tool_properties_count_in,
+            "tool_properties_count_out": self.tool_properties_count_out,
             "error": self.error,
             "decomposed": self.decomposed,
         }
@@ -121,6 +130,16 @@ class PruneResult:
             out["decomposed_breakdown"] = self.decomposed_breakdown
         if self.pruning_model_tokens:
             out["pruning_model_tokens"] = self.pruning_model_tokens
+        if self.pruning_token_usage:
+            out["pruning_token_usage"] = {
+                stage: {
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "reasoning_tokens": usage.reasoning_tokens,
+                    "usage_source": usage.usage_source,
+                }
+                for stage, usage in self.pruning_token_usage.items()
+            }
         if self.decomposed_catalog is not None:
             out["decomposed_catalog"] = self.decomposed_catalog
         return out
@@ -319,6 +338,26 @@ def _breakdown_entry(data: dict[str, Any]) -> dict[str, int]:
     return {"json": json_n, "md": md_n}
 
 
+def _count_optional_property_chunks(data: dict[str, Any]) -> int:
+    json_items = data.get("json")
+    if not isinstance(json_items, list):
+        return 0
+    return sum(
+        1
+        for item in json_items
+        if isinstance(item, dict) and is_decomposed_optional_property_chunk(item)
+    )
+
+
+def _pruning_tokens_summary(usage_map: dict[str, StageTokenUsage]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for stage, usage in usage_map.items():
+        total = usage.input_tokens + usage.output_tokens + (usage.reasoning_tokens or 0)
+        if total:
+            summary[stage] = total
+    return summary
+
+
 def _snapshot_catalog(data: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(data)
 
@@ -338,7 +377,7 @@ def _run_pruning_pipeline(
     dict[str, Any] | None,
     dict[str, Any],
     dict[str, dict[str, Any]] | None,
-    dict[str, int],
+    dict[str, StageTokenUsage],
 ]:
     decomposed_breakdown: dict[str, dict[str, int]] = {
         "build_index": _breakdown_entry(data),
@@ -346,7 +385,7 @@ def _run_pruning_pipeline(
     decomposed: dict[str, int] = {
         "build_index": decomposed_breakdown["build_index"]["json"] + decomposed_breakdown["build_index"]["md"],
     }
-    pruning_model_tokens: dict[str, int] = {}
+    pruning_token_usage: dict[str, StageTokenUsage] = {}
     snapshots: dict[str, dict[str, Any]] | None = {} if capture_catalog else None
     post_rerank: dict[str, Any] | None = None
     post_rerank_scored: dict[str, Any] | None = None
@@ -360,7 +399,7 @@ def _run_pruning_pipeline(
 
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
-            data, rerank_tokens = rerank_catalog_dict(
+            data, rerank_usage = rerank_catalog_dict(
                 data,
                 query,
                 prune=False,
@@ -368,7 +407,7 @@ def _run_pruning_pipeline(
                 mcp_policy=None,
                 merge_pinned=False,
             )
-            pruning_model_tokens["rerank"] = rerank_tokens
+            pruning_token_usage["rerank"] = rerank_usage
             if capture_catalog and snapshots is not None:
                 snapshots["rerank"] = _snapshot_catalog(data)
             post_rerank_scored = copy.deepcopy(data)
@@ -381,14 +420,14 @@ def _run_pruning_pipeline(
         elif stage == "llm":
             if i > 0 and pruning_pipeline[i - 1] == "rerank":
                 data = trim_catalog_dict(data)
-            data, llm_tokens = llm_catalog_dict(
+            data, llm_usage = llm_catalog_dict(
                 data,
                 query,
                 system_policy=None,
                 mcp_policy=None,
                 merge_pinned=False,
             )
-            pruning_model_tokens["llm"] = llm_tokens
+            pruning_token_usage["llm"] = llm_usage
             decomposed_breakdown["llm"] = _breakdown_entry(data)
             decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
             if capture_catalog and snapshots is not None:
@@ -399,11 +438,11 @@ def _run_pruning_pipeline(
     if pinned:
         data = merge_catalog(data, pinned)
 
-    if pruning_model_tokens:
+    if pruning_token_usage:
         parts = ", ".join(
-            f"{stage}={pruning_model_tokens[stage]}"
-            for stage in ("rerank", "llm")
-            if stage in pruning_model_tokens
+            f"{stage}={usage.input_tokens + usage.output_tokens}"
+            for stage, usage in pruning_token_usage.items()
+            if usage.input_tokens or usage.output_tokens
         )
         if parts:
             breakdown_msg = f"pruning model tokens: {parts}"
@@ -418,7 +457,7 @@ def _run_pruning_pipeline(
         post_rerank_scored,
         pinned,
         snapshots,
-        pruning_model_tokens,
+        pruning_token_usage,
     )
 
 
@@ -573,6 +612,8 @@ def filter_tools_for_query(
             tokens_in=tokens_in,
             tokens_out=tokens_in,
             tokens_saved=0,
+            tools_accepted=copy.deepcopy(original_tools),
+            tools_final=copy.deepcopy(original_tools),
         )
 
     if not query or not original_tools:
@@ -612,6 +653,8 @@ def filter_tools_for_query(
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 tokens_saved=tokens_in - tokens_out,
+                tools_accepted=copy.deepcopy(original_tools),
+                tools_final=copy.deepcopy(restored),
             )
         return PruneResult(
             tools=None,
@@ -628,10 +671,14 @@ def filter_tools_for_query(
     decomposed: dict[str, int] = {}
     decomposed_breakdown: dict[str, dict[str, int]] = {}
     decomposed_catalog: dict[str, dict[str, Any]] | None = None
+    pruning_token_usage: dict[str, StageTokenUsage] = {}
     pruning_model_tokens: dict[str, int] = {}
+    tool_properties_count_in = 0
+    tool_properties_count_out = 0
     try:
         index = build_catalog_index(entries, enums)
         data = index.to_catalog_dict()
+        tool_properties_count_in = _count_optional_property_chunks(data)
         (
             data,
             decomposed,
@@ -640,7 +687,7 @@ def filter_tools_for_query(
             post_rerank_scored,
             pinned,
             decomposed_catalog,
-            pruning_model_tokens,
+            pruning_token_usage,
         ) = _run_pruning_pipeline(
             data,
             query,
@@ -649,6 +696,8 @@ def filter_tools_for_query(
             system_policy=system_policy,
             mcp_policy=mcp_policy,
         )
+        tool_properties_count_out = _count_optional_property_chunks(data)
+        pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
         json_after_pipeline = data.get("json") if isinstance(data.get("json"), list) else []
         agent_debug_log(
             hypothesis_id="H1",
@@ -737,7 +786,11 @@ def filter_tools_for_query(
             tools_out=None,
             error=str(exc),
             tokens_in=tokens_in,
+            tool_properties_count_in=tool_properties_count_in,
+            tool_properties_count_out=tool_properties_count_out,
+            tools_accepted=copy.deepcopy(original_tools),
             pruning_model_tokens=pruning_model_tokens,
+            pruning_token_usage=pruning_token_usage,
             decomposed=decomposed,
             decomposed_breakdown=decomposed_breakdown,
             decomposed_catalog=decomposed_catalog,
@@ -753,7 +806,11 @@ def filter_tools_for_query(
             tools_out=None,
             error="pruned catalog produced no tools",
             tokens_in=tokens_in,
+            tool_properties_count_in=tool_properties_count_in,
+            tool_properties_count_out=tool_properties_count_out,
+            tools_accepted=copy.deepcopy(original_tools),
             pruning_model_tokens=pruning_model_tokens,
+            pruning_token_usage=pruning_token_usage,
             decomposed=decomposed,
             decomposed_breakdown=decomposed_breakdown,
             decomposed_catalog=decomposed_catalog,
@@ -825,7 +882,12 @@ def filter_tools_for_query(
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         tokens_saved=tokens_saved,
+        tool_properties_count_in=tool_properties_count_in,
+        tool_properties_count_out=tool_properties_count_out,
+        tools_accepted=copy.deepcopy(original_tools),
+        tools_final=copy.deepcopy(pruned),
         pruning_model_tokens=pruning_model_tokens,
+        pruning_token_usage=pruning_token_usage,
         decomposed=decomposed,
         decomposed_breakdown=decomposed_breakdown,
         decomposed_catalog=decomposed_catalog,

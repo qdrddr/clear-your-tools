@@ -1,0 +1,9 @@
+id: no-console-except-error
+message: Avoid console.log or console.debug in production code. Use console.error for errors or logging.warn for warnings. (Test files in __tests__/ are allowed.)
+language: typescript
+severity: warning
+rule:
+  pattern: console.$METHOD($$$)
+constraints:
+  METHOD:
+    regex: "log|debug"

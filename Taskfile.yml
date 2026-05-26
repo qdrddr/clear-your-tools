@@ -1,0 +1,12 @@
+version: "3"
+
+tasks:
+  ast-test:
+    desc: Test ast-grep lint rules
+    cmds:
+      - uv run ast-grep test --skip-snapshot-tests
+
+  ast-scan:
+    desc: Pattern-based security/quality scan
+    cmds:
+      - uv run ast-grep scan ui/

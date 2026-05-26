@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from build_index import count_tokens, log_token_usage
+from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import split_into_bulks
@@ -131,11 +132,11 @@ def rerank_items(
     api_key: str | None,
     extract_fn: Any,
     min_score: float | None = None,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], StageTokenUsage]:
     """Generic reranking logic for both json and md items."""
     documents = []
     valid_indices = []
-    tokens_consumed = 0
+    total_usage = empty_usage()
 
     for i, item in enumerate(items):
         item["score"] = f"{0.0:.20f}"
@@ -145,7 +146,7 @@ def rerank_items(
             valid_indices.append(i)
 
     if not documents:
-        return items, 0
+        return items, empty_usage()
 
     # Calculate base overhead (query)
     base_tokens = count_tokens(query) + 200  # buffer for wrapper tokens
@@ -166,11 +167,20 @@ def rerank_items(
             bulk_indices = [x[0] for x in bulk]
             bulk_docs = [x[1] for x in bulk]
             bulk_tokens = count_rerank_request_tokens(query, bulk_docs)
-            tokens_consumed += bulk_tokens
             logger.info(
                 "rerank request tokens: %d (query + %d documents)",
                 bulk_tokens,
                 len(bulk_docs),
+            )
+            total_usage = total_usage.merge(
+                StageTokenUsage(
+                    input_tokens=bulk_tokens,
+                    output_tokens=0,
+                    usage_source=TIKTOKEN_CL100K,
+                    model_name=RERANK_MODEL,
+                    provider_dns_name="api.deepinfra.com",
+                    provider="deepinfra",
+                ),
             )
 
             try:
@@ -194,13 +204,13 @@ def rerank_items(
         # Sort using float to ensure correct numerical order
         items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
         if min_score is not None:
-            return [item for item in items if float(item.get("score", 0)) >= min_score], tokens_consumed
+            return [item for item in items if float(item.get("score", 0)) >= min_score], total_usage
     except RuntimeError:
         raise
     except Exception as e:
         print(f"Error during reranking: {e}", file=sys.stderr)
 
-    return items, tokens_consumed
+    return items, total_usage
 
 
 def _extract_md_content(item: dict[str, Any]) -> str | None:
@@ -234,44 +244,44 @@ def rerank_catalog_dict(
     system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
     mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
     merge_pinned: bool = True,
-) -> tuple[dict[str, Any], int]:
+) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
     if (
         system_policy is not None
         and mcp_policy is not None
         and full_pass_through(system_policy, mcp_policy)
     ):
-        return data, 0
+        return data, empty_usage()
 
     load_env()
     key = os.environ.get("DEEPINFRA_API_KEY")
-    tokens_consumed = 0
+    total_usage = empty_usage()
     pinned: dict[str, Any] = {}
     if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     if "json" in data and isinstance(data["json"], list):
-        data["json"], json_tokens = rerank_items(
+        data["json"], json_usage = rerank_items(
             query,
             data["json"],
             key,
             _extract_json_catalog_document,
             None,
         )
-        tokens_consumed += json_tokens
+        total_usage = total_usage.merge(json_usage)
 
     if RERANK_ENUMS and "md" in data and isinstance(data["md"], list):
-        data["md"], md_tokens = rerank_items(
+        data["md"], md_usage = rerank_items(
             query,
             data["md"],
             key,
             _extract_md_content,
             None,
         )
-        tokens_consumed += md_tokens
+        total_usage = total_usage.merge(md_usage)
 
-    if tokens_consumed:
-        log_token_usage("pruning model tokens (rerank)", tokens_consumed)
+    if total_usage.input_tokens:
+        log_token_usage("pruning model tokens (rerank)", total_usage.input_tokens)
 
     if prune:
         data = prune_reranked_catalog(data)
@@ -279,7 +289,7 @@ def rerank_catalog_dict(
     if merge_pinned and pinned:
         data = merge_catalog(data, pinned)
 
-    return data, tokens_consumed
+    return data, total_usage
 
 
 def main() -> None:

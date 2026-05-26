@@ -1,0 +1,213 @@
+# find-all-imports-and-identifiers.yaml
+id: find-all-imports-and-identifiers
+language: TypeScript
+rule:
+  any:
+    # ALIAS IMPORTS
+    # ------------------------------------------------------------
+    # import { ORIGINAL as ALIAS } from 'SOURCE'
+    # ------------------------------------------------------------
+    - all:
+        # 1. Target the specific node type for named imports
+        - kind: import_specifier
+        # 2. Ensure it *has* an 'alias' field, capturing the alias identifier
+        - has:
+            field: alias
+            pattern: $ALIAS
+        # 3. Capture the original identifier (which has the 'name' field)
+        - has:
+            field: name
+            pattern: $ORIGINAL
+        # 4. Find an ANCESTOR import_statement and capture its source path
+        - inside:
+            stopBy: end # <<<--- Search ancestors.
+            kind: import_statement
+            has: # Ensure the found import_statement has the source field
+              field: source
+              pattern: $SOURCE
+
+    # DEFAULT IMPORTS
+    # ------------------------------------------------------------
+    # import { ORIGINAL } from 'SOURCE'
+    # ------------------------------------------------------------
+    - all:
+        - kind: import_statement
+        - has:
+            # Ensure it has an import_clause...
+            kind: import_clause
+            has:
+              # ...that directly contains an identifier (the default import name)
+              # This identifier is NOT under a 'named_imports' or 'namespace_import' node
+              kind: identifier
+              pattern: $DEFAULT_NAME
+        - has:
+            field: source
+            pattern: $SOURCE
+
+    # REGULAR IMPORTS
+    # ------------------------------------------------------------
+    # import { ORIGINAL } from 'SOURCE'
+    # ------------------------------------------------------------
+    - all:
+        # 1. Target the specific node type for named imports
+        - kind: import_specifier
+        # 2. Ensure it *has* an 'alias' field, capturing the alias identifier
+        - has:
+            field: name
+            pattern: $ORIGINAL
+        # 4. Find an ANCESTOR import_statement and capture its source path
+        - inside:
+            stopBy: end # <<<--- This is the key fix! Search ancestors.
+            kind: import_statement
+            has: # Ensure the found import_statement has the source field
+              field: source
+              pattern: $SOURCE
+
+    # DYNAMIC IMPORTS (Single Variable Assignment)
+    # ------------------------------------------------------------
+    # const VAR_NAME = require('SOURCE')
+    # ------------------------------------------------------------
+    - all:
+        - kind: variable_declarator
+        - has:
+            field: name
+            kind: identifier
+            pattern: $VAR_NAME # Capture the single variable name
+        - has:
+            field: value
+            any:
+              # Direct call
+              - all: # Wrap conditions in all
+                  - kind: call_expression
+                  - has: { field: function, regex: '^(require|import)$' }
+                  - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+              # Awaited call
+              - kind: await_expression
+                has:
+                  all: # Wrap conditions in all
+                    - kind: call_expression
+                    - has: { field: function, regex: '^(require|import)$' }
+                    - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+
+    # DYNAMIC IMPORTS (Destructured Shorthand Assignment)
+    # ------------------------------------------------------------
+    # const { ORIGINAL } = require('SOURCE')
+    # ------------------------------------------------------------
+    - all:
+        # 1. Target the shorthand identifier within the pattern
+        - kind: shorthand_property_identifier_pattern
+        - pattern: $ORIGINAL
+        # 2. Ensure it's inside an object_pattern that is the name of a variable_declarator
+        - inside:
+            kind: object_pattern
+            inside: # Check the variable_declarator it belongs to
+              kind: variable_declarator
+              # 3. Check the value assigned by the variable_declarator
+              has:
+                field: value
+                any:
+                  # Direct call
+                  - all:
+                      - kind: call_expression
+                      - has: { field: function, regex: '^(require|import)$' }
+                      - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+                  # Awaited call
+                  - kind: await_expression
+                    has:
+                      all:
+                        - kind: call_expression
+                        - has: { field: function, regex: '^(require|import)$' }
+                        - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+              stopBy: end # Search ancestors to find the correct variable_declarator
+
+    # DYNAMIC IMPORTS (Destructured Alias Assignment)
+    # ------------------------------------------------------------
+    # const { ORIGINAL: ALIAS } = require('SOURCE')
+    # ------------------------------------------------------------
+    - all:
+        # 1. Target the pair_pattern for aliased destructuring
+        - kind: pair_pattern
+        # 2. Capture the original identifier (key)
+        - has:
+            field: key
+            kind: property_identifier # Could be string/number literal too, but property_identifier is common
+            pattern: $ORIGINAL
+        # 3. Capture the alias identifier (value)
+        - has:
+            field: value
+            kind: identifier
+            pattern: $ALIAS
+        # 4. Ensure it's inside an object_pattern that is the name of a variable_declarator
+        - inside:
+            kind: object_pattern
+            inside: # Check the variable_declarator it belongs to
+              kind: variable_declarator
+              # 5. Check the value assigned by the variable_declarator
+              has:
+                field: value
+                any:
+                  # Direct call
+                  - all:
+                      - kind: call_expression
+                      - has: { field: function, regex: '^(require|import)$' }
+                      - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+                  # Awaited call
+                  - kind: await_expression
+                    has:
+                      all:
+                        - kind: call_expression
+                        - has: { field: function, regex: '^(require|import)$' }
+                        - has: { field: arguments, has: { kind: string, pattern: $SOURCE } } # Capture source
+              stopBy: end # Search ancestors to find the correct variable_declarator
+            stopBy: end # Ensure we check ancestors for the variable_declarator
+
+    # DYNAMIC IMPORTS (Side Effect / Source Only)
+    # ------------------------------------------------------------
+    # require('SOURCE')
+    # ------------------------------------------------------------
+    - all:
+        - kind: string # Target the source string literal directly
+        - pattern: $SOURCE
+        - inside: # String must be the argument of require() or import()
+            kind: arguments
+            parent:
+              kind: call_expression
+              has:
+                field: function
+                # Match 'require' identifier or 'import' keyword used dynamically
+                regex: '^(require|import)$'
+            stopBy: end # Search ancestors if needed (for the arguments/call_expression)
+        - not:
+            inside:
+              kind: lexical_declaration
+              stopBy: end # Search all ancestors up to the root
+
+    # NAMESPACE IMPORTS
+    # ------------------------------------------------------------
+    # import * as ns from 'mod'
+    # ------------------------------------------------------------
+    - all:
+        - kind: import_statement
+        - has:
+            kind: import_clause
+            has:
+              kind: namespace_import
+              has:
+                # namespace_import's child identifier is the alias
+                kind: identifier
+                pattern: $NAMESPACE_ALIAS
+        - has:
+            field: source
+            pattern: $SOURCE
+
+    # SIDE EFFECT IMPORTS
+    # ------------------------------------------------------------
+    # import 'mod'
+    # ------------------------------------------------------------
+    - all:
+        - kind: import_statement
+        - not: # Must NOT have an import_clause
+            has: { kind: import_clause }
+        - has: # But must have a source
+            field: source
+            pattern: $SOURCE

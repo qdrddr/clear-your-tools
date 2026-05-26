@@ -1,0 +1,22 @@
+id: speed-up-barrel-import
+language: typescript
+# find the barrel import statement
+rule:
+  pattern: import {$$$IDENTS} from './barrel'
+# rewrite imported identifiers to direct imports
+rewriters:
+  - id: rewrite-identifier
+    rule:
+      pattern: $IDENT
+      kind: identifier
+    fix: import $IDENT from './barrel/$IDENT'
+# apply the rewriter to the import statement
+transform:
+  IMPORTS:
+    rewrite:
+      rewriters: [rewrite-identifier]
+      # $$$IDENTS contains imported identifiers
+      source: $$$IDENTS
+      # join the rewritten imports by newline
+      joinBy: "\n"
+fix: $IMPORTS
