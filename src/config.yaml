@@ -105,10 +105,6 @@ pruning:
 
 network:
   proxy:
-    debug:
-      forward_log: forward.log
-      log_response_body: true
-      max_body_bytes: 1048576
     reverse:
       http2:
         upstream: true   # uv pip install h2
@@ -121,19 +117,8 @@ network:
         - upstream: anthropic
           url: https://openrouter.ai/api
           kind: anthropic
-        - upstream: cursor
-          url: https://api2.cursor.sh
-          kind: cursor
       endpoints:
         - anthropic
-        - cursor
-    forward:
-      enabled: true
-      port: 8835
-      host: 127.0.0.1
-      mitm:
-        ca_cert: src/crt/mitm-ca.pem
-        ca_key: src/crt/mitm-ca-key.pem
 
 stats:
   enabled: true

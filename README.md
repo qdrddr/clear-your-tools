@@ -270,10 +270,7 @@ If the user asks to fetch the Markdown of a webpage, `prune_all` typically keeps
 
 Entry point: `uv run src/proxy.py serve`
 
-| Port | Mode | Client setting |
-|------|------|----------------|
-| **8834** | Reverse (path-based) | `ANTHROPIC_BASE_URL=http://localhost:8834/anthropic` |
-| **8835** | Forward MITM | `"http.proxy": "http://127.0.0.1:8835"` (any HTTP-proxy client) |
+Default reverse listen port: **8834** (`ANTHROPIC_BASE_URL=http://localhost:8834/anthropic`).
 
 ### Reverse proxy (Claude Code)
 
@@ -307,46 +304,3 @@ $HOME/.local/bin/claude --model haiku 'say hi' -p
 ```
 
 Reverse debug (dry-run, no upstream): `uv run src/proxy.py serve --debug --port 8834`
-
-### Forward MITM proxy
-
-The forward proxy terminates TLS (MITM) so decrypted request/response bodies can be logged and transformed. It requires a **separate CA** from the reverse TLS cert (`cert.pem` is for localhost reverse only).
-
-Generate MITM CA (once):
-
-```shell
-mkdir -p src/crt
-openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
-  -keyout src/crt/mitm-ca-key.pem -out src/crt/mitm-ca.pem \
-  -subj "/CN=ToolAttention MITM CA" \
-  -addext "basicConstraints=critical,CA:TRUE,pathlen:0"
-```
-
-Trust the CA on your machine (macOS example):
-
-```shell
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain src/crt/mitm-ca.pem
-```
-
-Configure any HTTP-proxy client:
-
-```json
-{
-  "http.proxy": "http://127.0.0.1:8835",
-  "http.proxyStrictSSL": false
-}
-```
-
-Forward debug (append decrypted bodies to `forward.log` while forwarding):
-
-```shell
-uv run src/proxy.py serve --debug
-```
-
-Disable forward proxy: `uv run src/proxy.py serve --no-forward`
-
-Test:
-
-```shell
-./scripts/test_forward_proxy.sh
-```

@@ -36,7 +36,6 @@ dependencies = [
     "libsql-experimental>=0.0.55",
     "hypercorn==0.18.0",
     "h2==4.3.0",
-    "cryptography>=44.0.0",
 ]
 
 [dependency-groups]

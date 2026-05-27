@@ -1,15 +1,12 @@
-"""Central CLI and shared utilities for reverse and MITM forward proxies."""
+"""Central CLI and shared utilities for the reverse HTTP proxy."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import gzip
 import json
 import logging
-import re
 import sys
-import zlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,8 +20,7 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
-DEFAULT_PORT = 8000
-DEFAULT_FORWARD_PORT = 8835
+DEFAULT_REVERSE_PORT = 8000
 HOP_BY_HOP = frozenset(
     {
         "connection",
@@ -69,83 +65,12 @@ def reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("network.proxy.reverse must be configured")
 
 
-def forward_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
-    forward = proxy_cfg.get("forward")
-    if isinstance(forward, dict):
-        return forward
-    return {"enabled": False, "port": DEFAULT_FORWARD_PORT, "host": "127.0.0.1"}
-
-
-def debug_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
-    debug = proxy_cfg.get("debug")
-    return debug if isinstance(debug, dict) else {}
-
-
 def resolve_reverse_port(config: dict[str, Any], cli_port: int | None) -> int:
     if cli_port is not None:
         return cli_port
     proxy_cfg = config.get("network", {}).get("proxy", {})
     reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    return int(reverse_cfg.get("port", DEFAULT_PORT))
-
-
-def resolve_forward_port(config: dict[str, Any], cli_port: int | None) -> int:
-    if cli_port is not None:
-        return cli_port
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    forward_cfg = forward_proxy_cfg(proxy_cfg)
-    return int(forward_cfg.get("port", DEFAULT_FORWARD_PORT))
-
-
-def forward_enabled(config: dict[str, Any], cli_no_forward: bool) -> bool:
-    if cli_no_forward:
-        return False
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    forward_cfg = forward_proxy_cfg(proxy_cfg)
-    return bool(forward_cfg.get("enabled", True))
-
-
-def forward_bind_host(config: dict[str, Any]) -> str:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    forward_cfg = forward_proxy_cfg(proxy_cfg)
-    return str(forward_cfg.get("host", "127.0.0.1"))
-
-
-def _resolve_config_path(rel: str) -> Path:
-    base = Path(__file__).resolve().parent
-    path = Path(rel)
-    if path.is_absolute():
-        return path
-    if rel.startswith("src/"):
-        return base.parent / rel
-    return base / rel
-
-
-def mitm_ca_paths(config: dict[str, Any]) -> tuple[Path, Path]:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    forward_cfg = forward_proxy_cfg(proxy_cfg)
-    mitm = forward_cfg.get("mitm") if isinstance(forward_cfg.get("mitm"), dict) else {}
-    ca_cert = _resolve_config_path(str(mitm.get("ca_cert", "src/crt/mitm-ca.pem")))
-    ca_key = _resolve_config_path(str(mitm.get("ca_key", "src/crt/mitm-ca-key.pem")))
-    return ca_cert, ca_key
-
-
-def resolve_forward_debug_log(config: dict[str, Any]) -> Path:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    dbg = debug_cfg(proxy_cfg)
-    return Path(str(dbg.get("forward_log", "forward.log")))
-
-
-def debug_max_body_bytes(config: dict[str, Any]) -> int:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    dbg = debug_cfg(proxy_cfg)
-    return int(dbg.get("max_body_bytes", 1048576))
-
-
-def debug_log_response_body(config: dict[str, Any]) -> bool:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    dbg = debug_cfg(proxy_cfg)
-    return bool(dbg.get("log_response_body", True))
+    return int(reverse_cfg.get("port", DEFAULT_REVERSE_PORT))
 
 
 def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -180,124 +105,8 @@ def filter_headers(headers: httpx.Headers | dict[str, str]) -> dict[str, str]:
     }
 
 
-def filter_header_dict(headers: dict[str, str]) -> dict[str, str]:
-    return {k: v for k, v in headers.items() if k.lower() not in HOP_BY_HOP}
-
-
 def header_content_encoding(headers: dict[str, str]) -> str | None:
     return headers.get("content-encoding") or headers.get("connect-content-encoding")
-
-
-def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
-    if not body:
-        return body
-    if content_encoding:
-        for enc in (part.strip() for part in content_encoding.split(",")):
-            lower = enc.lower()
-            if lower in {"identity", ""}:
-                continue
-            if lower in {"gzip", "x-gzip"}:
-                return gzip.decompress(body)
-            if lower == "deflate":
-                return zlib.decompress(body)
-            if lower == "br":
-                try:
-                    import brotli
-                except ImportError:
-                    return body
-                return brotli.decompress(body)
-    if body[:2] == b"\x1f\x8b":
-        try:
-            return gzip.decompress(body)
-        except OSError:
-            pass
-    return body
-
-
-_PRINTABLE_RUN = re.compile(rb"[\x09\x0a\x0d\x20-\x7e\xc2-\xf4][\x20-\x7e\x80-\xbf]*")
-
-
-def _extract_printable_text(body: bytes) -> str:
-    runs = _PRINTABLE_RUN.findall(body)
-    if runs:
-        return "\n".join(part.decode("utf-8", errors="replace") for part in runs)
-    return body.decode("utf-8", errors="replace")
-
-
-def _bytes_to_log_text(body: bytes, content_type: str | None = None) -> str:
-    if content_type and any(
-        token in content_type.lower() for token in ("proto", "protobuf", "octet-stream")
-    ):
-        return _extract_printable_text(body)
-    try:
-        return body.decode("utf-8")
-    except UnicodeDecodeError:
-        return _extract_printable_text(body)
-
-
-def body_for_snapshot(
-    body: bytes,
-    content_type: str | None,
-    *,
-    content_encoding: str | None = None,
-    max_bytes: int | None = None,
-) -> Any:
-    if not body:
-        return None
-    original_len = len(body)
-    truncated = body
-    if max_bytes is not None and len(body) > max_bytes:
-        truncated = body[:max_bytes]
-    from connect_envelope import decode_connect_payload
-
-    decoded = decode_connect_payload(truncated, content_encoding=content_encoding)
-    if decoded is truncated and content_encoding:
-        decoded = _decompress_body(decoded, content_encoding)
-    elif decoded is truncated:
-        decoded = _decompress_body(decoded, content_encoding)
-    if content_type and "json" in content_type.lower():
-        try:
-            value = json.loads(decoded)
-            if max_bytes is not None and original_len > max_bytes:
-                return {
-                    "_json": value,
-                    "_truncated": True,
-                    "_original_bytes": original_len,
-                }
-            return value
-        except json.JSONDecodeError:
-            pass
-    if content_type and any(
-        token in content_type.lower() for token in ("proto", "protobuf", "connect")
-    ):
-        text = _extract_printable_text(decoded)
-        if text.strip():
-            if max_bytes is not None and original_len > max_bytes:
-                return {"_text": text, "_truncated": True, "_original_bytes": original_len}
-            return text
-    text = _bytes_to_log_text(decoded, content_type)
-    if max_bytes is not None and original_len > max_bytes:
-        return {"_text": text, "_truncated": True, "_original_bytes": original_len}
-    return text
-
-
-def optional_body_log_field(
-    body: bytes,
-    content_type: str | None,
-    *,
-    content_encoding: str | None = None,
-    max_bytes: int | None = None,
-    field: str = "request_body",
-) -> dict[str, Any]:
-    value = body_for_snapshot(
-        body,
-        content_type,
-        content_encoding=content_encoding,
-        max_bytes=max_bytes,
-    )
-    if value is None:
-        return {}
-    return {field: value}
 
 
 def append_debug_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
@@ -463,13 +272,10 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
             db.close()
 
 
-async def run_servers(
+async def run_reverse_server(
     *,
     config: dict[str, Any],
     reverse_port: int,
-    forward_port: int,
-    forward_host: str,
-    run_forward: bool,
     debug: bool,
     debug_strict: bool,
     http2_upstream: bool,
@@ -477,76 +283,37 @@ async def run_servers(
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
 ) -> None:
-    from proxy_forward import run_forward_mitm_proxy
     from proxy_reverse import serve_reverse_async
 
-    forward_task = None
-    if run_forward:
-        ca_cert, ca_key = mitm_ca_paths(config)
-        forward_task = asyncio.create_task(
-            run_forward_mitm_proxy(
-                host=forward_host,
-                port=forward_port,
-                ca_cert_path=ca_cert,
-                ca_key_path=ca_key,
-                debug=debug,
-                debug_log=resolve_forward_debug_log(config),
-                max_body_bytes=debug_max_body_bytes(config),
-                log_response_body=debug_log_response_body(config),
-            ),
-            name="forward-mitm",
-        )
-        logger.info("forward MITM proxy listening on %s:%s", forward_host, forward_port)
-
-    reverse_task = asyncio.create_task(
-        serve_reverse_async(
-            config,
-            host="0.0.0.0",
-            port=reverse_port,
-            debug=debug,
-            debug_strict=debug_strict,
-            http2_upstream=http2_upstream,
-            http2_serve=http2_serve,
-            ssl_keyfile=ssl_keyfile,
-            ssl_certfile=ssl_certfile,
-        ),
-        name="reverse-proxy",
+    await serve_reverse_async(
+        config,
+        host="0.0.0.0",
+        port=reverse_port,
+        debug=debug,
+        debug_strict=debug_strict,
+        http2_upstream=http2_upstream,
+        http2_serve=http2_serve,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile,
     )
-    logger.info("reverse proxy listening on 0.0.0.0:%s", reverse_port)
-
-    tasks = [reverse_task]
-    if forward_task is not None:
-        tasks.append(forward_task)
-    await asyncio.gather(*tasks)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Reverse + MITM forward HTTP proxy")
+    parser = argparse.ArgumentParser(description="Reverse HTTP proxy")
     subparsers = parser.add_subparsers(dest="command")
 
-    serve_parser = subparsers.add_parser("serve", help="Run reverse and forward proxies")
+    serve_parser = subparsers.add_parser("serve", help="Run the reverse proxy")
     serve_parser.add_argument(
         "--port",
         type=int,
         default=None,
-        help=f"Reverse listen port (default from config, else {DEFAULT_PORT})",
-    )
-    serve_parser.add_argument(
-        "--forward-port",
-        type=int,
-        default=None,
-        help=f"Forward MITM port (default from config, else {DEFAULT_FORWARD_PORT})",
-    )
-    serve_parser.add_argument(
-        "--no-forward",
-        action="store_true",
-        help="Disable forward MITM proxy",
+        help=f"Reverse listen port (default from config, else {DEFAULT_REVERSE_PORT})",
     )
     serve_parser.add_argument("--config", type=Path, default=None)
     serve_parser.add_argument(
         "--debug",
         action="store_true",
-        help="Reverse: dry-run to {endpoint}.log; forward: append decrypted bodies to forward.log",
+        help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
     )
     serve_parser.add_argument(
         "--debug-strict",
@@ -572,8 +339,6 @@ def main() -> None:
     stats_events.add_argument("--config", type=Path, default=None)
 
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--forward-port", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--no-forward", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--debug-strict", action="store_true", help=argparse.SUPPRESS)
@@ -590,7 +355,6 @@ def main() -> None:
         for attr, default in (
             ("debug", False),
             ("debug_strict", False),
-            ("no_forward", False),
         ):
             if not hasattr(args, attr):
                 setattr(args, attr, default)
@@ -624,12 +388,9 @@ def main() -> None:
     )
 
     asyncio.run(
-        run_servers(
+        run_reverse_server(
             config=config,
             reverse_port=resolve_reverse_port(config, args.port),
-            forward_port=resolve_forward_port(config, getattr(args, "forward_port", None)),
-            forward_host=forward_bind_host(config),
-            run_forward=forward_enabled(config, getattr(args, "no_forward", False)),
             debug=args.debug,
             debug_strict=args.debug_strict,
             http2_upstream=http2_upstream,

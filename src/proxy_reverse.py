@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import logging
+import re
+import struct
+import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -16,7 +21,6 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from proxy import (
-    body_for_snapshot,
     filter_headers,
     forward_upstream,
     header_content_encoding,
@@ -32,6 +36,157 @@ METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 logger = logging.getLogger(__name__)
+
+CONNECT_FLAG_COMPRESSED = 0x01
+
+
+@dataclass(frozen=True)
+class ConnectFrame:
+    compressed: bool
+    payload: bytes
+
+
+def _parse_connect_frames(buffer: bytearray) -> list[ConnectFrame]:
+    frames: list[ConnectFrame] = []
+    while len(buffer) >= 5:
+        flags = buffer[0]
+        length = struct.unpack(">I", buffer[1:5])[0]
+        if len(buffer) < 5 + length:
+            break
+        payload = bytes(buffer[5 : 5 + length])
+        del buffer[: 5 + length]
+        frames.append(ConnectFrame(compressed=bool(flags & CONNECT_FLAG_COMPRESSED), payload=payload))
+    return frames
+
+
+def _decompress_connect_frame_payload(
+    frame: ConnectFrame,
+    *,
+    content_encoding: str | None = None,
+) -> bytes:
+    payload = frame.payload
+    if frame.compressed:
+        payload = gzip.decompress(payload)
+    elif content_encoding and "gzip" in content_encoding.lower() and payload[:2] == b"\x1f\x8b":
+        try:
+            payload = gzip.decompress(payload)
+        except OSError:
+            pass
+    return payload
+
+
+def _decode_connect_payload(raw: bytes, *, content_encoding: str | None = None) -> bytes:
+    if not raw:
+        return raw
+    buf = bytearray(raw)
+    frames = _parse_connect_frames(buf)
+    if frames and not buf:
+        return b"".join(
+            _decompress_connect_frame_payload(frame, content_encoding=content_encoding)
+            for frame in frames
+        )
+    if content_encoding and "gzip" in content_encoding.lower():
+        try:
+            return gzip.decompress(raw)
+        except OSError:
+            pass
+    if raw[:2] == b"\x1f\x8b":
+        try:
+            return gzip.decompress(raw)
+        except OSError:
+            pass
+    return raw
+
+
+def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
+    if not body:
+        return body
+    if content_encoding:
+        for enc in (part.strip() for part in content_encoding.split(",")):
+            lower = enc.lower()
+            if lower in {"identity", ""}:
+                continue
+            if lower in {"gzip", "x-gzip"}:
+                return gzip.decompress(body)
+            if lower == "deflate":
+                return zlib.decompress(body)
+            if lower == "br":
+                try:
+                    import brotli
+                except ImportError:
+                    return body
+                return brotli.decompress(body)
+    if body[:2] == b"\x1f\x8b":
+        try:
+            return gzip.decompress(body)
+        except OSError:
+            pass
+    return body
+
+
+_PRINTABLE_RUN = re.compile(rb"[\x09\x0a\x0d\x20-\x7e\xc2-\xf4][\x20-\x7e\x80-\xbf]*")
+
+
+def _extract_printable_text(body: bytes) -> str:
+    runs = _PRINTABLE_RUN.findall(body)
+    if runs:
+        return "\n".join(part.decode("utf-8", errors="replace") for part in runs)
+    return body.decode("utf-8", errors="replace")
+
+
+def _bytes_to_log_text(body: bytes, content_type: str | None = None) -> str:
+    if content_type and any(
+        token in content_type.lower() for token in ("proto", "protobuf", "octet-stream")
+    ):
+        return _extract_printable_text(body)
+    try:
+        return body.decode("utf-8")
+    except UnicodeDecodeError:
+        return _extract_printable_text(body)
+
+
+def body_for_snapshot(
+    body: bytes,
+    content_type: str | None,
+    *,
+    content_encoding: str | None = None,
+    max_bytes: int | None = None,
+) -> Any:
+    if not body:
+        return None
+    original_len = len(body)
+    truncated = body
+    if max_bytes is not None and len(body) > max_bytes:
+        truncated = body[:max_bytes]
+    decoded = _decode_connect_payload(truncated, content_encoding=content_encoding)
+    if decoded is truncated and content_encoding:
+        decoded = _decompress_body(decoded, content_encoding)
+    elif decoded is truncated:
+        decoded = _decompress_body(decoded, content_encoding)
+    if content_type and "json" in content_type.lower():
+        try:
+            value = json.loads(decoded)
+            if max_bytes is not None and original_len > max_bytes:
+                return {
+                    "_json": value,
+                    "_truncated": True,
+                    "_original_bytes": original_len,
+                }
+            return value
+        except json.JSONDecodeError:
+            pass
+    if content_type and any(
+        token in content_type.lower() for token in ("proto", "protobuf", "connect")
+    ):
+        text = _extract_printable_text(decoded)
+        if text.strip():
+            if max_bytes is not None and original_len > max_bytes:
+                return {"_text": text, "_truncated": True, "_original_bytes": original_len}
+            return text
+    text = _bytes_to_log_text(decoded, content_type)
+    if max_bytes is not None and original_len > max_bytes:
+        return {"_text": text, "_truncated": True, "_original_bytes": original_len}
+    return text
 
 
 def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]:

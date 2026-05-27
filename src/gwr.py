@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 import types
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, final
 
@@ -127,13 +126,6 @@ class MCPAggregator:
 
         groups, tool_files = _group_files(input_files, decomposed_dir)
         final_tools = _process_groups(groups, tool_files, scores, decomposed_dir)
-
-        # Investigate why /ack has false; Save results to troubleshooting file
-        try:
-            with open("temp_cs_found_tools.json", "w") as tf:
-                json.dump(final_tools, tf, indent=2)
-        except Exception as e:
-            logger.error("Failed to save troubleshooting file: %s", e)
 
         return final_tools
 
@@ -400,19 +392,6 @@ class MCPAggregator:
         # This prevents starting a second HTTP server on port+1 (8082)
         logger.info("Forcing transport to stdio to integrate with Relay Server.")
         transport = "stdio"
-
-        # Log session ID and Claude-related env vars to debug file
-        with open("/tmp/claude-hook-debug.log", "a") as f:
-            f.write(f"\n--- {datetime.now().isoformat()} - CLAUDE Context Dump ---\n")
-            # Dump all environment variables containing "CLAUDE" (case-insensitive)
-            for key, val in os.environ.items():
-                if "CLAUDE" in key.upper():
-                    f.write(f"{key}={val}\n")
-
-            # Explicitly log the session ID if not already caught
-            session_id = os.environ.get("PPID")
-            f.write(f"PPID={session_id}\n")
-            f.write("-------------------------------------------\n")
 
         if transport == "stdio":
             # Redirect stdout logging to stderr

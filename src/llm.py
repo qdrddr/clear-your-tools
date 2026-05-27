@@ -16,17 +16,12 @@ from tool_policies import (
     SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
-    agent_debug_log,
     catalog_needs_partition,
     configure_policies_from_config,
-    debug_paths_for_tool,
     full_pass_through,
     merge_catalog,
     partition_catalog,
-    root_tool_id_from_chunk,
 )
-
-_BATCH_TOOL = "mcp__hedl__batch"
 
 logger = logging.getLogger(__name__)
 
@@ -364,31 +359,6 @@ def llm_catalog_dict(
         )
 
     result = process_results(data, item_metadata_storage, selected_ids, list_keys)
-    batch_selected: list[dict[str, str]] = []
-    batch_offered: list[dict[str, str]] = []
-    for chunk_id, storage in item_metadata_storage.items():
-        item = storage.get("item")
-        if not isinstance(item, dict):
-            continue
-        path = str(item.get("file_path", ""))
-        if not path or root_tool_id_from_chunk(item) != _BATCH_TOOL:
-            continue
-        entry = {"chunk_id": str(chunk_id), "list_key": str(storage.get("key", "")), "file_path": path}
-        batch_offered.append(entry)
-        if chunk_id in selected_ids:
-            batch_selected.append(entry)
-    json_after = result.get("json") if isinstance(result.get("json"), list) else []
-    agent_debug_log(
-        hypothesis_id="H1",
-        location="llm.py:llm_catalog_dict",
-        message="llm selection for batch tool",
-        data={
-            "selected_chunk_count": len(selected_ids),
-            "batch_chunks_offered": batch_offered,
-            "batch_chunks_selected": batch_selected,
-            "batch_paths_in_result": debug_paths_for_tool(json_after, _BATCH_TOOL),
-        },
-    )
     if merge_pinned and pinned:
         result = merge_catalog(result, pinned)
     return result, total_usage

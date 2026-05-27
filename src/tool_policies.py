@@ -4,43 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
-import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from build_index import DECOMPOSED_PREFIX, collect_enums, tool_id_from_decomposed_rel
 from retrieve_catalog import DECOMPOSED_ROOT, get_root_tool_key, to_decomposed_key
-
-_DEBUG_LOG_PATH = (
-    Path(__file__).resolve().parent.parent / ".cursor" / "debug-5f0fe7.log"
-)
-_DEBUG_SESSION_ID = "5f0fe7"
-
-
-def agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": _DEBUG_SESSION_ID,
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, default=str) + "\n")
-    except OSError:
-        pass
-    # #endregion
 
 # Keep in sync with rerank.RERANK_SCORE (avoid circular import: rerank imports tool_policies).
 RERANK_SCORE: float = 0.003
@@ -94,17 +61,6 @@ def root_tool_id_from_chunk(item: dict[str, Any]) -> str:
     if root_key is not None:
         return tool_id_from_decomposed_rel(root_key)
     return chunk_tool_id(item)
-
-
-def debug_paths_for_tool(items: list[Any], tool_id: str) -> list[str]:
-    paths: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        if root_tool_id_from_chunk(item) != tool_id:
-            continue
-        paths.append(str(item.get("file_path", "")))
-    return sorted(paths)
 
 
 def request_pass_through(tools: list[dict[str, Any]]) -> bool:
@@ -732,20 +688,6 @@ def mitigate_empty_optional_properties(
         if optional_chunks_for_tool(result, tool_id):
             continue
 
-        if tool_id == _BATCH_TOOL:
-            agent_debug_log(
-                hypothesis_id="H2",
-                location="tool_policies.py:mitigate_empty_optional_properties",
-                message="batch tool empty-root mitigation branch",
-                data={
-                    "last_stage": last_stage,
-                    "root_properties_empty": root_chunk_properties_empty(root_item),
-                    "needs_mitigation": needs_empty_optional_mitigation(catalog_index, tool_id),
-                    "all_batch_paths_in_result": debug_paths_for_tool(result, tool_id),
-                    "post_rerank_scored_available": bool(scored_json),
-                },
-            )
-
         if last_stage == "llm":
             tools_to_drop.add(tool_id)
             continue
@@ -761,13 +703,6 @@ def mitigate_empty_optional_properties(
                 result.append(copy.deepcopy(chunk))
 
     if tools_to_drop:
-        if _BATCH_TOOL in tools_to_drop:
-            agent_debug_log(
-                hypothesis_id="H2",
-                location="tool_policies.py:mitigate_empty_optional_properties",
-                message="batch tool dropped by mitigate",
-                data={"tools_to_drop": sorted(tools_to_drop)},
-            )
         result = [
             item
             for item in result
