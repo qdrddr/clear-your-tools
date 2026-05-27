@@ -12,6 +12,7 @@ import yaml
 from dotenv import load_dotenv
 
 SRC_ENV_PATH = Path(__file__).with_name(".env")
+SRC_CONFIG_PATH = Path(__file__).with_name("config.yaml")
 USER_ENV_PATH = Path("~/.configs/cyt/.env").expanduser()
 _env_path = SRC_ENV_PATH  # backward-compatible alias for resolve_model callers
 
@@ -171,8 +172,26 @@ def _write_default_user_config(config_path: Path) -> None:
     config_path.write_text(content, encoding="utf-8")
 
 
+def _load_yaml_dict(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as f:
+        loaded = yaml.safe_load(f)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
+    """Layer built-in defaults, bundled ``src/config.yaml``, then *user_config*."""
+    merged = _DEFAULTS
+    if SRC_CONFIG_PATH.exists():
+        merged = _deep_merge(merged, _load_yaml_dict(SRC_CONFIG_PATH))
+    return _deep_merge(merged, user_config)
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load ``config.yaml`` and layer it on top of built-in defaults.
+
+    The bundled ``src/config.yaml`` (when present) is merged before the resolved
+    user/cwd file so partial overrides in ``~/.configs/cyt/config.yaml`` keep
+    model and pipeline settings from the package defaults.
 
     Missing keys are populated from built-in defaults so callers always receive
     a complete configuration dictionary. When no config file exists and no
@@ -182,14 +201,11 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     config_path = resolve_config_path(path)
     user_config: dict[str, Any] = {}
     if config_path.exists():
-        with config_path.open(encoding="utf-8") as f:
-            loaded = yaml.safe_load(f)
-            if isinstance(loaded, dict):
-                user_config = loaded
+        user_config = _load_yaml_dict(config_path)
     elif path is None and config_path == DEFAULT_USER_CONFIG_PATH.expanduser():
         _write_default_user_config(config_path)
         user_config = _default_user_config_dict()
-    return _deep_merge(_DEFAULTS, user_config)
+    return _config_with_bundled_defaults(user_config)
 
 
 def reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:

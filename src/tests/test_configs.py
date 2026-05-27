@@ -81,6 +81,28 @@ def test_load_config_explicit_missing_returns_defaults(
     missing = isolated_config_paths["root"] / "missing.yaml"
     loaded = configs.load_config(missing)
 
-    assert loaded["network"]["proxy"]["reverse"]["port"] == configs.DEFAULT_REVERSE_PORT
+    assert loaded["network"]["proxy"]["reverse"]["port"] == 8834
+    assert loaded["defaults"]["remote"]["reranking_model_nick"] == "rerank-qwen3-8b"
     assert not missing.exists()
     assert not isolated_config_paths["user_config"].exists()
+
+
+def test_load_config_layers_bundled_defaults_under_user_overrides(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled = isolated_config_paths["root"] / "bundled.yaml"
+    bundled.write_text(
+        "defaults:\n  remote:\n    reranking_model_nick: bundled-rerank\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(configs, "SRC_CONFIG_PATH", bundled)
+
+    user_config = isolated_config_paths["user_config"]
+    user_config.parent.mkdir(parents=True, exist_ok=True)
+    user_config.write_text("defaults:\n  is_persistent: false\n", encoding="utf-8")
+
+    loaded = configs.load_config()
+
+    assert loaded["defaults"]["is_persistent"] is False
+    assert loaded["defaults"]["remote"]["reranking_model_nick"] == "bundled-rerank"

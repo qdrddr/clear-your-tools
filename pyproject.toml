@@ -3,7 +3,7 @@ name = "clear_your_tools"
 version = "0.0.1"
 description = "Dynamic Tool Gating for Eliminating the MCP/Tools Tax in Scalable Agentic Workflows"
 
-keywords = ["tool-attention", "mcp", "mcp-client"]
+keywords = ["Clear Your Tools", "mcp", "mcp-client"]
 classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
