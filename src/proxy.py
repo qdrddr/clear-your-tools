@@ -14,13 +14,18 @@ from typing import Any
 
 import httpx
 import uvicorn
-import yaml
 from dotenv import load_dotenv
+from configs import (
+    DEFAULT_REVERSE_PORT,
+    load_config,
+    proxy_http2_settings,
+    resolve_reverse_port,
+    stats_db_path,
+)
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
-DEFAULT_REVERSE_PORT = 8000
 HOP_BY_HOP = frozenset(
     {
         "connection",
@@ -45,56 +50,6 @@ def http2_package_available() -> bool:
     except ImportError:
         return False
     return True
-
-
-def load_proxy_config(path: Path | None = None) -> dict[str, Any]:
-    config_path = path or Path(__file__).with_name("config.yaml")
-    with config_path.open(encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid proxy config in {config_path}")
-    return data
-
-
-def reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
-    reverse = proxy_cfg.get("reverse")
-    if isinstance(reverse, dict):
-        return reverse
-    if proxy_cfg.get("upstreams") or proxy_cfg.get("endpoints"):
-        return proxy_cfg
-    raise ValueError("network.proxy.reverse must be configured")
-
-
-def resolve_reverse_port(config: dict[str, Any], cli_port: int | None) -> int:
-    if cli_port is not None:
-        return cli_port
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    return int(reverse_cfg.get("port", DEFAULT_REVERSE_PORT))
-
-
-def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    http2_cfg = reverse_cfg.get("http2")
-    if http2_cfg is None:
-        http2_cfg = proxy_cfg.get("http2")
-    if isinstance(http2_cfg, bool):
-        return {
-            "http2_upstream": http2_cfg,
-            "http2_serve": False,
-            "ssl_keyfile": None,
-            "ssl_certfile": None,
-        }
-    if not isinstance(http2_cfg, dict):
-        http2_cfg = {}
-    ssl_cfg = http2_cfg.get("ssl") if isinstance(http2_cfg.get("ssl"), dict) else {}
-    return {
-        "http2_upstream": bool(http2_cfg.get("upstream", False)),
-        "http2_serve": bool(http2_cfg.get("serve", False)),
-        "ssl_keyfile": ssl_cfg.get("keyfile") or http2_cfg.get("ssl_keyfile"),
-        "ssl_certfile": ssl_cfg.get("certfile") or http2_cfg.get("ssl_certfile"),
-    }
 
 
 def filter_headers(headers: httpx.Headers | dict[str, str]) -> dict[str, str]:
@@ -230,18 +185,11 @@ async def run_uvicorn_async(
     await server.serve()
 
 
-def _stats_db_path(config: dict[str, Any]) -> str:
-    stats_cfg = config.get("stats", {})
-    db_cfg = stats_cfg.get("database", {}) if isinstance(stats_cfg, dict) else {}
-    path = db_cfg.get("path", "~/.configs/sca/stats.db")
-    return str(Path(path).expanduser())
-
-
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     from db import StatsDB, empty_totals, format_events, format_totals
     from pricing import compute_stats_costs, empty_costs
 
-    db_path = _stats_db_path(config)
+    db_path = stats_db_path(config)
     db = StatsDB.open_for_query(db_path)
     try:
         if args.stats_command == "totals":
@@ -346,7 +294,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "stats":
-        config = load_proxy_config(getattr(args, "config", None))
+        config = load_config(getattr(args, "config", None))
         _run_stats_cli(args, config)
         return
 
@@ -370,7 +318,7 @@ def main() -> None:
             force=True,
         )
 
-    config = load_proxy_config(args.config)
+    config = load_config(args.config)
     from tool_policies import configure_policies_from_config
 
     configure_policies_from_config(config)

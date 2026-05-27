@@ -13,20 +13,23 @@ from fastmcp import Client, FastMCP, Context
 from fastmcp.server.middleware import Middleware, MiddlewareContext, CallNext
 from fastmcp.server.transforms.visibility import save_visibility_rules
 
+_src_root = Path(__file__).resolve().parent.parent
+if str(_src_root) not in sys.path:
+    sys.path.insert(0, str(_src_root))
+
+from configs import DEFAULT_MCP_AGGREGATOR_PORT
+from build_index import CatalogBuilder
+from llm import prepare_chunks, call_llm, process_results
+from rerank import rerank_items, extract_document_text
+from retrieve_catalog import load_catalog, parse_json_input, _group_files, _process_groups
 from recursion import (
     check_self_recursion_protection,
     is_mcp_aggregator_description,
     is_self_recursion,
 )
-from build_index import CatalogBuilder
-from retrieve_catalog import load_catalog, parse_json_input, _group_files, _process_groups
-from rerank import rerank_items, extract_document_text
-from llm import prepare_chunks, call_llm, process_results
 from relay import RelayServer, RELAY_IDENTITY
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_PORT = 8000
 
 @final
 class MCPAggregator:
@@ -119,10 +122,8 @@ class MCPAggregator:
         decomposed_dir = Path("src/catalog/schemas/decomposed")
 
         # Ensure decomposed_dir exists relative to current working directory
-        # If gwr.py is run from root, src/catalog/schemas/decomposed should be correct
         if not decomposed_dir.exists():
-             # Try absolute path based on file location
-             decomposed_dir = Path(__file__).parent / "catalog" / "schemas" / "decomposed"
+             decomposed_dir = Path(__file__).resolve().parent.parent / "catalog" / "schemas" / "decomposed"
 
         groups, tool_files = _group_files(input_files, decomposed_dir)
         final_tools = _process_groups(groups, tool_files, scores, decomposed_dir)
@@ -301,7 +302,6 @@ class MCPAggregator:
                     f'    return await client.call_tool("{bn_val}", params)'
                 ]
                 loc = {"logger": logger, "Context": Context}
-                # Use globals from gwr.py context
                 exec("\n".join(code_lines), globals(), loc)
                 return loc["handler"]
 
@@ -312,7 +312,7 @@ class MCPAggregator:
         self,
         config_paths: list[Path],
         transport: Literal["stdio", "http"] = "http",
-        port: int = DEFAULT_PORT,
+        port: int = DEFAULT_MCP_AGGREGATOR_PORT,
         only_relay: bool = False,
     ) -> None:
         if not only_relay:

@@ -8,4 +8,4 @@ mcpc @sca-stdio-proj tools-get mcp__fff_find_files
 rtk mcpc @sca-stdio-proj tools-call mcp__fff_find_files query:='"aggregator"' maxResults:=20 cursor:=null
 
 
-#uv run src/aggregator.py --port 8000
+#uv run src/mcp/aggregator.py --port 8000

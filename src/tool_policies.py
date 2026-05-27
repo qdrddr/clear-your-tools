@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from build_index import DECOMPOSED_PREFIX, collect_enums, tool_id_from_decomposed_rel
+from configs import DEFAULT_MCP_TOOL_POLICY, DEFAULT_SYSTEM_TOOL_POLICY, load_config
 from retrieve_catalog import DECOMPOSED_ROOT, get_root_tool_key, to_decomposed_key
 
 # Keep in sync with rerank.RERANK_SCORE (avoid circular import: rerank imports tool_policies).
@@ -19,8 +20,8 @@ SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
-SYSTEM_TOOL_POLICY: SystemToolPolicy = "prune_all"
-MCP_TOOL_POLICY: MCPToolPolicy = "prune_all"
+SYSTEM_TOOL_POLICY: SystemToolPolicy = cast(SystemToolPolicy, DEFAULT_SYSTEM_TOOL_POLICY)
+MCP_TOOL_POLICY: MCPToolPolicy = cast(MCPToolPolicy, DEFAULT_MCP_TOOL_POLICY)
 PER_TOOL_POLICIES: dict[str, ToolPolicy] = {}
 
 
@@ -176,8 +177,6 @@ def configure_policies_from_config(config: dict[str, Any] | None = None) -> None
     """Apply defaults.system_tool_policy / mcp_tool_policy / pruning.per_tool from config.yaml."""
     global SYSTEM_TOOL_POLICY, MCP_TOOL_POLICY, PER_TOOL_POLICIES
     if config is None:
-        from configs import load_config
-
         config = load_config()
     defaults = config.get("defaults", {})
     system = defaults.get("system_tool_policy")

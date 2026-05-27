@@ -20,13 +20,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from configs import pruning_pipeline_from_config, reverse_proxy_cfg, stats_db_path
 from proxy import (
     filter_headers,
     forward_upstream,
     header_content_encoding,
     http2_package_available,
     reverse_debug_log_path,
-    reverse_proxy_cfg,
     run_hypercorn_async,
     run_uvicorn_async,
     save_debug_snapshot,
@@ -230,16 +230,6 @@ def _needs_request_buffer(
     if kind != "anthropic":
         return False
     return method.upper() in BODY_METHODS
-
-
-def _pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
-    pruning = config.get("pruning")
-    pipeline = pruning.get("pipeline") if isinstance(pruning, dict) else None
-    if pipeline is None:
-        return ["rerank"]
-    if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
-        raise ValueError("pruning.pipeline must be a list of stage names")
-    return pipeline
 
 
 def _catalog_file_paths(catalog: dict[str, Any], key: str) -> list[str]:
@@ -583,15 +573,6 @@ def create_app(
     )
 
 
-def _stats_db_path(config: dict[str, Any]) -> str:
-    from pathlib import Path
-
-    stats_cfg = config.get("stats", {})
-    db_cfg = stats_cfg.get("database", {}) if isinstance(stats_cfg, dict) else {}
-    path = db_cfg.get("path", "~/.configs/sca/stats.db")
-    return str(Path(path).expanduser())
-
-
 async def serve_reverse_async(
     config: dict[str, Any],
     *,
@@ -606,7 +587,7 @@ async def serve_reverse_async(
 ) -> None:
     proxy_cfg = config["network"]["proxy"]
     routes = build_routes(proxy_cfg)
-    pruning_pipeline = _pruning_pipeline_from_config(config)
+    pruning_pipeline = pruning_pipeline_from_config(config)
 
     stats_cfg = config.get("stats", {})
     stats_enabled = isinstance(stats_cfg, dict) and stats_cfg.get("enabled", False)
@@ -616,7 +597,7 @@ async def serve_reverse_async(
         try:
             from db import StatsDB
 
-            stats_db = StatsDB.init(_stats_db_path(config))
+            stats_db = StatsDB.init(stats_db_path(config))
         except Exception as exc:
             logger.warning("stats database unavailable: %s", exc)
 

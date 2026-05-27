@@ -20,5 +20,5 @@ rtk uv run src/llm.py --json temp_embedings.json "find code graph tools" --outpu
 rtk uv run src/llm.py --dir src/catalog/schemas/decomposed "find code graph tools" --output-json temp_llm2.json
 
 
-rtk uv run src/aggregator.py --debug --only-relay --port 8123
-rtk uv run src/aggregator.py --debug --port 8123 --servers temp_empty_config.json
+rtk uv run src/mcp/aggregator.py --debug --only-relay --port 8123
+rtk uv run src/mcp/aggregator.py --debug --port 8123 --servers temp_empty_config.json

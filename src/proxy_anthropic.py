@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from build_index import CatalogIndex, build_catalog_index, collect_enums, compact_json, count_json_tokens, prepare_tool_entry
+from configs import DEFAULT_PRUNING_PIPELINE
 from token_usage import StageTokenUsage
 from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
@@ -38,8 +39,6 @@ from tool_policies import (
 _BATCH_TOOL = "mcp__hedl__batch"
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 
 SYSTEM_REMINDER_PREFIX = "<system-reminder>"
 

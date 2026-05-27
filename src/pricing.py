@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_STRONG_MODEL = "google/gemini-3-flash-preview"
+from configs import strong_model_name
 
 _PROVIDER_PREFIXES = frozenset({"openrouter", "deepinfra", "ollama", "openai", "anthropic"})
 
@@ -118,15 +118,6 @@ def lookup_pricing(catalog: dict[str, ModelPricing], model_name: str | None) -> 
         if normalize_model_name(key) == normalized:
             return pricing
     return None
-
-
-def strong_model_name(config: dict[str, Any]) -> str:
-    stats = config.get("stats", {})
-    if isinstance(stats, dict):
-        configured = stats.get("strong_model")
-        if isinstance(configured, str) and configured:
-            return configured
-    return DEFAULT_STRONG_MODEL
 
 
 def empty_costs(config: dict[str, Any] | None = None) -> StatsCosts:
