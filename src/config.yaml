@@ -10,6 +10,7 @@ defaults:
   reranking_enabled: true
 models:
   llm:
+    minimum_tools: 50
     remote:
       - name: openai/gpt-oss-120b
         provider: openrouter
@@ -43,6 +44,7 @@ models:
           output_cost_per_token: 7.5e-07
         # base_url: https://openrouter.ai/api/v1
   rerankers:
+    minimum_tools: 29
     remote:
       - name: Qwen/Qwen3-Reranker-8B
         provider: deepinfra

@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from build_index import count_tokens, log_token_usage
+from build_index import catalog_tool_count, count_tokens, log_token_usage
+from configs import reranker_minimum_tools
 from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from dotenv import load_dotenv
 from litellm import rerank
@@ -218,8 +219,24 @@ def _extract_md_content(item: dict[str, Any]) -> str | None:
     return str(content) if content else None
 
 
+def _below_reranker_minimum_tools(data: dict[str, Any]) -> bool:
+    minimum_tools = reranker_minimum_tools()
+    tool_count = catalog_tool_count(data)
+    if tool_count < minimum_tools:
+        logger.info(
+            "rerank pruning skipped: %d tools below minimum %d",
+            tool_count,
+            minimum_tools,
+        )
+        return True
+    return False
+
+
 def prune_reranked_catalog(data: dict[str, Any]) -> dict[str, Any]:
     """Drop catalog items below RERANK_SCORE / RERANK_ENUM_SCORE after rerank_items scored them."""
+    if _below_reranker_minimum_tools(data):
+        return data
+
     json_items = data.get("json")
     if isinstance(json_items, list):
         data["json"] = [
@@ -251,6 +268,9 @@ def rerank_catalog_dict(
         and mcp_policy is not None
         and full_pass_through(system_policy, mcp_policy)
     ):
+        return data, empty_usage()
+
+    if _below_reranker_minimum_tools(data):
         return data, empty_usage()
 
     load_env()

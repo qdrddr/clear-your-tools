@@ -245,7 +245,7 @@ async def run_reverse_server(
     config: dict[str, Any],
     reverse_port: int,
     debug: bool,
-    debug_terminate: bool,
+    debug_dry_run: bool,
     debug_strict: bool,
     http2_upstream: bool,
     http2_serve: bool,
@@ -259,7 +259,7 @@ async def run_reverse_server(
         host="0.0.0.0",
         port=reverse_port,
         debug=debug,
-        debug_terminate=debug_terminate,
+        debug_terminate=debug_dry_run,
         debug_strict=debug_strict,
         http2_upstream=http2_upstream,
         http2_serve=http2_serve,
@@ -286,14 +286,14 @@ def main() -> None:
         help="Log transformed requests to {endpoint}.log and forward to upstream",
     )
     serve_parser.add_argument(
-        "--debug-terminate",
+        "--debug-dry-run",
         action="store_true",
         help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
     )
     serve_parser.add_argument(
         "--debug-strict",
         action="store_true",
-        help="With --debug-terminate, return 502 when pruning did not apply",
+        help="With --debug-dry-run, return 502 when pruning did not apply",
     )
     serve_parser.add_argument("--http2-upstream", action=argparse.BooleanOptionalAction, default=None)
     serve_parser.add_argument("--http2-serve", action=argparse.BooleanOptionalAction, default=None)
@@ -316,7 +316,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--debug-terminate", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--debug-dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--debug-strict", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
@@ -330,7 +330,7 @@ def main() -> None:
         args.command = "serve"
         for attr, default in (
             ("debug", False),
-            ("debug_terminate", False),
+            ("debug_dry_run", False),
             ("debug_strict", False),
         ):
             if not hasattr(args, attr):
@@ -340,7 +340,7 @@ def main() -> None:
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 
-    if args.debug or args.debug_terminate:
+    if args.debug or args.debug_dry_run:
         logging.basicConfig(
             level=logging.INFO,
             format="%(levelname)s:%(name)s: %(message)s",
@@ -368,8 +368,8 @@ def main() -> None:
         run_reverse_server(
             config=config,
             reverse_port=resolve_reverse_port(config, args.port),
-            debug=args.debug or args.debug_terminate,
-            debug_terminate=args.debug_terminate,
+            debug=args.debug or args.debug_dry_run,
+            debug_terminate=args.debug_dry_run,
             debug_strict=args.debug_strict,
             http2_upstream=http2_upstream,
             http2_serve=http2_serve,

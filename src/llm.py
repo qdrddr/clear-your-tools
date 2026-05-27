@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any, TypeVar
 
-from build_index import count_tokens, log_token_usage
+from build_index import catalog_tool_count, count_tokens, log_token_usage
+from configs import llm_minimum_tools
 from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from dotenv import load_dotenv
 from litellm import completion
@@ -320,6 +321,16 @@ def llm_catalog_dict(
         and mcp_policy is not None
         and full_pass_through(system_policy, mcp_policy)
     ):
+        return data, empty_usage()
+
+    minimum_tools = llm_minimum_tools()
+    tool_count = catalog_tool_count(data)
+    if tool_count < minimum_tools:
+        logger.info(
+            "llm pruning skipped: %d tools below minimum %d",
+            tool_count,
+            minimum_tools,
+        )
         return data, empty_usage()
 
     api_key = get_api_key()

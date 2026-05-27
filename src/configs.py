@@ -23,6 +23,8 @@ DEFAULT_STATS_DB_PATH: str = "~/.configs/sca/stats.db"
 DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
+DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = 50
+DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = 10
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -49,6 +51,14 @@ _DEFAULTS: dict[str, Any] = {
         "system_tool_policy": DEFAULT_SYSTEM_TOOL_POLICY,
         "mcp_tool_policy": DEFAULT_MCP_TOOL_POLICY,
         "reranking_enabled": False,
+    },
+    "models": {
+        "llm": {
+            "minimum_tools": DEFAULT_MIN_TOOLS_LLM_PRUNINER,
+        },
+        "rerankers": {
+            "minimum_tools": DEFAULT_MIN_TOOLS_RERANKER_PRUNINER,
+        },
     },
     "pruning": {
         "pipeline": list(DEFAULT_PRUNING_PIPELINE),
@@ -154,6 +164,14 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
         raise ValueError("pruning.pipeline must be a list of stage names")
     return pipeline
+
+
+def llm_minimum_tools(config: dict[str, Any] | None = None) -> int:
+    return int(_merged_config(config or load_config())["models"]["llm"]["minimum_tools"])
+
+
+def reranker_minimum_tools(config: dict[str, Any] | None = None) -> int:
+    return int(_merged_config(config or load_config())["models"]["rerankers"]["minimum_tools"])
 
 
 def _llm_remote_entries(config: dict[str, Any]) -> list[dict[str, Any]]:

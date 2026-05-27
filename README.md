@@ -281,13 +281,15 @@ uv run src/proxy.py serve --port 8834
 ```
 
 HTTP/2 serve (requires TLS on reverse port):
-
+Generate the certificates AND add to the trusted system certificates
 ```shell
 uv pip install h2 'hypercorn[h2]'
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
   -keyout src/crt/key.pem -out src/crt/cert.pem \
   -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
 
+```shell
 uv run src/proxy.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
@@ -303,4 +305,4 @@ export ANTHROPIC_AUTH_TOKEN=${OPENROUTER_API_KEY}
 $HOME/.local/bin/claude --model haiku 'say hi' -p
 ```
 
-Reverse debug (dry-run, no upstream): `uv run src/proxy.py serve --debug --port 8834`
+Reverse debug (dry-run, no upstream): `uv run src/proxy.py serve --debug-dry-run --port 8834`

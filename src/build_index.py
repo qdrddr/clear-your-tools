@@ -40,6 +40,30 @@ def log_token_usage(label: str, tokens: int) -> None:
     logger.info(msg)
     print(msg, flush=True)
 
+
+def catalog_tool_count(data: dict[str, Any]) -> int:
+    """Return the number of tools represented in a decomposed catalog dict."""
+    tools = data.get("tools")
+    if isinstance(tools, list) and tools:
+        return len(tools)
+
+    json_items = data.get("json")
+    if not isinstance(json_items, list):
+        return 0
+
+    tool_ids: set[str] = set()
+    for item in json_items:
+        if not isinstance(item, dict):
+            continue
+        file_path = str(item.get("file_path", ""))
+        if file_path:
+            tool_ids.add(tool_id_from_decomposed_rel(file_path))
+            continue
+        item_id = item.get("id") or item.get("name")
+        if item_id:
+            tool_ids.add(str(item_id))
+    return len(tool_ids)
+
 JSON_EXT = ".json"
 MD_EXT = ".md"
 DECOMPOSED_PREFIX = "schemas/decomposed/"
