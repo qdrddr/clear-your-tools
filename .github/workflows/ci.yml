@@ -33,7 +33,7 @@ jobs:
         run: uv run ruff format --check src/cyt src/tests
 
       - name: Mypy
-        run: uv run mypy src/cyt
+        run: uv run mypy -p cyt
 
       - name: Pytest
         run: uv run pytest src/tests
