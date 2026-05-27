@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "fff": {
+      "type": "stdio",
+      "command": "fff-mcp",
+      "args": [
+        "--healthcheck"
+      ],
+      "env": {
+        "PWD": "$PWD"
+      }
+    }
+  }
+}
