@@ -8,7 +8,6 @@ import json
 import logging
 import re
 import struct
-import time
 import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -25,14 +24,18 @@ from starlette.routing import Route
 from cyt.config import (
     debug_log_max_body_bytes,
     pruning_pipeline_from_config,
+    reverse_debug_log_dir,
     reverse_proxy_cfg,
     stats_db_path,
 )
 from cyt.proxy.transport import (
+    agent_trace_log_path,
+    append_agent_trace_log,
     filter_headers,
     forward_upstream,
     header_content_encoding,
     http2_package_available,
+    new_debug_session_id,
     reverse_debug_log_path,
     run_hypercorn_async,
     run_uvicorn_async,
@@ -45,33 +48,30 @@ _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 logger = logging.getLogger(__name__)
 
-_DEBUG_LOG_PATH = Path(__file__).resolve().parents[3] / ".debug" / "debug-308477.log"
 
+@dataclass(frozen=True)
+class DebugTrace:
+    log_path: Path
+    session_id: str
+    run_id: str
 
-def _agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "308477",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, default=str) + "\n")
-    except OSError:
-        pass
-    # #endregion
+    def log(
+        self,
+        *,
+        hypothesis_id: str,
+        location: str,
+        message: str,
+        data: dict[str, Any],
+    ) -> None:
+        append_agent_trace_log(
+            self.log_path,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            hypothesis_id=hypothesis_id,
+            location=location,
+            message=message,
+            data=data,
+        )
 
 
 CONNECT_FLAG_COMPRESSED = 0x01
@@ -550,18 +550,20 @@ async def _debug_terminate_response(
     pruning_meta: dict[str, Any] | None,
     saved_to: Path,
     body: bytes,
+    debug_trace: DebugTrace | None = None,
 ) -> JSONResponse:
-    _agent_debug_log(
-        hypothesis_id="A",
-        location="proxy_reverse.py:proxy:debug_return",
-        message="returning debug JSONResponse instead of upstream",
-        data={
-            "endpoint": endpoint_name,
-            "path": request_path,
-            "target_url": target_url,
-            "response_preview": '{"debug":true,...}',
-        },
-    )
+    if debug_trace is not None:
+        debug_trace.log(
+            hypothesis_id="A",
+            location="reverse.py:_debug_terminate_response",
+            message="returning debug JSONResponse instead of upstream",
+            data={
+                "endpoint": endpoint_name,
+                "path": request_path,
+                "target_url": target_url,
+                "response_preview": '{"debug":true,...}',
+            },
+        )
     if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
         return JSONResponse(
             {
@@ -591,22 +593,23 @@ async def _proxy_request(
     debug_terminate: bool,
     debug_strict: bool,
     debug_log_max_body_bytes: int | None,
+    debug_log_dir: Path | None,
+    debug_trace: DebugTrace | None,
     stats_db: Any | None,
     store_full_tools: bool,
     config: dict[str, Any] | None,
 ) -> Response:
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="D",
-        location="reverse.py:_proxy_request:entry",
-        message="valid HTTP request reached proxy handler",
-        data={
-            "method": request.method,
-            "path": request.url.path,
-            "scheme": request.url.scheme,
-        },
-    )
-    # #endregion
+    if debug_trace is not None:
+        debug_trace.log(
+            hypothesis_id="D",
+            location="reverse.py:_proxy_request:entry",
+            message="valid HTTP request reached proxy handler",
+            data={
+                "method": request.method,
+                "path": request.url.path,
+                "scheme": request.url.scheme,
+            },
+        )
     match = resolve_upstream(request.url.path, routes)
     if match is None:
         return Response("Not Found", status_code=404)
@@ -673,7 +676,7 @@ async def _proxy_request(
             "pruning": pruning_meta,
         }
         saved_to = await save_debug_snapshot(
-            reverse_debug_log_path(endpoint_name),
+            reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
             snapshot,
             max_bytes=debug_log_max_body_bytes,
         )
@@ -691,20 +694,22 @@ async def _proxy_request(
                 pruning_meta=pruning_meta,
                 saved_to=saved_to,
                 body=body,
+                debug_trace=debug_trace,
             )
 
     client: httpx.AsyncClient = request.app.state.http_client
-    _agent_debug_log(
-        hypothesis_id="B",
-        location="proxy_reverse.py:proxy:forward_upstream",
-        message="forwarding request to upstream",
-        data={
-            "endpoint": endpoint_name,
-            "path": request.url.path,
-            "target_url": target_url,
-            "buffer_body": buffer_body,
-        },
-    )
+    if debug_trace is not None:
+        debug_trace.log(
+            hypothesis_id="B",
+            location="reverse.py:_proxy_request:forward_upstream",
+            message="forwarding request to upstream",
+            data={
+                "endpoint": endpoint_name,
+                "path": request.url.path,
+                "target_url": target_url,
+                "buffer_body": buffer_body,
+            },
+        )
     return await forward_upstream(
         client,
         method=request.method,
@@ -723,6 +728,8 @@ def create_app(
     debug_terminate: bool = False,
     debug_strict: bool = False,
     debug_log_max_body_bytes: int | None = None,
+    debug_log_dir: Path | None = None,
+    debug_trace: DebugTrace | None = None,
     stats_db: Any | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
@@ -755,6 +762,8 @@ def create_app(
             debug_terminate=debug_terminate,
             debug_strict=debug_strict,
             debug_log_max_body_bytes=debug_log_max_body_bytes,
+            debug_log_dir=debug_log_dir,
+            debug_trace=debug_trace,
             stats_db=stats_db,
             store_full_tools=store_full_tools,
             config=config,
@@ -798,24 +807,33 @@ async def serve_reverse_async(
         except Exception as exc:
             logger.warning("stats database unavailable: %s", exc)
 
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="A",
-        location="reverse.py:serve_reverse_async:startup",
-        message="proxy server starting",
-        data={
-            "host": host,
-            "port": port,
-            "http2_serve": http2_serve,
-            "http2_upstream": http2_upstream,
-            "ssl_keyfile": ssl_keyfile,
-            "ssl_certfile": ssl_certfile,
-            "ssl_key_exists": bool(ssl_keyfile and Path(ssl_keyfile).exists()),
-            "ssl_cert_exists": bool(ssl_certfile and Path(ssl_certfile).exists()),
-            "transport": "hypercorn+tls" if http2_serve else "uvicorn+plain-http",
-        },
-    )
-    # #endregion
+    debug_log_dir: Path | None = None
+    debug_trace: DebugTrace | None = None
+    if debug:
+        debug_log_dir = reverse_debug_log_dir(config)
+        debug_log_dir.mkdir(parents=True, exist_ok=True)
+        session_id = new_debug_session_id()
+        debug_trace = DebugTrace(
+            log_path=agent_trace_log_path(debug_log_dir, session_id),
+            session_id=session_id,
+            run_id=session_id,
+        )
+        debug_trace.log(
+            hypothesis_id="A",
+            location="reverse.py:serve_reverse_async:startup",
+            message="proxy server starting",
+            data={
+                "host": host,
+                "port": port,
+                "http2_serve": http2_serve,
+                "http2_upstream": http2_upstream,
+                "ssl_keyfile": ssl_keyfile,
+                "ssl_certfile": ssl_certfile,
+                "ssl_key_exists": bool(ssl_keyfile and Path(ssl_keyfile).exists()),
+                "ssl_cert_exists": bool(ssl_certfile and Path(ssl_certfile).exists()),
+                "transport": "hypercorn+tls" if http2_serve else "uvicorn+plain-http",
+            },
+        )
 
     app = create_app(
         routes,
@@ -824,6 +842,8 @@ async def serve_reverse_async(
         debug_terminate=debug_terminate,
         debug_strict=debug_strict,
         debug_log_max_body_bytes=debug_log_max_body_bytes(config),
+        debug_log_dir=debug_log_dir,
+        debug_trace=debug_trace,
         stats_db=stats_db,
         store_full_tools=store_full_tools,
         config=config,

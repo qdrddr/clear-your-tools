@@ -47,6 +47,7 @@ CWD_CONFIG_NAME: str = "config.yaml"
 DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
+DEFAULT_DEBUG_LOG_DIR: str = ".debug"
 DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = 50
 DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = 10
 
@@ -101,6 +102,7 @@ _DEFAULTS: dict[str, Any] = {
             "reverse": {
                 "port": DEFAULT_REVERSE_PORT,
                 "debug_log_max_body_bytes": DEFAULT_DEBUG_LOG_MAX_BODY_BYTES,
+                "debug_log_dir": DEFAULT_DEBUG_LOG_DIR,
                 "http2": {
                     "upstream": False,
                     "serve": False,
@@ -241,6 +243,11 @@ def resolve_reverse_port(config: dict[str, Any], cli_port: int | None) -> int:
 def debug_log_max_body_bytes(config: dict[str, Any]) -> int:
     reverse_cfg = reverse_proxy_cfg(_merged_config(config)["network"]["proxy"])
     return int(reverse_cfg["debug_log_max_body_bytes"])
+
+
+def reverse_debug_log_dir(config: dict[str, Any]) -> Path:
+    reverse_cfg = reverse_proxy_cfg(_merged_config(config)["network"]["proxy"])
+    return Path(str(reverse_cfg["debug_log_dir"])).expanduser()
 
 
 def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:

@@ -71,6 +71,7 @@ pruning:
 network:
   proxy:
     reverse:
+      debug_log_dir: .debug
       debug_log_max_body_bytes: 1048576
       http2:
         upstream: true # uv pip install h2
