@@ -70,7 +70,6 @@ src/.chroma_db/
 verify_*.py
 /test_*.py
 !src/tests/
-uv.lock
 CLAUDE.md
 AGENTS.md
 .coverage
