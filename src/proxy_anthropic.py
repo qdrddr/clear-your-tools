@@ -3,22 +3,25 @@
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import re
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
-from build_index import CatalogIndex, build_catalog_index, collect_enums, compact_json, count_json_tokens, prepare_tool_entry
+from build_index import (
+    CatalogIndex,
+    build_catalog_index,
+    collect_enums,
+    count_json_tokens,
+    prepare_tool_entry,
+)
 from configs import DEFAULT_PRUNING_PIPELINE
-from token_usage import StageTokenUsage
 from llm import llm_catalog_dict, trim_catalog_dict
 from rerank import prune_reranked_catalog, rerank_catalog_dict
-from retrieve_catalog import parse_json_input, retrieve_tools
+from retrieve_catalog import retrieve_tools
+from token_usage import StageTokenUsage
 from tool_policies import (
-    MCP_TOOL_POLICY,
-    SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
     catalog_needs_partition,
@@ -26,17 +29,17 @@ from tool_policies import (
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
+    is_decomposed_optional_property_chunk,
+    mcp_tool_policy,
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
-    is_decomposed_optional_property_chunk,
     partition_catalog,
     request_pass_through,
+    system_tool_policy,
     tool_pass_through,
     tools_for_catalog,
 )
-
-_BATCH_TOOL = "mcp__hedl__batch"
 
 logger = logging.getLogger(__name__)
 
@@ -327,13 +330,72 @@ def _snapshot_catalog(data: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(data)
 
 
+def _run_rerank_stage(
+    data: dict[str, Any],
+    query: str,
+    *,
+    capture_catalog: bool,
+    snapshots: dict[str, dict[str, Any]] | None,
+    decomposed_breakdown: dict[str, dict[str, int]],
+    decomposed: dict[str, int],
+    pruning_token_usage: dict[str, StageTokenUsage],
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    data, rerank_usage = rerank_catalog_dict(
+        data,
+        query,
+        prune=False,
+        system_policy=None,
+        mcp_policy=None,
+        merge_pinned=False,
+    )
+    pruning_token_usage["rerank"] = rerank_usage
+    if capture_catalog and snapshots is not None:
+        snapshots["rerank"] = _snapshot_catalog(data)
+    post_rerank_scored = copy.deepcopy(data)
+    data = prune_reranked_catalog(data)
+    post_rerank = copy.deepcopy(data)
+    decomposed_breakdown["rerank"] = _breakdown_entry(data)
+    decomposed["rerank"] = (
+        decomposed_breakdown["rerank"]["json"] + decomposed_breakdown["rerank"]["md"]
+    )
+    return data, post_rerank, post_rerank_scored
+
+
+def _run_llm_stage(
+    data: dict[str, Any],
+    query: str,
+    *,
+    trim_before_llm: bool,
+    capture_catalog: bool,
+    snapshots: dict[str, dict[str, Any]] | None,
+    decomposed_breakdown: dict[str, dict[str, int]],
+    decomposed: dict[str, int],
+    pruning_token_usage: dict[str, StageTokenUsage],
+) -> dict[str, Any]:
+    if trim_before_llm:
+        data = trim_catalog_dict(data)
+    data, llm_usage = llm_catalog_dict(
+        data,
+        query,
+        system_policy=None,
+        mcp_policy=None,
+        merge_pinned=False,
+    )
+    pruning_token_usage["llm"] = llm_usage
+    decomposed_breakdown["llm"] = _breakdown_entry(data)
+    decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
+    if capture_catalog and snapshots is not None:
+        snapshots["llm"] = _snapshot_catalog(data)
+    return data
+
+
 def _run_pruning_pipeline(
     data: dict[str, Any],
     query: str,
     pruning_pipeline: list[str],
     capture_catalog: bool = False,
-    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy = system_tool_policy,
+    mcp_policy: MCPToolPolicy = mcp_tool_policy,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -348,7 +410,8 @@ def _run_pruning_pipeline(
         "build_index": _breakdown_entry(data),
     }
     decomposed: dict[str, int] = {
-        "build_index": decomposed_breakdown["build_index"]["json"] + decomposed_breakdown["build_index"]["md"],
+        "build_index": decomposed_breakdown["build_index"]["json"]
+        + decomposed_breakdown["build_index"]["md"],
     }
     pruning_token_usage: dict[str, StageTokenUsage] = {}
     snapshots: dict[str, dict[str, Any]] | None = {} if capture_catalog else None
@@ -364,39 +427,26 @@ def _run_pruning_pipeline(
 
     for i, stage in enumerate(pruning_pipeline):
         if stage == "rerank":
-            data, rerank_usage = rerank_catalog_dict(
+            data, post_rerank, post_rerank_scored = _run_rerank_stage(
                 data,
                 query,
-                prune=False,
-                system_policy=None,
-                mcp_policy=None,
-                merge_pinned=False,
-            )
-            pruning_token_usage["rerank"] = rerank_usage
-            if capture_catalog and snapshots is not None:
-                snapshots["rerank"] = _snapshot_catalog(data)
-            post_rerank_scored = copy.deepcopy(data)
-            data = prune_reranked_catalog(data)
-            post_rerank = copy.deepcopy(data)
-            decomposed_breakdown["rerank"] = _breakdown_entry(data)
-            decomposed["rerank"] = (
-                decomposed_breakdown["rerank"]["json"] + decomposed_breakdown["rerank"]["md"]
+                capture_catalog=capture_catalog,
+                snapshots=snapshots,
+                decomposed_breakdown=decomposed_breakdown,
+                decomposed=decomposed,
+                pruning_token_usage=pruning_token_usage,
             )
         elif stage == "llm":
-            if i > 0 and pruning_pipeline[i - 1] == "rerank":
-                data = trim_catalog_dict(data)
-            data, llm_usage = llm_catalog_dict(
+            data = _run_llm_stage(
                 data,
                 query,
-                system_policy=None,
-                mcp_policy=None,
-                merge_pinned=False,
+                trim_before_llm=i > 0 and pruning_pipeline[i - 1] == "rerank",
+                capture_catalog=capture_catalog,
+                snapshots=snapshots,
+                decomposed_breakdown=decomposed_breakdown,
+                decomposed=decomposed,
+                pruning_token_usage=pruning_token_usage,
             )
-            pruning_token_usage["llm"] = llm_usage
-            decomposed_breakdown["llm"] = _breakdown_entry(data)
-            decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
-            if capture_catalog and snapshots is not None:
-                snapshots["llm"] = _snapshot_catalog(data)
         else:
             raise ValueError(f"unknown pruning stage: {stage}")
 
@@ -434,8 +484,8 @@ def _json_entries_for_recompose(
     catalog_index: CatalogIndex,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
-    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy = system_tool_policy,
+    mcp_policy: MCPToolPolicy = mcp_tool_policy,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
     entries: list[dict[str, Any]] = []
@@ -490,8 +540,8 @@ def _recompose_catalog_data(
     catalog_index: CatalogIndex,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
-    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy = system_tool_policy,
+    mcp_policy: MCPToolPolicy = mcp_tool_policy,
 ) -> dict[str, Any]:
     """Build catalog dict for retrieve_tools after pruning.
 
@@ -512,7 +562,11 @@ def _recompose_catalog_data(
         ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
-    for key in ("system_required_enum_values", "mcp_required_enum_values", "required_enum_values_by_tool"):
+    for key in (
+        "system_required_enum_values",
+        "mcp_required_enum_values",
+        "required_enum_values_by_tool",
+    ):
         if key in data:
             recompose[key] = data[key]
         elif isinstance(pinned, dict) and key in pinned:
@@ -535,8 +589,8 @@ def filter_tools_for_query(
     query: str,
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
-    system_policy: SystemToolPolicy = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy = system_tool_policy,
+    mcp_policy: MCPToolPolicy = mcp_tool_policy,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -574,7 +628,9 @@ def filter_tools_for_query(
     stashed_by_name: dict[str, dict[str, Any]] = {
         name: copy.deepcopy(tool)
         for tool in original_tools
-        if isinstance(tool, dict) and (name := str(tool.get("name", ""))) and tool_pass_through(name)
+        if isinstance(tool, dict)
+        and (name := str(tool.get("name", "")))
+        and tool_pass_through(name)
     }
 
     catalog_source = tools_for_catalog(original_tools, system_policy, mcp_policy)

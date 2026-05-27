@@ -1,8 +1,5 @@
-import argparse
-import json
-import tiktoken
+"""Estimate token savings on a captured request JSON.
 
-"""
 Example usage:
 uv run count_request_tokens.py --requestfile temp_example_claude_call.json --tool-savings-percent 95
 
@@ -14,6 +11,12 @@ Output:
     Tokens after pruning: 46873
     Total token savings: 26751 (36.3%)
 """
+
+import argparse
+import json
+
+import tiktoken
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--requestfile", required=True, help="Path to the request JSON file")
 parser.add_argument("--tool-savings-percent", type=float, default=None)

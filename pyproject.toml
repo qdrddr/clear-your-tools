@@ -118,13 +118,17 @@ classmethod-decorators = [
   "pydantic.validator",
 ]
 
+[tool.ty.environment]
+root = ["./src"]
+extra-paths = ["./typings"]
+
 [tool.mypy]
 explicit_package_bases = true
 namespace_packages = true
 pretty = true
-python_version = "3.10"
+python_version = "3.13"
 no_implicit_optional = true
-exclude = ["^site/", "^docs/", "^src/catalog/", "^cocoindex-code/", "^fastmcp/"]
+exclude = ["^site/", "^nogo/", "^src/nogo/", "^docs/", "^src/catalog/", "^cocoindex-code/", "^fastmcp/"]
 plugins = "pydantic.mypy"
 warn_return_any = true
 warn_unused_configs = true
@@ -140,21 +144,30 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = [
     "rich.*",
-    "typer.*",
     "yaml.*",
     "pandas.*",
-    "networkx.*",
     "litellm.*",
     "tiktoken.*",
     "google.*",
-    "lancedb.*",
     "libsql_experimental.*",
-    "sentence_transformers.*",
-    "cocoindex_code.*",
 ]
 ignore_missing_imports = true
 
+[tool.basedpyright]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+failOnWarnings = false
+include = ["src", "count_request_tokens.py"]
+stubPath = "typings"
+exclude = ["**/nogo/**", "src/catalog/**"]
+executionEnvironments = [
+  { root = "src", extraPaths = ["src", "typings"] },
+  { root = ".", extraPaths = ["src", "typings"] },
+]
+
 [tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src/tests"]
 filterwarnings = [
     "error",
     # Ignore ResourceWarnings from unclosed sockets/event loops
@@ -163,12 +176,11 @@ filterwarnings = [
     "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
 ]
-addopts = "--cov=code --cov-report=term-missing"
-testpaths = ["code"]
+addopts = "-q"
 
 [tool.coverage.run]
-source = ["code"]
-omit = ["src/test_*"]
+source = ["src"]
+omit = ["src/tests/*", "src/old/*", "src/nogo/*"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -181,4 +193,6 @@ exclude_lines = [
 [tool.codespell]
 ignore-words-list = [
     "fallow",
+    "Bui",
+    "te",
 ]

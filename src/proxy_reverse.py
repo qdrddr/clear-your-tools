@@ -14,16 +14,21 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from configs import debug_log_max_body_bytes, pruning_pipeline_from_config, reverse_proxy_cfg, stats_db_path
-from proxy import (
+from configs import (
+    debug_log_max_body_bytes,
+    pruning_pipeline_from_config,
+    reverse_proxy_cfg,
+    stats_db_path,
+)
+from proxy_transport import (
     filter_headers,
     forward_upstream,
     header_content_encoding,
@@ -36,12 +41,11 @@ from proxy import (
 
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 logger = logging.getLogger(__name__)
 
-_DEBUG_LOG_PATH = (
-    Path(__file__).resolve().parent.parent / ".cursor" / "debug-863b82.log"
-)
+_DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent / ".cursor" / "debug-863b82.log"
 
 
 def _agent_debug_log(
@@ -88,7 +92,9 @@ def _parse_connect_frames(buffer: bytearray) -> list[ConnectFrame]:
             break
         payload = bytes(buffer[5 : 5 + length])
         del buffer[: 5 + length]
-        frames.append(ConnectFrame(compressed=bool(flags & CONNECT_FLAG_COMPRESSED), payload=payload))
+        frames.append(
+            ConnectFrame(compressed=bool(flags & CONNECT_FLAG_COMPRESSED), payload=payload),
+        )
     return frames
 
 
@@ -131,24 +137,33 @@ def _decode_connect_payload(raw: bytes, *, content_encoding: str | None = None) 
     return raw
 
 
+def _decompress_single_encoding(encoding: str, body: bytes) -> bytes | None:
+    lower = encoding.strip().lower()
+    if lower in {"identity", ""}:
+        return None
+    if lower in {"gzip", "x-gzip"}:
+        return gzip.decompress(body)
+    if lower == "deflate":
+        return zlib.decompress(body)
+    if lower == "br":
+        try:
+            import importlib
+
+            brotli = importlib.import_module("brotli")
+        except ImportError:
+            return body
+        return cast(bytes, brotli.decompress(body))
+    return None
+
+
 def _decompress_body(body: bytes, content_encoding: str | None) -> bytes:
     if not body:
         return body
     if content_encoding:
-        for enc in (part.strip() for part in content_encoding.split(",")):
-            lower = enc.lower()
-            if lower in {"identity", ""}:
-                continue
-            if lower in {"gzip", "x-gzip"}:
-                return gzip.decompress(body)
-            if lower == "deflate":
-                return zlib.decompress(body)
-            if lower == "br":
-                try:
-                    import brotli
-                except ImportError:
-                    return body
-                return brotli.decompress(body)
+        for enc in content_encoding.split(","):
+            decompressed = _decompress_single_encoding(enc, body)
+            if decompressed is not None:
+                return decompressed
     if body[:2] == b"\x1f\x8b":
         try:
             return gzip.decompress(body)
@@ -178,6 +193,40 @@ def _bytes_to_log_text(body: bytes, content_type: str | None = None) -> str:
         return _extract_printable_text(body)
 
 
+def _maybe_truncated_payload(
+    payload: Any,
+    *,
+    original_len: int,
+    max_bytes: int | None,
+    wrap_key: str,
+) -> Any:
+    if max_bytes is not None and original_len > max_bytes:
+        return {
+            wrap_key: payload,
+            "_truncated": True,
+            "_original_bytes": original_len,
+        }
+    return payload
+
+
+def _snapshot_decoded_json(
+    decoded: bytes,
+    *,
+    original_len: int,
+    max_bytes: int | None,
+) -> Any | None:
+    try:
+        value = json.loads(decoded)
+    except json.JSONDecodeError:
+        return None
+    return _maybe_truncated_payload(
+        value,
+        original_len=original_len,
+        max_bytes=max_bytes,
+        wrap_key="_json",
+    )
+
+
 def body_for_snapshot(
     body: bytes,
     content_type: str | None,
@@ -197,36 +246,36 @@ def body_for_snapshot(
     elif decoded is truncated:
         decoded = _decompress_body(decoded, content_encoding)
     if content_type and "json" in content_type.lower():
-        try:
-            value = json.loads(decoded)
-            if max_bytes is not None and original_len > max_bytes:
-                return {
-                    "_json": value,
-                    "_truncated": True,
-                    "_original_bytes": original_len,
-                }
-            return value
-        except json.JSONDecodeError:
-            pass
+        json_value = _snapshot_decoded_json(
+            decoded,
+            original_len=original_len,
+            max_bytes=max_bytes,
+        )
+        if json_value is not None:
+            return json_value
     if content_type and any(
         token in content_type.lower() for token in ("proto", "protobuf", "connect")
     ):
         text = _extract_printable_text(decoded)
         if text.strip():
-            if max_bytes is not None and original_len > max_bytes:
-                return {"_text": text, "_truncated": True, "_original_bytes": original_len}
-            return text
+            return _maybe_truncated_payload(
+                text,
+                original_len=original_len,
+                max_bytes=max_bytes,
+                wrap_key="_text",
+            )
     text = _bytes_to_log_text(decoded, content_type)
-    if max_bytes is not None and original_len > max_bytes:
-        return {"_text": text, "_truncated": True, "_original_bytes": original_len}
-    return text
+    return _maybe_truncated_payload(
+        text,
+        original_len=original_len,
+        max_bytes=max_bytes,
+        wrap_key="_text",
+    )
 
 
 def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]:
     reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    upstreams = {
-        item["upstream"]: item for item in reverse_cfg.get("upstreams", [])
-    }
+    upstreams = {item["upstream"]: item for item in reverse_cfg.get("upstreams", [])}
     routes: dict[str, tuple[str, str | None]] = {}
     for endpoint in reverse_cfg.get("endpoints", []):
         if endpoint not in upstreams:
@@ -243,7 +292,8 @@ def resolve_upstream(
     path: str,
     routes: dict[str, tuple[str, str | None]],
 ) -> tuple[str, str, str | None, str] | None:
-    for prefix in sorted(routes, key=len, reverse=True):
+    prefixes: list[str] = sorted(routes, key=lambda route: len(route), reverse=True)
+    for prefix in prefixes:
         if path == prefix or path.startswith(prefix + "/"):
             suffix = path[len(prefix) :] if path != prefix else ""
             upstream_base, kind = routes[prefix]
@@ -303,7 +353,10 @@ def _format_decomposed_table_lines(pruning: dict[str, Any]) -> list[str]:
     col_md = max(len("enum (md)"), max(len(r[2]) for r in rows))
     header = f"{'stage':<{col_stage}}  {'json':>{col_json}}  {'enum (md)':>{col_md}}"
     sep = f"{'-' * col_stage}  {'-' * col_json}  {'-' * col_md}"
-    body = [f"{stage:<{col_stage}}  {json_n:>{col_json}}  {md_n:>{col_md}}" for stage, json_n, md_n in rows]
+    body = [
+        f"{stage:<{col_stage}}  {json_n:>{col_json}}  {md_n:>{col_md}}"
+        for stage, json_n, md_n in rows
+    ]
     return ["Decomposed items:", header, sep, *body]
 
 
@@ -467,6 +520,190 @@ def _record_stats_async(stats_db: Any, record: Any) -> None:
         logger.warning("stats record failed: %s", exc)
 
 
+def _extract_upstream_model(
+    body: bytes,
+    content_type: str | None,
+    *,
+    buffer_body: bool,
+) -> str | None:
+    if not buffer_body or not body or not content_type or "json" not in content_type.lower():
+        return None
+    try:
+        model = json.loads(body).get("model")
+    except json.JSONDecodeError:
+        return None
+    return str(model) if model is not None else None
+
+
+def _schedule_stats_record(stats_db: Any, record: Any) -> None:
+    task = asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+async def _debug_terminate_response(
+    *,
+    endpoint_name: str,
+    request_path: str,
+    target_url: str,
+    debug_strict: bool,
+    pruning_meta: dict[str, Any] | None,
+    saved_to: Path,
+    body: bytes,
+) -> JSONResponse:
+    _agent_debug_log(
+        hypothesis_id="A",
+        location="proxy_reverse.py:proxy:debug_return",
+        message="returning debug JSONResponse instead of upstream",
+        data={
+            "endpoint": endpoint_name,
+            "path": request_path,
+            "target_url": target_url,
+            "response_preview": '{"debug":true,...}',
+        },
+    )
+    if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
+        return JSONResponse(
+            {
+                "debug": True,
+                "error": "pruning not applied",
+                "pruning": pruning_meta,
+                "saved_to": str(saved_to),
+            },
+            status_code=502,
+        )
+    return JSONResponse(
+        {
+            "debug": True,
+            "saved_to": str(saved_to),
+            "bytes": len(body),
+            "pruning": pruning_meta,
+        },
+    )
+
+
+async def _proxy_request(
+    request: Request,
+    *,
+    routes: dict[str, tuple[str, str | None]],
+    pruning_pipeline: list[str] | None,
+    debug: bool,
+    debug_terminate: bool,
+    debug_strict: bool,
+    debug_log_max_body_bytes: int | None,
+    stats_db: Any | None,
+    store_full_tools: bool,
+    config: dict[str, Any] | None,
+) -> Response:
+    match = resolve_upstream(request.url.path, routes)
+    if match is None:
+        return Response("Not Found", status_code=404)
+
+    upstream_base, path_suffix, kind, endpoint_name = match
+    query = request.url.query
+    target_url = f"{upstream_base}{path_suffix}"
+    if query:
+        target_url = f"{target_url}?{query}"
+
+    content_type = request.headers.get("content-type")
+    buffer_body = _needs_request_buffer(
+        kind=kind,
+        method=request.method,
+        debug=debug,
+    )
+    body = await request.body() if buffer_body else b""
+    upstream_model = _extract_upstream_model(body, content_type, buffer_body=buffer_body)
+
+    pruning = None
+    if buffer_body:
+        body, pruning = await transform_request_body(
+            body,
+            content_type,
+            kind,
+            pruning_pipeline,
+            debug,
+        )
+    pruning_meta = pruning.to_dict() if pruning is not None else None
+
+    if stats_db is not None and pruning is not None:
+        record = build_stats_record(
+            endpoint=endpoint_name,
+            target_url=target_url,
+            upstream_model=upstream_model,
+            pruning_pipeline=pruning_pipeline,
+            pruning=pruning,
+            config=config or {},
+            store_full_tools=store_full_tools or debug,
+        )
+        _schedule_stats_record(stats_db, record)
+    forward_headers = filter_headers(dict(request.headers))
+
+    if debug:
+        if pruning_meta and pruning_meta.get("status") != "applied":
+            logger.warning(
+                "pruning %s: %s",
+                pruning_meta.get("status"),
+                pruning_meta.get("error"),
+            )
+        _print_debug_pruning(pruning_meta)
+        snapshot = {
+            "method": request.method,
+            "path": request.url.path,
+            "query": query or None,
+            "target_url": target_url,
+            "headers": forward_headers,
+            "body": body_for_snapshot(
+                body,
+                content_type,
+                content_encoding=header_content_encoding(forward_headers),
+                max_bytes=debug_log_max_body_bytes,
+            ),
+            "pruning": pruning_meta,
+        }
+        saved_to = await save_debug_snapshot(
+            reverse_debug_log_path(endpoint_name),
+            snapshot,
+            max_bytes=debug_log_max_body_bytes,
+        )
+        logger.info(
+            "debug snapshot appended: endpoint=%s path=%s",
+            endpoint_name,
+            request.url.path,
+        )
+        if debug_terminate:
+            return await _debug_terminate_response(
+                endpoint_name=endpoint_name,
+                request_path=request.url.path,
+                target_url=target_url,
+                debug_strict=debug_strict,
+                pruning_meta=pruning_meta,
+                saved_to=saved_to,
+                body=body,
+            )
+
+    client: httpx.AsyncClient = request.app.state.http_client
+    _agent_debug_log(
+        hypothesis_id="B",
+        location="proxy_reverse.py:proxy:forward_upstream",
+        message="forwarding request to upstream",
+        data={
+            "endpoint": endpoint_name,
+            "path": request.url.path,
+            "target_url": target_url,
+            "buffer_body": buffer_body,
+        },
+    )
+    return await forward_upstream(
+        client,
+        method=request.method,
+        url=target_url,
+        headers=forward_headers,
+        body=body if buffer_body else None,
+        stream_request=not buffer_body,
+        request=request if not buffer_body else None,
+    )
+
+
 def create_app(
     routes: dict[str, tuple[str, str | None]],
     pruning_pipeline: list[str] | None = None,
@@ -498,133 +735,17 @@ def create_app(
         return JSONResponse({"status": "ok"})
 
     async def proxy(request: Request) -> Response:
-        match = resolve_upstream(request.url.path, routes)
-        if match is None:
-            return Response("Not Found", status_code=404)
-
-        upstream_base, path_suffix, kind, endpoint_name = match
-        query = request.url.query
-        target_url = f"{upstream_base}{path_suffix}"
-        if query:
-            target_url = f"{target_url}?{query}"
-
-        content_type = request.headers.get("content-type")
-        buffer_body = _needs_request_buffer(
-            kind=kind,
-            method=request.method,
+        return await _proxy_request(
+            request,
+            routes=routes,
+            pruning_pipeline=pruning_pipeline,
             debug=debug,
-        )
-        body = await request.body() if buffer_body else b""
-        upstream_model: str | None = None
-        if buffer_body and body and content_type and "json" in content_type.lower():
-            try:
-                upstream_model = json.loads(body).get("model")
-            except json.JSONDecodeError:
-                pass
-
-        pruning = None
-        if buffer_body:
-            body, pruning = await transform_request_body(
-                body,
-                content_type,
-                kind,
-                pruning_pipeline,
-                debug,
-            )
-        pruning_meta = pruning.to_dict() if pruning is not None else None
-
-        if stats_db is not None and pruning is not None:
-            record = build_stats_record(
-                endpoint=endpoint_name,
-                target_url=target_url,
-                upstream_model=upstream_model,
-                pruning_pipeline=pruning_pipeline,
-                pruning=pruning,
-                config=config or {},
-                store_full_tools=store_full_tools or debug,
-            )
-            asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
-        forward_headers = filter_headers(request.headers)
-
-        if debug:
-            if pruning_meta and pruning_meta.get("status") != "applied":
-                logger.warning(
-                    "pruning %s: %s",
-                    pruning_meta.get("status"),
-                    pruning_meta.get("error"),
-                )
-            _print_debug_pruning(pruning_meta)
-            snapshot = {
-                "method": request.method,
-                "path": request.url.path,
-                "query": query or None,
-                "target_url": target_url,
-                "headers": forward_headers,
-                "body": body_for_snapshot(
-                    body,
-                    content_type,
-                    content_encoding=header_content_encoding(forward_headers),
-                    max_bytes=debug_log_max_body_bytes,
-                ),
-                "pruning": pruning_meta,
-            }
-            saved_to = await save_debug_snapshot(
-                reverse_debug_log_path(endpoint_name),
-                snapshot,
-                max_bytes=debug_log_max_body_bytes,
-            )
-            logger.info("debug snapshot appended: endpoint=%s path=%s", endpoint_name, request.url.path)
-            if debug_terminate:
-                _agent_debug_log(
-                    hypothesis_id="A",
-                    location="proxy_reverse.py:proxy:debug_return",
-                    message="returning debug JSONResponse instead of upstream",
-                    data={
-                        "endpoint": endpoint_name,
-                        "path": request.url.path,
-                        "target_url": target_url,
-                        "response_preview": '{"debug":true,...}',
-                    },
-                )
-                if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
-                    return JSONResponse(
-                        {
-                            "debug": True,
-                            "error": "pruning not applied",
-                            "pruning": pruning_meta,
-                            "saved_to": str(saved_to),
-                        },
-                        status_code=502,
-                    )
-                return JSONResponse(
-                    {
-                        "debug": True,
-                        "saved_to": str(saved_to),
-                        "bytes": len(body),
-                        "pruning": pruning_meta,
-                    },
-                )
-
-        client: httpx.AsyncClient = request.app.state.http_client
-        _agent_debug_log(
-            hypothesis_id="B",
-            location="proxy_reverse.py:proxy:forward_upstream",
-            message="forwarding request to upstream",
-            data={
-                "endpoint": endpoint_name,
-                "path": request.url.path,
-                "target_url": target_url,
-                "buffer_body": buffer_body,
-            },
-        )
-        return await forward_upstream(
-            client,
-            method=request.method,
-            url=target_url,
-            headers=forward_headers,
-            body=body if buffer_body else None,
-            stream_request=not buffer_body,
-            request=request if not buffer_body else None,
+            debug_terminate=debug_terminate,
+            debug_strict=debug_strict,
+            debug_log_max_body_bytes=debug_log_max_body_bytes,
+            stats_db=stats_db,
+            store_full_tools=store_full_tools,
+            config=config,
         )
 
     return Starlette(
@@ -695,9 +816,3 @@ async def serve_reverse_async(
         ssl_keyfile=None,
         ssl_certfile=None,
     )
-
-
-if __name__ == "__main__":
-    from proxy import main
-
-    main()

@@ -11,38 +11,17 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from build_index import CatalogIndex
 
-JSON_EXT = ".json"
-MD_EXT = ".md"
-DECOMPOSED_ROOT = Path("schemas/decomposed")
+from catalog_paths import (
+    DECOMPOSED_ROOT,
+    JSON_EXT,
+    MD_EXT,
+    get_root_tool_key,
+    to_decomposed_key,
+    tool_id_from_decomposed_rel,
+)
 
 DECOMPOSED_SCORE: float = 0.5
 ENUM_SCORE: float = 0.2
-
-
-def to_decomposed_key(file_path: str) -> str | None:
-    """Normalize a file path to schemas/decomposed/... form."""
-    parts = Path(file_path).parts
-    for i in range(len(parts) - 1):
-        if parts[i] == "schemas" and parts[i + 1] == "decomposed":
-            return str(Path(*parts[i:]))
-    return None
-
-
-def get_root_tool_key(file_path: str) -> str | None:
-    """Given any decomposed file path, return its root tool file key."""
-    key = to_decomposed_key(file_path)
-    if key is None:
-        return None
-
-    rel = Path(key).relative_to(DECOMPOSED_ROOT)
-    if not rel.parts:
-        return None
-
-    if len(rel.parts) == 1 and rel.parts[0].endswith(JSON_EXT):
-        return key
-
-    tool_id = rel.parts[0]
-    return str(DECOMPOSED_ROOT / f"{tool_id}{JSON_EXT}")
 
 
 @dataclass
@@ -95,13 +74,61 @@ class DecomposedCatalog:
         return self._json_files.get(key)
 
 
+def _catalog_md_entry(file_path: Path) -> dict[str, Any] | None:
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except Exception as e:
+        print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+        return None
+    return {
+        "id": file_path.stem,
+        "file_path": str(file_path),
+        "score": 0.0,
+        "start_line": 1,
+        "end_line": 1,
+        "language": "markdown",
+        "content": content,
+    }
+
+
+def _catalog_json_entry(file_path: Path) -> dict[str, Any] | None:
+    rel_path = str(file_path)
+    try:
+        raw_text = file_path.read_text(encoding="utf-8")
+        content = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise json.JSONDecodeError(
+            f"Invalid JSON in {file_path}: {exc.msg}",
+            exc.doc,
+            exc.pos,
+        ) from exc
+    except Exception as e:
+        print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+        return None
+
+    line_count = len(raw_text.splitlines())
+    decomposed_key = to_decomposed_key(rel_path)
+    entry_id = content.get("id") if isinstance(content, dict) else None
+    if not entry_id and decomposed_key is not None:
+        entry_id = tool_id_from_decomposed_rel(decomposed_key)
+    chunk_id = entry_id or file_path.stem
+    return {
+        "id": chunk_id,
+        "name": chunk_id,
+        "file_path": rel_path,
+        "score": 0.0,
+        "start_line": 1,
+        "end_line": line_count,
+        "language": "json",
+        "content": content,
+    }
+
+
 def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
     """
     Recursively walk the directory, read every *.json and *.md file,
     and build a dictionary structure matching the input for rerank/llm.
     """
-    from build_index import tool_id_from_decomposed_rel
-
     root = Path(dir_path)
     if not root.is_dir():
         raise FileNotFoundError(f"Directory not found: {dir_path}")
@@ -113,56 +140,15 @@ def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
         if not file_path.is_file():
             continue
 
-        rel_path = str(file_path)
         suffix = file_path.suffix.lower()
-
         if suffix == MD_EXT:
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                md_entries.append(
-                    {
-                        "id": file_path.stem,
-                        "file_path": rel_path,
-                        "score": 0.0,
-                        "start_line": 1,
-                        "end_line": 1,
-                        "language": "markdown",
-                        "content": content,
-                    },
-                )
-            except Exception as e:
-                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
-
+            entry = _catalog_md_entry(file_path)
+            if entry is not None:
+                md_entries.append(entry)
         elif suffix == JSON_EXT:
-            try:
-                raw_text = file_path.read_text(encoding="utf-8")
-                content = json.loads(raw_text)
-                line_count = len(raw_text.splitlines())
-                decomposed_key = to_decomposed_key(rel_path)
-                entry_id = content.get("id") if isinstance(content, dict) else None
-                if not entry_id and decomposed_key is not None:
-                    entry_id = tool_id_from_decomposed_rel(decomposed_key)
-                chunk_id = entry_id or file_path.stem
-                json_entries.append(
-                    {
-                        "id": chunk_id,
-                        "name": chunk_id,
-                        "file_path": rel_path,
-                        "score": 0.0,
-                        "start_line": 1,
-                        "end_line": line_count,
-                        "language": "json",
-                        "content": content,
-                    },
-                )
-            except json.JSONDecodeError as exc:
-                raise json.JSONDecodeError(
-                    f"Invalid JSON in {file_path}: {exc.msg}",
-                    exc.doc,
-                    exc.pos,
-                ) from exc
-            except Exception as e:
-                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+            entry = _catalog_json_entry(file_path)
+            if entry is not None:
+                json_entries.append(entry)
 
     if not md_entries and not json_entries:
         print(f"Warning: No .json or .md files found in {dir_path}", file=sys.stderr)
@@ -419,17 +405,17 @@ def retrieve_tools(
     """
     from build_index import CatalogIndex
     from tool_policies import (
-        MCP_TOOL_POLICY,
-        SYSTEM_TOOL_POLICY,
         mcp_required_enum_values,
+        mcp_tool_policy,
         required_enum_values_by_tool,
         system_required_enum_values,
+        system_tool_policy,
     )
 
     if system_policy is None:
-        system_policy = SYSTEM_TOOL_POLICY
+        system_policy = system_tool_policy
     if mcp_policy is None:
-        mcp_policy = MCP_TOOL_POLICY
+        mcp_policy = mcp_tool_policy
 
     if isinstance(catalog, DecomposedCatalog):
         store = catalog

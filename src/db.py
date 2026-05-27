@@ -75,10 +75,7 @@ def new_uuid7() -> str:
     rand_b = int.from_bytes(os.urandom(8), "big") & ((1 << 62) - 1)
     uuid_int = (ts_ms << 80) | (0x7 << 76) | (rand_a << 64) | (0x2 << 62) | rand_b
     hex_str = f"{uuid_int:032x}"
-    return (
-        f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-"
-        f"{hex_str[16:20]}-{hex_str[20:32]}"
-    )
+    return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
 
 
 def provider_dns_from_url(url: str) -> str | None:
@@ -86,7 +83,10 @@ def provider_dns_from_url(url: str) -> str | None:
     return parsed.hostname
 
 
-def lookup_model_provider(model_name: str | None, config: dict[str, Any] | None) -> tuple[str | None, str | None]:
+def lookup_model_provider(
+    model_name: str | None,
+    config: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
     """Return (provider, provider_dns_name) for a model name from config.yaml."""
     if not model_name or not config:
         return None, None
@@ -354,7 +354,10 @@ class StatsDB:
             return None
         return now - delta
 
-    def query_stage_model_tokens(self, period: str = "all") -> list[tuple[str, str | None, str, int]]:
+    def query_stage_model_tokens(
+        self,
+        period: str = "all",
+    ) -> list[tuple[str, str | None, str, int]]:
         """Return (stage, model_name, token_type, token_count) for pruning stages."""
         cutoff = self._period_cutoff_ms(period)
         where = "WHERE p.ts_ms >= ?" if cutoff is not None else ""
@@ -372,10 +375,7 @@ class StatsDB:
             """,
             params,
         ).fetchall()
-        return [
-            (str(row[0]), row[1], str(row[2]), int(row[3] or 0))
-            for row in rows
-        ]
+        return [(str(row[0]), row[1], str(row[2]), int(row[3] or 0)) for row in rows]
 
     def query_totals(self, period: str = "all") -> dict[str, int]:
         cutoff = self._period_cutoff_ms(period)
@@ -549,7 +549,7 @@ def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
         lines.extend(
             [
                 "",
-                f"tool savings: strong model input:",
+                "tool savings: strong model input:",
                 f"  {format_usd(costs.tools_saved_usd)}",
                 "",
                 "pruning cost:",

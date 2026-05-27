@@ -68,7 +68,8 @@ src/.chroma_db/
 
 *.mdx
 verify_*.py
-test_*.py
+/test_*.py
+!src/tests/
 uv.lock
 CLAUDE.md
 AGENTS.md

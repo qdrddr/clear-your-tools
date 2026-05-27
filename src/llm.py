@@ -4,6 +4,9 @@ import logging
 import sys
 from typing import Any, TypeVar
 
+from litellm import completion
+from pydantic import BaseModel
+
 from build_index import catalog_tool_count, count_tokens, log_token_usage
 from configs import (
     _remote_defaults,
@@ -14,18 +17,16 @@ from configs import (
     resolve_model,
 )
 from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from litellm import completion
-from pydantic import BaseModel
 from tool_policies import (
-    MCP_TOOL_POLICY,
-    SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
     catalog_needs_partition,
     configure_policies_from_config,
     full_pass_through,
+    mcp_tool_policy,
     merge_catalog,
     partition_catalog,
+    system_tool_policy,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ SELECTOR_SYSTEM_PROMPT = (
     "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
     "to save on tokens by removing the irrelevant to user query noise."
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
-    "potentially be usefull for the request. "
+    "potentially be useful for the request. "
 )
 
 
@@ -61,7 +62,7 @@ class RelevantChunkIds(BaseModel):
 class LlmPruningSettings:
     """Resolved LLM pruning model and credentials from config."""
 
-    __slots__ = ("model_name", "api_key", "base_url", "provider", "provider_dns")
+    __slots__ = ("api_key", "base_url", "model_name", "provider", "provider_dns")
 
     def __init__(
         self,
@@ -144,20 +145,18 @@ def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
 
     filtered.sort(key=lambda x: str(x.get("file_path", "")))
 
-#    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
-#    for item in trimmed:
-#        for field in LLM_TRIM_FIELDS:
-#            item.pop(field, None)
-#
-#    data["json"] = trimmed
+    #    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
+    #    for item in trimmed:
+    #        for field in LLM_TRIM_FIELDS:
+    #            item.pop(field, None)
+    #
+    #    data["json"] = trimmed
     data["json"] = filtered
     return data
 
 
 def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], list[str]]:
-    list_keys = [
-        k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)
-    ]
+    list_keys = [k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)]
 
     if not list_keys:
         raise ValueError("No json/md catalog lists found in JSON root.")
@@ -352,8 +351,8 @@ def llm_catalog_dict(
     data: dict[str, Any],
     query: str,
     *,
-    system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy | None = system_tool_policy,
+    mcp_policy: MCPToolPolicy | None = mcp_tool_policy,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
@@ -432,6 +431,7 @@ def main() -> None:
         data = read_json_input(args.json)
     else:
         from retrieve_catalog import load_catalog
+
         try:
             data = load_catalog(args.dir)
         except Exception as e:

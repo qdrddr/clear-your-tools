@@ -5,6 +5,8 @@ import sys
 from typing import Any
 from urllib.parse import urlparse
 
+from litellm import rerank
+
 from build_index import catalog_tool_count, count_tokens, log_token_usage
 from configs import (
     _remote_defaults,
@@ -14,19 +16,18 @@ from configs import (
     reranker_minimum_tools,
     resolve_model,
 )
-from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from litellm import rerank
 from split_bulks import split_into_bulks
+from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from tool_policies import (
-    MCP_TOOL_POLICY,
-    SYSTEM_TOOL_POLICY,
     MCPToolPolicy,
     SystemToolPolicy,
     catalog_needs_partition,
     configure_policies_from_config,
     full_pass_through,
+    mcp_tool_policy,
     merge_catalog,
     partition_catalog,
+    system_tool_policy,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ RERANK_ENUM_SCORE: float = 0.0001
 class RerankPruningSettings:
     """Resolved reranker model and credentials from config."""
 
-    __slots__ = ("model_name", "api_key", "base_url", "provider", "provider_dns")
+    __slots__ = ("api_key", "base_url", "model_name", "provider", "provider_dns")
 
     def __init__(
         self,
@@ -173,6 +174,102 @@ def count_rerank_request_tokens(query: str, documents: list[str]) -> int:
     return count_tokens(query) + sum(count_tokens(doc) for doc in documents)
 
 
+def _rerank_single_bulk(
+    bulk: list[tuple[int, str]],
+    *,
+    query: str,
+    settings: RerankPruningSettings,
+    items: list[dict[str, Any]],
+) -> tuple[StageTokenUsage, bool, Exception | None]:
+    bulk_indices = [x[0] for x in bulk]
+    bulk_docs = [x[1] for x in bulk]
+    bulk_tokens = count_rerank_request_tokens(query, bulk_docs)
+    logger.info(
+        "rerank request tokens: %d (query + %d documents)",
+        bulk_tokens,
+        len(bulk_docs),
+    )
+    usage = StageTokenUsage(
+        input_tokens=bulk_tokens,
+        output_tokens=0,
+        usage_source=TIKTOKEN_CL100K,
+        model_name=settings.model_name,
+        provider_dns_name=settings.provider_dns,
+        provider=settings.provider,
+    )
+    rerank_kwargs: dict[str, Any] = {
+        "model": settings.model_name,
+        "query": query,
+        "documents": bulk_docs,
+        "api_key": settings.api_key,
+    }
+    if settings.base_url:
+        rerank_kwargs["api_base"] = settings.base_url
+
+    try:
+        response = rerank(**rerank_kwargs)
+        process_response(response, bulk_indices, items)
+        return usage, True, None
+    except Exception as bulk_exc:
+        print(f"Error during reranking bulk: {bulk_exc}", file=sys.stderr)
+        return usage, False, bulk_exc
+
+
+def _prepare_rerank_documents(
+    items: list[dict[str, Any]],
+    extract_fn: Any,
+) -> list[tuple[int, str]]:
+    indexed_docs: list[tuple[int, str]] = []
+    for i, item in enumerate(items):
+        item["score"] = f"{0.0:.20f}"
+        doc_text = extract_fn(item)
+        if doc_text:
+            indexed_docs.append((i, doc_text))
+    return indexed_docs
+
+
+def _rerank_prepared_bulks(
+    indexed_docs: list[tuple[int, str]],
+    *,
+    query: str,
+    settings: RerankPruningSettings,
+    items: list[dict[str, Any]],
+    base_tokens: int,
+    min_score: float | None,
+) -> tuple[list[dict[str, Any]], StageTokenUsage]:
+    total_usage = empty_usage()
+    bulks = split_into_bulks(
+        items=indexed_docs,
+        transform_fn=lambda x: x[1],
+        base_tokens=base_tokens,
+    )
+
+    bulk_errors: list[Exception] = []
+    any_success = False
+    for bulk in bulks:
+        bulk_usage, success, bulk_exc = _rerank_single_bulk(
+            bulk,
+            query=query,
+            settings=settings,
+            items=items,
+        )
+        total_usage = total_usage.merge(bulk_usage)
+        if success:
+            any_success = True
+        elif bulk_exc is not None:
+            bulk_errors.append(bulk_exc)
+
+    if not any_success and bulk_errors:
+        raise RuntimeError(
+            f"All rerank bulks failed ({len(bulk_errors)}): {bulk_errors[-1]}",
+        ) from bulk_errors[-1]
+
+    items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
+    if min_score is not None:
+        return [item for item in items if float(item.get("score", 0)) >= min_score], total_usage
+    return items, total_usage
+
+
 def rerank_items(
     query: str,
     items: list[dict[str, Any]],
@@ -181,87 +278,27 @@ def rerank_items(
     min_score: float | None = None,
 ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
     """Generic reranking logic for both json and md items."""
-    documents = []
-    valid_indices = []
-    total_usage = empty_usage()
-
-    for i, item in enumerate(items):
-        item["score"] = f"{0.0:.20f}"
-        doc_text = extract_fn(item)
-        if doc_text:
-            documents.append(doc_text)
-            valid_indices.append(i)
-
-    if not documents:
+    indexed_docs = _prepare_rerank_documents(items, extract_fn)
+    if not indexed_docs:
         return items, empty_usage()
 
-    # Calculate base overhead (query)
-    base_tokens = count_tokens(query) + 200  # buffer for wrapper tokens
-
-    # Zip indices and documents to keep them together during splitting
-    indexed_docs = list(zip(valid_indices, documents))
+    base_tokens = count_tokens(query) + 200
 
     try:
-        bulks = split_into_bulks(
-            items=indexed_docs,
-            transform_fn=lambda x: x[1],  # text is the document
-            base_tokens=base_tokens
+        return _rerank_prepared_bulks(
+            indexed_docs,
+            query=query,
+            settings=settings,
+            items=items,
+            base_tokens=base_tokens,
+            min_score=min_score,
         )
-
-        bulk_errors: list[Exception] = []
-        any_success = False
-        for bulk in bulks:
-            bulk_indices = [x[0] for x in bulk]
-            bulk_docs = [x[1] for x in bulk]
-            bulk_tokens = count_rerank_request_tokens(query, bulk_docs)
-            logger.info(
-                "rerank request tokens: %d (query + %d documents)",
-                bulk_tokens,
-                len(bulk_docs),
-            )
-            total_usage = total_usage.merge(
-                StageTokenUsage(
-                    input_tokens=bulk_tokens,
-                    output_tokens=0,
-                    usage_source=TIKTOKEN_CL100K,
-                    model_name=settings.model_name,
-                    provider_dns_name=settings.provider_dns,
-                    provider=settings.provider,
-                ),
-            )
-
-            rerank_kwargs: dict[str, Any] = {
-                "model": settings.model_name,
-                "query": query,
-                "documents": bulk_docs,
-                "api_key": settings.api_key,
-            }
-            if settings.base_url:
-                rerank_kwargs["api_base"] = settings.base_url
-
-            try:
-                response = rerank(**rerank_kwargs)
-                process_response(response, bulk_indices, items)
-                any_success = True
-            except Exception as bulk_exc:
-                bulk_errors.append(bulk_exc)
-                print(f"Error during reranking bulk: {bulk_exc}", file=sys.stderr)
-
-        if not any_success and bulk_errors:
-            raise RuntimeError(
-                f"All rerank bulks failed ({len(bulk_errors)}): {bulk_errors[-1]}",
-            ) from bulk_errors[-1]
-
-        # Sort using float to ensure correct numerical order
-        items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
-        if min_score is not None:
-            return [item for item in items if float(item.get("score", 0)) >= min_score], total_usage
     except RuntimeError:
         raise
     except Exception as e:
         print(f"Error during reranking: {e}", file=sys.stderr)
 
-    return items, total_usage
+    return items, empty_usage()
 
 
 def _extract_md_content(item: dict[str, Any]) -> str | None:
@@ -289,9 +326,7 @@ def prune_reranked_catalog(data: dict[str, Any]) -> dict[str, Any]:
 
     json_items = data.get("json")
     if isinstance(json_items, list):
-        data["json"] = [
-            item for item in json_items if float(item.get("score", 0)) >= RERANK_SCORE
-        ]
+        data["json"] = [item for item in json_items if float(item.get("score", 0)) >= RERANK_SCORE]
 
     if RERANK_ENUMS:
         md_items = data.get("md")
@@ -308,8 +343,8 @@ def rerank_catalog_dict(
     query: str,
     *,
     prune: bool = True,
-    system_policy: SystemToolPolicy | None = SYSTEM_TOOL_POLICY,
-    mcp_policy: MCPToolPolicy | None = MCP_TOOL_POLICY,
+    system_policy: SystemToolPolicy | None = system_tool_policy,
+    mcp_policy: MCPToolPolicy | None = mcp_tool_policy,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
@@ -367,7 +402,13 @@ def main() -> None:
     group.add_argument("--json", help="Input JSON file path")
     group.add_argument("--dir", help="Path to the directory containing decomposed tool files")
     parser.add_argument("--output-json", help="Optional output JSON file path")
-    parser.add_argument("command", choices=["search"], nargs="?", default="search", help="Command to run (default: search)")
+    parser.add_argument(
+        "command",
+        choices=["search"],
+        nargs="?",
+        default="search",
+        help="Command to run (default: search)",
+    )
     parser.add_argument("query", help="Search query")
 
     args = parser.parse_args()
@@ -383,6 +424,7 @@ def main() -> None:
             sys.exit(1)
     else:
         from retrieve_catalog import load_catalog
+
         try:
             data = load_catalog(args.dir)
         except Exception as e:

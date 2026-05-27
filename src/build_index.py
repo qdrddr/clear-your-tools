@@ -7,16 +7,28 @@ from typing import Any
 
 import tiktoken
 
+from catalog_paths import (
+    DECOMPOSED_PREFIX,
+    JSON_EXT,
+    MD_EXT,
+    tool_id_from_decomposed_rel,
+)
+from catalog_paths import (
+    collect_enums as _collect_enums,
+)
+
+collect_enums = _collect_enums
+
 logger = logging.getLogger(__name__)
 
-_TIKTOKEN_ENCODING: tiktoken.Encoding | None = None
+_tiktoken_encoding_cache: tiktoken.Encoding | None = None
 
 
 def _tiktoken_encoding() -> tiktoken.Encoding:
-    global _TIKTOKEN_ENCODING
-    if _TIKTOKEN_ENCODING is None:
-        _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
-    return _TIKTOKEN_ENCODING
+    global _tiktoken_encoding_cache
+    if _tiktoken_encoding_cache is None:
+        _tiktoken_encoding_cache = tiktoken.get_encoding("cl100k_base")
+    return _tiktoken_encoding_cache
 
 
 def compact_json(obj: Any) -> str:
@@ -64,25 +76,6 @@ def catalog_tool_count(data: dict[str, Any]) -> int:
             tool_ids.add(str(item_id))
     return len(tool_ids)
 
-JSON_EXT = ".json"
-MD_EXT = ".md"
-DECOMPOSED_PREFIX = "schemas/decomposed/"
-
-
-def tool_id_from_decomposed_rel(rel_path: str) -> str:
-    """Return the tool id encoded in a decomposed catalog relative path."""
-    if rel_path.startswith(DECOMPOSED_PREFIX):
-        rel = rel_path[len(DECOMPOSED_PREFIX) :]
-    else:
-        rel = rel_path
-    parts = Path(rel).parts
-    if not parts:
-        return Path(rel).stem
-    first = parts[0]
-    if first.endswith(JSON_EXT):
-        return first[: -len(JSON_EXT)]
-    return first
-
 
 # ------------------------------------------------------------------ #
 # Data types
@@ -94,7 +87,10 @@ class CatalogIndex:
     tools: list[dict[str, Any]]
     files: dict[str, str] = field(default_factory=dict)
 
-    def to_catalog_dict(self, catalog_prefix: str = "src/catalog") -> dict[str, list[dict[str, Any]]]:
+    def to_catalog_dict(
+        self,
+        catalog_prefix: str = "src/catalog",
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Convert decomposed catalog files to the dict format used by cs.py, rerank.py, and llm.py.
 
@@ -141,16 +137,6 @@ class CatalogIndex:
 
         return {"md": md_entries, "json": json_entries, "tools": self.tools}
 
-    def pruned_tools_from_reranked(self, data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Rebuild merged tool schemas from a reranked catalog dict (in-memory only)."""
-        from retrieve_catalog import retrieve_tools
-
-        return retrieve_tools(
-            data,
-            catalog=self,
-            apply_decomposed_score_filter=False,
-        )
-
 
 # ------------------------------------------------------------------ #
 # Schema processing helpers
@@ -162,22 +148,6 @@ def truncate_description(description: str | None, max_tokens: int = 60) -> str:
     if len(description) <= max_chars:
         return description
     return description[:max_chars].rsplit(" ", 1)[0] + "..."
-
-
-def collect_enums(schema: Any) -> list[Any]:
-    """Walk a JSON schema and return all enum values found."""
-    found: list[Any] = []
-    if isinstance(schema, dict):
-        if "enum" in schema and isinstance(schema["enum"], list):
-            found.extend(schema["enum"])
-        for val in schema.values():
-            if isinstance(val, dict | list):
-                found.extend(collect_enums(val))
-    elif isinstance(schema, list):
-        for item in schema:
-            if isinstance(item, dict | list):
-                found.extend(collect_enums(item))
-    return found
 
 
 def dedupe_enums(all_enums: list[Any]) -> list[Any]:
@@ -193,7 +163,9 @@ def dedupe_enums(all_enums: list[Any]) -> list[Any]:
 
 
 def _build_property_file(
-    tool_name: str, path: list[dict[str, Any]], leaf_schema: Any
+    tool_name: str,
+    path: list[dict[str, Any]],
+    leaf_schema: Any,
 ) -> dict[str, Any]:
     current = leaf_schema
     for segment in reversed(path):
@@ -235,11 +207,19 @@ def _process_node(
             child_path = [*path, {"type": "properties", "name": prop_name}]
             if prop_name in req_props:
                 filtered_properties[prop_name] = _process_node(
-                    prop_schema, tool_name, server_name, child_path, extractions
+                    prop_schema,
+                    tool_name,
+                    server_name,
+                    child_path,
+                    extractions,
                 )
             else:
                 filtered_child = _process_node(
-                    prop_schema, tool_name, server_name, child_path, extractions
+                    prop_schema,
+                    tool_name,
+                    server_name,
+                    child_path,
+                    extractions,
                 )
                 prop_file = _build_property_file(tool_name, child_path, filtered_child)
                 extractions.append((child_path, prop_file))
@@ -271,7 +251,11 @@ def _handle_logical_compositions(
         if key in result and isinstance(result[key], list):
             result[key] = [
                 _process_node(
-                    item, tool_name, server_name, [*path, {"type": key, "index": i}], extractions
+                    item,
+                    tool_name,
+                    server_name,
+                    [*path, {"type": key, "index": i}],
+                    extractions,
                 )
                 for i, item in enumerate(result[key])
             ]
@@ -287,11 +271,19 @@ def _handle_conditional_compositions(
     for key in ("if", "then", "else"):
         if key in result:
             result[key] = _process_node(
-                result[key], tool_name, server_name, [*path, {"type": key}], extractions
+                result[key],
+                tool_name,
+                server_name,
+                [*path, {"type": key}],
+                extractions,
             )
     if "not" in result:
         result["not"] = _process_node(
-            result["not"], tool_name, server_name, [*path, {"type": "not"}], extractions
+            result["not"],
+            tool_name,
+            server_name,
+            [*path, {"type": "not"}],
+            extractions,
         )
 
 
@@ -305,12 +297,20 @@ def _handle_array_properties(
     if "items" in result:
         if isinstance(result["items"], dict):
             result["items"] = _process_node(
-                result["items"], tool_name, server_name, [*path, {"type": "items"}], extractions
+                result["items"],
+                tool_name,
+                server_name,
+                [*path, {"type": "items"}],
+                extractions,
             )
         elif isinstance(result["items"], list):
             result["items"] = [
                 _process_node(
-                    item, tool_name, server_name, [*path, {"type": "items", "index": i}], extractions
+                    item,
+                    tool_name,
+                    server_name,
+                    [*path, {"type": "items", "index": i}],
+                    extractions,
                 )
                 for i, item in enumerate(result["items"])
             ]
@@ -326,12 +326,20 @@ def _handle_miscellaneous_keywords(
     for key in ("contains", "propertyNames", "additionalProperties"):
         if key in result and isinstance(result[key], dict):
             result[key] = _process_node(
-                result[key], tool_name, server_name, [*path, {"type": key}], extractions
+                result[key],
+                tool_name,
+                server_name,
+                [*path, {"type": key}],
+                extractions,
             )
     if "patternProperties" in result and isinstance(result["patternProperties"], dict):
         for pat, sub in result["patternProperties"].items():
             result["patternProperties"][pat] = _process_node(
-                sub, tool_name, server_name, [*path, {"type": "patternProperties", "pattern": pat}], extractions
+                sub,
+                tool_name,
+                server_name,
+                [*path, {"type": "patternProperties", "pattern": pat}],
+                extractions,
             )
 
 

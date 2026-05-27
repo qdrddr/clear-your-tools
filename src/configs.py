@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -14,7 +15,7 @@ SRC_ENV_PATH = Path(__file__).with_name(".env")
 USER_ENV_PATH = Path("~/.configs/cyt/.env").expanduser()
 _env_path = SRC_ENV_PATH  # backward-compatible alias for resolve_model callers
 
-_PROXY_ENV_LOADED = False
+_proxy_env_loaded = False
 
 
 def load_proxy_env() -> None:
@@ -22,13 +23,13 @@ def load_proxy_env() -> None:
 
     Variables already set in the process environment are never overwritten.
     """
-    global _PROXY_ENV_LOADED
-    if _PROXY_ENV_LOADED:
+    global _proxy_env_loaded
+    if _proxy_env_loaded:
         return
     for path in (SRC_ENV_PATH, USER_ENV_PATH):
         if path.exists():
             load_dotenv(dotenv_path=path, override=False)
-    _PROXY_ENV_LOADED = True
+    _proxy_env_loaded = True
 
 
 load_proxy_env()
@@ -310,18 +311,11 @@ def _key_var_names_for_upstream_host(config: dict[str, Any], host: str) -> list[
     return names
 
 
-def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
-    """Environment variable names required for ``proxy serve``."""
-    merged = _merged_config(config)
-    remote_defaults = _remote_defaults(config)
-    required: list[str] = []
-    seen: set[str] = set()
-
-    def add(name: str) -> None:
-        if name not in seen:
-            seen.add(name)
-            required.append(name)
-
+def _append_pipeline_stage_env_vars(
+    config: dict[str, Any],
+    remote_defaults: dict[str, Any],
+    add: Callable[[str], None],
+) -> None:
     for stage in pruning_pipeline_from_config(config):
         stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
         if stage_keys is None:
@@ -334,6 +328,12 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
             )
         add(key_var_name_for_model_nick(config, model_kind, str(model_nick)))
 
+
+def _append_upstream_env_vars(
+    config: dict[str, Any],
+    merged: dict[str, Any],
+    add: Callable[[str], None],
+) -> None:
     reverse_cfg = reverse_proxy_cfg(merged["network"]["proxy"])
     for item in reverse_cfg.get("upstreams", []):
         if not isinstance(item, dict):
@@ -347,6 +347,22 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
         for name in _key_var_names_for_upstream_host(config, host):
             add(name)
 
+
+def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Environment variable names required for ``proxy serve``."""
+    merged = _merged_config(config)
+    remote_defaults = _remote_defaults(config)
+    required: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            required.append(name)
+
+    _append_pipeline_stage_env_vars(config, remote_defaults, add)
+    _append_upstream_env_vars(config, merged, add)
+
     return required
 
 
@@ -358,7 +374,7 @@ def require_proxy_env(config: dict[str, Any]) -> None:
         env_locations = " or ".join(str(p) for p in (SRC_ENV_PATH, USER_ENV_PATH))
         raise RuntimeError(
             "Required environment variable(s) not set: "
-            f"{', '.join(missing)}. Export them in the shell or define them in {env_locations}."
+            f"{', '.join(missing)}. Export them in the shell or define them in {env_locations}.",
         )
 
 

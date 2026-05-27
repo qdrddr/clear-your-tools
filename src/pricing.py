@@ -30,7 +30,12 @@ class StatsCosts:
 
     @property
     def pruning_total_usd(self) -> float:
-        return self.llm_input_usd + self.llm_output_usd + self.rerank_input_usd + self.rerank_output_usd
+        return (
+            self.llm_input_usd
+            + self.llm_output_usd
+            + self.rerank_input_usd
+            + self.rerank_output_usd
+        )
 
     @property
     def net_savings_usd(self) -> float:
@@ -133,6 +138,35 @@ def empty_costs(config: dict[str, Any] | None = None) -> StatsCosts:
     )
 
 
+def _token_cost(pricing: ModelPricing, token_type: str, count: int) -> float:
+    if token_type == "input":
+        return count * pricing.input_cost_per_token
+    return count * pricing.output_cost_per_token
+
+
+def _accumulate_stage_cost(
+    stage: str,
+    token_type: str,
+    cost: float,
+    *,
+    llm_input_usd: float,
+    llm_output_usd: float,
+    rerank_input_usd: float,
+    rerank_output_usd: float,
+) -> tuple[float, float, float, float]:
+    if stage == "llm":
+        if token_type == "input":
+            llm_input_usd += cost
+        elif token_type == "output":
+            llm_output_usd += cost
+    elif stage == "rerank":
+        if token_type == "input":
+            rerank_input_usd += cost
+        elif token_type == "output":
+            rerank_output_usd += cost
+    return llm_input_usd, llm_output_usd, rerank_input_usd, rerank_output_usd
+
+
 def compute_stats_costs(
     totals: dict[str, int],
     stage_model_tokens: list[tuple[str, str | None, str, int]],
@@ -156,23 +190,16 @@ def compute_stats_costs(
         pricing = lookup_pricing(catalog, model_name)
         if pricing is None:
             continue
-        if token_type == "input":
-            cost = count * pricing.input_cost_per_token
-        elif token_type == "output":
-            cost = count * pricing.output_cost_per_token
-        else:
-            cost = count * pricing.output_cost_per_token
-
-        if stage == "llm":
-            if token_type == "input":
-                llm_input_usd += cost
-            elif token_type == "output":
-                llm_output_usd += cost
-        elif stage == "rerank":
-            if token_type == "input":
-                rerank_input_usd += cost
-            elif token_type == "output":
-                rerank_output_usd += cost
+        cost = _token_cost(pricing, token_type, count)
+        llm_input_usd, llm_output_usd, rerank_input_usd, rerank_output_usd = _accumulate_stage_cost(
+            stage,
+            token_type,
+            cost,
+            llm_input_usd=llm_input_usd,
+            llm_output_usd=llm_output_usd,
+            rerank_input_usd=rerank_input_usd,
+            rerank_output_usd=rerank_output_usd,
+        )
 
     return StatsCosts(
         tools_saved_usd=tools_saved_usd,
