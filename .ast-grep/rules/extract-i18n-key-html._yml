@@ -1,8 +1,0 @@
-id: extract-i18n-key
-language: html
-rule:
-  kind: text
-  pattern: $T
-  # skip dynamic text in mustache syntax
-  not: { regex: '\{\{.*\}\}' }
-fix: "{{ $('$T') }}"
