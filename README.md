@@ -92,8 +92,17 @@ uv sync --all-extras
 Copy API keys (or use `~/.configs/cyt/.env`):
 
 ```bash
-cp src/.env.example .env
+cp .env.example .env
 # Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
+```
+
+Though we strongly recommend using password vaults like macOS KeyChain 
+```shell
+# Store key in secure vault
+security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
+
+# Now you can access the key like this:
+export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
 ```
 
 ### Run the proxy
