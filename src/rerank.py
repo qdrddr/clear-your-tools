@@ -1,15 +1,20 @@
 import argparse
 import json
 import logging
-import os
 import sys
-from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from build_index import catalog_tool_count, count_tokens, log_token_usage
-from configs import reranker_minimum_tools
+from configs import (
+    _remote_defaults,
+    key_var_name_for_model_nick,
+    load_config,
+    remote_model_entry,
+    reranker_minimum_tools,
+    resolve_model,
+)
 from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from dotenv import load_dotenv
 from litellm import rerank
 from split_bulks import split_into_bulks
 from tool_policies import (
@@ -29,7 +34,55 @@ logger = logging.getLogger(__name__)
 RERANK_SCORE: float = 0.003
 RERANK_ENUMS: bool = True
 RERANK_ENUM_SCORE: float = 0.0001
-RERANK_MODEL: str = "deepinfra/Qwen/Qwen3-Reranker-8B"
+
+
+class RerankPruningSettings:
+    """Resolved reranker model and credentials from config."""
+
+    __slots__ = ("model_name", "api_key", "base_url", "provider", "provider_dns")
+
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        base_url: str | None,
+        provider: str | None,
+        provider_dns: str | None,
+    ) -> None:
+        self.model_name = model_name
+        self.api_key = api_key
+        self.base_url = base_url
+        self.provider = provider
+        self.provider_dns = provider_dns
+
+
+def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruningSettings:
+    """Resolve pruning reranker model and API key from ``defaults.remote.reranking_model_nick``."""
+    cfg = config or load_config()
+    model_nick = _remote_defaults(cfg).get("reranking_model_nick")
+    if not model_nick:
+        raise ValueError("defaults.remote.reranking_model_nick is required for rerank pruning")
+    nick = str(model_nick)
+    model_name, api_key, base_url = resolve_model(nick, "rerankers", "remote", config=cfg)
+    if not api_key:
+        key_var = key_var_name_for_model_nick(cfg, "rerankers", nick)
+        print(f"Error: {key_var} not found.", file=sys.stderr)
+        sys.exit(1)
+    entry = remote_model_entry(cfg, "rerankers", nick)
+    provider = entry.get("provider")
+    domain_match = entry.get("domain_match")
+    provider_dns = None
+    if isinstance(domain_match, list) and domain_match:
+        provider_dns = str(domain_match[0])
+    elif base_url:
+        provider_dns = urlparse(str(base_url)).hostname
+    return RerankPruningSettings(
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        provider=str(provider) if provider else None,
+        provider_dns=provider_dns,
+    )
 
 
 def extract_level_info(data: Any) -> list[str]:
@@ -83,13 +136,6 @@ def _extract_json_catalog_document(item: dict[str, Any]) -> str | None:
     return extract_document_text(content)
 
 
-def load_env() -> None:
-    """Load environment variables from src/.env next to this module."""
-    env_path = Path(__file__).resolve().parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
-
-
 def process_response(response: Any, valid_indices: list[int], items: list[dict[str, Any]]) -> None:
     """Processes the rerank response and updates item scores."""
     # LiteLLM's rerank response usually has a 'results' attribute or key
@@ -130,7 +176,7 @@ def count_rerank_request_tokens(query: str, documents: list[str]) -> int:
 def rerank_items(
     query: str,
     items: list[dict[str, Any]],
-    api_key: str | None,
+    settings: RerankPruningSettings,
     extract_fn: Any,
     min_score: float | None = None,
 ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
@@ -178,19 +224,23 @@ def rerank_items(
                     input_tokens=bulk_tokens,
                     output_tokens=0,
                     usage_source=TIKTOKEN_CL100K,
-                    model_name=RERANK_MODEL,
-                    provider_dns_name="api.deepinfra.com",
-                    provider="deepinfra",
+                    model_name=settings.model_name,
+                    provider_dns_name=settings.provider_dns,
+                    provider=settings.provider,
                 ),
             )
 
+            rerank_kwargs: dict[str, Any] = {
+                "model": settings.model_name,
+                "query": query,
+                "documents": bulk_docs,
+                "api_key": settings.api_key,
+            }
+            if settings.base_url:
+                rerank_kwargs["api_base"] = settings.base_url
+
             try:
-                response = rerank(
-                    model=RERANK_MODEL,
-                    query=query,
-                    documents=bulk_docs,
-                    api_key=api_key,
-                )
+                response = rerank(**rerank_kwargs)
                 process_response(response, bulk_indices, items)
                 any_success = True
             except Exception as bulk_exc:
@@ -273,8 +323,7 @@ def rerank_catalog_dict(
     if _below_reranker_minimum_tools(data):
         return data, empty_usage()
 
-    load_env()
-    key = os.environ.get("DEEPINFRA_API_KEY")
+    settings = rerank_pruning_settings()
     total_usage = empty_usage()
     pinned: dict[str, Any] = {}
     if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
@@ -284,7 +333,7 @@ def rerank_catalog_dict(
         data["json"], json_usage = rerank_items(
             query,
             data["json"],
-            key,
+            settings,
             _extract_json_catalog_document,
             None,
         )
@@ -294,7 +343,7 @@ def rerank_catalog_dict(
         data["md"], md_usage = rerank_items(
             query,
             data["md"],
-            key,
+            settings,
             _extract_md_content,
             None,
         )
@@ -324,8 +373,6 @@ def main() -> None:
     args = parser.parse_args()
 
     configure_policies_from_config()
-    load_env()
-    api_key = os.environ.get("DEEPINFRA_API_KEY")
 
     if args.json:
         try:

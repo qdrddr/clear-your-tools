@@ -1,15 +1,19 @@
 import argparse
 import json
 import logging
-import os
 import sys
-from pathlib import Path
 from typing import Any, TypeVar
 
 from build_index import catalog_tool_count, count_tokens, log_token_usage
-from configs import llm_minimum_tools
+from configs import (
+    _remote_defaults,
+    key_var_name_for_model_nick,
+    llm_minimum_tools,
+    load_config,
+    remote_model_entry,
+    resolve_model,
+)
 from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from dotenv import load_dotenv
 from litellm import completion
 from pydantic import BaseModel
 from tool_policies import (
@@ -27,9 +31,6 @@ from tool_policies import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-# LLM_MCP_SELECTOR_MODEL: str = "openrouter/inception/mercury-2"
-LLM_MCP_SELECTOR_MODEL: str = "openrouter/openai/gpt-oss-120b"
 
 # Top_k may exclude relevant items, should not be capping by top_k, but by score only.
 # LLM_TRIM_TOP_K_JSON: int = 40
@@ -57,24 +58,51 @@ class RelevantChunkIds(BaseModel):
     ids: list[int]
 
 
-def load_env() -> None:
-    """Load environment variables from src/.env if it exists."""
-    # OPENROUTER_API_KEY in env takes precedence over .env file
-    if "OPENROUTER_API_KEY" in os.environ:
-        return
+class LlmPruningSettings:
+    """Resolved LLM pruning model and credentials from config."""
 
-    env_path = Path(__file__).resolve().parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
+    __slots__ = ("model_name", "api_key", "base_url", "provider", "provider_dns")
+
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        base_url: str | None,
+        provider: str | None,
+        provider_dns: str | None,
+    ) -> None:
+        self.model_name = model_name
+        self.api_key = api_key
+        self.base_url = base_url
+        self.provider = provider
+        self.provider_dns = provider_dns
 
 
-def get_api_key() -> str:
-    load_env()
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
+    """Resolve pruning LLM model and API key from ``defaults.remote.llm_model_nick``."""
+    cfg = config or load_config()
+    model_nick = _remote_defaults(cfg).get("llm_model_nick")
+    if not model_nick:
+        raise ValueError("defaults.remote.llm_model_nick is required for llm pruning")
+    nick = str(model_nick)
+    model_name, api_key, base_url = resolve_model(nick, "llm", "remote", config=cfg)
     if not api_key:
-        print("Error: OPENROUTER_API_KEY not found.", file=sys.stderr)
+        key_var = key_var_name_for_model_nick(cfg, "llm", nick)
+        print(f"Error: {key_var} not found.", file=sys.stderr)
         sys.exit(1)
-    return api_key
+    entry = remote_model_entry(cfg, "llm", nick)
+    provider = entry.get("provider")
+    domain_match = entry.get("domain_match")
+    provider_dns = None
+    if isinstance(domain_match, list) and domain_match:
+        provider_dns = str(domain_match[0])
+    return LlmPruningSettings(
+        model_name=model_name,
+        api_key=api_key,
+        base_url=base_url,
+        provider=str(provider) if provider else None,
+        provider_dns=provider_dns,
+    )
 
 
 def read_json_input(path: str) -> dict[str, Any]:
@@ -178,7 +206,12 @@ def count_llm_request_tokens(query: str, chunks_text: str) -> int:
     return count_tokens(SELECTOR_SYSTEM_PROMPT) + count_tokens(user_message)
 
 
-def _usage_from_litellm_response(response: Any, fallback_output_text: str) -> StageTokenUsage:
+def _usage_from_litellm_response(
+    response: Any,
+    fallback_output_text: str,
+    *,
+    settings: LlmPruningSettings,
+) -> StageTokenUsage:
     usage = getattr(response, "usage", None)
     if usage is not None:
         prompt = getattr(usage, "prompt_tokens", None)
@@ -189,33 +222,41 @@ def _usage_from_litellm_response(response: Any, fallback_output_text: str) -> St
                 output_tokens=int(completion or 0),
                 usage_source="provider",
                 request_id=getattr(response, "id", None),
-                model_name=LLM_MCP_SELECTOR_MODEL,
-                provider_dns_name="openrouter.ai",
-                provider="openrouter",
+                model_name=settings.model_name,
+                provider_dns_name=settings.provider_dns,
+                provider=settings.provider,
             )
     return StageTokenUsage(
         output_tokens=count_tokens(fallback_output_text),
         usage_source=TIKTOKEN_CL100K,
-        model_name=LLM_MCP_SELECTOR_MODEL,
-        provider_dns_name="openrouter.ai",
-        provider="openrouter",
+        model_name=settings.model_name,
+        provider_dns_name=settings.provider_dns,
+        provider=settings.provider,
     )
 
 
-def call_llm(api_key: str, query: str, chunks_text: str) -> tuple[RelevantChunkIds, StageTokenUsage]:
+def call_llm(
+    settings: LlmPruningSettings,
+    query: str,
+    chunks_text: str,
+) -> tuple[RelevantChunkIds, StageTokenUsage]:
     user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
     input_tokens = count_llm_request_tokens(query, chunks_text)
 
-    # litellm.completion returns a ModelResponse object but it's often treated as Any
-    response: Any = completion(
-        model=LLM_MCP_SELECTOR_MODEL,
-        messages=[
+    completion_kwargs: dict[str, Any] = {
+        "model": settings.model_name,
+        "messages": [
             {"role": "system", "content": SELECTOR_SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
-        api_key=api_key,
-        response_format=RelevantChunkIds,
-    )
+        "api_key": settings.api_key,
+        "response_format": RelevantChunkIds,
+    }
+    if settings.base_url:
+        completion_kwargs["api_base"] = settings.base_url
+
+    # litellm.completion returns a ModelResponse object but it's often treated as Any
+    response: Any = completion(**completion_kwargs)
 
     content_val: Any = response.choices[0].message.content
     if not isinstance(content_val, str):
@@ -232,16 +273,16 @@ def call_llm(api_key: str, query: str, chunks_text: str) -> tuple[RelevantChunkI
         else:
             raise ValueError(f"Could not parse LLM response: {content_val}") from None
 
-    usage = _usage_from_litellm_response(response, content_val)
+    usage = _usage_from_litellm_response(response, content_val, settings=settings)
     if usage.usage_source == TIKTOKEN_CL100K:
         usage = StageTokenUsage(
             input_tokens=input_tokens,
             output_tokens=usage.output_tokens,
             usage_source=TIKTOKEN_CL100K,
             request_id=getattr(response, "id", None),
-            model_name=LLM_MCP_SELECTOR_MODEL,
-            provider_dns_name="openrouter.ai",
-            provider="openrouter",
+            model_name=settings.model_name,
+            provider_dns_name=settings.provider_dns,
+            provider=settings.provider,
         )
     elif usage.input_tokens == 0:
         usage = StageTokenUsage(
@@ -333,7 +374,7 @@ def llm_catalog_dict(
         )
         return data, empty_usage()
 
-    api_key = get_api_key()
+    settings = llm_pruning_settings()
     pinned: dict[str, Any] = {}
     if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
@@ -349,7 +390,7 @@ def llm_catalog_dict(
     for bulk_text in bulks:
         bulk_tokens = count_llm_request_tokens(query, bulk_text)
         logger.info("llm request tokens: %d", bulk_tokens)
-        parsed_response, bulk_usage = call_llm(api_key, query, bulk_text)
+        parsed_response, bulk_usage = call_llm(settings, query, bulk_text)
         if bulk_usage.input_tokens == 0:
             bulk_usage = StageTokenUsage(
                 input_tokens=bulk_tokens,

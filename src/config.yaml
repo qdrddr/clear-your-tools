@@ -4,7 +4,7 @@ defaults:
   is_persistent: true
   remote: 
     reranking_model_nick: rerank-qwen3-8b
-    llm_model_nick: llm-mercury-2
+    llm_model_nick: mercury-2
   inprocess: []
 
   reranking_enabled: true
