@@ -14,7 +14,9 @@
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
-# 3. Create a release (tag e.g. v0.0.1) to trigger this workflow.
+# 3. Create a release (tag e.g. v0.0.2) to trigger this workflow.
+#    The tag name (without leading "v") is the PyPI version; pyproject.toml
+#    is updated in CI before the build.
 
 name: Publish to PyPI
 
@@ -46,6 +48,13 @@ jobs:
         with:
           python-version: "3.13"
           enable-cache: true
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          uv version "$VERSION"
 
       - name: Build sdist and wheel
         run: uv build

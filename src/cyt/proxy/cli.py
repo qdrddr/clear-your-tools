@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from cyt import __version__
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
     load_config,
@@ -87,6 +88,12 @@ async def run_reverse_server(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reverse HTTP proxy")
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     serve_parser = subparsers.add_parser("serve", help="Run the reverse proxy")
