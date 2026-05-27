@@ -6,10 +6,11 @@ import json
 import unittest
 from typing import Any
 
-from build_index import DECOMPOSED_PREFIX, CatalogIndex, build_catalog_index
-from retrieve_catalog import retrieve_tools
-import tool_policies
-from tool_policies import (
+import cyt.pruners.policies as tool_policies
+from cyt.common.catalog_paths import DECOMPOSED_PREFIX
+from cyt.indexer.build import CatalogIndex, build_catalog_index
+from cyt.indexer.retrieve import retrieve_tools
+from cyt.pruners.policies import (
     EMPTY_OPTIONAL_FALLBACK_K,
     direct_root_optional_chunks_for_tool,
     drop_recomposed_tools_with_empty_properties,
@@ -19,7 +20,6 @@ from tool_policies import (
     tool_id_had_empty_original_root_properties,
     tool_id_has_empty_decomposed_root,
 )
-
 
 TOOL_ID = "mcp__test__empty_optional_tool"
 ORIGINALLY_EMPTY_TOOL_ID = "mcp__test__originally_empty_tool"

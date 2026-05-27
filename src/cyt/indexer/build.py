@@ -7,13 +7,13 @@ from typing import Any
 
 import tiktoken
 
-from catalog_paths import (
+from cyt.common.catalog_paths import (
     DECOMPOSED_PREFIX,
     JSON_EXT,
     MD_EXT,
     tool_id_from_decomposed_rel,
 )
-from catalog_paths import (
+from cyt.common.catalog_paths import (
     collect_enums as _collect_enums,
 )
 

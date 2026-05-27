@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from db import ProxyRequestRecord, StatsDB, format_totals
-from token_usage import StageTokenUsage
+from cyt.common.token_usage import StageTokenUsage
+from cyt.proxy.stats import ProxyRequestRecord, StatsDB, format_totals
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_record_without_full_tools_json(temp_db: StatsDB) -> None:
 
 
 def test_query_totals_format() -> None:
-    from pricing import StatsCosts
+    from cyt.common.pricing import StatsCosts
 
     costs = StatsCosts(
         tools_saved_usd=0.0005,

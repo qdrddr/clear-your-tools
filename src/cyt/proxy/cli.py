@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from configs import (
+from cyt.config import (
     DEFAULT_REVERSE_PORT,
     load_config,
     proxy_http2_settings,
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    from db import StatsDB, empty_totals, format_events, format_totals
-    from pricing import compute_stats_costs, empty_costs
+    from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
+    from cyt.common.pricing import compute_stats_costs, empty_costs
 
     db_path = stats_db_path(config)
     db = StatsDB.open_for_query(db_path)
@@ -69,7 +69,7 @@ async def run_reverse_server(
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
 ) -> None:
-    from proxy_reverse import serve_reverse_async
+    from cyt.proxy.reverse import serve_reverse_async
 
     await serve_reverse_async(
         config,
@@ -176,7 +176,7 @@ def main() -> None:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    from tool_policies import configure_policies_from_config
+    from cyt.pruners.policies import configure_policies_from_config
 
     configure_policies_from_config(config)
 

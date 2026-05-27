@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from build_index import count_tokens
+from cyt.indexer.build import count_tokens
 
 
 def split_into_bulks[T](

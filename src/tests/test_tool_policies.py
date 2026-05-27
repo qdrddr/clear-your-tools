@@ -6,8 +6,9 @@ import copy
 from types import SimpleNamespace
 from typing import Any
 
-from build_index import build_catalog_index, collect_enums, prepare_system_tool_entry, prepare_tool_entry
-from tool_policies import (
+from cyt.common.catalog_paths import collect_enums
+from cyt.indexer.build import build_catalog_index, prepare_system_tool_entry, prepare_tool_entry
+from cyt.pruners.policies import (
     RERANK_SCORE,
     filter_recompose_json_entries,
     is_decomposed_optional_property_chunk,
@@ -133,8 +134,8 @@ def test_filter_recompose_json_entries_drops_pruned_optionals() -> None:
 
 def test_bash_optional_not_restored_from_full_catalog_index() -> None:
     """Survivor-only recompose must not merge optional chunks present only in the full index."""
-    from retrieve_catalog import retrieve_tools
-    from tool_policies import partition_catalog
+    from cyt.indexer.retrieve import retrieve_tools
+    from cyt.pruners.policies import partition_catalog
 
     bash_schema = {
         "type": "object",

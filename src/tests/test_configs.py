@@ -3,15 +3,11 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SRC))
-
-import configs  # noqa: E402
+import cyt.config as configs
 
 
 @pytest.fixture
@@ -96,7 +92,11 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
         "defaults:\n  remote:\n    reranking_model_nick: bundled-rerank\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(configs, "SRC_CONFIG_PATH", bundled)
+    monkeypatch.setattr(
+        configs,
+        "_load_bundled_defaults_yaml",
+        lambda: configs._load_yaml_dict(bundled),
+    )
 
     user_config = isolated_config_paths["user_config"]
     user_config.parent.mkdir(parents=True, exist_ok=True)

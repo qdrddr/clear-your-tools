@@ -1,9 +1,9 @@
 [project]
-name = "clear_your_tools"
+name = "clear-your-tools"
 version = "0.0.1"
-description = "Dynamic Tool Gating for Eliminating the MCP/Tools Tax in Scalable Agentic Workflows"
+description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
-keywords = ["Clear Your Tools", "mcp", "mcp-client"]
+keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
 classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
@@ -18,25 +18,53 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "sentence-transformers>=2.7.0",
-    "tiktoken==0.12.0",
-    "numpy==2.4.4",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
-    "litellm==1.83.14",
     "python-dotenv==1.2.2",
-    "lancedb==0.30.2",
-    "pyarrow==24.0.0",
-    "fastmcp==3.2.4",
-    "mcp==1.27.0",
-    "psutil==7.2.2",
-    "types-psutil>=7.2.2",
-    "sentencepiece==0.2.1",
-    "tokenizers==0.22.2",
-    "libsql-experimental>=0.0.55",
+    "pyyaml>=6.0.2",
+    "tiktoken==0.12.0",
+]
+
+[project.optional-dependencies]
+proxy = [
+    "httpx>=0.28.0",
+    "uvicorn>=0.34.0",
+    "starlette>=0.46.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
+    "libsql-experimental>=0.0.55",
 ]
+pruners = [
+    "litellm==1.83.14",
+]
+all = [
+    "clear-your-tools[proxy,pruners]",
+]
+
+[project.scripts]
+cyt-rproxy = "cyt.proxy.cli:main"
+cyt-rerank = "cyt.pruners.rerank:main"
+cyt-llm-prune = "cyt.pruners.llm:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cyt"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.cursorignore",
+  "/.git",
+  "/src/nogo",
+  "/src/old",
+  "/anthropic.log.1",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/cyt/config/defaults.yaml" = "cyt/config/defaults.yaml"
+"src/cyt/py.typed" = "cyt/py.typed"
 
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities
@@ -62,10 +90,17 @@ test = [
     "pytest-timeout>=2.1.0",
     "pytest-asyncio>=0.21.0",
     "mypy>=1.4.0",
+    "httpx>=0.28.0",
+    "uvicorn>=0.34.0",
+    "starlette>=0.46.0",
+    "hypercorn==0.18.0",
+    "h2==4.3.0",
+    "libsql-experimental>=0.0.55",
+    "litellm==1.83.14",
 ]
 
 [tool.uv]
-package = false
+package = true
 default-groups = ["dev", "test"]
 
 [tool.ruff]
@@ -157,9 +192,9 @@ ignore_missing_imports = true
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
 failOnWarnings = false
-include = ["src", "count_request_tokens.py"]
+include = ["src/cyt", "count_request_tokens.py"]
 stubPath = "typings"
-exclude = ["**/nogo/**", "src/catalog/**"]
+exclude = ["**/nogo/**", "src/old/**", "src/catalog/**"]
 executionEnvironments = [
   { root = "src", extraPaths = ["src", "typings"] },
   { root = ".", extraPaths = ["src", "typings"] },
@@ -179,7 +214,7 @@ filterwarnings = [
 addopts = "-q"
 
 [tool.coverage.run]
-source = ["src"]
+source = ["src/cyt"]
 omit = ["src/tests/*", "src/old/*", "src/nogo/*"]
 
 [tool.coverage.report]

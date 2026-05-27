@@ -7,8 +7,8 @@ from typing import Any, TypeVar
 from litellm import completion
 from pydantic import BaseModel
 
-from build_index import catalog_tool_count, count_tokens, log_token_usage
-from configs import (
+from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.config import (
     _remote_defaults,
     key_var_name_for_model_nick,
     llm_minimum_tools,
@@ -16,8 +16,8 @@ from configs import (
     remote_model_entry,
     resolve_model,
 )
-from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from tool_policies import (
+from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
+from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,
     catalog_needs_partition,
@@ -380,7 +380,7 @@ def llm_catalog_dict(
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 
-    from split_bulks import split_chunks_into_bulks
+    from cyt.pruners.split import split_chunks_into_bulks
 
     bulks = split_chunks_into_bulks(query, SELECTOR_SYSTEM_PROMPT, formatted_chunks)
     selected_ids: set[int] = set()
@@ -430,7 +430,7 @@ def main() -> None:
     if args.json:
         data = read_json_input(args.json)
     else:
-        from retrieve_catalog import load_catalog
+        from cyt.indexer.retrieve import load_catalog
 
         try:
             data = load_catalog(args.dir)

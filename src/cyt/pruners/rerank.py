@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 
 from litellm import rerank
 
-from build_index import catalog_tool_count, count_tokens, log_token_usage
-from configs import (
+from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.config import (
     _remote_defaults,
     key_var_name_for_model_nick,
     load_config,
@@ -16,9 +16,9 @@ from configs import (
     reranker_minimum_tools,
     resolve_model,
 )
-from split_bulks import split_into_bulks
-from token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from tool_policies import (
+from cyt.pruners.split import split_into_bulks
+from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
+from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,
     catalog_needs_partition,
@@ -423,7 +423,7 @@ def main() -> None:
             print(f"Error reading JSON: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        from retrieve_catalog import load_catalog
+        from cyt.indexer.retrieve import load_catalog
 
         try:
             data = load_catalog(args.dir)

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from catalog_paths import (
+from cyt.common.catalog_paths import (
     DECOMPOSED_PREFIX,
     DECOMPOSED_ROOT,
     collect_enums,
@@ -15,13 +15,13 @@ from catalog_paths import (
     to_decomposed_key,
     tool_id_from_decomposed_rel,
 )
-from configs import DEFAULT_MCP_TOOL_POLICY, DEFAULT_SYSTEM_TOOL_POLICY, load_config
+from cyt.config import DEFAULT_MCP_TOOL_POLICY, DEFAULT_SYSTEM_TOOL_POLICY, load_config
 
 # Keep in sync with rerank.RERANK_SCORE (avoid circular import: rerank imports tool_policies).
 RERANK_SCORE: float = 0.003
 
 if TYPE_CHECKING:
-    from build_index import CatalogIndex
+    from cyt.indexer.build import CatalogIndex
 
 SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]

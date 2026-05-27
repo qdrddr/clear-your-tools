@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -11,23 +12,23 @@ from urllib.parse import urlparse
 import yaml
 from dotenv import load_dotenv
 
-SRC_ENV_PATH = Path(__file__).with_name(".env")
-SRC_CONFIG_PATH = Path(__file__).with_name("config.yaml")
+BUNDLED_DEFAULTS_NAME = "defaults.yaml"
 USER_ENV_PATH = Path("~/.configs/cyt/.env").expanduser()
-_env_path = SRC_ENV_PATH  # backward-compatible alias for resolve_model callers
+CWD_ENV_PATH = Path.cwd() / ".env"
+_env_path = USER_ENV_PATH  # backward-compatible alias for resolve_model callers
 
 _proxy_env_loaded = False
 
 
 def load_proxy_env() -> None:
-    """Load API keys from src/.env, then ~/.configs/cyt/.env.
+    """Load API keys from ``./.env``, then ``~/.configs/cyt/.env``.
 
     Variables already set in the process environment are never overwritten.
     """
     global _proxy_env_loaded
     if _proxy_env_loaded:
         return
-    for path in (SRC_ENV_PATH, USER_ENV_PATH):
+    for path in (CWD_ENV_PATH, USER_ENV_PATH):
         if path.exists():
             load_dotenv(dotenv_path=path, override=False)
     _proxy_env_loaded = True
@@ -178,18 +179,31 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _load_bundled_defaults_yaml() -> dict[str, Any]:
+    """Load packaged ``defaults.yaml`` (wheel) or sibling file (editable install)."""
+    try:
+        ref = importlib.resources.files("cyt.config").joinpath(BUNDLED_DEFAULTS_NAME)
+        if ref.is_file():
+            loaded = yaml.safe_load(ref.read_text(encoding="utf-8"))
+            return loaded if isinstance(loaded, dict) else {}
+    except (FileNotFoundError, ModuleNotFoundError, TypeError, OSError):
+        pass
+    bundled_path = Path(__file__).with_name(BUNDLED_DEFAULTS_NAME)
+    if bundled_path.exists():
+        return _load_yaml_dict(bundled_path)
+    return {}
+
+
 def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
-    """Layer built-in defaults, bundled ``src/config.yaml``, then *user_config*."""
-    merged = _DEFAULTS
-    if SRC_CONFIG_PATH.exists():
-        merged = _deep_merge(merged, _load_yaml_dict(SRC_CONFIG_PATH))
+    """Layer built-in defaults, bundled ``defaults.yaml``, then *user_config*."""
+    merged = _deep_merge(_DEFAULTS, _load_bundled_defaults_yaml())
     return _deep_merge(merged, user_config)
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load ``config.yaml`` and layer it on top of built-in defaults.
 
-    The bundled ``src/config.yaml`` (when present) is merged before the resolved
+    The bundled ``defaults.yaml`` (when present) is merged before the resolved
     user/cwd file so partial overrides in ``~/.configs/cyt/config.yaml`` keep
     model and pipeline settings from the package defaults.
 
@@ -387,7 +401,7 @@ def require_proxy_env(config: dict[str, Any]) -> None:
     load_proxy_env()
     missing = [name for name in required_proxy_env_var_names(config) if not os.environ.get(name)]
     if missing:
-        env_locations = " or ".join(str(p) for p in (SRC_ENV_PATH, USER_ENV_PATH))
+        env_locations = " or ".join(str(p) for p in (CWD_ENV_PATH, USER_ENV_PATH))
         raise RuntimeError(
             "Required environment variable(s) not set: "
             f"{', '.join(missing)}. Export them in the shell or define them in {env_locations}.",

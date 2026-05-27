@@ -22,13 +22,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from configs import (
+from cyt.config import (
     debug_log_max_body_bytes,
     pruning_pipeline_from_config,
     reverse_proxy_cfg,
     stats_db_path,
 )
-from proxy_transport import (
+from cyt.proxy.transport import (
     filter_headers,
     forward_upstream,
     header_content_encoding,
@@ -438,7 +438,7 @@ async def transform_request_body(
     if not content_type or "json" not in content_type.lower():
         return body, None
     try:
-        from proxy_anthropic import PruneResult, transform_anthropic_request
+        from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
 
         payload = json.loads(body)
         transformed, pruning = await asyncio.to_thread(
@@ -452,7 +452,7 @@ async def transform_request_body(
         return body, None
     except Exception as exc:
         logger.warning("anthropic transform failed: %s", exc)
-        from proxy_anthropic import PruneResult
+        from cyt.proxy.anthropic import PruneResult
 
         return body, PruneResult(
             tools=None,
@@ -475,7 +475,7 @@ def build_stats_record(
     config: dict[str, Any],
     store_full_tools: bool,
 ) -> Any:
-    from db import ProxyRequestRecord, lookup_model_provider, provider_dns_from_url
+    from cyt.proxy.stats import ProxyRequestRecord, lookup_model_provider, provider_dns_from_url
 
     provider, provider_dns = lookup_model_provider(upstream_model, config)
     if not provider_dns:
@@ -484,11 +484,11 @@ def build_stats_record(
     tools_accepted_json: str | None = None
     tools_final_json: str | None = None
     if store_full_tools and pruning.tools_accepted is not None:
-        from build_index import compact_json
+        from cyt.indexer.build import compact_json
 
         tools_accepted_json = compact_json(pruning.tools_accepted)
     if store_full_tools and pruning.tools_final is not None:
-        from build_index import compact_json
+        from cyt.indexer.build import compact_json
 
         tools_final_json = compact_json(pruning.tools_final)
 
@@ -780,7 +780,7 @@ async def serve_reverse_async(
     stats_db = None
     if stats_enabled:
         try:
-            from db import StatsDB
+            from cyt.proxy.stats import StatsDB
 
             stats_db = StatsDB.init(stats_db_path(config))
         except Exception as exc:

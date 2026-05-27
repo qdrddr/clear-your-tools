@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from configs import strong_model_entry, strong_model_name
+from cyt.config import strong_model_entry, strong_model_name
 
 _PROVIDER_PREFIXES = frozenset({"openrouter", "deepinfra", "ollama", "openai", "anthropic"})
 

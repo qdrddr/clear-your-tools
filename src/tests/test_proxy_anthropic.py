@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from proxy_anthropic import (
+from cyt.proxy.anthropic import (
     PruneResult,
     clean_messages,
     extract_user_query,
@@ -169,7 +169,7 @@ def test_transform_anthropic_request_only_changes_tools() -> None:
         decomposed={"build_index": 5, "rerank": 4, "llm": 2},
     )
 
-    with patch("proxy_anthropic.filter_tools_for_query", return_value=prune_result):
+    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
         out, meta = transform_anthropic_request(body)
 
     assert out["tools"] == pruned_tools
@@ -195,15 +195,18 @@ def test_prune_result_to_dict_includes_decomposed_catalog_when_set() -> None:
     )
     d = result.to_dict()
     assert d["decomposed_catalog"] == {"build_index": {"json": [], "md": []}}
-    assert "decomposed_catalog" not in PruneResult(
-        tools=None,
-        status="skipped",
-        query=None,
-        tools_in=0,
-        mcp_tools_in=0,
-        tools_out=None,
-        error="x",
-    ).to_dict()
+    assert (
+        "decomposed_catalog"
+        not in PruneResult(
+            tools=None,
+            status="skipped",
+            query=None,
+            tools_in=0,
+            mcp_tools_in=0,
+            tools_out=None,
+            error="x",
+        ).to_dict()
+    )
 
 
 def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
@@ -221,7 +224,7 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
         tools_out=None,
         error="api error",
     )
-    with patch("proxy_anthropic.filter_tools_for_query", return_value=failed):
+    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=failed):
         out, meta = transform_anthropic_request(body)
     assert out == body
     assert meta is not None

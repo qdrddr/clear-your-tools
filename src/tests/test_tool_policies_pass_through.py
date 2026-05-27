@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tool_policies import MCPToolPolicy, SystemToolPolicy, full_pass_through
+from cyt.pruners.policies import MCPToolPolicy, SystemToolPolicy, full_pass_through
 
 
 class TestFullPassThroughPredicate:

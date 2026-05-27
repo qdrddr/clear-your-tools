@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from build_index import CatalogIndex
+    from cyt.indexer.build import CatalogIndex
 
-from catalog_paths import (
+from cyt.common.catalog_paths import (
     DECOMPOSED_ROOT,
     JSON_EXT,
     MD_EXT,
@@ -355,7 +355,7 @@ def process_groups(
     mcp_policy: str = "prune_all",
 ) -> list[dict[str, Any]]:
     """Merge and return the resulting schemas for each tool group."""
-    from tool_policies import effective_policy
+    from cyt.pruners.policies import effective_policy
 
     del system_policy, mcp_policy
     tools: list[dict[str, Any]] = []
@@ -403,8 +403,8 @@ def retrieve_tools(
 
     Requires an in-memory ``catalog`` (DecomposedCatalog or CatalogIndex).
     """
-    from build_index import CatalogIndex
-    from tool_policies import (
+    from cyt.indexer.build import CatalogIndex
+    from cyt.pruners.policies import (
         mcp_required_enum_values,
         mcp_tool_policy,
         required_enum_values_by_tool,

@@ -31,7 +31,7 @@ On each intercepted request the proxy:
 1. **Extracts the user query** from the conversation (latest user turn, with message cleanup).
 2. **Decomposes tool schemas** into a catalog of chunks: each tool root keeps required properties;
    optional properties are split into separate searchable units.
-3. **Runs the pruning pipeline** configured in `src/config.yaml` (default: `rerank`; or `llm`).
+3. **Runs the pruning pipeline** configured in `config.yaml` (default: `rerank`; or `llm`).
 4. **Recomposes surviving tools** — required properties always remain; only optional properties
    that look relevant to the query are merged back in.
 5. **Forwards the modified request** to the upstream provider with the smaller `tools` array.
@@ -51,7 +51,7 @@ On each intercepted request the proxy:
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
 
-Configure thresholds in `src/config.yaml`:
+Configure thresholds in `config.yaml` (or `~/.configs/cyt/config.yaml`):
 
 ```yaml
 models:
@@ -74,26 +74,42 @@ Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
 
 ### Install
 
-Dependencies are managed with [`uv`](https://docs.astral.sh/uv/):
+From PyPI (proxy + pruners):
 
 ```bash
-uv sync
+pip install 'clear-your-tools[all]'
+# or
+uv tool install 'clear-your-tools[all]'
 ```
 
-Copy API keys:
+For local development, dependencies are managed with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
-cp src/.env.example src/.env
-# Edit src/.env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
+uv sync --all-extras
+```
+
+Copy API keys (or use `~/.configs/cyt/.env`):
+
+```bash
+cp src/.env.example .env
+# Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
 ```
 
 ### Run the proxy
 
+Installed CLI:
+
 ```bash
-uv run src/proxy.py serve
+cyt-rproxy serve --port 8834
 ```
 
-Default listen port: **8834** (from `src/config.yaml`).
+From a dev checkout:
+
+```bash
+uv run cyt-rproxy serve --port 8834
+```
+
+Default listen port: **8834** (from bundled `defaults.yaml` or `~/.configs/cyt/config.yaml`).
 
 Point Claude Code at the proxy:
 
@@ -110,7 +126,7 @@ The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpo
 ### Debug without calling upstream
 
 ```bash
-uv run src/proxy.py serve --debug-dry-run --port 8834
+cyt-rproxy serve --debug-dry-run --port 8834
 ```
 
 Writes transformed request snapshots to `{endpoint}.log` (e.g. `anthropic.log`).
@@ -118,9 +134,9 @@ Writes transformed request snapshots to `{endpoint}.log` (e.g. `anthropic.log`).
 ### View pruning stats savings
 
 ```bash
-uv run src/proxy.py stats totals
-uv run src/proxy.py stats summary --period day
-uv run src/proxy.py stats events --limit 20
+cyt-rproxy stats totals
+cyt-rproxy stats summary --period day
+cyt-rproxy stats events --limit 20
 ```
 
 Stats are stored in `~/.configs/cyt/stats.db` by default.
@@ -146,13 +162,13 @@ Run with HTTP/2:
 
 ```bash
 uv pip install h2 'hypercorn[h2]'
-uv run src/proxy.py serve --http2-serve \
+cyt-rproxy serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
   --port 8834
 ```
 
-TLS settings can also live in `src/config.yaml` under `network.proxy.reverse.http2.ssl`.
+TLS settings can also live in `config.yaml` under `network.proxy.reverse.http2.ssl`.
 
 ---
 
@@ -165,7 +181,7 @@ Two tool categories with different defaults:
 | **System tools** | `prune_optional` | `Read`, `Write`, `Agent`  | (no `mcp__` prefix) |
 | **MCP tools**    | `prune_all`      | Tools from MCP servers    | `mcp__…`            |
 
-Set defaults in `src/config.yaml`:
+Set defaults in `config.yaml`:
 
 ```yaml
 defaults:
@@ -271,24 +287,30 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 ├── pyproject.toml
 ├── count_request_tokens.py      # estimate savings on a captured request JSON
 └── src/
-    ├── proxy.py                 # CLI: serve, stats
-    ├── proxy_reverse.py         # reverse HTTP proxy (routing, forwarding)
-    ├── proxy_anthropic.py       # Anthropic request transform + pruning orchestration
-    ├── build_index.py           # decompose tool schemas into catalog chunks
-    ├── rerank.py                # reranker pruning stage
-    ├── llm.py                   # LLM selector pruning stage
-    ├── retrieve_catalog.py      # recompose pruned schemas back into tools[]
-    ├── tool_policies.py         # system vs MCP policies, per-tool overrides
-    ├── configs.py               # config loader
-    ├── config.yaml              # proxy, models, policies, pipeline
-    └── db.py                    # persisted pruning stats (libSQL)
+    └── cyt/                       # installable package (Clear Your Tools)
+        ├── config/                # load_config, defaults.yaml
+        ├── common/                # catalog_paths, token_usage, pricing
+        ├── indexer/               # build, retrieve, catalog_io
+        ├── pruners/               # llm, rerank, policies
+        └── proxy/                 # transport, reverse, anthropic, stats, cli
+```
+
+### Library usage
+
+```python
+from cyt.indexer import CatalogIndex, build_catalog_index, load_catalog, retrieve_tools
+from cyt.pruners import rerank_catalog_dict, llm_catalog_dict
+from cyt.pruners.policies import configure_policies_from_config
+from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
 ```
 
 ---
 
 ## Configuration reference
 
-Main config file: [`src/config.yaml`](src/config.yaml).
+Main config file: `config.yaml` in the working directory, or
+[`~/.configs/cyt/config.yaml`](~/.configs/cyt/config.yaml) (created on first run).
+Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
 
 | Section                                                   | Purpose                                                  |
 | --------------------------------------------------------- | -------------------------------------------------------- |

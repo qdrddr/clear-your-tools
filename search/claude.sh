@@ -7,5 +7,5 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="google/gemini-3-flash-preview"
 export CLAUDE_CODE_SUBAGENT_MODEL="google/gemini-3-flash-preview"
 
 # Start the proxy
-uv run src/proxy.py serve
+uv run cyt-rproxy serve
 $HOME/.local/bin/claude --model haiku -p "say hi!"
