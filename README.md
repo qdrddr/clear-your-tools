@@ -1,64 +1,124 @@
-# Tool Attention — Reference Implementation
+# Clear Your Tools
 
-Companion code for the paper
-**"Tool Attention Is All You Need: Dynamic Tool Gating and Lazy Schema Loading for Eliminating the MCP/Tools Tax
-inScalable Agentic Workflows"**
-(Anuj Sadani, 2026). Published on arXiv: [arxiv.org/abs/2604.21816](https://arxiv.org/abs/2604.21816).
-See [`paper.md`](paper.md) for the Markdown version or [`latex/paper.pdf`](latex/paper.pdf) for the rendered PDF.
+**Clear Your Tools** is a reverse proxy for coding agents such as [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It sits between the agent and upstream LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts each request, and shrinks the tool payload before forwarding it upstream. Can be easilly adopted for other harness agents.
 
-Tool Attention is a drop-in middleware layer for LLM agents that eliminates
-the *MCP Tax* — the 10k–60k tokens of tool-schema overhead that stateless
-MCP injection imposes on every conversational turn. It combines:
-
-1. an **Intent–Schema Overlap (ISO)** score over sentence embeddings,
-2. a **state-aware gating function** enforcing preconditions and scopes, and
-3. a **two-phase lazy schema loader** (summary pool + on-demand full schemas).
-
-On a 120-tool synthetic MCP catalog, the reference implementation measures a
-**98.6% reduction in the always-resident summary pool** and a **91.9%
-reduction in the per-turn marginal schema cost** versus naive full-schema
-injection, with steady-state cost dominated by the cache-amortized Phase-2
-payload.
+Large MCP catalogs can add tens of thousands of tokens of tool-schema overhead on every turn. Clear Your Tools removes irrelevant tools and trims irrelevant optional parameters while always keeping required fields for tools that stay in the request.
 
 ---
 
-## Repository layout
+## How it works
 
-```shell
-.
-├── paper.md                     # full preprint (Markdown, LaTeX math)
-├── latex/
-│   ├── paper.tex                # arXiv-style LaTeX source
-│   ├── references.bib           # 35-entry bibliography
-│   └── paper.pdf                # 19-page rendered preprint
-└── src/
-    ├── vector_store.py          # FAISS-backed tool-summary index
-    ├── intent_router.py         # ISO router + state-aware gate
-    ├── lazy_loader.py           # LRU-cached full-schema loader
-    ├── tool_attention.py        # before_model / after_model middleware
-    ├── build_catalog.py         # generates the 120-tool synthetic testbed
-    └── benchmark.py             # token-counting harness
+```text
+Agent (Claude Code, etc.)
+        │
+        ▼
+Clear Your Tools proxy  ──► extract user query from messages
+        │                   decompose each tool schema
+        │                   score / filter with reranker (or LLM pruning)
+        │                   recompose pruned tool list
+        ▼
+Upstream provider (OpenRouter, Anthropic, Novita, …)
+```
+
+On each intercepted request the proxy:
+
+1. **Extracts the user query** from the conversation (latest user turn, with message cleanup).
+2. **Decomposes tool schemas** into a catalog of chunks: each tool root keeps required properties; optional properties are split into separate searchable units.
+3. **Runs the pruning pipeline** configured in `src/config.yaml` (default: `rerank`; or `llm`).
+4. **Recomposes surviving tools** — required properties always remain; only optional properties that look relevant to the query are merged back in.
+5. **Forwards the modified request** to the upstream provider with the smaller `tools` array.
+
+### Pruning pipeline
+
+| Stage | Model (default) | When it runs | What it does |
+|-------|-----------------|--------------|--------------|
+| `rerank` | Qwen3-Reranker-8B (DeepInfra) | ≥ `models.rerankers.minimum_tools` tools (default **29**) | Scores every catalog chunk against the user query; drops low-scoring tools and optional properties. |
+| `llm` | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank` if both are enabled | LLM selects which catalog chunks to keep; can remove entire tools more aggressively. |
+
+**Recommendations:**
+
+- **Fewer than ~30 tools** — pruning is skipped automatically; the overhead is usually not worth it.
+- **30–50 tools** — enable the **`rerank`** pipeline (default). This is the sweet spot for the reranker pruner.
+- **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
+
+Configure thresholds in `src/config.yaml`:
+
+```yaml
+models:
+  rerankers:
+    minimum_tools: 29
+  llm:
+    minimum_tools: 50
+
+pruning:
+  pipeline:
+    - rerank
+    # - llm
 ```
 
 ---
 
-## Installation
+## Quick start
 
-Requires Python 3.11+ (see [`pyproject.toml`](pyproject.toml)).
+Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
 
-Dependencies are managed with [`uv`](https://docs.astral.sh/uv/). From the repository root run:
+### Install
+
+Dependencies are managed with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
 ```
 
-The first run will download the
-[`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
-encoder (~90 MB).
+Copy API keys:
 
-### Self-signed TLS certificates (HTTP/2 proxy)
+```bash
+cp src/.env.example src/.env
+# Edit src/.env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
+```
 
-HTTP/2 serving requires TLS. Generate a local cert/key pair into `src/crt/` (gitignored):
+### Run the proxy
+
+```bash
+uv run src/proxy.py serve
+```
+
+Default listen port: **8834** (from `src/config.yaml`).
+
+Point Claude Code at the proxy:
+
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
+export OPENROUTER_API_KEY="sk-or-..."
+export ANTHROPIC_AUTH_TOKEN="${OPENROUTER_API_KEY}"
+claude --model haiku 'say hi' -p
+```
+
+The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpoint. Change `network.proxy.reverse.upstreams` to target a different provider URL.
+
+### Debug without calling upstream
+
+```bash
+uv run src/proxy.py serve --debug-dry-run --port 8834
+```
+
+Writes transformed request snapshots to `{endpoint}.log` (e.g. `anthropic.log`).
+
+### View pruning stats savings
+
+```bash
+uv run src/proxy.py stats totals
+uv run src/proxy.py stats summary --period day
+uv run src/proxy.py stats events --limit 20
+```
+
+Stats are stored in `~/.configs/cyt/stats.db` by default.
+
+---
+
+## HTTP/2 and TLS
+
+Some clients prefer HTTP/2. Generate a local certificate (gitignored under `src/crt/`):
 
 ```bash
 mkdir -p src/crt
@@ -69,240 +129,156 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-Point the proxy at them in `src/config.yaml` (uncomment `network.proxy.http2`) or pass CLI flags:
+Trust the cert on macOS: Keychain Access → System → import `cert.pem` → Trust → "Always Trust".
+
+Run with HTTP/2:
 
 ```bash
-uv run src/proxy.py serve --http2-serve \
-  --ssl-keyfile src/crt/key.pem \
-  --ssl-certfile src/crt/cert.pem
-```
-
-Ensure to add the self-signed cert.pem to your system so it could be trusted.
-In macOS > Keychain Access > System > drag & drop the cert.pem > open localhost added just now > expand "Trust" Dropdown > in the "When Using this certificate" select "Always Trust" and close.
-
----
-
-## Quick start: reproduce the token-reduction numbers
-
-`pyproject.toml` lives in the repository root, while the scripts are in `src/`.
-You can invoke them directly from the root with `uv run`:
-
-```bash
-uv run src/build_catalog.py   # creates src/catalog/tools.json and src/catalog/schemas/*.json
-uv run src/benchmark.py       # prints the reduction table
-```
-
-Or change into `src/` and run `uv run build_catalog.py` / `uv run benchmark.py`
-— `uv` discovers the project root automatically.
-
-Expected output (seed 42, 120 tools, 7 queries):
-
-```shell
-| Method                              | tokens/turn |   reduction |
-|-------------------------------------|------------:|------------:|
-| B1 Naive Full-Schema                |      57,452 |        0.0% |
-| B3 Simple Retrieval (top-k schemas) |       5,390 |       90.6% |
-| Tool Attention: Phase-1 only        |         787 |       98.6% |
-| Tool Attention: Phase-2 only        |       4,672 |       91.9% |
-| Tool Attention: first turn (P1+P2)  |       5,459 |       90.5% |
-```
-
-Under prompt caching the steady-state per-turn cost is dominated by Phase-2
-(the full schemas for the top-\(k\) active tools); Phase-1 is cached after
-the first turn.
-
----
-
-## Minimal library usage
-
-All snippets below assume execution inside the `uv` managed environment
-(e.g., run `uv run python` from the `src/` directory):
-
-```python
-from pathlib import Path
-import tiktoken
-from sentence_transformers import SentenceTransformer
-
-from vector_store import ToolVectorStore
-from intent_router import IntentRouter
-from lazy_loader import LazySchemaLoader
-from tool_attention import ToolAttention
-
-enc = tiktoken.get_encoding("cl100k_base")
-count = lambda s: len(enc.encode(s))
-
-encoder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-tools = [
-    {"id": "github__list_open_prs",
-     "summary": "List open GitHub pull requests filtered by label and assignee."},
-    {"id": "slack__search",
-     "summary": "Search Slack messages by channel, author, and time range."},
-    # ... hundreds more
-]
-
-store = ToolVectorStore(dim=384)
-store.add_tools(tools, encoder)
-
-loader = LazySchemaLoader(registry_path=Path("catalog/schemas"))
-router = IntentRouter(store=store, encoder=encoder, threshold=0.28, top_k=10)
-ta     = ToolAttention(store, loader, router, token_counter=count)
-
-# Per-turn middleware call
-result = ta.before_model("list open PRs labeled `bug` in the auth repo")
-print(result.active_ids)            # routed tools for this turn
-print(result.phase1_tokens, result.phase2_tokens)
-```
-
-### State-aware gating
-
-`IntentRouter.route(query, precondition_check=...)` takes an optional
-predicate that receives a tool_id and returns `True` if the agent's current
-state satisfies the tool's preconditions (auth scopes, workflow milestones,
-etc.):
-
-```python
-def allowed(tool_id: str) -> bool:
-    if tool_id.startswith("github__") and not state.authenticated("github:write"):
-        return False
-    return True
-
-result = ta.before_model(query, precondition_check=allowed)
-```
-
-### Hallucination rejection gate
-
-After the model returns a tool call, wrap it through `after_model` to
-reject any call targeting a tool whose schema was not promoted this turn:
-
-```python
-err = ta.after_model(result.active_ids, requested_tool=model_output.tool_name)
-if err:
-    # Return `err` to the model as a structured error; it will retry.
-    pass
-```
-
-## FAQ
-
-### Doesn't pruning burn more tokens than it saves?
-
-The reranker and LLM used for pruning are **much cheaper per token** than the main model (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you save on the main request.
-
-**Example pricing (input tokens):**
-
-| Model | Cost per 1M input tokens |
-|-------|-------------------------|
-| Claude Sonnet 4.6 | $3.00 |
-| Inception Mercury 2 | $0.25 |
-| Qwen-Reranker-8B | $0.050 |
-
-Mercury 2 also returns only the IDs of tools to keep, so its output stays extreamly small. While Rerankers do not count output tokens and usually much cheaper vs. strong LLM.
-
-**Rule of thumb:** saving 1M Sonnet input tokens is still worthwhile even if pruning uses up to ~10M Mercury tokens — roughly a 1:10 cost ratio. While Reranker has 1:60 cost ratio.
-
-In practice, pruning usually adds a modest overhead. Worst case (no tools pruned), you might pay ~$3.30 instead of $3.00. With typical pruning (40–95% of tool tokens removed), tool-schema cost drops from ~$3.00 to roughly **$0.15–$1.80**, plus ~$0.30 for pruning with Mercury Model — about **$0.45–$2.10 total** for the tool pruning. That is roughly **30–85% savings on tool-related cost**, depending on how aggressive your policy is set.
-
-### Why don't I see 30–85% savings on my total request?
-
-Those numbers apply to **tool schemas only**, not the full prompt (system message, conversation history, user message, etc.). This app is only prunes tools based on the user request, the rest of the request reamins unchanged.
-
-How much you save overall depends on:
-
-- **How many tools you have** — more MCP servers and tools mean a larger share of the request is tool schemas.
-- **Which pruning policy you use** — see the next section.
-
-To estimate total savings on a real request:
-
-```bash
-uv run count_request_tokens.py \
-  --tool-savings-percent 85 \
-  --requestfile temp_example_claude_call.json
-```
-
-With ~100 tools and `prune_all`, expect **~85-85% savings on tool tokens** and typically more than **~30% savings on the full request**.
-
-### What are the pruning policies, and how do I maximize savings?
-
-There are two tool categories:
-
-| Category | Default Policy | Examples | Typical prefix |
-|----------|----------|----------|----------------|
-| **System tools** | `prune_optional` | `Read`, `Write`, `Agent` | (no `mcp__` prefix) |
-| **MCP tools** | `prune_all` | Tools from MCP servers | `mcp__…` |
-
-Set defaults in `config.yaml` under `defaults.system_tool_policy` and `defaults.mcp_tool_policy`.
-
-**Policy options:**
-
-| Policy | What it does |
-|--------|--------------|
-| `always_include` | No pruning — the tool and full tool schema every turn included. |
-| `prune_optional` | Keep the tool, but drop optional properties that look irrelevant to the query. Required properties are always kept. |
-| `prune_all` | Most aggressive — entire tools can be removed if they look irrelevant. If a tool is kept, its required properties are always included; optional ones are trimmed when irrelevant to the query. |
-
-`prune_all` saves the most tokens. With ~100 tools, expect up to **~95% reduction in tool-schema tokens**.
-
-### Can I override pruning for specific tools?
-
-Yes. Per-tool policies in `config.yaml` override the system/MCP defaults:
-
-```yaml
-pruning:
-  per_tool:
-    mcp__hedl__hedl_convert_from: prune_optional   # this tool always inc;luded; trim optional fields if irrelevant to the user query
-    Agent: prune_optional
-    mcp__hedl__batch: prune_all                    # may be removed entirely
-    mcp__fff__multi_grep: always_include           # never prune, entier tool and its full definitions always remains unchenged
-```
-
-- **`always_include`** — tool is never pruned (no savings)
-- **`prune_optional`** — tool is always included; only irrelevant optional properties are removed (moderate savings about 45%)
-- **`prune_all`** — tool may be dropped entirely when irrelevant (most aggressive, saves about 95%)
-
-### Where can I see how many tools and parameters an MCP server has?
-
-A very popular [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its **Tools** tab you can see 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters in total.
-
-If the user asks to fetch the Markdown of a webpage, `prune_all` typically keeps only the **Fetch Markdown** tool: its required parameter plus any optional parameters that look relevant. That shrinks the payload from 4 tools and 16 parameters to roughly 1 tool and 1–2 parameters. Unrelated tools (for example, **Read file**) are dropped entirely.
-
-
-## Proxy
-
-Entry point: `uv run src/proxy.py serve`
-
-Default reverse listen port: **8834** (`ANTHROPIC_BASE_URL=http://localhost:8834/anthropic`).
-
-### Reverse proxy (Claude Code)
-
-No TLS:
-
-```shell
-uv run src/proxy.py serve --port 8834
-```
-
-HTTP/2 serve (requires TLS on reverse port):
-Generate the certificates AND add to the trusted system certificates
-```shell
 uv pip install h2 'hypercorn[h2]'
-openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
-  -keyout src/crt/key.pem -out src/crt/cert.pem \
-  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-```
-
-```shell
 uv run src/proxy.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
   --port 8834
 ```
 
-Claude Code:
+TLS settings can also live in `src/config.yaml` under `network.proxy.reverse.http2.ssl`.
 
-```shell
-export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
-export OPENROUTER_API_KEY="sk-..."
-export ANTHROPIC_AUTH_TOKEN=${OPENROUTER_API_KEY}
-$HOME/.local/bin/claude --model haiku 'say hi' -p
+---
+
+## Pruning policies
+
+Two tool categories with different defaults:
+
+| Category | Default policy | Examples | Typical prefix |
+|----------|----------------|----------|----------------|
+| **System tools** | `prune_optional` | `Read`, `Write`, `Agent` | (no `mcp__` prefix) |
+| **MCP tools** | `prune_all` | Tools from MCP servers | `mcp__…` |
+
+Set defaults in `src/config.yaml`:
+
+```yaml
+defaults:
+  system_tool_policy: prune_optional
+  mcp_tool_policy: prune_all
 ```
 
-Reverse debug (dry-run, no upstream): `uv run src/proxy.py serve --debug-dry-run --port 8834`
+### Policy options
+
+| Policy | Behavior |
+|--------|----------|
+| `always_include` | No pruning — full tool schema every turn. |
+| `prune_optional` | Tool always included; irrelevant **optional** properties dropped. Required properties always kept. |
+| `prune_all` | Entire tool may be removed if irrelevant. If kept, required properties stay; optional ones trimmed when irrelevant. |
+
+`prune_all` on MCP tools saves the most tokens. With ~100 tools, expect up to **~95% reduction in tool-schema tokens**.
+
+### Per-tool overrides
+
+```yaml
+pruning:
+  per_tool:
+    Agent: prune_optional
+    mcp__hedl__hedl_convert_from: prune_optional
+    mcp__hedl__batch: prune_all
+    mcp__fff__multi_grep: always_include
+```
+
+---
+
+## FAQ
+
+### Doesn't pruning burn more tokens than it saves?
+
+The reranker and weak LLM used for pruning are **much cheaper per token** than the main model (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you save on the main request. Add input_cost_per_token & output_cost_per_token to config.yaml to track savings.
+
+**Example pricing (input tokens):**
+
+| Model | Cost per 1M input tokens |
+|-------|-------------------------|
+| Claude Sonnet 4.6 | $3.00 |
+| GPT-OSS-120B | $0.039 |
+| Qwen-Reranker-8B | $0.050 |
+| Inception Mercury 2 | $0.25 |
+
+The weak models such as Mercury 2 or GPT-OSS-120B returns only the IDs of tools to keep, so its output stays extremely small. Rerankers do not count output tokens and are usually much cheaper than a strong LLM.
+
+**Rule of thumb:** saving 1M Sonnet input tokens is still worthwhile even if pruning uses up to ~10M Mercury tokens — roughly a 1:10 cost ratio. The reranker has roughly a 1:60 cost ratio.
+
+In practice, pruning usually adds modest overhead. Worst case (no tools pruned), you might pay ~$3.30 instead of $3.00. With typical pruning (40–95% of tool tokens removed), tool-schema cost drops from ~$3.00 to roughly **$0.15–$1.80**, plus ~$0.30 for pruning — about **$0.45–$2.10 total** for tool-related cost, or roughly **30–85% savings** depending on policy.
+
+### Why don't I see 30–85% savings on my total request?
+
+Those numbers apply to **tool schemas only**, not the full prompt (system message, conversation history, user message, etc.). Clear Your Tools prunes tools based on the user request; the rest of the request is unchanged.
+
+How much you save overall depends on:
+
+- **How many tools you have** — more MCP servers mean a larger share of the request is tool schemas. We do not recommend using CYT below 50 tools.
+- **Which pruning policy you use** — see [Pruning policies](#pruning-policies).
+
+Estimate total savings on a captured request:
+
+```bash
+uv run count_request_tokens.py \
+  --tool-savings-percent 85 \
+  --requestfile temp_example_claude_call.json
+```
+temp_example_claude_call can be obtained from the proxy running in debug mode.
+
+With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+ savings on the full request**. The more tools you have the more overall savings you'll see.
+
+### Where can I see how many tools and parameters an MCP server has?
+
+The popular [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its **Tools** tab: 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters total.
+
+If the user asks to "fetch the Markdown of a webpage", the `prune_all` typically keeps only the **Fetch Markdown** tool with its required parameter plus any optional parameters that look relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
+
+---
+
+## Repository layout
+
+```text
+.
+├── README.md
+├── pyproject.toml
+├── count_request_tokens.py      # estimate savings on a captured request JSON
+└── src/
+    ├── proxy.py                 # CLI: serve, stats
+    ├── proxy_reverse.py         # reverse HTTP proxy (routing, forwarding)
+    ├── proxy_anthropic.py       # Anthropic request transform + pruning orchestration
+    ├── build_index.py           # decompose tool schemas into catalog chunks
+    ├── rerank.py                # reranker pruning stage
+    ├── llm.py                   # LLM selector pruning stage
+    ├── retrieve_catalog.py      # recompose pruned schemas back into tools[]
+    ├── tool_policies.py         # system vs MCP policies, per-tool overrides
+    ├── configs.py               # config loader
+    ├── config.yaml              # proxy, models, policies, pipeline
+    ├── db.py                    # persisted pruning stats (libSQL)
+    └── old/                     # original paper reference implementation
+```
+
+---
+
+## Configuration reference
+
+Main config file: [`src/config.yaml`](src/config.yaml).
+
+| Section | Purpose |
+|---------|---------|
+| `defaults.system_tool_policy` / `mcp_tool_policy` | Default pruning behavior for system vs MCP tools |
+| `defaults.remote.reranking_model_nick` / `llm_model_nick` | Model nicknames for pruning stages |
+| `pruning.pipeline` | Ordered list of stages: `rerank`, `llm` |
+| `pruning.per_tool` | Per-tool policy overrides |
+| `models.rerankers` / `models.llm` | Remote model definitions, API keys, minimum tool counts |
+| `network.proxy.reverse` | Listen port, upstream URLs, HTTP/2, TLS |
+| `stats` | Stats DB path, optional full tool JSON storage |
+
+Environment variables (see [`src/.env.example`](src/.env.example)):
+
+- `DEEPINFRA_API_KEY` — reranker stage
+- `OPENROUTER_API_KEY` — upstream forwarding and optional LLM stage
+
+---
+
+## License
+
+See [`LICENSE`](LICENSE).
