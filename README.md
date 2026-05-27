@@ -65,6 +65,7 @@ pruning:
     - rerank
     # - llm
 ```
+
 Full example of [config file is here](src/cyt/config/defaults.yaml).
 
 ---
@@ -96,7 +97,8 @@ cp .env.example .env
 # Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
 ```
 
-Though we strongly recommend using password vaults like macOS KeyChain 
+Though we strongly recommend using password vaults like macOS KeyChain
+
 ```shell
 # Store key in secure vault
 security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
@@ -225,7 +227,8 @@ pruning:
 
 ## FAQ
 
-### Doesn't pruning burn more tokens than it saves?
+<details>
+<summary><strong>Doesn't pruning burn more tokens than it saves?</strong></summary>
 
 The reranker and weak LLM used for pruning are **much cheaper per token** than the main model
 (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you
@@ -253,7 +256,10 @@ In practice, pruning usually adds modest overhead. Worst case (no tools pruned),
 drops from ~$3.00 to roughly **$0.15–$1.80**, plus ~$0.30 for pruning — about **$0.45–$2.10 total**
 for tool-related cost, or roughly **30–85% savings** depending on policy.
 
-### Why don't I see 30–85% savings on my total request?
+</details>
+
+<details>
+<summary><strong>Why don't I see 30–85% savings on my total request?</strong></summary>
 
 Those numbers apply to **tool schemas only**, not the full prompt (system message, conversation
 history, user message, etc.). Clear Your Tools prunes tools based on the user request; the rest of
@@ -278,7 +284,10 @@ uv run count_request_tokens.py \
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
 savings on the full request**. The more tools you have the more overall savings you'll see.
 
-### Where can I see how many tools and parameters an MCP server has?
+</details>
+
+<details>
+<summary><strong>Where can I see how many tools and parameters an MCP server has?</strong></summary>
 
 The popular [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good example. On its
 **Tools** tab: 4 tools, each with 4 parameters (1 required, 3 optional) — 16 parameters total.
@@ -286,6 +295,8 @@ The popular [Fetch](https://mcpmarket.com/server/fetch) MCP server is a good exa
 If the user asks to "fetch the Markdown of a webpage", the `prune_all` typically keeps only the
 **Fetch Markdown** tool with its required parameter plus any optional parameters that look
 relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
+
+</details>
 
 ---
 
