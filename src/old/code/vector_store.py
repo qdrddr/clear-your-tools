@@ -15,12 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
-from configs import (
+from configs import load_config, resolve_model
+from nogo.embedder.configs import (
     _FINGERPRINT_KEYS,
-    load_config,
-    resolve_model,
+    load_embedder_config,
 )
-from embeddings import get_embedder
+from nogo.embedder.embeddings import get_embedder
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast, final
@@ -91,7 +91,7 @@ class ToolVectorStore:
 
     @staticmethod
     def _resolve_fingerprint(dim: int) -> dict[str, Any]:
-        config = load_config()
+        config = load_embedder_config()
         defaults = config.get("defaults", {})
         model_nick = str(defaults.get("embedding_model_nick", ""))
         model_type = str(defaults.get("embedding_model_type", ""))
@@ -102,7 +102,7 @@ class ToolVectorStore:
                 "base_url": None,
                 "dimensions": dim,
             }
-        model_name, _, base_url = resolve_model(model_nick, "embeddings", model_type)
+        model_name, _, base_url = resolve_model(model_nick, "embeddings", model_type, config=config)
         return {
             "model_name": model_name,
             "model_type": model_type,
@@ -328,7 +328,7 @@ class ToolVectorStore:
     ) -> list[tuple[str, float]] | None:
         """Call an external reranker and return re-sorted candidates, or None."""
         try:
-            config = load_config()
+            config = load_embedder_config()
             defaults = config.get("defaults", {})
             if not defaults.get("reranking_enabled"):
                 return None
@@ -341,6 +341,7 @@ class ToolVectorStore:
                 str(model_nick),
                 "rerankers",
                 str(model_type),
+                config=config,
             )
 
             candidate_ids = [tid for tid, _ in candidates]

@@ -83,8 +83,8 @@ class MCPAggregator:
             return self.catalog.discovered_tools
 
     async def run_filtering_pipeline(self, prompt: str) -> list[dict[str, Any]]:
-        # 1. Select the relevant tools via cs.py
-        import src.cs as cs
+        # 1. Select the relevant tools via semantic search (nogo.embedder.cs)
+        import src.nogo.embedder.cs as cs
         from src.retrieve_catalog import parse_json_input, _group_files, _process_groups
 
         import io
@@ -93,7 +93,7 @@ class MCPAggregator:
         f = io.StringIO()
         with redirect_stdout(f):
             try:
-                # Based on src/cs.py, the search function takes query as a list of strings
+                # Based on nogo.embedder.cs, the search function takes query as a list of strings
                 cs.search(query=[prompt], json_output=True)
             except SystemExit:
                 # Typer commands might call sys.exit(0) on success
@@ -106,15 +106,15 @@ class MCPAggregator:
         output = f.getvalue()
         try:
             # Look for the last valid JSON block in output
-            # cs.py search writes JSON followed by \n
+            # cs search writes JSON followed by \n
             start_idx = output.find('{')
             if start_idx == -1:
-                logger.error("No JSON found in cs.py output: %s", output)
+                logger.error("No JSON found in cs output: %s", output)
                 return []
             json_str = output[start_idx:]
             data = json.loads(json_str)
         except json.JSONDecodeError:
-            logger.error("Failed to parse cs.py output as JSON: %s", output)
+            logger.error("Failed to parse cs output as JSON: %s", output)
             return []
 
         # 2. Reconstruct tool schemas via retrieve_catalog

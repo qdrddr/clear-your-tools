@@ -27,7 +27,7 @@ include_patterns:
 #    module: custom_json_chunker:json_chunker
 EOF
 
-#cp src/custom_json_chunker.py src/catalog/custom_json_chunker.py
+#cp src/nogo/embedder/custom_json_chunker.py src/catalog/custom_json_chunker.py
 
 # ccc --install-completion
 cd src/catalog

@@ -15,26 +15,13 @@ if _env_path.exists():
     load_dotenv(dotenv_path=_env_path, override=False)
 
 # Default fallbacks - single source of truth for hard-coded values
-DEFAULT_INTENT_ROUTER_TOP_K: int = 10
-DEFAULT_INTENT_ROUTER_THRESHOLD: float = 0.28
-DEFAULT_EMBEDDING_MODEL_TYPE: str = "inprocess"
-DEFAULT_EMBEDDING_MODEL_NICK: str = "all-MiniLM-L6-v2"
-DEFAULT_LOCAL_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_REVERSE_PORT: int = 8000
 DEFAULT_MCP_AGGREGATOR_PORT: int = 8000
-DEFAULT_STRONG_MODEL: str = "google/gemini-3-flash-preview"
+DEFAULT_STRONG_MODEL: str = "gemini-3-flash"
 DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.configs/sca/stats.db"
-DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_all"
+DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
-DEFAULT_VECTORDB_DIR: str = ".lancedb"
-
-_FINGERPRINT_KEYS = (
-    "embedding_model_name",
-    "embedding_model_type",
-    "embedding_base_url",
-    "embedding_dimensions",
-)
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -58,35 +45,16 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 _DEFAULTS: dict[str, Any] = {
     "defaults": {
         "is_persistent": True,
-        "embedding_model_type": DEFAULT_EMBEDDING_MODEL_TYPE,
-        "embedding_model_nick": DEFAULT_EMBEDDING_MODEL_NICK,
         "system_tool_policy": DEFAULT_SYSTEM_TOOL_POLICY,
         "mcp_tool_policy": DEFAULT_MCP_TOOL_POLICY,
         "reranking_enabled": False,
-        "intent_router": {
-            "top_k": DEFAULT_INTENT_ROUTER_TOP_K,
-            "threshold": DEFAULT_INTENT_ROUTER_THRESHOLD,
-        },
-    },
-    "models": {
-        "embeddings": {
-            "inprocess": [
-                {
-                    "name": DEFAULT_LOCAL_MODEL_NAME,
-                    "nick": DEFAULT_EMBEDDING_MODEL_NICK,
-                },
-            ],
-        },
-    },
-    "vectordb": {
-        "dir": DEFAULT_VECTORDB_DIR,
     },
     "pruning": {
         "pipeline": list(DEFAULT_PRUNING_PIPELINE),
         "per_tool": {},
     },
     "stats": {
-        "enabled": False,
+        "enabled": True,
         "store_full_tools": False,
         "strong_model": DEFAULT_STRONG_MODEL,
         "database": {
@@ -100,6 +68,10 @@ _DEFAULTS: dict[str, Any] = {
                 "http2": {
                     "upstream": False,
                     "serve": False,
+                    "ssl": {
+                        "keyfile": None,
+                        "certfile": None,
+                    },
                 },
             },
         },
@@ -107,11 +79,15 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
+def _merged_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Layer *config* over built-in defaults for partial config dicts."""
+    return _deep_merge(_DEFAULTS, config)
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load ``config.yaml`` and layer it on top of built-in defaults.
 
-    Missing keys (including nested ones such as ``intent_router``
-    sub-keys) are populated from the defaults so callers always receive
+    Missing keys are populated from built-in defaults so callers always receive
     a complete configuration dictionary.
     """
     config_path = path or Path(__file__).with_name("config.yaml")
@@ -136,69 +112,79 @@ def reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
 def resolve_reverse_port(config: dict[str, Any], cli_port: int | None) -> int:
     if cli_port is not None:
         return cli_port
-    proxy_cfg = config.get("network", {}).get("proxy", {})
-    reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    return int(reverse_cfg.get("port", DEFAULT_REVERSE_PORT))
+    reverse_cfg = reverse_proxy_cfg(_merged_config(config)["network"]["proxy"])
+    return int(reverse_cfg["port"])
 
 
 def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
-    proxy_cfg = config.get("network", {}).get("proxy", {})
+    merged = _merged_config(config)
+    proxy_cfg = merged["network"]["proxy"]
     reverse_cfg = reverse_proxy_cfg(proxy_cfg)
+    default_http2 = _DEFAULTS["network"]["proxy"]["reverse"]["http2"]
     http2_cfg = reverse_cfg.get("http2")
     if http2_cfg is None:
-        http2_cfg = proxy_cfg.get("http2")
+        http2_cfg = proxy_cfg.get("http2", default_http2)
     if isinstance(http2_cfg, bool):
-        return {
-            "http2_upstream": http2_cfg,
-            "http2_serve": False,
-            "ssl_keyfile": None,
-            "ssl_certfile": None,
-        }
-    if not isinstance(http2_cfg, dict):
-        http2_cfg = {}
-    ssl_cfg = http2_cfg.get("ssl") if isinstance(http2_cfg.get("ssl"), dict) else {}
+        http2_cfg = {**default_http2, "upstream": http2_cfg}
+    elif not isinstance(http2_cfg, dict):
+        http2_cfg = default_http2
+    ssl_cfg = http2_cfg.get("ssl", default_http2["ssl"])
     return {
-        "http2_upstream": bool(http2_cfg.get("upstream", False)),
-        "http2_serve": bool(http2_cfg.get("serve", False)),
+        "http2_upstream": bool(http2_cfg["upstream"]),
+        "http2_serve": bool(http2_cfg["serve"]),
         "ssl_keyfile": ssl_cfg.get("keyfile") or http2_cfg.get("ssl_keyfile"),
         "ssl_certfile": ssl_cfg.get("certfile") or http2_cfg.get("ssl_certfile"),
     }
 
 
 def stats_db_path(config: dict[str, Any]) -> str:
-    stats_cfg = config.get("stats", {})
-    db_cfg = stats_cfg.get("database", {}) if isinstance(stats_cfg, dict) else {}
-    path = db_cfg.get("path", DEFAULT_STATS_DB_PATH)
+    path = _merged_config(config)["stats"]["database"]["path"]
     return str(Path(path).expanduser())
 
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
-    pruning = config.get("pruning")
-    pipeline = pruning.get("pipeline") if isinstance(pruning, dict) else None
-    if pipeline is None:
-        return list(DEFAULT_PRUNING_PIPELINE)
+    pipeline = _merged_config(config)["pruning"]["pipeline"]
     if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
         raise ValueError("pruning.pipeline must be a list of stage names")
     return pipeline
 
 
+def _llm_remote_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = config.get("models", {}).get("llm", {}).get("remote", [])
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def strong_model_entry(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the ``models.llm.remote`` entry referenced by ``stats.strong_model``."""
+    merged = _merged_config(config)
+    identifier = str(merged["stats"]["strong_model"])
+    for entry in _llm_remote_entries(merged):
+        nick = entry.get("nick")
+        name = entry.get("name")
+        if identifier == nick or identifier == name:
+            return entry
+    raise ValueError(
+        f"stats.strong_model {identifier!r} does not match any models.llm.remote nick or name",
+    )
+
+
 def strong_model_name(config: dict[str, Any]) -> str:
-    stats = config.get("stats", {})
-    if isinstance(stats, dict):
-        configured = stats.get("strong_model")
-        if isinstance(configured, str) and configured:
-            return configured
-    return DEFAULT_STRONG_MODEL
+    """Return the ``models.llm.remote`` nick for ``stats.strong_model``."""
+    return str(strong_model_entry(config)["nick"])
 
 
 def resolve_model(
     model_nick: str,
     model_kind: str,
     model_type: str,
+    *,
+    config: dict[str, Any] | None = None,
 ) -> tuple[str, str | None, str | None]:
     """Return (model_name, api_key, base_url) for a given nick and type."""
-    config = load_config()
-    for entry in config.get("models", {}).get(model_kind, {}).get(model_type, []):
+    merged = _merged_config(config or load_config())
+    for entry in merged.get("models", {}).get(model_kind, {}).get(model_type, []):
         if entry.get("nick") == model_nick:
             provider = entry.get("provider", None)
             full_model_name = entry.get("name")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from configs import strong_model_name
+from configs import strong_model_entry, strong_model_name
 
 _PROVIDER_PREFIXES = frozenset({"openrouter", "deepinfra", "ollama", "openai", "anthropic"})
 
@@ -140,7 +140,7 @@ def compute_stats_costs(
 ) -> StatsCosts:
     catalog = build_pricing_catalog(config)
     strong = strong_model_name(config)
-    strong_pricing = lookup_pricing(catalog, strong)
+    strong_pricing = _pricing_from_entry(strong_model_entry(config), "llm")
     strong_input_rate = strong_pricing.input_cost_per_token if strong_pricing else 0.0
 
     tools_saved_usd = totals.get("tools_saved", 0) * strong_input_rate
