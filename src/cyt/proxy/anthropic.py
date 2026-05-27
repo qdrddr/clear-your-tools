@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
+from cyt.common.token_usage import StageTokenUsage
+from cyt.config import DEFAULT_PRUNING_PIPELINE
 from cyt.indexer.build import (
     CatalogIndex,
     build_catalog_index,
@@ -16,11 +18,8 @@ from cyt.indexer.build import (
     count_json_tokens,
     prepare_tool_entry,
 )
-from cyt.config import DEFAULT_PRUNING_PIPELINE
-from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
-from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.indexer.retrieve import retrieve_tools
-from cyt.common.token_usage import StageTokenUsage
+from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,
@@ -40,6 +39,7 @@ from cyt.pruners.policies import (
     tool_pass_through,
     tools_for_catalog,
 )
+from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 
 logger = logging.getLogger(__name__)
 

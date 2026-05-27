@@ -1,0 +1,56 @@
+# Publish clear-your-tools to PyPI when a GitHub Release is published.
+#
+# One-time setup (repository maintainer with admin access):
+#
+# 1. PyPI — Trusted Publisher (https://pypi.org/manage/account/publishing/):
+#    - PyPI project: clear-your-tools
+#    - Owner: qdrddr
+#    - Repository: clear-your-tools
+#    - Workflow: publish-pypi.yml
+#    - Environment name: pypi
+#
+# 2. GitHub — Environment (Settings → Environments → New environment):
+#    - Name: pypi
+#    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#    - No secrets needed when using PyPI trusted publishing (OIDC)
+#
+# 3. Create a release (tag e.g. v0.0.1) to trigger this workflow.
+
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Upload to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/clear-your-tools
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

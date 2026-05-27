@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from litellm import rerank
 
-from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import (
     _remote_defaults,
     key_var_name_for_model_nick,
@@ -16,8 +16,7 @@ from cyt.config import (
     reranker_minimum_tools,
     resolve_model,
 )
-from cyt.pruners.split import split_into_bulks
-from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
+from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
 from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,
@@ -29,6 +28,7 @@ from cyt.pruners.policies import (
     partition_catalog,
     system_tool_policy,
 )
+from cyt.pruners.split import split_into_bulks
 
 logger = logging.getLogger(__name__)
 

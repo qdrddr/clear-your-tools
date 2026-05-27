@@ -77,7 +77,7 @@ Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
 From PyPI (proxy + pruners):
 
 ```bash
-pip install 'clear-your-tools[all]'
+uv pip install 'clear-your-tools[all]'
 # or
 uv tool install 'clear-your-tools[all]'
 ```

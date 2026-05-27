@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 from litellm import completion
 from pydantic import BaseModel
 
-from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import (
     _remote_defaults,
     key_var_name_for_model_nick,
@@ -16,7 +16,7 @@ from cyt.config import (
     remote_model_entry,
     resolve_model,
 )
-from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
+from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
 from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,

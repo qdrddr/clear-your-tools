@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
-    from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
     from cyt.common.pricing import compute_stats_costs, empty_costs
+    from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
 
     db_path = stats_db_path(config)
     db = StatsDB.open_for_query(db_path)
