@@ -379,7 +379,7 @@ def main() -> None:
     if args.json:
         data = read_json_input(args.json)
     else:
-        from retrieve_catalog import load_catalog
+        from nogo.embedder.retrieve_catalog import load_catalog
         try:
             data = load_catalog(args.dir)
         except Exception as e:

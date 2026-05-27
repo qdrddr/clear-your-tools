@@ -63,12 +63,13 @@ pruning:
     mcp__fff__multi_grep: always_include
 
   pipeline:
-#    - rerank
-    - llm
+    - rerank
+#    - llm
 
 network:
   proxy:
     reverse:
+      debug_log_max_body_bytes: 1048576
       http2:
         upstream: true   # uv pip install h2
         serve: true      # uv pip install 'hypercorn[h2]' + TLS belows

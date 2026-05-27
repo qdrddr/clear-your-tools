@@ -549,7 +549,7 @@ def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
         lines.extend(
             [
                 "",
-                f"tool savings (strong model input @ {costs.strong_model}):",
+                f"tool savings: strong model input:",
                 f"  {format_usd(costs.tools_saved_usd)}",
                 "",
                 "pruning cost:",

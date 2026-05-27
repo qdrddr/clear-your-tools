@@ -22,6 +22,7 @@ DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.configs/sca/stats.db"
 DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
+DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -65,6 +66,7 @@ _DEFAULTS: dict[str, Any] = {
         "proxy": {
             "reverse": {
                 "port": DEFAULT_REVERSE_PORT,
+                "debug_log_max_body_bytes": DEFAULT_DEBUG_LOG_MAX_BODY_BYTES,
                 "http2": {
                     "upstream": False,
                     "serve": False,
@@ -114,6 +116,11 @@ def resolve_reverse_port(config: dict[str, Any], cli_port: int | None) -> int:
         return cli_port
     reverse_cfg = reverse_proxy_cfg(_merged_config(config)["network"]["proxy"])
     return int(reverse_cfg["port"])
+
+
+def debug_log_max_body_bytes(config: dict[str, Any]) -> int:
+    reverse_cfg = reverse_proxy_cfg(_merged_config(config)["network"]["proxy"])
+    return int(reverse_cfg["debug_log_max_body_bytes"])
 
 
 def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:

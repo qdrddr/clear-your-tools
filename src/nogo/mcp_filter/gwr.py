@@ -13,15 +13,17 @@ from fastmcp import Client, FastMCP, Context
 from fastmcp.server.middleware import Middleware, MiddlewareContext, CallNext
 from fastmcp.server.transforms.visibility import save_visibility_rules
 
-_src_root = Path(__file__).resolve().parent.parent
-if str(_src_root) not in sys.path:
-    sys.path.insert(0, str(_src_root))
+_src_root = Path(__file__).resolve().parent.parent.parent
+_mcp_filter_dir = Path(__file__).resolve().parent
+for _path in (_src_root, _mcp_filter_dir):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 from configs import DEFAULT_MCP_AGGREGATOR_PORT
-from build_index import CatalogBuilder
+from nogo.embedder.build_index import CatalogBuilder
 from llm import prepare_chunks, call_llm, process_results
 from rerank import rerank_items, extract_document_text
-from retrieve_catalog import load_catalog, parse_json_input, _group_files, _process_groups
+from nogo.embedder.retrieve_catalog import load_catalog, parse_json_input, _group_files, _process_groups
 from recursion import (
     check_self_recursion_protection,
     is_mcp_aggregator_description,
@@ -85,7 +87,7 @@ class MCPAggregator:
     async def run_filtering_pipeline(self, prompt: str) -> list[dict[str, Any]]:
         # 1. Select the relevant tools via semantic search (nogo.embedder.cs)
         import src.nogo.embedder.cs as cs
-        from src.retrieve_catalog import parse_json_input, _group_files, _process_groups
+        from nogo.embedder.retrieve_catalog import parse_json_input, _group_files, _process_groups
 
         import io
         from contextlib import redirect_stdout

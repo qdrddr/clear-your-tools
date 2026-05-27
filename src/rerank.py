@@ -315,8 +315,7 @@ def main() -> None:
             print(f"Error reading JSON: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Use load_catalog from retrieve_catalog
-        from retrieve_catalog import load_catalog
+        from nogo.embedder.retrieve_catalog import load_catalog
         try:
             data = load_catalog(args.dir)
         except Exception as e:

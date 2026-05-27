@@ -64,15 +64,35 @@ def header_content_encoding(headers: dict[str, str]) -> str | None:
     return headers.get("content-encoding") or headers.get("connect-content-encoding")
 
 
-def append_debug_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
+def _rotate_debug_log(path: Path) -> None:
+    backup = path.with_name(f"{path.name}.1")
+    backup.unlink(missing_ok=True)
+    path.replace(backup)
+
+
+def append_debug_snapshot(
+    path: Path,
+    snapshot: dict[str, Any],
+    *,
+    max_bytes: int | None = None,
+) -> None:
     timestamp = datetime.now(UTC).isoformat()
     block = f"--- {timestamp} ---\n{json.dumps(snapshot, indent=2)}\n"
+    if max_bytes is not None and max_bytes > 0 and path.exists():
+        block_size = len(block.encode("utf-8"))
+        if path.stat().st_size + block_size > max_bytes:
+            _rotate_debug_log(path)
     with path.open("a", encoding="utf-8") as f:
         f.write(block)
 
 
-async def save_debug_snapshot(path: Path, snapshot: dict[str, Any]) -> Path:
-    await asyncio.to_thread(append_debug_snapshot, path, snapshot)
+async def save_debug_snapshot(
+    path: Path,
+    snapshot: dict[str, Any],
+    *,
+    max_bytes: int | None = None,
+) -> Path:
+    await asyncio.to_thread(append_debug_snapshot, path, snapshot, max_bytes=max_bytes)
     return path
 
 
@@ -225,6 +245,7 @@ async def run_reverse_server(
     config: dict[str, Any],
     reverse_port: int,
     debug: bool,
+    debug_terminate: bool,
     debug_strict: bool,
     http2_upstream: bool,
     http2_serve: bool,
@@ -238,6 +259,7 @@ async def run_reverse_server(
         host="0.0.0.0",
         port=reverse_port,
         debug=debug,
+        debug_terminate=debug_terminate,
         debug_strict=debug_strict,
         http2_upstream=http2_upstream,
         http2_serve=http2_serve,
@@ -261,12 +283,17 @@ def main() -> None:
     serve_parser.add_argument(
         "--debug",
         action="store_true",
+        help="Log transformed requests to {endpoint}.log and forward to upstream",
+    )
+    serve_parser.add_argument(
+        "--debug-terminate",
+        action="store_true",
         help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
     )
     serve_parser.add_argument(
         "--debug-strict",
         action="store_true",
-        help="With --debug on reverse, return 502 when pruning did not apply",
+        help="With --debug-terminate, return 502 when pruning did not apply",
     )
     serve_parser.add_argument("--http2-upstream", action=argparse.BooleanOptionalAction, default=None)
     serve_parser.add_argument("--http2-serve", action=argparse.BooleanOptionalAction, default=None)
@@ -289,6 +316,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--debug-terminate", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--debug-strict", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
@@ -302,6 +330,7 @@ def main() -> None:
         args.command = "serve"
         for attr, default in (
             ("debug", False),
+            ("debug_terminate", False),
             ("debug_strict", False),
         ):
             if not hasattr(args, attr):
@@ -311,7 +340,7 @@ def main() -> None:
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
 
-    if args.debug:
+    if args.debug or args.debug_terminate:
         logging.basicConfig(
             level=logging.INFO,
             format="%(levelname)s:%(name)s: %(message)s",
@@ -339,7 +368,8 @@ def main() -> None:
         run_reverse_server(
             config=config,
             reverse_port=resolve_reverse_port(config, args.port),
-            debug=args.debug,
+            debug=args.debug or args.debug_terminate,
+            debug_terminate=args.debug_terminate,
             debug_strict=args.debug_strict,
             http2_upstream=http2_upstream,
             http2_serve=http2_serve,

@@ -8,10 +8,12 @@ import json
 import logging
 import re
 import struct
+import time
 import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from configs import pruning_pipeline_from_config, reverse_proxy_cfg, stats_db_path
+from configs import debug_log_max_body_bytes, pruning_pipeline_from_config, reverse_proxy_cfg, stats_db_path
 from proxy import (
     filter_headers,
     forward_upstream,
@@ -36,6 +38,37 @@ METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 logger = logging.getLogger(__name__)
+
+_DEBUG_LOG_PATH = (
+    Path(__file__).resolve().parent.parent / ".cursor" / "debug-863b82.log"
+)
+
+
+def _agent_debug_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "863b82",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, default=str) + "\n")
+    except OSError:
+        pass
+    # #endregion
+
 
 CONNECT_FLAG_COMPRESSED = 0x01
 
@@ -438,7 +471,9 @@ def create_app(
     routes: dict[str, tuple[str, str | None]],
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
+    debug_terminate: bool = False,
     debug_strict: bool = False,
+    debug_log_max_body_bytes: int | None = None,
     stats_db: Any | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
@@ -529,31 +564,59 @@ def create_app(
                     body,
                     content_type,
                     content_encoding=header_content_encoding(forward_headers),
+                    max_bytes=debug_log_max_body_bytes,
                 ),
                 "pruning": pruning_meta,
             }
-            saved_to = await save_debug_snapshot(reverse_debug_log_path(endpoint_name), snapshot)
+            saved_to = await save_debug_snapshot(
+                reverse_debug_log_path(endpoint_name),
+                snapshot,
+                max_bytes=debug_log_max_body_bytes,
+            )
             logger.info("debug snapshot appended: endpoint=%s path=%s", endpoint_name, request.url.path)
-            if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
+            if debug_terminate:
+                _agent_debug_log(
+                    hypothesis_id="A",
+                    location="proxy_reverse.py:proxy:debug_return",
+                    message="returning debug JSONResponse instead of upstream",
+                    data={
+                        "endpoint": endpoint_name,
+                        "path": request.url.path,
+                        "target_url": target_url,
+                        "response_preview": '{"debug":true,...}',
+                    },
+                )
+                if debug_strict and pruning_meta and pruning_meta.get("status") != "applied":
+                    return JSONResponse(
+                        {
+                            "debug": True,
+                            "error": "pruning not applied",
+                            "pruning": pruning_meta,
+                            "saved_to": str(saved_to),
+                        },
+                        status_code=502,
+                    )
                 return JSONResponse(
                     {
                         "debug": True,
-                        "error": "pruning not applied",
-                        "pruning": pruning_meta,
                         "saved_to": str(saved_to),
+                        "bytes": len(body),
+                        "pruning": pruning_meta,
                     },
-                    status_code=502,
                 )
-            return JSONResponse(
-                {
-                    "debug": True,
-                    "saved_to": str(saved_to),
-                    "bytes": len(body),
-                    "pruning": pruning_meta,
-                },
-            )
 
         client: httpx.AsyncClient = request.app.state.http_client
+        _agent_debug_log(
+            hypothesis_id="B",
+            location="proxy_reverse.py:proxy:forward_upstream",
+            message="forwarding request to upstream",
+            data={
+                "endpoint": endpoint_name,
+                "path": request.url.path,
+                "target_url": target_url,
+                "buffer_body": buffer_body,
+            },
+        )
         return await forward_upstream(
             client,
             method=request.method,
@@ -579,6 +642,7 @@ async def serve_reverse_async(
     host: str,
     port: int,
     debug: bool,
+    debug_terminate: bool,
     debug_strict: bool,
     http2_upstream: bool,
     http2_serve: bool,
@@ -605,7 +669,9 @@ async def serve_reverse_async(
         routes,
         pruning_pipeline,
         debug=debug,
+        debug_terminate=debug_terminate,
         debug_strict=debug_strict,
+        debug_log_max_body_bytes=debug_log_max_body_bytes(config),
         stats_db=stats_db,
         store_full_tools=store_full_tools,
         config=config,

@@ -9,8 +9,8 @@ uv run src/cs.py --root ${MY_WORK_DIR} search --refresh --limit 100 "List of ope
 uv run src/cs.py --root ${MY_WORK_DIR} search --refresh --limit 100 "List of operation IDs" --file-only "\n"
 
 # need to add src/catalog/
-uv run src/retrieve_catalog.py --files src/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json src/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json src/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json
-uv run src/retrieve_catalog.py --json-file temp_embedings.json > temp_tools.json
+uv run src/nogo/embedder/retrieve_catalog.py --files src/catalog/schemas/decomposed/code-review-graph/get_community_tool/repo_root.json src/catalog/schemas/decomposed/code-review-graph/cross_repo_search_tool/limit.json src/catalog/schemas/decomposed/hedl/convert_from/options/delimiter.json
+uv run src/nogo/embedder/retrieve_catalog.py --json-file temp_embedings.json > temp_tools.json
 
 
 rtk uv run src/rerank.py --json temp_embedings.json search "List of operation IDs" --output-json temp_rerank.json
