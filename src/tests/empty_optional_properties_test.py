@@ -8,15 +8,14 @@ from typing import Any
 
 from build_index import DECOMPOSED_PREFIX, CatalogIndex, build_catalog_index
 from retrieve_catalog import retrieve_tools
+import tool_policies
 from tool_policies import (
     EMPTY_OPTIONAL_FALLBACK_K,
-    PER_TOOL_POLICIES,
     direct_root_optional_chunks_for_tool,
     drop_recomposed_tools_with_empty_properties,
     filter_recompose_json_entries,
     mitigate_empty_optional_properties,
     root_chunk_properties_empty,
-    system_tool_policy,
     tool_id_had_empty_original_root_properties,
     tool_id_has_empty_decomposed_root,
 )
@@ -111,8 +110,8 @@ def _optional_entries(index: CatalogIndex, scores: dict[str, float]) -> list[dic
 class TestEmptyOptionalDetection(unittest.TestCase):
     index: CatalogIndex
 
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
+    def __init__(self, method_name: str = "runTest") -> None:
+        super().__init__(methodName=method_name)
         self.index = _build_index()
 
     def test_empty_decomposed_root(self) -> None:
@@ -129,8 +128,8 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
     optional: list[dict[str, Any]]
     post_rerank_scored: dict[str, list[dict[str, Any]]]
 
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
+    def __init__(self, method_name: str = "runTest") -> None:
+        super().__init__(methodName=method_name)
         self.index = _build_index()
         self.root = _root_entry(self.index, score=0.5)
         prop_scores = {
@@ -188,10 +187,10 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_always_include_not_dropped_by_safety_net(self) -> None:
-        global system_tool_policy, PER_TOOL_POLICIES
-        old_system, old_per = system_tool_policy, dict(PER_TOOL_POLICIES)
+        old_system = tool_policies.system_tool_policy
+        old_per = dict(tool_policies.PER_TOOL_POLICIES)
         try:
-            PER_TOOL_POLICIES[TOOL_ID] = "always_include"
+            tool_policies.PER_TOOL_POLICIES[TOOL_ID] = "always_include"
             tools = [
                 {
                     "name": TOOL_ID,
@@ -202,9 +201,9 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
             kept = drop_recomposed_tools_with_empty_properties(tools, self.index)
             self.assertEqual(len(kept), 1)
         finally:
-            system_tool_policy = old_system
-            PER_TOOL_POLICIES.clear()
-            PER_TOOL_POLICIES.update(old_per)
+            tool_policies.system_tool_policy = old_system
+            tool_policies.PER_TOOL_POLICIES.clear()
+            tool_policies.PER_TOOL_POLICIES.update(old_per)
 
 
 class TestOriginallyEmptyRootException(unittest.TestCase):
@@ -213,8 +212,8 @@ class TestOriginallyEmptyRootException(unittest.TestCase):
     index: CatalogIndex
     root: dict[str, Any]
 
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
+    def __init__(self, method_name: str = "runTest") -> None:
+        super().__init__(methodName=method_name)
         self.index = _build_originally_empty_index()
         assert tool_id_has_empty_decomposed_root(self.index, ORIGINALLY_EMPTY_TOOL_ID)
         assert tool_id_had_empty_original_root_properties(self.index, ORIGINALLY_EMPTY_TOOL_ID)

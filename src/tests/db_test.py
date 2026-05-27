@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from db import ProxyRequestRecord, StatsDB, format_totals
 from token_usage import StageTokenUsage
 
 
 @pytest.fixture
-def temp_db() -> Generator[StatsDB, None, None]:
+def temp_db() -> Generator[StatsDB]:
     with tempfile.TemporaryDirectory() as tmp:
         db_path = str(Path(tmp) / "stats.db")
         db = StatsDB.init(db_path)

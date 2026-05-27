@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import httpx
 from starlette.applications import Starlette
@@ -152,7 +152,7 @@ def _decompress_single_encoding(encoding: str, body: bytes) -> bytes | None:
             brotli = importlib.import_module("brotli")
         except ImportError:
             return body
-        return cast(bytes, brotli.decompress(body))
+        return brotli.decompress(body)  # type: ignore[no-any-return]
     return None
 
 

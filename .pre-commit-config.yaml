@@ -123,6 +123,7 @@ repos:
       # Conflicts with ruff
       #      - id: double-quote-string-fixer
       - id: name-tests-test
+        args: [--pytest-test-first]
 
   - repo: local
     hooks:
