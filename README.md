@@ -252,8 +252,7 @@ If the user asks to "fetch the Markdown of a webpage", the `prune_all` typically
     ├── tool_policies.py         # system vs MCP policies, per-tool overrides
     ├── configs.py               # config loader
     ├── config.yaml              # proxy, models, policies, pipeline
-    ├── db.py                    # persisted pruning stats (libSQL)
-    └── old/                     # original paper reference implementation
+    └── db.py                    # persisted pruning stats (libSQL)
 ```
 
 ---
@@ -281,7 +280,7 @@ Environment variables (see [`src/.env.example`](src/.env.example)):
 ## Limitations
 This implementation requires running as reverse proxy with supported agents such as Claude Code, Codex, OpenCode etc. 
 
-Cursor for instance can't run with reverse proxy and only supports forward proxy, though the requests are still encrypted and not visible for manipulation and pruning.
+Cursor for instance can't run with reverse proxy and only supports forward proxy, though the requests sent via forward proxy are still encrypted and not visible for manipulation and pruning.
 
 This functionality logically is more suitable to be acompanied with an MCP Aggregator that takes all the tools from actual MCP servers on backend and serves only the relevant tools to the agent. Though in theory sound concept, in practice MCP protocol Specification has limitations not allowing this to happen:
 - MCP is not designed to be integrated with Agent hooks

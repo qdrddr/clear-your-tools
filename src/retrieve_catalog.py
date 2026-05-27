@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from build_index import CatalogIndex
 
 JSON_EXT = ".json"
+MD_EXT = ".md"
 DECOMPOSED_ROOT = Path("schemas/decomposed")
 
 DECOMPOSED_SCORE: float = 0.5
@@ -92,6 +93,81 @@ class DecomposedCatalog:
 
     def get_json(self, key: str) -> dict[str, Any] | None:
         return self._json_files.get(key)
+
+
+def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
+    """
+    Recursively walk the directory, read every *.json and *.md file,
+    and build a dictionary structure matching the input for rerank/llm.
+    """
+    from build_index import tool_id_from_decomposed_rel
+
+    root = Path(dir_path)
+    if not root.is_dir():
+        raise FileNotFoundError(f"Directory not found: {dir_path}")
+
+    md_entries: list[dict[str, Any]] = []
+    json_entries: list[dict[str, Any]] = []
+
+    for file_path in root.rglob("*"):
+        if not file_path.is_file():
+            continue
+
+        rel_path = str(file_path)
+        suffix = file_path.suffix.lower()
+
+        if suffix == MD_EXT:
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                md_entries.append(
+                    {
+                        "id": file_path.stem,
+                        "file_path": rel_path,
+                        "score": 0.0,
+                        "start_line": 1,
+                        "end_line": 1,
+                        "language": "markdown",
+                        "content": content,
+                    },
+                )
+            except Exception as e:
+                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+        elif suffix == JSON_EXT:
+            try:
+                raw_text = file_path.read_text(encoding="utf-8")
+                content = json.loads(raw_text)
+                line_count = len(raw_text.splitlines())
+                decomposed_key = to_decomposed_key(rel_path)
+                entry_id = content.get("id") if isinstance(content, dict) else None
+                if not entry_id and decomposed_key is not None:
+                    entry_id = tool_id_from_decomposed_rel(decomposed_key)
+                chunk_id = entry_id or file_path.stem
+                json_entries.append(
+                    {
+                        "id": chunk_id,
+                        "name": chunk_id,
+                        "file_path": rel_path,
+                        "score": 0.0,
+                        "start_line": 1,
+                        "end_line": line_count,
+                        "language": "json",
+                        "content": content,
+                    },
+                )
+            except json.JSONDecodeError as exc:
+                raise json.JSONDecodeError(
+                    f"Invalid JSON in {file_path}: {exc.msg}",
+                    exc.doc,
+                    exc.pos,
+                ) from exc
+            except Exception as e:
+                print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+    if not md_entries and not json_entries:
+        print(f"Warning: No .json or .md files found in {dir_path}", file=sys.stderr)
+
+    return {"md": md_entries, "json": json_entries}
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

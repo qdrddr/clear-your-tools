@@ -24,6 +24,8 @@ src/catalog/schemas/full
 src/catalog/queries.jsonl
 src/crt/
 crt/
+src/nogo
+src/nogo_
 
 # OS / editor
 .DS_Store
