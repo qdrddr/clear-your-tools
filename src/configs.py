@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
-from dotenv import dotenv_values, load_dotenv
+from dotenv import load_dotenv
 
-# Load .env so API keys (e.g. OPENROUTER_API_KEY) are available.
-# Shell environment takes precedence.
-_env_path = Path(__file__).with_name(".env")
-if _env_path.exists():
-    load_dotenv(dotenv_path=_env_path, override=False)
+SRC_ENV_PATH = Path(__file__).with_name(".env")
+USER_ENV_PATH = Path("~/.configs/cyt/.env").expanduser()
+_env_path = SRC_ENV_PATH  # backward-compatible alias for resolve_model callers
+
+_PROXY_ENV_LOADED = False
+
+
+def load_proxy_env() -> None:
+    """Load API keys from src/.env, then ~/.configs/cyt/.env.
+
+    Variables already set in the process environment are never overwritten.
+    """
+    global _PROXY_ENV_LOADED
+    if _PROXY_ENV_LOADED:
+        return
+    for path in (SRC_ENV_PATH, USER_ENV_PATH):
+        if path.exists():
+            load_dotenv(dotenv_path=path, override=False)
+    _PROXY_ENV_LOADED = True
+
+
+load_proxy_env()
 
 # Default fallbacks - single source of truth for hard-coded values
 DEFAULT_REVERSE_PORT: int = 8000
@@ -226,6 +244,32 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     return pipeline
 
 
+def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Environment variable names required for ``proxy serve``."""
+    required = ["OPENROUTER_API_KEY"]
+    if "rerank" in pruning_pipeline_from_config(config):
+        required.append("DEEPINFRA_API_KEY")
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in required:
+        if name not in seen:
+            seen.add(name)
+            unique.append(name)
+    return unique
+
+
+def require_proxy_env(config: dict[str, Any]) -> None:
+    """Ensure required API keys are set after loading .env fallbacks."""
+    load_proxy_env()
+    missing = [name for name in required_proxy_env_var_names(config) if not os.environ.get(name)]
+    if missing:
+        env_locations = " or ".join(str(p) for p in (SRC_ENV_PATH, USER_ENV_PATH))
+        raise RuntimeError(
+            "Required environment variable(s) not set: "
+            f"{', '.join(missing)}. Export them in the shell or define them in {env_locations}."
+        )
+
+
 def llm_minimum_tools(config: dict[str, Any] | None = None) -> int:
     return int(_merged_config(config or load_config())["models"]["llm"]["minimum_tools"])
 
@@ -274,11 +318,9 @@ def resolve_model(
             provider = entry.get("provider", None)
             full_model_name = entry.get("name")
             if model_type == "remote":
-                env_values = dotenv_values(_env_path)
+                load_proxy_env()
                 key_var_name = entry.get("key_var_name")
-                api_key_value = None
-                if key_var_name in env_values:
-                    api_key_value = env_values[key_var_name]
+                api_key_value = os.environ.get(key_var_name) if key_var_name else None
                 base_url = entry.get("base_url")
                 if provider:
                     return f"{provider}/{full_model_name}", api_key_value, base_url

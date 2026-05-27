@@ -14,11 +14,11 @@ from typing import Any
 
 import httpx
 import uvicorn
-from dotenv import load_dotenv
 from configs import (
     DEFAULT_REVERSE_PORT,
     load_config,
     proxy_http2_settings,
+    require_proxy_env,
     resolve_reverse_port,
     stats_db_path,
 )
@@ -341,10 +341,6 @@ def main() -> None:
             if not hasattr(args, attr):
                 setattr(args, attr, default)
 
-    env_path = Path(__file__).resolve().parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
-
     if args.debug or args.debug_dry_run:
         logging.basicConfig(
             level=logging.INFO,
@@ -353,6 +349,12 @@ def main() -> None:
         )
 
     config = load_config(args.config)
+    try:
+        require_proxy_env(config)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
     from tool_policies import configure_policies_from_config
 
     configure_policies_from_config(config)
