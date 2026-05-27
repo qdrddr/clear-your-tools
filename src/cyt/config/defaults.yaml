@@ -91,4 +91,4 @@ stats:
   store_full_tools: false
   strong_model: gemini-3-flash # nickname from models.llm
   database:
-    path: ~/.configs/cyt/stats.db
+    path: ~/.config/cyt/stats.db

@@ -45,7 +45,7 @@ _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 logger = logging.getLogger(__name__)
 
-_DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent / ".cursor" / "debug-863b82.log"
+_DEBUG_LOG_PATH = Path(__file__).resolve().parents[3] / ".debug" / "debug-308477.log"
 
 
 def _agent_debug_log(
@@ -59,7 +59,7 @@ def _agent_debug_log(
     # #region agent log
     try:
         payload = {
-            "sessionId": "863b82",
+            "sessionId": "308477",
             "runId": run_id,
             "hypothesisId": hypothesis_id,
             "location": location,
@@ -595,6 +595,18 @@ async def _proxy_request(
     store_full_tools: bool,
     config: dict[str, Any] | None,
 ) -> Response:
+    # #region agent log
+    _agent_debug_log(
+        hypothesis_id="D",
+        location="reverse.py:_proxy_request:entry",
+        message="valid HTTP request reached proxy handler",
+        data={
+            "method": request.method,
+            "path": request.url.path,
+            "scheme": request.url.scheme,
+        },
+    )
+    # #endregion
     match = resolve_upstream(request.url.path, routes)
     if match is None:
         return Response("Not Found", status_code=404)
@@ -785,6 +797,25 @@ async def serve_reverse_async(
             stats_db = StatsDB.init(stats_db_path(config))
         except Exception as exc:
             logger.warning("stats database unavailable: %s", exc)
+
+    # #region agent log
+    _agent_debug_log(
+        hypothesis_id="A",
+        location="reverse.py:serve_reverse_async:startup",
+        message="proxy server starting",
+        data={
+            "host": host,
+            "port": port,
+            "http2_serve": http2_serve,
+            "http2_upstream": http2_upstream,
+            "ssl_keyfile": ssl_keyfile,
+            "ssl_certfile": ssl_certfile,
+            "ssl_key_exists": bool(ssl_keyfile and Path(ssl_keyfile).exists()),
+            "ssl_cert_exists": bool(ssl_certfile and Path(ssl_certfile).exists()),
+            "transport": "hypercorn+tls" if http2_serve else "uvicorn+plain-http",
+        },
+    )
+    # #endregion
 
     app = create_app(
         routes,

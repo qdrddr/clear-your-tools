@@ -4,6 +4,7 @@ export OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENRO
 
 # Debug: reverse dry-run to anthropic.log
 uv tool install 'clear-your-tools[all]' -p 3.13
+uv tool upgrade 'clear-your-tools[all]' -p 3.13
 cyt-rproxy serve --port 8834
 
 curl -s http://localhost:8834/health
