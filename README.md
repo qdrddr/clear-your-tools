@@ -72,7 +72,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
 Point the proxy at them in `src/config.yaml` (uncomment `network.proxy.http2`) or pass CLI flags:
 
 ```bash
-uv run src/proxy_reverse.py serve --http2-serve \
+uv run src/proxy.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem
 ```
@@ -268,37 +268,85 @@ If the user asks to fetch the Markdown of a webpage, `prune_all` typically keeps
 
 ## Proxy
 
-You may run proxy in HTTP/2 compatible mode (requires TLS):
+Entry point: `uv run src/proxy.py serve`
+
+| Port | Mode | Client setting |
+|------|------|----------------|
+| **8834** | Reverse (path-based) | `ANTHROPIC_BASE_URL=http://localhost:8834/anthropic` |
+| **8835** | Forward MITM | `"http.proxy": "http://127.0.0.1:8835"` (any HTTP-proxy client) |
+
+### Reverse proxy (Claude Code)
+
+No TLS:
 
 ```shell
-uv pip install h2
-uv pip install 'hypercorn[h2]'
-openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-# Add src/crt/cert.pem to your system trusted certificates (otherwise observe error "Proxy uses self-signed certificate")
+uv run src/proxy.py serve --port 8834
+```
 
-uv run src/proxy_reverse.py serve --http2-serve \
+HTTP/2 serve (requires TLS on reverse port):
+
+```shell
+uv pip install h2 'hypercorn[h2]'
+openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
+  -keyout src/crt/key.pem -out src/crt/cert.pem \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+
+uv run src/proxy.py serve --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
   --port 8834
 ```
 
-No TLS:
-`uv run src/proxy_reverse.py --port 8834`
-
-### Claude Code
+Claude Code:
 
 ```shell
-export ANTHROPIC_API_KEY=""
-# security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
-# export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
 export OPENROUTER_API_KEY="sk-..."
 export ANTHROPIC_AUTH_TOKEN=${OPENROUTER_API_KEY}
-
-# No TLS, use http://
-export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
-# With HTTP/2 & TLS, add httpS://
-export ANTHROPIC_BASE_URL="https://localhost:8834/anthropic"
-
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="google/gemini-3-flash-preview"
 $HOME/.local/bin/claude --model haiku 'say hi' -p
+```
+
+Reverse debug (dry-run, no upstream): `uv run src/proxy.py serve --debug --port 8834`
+
+### Forward MITM proxy
+
+The forward proxy terminates TLS (MITM) so decrypted request/response bodies can be logged and transformed. It requires a **separate CA** from the reverse TLS cert (`cert.pem` is for localhost reverse only).
+
+Generate MITM CA (once):
+
+```shell
+mkdir -p src/crt
+openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+  -keyout src/crt/mitm-ca-key.pem -out src/crt/mitm-ca.pem \
+  -subj "/CN=ToolAttention MITM CA" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:0"
+```
+
+Trust the CA on your machine (macOS example):
+
+```shell
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain src/crt/mitm-ca.pem
+```
+
+Configure any HTTP-proxy client:
+
+```json
+{
+  "http.proxy": "http://127.0.0.1:8835",
+  "http.proxyStrictSSL": false
+}
+```
+
+Forward debug (append decrypted bodies to `forward.log` while forwarding):
+
+```shell
+uv run src/proxy.py serve --debug
+```
+
+Disable forward proxy: `uv run src/proxy.py serve --no-forward`
+
+Test:
+
+```shell
+./scripts/test_forward_proxy.sh
 ```

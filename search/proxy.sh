@@ -2,8 +2,8 @@
 export DEEPINFRA_API_KEY="..."      # rerank stage
 export OPENROUTER_API_KEY="..."    # llm stage
 
-# Debug: no upstream; appends snapshots to anthropic.log; prints query + decomposed counts
-# uv run src/proxy_reverse.py --debug --port 8834
-uv run src/proxy_reverse.py --port 8834
+# Debug: reverse dry-run to anthropic.log; forward appends decrypted bodies to forward.log
+# uv run src/proxy.py serve --debug --port 8834
+uv run src/proxy.py serve --port 8834
 
 curl -s http://localhost:8834/health
