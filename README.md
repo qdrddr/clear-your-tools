@@ -65,6 +65,7 @@ pruning:
     - rerank
     # - llm
 ```
+Full example of [config file is here](src/cyt/config/defaults.yaml).
 
 ---
 
