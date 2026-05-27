@@ -196,8 +196,8 @@ The reranker and weak LLM used for pruning are **much cheaper per token** than t
 | Model | Cost per 1M input tokens |
 |-------|-------------------------|
 | Claude Sonnet 4.6 | $3.00 |
-| GPT-OSS-120B | $0.039 |
 | Qwen-Reranker-8B | $0.050 |
+| GPT-OSS-120B | $0.14 |
 | Inception Mercury 2 | $0.25 |
 
 The weak models such as Mercury 2 or GPT-OSS-120B returns only the IDs of tools to keep, so its output stays extremely small. Rerankers do not count output tokens and are usually much cheaper than a strong LLM.
@@ -278,7 +278,16 @@ Environment variables (see [`src/.env.example`](src/.env.example)):
 - `OPENROUTER_API_KEY` — upstream forwarding and optional LLM stage
 
 ---
+## Limitations
+This implementation requires running as reverse proxy with supported agents such as Claude Code, Codex, OpenCode etc. 
 
+Cursor for instance can't run with reverse proxy and only supports forward proxy, though the requests are still encrypted and not visible for manipulation and pruning.
+
+This functionality logically is more suitable to be acompanied with an MCP Aggregator that takes all the tools from actual MCP servers on backend and serves only the relevant tools to the agent. Though in theory sound concept, in practice MCP protocol Specification has limitations not allowing this to happen:
+- MCP is not designed to be integrated with Agent hooks
+- MCP Client and servers are initialized before agent starts its session leading to MCP is not aware of agent sessions or sub-agents and can't reliably target which agent session or subagent see which tools, so pruning would become unreliable. 
+
+---
 ## License
 
 See [`LICENSE`](LICENSE).

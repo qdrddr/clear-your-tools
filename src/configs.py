@@ -19,7 +19,9 @@ DEFAULT_REVERSE_PORT: int = 8000
 DEFAULT_MCP_AGGREGATOR_PORT: int = 8000
 DEFAULT_STRONG_MODEL: str = "gemini-3-flash"
 DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
-DEFAULT_STATS_DB_PATH: str = "~/.configs/sca/stats.db"
+DEFAULT_STATS_DB_PATH: str = "~/.configs/cyt/stats.db"
+DEFAULT_USER_CONFIG_PATH: Path = Path("~/.configs/cyt/config.yaml")
+CWD_CONFIG_NAME: str = "config.yaml"
 DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
@@ -96,19 +98,77 @@ def _merged_config(config: dict[str, Any]) -> dict[str, Any]:
     return _deep_merge(_DEFAULTS, config)
 
 
+def resolve_config_path(path: Path | None = None) -> Path:
+    """Resolve the config file path.
+
+    Priority:
+    1. Explicit *path* (e.g. ``--config``)
+    2. ``./config.yaml`` in the current working directory
+    3. ``~/.configs/cyt/config.yaml``
+    """
+    if path is not None:
+        return path.expanduser()
+    cwd_config = Path.cwd() / CWD_CONFIG_NAME
+    if cwd_config.exists():
+        return cwd_config
+    return DEFAULT_USER_CONFIG_PATH.expanduser()
+
+
+def _default_user_config_dict() -> dict[str, Any]:
+    """Starter config written when no config file exists anywhere."""
+    return _deep_merge(
+        _DEFAULTS,
+        {
+            "network": {
+                "proxy": {
+                    "reverse": {
+                        "port": 8834,
+                        "upstreams": [
+                            {
+                                "upstream": "anthropic",
+                                "url": "https://openrouter.ai/api",
+                                "kind": "anthropic",
+                            },
+                        ],
+                        "endpoints": ["anthropic"],
+                    },
+                },
+            },
+            "stats": {
+                "database": {"path": DEFAULT_STATS_DB_PATH},
+            },
+        },
+    )
+
+
+def _write_default_user_config(config_path: Path) -> None:
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    content = yaml.dump(
+        _default_user_config_dict(),
+        default_flow_style=False,
+        sort_keys=False,
+    )
+    config_path.write_text(content, encoding="utf-8")
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load ``config.yaml`` and layer it on top of built-in defaults.
 
     Missing keys are populated from built-in defaults so callers always receive
-    a complete configuration dictionary.
+    a complete configuration dictionary. When no config file exists and no
+    explicit path was given, creates ``~/.configs/cyt/config.yaml`` with
+    built-in defaults.
     """
-    config_path = path or Path(__file__).with_name("config.yaml")
+    config_path = resolve_config_path(path)
     user_config: dict[str, Any] = {}
     if config_path.exists():
         with config_path.open(encoding="utf-8") as f:
             loaded = yaml.safe_load(f)
             if isinstance(loaded, dict):
                 user_config = loaded
+    elif path is None and config_path == DEFAULT_USER_CONFIG_PATH.expanduser():
+        _write_default_user_config(config_path)
+        user_config = _default_user_config_dict()
     return _deep_merge(_DEFAULTS, user_config)
 
 

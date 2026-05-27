@@ -279,7 +279,12 @@ def main() -> None:
         default=None,
         help=f"Reverse listen port (default from config, else {DEFAULT_REVERSE_PORT})",
     )
-    serve_parser.add_argument("--config", type=Path, default=None)
+    serve_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.configs/cyt/config.yaml)",
+    )
     serve_parser.add_argument(
         "--debug",
         action="store_true",
