@@ -16,6 +16,8 @@ env/
 .cursor
 .temp
 
+*.tsv
+*.txt
 # Generated benchmark artifacts
 src/catalog/tools.json
 #src/catalog/schemas/decomposed
