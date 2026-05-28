@@ -384,9 +384,10 @@ has several limitations that make this difficult in practice:
   see a specific subset of tools, making dynamic tool pruning unreliable.
 
 The savings shown in the `cyt-rproxy stats totals` output are estimated using the `tiktoken`
-tokenizer, because the pruned content is never actually sent to the LLM provider and
-Anthropic does not have its tokenizer opensourced.
-As a result, the reported token savings may slightly differ from the provider's own token counts.
+tokenizer, because the pruned content is never actually sent to the LLM provider. As a result,
+the reported token savings may slightly differ from the provider's own token counts. However,
+since the pruned content is never transmitted, this discrepancy does not affect the actual billed
+usage.
 
 ---
 
