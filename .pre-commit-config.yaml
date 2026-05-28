@@ -42,6 +42,15 @@ repos:
         args: ["--max-line-length", "140", "--ignore=E203,W503"]
         exclude: ^test_data/|bumpity.py$
 
+  - repo: local
+    hooks:
+      - id: sync-version
+        name: sync-version
+        entry: bash 'search/sync-version.sh'
+        language: system
+        verbose: true
+        pass_filenames: false
+
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
     rev: 0.11.14
@@ -170,12 +179,6 @@ repos:
         language: system
         # Run when app code or tests change (tests live under src/tests/).
         files: ^(src/.*\.py|src/tests/.*)$
-      - id: sync-version
-        name: sync-version
-        entry: bash 'search/sync-version.sh'
-        language: system
-        verbose: true
-        pass_filenames: false
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
     rev: 1.39.4
