@@ -348,25 +348,36 @@ Environment variables (see [`src/.env.example`](src/.env.example)):
 - `DEEPINFRA_API_KEY` — reranker stage
 - `OPENROUTER_API_KEY` — upstream forwarding and optional LLM stage
 
+## Inspiration
+
+This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project, particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
+
+It also aims to limit the effects of [context rot](https://www.trychroma.com/research/context-rot)
+by pruning irrelevant or confusing tools from the available toolset based on the current user prompt and execution context.
+
+Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model, and can improve tool selection accuracy and overall agent reliability.
+
 ---
 
 ## Limitations
 
-This implementation requires running as reverse proxy with supported agents such as Claude Code,
-Codex, OpenCode etc.
+This implementation requires running as a reverse proxy with supported agents such as Claude Code, and others like Codex, OpenCode, etc (not tested yet).
 
-Cursor for instance can't run with reverse proxy and only supports forward proxy, though the
-requests sent via forward proxy are still encrypted and not visible for manipulation and pruning.
+Cursor, for example, does not support reverse proxying and only supports forward proxies. In that
+configuration, requests remain end-to-end encrypted, so the proxy cannot inspect, manipulate, or
+prune the request payload.
 
-This functionality logically is more suitable to be accompanied with an MCP Aggregator that takes
-all the tools from actual MCP servers on backend and serves only the relevant tools to the agent.
-Though in theory sound concept, in practice MCP protocol Specification has limitations not allowing
-this to happen:
+The token savings applies to **input tokens only** and **only tool definitions**, the rest of the request remains unchanged. Output/completion or reasoning tokens are not affected.
 
-- MCP is not designed to be integrated with Agent hooks
-- MCP Client and servers are initialized before agent starts its session leading to MCP is not
-  aware of agent sessions or sub-agents and can't reliably target which agent session or subagent
-  see which tools, so pruning would become unreliable.
+Conceptually, this functionality is better suited to an MCP Aggregator that connects to backend MCP
+servers and exposes only the relevant tools to the agent. However, the current MCP specification
+has several limitations that make this difficult in practice:
+
+- MCP is not designed to integrate with agent lifecycle hooks.
+- MCP clients and servers are initialized before the agent session starts, so MCP is not aware of
+  agent sessions, sub-agents, or execution context boundaries.
+- Because of this, an MCP Aggregator cannot reliably determine which agent session or sub-agent should
+  see a specific subset of tools, making dynamic tool pruning unreliable.
 
 ---
 
