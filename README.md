@@ -400,20 +400,6 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 
 See [`DEV.md`](DEV.md) for checkout setup, repository layout, library usage, and configuration reference.
 
-<details>
-## <summary><strong>Inspiration</strong></summary>
-
-This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project,
-particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
-
-It also aims to limit the effects of [context rot](https://www.trychroma.com/research/context-rot)
-by pruning irrelevant or confusing tools from the available toolset based on the current user prompt and execution context.
-
-Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model,
-and can improve tool selection accuracy and overall agent reliability.
-
-</details>
-
 ---
 
 ## Limitations
@@ -427,5 +413,19 @@ See details to debug pruning in [debug/](debug/).
 ---
 
 ## License
+
+<details>
+<summary><strong>Inspiration</strong></summary>
+
+This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project,
+particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
+
+It also aims to limit the effects of [context rot](https://www.trychroma.com/research/context-rot)
+by pruning irrelevant or confusing tools from the available toolset based on the current user prompt and execution context.
+
+Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model,
+and can improve tool selection accuracy and overall agent reliability.
+
+</details>
 
 See [`LICENSE`](LICENSE).
