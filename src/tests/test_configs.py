@@ -45,6 +45,19 @@ def test_resolve_config_path_falls_back_to_user_config(
     assert configs.resolve_config_path(None) == isolated_config_paths["user_config"]
 
 
+def test_resolve_setup_config_path_defaults_to_user_config(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    assert configs.resolve_setup_config_path(None) == isolated_config_paths["user_config"]
+
+
+def test_resolve_setup_config_path_explicit(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    explicit = isolated_config_paths["root"] / "setup.yaml"
+    assert configs.resolve_setup_config_path(explicit) == explicit
+
+
 def test_load_config_creates_user_config_when_missing(
     isolated_config_paths: dict[str, Path],
 ) -> None:

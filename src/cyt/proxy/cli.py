@@ -17,6 +17,7 @@ from cyt.config import (
     proxy_http2_settings,
     require_proxy_env,
     resolve_reverse_port,
+    resolve_setup_config_path,
     stats_db_path,
 )
 
@@ -154,6 +155,17 @@ def main() -> None:
     stats_events.add_argument("--json", action="store_true")
     stats_events.add_argument("--config", type=Path, default=None)
 
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Interactive wizard for ~/.config/cyt/config.yaml",
+    )
+    setup_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Config path (default: ~/.config/cyt/config.yaml)",
+    )
+
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
@@ -165,6 +177,12 @@ def main() -> None:
     if args.command == "stats":
         config = load_config(getattr(args, "config", None))
         _run_stats_cli(args, config)
+        return
+
+    if args.command == "setup":
+        from cyt.proxy.setup import run_setup
+
+        run_setup(resolve_setup_config_path(getattr(args, "config", None)))
         return
 
     if args.command is None:

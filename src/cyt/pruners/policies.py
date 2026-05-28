@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from cyt.common.catalog_paths import (
     DECOMPOSED_PREFIX,
@@ -27,8 +27,8 @@ SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
-system_tool_policy: SystemToolPolicy = cast(SystemToolPolicy, DEFAULT_SYSTEM_TOOL_POLICY)
-mcp_tool_policy: MCPToolPolicy = cast(MCPToolPolicy, DEFAULT_MCP_TOOL_POLICY)
+system_tool_policy: SystemToolPolicy = DEFAULT_SYSTEM_TOOL_POLICY
+mcp_tool_policy: MCPToolPolicy = DEFAULT_MCP_TOOL_POLICY
 PER_TOOL_POLICIES: dict[str, ToolPolicy] = {}
 
 

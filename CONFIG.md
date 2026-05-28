@@ -45,8 +45,204 @@ On each intercepted request the proxy:
 
 **Recommendations:**
 
+- **Fewer than ~30 tools** — pruning is skipped automatically; the overhead is usually not worth it.
+- **30–50 tools** — enable the **`rerank`** pipeline (default). This is the sweet spot for the
+  reranker pruner.
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
+
+---
+
+## Configuration
+
+User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt-rproxy` run). Values are layered on
+top of the packaged [`defaults.yaml`](src/cyt/config/defaults.yaml). You can also use `./config.yaml` in the
+working directory or pass `--config`.
+
+<details>
+<summary><strong>Update Thresholds</strong></summary>
+
+Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (deep-merged with bundled
+[`defaults.yaml`](src/cyt/config/defaults.yaml); see [Configuration](#configuration) below).
+
+```yaml
+models:
+  rerankers:
+    minimum_tools: 29
+  llm:
+    minimum_tools: 50
+
+pruning:
+  pipeline:
+    - rerank
+    # - llm
+```
+
+</details>
+
+<details>
+<summary><strong>Update model pricing (stats)</strong></summary>
+
+`cyt-rproxy stats` uses `input_cost_per_token` and `output_cost_per_token` under each model entry in
+`models.llm.remote` (upstream models) and `models.rerankers.remote` (reranker). Update these when provider
+prices change so net-savings numbers stay accurate.
+
+Example — Claude Sonnet 4.6 on Anthropic / OpenRouter (`nick: sonnet` in defaults):
+
+```yaml
+# ~/.config/cyt/config.yaml
+models:
+  llm:
+    remote:
+      - nick: sonnet
+        name: claude-sonnet-4-6
+        provider: anthropic
+        key_var_name: ANTHROPIC_API_KEY
+        pricing:
+          input_cost_per_token: 3e-06   # $3 / 1M input tokens
+          output_cost_per_token: 15e-06 # $15 / 1M output tokens
+```
+
+**Important:** `models.llm.remote` is a YAML **list**. Copy every entry you still need from
+[`defaults.yaml`](src/cyt/config/defaults.yaml) (upstream model, pruning LLM, reranker), then adjust `pricing`.
+If your file does not define `models.llm.remote` yet, bundled pricing is used as-is.
+
+Reranker pricing (DeepInfra Qwen3-Reranker-8B):
+
+```yaml
+models:
+  rerankers:
+    remote:
+      - nick: rerank-qwen3-8b
+        pricing:
+          input_cost_per_token: 5e-08 # $0.05 / 1M input tokens
+```
+
+</details>
+
+### Switch from Rerank to LLM pruner
+
+Default pipeline is **`rerank` only**. To use the LLM pruner instead (or after rerank):
+
+```yaml
+# ~/.config/cyt/config.yaml
+pruning:
+  pipeline:
+    - llm          # LLM only (no reranker)
+    # - rerank     # or: [rerank, llm] for two-stage filtering
+
+defaults:
+  remote:
+    llm_model_nick: mercury-2   # must match a nick under models.llm.remote
+
+models:
+  llm:
+    minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
+```
+
+Rerank & LLM prunners can use any providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
+
+| Pipeline | API keys needed |
+| -------- | ----------------- |
+| `[rerank]` | Key for chosen `reranking_model_nick` (see below). Default `DEEPINFRA_API_KEY` |
+| `[llm]` | Key for chosen `llm_model_nick` (see below) |
+| `[rerank, llm]` | Both |
+
+With **`llm` only**, you can skip `DEEPINFRA_API_KEY`. The LLM stage is stronger at dropping whole tools;
+rerank is cheaper and better for the 30–50 tool range.
+
+<details>
+<summary><strong>Choose LLM pruning model (OpenRouter vs OpenAI)</strong></summary>
+
+Set **`defaults.remote.llm_model_nick`** to a `nick` under `models.llm.remote`. Bundled options:
+
+| `llm_model_nick` | Provider | Model | Env var |
+| ---------------- | -------- | ----- | ------- |
+| `mercury-2` | OpenRouter | `inception/mercury-2` | `OPENROUTER_API_KEY` |
+| `gpt-oss-120b` | OpenRouter | `openai/gpt-oss-120b` | `OPENROUTER_API_KEY` |
+| `gemini-3-flash` | OpenRouter | `google/gemini-3-flash-preview` | `OPENROUTER_API_KEY` |
+| `gpt-5.4-nano` | OpenAI | `gpt-5.4-nano` | `OPENAI_API_KEY` |
+
+Example — OpenRouter (default-style):
+
+```yaml
+defaults:
+  remote:
+    llm_model_nick: gpt-oss-120b
+
+pruning:
+  pipeline:
+    - llm
+```
+
+Example — OpenAI direct:
+
+```yaml
+defaults:
+  remote:
+    llm_model_nick: gpt-5.4-nano
+
+pruning:
+  pipeline:
+    - llm
+```
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+To add another model, append an entry under `models.llm.remote` with `nick`, `name`, `provider`,
+`key_var_name`, and `pricing`, then point `llm_model_nick` at that `nick`.
+
+Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml). See [`DEV.md`](DEV.md) for the
+rest of the config surface.
+
+</details>
+
+<details>
+<summary><strong>Pruning policies</strong></summary>
+
+Two tool categories with different defaults:
+
+| Category         | Default policy   | Examples                  | Typical prefix      |
+| ---------------- | ---------------- | ------------------------- | ------------------- |
+| **System tools** | `prune_optional` | `Read`, `Write`, `Agent`  | (no `mcp__` prefix) |
+| **MCP tools**    | `prune_all`      | Tools from MCP servers    | `mcp__…`            |
+
+Set defaults in `config.yaml`:
+
+```yaml
+defaults:
+  system_tool_policy: prune_optional
+  mcp_tool_policy: prune_all
+```
+
+</details>
+
+<details>
+<summary><strong>Policy options</strong></summary>
+
+| Policy           | Behavior                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `always_include` | No pruning — full tool schema every turn.                                                           |
+| `prune_optional` | Tool always included; irrelevant **optional** properties dropped. Required properties always kept.  |
+| `prune_all`      | Entire tool may be removed if irrelevant. If kept, required properties stay; optional ones trimmed. |
+
+`prune_all` on MCP tools saves the most tokens. With ~100 tools, expect up to **~95% reduction in
+tool-schema tokens**.
+
+### Per-tool overrides
+
+```yaml
+pruning:
+  per_tool:
+    Agent: prune_optional
+    mcp__hedl__hedl_convert_from: prune_optional
+    mcp__hedl__batch: prune_all
+    mcp__fff__multi_grep: always_include
+```
+
+</details>
 
 ---
 
@@ -61,6 +257,13 @@ From PyPI (proxy + pruners):
 
 ```bash
 uv tool install 'clear-your-tools[all]'
+```
+
+Copy API keys (or use `~/.config/cyt/.env`):
+
+```bash
+cp .env.example .env
+# Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY or OPENAI_API_KEY (upstream + optional LLM stage)
 ```
 
 <details>
@@ -81,10 +284,11 @@ export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPEN
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
 ```bash
-uv run cyt-rproxy setup
+cyt-rproxy setup
 ```
 
-Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
+Or edit `~/.config/cyt/config.yaml` manually — see [Configuration](#configuration).
+Bundled defaults include rerank via DeepInfra Qwen3-Reranker-8B (`DEEPINFRA_API_KEY`).
 
 ### 3. Run the proxy
 
@@ -130,7 +334,7 @@ Stats are stored in `~/.config/cyt/stats.db` by default.
 The reranker and weak LLM used for pruning are **much cheaper per token** than the main model
 (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you
 save on the main request. Set `input_cost_per_token` and `output_cost_per_token` in
-[`~/.config/cyt/config.yaml`](CONFIG.md#configuration) to track savings.
+[`~/.config/cyt/config.yaml`](#configuration) to track savings.
 
 **Example pricing (input tokens):**
 
@@ -166,7 +370,7 @@ How much you save overall depends on:
 
 - **How many tools you have** — more MCP servers mean a larger share of the request is tool
   schemas. We do not recommend using CYT below 50 tools.
-- **Which pruning policy you use** — see [Pruning policies](CONFIG.md#configuration).
+- **Which pruning policy you use** — see [Pruning policies](#configuration).
 
 To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
 To see statistics of actual net savings (input tokens) run:

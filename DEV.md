@@ -64,6 +64,7 @@ from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
 
 Main config file: `config.yaml` in the working directory, or
 [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (created on first run).
+Run `cyt-rproxy setup` for an interactive wizard that writes the user config and optional `~/.config/cyt/.env`.
 Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
 
 User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter vs OpenAI pruning models):

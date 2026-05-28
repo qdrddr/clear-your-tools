@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import importlib.resources
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -43,8 +44,9 @@ DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
 CWD_CONFIG_NAME: str = "config.yaml"
-DEFAULT_SYSTEM_TOOL_POLICY: str = "prune_optional"
-DEFAULT_MCP_TOOL_POLICY: str = "prune_all"
+ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
+DEFAULT_SYSTEM_TOOL_POLICY: ToolPolicy = "prune_optional"
+DEFAULT_MCP_TOOL_POLICY: ToolPolicy = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
 DEFAULT_DEBUG_LOG_DIR: str = ".debug"
 DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = 50
@@ -177,6 +179,34 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as f:
         loaded = yaml.safe_load(f)
     return loaded if isinstance(loaded, dict) else {}
+
+
+def default_model_nick(provider: str, name: str) -> str:
+    """Build a default model nick from provider and LiteLLM model name."""
+    raw = f"{provider}-{name}"
+    return re.sub(r"[^a-zA-Z0-9]+", "-", raw).strip("-").lower()
+
+
+def save_user_config(path: Path, overlay: dict[str, Any]) -> None:
+    """Deep-merge *overlay* onto an existing user config file and write YAML."""
+    path = path.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict[str, Any] = _load_yaml_dict(path) if path.exists() else {}
+    merged = _deep_merge(existing, overlay)
+    content = yaml.dump(merged, default_flow_style=False, sort_keys=False)
+    path.write_text(content, encoding="utf-8")
+
+
+def resolve_setup_config_path(path: Path | None = None) -> Path:
+    """Config path for ``proxy setup`` (defaults to ``~/.config/cyt/config.yaml``)."""
+    if path is not None:
+        return path.expanduser()
+    return DEFAULT_USER_CONFIG_PATH.expanduser()
+
+
+def load_bundled_defaults_yaml() -> dict[str, Any]:
+    """Load packaged ``defaults.yaml`` (public wrapper)."""
+    return _load_bundled_defaults_yaml()
 
 
 def _load_bundled_defaults_yaml() -> dict[str, Any]:
