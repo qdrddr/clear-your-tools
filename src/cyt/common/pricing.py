@@ -116,13 +116,11 @@ def lookup_llm_pricing(
     if not model_name:
         return None
 
-    candidates = [entry for entry in _llm_remote_entries(config) if _model_name_matches(entry, model_name)]
+    candidates = [
+        entry for entry in _llm_remote_entries(config) if _model_name_matches(entry, model_name)
+    ]
     if provider_dns_name:
-        by_dns = [
-            entry
-            for entry in candidates
-            if _entry_provider_dns(entry) == provider_dns_name
-        ]
+        by_dns = [entry for entry in candidates if _entry_provider_dns(entry) == provider_dns_name]
         if by_dns:
             candidates = by_dns
 

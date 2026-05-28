@@ -97,7 +97,7 @@ def main() -> None:
                     n_fields,
                     tool.get("server_slug", ""),
                     tool.get("name", ""),
-                )
+                ),
             )
 
     key_idx = {"max": 0, "total": 1, "unique": 2, "fields": 3}[args.sort]
@@ -107,11 +107,11 @@ def main() -> None:
     out = open(args.output, "w", encoding="utf-8") if args.output else sys.stdout
     try:
         out.write(
-            "rank\tmax_enum\ttotal_enums\tunique_enums\tenum_fields\tserver_slug\tname\n"
+            "rank\tmax_enum\ttotal_enums\tunique_enums\tenum_fields\tserver_slug\tname\n",
         )
         for i, (max_len, total, n_unique, n_fields, slug, name) in enumerate(top, 1):
             out.write(
-                f"{i}\t{max_len}\t{total}\t{n_unique}\t{n_fields}\t{slug}\t{name}\n"
+                f"{i}\t{max_len}\t{total}\t{n_unique}\t{n_fields}\t{slug}\t{name}\n",
             )
     finally:
         if args.output:

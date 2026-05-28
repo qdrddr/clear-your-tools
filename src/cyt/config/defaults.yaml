@@ -65,17 +65,17 @@ models:
           input_cost_per_token: 5e-06
           output_cost_per_token: 25e-06
         # base_url: https://api.anthropic.com/v1
-#      - name: claude-opus-4-7
-#        provider: anthropic
-#        nick: opus-fast
-#        key_var_name: ANTHROPIC_API_KEY
-#        max_tokens: 1000000
-#        domain_match: ["anthropic.com"]
-#        pricing:
-#          # match_litellm:
-#          input_cost_per_token: 30e-06
-#          output_cost_per_token: 150e-06
-#        # base_url: https://api.anthropic.com/v1
+      #      - name: claude-opus-4-7
+      #        provider: anthropic
+      #        nick: opus-fast
+      #        key_var_name: ANTHROPIC_API_KEY
+      #        max_tokens: 1000000
+      #        domain_match: ["anthropic.com"]
+      #        pricing:
+      #          # match_litellm:
+      #          input_cost_per_token: 30e-06
+      #          output_cost_per_token: 150e-06
+      #        # base_url: https://api.anthropic.com/v1
       - name: claude-sonnet-4-6
         provider: anthropic
         nick: sonnet
