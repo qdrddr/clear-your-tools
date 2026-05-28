@@ -350,24 +350,28 @@ Environment variables (see [`src/.env.example`](src/.env.example)):
 
 ## Inspiration
 
-This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project, particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
+This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project,
+particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
 
 It also aims to limit the effects of [context rot](https://www.trychroma.com/research/context-rot)
 by pruning irrelevant or confusing tools from the available toolset based on the current user prompt and execution context.
 
-Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model, and can improve tool selection accuracy and overall agent reliability.
+Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model,
+and can improve tool selection accuracy and overall agent reliability.
 
 ---
 
 ## Limitations
 
-This implementation requires running as a reverse proxy with supported agents such as Claude Code, and others like Codex, OpenCode, etc (not tested yet).
+This implementation requires running as a reverse proxy with supported agents such as Claude Code,
+and others like Codex, OpenCode, etc (not tested yet).
 
 Cursor, for example, does not support reverse proxying and only supports forward proxies. In that
 configuration, requests remain end-to-end encrypted, so the proxy cannot inspect, manipulate, or
 prune the request payload.
 
-The token savings applies to **input tokens only** and **only tool definitions**, the rest of the request remains unchanged. Output/completion or reasoning tokens are not affected.
+The token savings applies to **input tokens only** and **only tool definitions**,
+the rest of the request remains unchanged. Output/completion or reasoning tokens are not affected.
 
 Conceptually, this functionality is better suited to an MCP Aggregator that connects to backend MCP
 servers and exposes only the relevant tools to the agent. However, the current MCP specification

@@ -556,17 +556,25 @@ def empty_totals() -> dict[str, int]:
 
 
 def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
+    tools_accepted = totals.get("tools_accepted", 0)
+    tools_saved = totals.get("tools_saved", 0)
+    tools_saved_pct = (100.0 * tools_saved / tools_accepted) if tools_accepted else 0.0
     lines = [
         f"events:              {totals.get('events', 0)}",
         "",
         "upstream tool tokens (sent after pruning):",
-        f"  tools accepted:      {totals.get('tools_accepted', 0)}",
+        f"  tools accepted:      {tools_accepted}",
         f"  tools sent:          {totals.get('tools_sent_upstream', 0)}",
-        f"  tools saved:         {totals.get('tools_saved', 0)}",
+        f"  tools saved:         {tools_saved}  ({tools_saved_pct:.1f}%)",
     ]
     if costs is not None:
-        from cyt.common.pricing import format_usd
+        from cyt.common.pricing import compute_net_savings_tokens, format_usd
 
+        net_savings_tokens, net_savings_pct = compute_net_savings_tokens(
+            tools_saved,
+            tools_accepted,
+            costs,
+        )
         lines.extend(
             [
                 "",
@@ -580,7 +588,9 @@ def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
                 f"  rerank output:       {totals.get('rerank_output', 0)}  ({format_usd(costs.rerank_output_usd)})",
                 f"  total pruning:       {format_usd(costs.pruning_total_usd)}",
                 "",
-                f"net savings:           {format_usd(costs.net_savings_usd)}",
+                "net savings (input tokens):",
+                f"  cost:         {format_usd(costs.net_savings_usd)}",
+                f"  tokens:     {net_savings_tokens} ({net_savings_pct:.1f}%)",
             ],
         )
     else:

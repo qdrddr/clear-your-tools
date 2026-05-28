@@ -170,6 +170,13 @@ repos:
         language: system
         # Run when app code or tests change (tests live under src/tests/).
         files: ^(src/.*\.py|src/tests/.*)$
+      - id: sync-version
+        name: sync-version
+        entry: bash 'search/sync-version.sh'
+        language: system
+        verbose: true
+        pass_filenames: false
+
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
     rev: 1.39.4
     hooks:

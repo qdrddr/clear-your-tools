@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from cyt.common.pricing import compute_stats_costs, lookup_llm_pricing
+import pytest
+
+from cyt.common.pricing import compute_net_savings_tokens, compute_stats_costs, lookup_llm_pricing
 
 
 def _sample_config() -> dict:
@@ -61,3 +63,18 @@ def test_compute_stats_costs_prices_saved_tokens_per_upstream_model() -> None:
     )
     expected = 600 * 2.5e-07 + 100 * 3e-06
     assert costs.tools_saved_usd == expected
+
+
+def test_compute_net_savings_tokens() -> None:
+    from cyt.common.pricing import StatsCosts
+
+    costs = StatsCosts(
+        tools_saved_usd=0.009506,
+        llm_input_usd=0.0,
+        llm_output_usd=0.0,
+        rerank_input_usd=0.001456,
+        rerank_output_usd=0.0,
+    )
+    net_tokens, net_pct = compute_net_savings_tokens(38025, 203535, costs)
+    assert net_tokens == 32201
+    assert net_pct == pytest.approx(15.8, abs=0.05)

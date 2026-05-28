@@ -270,3 +270,17 @@ def format_usd(amount: float) -> str:
     if abs(amount) >= 0.0001:
         return f"${amount:.6f}"
     return f"${amount:.9f}"
+
+
+def compute_net_savings_tokens(
+    tools_saved: int,
+    tools_accepted: int,
+    costs: StatsCosts,
+) -> tuple[int, float]:
+    """Estimate net tool-token savings after pruning cost, using cost ratio."""
+    if costs.tools_saved_usd <= 0 or tools_saved <= 0:
+        return 0, 0.0
+    adjusted_percent = costs.net_savings_usd / costs.tools_saved_usd
+    net_tokens = round(tools_saved * adjusted_percent)
+    net_pct = (100.0 * net_tokens / tools_accepted) if tools_accepted else 0.0
+    return net_tokens, net_pct

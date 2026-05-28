@@ -100,9 +100,10 @@ def test_query_totals_format() -> None:
         },
         costs,
     )
-    assert "tools saved:         2000" in text
-    assert "net savings:" in text
-    assert "net token savings" not in text
+    assert "tools saved:         2000  (66.7%)" in text
+    assert "net savings (input tokens):" in text
+    assert "  cost:         $0.000473" in text
+    assert "  tokens:     1892 (63.1%)" in text
 
 
 def test_query_upstream_saved_tokens_and_costs(temp_db: StatsDB) -> None:
