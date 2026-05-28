@@ -248,7 +248,7 @@ pruning:
 Requires uv tool.
 Install [uv](https://docs.astral.sh/uv/getting-started/installation)
 
-### Install proxy
+### 1. Install proxy
 
 From PyPI (proxy + pruners):
 
@@ -263,7 +263,8 @@ cp .env.example .env
 # Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY or OPENAI_API_KEY (upstream + optional LLM stage)
 ```
 
-Though we strongly recommend using password vaults like macOS KeyChain
+<details>
+<summary><strong>Though we strongly recommend using password vaults like macOS KeyChain</strong></summary>
 
 ```shell
 # Store key in secure vault
@@ -273,15 +274,28 @@ security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # m
 export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
 ```
 
-### Run the proxy
+</details>
+
+### 2. Update the config.yaml
+
+(Optional) Use deafaults:
+
+- **Prunner**: rerank
+- **Provider**: DeepInfra
+- **Model**: Qwen3-Reranker-8B
+- **API Key**: DEEPINFRA_API_KEY
+
+### 3. Run the proxy
 
 Installed CLI:
 
 ```bash
-uv run cyt-rproxy serve --port 8834
+uv run cyt-rproxy serve
 ```
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
+
+### 4. Run the the Agent
 
 Point Claude Code at the proxy:
 
@@ -295,7 +309,7 @@ claude --model haiku 'say hi' -p
 The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpoint. Change
 `network.proxy.reverse.upstreams` to target a different provider URL.
 
-### View pruning stats savings
+### 5. View pruning stats savings
 
 ```bash
 uv run cyt-rproxy stats totals
