@@ -383,6 +383,11 @@ has several limitations that make this difficult in practice:
 - Because of this, an MCP Aggregator cannot reliably determine which agent session or sub-agent should
   see a specific subset of tools, making dynamic tool pruning unreliable.
 
+The savings shown in the `cyt-rproxy stats totals` output are estimated using the `tiktoken`
+tokenizer, because the pruned content is never actually sent to the LLM provider and
+Anthropic does not have its tokenizer opensourced.
+As a result, the reported token savings may slightly differ from the provider's own token counts.
+
 ---
 
 ## License
