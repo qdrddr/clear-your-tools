@@ -279,6 +279,12 @@ uv run count_request_tokens.py \
   --requestfile temp_example_claude_call.json
 ```
 
+To see statistics of actual net savings (input tokens) run:
+
+```bash
+uv run cyt-rproxy stats totals
+```
+
 `temp_example_claude_call` can be obtained from the proxy running in debug mode.
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
