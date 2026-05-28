@@ -90,3 +90,6 @@ cocoindex-code
 temp_*
 
 *.log
+.mcp.json
+.cclsp
+LEAN-CTX.md
