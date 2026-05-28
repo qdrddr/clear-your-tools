@@ -402,6 +402,10 @@ tools from the payload:
 - Cloud-hosted applications cannot use this approach, because their traffic does not pass through
   the locally running proxy.
 
+## Debug
+
+See details to debug pruning in [debug/](debug/).
+
 ---
 
 ## License

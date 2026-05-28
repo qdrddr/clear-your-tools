@@ -1,0 +1,88 @@
+{
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "say hi"
+                }
+            ]
+        }
+    ],
+    "tools": [
+        {
+            "name": "Agent",
+            "description": "Launch a new agent to handle complex, multi-step tasks.",
+            "input_schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "description": "A short (3-5 word) description of the task",
+                        "type": "string"
+                    },
+                    "prompt": {
+                        "description": "The task for the agent to perform",
+                        "type": "string"
+                    },
+                    "model": {
+                        "description": "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.",
+                        "type": "string",
+                        "enum": [
+                            "opus",
+                            "haiku",
+                            "sonnet"
+                        ]
+                    }
+                },
+                "required": [
+                    "description",
+                    "prompt"
+                ],
+                "additionalProperties": false
+            }
+        }
+    ],
+    "pruning": {
+        "decomposed_catalog": {
+            "build_index": {},
+            "json": [
+                {
+                    "id": "AskUserQuestion",
+                    "name": "AskUserQuestion",
+                    "file_path": "src/catalog/schemas/decomposed/AskUserQuestion/metadata.json",
+                    "score": "0.00345749058760702610",
+                    "start_line": 1,
+                    "end_line": 14,
+                    "language": "json",
+                    "content": {
+                        "id": "AskUserQuestion",
+                        "name": "AskUserQuestion",
+                        "inputSchema": {
+                            "properties": {
+                                "metadata": {
+                                    "description": "Optional metadata for tracking and analytics purposes. Not displayed to user.",
+                                    "type": "object",
+                                    "properties": {},
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "md": [
+                {
+                    "id": "code",
+                    "file_path": "src/catalog/schemas/decomposed/code.md",
+                    "score": "0.00698569510132074356",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "language": "markdown",
+                    "content": "code"
+                }
+            ]
+        }
+    }
+}
