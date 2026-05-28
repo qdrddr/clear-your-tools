@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-
-from cyt.config import strong_model_entry, strong_model_name
+from urllib.parse import urlparse
 
 _PROVIDER_PREFIXES = frozenset({"openrouter", "deepinfra", "ollama", "openai", "anthropic"})
 
@@ -25,8 +24,6 @@ class StatsCosts:
     llm_output_usd: float
     rerank_input_usd: float
     rerank_output_usd: float
-    strong_model: str
-    strong_input_rate: float
 
     @property
     def pruning_total_usd(self) -> float:
@@ -82,6 +79,62 @@ def _pricing_from_entry(entry: dict[str, Any], kind: str) -> ModelPricing | None
     )
 
 
+def _entry_provider_dns(entry: dict[str, Any]) -> str | None:
+    domain_match = entry.get("domain_match")
+    if isinstance(domain_match, list) and domain_match:
+        return str(domain_match[0])
+    base_url = entry.get("base_url")
+    if base_url:
+        hostname = urlparse(str(base_url)).hostname
+        if hostname:
+            return hostname
+    return None
+
+
+def _model_name_matches(entry: dict[str, Any], model_name: str) -> bool:
+    name = entry.get("name")
+    if not isinstance(name, str):
+        return False
+    if name == model_name:
+        return True
+    return normalize_model_name(name) == normalize_model_name(model_name)
+
+
+def _llm_remote_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = config.get("models", {}).get("llm", {}).get("remote", [])
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def lookup_llm_pricing(
+    config: dict[str, Any],
+    model_name: str | None,
+    provider_dns_name: str | None = None,
+) -> ModelPricing | None:
+    """Return LLM pricing for an upstream model, optionally disambiguated by provider DNS."""
+    if not model_name:
+        return None
+
+    candidates = [entry for entry in _llm_remote_entries(config) if _model_name_matches(entry, model_name)]
+    if provider_dns_name:
+        by_dns = [
+            entry
+            for entry in candidates
+            if _entry_provider_dns(entry) == provider_dns_name
+        ]
+        if by_dns:
+            candidates = by_dns
+
+    if len(candidates) == 1:
+        return _pricing_from_entry(candidates[0], "llm")
+    if len(candidates) > 1:
+        return _pricing_from_entry(candidates[0], "llm")
+
+    catalog = build_pricing_catalog(config)
+    return lookup_pricing(catalog, model_name)
+
+
 def build_pricing_catalog(config: dict[str, Any]) -> dict[str, ModelPricing]:
     """Index config model entries by normalized name."""
     catalog: dict[str, ModelPricing] = {}
@@ -125,16 +178,13 @@ def lookup_pricing(catalog: dict[str, ModelPricing], model_name: str | None) -> 
     return None
 
 
-def empty_costs(config: dict[str, Any] | None = None) -> StatsCosts:
-    model = strong_model_name(config or {})
+def empty_costs() -> StatsCosts:
     return StatsCosts(
         tools_saved_usd=0.0,
         llm_input_usd=0.0,
         llm_output_usd=0.0,
         rerank_input_usd=0.0,
         rerank_output_usd=0.0,
-        strong_model=model,
-        strong_input_rate=0.0,
     )
 
 
@@ -168,16 +218,20 @@ def _accumulate_stage_cost(
 
 
 def compute_stats_costs(
-    totals: dict[str, int],
     stage_model_tokens: list[tuple[str, str | None, str, int]],
+    upstream_saved_tokens: list[tuple[str | None, str | None, int]],
     config: dict[str, Any],
 ) -> StatsCosts:
-    catalog = build_pricing_catalog(config)
-    strong = strong_model_name(config)
-    strong_pricing = _pricing_from_entry(strong_model_entry(config), "llm")
-    strong_input_rate = strong_pricing.input_cost_per_token if strong_pricing else 0.0
+    tools_saved_usd = 0.0
+    for model_name, provider_dns_name, count in upstream_saved_tokens:
+        if count <= 0:
+            continue
+        pricing = lookup_llm_pricing(config, model_name, provider_dns_name)
+        if pricing is None:
+            continue
+        tools_saved_usd += count * pricing.input_cost_per_token
 
-    tools_saved_usd = totals.get("tools_saved", 0) * strong_input_rate
+    catalog = build_pricing_catalog(config)
 
     llm_input_usd = 0.0
     llm_output_usd = 0.0
@@ -207,8 +261,6 @@ def compute_stats_costs(
         llm_output_usd=llm_output_usd,
         rerank_input_usd=rerank_input_usd,
         rerank_output_usd=rerank_output_usd,
-        strong_model=strong,
-        strong_input_rate=strong_input_rate,
     )
 
 

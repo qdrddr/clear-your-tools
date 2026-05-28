@@ -34,17 +34,25 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
             period = getattr(args, "period", "all")
             totals = db.query_totals(period) if db is not None else empty_totals()
             costs = (
-                compute_stats_costs(totals, db.query_stage_model_tokens(period), config)
+                compute_stats_costs(
+                    db.query_stage_model_tokens(period),
+                    db.query_upstream_saved_tokens(period),
+                    config,
+                )
                 if db is not None
-                else empty_costs(config)
+                else empty_costs()
             )
             print(format_totals(totals, costs))
         elif args.stats_command == "summary":
             totals = db.query_summary(args.period) if db is not None else empty_totals()
             costs = (
-                compute_stats_costs(totals, db.query_stage_model_tokens(args.period), config)
+                compute_stats_costs(
+                    db.query_stage_model_tokens(args.period),
+                    db.query_upstream_saved_tokens(args.period),
+                    config,
+                )
                 if db is not None
-                else empty_costs(config)
+                else empty_costs()
             )
             print(format_totals(totals, costs))
         elif args.stats_command == "events":

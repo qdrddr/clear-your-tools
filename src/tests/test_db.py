@@ -86,8 +86,6 @@ def test_query_totals_format() -> None:
         llm_output_usd=0.000012,
         rerank_input_usd=0.0,
         rerank_output_usd=0.0,
-        strong_model="google/gemini-3-flash-preview",
-        strong_input_rate=2.5e-07,
     )
     text = format_totals(
         {
@@ -105,6 +103,46 @@ def test_query_totals_format() -> None:
     assert "tools saved:         2000" in text
     assert "net savings:" in text
     assert "net token savings" not in text
+
+
+def test_query_upstream_saved_tokens_and_costs(temp_db: StatsDB) -> None:
+    from cyt.common.pricing import compute_stats_costs
+
+    record = ProxyRequestRecord(
+        endpoint="anthropic",
+        tools_in=1000,
+        tool_count_in=10,
+        tool_properties_count_in=50,
+        tools_out=400,
+        tool_count_out=8,
+        tool_properties_count_out=20,
+        prune_status="applied",
+        pipeline=["llm"],
+        upstream_model_name="google/gemini-3-flash-preview",
+        upstream_provider_dns="openrouter.ai",
+        upstream_provider="openrouter",
+    )
+    temp_db.record_proxy_request(record)
+
+    saved = temp_db.query_upstream_saved_tokens()
+    assert saved == [("google/gemini-3-flash-preview", "openrouter.ai", 600)]
+
+    config = {
+        "models": {
+            "llm": {
+                "remote": [
+                    {
+                        "name": "google/gemini-3-flash-preview",
+                        "nick": "gemini-3-flash",
+                        "domain_match": ["openrouter.ai"],
+                        "pricing": {"input_cost_per_token": 2.5e-07},
+                    },
+                ],
+            },
+        },
+    }
+    costs = compute_stats_costs([], saved, config)
+    assert costs.tools_saved_usd == 600 * 2.5e-07
 
 
 def test_stats_db_init_creates_parent_dir() -> None:

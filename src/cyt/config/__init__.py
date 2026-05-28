@@ -39,7 +39,6 @@ load_proxy_env()
 # Default fallbacks - single source of truth for hard-coded values
 DEFAULT_REVERSE_PORT: int = 8000
 DEFAULT_MCP_AGGREGATOR_PORT: int = 8000
-DEFAULT_STRONG_MODEL: str = "gemini-3-flash"
 DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
@@ -92,7 +91,6 @@ _DEFAULTS: dict[str, Any] = {
     "stats": {
         "enabled": True,
         "store_full_tools": False,
-        "strong_model": DEFAULT_STRONG_MODEL,
         "database": {
             "path": DEFAULT_STATS_DB_PATH,
         },
@@ -421,32 +419,6 @@ def llm_minimum_tools(config: dict[str, Any] | None = None) -> int:
 
 def reranker_minimum_tools(config: dict[str, Any] | None = None) -> int:
     return int(_merged_config(config or load_config())["models"]["rerankers"]["minimum_tools"])
-
-
-def _llm_remote_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
-    entries = config.get("models", {}).get("llm", {}).get("remote", [])
-    if not isinstance(entries, list):
-        return []
-    return [entry for entry in entries if isinstance(entry, dict)]
-
-
-def strong_model_entry(config: dict[str, Any]) -> dict[str, Any]:
-    """Return the ``models.llm.remote`` entry referenced by ``stats.strong_model``."""
-    merged = _merged_config(config)
-    identifier = str(merged["stats"]["strong_model"])
-    for entry in _llm_remote_entries(merged):
-        nick = entry.get("nick")
-        name = entry.get("name")
-        if identifier == nick or identifier == name:
-            return entry
-    raise ValueError(
-        f"stats.strong_model {identifier!r} does not match any models.llm.remote nick or name",
-    )
-
-
-def strong_model_name(config: dict[str, Any]) -> str:
-    """Return the ``models.llm.remote`` nick for ``stats.strong_model``."""
-    return str(strong_model_entry(config)["nick"])
 
 
 def resolve_model(

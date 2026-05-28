@@ -360,7 +360,7 @@ class StatsDB:
     ) -> list[tuple[str, str | None, str, int]]:
         """Return (stage, model_name, token_type, token_count) for pruning stages."""
         cutoff = self._period_cutoff_ms(period)
-        where = "WHERE p.ts_ms >= ?" if cutoff is not None else ""
+        period_clause = "p.ts_ms >= ? AND " if cutoff is not None else ""
         params: tuple[Any, ...] = (cutoff,) if cutoff is not None else ()
         rows = self._conn.execute(
             f"""
@@ -368,14 +368,35 @@ class StatsDB:
             FROM tokens t
             JOIN model_request m ON t.model_request_id = m.id
             JOIN proxy_request p ON m.proxy_request_id = p.id
-            {where}
-            AND m.stage IN ('llm', 'rerank')
+            WHERE {period_clause}m.stage IN ('llm', 'rerank')
             AND t.is_saved = 0
             GROUP BY m.stage, m.model_name, t.type
             """,
             params,
         ).fetchall()
         return [(str(row[0]), row[1], str(row[2]), int(row[3] or 0)) for row in rows]
+
+    def query_upstream_saved_tokens(
+        self,
+        period: str = "all",
+    ) -> list[tuple[str | None, str | None, int]]:
+        """Return (model_name, provider_dns_name, token_count) for saved upstream tool tokens."""
+        cutoff = self._period_cutoff_ms(period)
+        period_clause = "p.ts_ms >= ? AND " if cutoff is not None else ""
+        params: tuple[Any, ...] = (cutoff,) if cutoff is not None else ()
+        rows = self._conn.execute(
+            f"""
+            SELECT m.model_name, m.provider_dns_name, COALESCE(SUM(t.tokens), 0)
+            FROM tokens t
+            JOIN model_request m ON t.model_request_id = m.id
+            JOIN proxy_request p ON m.proxy_request_id = p.id
+            WHERE {period_clause}m.stage = 'upstream'
+            AND t.is_saved = 1
+            GROUP BY m.model_name, m.provider_dns_name
+            """,
+            params,
+        ).fetchall()
+        return [(row[0], row[1], int(row[2] or 0)) for row in rows]
 
     def query_totals(self, period: str = "all") -> dict[str, int]:
         cutoff = self._period_cutoff_ms(period)
@@ -549,7 +570,7 @@ def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
         lines.extend(
             [
                 "",
-                "tool savings: strong model input:",
+                "tool savings (upstream input rate):",
                 f"  {format_usd(costs.tools_saved_usd)}",
                 "",
                 "pruning cost:",
