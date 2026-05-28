@@ -51,6 +51,17 @@ On each intercepted request the proxy:
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
 
+---
+
+## Configuration
+
+User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt-rproxy` run). Values are layered on
+top of the packaged [`defaults.yaml`](src/cyt/config/defaults.yaml). You can also use `./config.yaml` in the
+working directory or pass `--config`.
+
+<details>
+<summary><strong>Update Thresholds</strong></summary>
+
 Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (deep-merged with bundled
 [`defaults.yaml`](src/cyt/config/defaults.yaml); see [Configuration](#configuration) below).
 
@@ -67,15 +78,10 @@ pruning:
     # - llm
 ```
 
----
+</details>
 
-## Configuration
-
-User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt-rproxy` run). Values are layered on
-top of the packaged [`defaults.yaml`](src/cyt/config/defaults.yaml). You can also use `./config.yaml` in the
-working directory or pass `--config`.
-
-### Update model pricing (stats)
+<details>
+<summary><strong>Update model pricing (stats)</strong></summary>
 
 `cyt-rproxy stats` uses `input_cost_per_token` and `output_cost_per_token` under each model entry in
 `models.llm.remote` (upstream models) and `models.rerankers.remote` (reranker). Update these when provider
@@ -112,6 +118,8 @@ models:
           input_cost_per_token: 5e-08 # $0.05 / 1M input tokens
 ```
 
+</details>
+
 ### Switch from Rerank to LLM pruner
 
 Default pipeline is **`rerank` only**. To use the LLM pruner instead (or after rerank):
@@ -131,6 +139,7 @@ models:
   llm:
     minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
 ```
+
 Rerank & LLM prunners supports any LLM and reranker providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
 
 | Pipeline | API keys needed |
@@ -178,7 +187,7 @@ pruning:
 ```
 
 ```bash
-export OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="..."
 ```
 
 To add another model, append an entry under `models.llm.remote` with `nick`, `name`, `provider`,
@@ -187,13 +196,59 @@ To add another model, append an entry under `models.llm.remote` with `nick`, `na
 Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml). See [`DEV.md`](DEV.md) for the
 rest of the config surface.
 
+<details>
+<summary><strong>Pruning policies</strong></summary>
+
+Two tool categories with different defaults:
+
+| Category         | Default policy   | Examples                  | Typical prefix      |
+| ---------------- | ---------------- | ------------------------- | ------------------- |
+| **System tools** | `prune_optional` | `Read`, `Write`, `Agent`  | (no `mcp__` prefix) |
+| **MCP tools**    | `prune_all`      | Tools from MCP servers    | `mcp__…`            |
+
+Set defaults in `config.yaml`:
+
+```yaml
+defaults:
+  system_tool_policy: prune_optional
+  mcp_tool_policy: prune_all
+```
+
+</details>
+
+<details>
+<summary><strong>Policy options</strong></summary>
+
+| Policy           | Behavior                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| `always_include` | No pruning — full tool schema every turn.                                                           |
+| `prune_optional` | Tool always included; irrelevant **optional** properties dropped. Required properties always kept.  |
+| `prune_all`      | Entire tool may be removed if irrelevant. If kept, required properties stay; optional ones trimmed. |
+
+`prune_all` on MCP tools saves the most tokens. With ~100 tools, expect up to **~95% reduction in
+tool-schema tokens**.
+
+### Per-tool overrides
+
+```yaml
+pruning:
+  per_tool:
+    Agent: prune_optional
+    mcp__hedl__hedl_convert_from: prune_optional
+    mcp__hedl__batch: prune_all
+    mcp__fff__multi_grep: always_include
+```
+
+</details>
+
 ---
 
 ## Quick start
 
-Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
+Requires uv tool.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation)
 
-### Install
+### Install proxy
 
 From PyPI (proxy + pruners):
 
@@ -252,47 +307,6 @@ Stats are stored in `~/.config/cyt/stats.db` by default.
 
 ---
 
-## Pruning policies
-
-Two tool categories with different defaults:
-
-| Category         | Default policy   | Examples                  | Typical prefix      |
-| ---------------- | ---------------- | ------------------------- | ------------------- |
-| **System tools** | `prune_optional` | `Read`, `Write`, `Agent`  | (no `mcp__` prefix) |
-| **MCP tools**    | `prune_all`      | Tools from MCP servers    | `mcp__…`            |
-
-Set defaults in `config.yaml`:
-
-```yaml
-defaults:
-  system_tool_policy: prune_optional
-  mcp_tool_policy: prune_all
-```
-
-### Policy options
-
-| Policy           | Behavior                                                                                            |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
-| `always_include` | No pruning — full tool schema every turn.                                                           |
-| `prune_optional` | Tool always included; irrelevant **optional** properties dropped. Required properties always kept.  |
-| `prune_all`      | Entire tool may be removed if irrelevant. If kept, required properties stay; optional ones trimmed. |
-
-`prune_all` on MCP tools saves the most tokens. With ~100 tools, expect up to **~95% reduction in
-tool-schema tokens**.
-
-### Per-tool overrides
-
-```yaml
-pruning:
-  per_tool:
-    Agent: prune_optional
-    mcp__hedl__hedl_convert_from: prune_optional
-    mcp__hedl__batch: prune_all
-    mcp__fff__multi_grep: always_include
-```
-
----
-
 ## FAQ
 
 <details>
@@ -301,7 +315,7 @@ pruning:
 The reranker and weak LLM used for pruning are **much cheaper per token** than the main model
 (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you
 save on the main request. Set `input_cost_per_token` and `output_cost_per_token` in
-[`~/.config/cyt/config.yaml`](#update-model-pricing-stats) to track savings.
+[`~/.config/cyt/config.yaml`](#configuration) to track savings.
 
 **Example pricing (input tokens):**
 
@@ -337,9 +351,10 @@ How much you save overall depends on:
 
 - **How many tools you have** — more MCP servers mean a larger share of the request is tool
   schemas. We do not recommend using CYT below 50 tools.
-- **Which pruning policy you use** — see [Pruning policies](#pruning-policies).
+- **Which pruning policy you use** — see [Pruning policies](#configuration).
 
-To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md). To see statistics of actual net savings (input tokens) run:
+To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
+To see statistics of actual net savings (input tokens) run:
 
 ```bash
 uv run cyt-rproxy stats totals
