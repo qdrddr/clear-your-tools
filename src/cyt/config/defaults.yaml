@@ -119,7 +119,7 @@ network:
       debug_log_max_body_bytes: 1048576
       http2:
         upstream: true # uv pip install h2
-        serve: true # uv pip install 'hypercorn[h2]' + TLS below
+        serve: false # uv pip install 'hypercorn[h2]' + TLS below
         ssl: # openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
           keyfile: src/crt/key.pem
           certfile: src/crt/cert.pem
