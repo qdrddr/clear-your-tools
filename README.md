@@ -261,7 +261,7 @@ for tool-related cost, or roughly **30–85% savings** depending on policy.
 <details>
 <summary><strong>Why don't I see 30–85% savings on my total request?</strong></summary>
 
-Those numbers apply to **tool schemas only**, not the full prompt (system message, conversation
+Those numbers apply to **tool schemas only** of the **input tokens only**, not the full prompt (system message, conversation
 history, user message, etc.). Clear Your Tools prunes tools based on the user request; the rest of
 the request is unchanged.
 
