@@ -51,7 +51,8 @@ On each intercepted request the proxy:
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
 
-Configure thresholds in `config.yaml` (or `~/.config/cyt/config.yaml`):
+Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (deep-merged with bundled
+[`defaults.yaml`](src/cyt/config/defaults.yaml); see [Configuration](#configuration) below).
 
 ```yaml
 models:
@@ -66,7 +67,125 @@ pruning:
     # - llm
 ```
 
-Full example of [config file is here](src/cyt/config/defaults.yaml).
+---
+
+## Configuration
+
+User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt-rproxy` run). Values are layered on
+top of the packaged [`defaults.yaml`](src/cyt/config/defaults.yaml). You can also use `./config.yaml` in the
+working directory or pass `--config`.
+
+### Update model pricing (stats)
+
+`cyt-rproxy stats` uses `input_cost_per_token` and `output_cost_per_token` under each model entry in
+`models.llm.remote` (upstream models) and `models.rerankers.remote` (reranker). Update these when provider
+prices change so net-savings numbers stay accurate.
+
+Example — Claude Sonnet 4.6 on Anthropic / OpenRouter (`nick: sonnet` in defaults):
+
+```yaml
+# ~/.config/cyt/config.yaml
+models:
+  llm:
+    remote:
+      - nick: sonnet
+        name: claude-sonnet-4-6
+        provider: anthropic
+        key_var_name: ANTHROPIC_API_KEY
+        pricing:
+          input_cost_per_token: 3e-06   # $3 / 1M input tokens
+          output_cost_per_token: 15e-06 # $15 / 1M output tokens
+```
+
+**Important:** `models.llm.remote` is a YAML **list**. Copy every entry you still need from
+[`defaults.yaml`](src/cyt/config/defaults.yaml) (upstream model, pruning LLM, reranker), then adjust `pricing`.
+If your file does not define `models.llm.remote` yet, bundled pricing is used as-is.
+
+Reranker pricing (DeepInfra Qwen3-Reranker-8B):
+
+```yaml
+models:
+  rerankers:
+    remote:
+      - nick: rerank-qwen3-8b
+        pricing:
+          input_cost_per_token: 5e-08 # $0.05 / 1M input tokens
+```
+
+### Switch from Rerank to LLM pruner
+
+Default pipeline is **`rerank` only**. To use the LLM pruner instead (or after rerank):
+
+```yaml
+# ~/.config/cyt/config.yaml
+pruning:
+  pipeline:
+    - llm          # LLM only (no DeepInfra reranker)
+    # - rerank     # or: [rerank, llm] for two-stage filtering
+
+defaults:
+  remote:
+    llm_model_nick: mercury-2   # must match a nick under models.llm.remote
+
+models:
+  llm:
+    minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
+```
+Rerank & LLM prunners supports any LLM and reranker providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
+
+| Pipeline | API keys needed |
+| -------- | ----------------- |
+| `[rerank]` | `DEEPINFRA_API_KEY` |
+| `[llm]` | Key for chosen `llm_model_nick` (see below) |
+| `[rerank, llm]` | Both |
+
+With **`llm` only**, you can skip `DEEPINFRA_API_KEY`. The LLM stage is stronger at dropping whole tools;
+rerank is cheaper and better for the 30–50 tool range.
+
+### Choose LLM pruning model (OpenRouter vs OpenAI)
+
+Set **`defaults.remote.llm_model_nick`** to a `nick` under `models.llm.remote`. Bundled options:
+
+| `llm_model_nick` | Provider | Model | Env var |
+| ---------------- | -------- | ----- | ------- |
+| `mercury-2` | OpenRouter | `inception/mercury-2` | `OPENROUTER_API_KEY` |
+| `gpt-oss-120b` | OpenRouter | `openai/gpt-oss-120b` | `OPENROUTER_API_KEY` |
+| `gemini-3-flash` | OpenRouter | `google/gemini-3-flash-preview` | `OPENROUTER_API_KEY` |
+| `gpt-5.4-nano` | OpenAI | `gpt-5.4-nano` | `OPENAI_API_KEY` |
+
+Example — OpenRouter (default-style):
+
+```yaml
+defaults:
+  remote:
+    llm_model_nick: gpt-oss-120b
+
+pruning:
+  pipeline:
+    - llm
+```
+
+Example — OpenAI direct:
+
+```yaml
+defaults:
+  remote:
+    llm_model_nick: gpt-5.4-nano
+
+pruning:
+  pipeline:
+    - llm
+```
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+To add another model, append an entry under `models.llm.remote` with `nick`, `name`, `provider`,
+`key_var_name`, and `pricing`, then point `llm_model_nick` at that `nick`.
+
+Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml). See [`DEV.md`](DEV.md) for the
+rest of the config surface.
 
 ---
 
@@ -79,22 +198,14 @@ Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
 From PyPI (proxy + pruners):
 
 ```bash
-uv pip install 'clear-your-tools[all]'
-# or
 uv tool install 'clear-your-tools[all]'
-```
-
-For local development, dependencies are managed with [`uv`](https://docs.astral.sh/uv/):
-
-```bash
-uv sync --all-extras
 ```
 
 Copy API keys (or use `~/.config/cyt/.env`):
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
+# Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY or OPENAI_API_KEY (upstream + optional LLM stage)
 ```
 
 Though we strongly recommend using password vaults like macOS KeyChain
@@ -110,12 +221,6 @@ export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPEN
 ### Run the proxy
 
 Installed CLI:
-
-```bash
-cyt-rproxy serve --port 8834
-```
-
-From a dev checkout:
 
 ```bash
 uv run cyt-rproxy serve --port 8834
@@ -135,52 +240,15 @@ claude --model haiku 'say hi' -p
 The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpoint. Change
 `network.proxy.reverse.upstreams` to target a different provider URL.
 
-### Debug without calling upstream
-
-```bash
-cyt-rproxy serve --debug-dry-run --port 8834
-```
-
-Writes transformed request snapshots to `{endpoint}.log` (e.g. `anthropic.log`).
-
 ### View pruning stats savings
 
 ```bash
-cyt-rproxy stats totals
-cyt-rproxy stats summary --period day
-cyt-rproxy stats events --limit 20
+uv run cyt-rproxy stats totals
+uv run cyt-rproxy stats summary --period day
+uv run cyt-rproxy stats events --limit 20
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.
-
----
-
-## HTTP/2 and TLS
-
-Some clients prefer HTTP/2. Generate a local certificate (gitignored under `src/crt/`):
-
-```bash
-mkdir -p src/crt
-openssl req -x509 -nodes -days 365 -newkey rsa:4096 \
-  -keyout src/crt/key.pem \
-  -out src/crt/cert.pem \
-  -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-```
-
-Trust the cert on macOS: Keychain Access → System → import `cert.pem` → Trust → "Always Trust".
-
-Run with HTTP/2:
-
-```bash
-uv pip install h2 'hypercorn[h2]'
-cyt-rproxy serve --http2-serve \
-  --ssl-keyfile src/crt/key.pem \
-  --ssl-certfile src/crt/cert.pem \
-  --port 8834
-```
-
-TLS settings can also live in `config.yaml` under `network.proxy.reverse.http2.ssl`.
 
 ---
 
@@ -232,8 +300,8 @@ pruning:
 
 The reranker and weak LLM used for pruning are **much cheaper per token** than the main model
 (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you
-save on the main request. Add `input_cost_per_token` and `output_cost_per_token` to `config.yaml`
-to track savings.
+save on the main request. Set `input_cost_per_token` and `output_cost_per_token` in
+[`~/.config/cyt/config.yaml`](#update-model-pricing-stats) to track savings.
 
 **Example pricing (input tokens):**
 
@@ -271,21 +339,11 @@ How much you save overall depends on:
   schemas. We do not recommend using CYT below 50 tools.
 - **Which pruning policy you use** — see [Pruning policies](#pruning-policies).
 
-Estimate total savings on a captured request:
-
-```bash
-uv run count_request_tokens.py \
-  --tool-savings-percent 85 \
-  --requestfile temp_example_claude_call.json
-```
-
-To see statistics of actual net savings (input tokens) run:
+To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md). To see statistics of actual net savings (input tokens) run:
 
 ```bash
 uv run cyt-rproxy stats totals
 ```
-
-`temp_example_claude_call` can be obtained from the proxy running in debug mode.
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
 savings on the full request**. The more tools you have the more overall savings you'll see.
@@ -306,53 +364,9 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 
 ---
 
-## Repository layout
+## Development
 
-```text
-.
-├── README.md
-├── pyproject.toml
-├── count_request_tokens.py      # estimate savings on a captured request JSON
-└── src/
-    └── cyt/                       # installable package (Clear Your Tools)
-        ├── config/                # load_config, defaults.yaml
-        ├── common/                # catalog_paths, token_usage, pricing
-        ├── indexer/               # build, retrieve, catalog_io
-        ├── pruners/               # llm, rerank, policies
-        └── proxy/                 # transport, reverse, anthropic, stats, cli
-```
-
-### Library usage
-
-```python
-from cyt.indexer import CatalogIndex, build_catalog_index, load_catalog, retrieve_tools
-from cyt.pruners import rerank_catalog_dict, llm_catalog_dict
-from cyt.pruners.policies import configure_policies_from_config
-from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
-```
-
----
-
-## Configuration reference
-
-Main config file: `config.yaml` in the working directory, or
-[`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (created on first run).
-Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
-
-| Section                                                   | Purpose                                                  |
-| --------------------------------------------------------- | -------------------------------------------------------- |
-| `defaults.system_tool_policy` / `mcp_tool_policy`         | Default pruning behavior for system vs MCP tools         |
-| `defaults.remote.reranking_model_nick` / `llm_model_nick` | Model nicknames for pruning stages                       |
-| `pruning.pipeline`                                        | Ordered list of stages: `rerank`, `llm`                  |
-| `pruning.per_tool`                                        | Per-tool policy overrides                                |
-| `models.rerankers` / `models.llm`                         | Remote model definitions, API keys, minimum tool counts  |
-| `network.proxy.reverse`                                   | Listen port, upstream URLs, HTTP/2, TLS                  |
-| `stats`                                                   | Stats DB path, optional full tool JSON storage           |
-
-Environment variables (see [`src/.env.example`](src/.env.example)):
-
-- `DEEPINFRA_API_KEY` — reranker stage
-- `OPENROUTER_API_KEY` — upstream forwarding and optional LLM stage
+See [`DEV.md`](DEV.md) for checkout setup, repository layout, library usage, and configuration reference.
 
 ## Inspiration
 
@@ -369,38 +383,7 @@ and can improve tool selection accuracy and overall agent reliability.
 
 ## Limitations
 
-This implementation requires running as a reverse proxy with supported agents such as Claude Code,
-and others like Codex, OpenCode, etc (not tested yet). It could be used with Copilot only with the BYOK.
-
-Cursor, or VSCode/Copilot for example, does not support reverse proxying and only supports forward proxies.
-In that configuration, requests remain end-to-end encrypted, so the proxy cannot inspect, manipulate,
-or prune the request payload.
-
-The token savings applies to **input tokens only** and **only tool definitions**,
-the rest of the request remains unchanged. Output/completion or reasoning tokens are not affected.
-
-Conceptually, this functionality is better suited to an MCP Aggregator that connects to backend MCP
-servers and exposes only the relevant tools to the agent. However, the current MCP specification
-has several limitations that make this difficult in practice:
-
-- MCP is not designed to integrate with agent lifecycle hooks.
-- MCP clients and servers are initialized before the agent session starts, so MCP is not aware of
-  agent sessions, sub-agents, or execution context boundaries.
-- Because of this, an MCP Aggregator cannot reliably determine which agent session or sub-agent should
-  see a specific subset of tools, making dynamic tool pruning unreliable.
-
-The savings shown in the `cyt-rproxy stats totals` output are estimated using the `tiktoken`
-tokenizer, because the pruned content is never actually sent to the LLM provider. As a result,
-the reported token savings may slightly differ from the provider's own token counts. However,
-since the pruned content is never transmitted, this discrepancy does not affect the actual billed
-usage.
-
-Local applications only. The proxy intercepts outgoing network traffic from locally running agent
-applications before the requests are sent to the LLM provider, allowing it to prune irrelevant
-tools from the payload:
-
-- Cloud-hosted applications cannot use this approach, because their traffic does not pass through
-  the locally running proxy.
+See [`LIMITATIONS.md`](LIMITATIONS.md) for deployment constraints, token accounting caveats, and MCP aggregator trade-offs.
 
 ## Debug
 
