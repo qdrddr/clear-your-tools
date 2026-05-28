@@ -1,6 +1,6 @@
 # update pyproject.toml version
 
-tag=v0.0.5
+tag=v0.0.6
 
 
 oco -n
