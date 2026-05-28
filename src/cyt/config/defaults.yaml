@@ -87,6 +87,17 @@ models:
           input_cost_per_token: 3e-06
           output_cost_per_token: 15e-06
         # base_url: https://api.anthropic.com/v1
+      - name: gpt-5.4-nano
+        provider: openai
+        nick: gpt-5.4-nano
+        key_var_name: OPENAI_API_KEY
+        max_tokens: 400000
+        domain_match: ["openai.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 0.2e-06
+          output_cost_per_token: 1.25e-06
+        # base_url: https://api.openai.com/v1
   rerankers:
     minimum_tools: 29
     remote:
