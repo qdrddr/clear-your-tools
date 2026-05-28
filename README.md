@@ -43,10 +43,16 @@ On each intercepted request the proxy:
 | `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **29**)             | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
 | `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank`   | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.             |
 
-**Recommendations:**
+**Tool Recommendations:**
 
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
+
+**Pipeline & Model Recommendations**: Choose your pipeline based on model cost:
+
+- **Expensive models** (≥$3/M input tokens, e.g. Sonnet): Use an **LLM pruner** pipeline.
+- **Cheap models** ($0.10–$1/M input tokens, e.g. Haiku, Gemini 3 Flash): Use a **rerank** pipeline with a low-cost model.
+- **Premium models** (e.g. Opus): Use an **LLM pruner + rerank** combined pipeline.
 
 ---
 
@@ -152,7 +158,6 @@ In practice, pruning usually adds modest overhead. Worst case (no tools pruned),
 ~$3.30 instead of $3.00. With typical pruning (40–95% of tool tokens removed), tool-schema cost
 drops from ~$3.00 to roughly **$0.15–$1.80**, plus ~$0.30 for pruning — about **$0.45–$2.10 total**
 for tool-related cost, or roughly **30–85% savings** depending on policy.
-
 </details>
 
 <details>
