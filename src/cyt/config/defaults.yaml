@@ -43,6 +43,50 @@ models:
           input_cost_per_token: 2.5e-07
           output_cost_per_token: 7.5e-07
         # base_url: https://openrouter.ai/api/v1
+      - name: claude-haiku-4-5
+        provider: anthropic
+        nick: haiku
+        key_var_name: ANTHROPIC_API_KEY
+        max_tokens: 200000
+        domain_match: ["anthropic.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 1e-06
+          output_cost_per_token: 5e-06
+        # base_url: https://api.anthropic.com/v1
+      - name: claude-opus-4-7
+        provider: anthropic
+        nick: opus
+        key_var_name: ANTHROPIC_API_KEY
+        max_tokens: 1000000
+        domain_match: ["anthropic.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 5e-06
+          output_cost_per_token: 25e-06
+        # base_url: https://api.anthropic.com/v1
+#      - name: claude-opus-4-7
+#        provider: anthropic
+#        nick: opus-fast
+#        key_var_name: ANTHROPIC_API_KEY
+#        max_tokens: 1000000
+#        domain_match: ["anthropic.com"]
+#        pricing:
+#          # match_litellm:
+#          input_cost_per_token: 30e-06
+#          output_cost_per_token: 150e-06
+#        # base_url: https://api.anthropic.com/v1
+      - name: claude-sonnet-4-6
+        provider: anthropic
+        nick: sonnet
+        key_var_name: ANTHROPIC_API_KEY
+        max_tokens: 1000000
+        domain_match: ["anthropic.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 3e-06
+          output_cost_per_token: 15e-06
+        # base_url: https://api.anthropic.com/v1
   rerankers:
     minimum_tools: 29
     remote:
