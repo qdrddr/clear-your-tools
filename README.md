@@ -140,18 +140,19 @@ models:
     minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
 ```
 
-Rerank & LLM prunners supports any LLM and reranker providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
+Rerank & LLM prunners can use any providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
 
 | Pipeline | API keys needed |
 | -------- | ----------------- |
-| `[rerank]` | `DEEPINFRA_API_KEY` |
+| `[rerank]` | Key for chosen `reranking_model_nick` (see below). Default `DEEPINFRA_API_KEY` |
 | `[llm]` | Key for chosen `llm_model_nick` (see below) |
 | `[rerank, llm]` | Both |
 
 With **`llm` only**, you can skip `DEEPINFRA_API_KEY`. The LLM stage is stronger at dropping whole tools;
 rerank is cheaper and better for the 30–50 tool range.
 
-### Choose LLM pruning model (OpenRouter vs OpenAI)
+<details>
+<summary><strong>Choose LLM pruning model (OpenRouter vs OpenAI)</strong></summary>
 
 Set **`defaults.remote.llm_model_nick`** to a `nick` under `models.llm.remote`. Bundled options:
 
@@ -195,6 +196,8 @@ To add another model, append an entry under `models.llm.remote` with `nick`, `na
 
 Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml). See [`DEV.md`](DEV.md) for the
 rest of the config surface.
+
+</details>
 
 <details>
 <summary><strong>Pruning policies</strong></summary>
@@ -397,7 +400,8 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 
 See [`DEV.md`](DEV.md) for checkout setup, repository layout, library usage, and configuration reference.
 
-## Inspiration
+<details>
+## <summary><strong>Inspiration</strong></summary>
 
 This project is inspired by the ideas explored in the [tool-attention](https://github.com/asadani/tool-attention) project,
 particularly around improving tool selection efficiency and reducing unnecessary tool exposure to the model.
@@ -407,6 +411,8 @@ by pruning irrelevant or confusing tools from the available toolset based on the
 
 Reducing irrelevant tools helps decrease prompt noise, lowers cognitive load on the model,
 and can improve tool selection accuracy and overall agent reliability.
+
+</details>
 
 ---
 
