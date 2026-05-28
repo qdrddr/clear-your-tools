@@ -51,7 +51,7 @@ On each intercepted request the proxy:
 - **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
   stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
 
-Configure thresholds in `config.yaml` (or `~/.configs/cyt/config.yaml`):
+Configure thresholds in `config.yaml` (or `~/.config/cyt/config.yaml`):
 
 ```yaml
 models:
@@ -90,7 +90,7 @@ For local development, dependencies are managed with [`uv`](https://docs.astral.
 uv sync --all-extras
 ```
 
-Copy API keys (or use `~/.configs/cyt/.env`):
+Copy API keys (or use `~/.config/cyt/.env`):
 
 ```bash
 cp .env.example .env
@@ -121,7 +121,7 @@ From a dev checkout:
 uv run cyt-rproxy serve --port 8834
 ```
 
-Default listen port: **8834** (from bundled `defaults.yaml` or `~/.configs/cyt/config.yaml`).
+Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
 
 Point Claude Code at the proxy:
 
@@ -151,7 +151,7 @@ cyt-rproxy stats summary --period day
 cyt-rproxy stats events --limit 20
 ```
 
-Stats are stored in `~/.configs/cyt/stats.db` by default.
+Stats are stored in `~/.config/cyt/stats.db` by default.
 
 ---
 
@@ -330,7 +330,7 @@ from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
 ## Configuration reference
 
 Main config file: `config.yaml` in the working directory, or
-[`~/.configs/cyt/config.yaml`](~/.configs/cyt/config.yaml) (created on first run).
+[`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (created on first run).
 Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
 
 | Section                                                   | Purpose                                                  |

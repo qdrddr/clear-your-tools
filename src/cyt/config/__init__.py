@@ -13,7 +13,7 @@ import yaml
 from dotenv import load_dotenv
 
 BUNDLED_DEFAULTS_NAME = "defaults.yaml"
-USER_ENV_PATH = Path("~/.configs/cyt/.env").expanduser()
+USER_ENV_PATH = Path("~/.config/cyt/.env").expanduser()
 CWD_ENV_PATH = Path.cwd() / ".env"
 _env_path = USER_ENV_PATH  # backward-compatible alias for resolve_model callers
 
@@ -21,7 +21,7 @@ _proxy_env_loaded = False
 
 
 def load_proxy_env() -> None:
-    """Load API keys from ``./.env``, then ``~/.configs/cyt/.env``.
+    """Load API keys from ``./.env``, then ``~/.config/cyt/.env``.
 
     Variables already set in the process environment are never overwritten.
     """
@@ -128,7 +128,7 @@ def resolve_config_path(path: Path | None = None) -> Path:
     Priority:
     1. Explicit *path* (e.g. ``--config``)
     2. ``./config.yaml`` in the current working directory
-    3. ``~/.configs/cyt/config.yaml``
+    3. ``~/.config/cyt/config.yaml``
     """
     if path is not None:
         return path.expanduser()
@@ -206,12 +206,12 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load ``config.yaml`` and layer it on top of built-in defaults.
 
     The bundled ``defaults.yaml`` (when present) is merged before the resolved
-    user/cwd file so partial overrides in ``~/.configs/cyt/config.yaml`` keep
+    user/cwd file so partial overrides in ``~/.config/cyt/config.yaml`` keep
     model and pipeline settings from the package defaults.
 
     Missing keys are populated from built-in defaults so callers always receive
     a complete configuration dictionary. When no config file exists and no
-    explicit path was given, creates ``~/.configs/cyt/config.yaml`` with
+    explicit path was given, creates ``~/.config/cyt/config.yaml`` with
     built-in defaults.
     """
     config_path = resolve_config_path(path)

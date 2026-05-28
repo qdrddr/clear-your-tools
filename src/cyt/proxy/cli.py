@@ -107,7 +107,7 @@ def main() -> None:
         "--config",
         type=Path,
         default=None,
-        help="Path to config.yaml (default: ./config.yaml, then ~/.configs/cyt/config.yaml)",
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
     serve_parser.add_argument(
         "--debug",
