@@ -124,11 +124,11 @@ models:
           # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
 
 pruning:
-  per_tool:
-    Agent: prune_optional
-    mcp__hedl__hedl_convert_from: prune_optional
-    mcp__hedl__batch: prune_all
-    mcp__fff__multi_grep: always_include
+  per_tool: {}
+  #    Agent: prune_optional
+  #    mcp__hedl__hedl_convert_from: prune_optional
+  #    mcp__hedl__batch: prune_all
+  #    mcp__fff__multi_grep: always_include
 
   pipeline:
     - rerank
@@ -148,7 +148,7 @@ network:
       port: 8834
       upstreams:
         - upstream: anthropic
-          url: https://openrouter.ai/api
+          url: https://api.anthropic.com
           kind: anthropic
       endpoints:
         - anthropic
