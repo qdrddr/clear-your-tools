@@ -1,1 +1,1 @@
-"""Reverse HTTP proxy with Anthropic request pruning."""
+"""Reverse HTTP proxy with Anthropic and OpenAI request pruning."""

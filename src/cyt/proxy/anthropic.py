@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -261,7 +262,9 @@ def anthropic_tools_to_catalog_entries(
         name = tool.get("name", "")
         if not name:
             continue
-        input_schema = tool.get("input_schema") or tool.get("inputSchema") or {}
+        input_schema = (
+            tool.get("input_schema") or tool.get("inputSchema") or tool.get("parameters") or {}
+        )
         tool_obj = SimpleNamespace(
             name=name,
             description=tool.get("description", "") or "",
@@ -591,6 +594,12 @@ def filter_tools_for_query(
     capture_decomposed_catalog: bool = False,
     system_policy: SystemToolPolicy = system_tool_policy,
     mcp_policy: MCPToolPolicy = mcp_tool_policy,
+    tools_to_catalog_entries: Callable[
+        [list[dict[str, Any]]],
+        tuple[list[dict[str, Any]], list[Any]],
+    ]
+    | None = None,
+    merged_to_api_tools: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -634,7 +643,9 @@ def filter_tools_for_query(
     }
 
     catalog_source = tools_for_catalog(original_tools, system_policy, mcp_policy)
-    entries, enums = anthropic_tools_to_catalog_entries(catalog_source)
+    to_catalog = tools_to_catalog_entries or anthropic_tools_to_catalog_entries
+    to_api = merged_to_api_tools or _merged_tools_to_anthropic
+    entries, enums = to_catalog(catalog_source)
     entries = entries_for_policy(entries, system_policy, mcp_policy)
     if not entries:
         restored = merge_tools_preserving_order(original_tools, {}, stashed_by_name)
@@ -756,7 +767,7 @@ def filter_tools_for_query(
         )
 
     pruned_by_name: dict[str, dict[str, Any]] = {}
-    for tool in _merged_tools_to_anthropic(merged):
+    for tool in to_api(merged):
         name = str(tool.get("name", ""))
         if name:
             pruned_by_name[name] = tool

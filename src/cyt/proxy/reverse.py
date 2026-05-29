@@ -1,4 +1,4 @@
-"""Reverse HTTP proxy for LLM API endpoints (path-based routing, anthropic pruning)."""
+"""Reverse HTTP proxy with Anthropic and OpenAI request pruning."""
 
 from __future__ import annotations
 
@@ -313,7 +313,7 @@ def _needs_request_buffer(
 ) -> bool:
     if debug:
         return True
-    if kind != "anthropic":
+    if kind not in ("anthropic", "openai"):
         return False
     return method.upper() in BODY_METHODS
 
@@ -436,25 +436,35 @@ async def transform_request_body(
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
 ) -> tuple[bytes, Any | None]:
-    if kind != "anthropic" or not body:
+    if not body or kind not in ("anthropic", "openai"):
         return body, None
     if not content_type or "json" not in content_type.lower():
         return body, None
     try:
-        from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
-
         payload = json.loads(body)
-        transformed, pruning = await asyncio.to_thread(
-            transform_anthropic_request,
-            payload,
-            pruning_pipeline,
-            capture_decomposed_catalog=debug,
-        )
+        if kind == "anthropic":
+            from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
+
+            transformed, pruning = await asyncio.to_thread(
+                transform_anthropic_request,
+                payload,
+                pruning_pipeline,
+                capture_decomposed_catalog=debug,
+            )
+        else:
+            from cyt.proxy.openai_responses import transform_openai_request
+
+            transformed, pruning = await asyncio.to_thread(
+                transform_openai_request,
+                payload,
+                pruning_pipeline,
+                capture_decomposed_catalog=debug,
+            )
         return json.dumps(transformed).encode(), pruning
     except json.JSONDecodeError:
         return body, None
     except Exception as exc:
-        logger.warning("anthropic transform failed: %s", exc)
+        logger.warning("%s transform failed: %s", kind, exc)
         from cyt.proxy.anthropic import PruneResult
 
         return body, PruneResult(

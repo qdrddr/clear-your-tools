@@ -109,6 +109,39 @@ models:
           input_cost_per_token: 0.2e-06
           output_cost_per_token: 1.25e-06
         # base_url: https://api.openai.com/v1
+      - name: gpt-5.4-mini
+        provider: openai
+        nick: gpt-5.4-mini
+        key_var_name: OPENAI_API_KEY
+        max_tokens: 400000
+        domain_match: ["openai.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 0.75e-06
+          output_cost_per_token: 4.5e-06
+        # base_url: https://api.openai.com/v1
+      - name: gpt-5.5
+        provider: openai
+        nick: gpt-5.5
+        key_var_name: OPENAI_API_KEY
+        max_tokens: 1000000
+        domain_match: ["openai.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 5e-06
+          output_cost_per_token: 30e-06
+        # base_url: https://api.openai.com/v1
+      - name: gpt-5.5-pro
+        provider: openai
+        nick: gpt-5.5-pro
+        key_var_name: OPENAI_API_KEY
+        max_tokens: 1000000
+        domain_match: ["openai.com"]
+        pricing:
+          # match_litellm:
+          input_cost_per_token: 30e-06
+          output_cost_per_token: 180e-06
+        # base_url: https://api.openai.com/v1
   rerankers:
     minimum_tools: 29
     remote:
@@ -150,8 +183,12 @@ network:
         - upstream: anthropic
           base_url: https://api.anthropic.com
           kind: anthropic
+        - upstream: openai
+          base_url: https://api.openai.com/v1
+          kind: openai
       endpoints:
         - anthropic
+        - openai
 
 stats:
   enabled: true

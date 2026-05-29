@@ -12,6 +12,6 @@ export OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENRO
 export DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w)"
 
 # Start the proxy in the background (plain HTTP unless you enable http2.serve + TLS certs)
-cyt-rproxy serve --port "${PORT}"
+cyt-rproxy serve
 
 curl -s http://localhost:8834/health
