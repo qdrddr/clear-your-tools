@@ -330,7 +330,10 @@ def _pruning_tokens_summary(usage_map: dict[str, StageTokenUsage]) -> dict[str, 
 
 
 def _snapshot_catalog(data: dict[str, Any]) -> dict[str, Any]:
-    return copy.deepcopy(data)
+    """Catalog snapshot for debug logs (json/md only; request tools live under pruning.input)."""
+    snap = copy.deepcopy(data)
+    snap.pop("tools", None)
+    return snap
 
 
 def _run_rerank_stage(

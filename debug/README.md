@@ -118,13 +118,14 @@ Each block is a JSON snapshot (timestamp header, then payload). Useful fields:
 
 - **`body.tools`** — tools after pruning (what would be sent upstream); these are the tools that “survived.”
 - **`pruning`** — metadata for the same request:
+  - `input.tools` — full copy of request `tools` before pruning (unchanged from the client payload)
   - `tools_in` / `tools_out` — tool counts before and after pruning
   - `status` — e.g. `applied`, `skipped`, `error`
   - `query` — text used for retrieval/rerank
   - token and decomposed breakdown fields when pruning ran
 
-The log does not duplicate the full pre-pruning tool definitions in the snapshot; use `tools_accepted_json` in SQLite
-(or enable `store_full_tools`) for side-by-side JSON of accepted vs final tools.
+For side-by-side JSON outside the log file, `tools_accepted_json` / `tools_final_json` in SQLite still apply when
+`store_full_tools` is enabled (on by default with `--debug`).
 
 Console lines while `--debug` is on also print a one-line summary, e.g. `pruning status: applied (tools 30 -> 28)`.
 
@@ -142,6 +143,7 @@ To investigate the request prior and after pruning:
 
 - User Query saved in `content.messages:` (role: user)
 - Final tools after pruning is in `tools:`
-- Decomposed Tools / Optional properties are in `pruning.decomposed_catalog.json:` while the enums are in `md:`
+- Original request tools are in `pruning.input.tools`
+- Decomposed optional properties per stage are in `pruning.decomposed_catalog.<stage>.json`; enums are in `md`
 
 See as short example in [example.json](example.json)

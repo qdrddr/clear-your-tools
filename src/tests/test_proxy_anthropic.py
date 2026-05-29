@@ -229,3 +229,36 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
     assert out == body
     assert meta is not None
     assert meta.status == "failed"
+
+
+def test_snapshot_catalog_omits_tools() -> None:
+    from cyt.proxy.anthropic import _snapshot_catalog
+
+    data = {"json": [{"id": "a"}], "md": [], "tools": [{"name": "t"}]}
+    snap = _snapshot_catalog(data)
+    assert "tools" not in snap
+    assert snap["json"] == [{"id": "a"}]
+    assert data["tools"] == [{"name": "t"}]
+
+
+def test_input_tools_from_payload_deep_copies_tools() -> None:
+    from typing import Any
+
+    from cyt.proxy.reverse import _input_tools_from_payload, _pruning_meta_for_debug
+
+    original: list[dict[str, Any]] = [{"name": "a", "input_schema": {"x": 1}}]
+    payload = {"tools": original}
+    copied = _input_tools_from_payload(payload)
+    assert copied == original
+    assert copied is not original
+    schema = copied[0]["input_schema"]
+    assert isinstance(schema, dict)
+    schema["x"] = 2
+    original_schema = original[0]["input_schema"]
+    assert isinstance(original_schema, dict)
+    assert original_schema["x"] == 1
+
+    meta = _pruning_meta_for_debug({"status": "applied"}, copied)
+    assert meta is not None
+    assert meta["input"]["tools"] == [{"name": "a", "input_schema": {"x": 2}}]
+    assert _pruning_meta_for_debug(None, copied) is None

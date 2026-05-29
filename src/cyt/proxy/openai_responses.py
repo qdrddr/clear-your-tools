@@ -7,8 +7,6 @@ import logging
 from typing import Any
 
 from cyt.indexer.build import count_json_tokens
-from cyt.pruners.policies import request_pass_through
-
 from cyt.proxy.anthropic import (
     PruneResult,
     _text_from_user_message,
@@ -16,6 +14,7 @@ from cyt.proxy.anthropic import (
     clean_messages,
     filter_tools_for_query,
 )
+from cyt.pruners.policies import request_pass_through
 
 logger = logging.getLogger(__name__)
 

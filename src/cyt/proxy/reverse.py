@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import gzip
 import json
 import logging
@@ -429,19 +430,39 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
     print("\n".join(lines), flush=True)
 
 
+def _input_tools_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Deep copy of request ``tools`` before pruning transforms the payload."""
+    raw = payload.get("tools")
+    if not isinstance(raw, list):
+        return []
+    return copy.deepcopy(raw)
+
+
+def _pruning_meta_for_debug(
+    pruning_meta: dict[str, Any] | None,
+    input_tools: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    if pruning_meta is None or input_tools is None:
+        return pruning_meta
+    return {**pruning_meta, "input": {"tools": input_tools}}
+
+
 async def transform_request_body(
     body: bytes,
     content_type: str | None,
     kind: str | None,
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
-) -> tuple[bytes, Any | None]:
+) -> tuple[bytes, Any | None, list[dict[str, Any]] | None]:
     if not body or kind not in ("anthropic", "openai"):
-        return body, None
+        return body, None, None
     if not content_type or "json" not in content_type.lower():
-        return body, None
+        return body, None, None
+    input_tools: list[dict[str, Any]] | None = None
     try:
         payload = json.loads(body)
+        if debug:
+            input_tools = _input_tools_from_payload(payload)
         if kind == "anthropic":
             from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
 
@@ -460,21 +481,25 @@ async def transform_request_body(
                 pruning_pipeline,
                 capture_decomposed_catalog=debug,
             )
-        return json.dumps(transformed).encode(), pruning
+        return json.dumps(transformed).encode(), pruning, input_tools
     except json.JSONDecodeError:
-        return body, None
+        return body, None, None
     except Exception as exc:
         logger.warning("%s transform failed: %s", kind, exc)
         from cyt.proxy.anthropic import PruneResult
 
-        return body, PruneResult(
-            tools=None,
-            status="failed",
-            query=None,
-            tools_in=0,
-            mcp_tools_in=0,
-            tools_out=None,
-            error=str(exc),
+        return (
+            body,
+            PruneResult(
+                tools=None,
+                status="failed",
+                query=None,
+                tools_in=0,
+                mcp_tools_in=0,
+                tools_out=None,
+                error=str(exc),
+            ),
+            input_tools,
         )
 
 
@@ -552,6 +577,68 @@ def _schedule_stats_record(stats_db: Any, record: Any) -> None:
     task = asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+async def _handle_debug_snapshot(
+    *,
+    request: Request,
+    query: str,
+    target_url: str,
+    endpoint_name: str,
+    request_path: str,
+    forward_headers: dict[str, str],
+    body: bytes,
+    content_type: str | None,
+    pruning_meta: dict[str, Any] | None,
+    debug_terminate: bool,
+    debug_strict: bool,
+    debug_log_max_body_bytes: int | None,
+    debug_log_dir: Path | None,
+    debug_trace: DebugTrace | None,
+) -> Response | None:
+    if pruning_meta and pruning_meta.get("status") != "applied":
+        logger.warning(
+            "pruning %s: %s",
+            pruning_meta.get("status"),
+            pruning_meta.get("error"),
+        )
+    _print_debug_pruning(pruning_meta)
+    snapshot = {
+        "method": request.method,
+        "path": request_path,
+        "query": query or None,
+        "target_url": target_url,
+        "headers": forward_headers,
+        "body": body_for_snapshot(
+            body,
+            content_type,
+            content_encoding=header_content_encoding(forward_headers),
+            max_bytes=debug_log_max_body_bytes,
+        ),
+        "pruning": pruning_meta,
+    }
+    saved_to = await save_debug_snapshot(
+        reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
+        snapshot,
+        max_bytes=debug_log_max_body_bytes,
+    )
+    logger.info(
+        "debug snapshot appended: endpoint=%s path=%s",
+        endpoint_name,
+        request_path,
+    )
+    if not debug_terminate:
+        return None
+    return await _debug_terminate_response(
+        endpoint_name=endpoint_name,
+        request_path=request_path,
+        target_url=target_url,
+        debug_strict=debug_strict,
+        pruning_meta=pruning_meta,
+        saved_to=saved_to,
+        body=body,
+        debug_trace=debug_trace,
+    )
 
 
 async def _debug_terminate_response(
@@ -643,8 +730,9 @@ async def _proxy_request(
     upstream_model = _extract_upstream_model(body, content_type, buffer_body=buffer_body)
 
     pruning = None
+    input_tools: list[dict[str, Any]] | None = None
     if buffer_body:
-        body, pruning = await transform_request_body(
+        body, pruning, input_tools = await transform_request_body(
             body,
             content_type,
             kind,
@@ -652,6 +740,8 @@ async def _proxy_request(
             debug,
         )
     pruning_meta = pruning.to_dict() if pruning is not None else None
+    if debug:
+        pruning_meta = _pruning_meta_for_debug(pruning_meta, input_tools)
 
     if stats_db is not None and pruning is not None:
         record = build_stats_record(
@@ -667,48 +757,24 @@ async def _proxy_request(
     forward_headers = filter_headers(dict(request.headers))
 
     if debug:
-        if pruning_meta and pruning_meta.get("status") != "applied":
-            logger.warning(
-                "pruning %s: %s",
-                pruning_meta.get("status"),
-                pruning_meta.get("error"),
-            )
-        _print_debug_pruning(pruning_meta)
-        snapshot = {
-            "method": request.method,
-            "path": request.url.path,
-            "query": query or None,
-            "target_url": target_url,
-            "headers": forward_headers,
-            "body": body_for_snapshot(
-                body,
-                content_type,
-                content_encoding=header_content_encoding(forward_headers),
-                max_bytes=debug_log_max_body_bytes,
-            ),
-            "pruning": pruning_meta,
-        }
-        saved_to = await save_debug_snapshot(
-            reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
-            snapshot,
-            max_bytes=debug_log_max_body_bytes,
+        early = await _handle_debug_snapshot(
+            request=request,
+            query=query,
+            target_url=target_url,
+            endpoint_name=endpoint_name,
+            request_path=request.url.path,
+            forward_headers=forward_headers,
+            body=body,
+            content_type=content_type,
+            pruning_meta=pruning_meta,
+            debug_terminate=debug_terminate,
+            debug_strict=debug_strict,
+            debug_log_max_body_bytes=debug_log_max_body_bytes,
+            debug_log_dir=debug_log_dir,
+            debug_trace=debug_trace,
         )
-        logger.info(
-            "debug snapshot appended: endpoint=%s path=%s",
-            endpoint_name,
-            request.url.path,
-        )
-        if debug_terminate:
-            return await _debug_terminate_response(
-                endpoint_name=endpoint_name,
-                request_path=request.url.path,
-                target_url=target_url,
-                debug_strict=debug_strict,
-                pruning_meta=pruning_meta,
-                saved_to=saved_to,
-                body=body,
-                debug_trace=debug_trace,
-            )
+        if early is not None:
+            return early
 
     client: httpx.AsyncClient = request.app.state.http_client
     if debug_trace is not None:
