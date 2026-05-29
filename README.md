@@ -197,6 +197,23 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 
 </details>
 
+<details>
+<summary><strong>Is my provider/model supported?</strong></summary>
+
+CYT's **pruner models** (the cheap reranker and LLM that decide which tools to keep) call providers through [LiteLLM](https://docs.litellm.ai/docs/providers).
+If LiteLLM supports your provider and model, you can use them in CYT.
+
+When you run `cyt-rproxy setup` and add a pruner model, you'll be prompted for:
+
+- **Provider** — LiteLLM provider route, without a trailing slash (e.g. `openai`, `openrouter`).
+- **Model name** — LiteLLM model string (see the [provider docs](https://docs.litellm.ai/docs/providers)).
+- **API key env var** — the *name* of the environment variable that holds your key,
+not the key itself (e.g. `OPENAI_API_KEY`, `OPENROUTER_API_KEY`).
+- **domain_match** — hostname from the provider's API base URL (e.g. `openai.com` for OpenAI, `openrouter.ai` for OpenRouter).
+Used to match outgoing requests to the right model config.
+
+</details>
+
 ---
 
 ## Development

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import copy
 import getpass
-import re
 import sys
 from pathlib import Path
 from typing import Any, Literal, TypeVar
+from urllib.parse import urlparse
 
 from cyt.config import (
     DEFAULT_MCP_TOOL_POLICY,
@@ -80,12 +80,26 @@ def domain_match_default_string(
     return PROVIDER_DOMAIN_DEFAULTS.get(provider.strip().lower(), "")
 
 
+def _extract_hostname(part: str) -> str:
+    """Return hostname from a URL or plain hostname."""
+    text = part.strip()
+    if not text:
+        return text
+    if "://" in text or text.startswith("//"):
+        parsed = urlparse(text if "://" in text else f"//{text}")
+        if parsed.hostname:
+            return parsed.hostname
+    if "/" in text:
+        return text.split("/", 1)[0]
+    return text
+
+
 def parse_domain_match(raw: str) -> list[str] | None:
-    """Parse comma-separated hostnames; empty input means omit domain_match."""
+    """Parse comma-separated hostnames or API base URLs; empty input omits domain_match."""
     text = raw.strip()
     if not text:
         return None
-    domains = [part.strip() for part in text.split(",") if part.strip()]
+    domains = [_extract_hostname(part) for part in text.split(",") if part.strip()]
     return domains or None
 
 
@@ -280,7 +294,10 @@ def _prompt_float(text: str, default: float | None = None) -> float:
 
 def _prompt_domain_match(provider: str, entry: dict[str, Any] | None) -> list[str] | None:
     default = domain_match_default_string(provider, entry)
-    raw = _prompt("domain_match (comma-separated hostnames)", default)
+    raw = _prompt(
+        "domain_match (comma-separated hostnames or API base URLs)",
+        default,
+    )
     return parse_domain_match(raw)
 
 
@@ -360,9 +377,13 @@ def _confirm_model_fields(
     name = str(entry.get("name", ""))
     default_nick = str(entry.get("nick") or default_model_nick(provider, name))
     nick = _prompt("Model nick", default_nick)
-    name = _prompt("Model name (LiteLLM)", name)
-    provider = _prompt("Provider (LiteLLM)", provider)
-    key_var = _prompt("Environment variable for API key", str(entry.get("key_var_name", "")))
+    name = _prompt("Model name (https://docs.litellm.ai/docs/providers)", name)
+    provider = _prompt("Provider (https://docs.litellm.ai/docs/providers)", provider)
+    key_var = _prompt(
+        "Environment variable for API key NAME (not the key itself, e.g. OPENAI_API_KEY), "
+        "use key names from https://docs.litellm.ai/docs/providers",
+        str(entry.get("key_var_name", "")),
+    )
     max_tokens = _prompt_int(
         "max_tokens",
         int(entry.get("max_tokens", 128000)),
@@ -400,12 +421,15 @@ def _confirm_model_fields(
 
 
 def _prompt_custom_model(*, kind_label: str) -> dict[str, Any]:
-    provider = _prompt("Provider (LiteLLM)")
-    name = _prompt("Model name (LiteLLM)")
+    provider = _prompt("Provider (https://docs.litellm.ai/docs/providers)")
+    name = _prompt("Model name (https://docs.litellm.ai/docs/providers)")
     nick = _prompt("Model nick", default_model_nick(provider, name))
     while not nick:
         nick = _prompt("Model nick (required)")
-    key_var = _prompt("Environment variable for API key")
+    key_var = _prompt(
+        "Environment variable for API key NAME (not the key itself, e.g. OPENAI_API_KEY), "
+        "use key names from https://docs.litellm.ai/docs/providers",
+    )
     max_tokens = _prompt_int("max_tokens", 128000)
     in_cost = _prompt_cost_per_token("input_cost_per_token")
     out_cost = _prompt_cost_per_token("output_cost_per_token")
@@ -451,7 +475,7 @@ def _prompt_upstreams() -> tuple[list[dict[str, Any]], list[str]]:
     print("Configure upstream API endpoints (kind + URL).")
     while True:
         kind = _prompt("Upstream kind (e.g. anthropic)", "anthropic")
-        url = _prompt("Upstream URL", "https://openrouter.ai/api")
+        url = _prompt("Upstream URL", "https://api.anthropic.com")
         upstreams.append({"upstream": kind, "url": url, "kind": kind})
         if kind not in endpoints:
             endpoints.append(kind)
@@ -515,7 +539,7 @@ def run_setup(config_path: Path) -> None:
             DEFAULT_LLM_MINIMUM_TOOLS,
         )
 
-    print("\n--- Strong upstream LLM (for stats / cost tracking) ---")
+    print("\n--- Primary/Strong upstream LLM (for stats / cost tracking) ---")
     upstream_llm_model = _select_model_from_catalog("llm", label="upstream LLM model")
     if llm_minimum_tools is None:
         llm_minimum_tools = _prompt_int(

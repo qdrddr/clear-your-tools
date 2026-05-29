@@ -70,12 +70,25 @@ class TestDomainMatchParsing:
         assert parse_domain_match("") is None
         assert parse_domain_match("  ") is None
 
+    def test_extracts_hostname_from_url(self) -> None:
+        assert parse_domain_match("https://api.synthetic.new/openai/v1") == [
+            "api.synthetic.new",
+        ]
+
+    def test_extracts_hostnames_from_mixed_urls_and_domains(self) -> None:
+        assert parse_domain_match(
+            "https://api.synthetic.new/openai/v1, anthropic.com",
+        ) == ["api.synthetic.new", "anthropic.com"]
+
     def test_provider_default(self) -> None:
         assert domain_match_default_string("deepinfra") == "deepinfra.com"
-        assert domain_match_default_string(
-            "anthropic",
-            {"domain_match": ["custom.example"]},
-        ) == "custom.example"
+        assert (
+            domain_match_default_string(
+                "anthropic",
+                {"domain_match": ["custom.example"]},
+            )
+            == "custom.example"
+        )
 
 
 class TestCostPerTokenParsing:
@@ -104,7 +117,10 @@ class TestCostPerTokenParsing:
 
 class TestDefaultModelNick:
     def test_slashes_and_spaces(self) -> None:
-        assert default_model_nick("openrouter", "openai/gpt-oss-120b") == "openrouter-openai-gpt-oss-120b"
+        assert (
+            default_model_nick("openrouter", "openai/gpt-oss-120b")
+            == "openrouter-openai-gpt-oss-120b"
+        )
 
     def test_mixed_case_lowered(self) -> None:
         assert default_model_nick("DeepInfra", "Qwen/Reranker") == "deepinfra-qwen-reranker"
