@@ -933,3 +933,8 @@ def run_setup(config_path: Path) -> None:
 
     print("\nProxy base URL(s):")
     print_proxy_urls(reverse_port, endpoints)
+    print("\nNow run proxy with:\n")
+    print("\tuv run cyt-rproxy serve")
+    print("\n\nAnd point Claude Code at the proxy:\n")
+    print('\texport ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"')
+    print("\tclaude 'say hi' -p")
