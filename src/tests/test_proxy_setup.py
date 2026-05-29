@@ -30,7 +30,6 @@ from cyt.proxy.setup import (
     merge_model_entry,
     model_input_cost_per_token,
     normalize_base_url,
-    normalize_host_url,
     parse_cost_per_token,
     parse_domain_match,
     parse_env_file,
@@ -111,10 +110,10 @@ class TestDomainMatchParsing:
             == "custom.example"
         )
 
-    def test_upstream_host_urls_default(self) -> None:
+    def test_upstream_base_urls_default(self) -> None:
         upstreams = [
-            {"host_url": "https://api.anthropic.com"},
-            {"host_url": "https://openrouter.ai"},
+            {"base_url": "https://api.anthropic.com"},
+            {"base_url": "https://openrouter.ai/api"},
         ]
         assert upstream_hostnames_default(upstreams) == ("api.anthropic.com,openrouter.ai")
         assert (
@@ -125,8 +124,8 @@ class TestDomainMatchParsing:
             == "api.anthropic.com,openrouter.ai"
         )
 
-    def test_upstream_host_urls_override_catalog_domain_match(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+    def test_upstream_base_urls_override_catalog_domain_match(self) -> None:
+        upstreams = [{"base_url": "https://api.anthropic.com"}]
         assert (
             domain_match_default_string(
                 "anthropic",
@@ -208,12 +207,12 @@ class TestFilterCatalogByUpstreams:
     ]
 
     def test_filters_by_upstream_hostname(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        upstreams = [{"base_url": "https://api.anthropic.com"}]
         filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
         assert [e["nick"] for e in filtered] == ["anthropic-model"]
 
     def test_returns_all_when_no_match(self) -> None:
-        upstreams = [{"host_url": "https://api.example.com"}]
+        upstreams = [{"base_url": "https://api.example.com/v1"}]
         filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
         assert filtered == self._CATALOG
 
@@ -222,27 +221,18 @@ class TestFilterCatalogByUpstreams:
         assert filter_catalog_by_upstreams(self._CATALOG, None) == self._CATALOG
 
     def test_has_match_when_filtered(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        upstreams = [{"base_url": "https://api.anthropic.com"}]
         assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is True
 
     def test_no_match_for_unknown_host(self) -> None:
-        upstreams = [{"host_url": "https://api.example.com"}]
+        upstreams = [{"base_url": "https://api.example.com/v1"}]
         assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is False
 
 
 class TestUpstreamBaseUrlDefault:
     def test_keeps_api_path(self) -> None:
-        upstreams = [
-            {
-                "host_url": "https://api.openai.com",
-                "base_url": "https://api.openai.com/v1",
-            },
-        ]
+        upstreams = [{"base_url": "https://api.openai.com/v1"}]
         assert upstream_base_url_default(upstreams) == "https://api.openai.com/v1"
-
-    def test_does_not_fall_back_to_host_url(self) -> None:
-        upstreams = [{"host_url": "https://api.openai.com"}]
-        assert upstream_base_url_default(upstreams) is None
 
     def test_empty_upstreams(self) -> None:
         assert upstream_base_url_default([]) is None
@@ -252,20 +242,8 @@ class TestNormalizeBaseUrl:
     def test_preserves_path(self) -> None:
         assert normalize_base_url("https://api.openai.com/v1/") == "https://api.openai.com/v1"
 
-
-class TestNormalizeHostUrl:
-    def test_strips_path(self) -> None:
-        assert normalize_host_url("https://anthropic.com/v1/") == "https://anthropic.com"
-
-    def test_preserves_host_only_url(self) -> None:
-        assert normalize_host_url("https://api.anthropic.com") == "https://api.anthropic.com"
-
-    def test_adds_https_when_scheme_missing(self) -> None:
-        assert normalize_host_url("api.anthropic.com/v1") == "https://api.anthropic.com"
-
-    def test_openai_example(self) -> None:
-        assert normalize_host_url("https://api.openai.com/v1") == "https://api.openai.com"
-        assert normalize_base_url("https://api.openai.com/v1") == "https://api.openai.com/v1"
+    def test_openrouter_api_path(self) -> None:
+        assert normalize_base_url("https://openrouter.ai/api/") == "https://openrouter.ai/api"
 
 
 class TestCostPerTokenParsing:
@@ -387,7 +365,7 @@ class TestPromptCustomModel:
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         result = _prompt_custom_model(
             kind_label="reranker model",
-            default_base_url="https://api.anthropic.com/v1",
+            default_base_url="https://api.anthropic.com",
             prompt_base_url=True,
         )
         assert result["base_url"] == "https://api.deepinfra.com/v1"
@@ -444,7 +422,11 @@ class TestBuildSetupOverlay:
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
-                {"upstream": "anthropic", "host_url": "https://x", "kind": "anthropic"},
+                {
+                    "upstream": "anthropic",
+                    "base_url": "https://openrouter.ai/api",
+                    "kind": "anthropic",
+                },
             ],
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
@@ -459,10 +441,9 @@ class TestBuildSetupOverlay:
         saved_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
         assert saved_upstream == {
             "upstream": "anthropic",
-            "host_url": "https://x",
+            "base_url": "https://openrouter.ai/api",
             "kind": "anthropic",
         }
-        assert "base_url" not in saved_upstream
 
     def test_both_pipeline_includes_pruner(self) -> None:
         overlay = build_setup_overlay(
@@ -476,7 +457,11 @@ class TestBuildSetupOverlay:
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
-                {"upstream": "anthropic", "host_url": "https://x", "kind": "anthropic"},
+                {
+                    "upstream": "anthropic",
+                    "base_url": "https://openrouter.ai/api",
+                    "kind": "anthropic",
+                },
             ],
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",

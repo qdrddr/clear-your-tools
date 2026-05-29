@@ -149,14 +149,14 @@ def parse_cost_per_token(raw: str) -> float:
 
 
 def upstream_hostnames(upstreams: list[dict[str, Any]]) -> list[str]:
-    """Unique hostnames extracted from configured upstream URLs."""
+    """Unique hostnames extracted from configured upstream base URLs."""
     seen: set[str] = set()
     hostnames: list[str] = []
     for upstream in upstreams:
-        host_url = upstream.get("host_url")
-        if not host_url:
+        base_url = upstream.get("base_url")
+        if not base_url:
             continue
-        host = _extract_hostname(str(host_url))
+        host = _extract_hostname(str(base_url))
         if host and host not in seen:
             seen.add(host)
             hostnames.append(host)
@@ -215,10 +215,7 @@ def filter_catalog_by_upstreams(
 
 
 def upstream_base_url_default(upstreams: list[dict[str, Any]]) -> str | None:
-    """First upstream API base URL (with path) entered during setup.
-
-    Unlike ``host_url``, this keeps the API path (e.g. ``https://api.openai.com/v1``).
-    """
+    """First upstream API base URL (with path) entered during setup."""
     for upstream in upstreams:
         base_url = upstream.get("base_url")
         if base_url:
@@ -229,11 +226,11 @@ def upstream_base_url_default(upstreams: list[dict[str, Any]]) -> str | None:
 
 
 def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Serialize upstream entries for saved config (``host_url`` only; path lives on models)."""
+    """Serialize upstream entries for saved config (``base_url`` with path preserved)."""
     result: list[dict[str, Any]] = []
     for upstream in upstreams:
         entry: dict[str, Any] = {}
-        for key in ("upstream", "host_url", "kind"):
+        for key in ("upstream", "base_url", "kind"):
             if key in upstream:
                 entry[key] = copy.deepcopy(upstream[key])
         result.append(entry)
@@ -270,17 +267,6 @@ def _extract_hostname(part: str) -> str:
     if "/" in text:
         return text.split("/", 1)[0]
     return text
-
-
-def normalize_host_url(raw: str) -> str:
-    """Return ``scheme://netloc`` from a URL, dropping path, query, and fragment."""
-    text = raw.strip()
-    if not text:
-        return text
-    parsed = urlparse(text if "://" in text else f"https://{text}")
-    if parsed.scheme and parsed.netloc:
-        return f"{parsed.scheme}://{parsed.netloc}"
-    return text.rstrip("/")
 
 
 def normalize_base_url(raw: str) -> str:
@@ -795,14 +781,12 @@ def _prompt_upstreams() -> tuple[list[dict[str, Any]], list[str]]:
         base_url = normalize_base_url(
             _prompt_required(
                 "Base URL (required)",
-                "https://api.anthropic.com/v1",
+                "https://api.anthropic.com",
             ),
         )
-        host_url = normalize_host_url(base_url)
         upstreams.append(
             {
                 "upstream": kind,
-                "host_url": host_url,
                 "kind": kind,
                 "base_url": base_url,
             },

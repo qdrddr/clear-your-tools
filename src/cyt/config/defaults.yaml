@@ -21,7 +21,7 @@ models:
           # match_litellm: "openrouter/openai/gpt-oss-120b"
           input_cost_per_token: 1.5e-07
           output_cost_per_token: 6e-07
-        # base_url: https://openrouter.ai/api/v1
+        # base_url: https://openrouter.ai/api
       - name: inception/mercury-2
         provider: openrouter
         nick: mercury-2
@@ -31,7 +31,7 @@ models:
           # match_litellm:
           input_cost_per_token: 2.5e-07
           output_cost_per_token: 7.5e-07
-        # base_url: https://openrouter.ai/api/v1
+        # base_url: https://openrouter.ai/api
       - name: google/gemini-3-flash-preview
         provider: openrouter
         nick: gemini-3-flash
@@ -40,9 +40,9 @@ models:
         domain_match: ["openrouter.ai"]
         pricing:
           # match_litellm:
-          input_cost_per_token: 2.5e-07
-          output_cost_per_token: 7.5e-07
-        # base_url: https://openrouter.ai/api/v1
+          input_cost_per_token: 0.5e-06
+          output_cost_per_token: 3e-06
+        # base_url: https://openrouter.ai/api
       - name: claude-haiku-4-5
         provider: anthropic
         nick: haiku45
@@ -53,7 +53,7 @@ models:
           # match_litellm:
           input_cost_per_token: 1e-06
           output_cost_per_token: 5e-06
-        # base_url: https://api.anthropic.com/v1
+        # base_url: https://api.anthropic.com
       - name: claude-opus-4-7
         provider: anthropic
         nick: opus47
@@ -64,7 +64,7 @@ models:
           # match_litellm:
           input_cost_per_token: 5e-06
           output_cost_per_token: 25e-06
-        # base_url: https://api.anthropic.com/v1
+        # base_url: https://api.anthropic.com
       - name: claude-opus-4-8
         provider: anthropic
         nick: opus48
@@ -75,7 +75,7 @@ models:
           # match_litellm:
           input_cost_per_token: 5e-06
           output_cost_per_token: 25e-06
-        # base_url: https://api.anthropic.com/v1
+        # base_url: https://api.anthropic.com
       #      - name: claude-opus-4-7
       #        provider: anthropic
       #        nick: opus47-fast
@@ -86,7 +86,7 @@ models:
       #          # match_litellm:
       #          input_cost_per_token: 30e-06
       #          output_cost_per_token: 150e-06
-      #        # base_url: https://api.anthropic.com/v1
+      #        # base_url: https://api.anthropic.com
       - name: claude-sonnet-4-6
         provider: anthropic
         nick: sonnet46
@@ -97,7 +97,7 @@ models:
           # match_litellm:
           input_cost_per_token: 3e-06
           output_cost_per_token: 15e-06
-        # base_url: https://api.anthropic.com/v1
+        # base_url: https://api.anthropic.com
       - name: gpt-5.4-nano
         provider: openai
         nick: gpt-5.4-nano
@@ -148,7 +148,7 @@ network:
       port: 8834
       upstreams:
         - upstream: anthropic
-          host_url: https://api.anthropic.com
+          base_url: https://api.anthropic.com
           kind: anthropic
       endpoints:
         - anthropic
