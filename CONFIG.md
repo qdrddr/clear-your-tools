@@ -396,6 +396,36 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 
 </details>
 
+<details>
+<summary><strong>Claude Code reports ZlibError when using the proxy</strong></summary>
+
+The proxy must not decompress upstream responses while still forwarding `Content-Encoding: gzip`.
+If it does, Claude Code’s `fetch` inflates already-plain JSON/SSE and raises **`ZlibError`**.
+This is not fixed by installing zlib for Node or Python.
+
+Upgrade `cyt-rproxy` to a version that pass-through streams compressed bytes to clients. Confirm with:
+
+```bash
+curl --raw -sS -D - -o /tmp/cyt-msg.body ... # POST via http://127.0.0.1:8834/anthropic/...
+head -c 4 /tmp/cyt-msg.body | xxd   # 1f8b when Content-Encoding is gzip
+```
+
+Set `ANTHROPIC_BASE_URL` to **`http://localhost:<port>/anthropic`** (see [Run the proxy](#3-run-the-proxy)),
+not `https://`, unless you enable `network.proxy.reverse.http2.serve` with TLS certificates.
+
+</details>
+
+<details>
+<summary><strong>Uvicorn logs Invalid HTTP request received</strong></summary>
+
+Default `cyt-rproxy serve` uses **plain HTTP** (uvicorn).
+Clients that open **`https://`** to that port send a TLS handshake; uvicorn logs this warning and rejects the connection.
+
+Use `http://` in `ANTHROPIC_BASE_URL`, or configure Hypercorn TLS via
+`network.proxy.reverse.http2.serve` and `http2.ssl` in this file.
+
+</details>
+
 ---
 
 ## Development

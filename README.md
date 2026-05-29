@@ -214,6 +214,42 @@ Used to match outgoing requests to the right model config.
 
 </details>
 
+<details>
+<summary><strong>Claude Code reports ZlibError when using the proxy</strong></summary>
+
+This usually means the proxy returned a **`Content-Encoding: gzip`** (or `deflate`) header with a body
+that was **already decompressed**. Claude Code’s `fetch` then tries to inflate plain JSON/SSE and fails.
+It is **not** a missing zlib install on your machine or in CYT.
+
+**Fix:** upgrade to a `cyt-rproxy` build that streams upstream bytes unchanged (`aiter_raw` pass-through).
+After upgrading, verify:
+
+```bash
+curl --raw -sS -D - -o /tmp/cyt-msg.body \
+  -H 'Accept-Encoding: gzip' \
+  ... # your POST to http://127.0.0.1:8834/anthropic/v1/messages
+head -c 4 /tmp/cyt-msg.body | xxd   # should show 1f8b when header says gzip
+```
+
+**Also check:** `ANTHROPIC_BASE_URL` must use **`http://`** for the default plain-HTTP server,
+e.g. `http://localhost:8834/anthropic`. Using **`https://`** against `cyt-rproxy serve` (without TLS/`http2.serve`)
+causes uvicorn’s `Invalid HTTP request received` and broken API calls.
+
+</details>
+
+<details>
+<summary><strong>Uvicorn logs Invalid HTTP request received</strong></summary>
+
+`cyt-rproxy serve` listens for **HTTP/1.1** on the configured port (default **8834**).
+This warning almost always means a client connected with the wrong protocol:
+
+- **`https://localhost:8834`** while the proxy is plain HTTP → TLS handshake bytes, not HTTP
+- HTTP/2 prior knowledge to uvicorn (use `http2.serve` + TLS certs only if you intend HTTPS)
+
+Use `http://localhost:8834/anthropic` unless you have enabled Hypercorn TLS in config.
+
+</details>
+
 ---
 
 ## Development

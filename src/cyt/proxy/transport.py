@@ -165,7 +165,7 @@ async def forward_upstream(
 
     async def response_stream() -> AsyncIterator[bytes]:
         try:
-            async for chunk in upstream_resp.aiter_bytes():
+            async for chunk in upstream_resp.aiter_raw():
                 yield chunk
         finally:
             await upstream_resp.aclose()
