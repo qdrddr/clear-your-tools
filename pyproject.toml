@@ -34,7 +34,7 @@ Issues = "https://github.com/qdrddr/clear-your-tools/issues"
 proxy = [
     "httpx==0.28.1",
     "uvicorn==0.48.0",
-    "starlette==1.1.0",
+    "starlette==1.2.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
     "libsql-experimental==0.0.55",
@@ -97,7 +97,7 @@ test = [
     "mypy==2.1.0",
     "httpx==0.28.1",
     "uvicorn==0.48.0",
-    "starlette==1.1.0",
+    "starlette==1.2.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
     "libsql-experimental==0.0.55",
