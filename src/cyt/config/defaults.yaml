@@ -48,7 +48,7 @@ models:
         nick: haiku45
         key_var_name: ANTHROPIC_API_KEY
         max_tokens: 200000
-        domain_match: ["anthropic.com"]
+        domain_match: ["api.anthropic.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 1e-06
@@ -59,7 +59,7 @@ models:
         nick: opus47
         key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["anthropic.com"]
+        domain_match: ["api.anthropic.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 5e-06
@@ -70,7 +70,7 @@ models:
         nick: opus48
         key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["anthropic.com"]
+        domain_match: ["api.anthropic.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 5e-06
@@ -81,7 +81,7 @@ models:
       #        nick: opus47-fast
       #        key_var_name: ANTHROPIC_API_KEY
       #        max_tokens: 1000000
-      #        domain_match: ["anthropic.com"]
+      #        domain_match: ["api.anthropic.com"]
       #        pricing:
       #          # match_litellm:
       #          input_cost_per_token: 30e-06
@@ -92,7 +92,7 @@ models:
         nick: sonnet46
         key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["anthropic.com"]
+        domain_match: ["api.anthropic.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 3e-06
@@ -120,7 +120,7 @@ models:
         # base_url: https://api.deepinfra.com/v1
         pricing:
           input_cost_per_token: 5e-08
-          # output_cost_per_token": 5e-08
+          output_cost_per_token: 0
           # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
 
 pruning:
@@ -142,13 +142,13 @@ network:
       http2:
         upstream: true # uv pip install h2
         serve: false # uv pip install 'hypercorn[h2]' + TLS below
-        ssl: # openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout src/crt/key.pem -out src/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-          keyfile: src/crt/key.pem
-          certfile: src/crt/cert.pem
+        ssl: # openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout ~/.config/cyt/crt/key.pem -out ~/.config/cyt/crt/cert.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          keyfile: ~/.config/cyt/crt/key.pem
+          certfile: ~/.config/cyt/crt/cert.pem
       port: 8834
       upstreams:
         - upstream: anthropic
-          url: https://api.anthropic.com
+          host_url: https://api.anthropic.com
           kind: anthropic
       endpoints:
         - anthropic

@@ -52,8 +52,6 @@ def normalize_model_name(name: str | None) -> str:
 
 def _read_cost(pricing: dict[str, Any], key: str) -> float | None:
     value = pricing.get(key)
-    if value is None and key == "output_cost_per_token":
-        value = pricing.get('output_cost_per_token"')
     if value is None:
         return None
     try:

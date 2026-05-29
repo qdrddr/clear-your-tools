@@ -69,6 +69,10 @@ def test_load_config_creates_user_config_when_missing(
     assert user_config.exists()
     assert loaded["network"]["proxy"]["reverse"]["port"] == 8834
     assert loaded["stats"]["database"]["path"] == configs.DEFAULT_STATS_DB_PATH
+    written = configs._load_yaml_dict(user_config)
+    ssl = written["network"]["proxy"]["reverse"]["http2"]["ssl"]
+    assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
+    assert written["pruning"]["per_tool"] == {}
 
 
 def test_load_config_uses_cwd_config(isolated_config_paths: dict[str, Path]) -> None:

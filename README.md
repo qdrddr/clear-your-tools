@@ -217,6 +217,13 @@ Used to match outgoing requests to the right model config.
 <details>
 <summary><strong>Claude Code reports ZlibError when using the proxy</strong></summary>
 
+Install missing zlib:
+
+```bash
+npm install -g zlib
+brew install zlib
+```
+
 This usually means the proxy returned a **`Content-Encoding: gzip`** (or `deflate`) header with a body
 that was **already decompressed**. Claude Code’s `fetch` then tries to inflate plain JSON/SSE and fails.
 It is **not** a missing zlib install on your machine or in CYT.

@@ -3,24 +3,45 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
 
-from cyt.config import default_model_nick, save_user_config
+from cyt.config import (
+    bundled_user_config_sections,
+    default_model_nick,
+    save_user_config,
+)
 from cyt.proxy.setup import (
+    PRIMARY_TOO_CHEAP_MESSAGE,
+    _prompt_custom_model,
+    _prompt_key_var_name,
     build_setup_overlay,
+    catalog_has_upstream_domain_match,
     collect_key_var_names,
     domain_match_default_string,
+    filter_catalog_by_max_input_cost,
+    filter_catalog_by_upstreams,
     format_cost_prompt_default,
     format_env_lines,
+    input_usd_per_million,
+    max_pruner_input_cost_per_token,
     merge_model_entry,
+    model_input_cost_per_token,
+    normalize_base_url,
+    normalize_host_url,
     parse_cost_per_token,
     parse_domain_match,
     parse_env_file,
     per_token_to_usd_per_million,
     pipeline_from_choice,
+    print_primary_too_cheap_warning,
     print_proxy_urls,
+    pruner_input_cost_error,
+    recommended_pipeline_default_index,
+    upstream_base_url_default,
+    upstream_hostnames_default,
     usd_per_million_to_per_token,
     write_env_file,
 )
@@ -90,10 +111,170 @@ class TestDomainMatchParsing:
             == "custom.example"
         )
 
+    def test_upstream_host_urls_default(self) -> None:
+        upstreams = [
+            {"host_url": "https://api.anthropic.com"},
+            {"host_url": "https://openrouter.ai"},
+        ]
+        assert upstream_hostnames_default(upstreams) == ("api.anthropic.com,openrouter.ai")
+        assert (
+            domain_match_default_string(
+                "anthropic",
+                upstreams=upstreams,
+            )
+            == "api.anthropic.com,openrouter.ai"
+        )
+
+    def test_upstream_host_urls_override_catalog_domain_match(self) -> None:
+        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        assert (
+            domain_match_default_string(
+                "anthropic",
+                {"domain_match": ["anthropic.com"]},
+                upstreams=upstreams,
+            )
+            == "api.anthropic.com"
+        )
+
+
+class TestPrimaryModelPricing:
+    def test_model_input_cost_per_token(self) -> None:
+        assert model_input_cost_per_token(_SAMPLE_MODEL) == pytest.approx(3e-06)
+        assert model_input_cost_per_token({}) is None
+
+    def test_input_usd_per_million(self) -> None:
+        assert input_usd_per_million(_SAMPLE_MODEL) == pytest.approx(3)
+
+    def test_too_cheap_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cheap = {
+            "pricing": {"input_cost_per_token": 0.2e-06},
+        }
+        print_primary_too_cheap_warning(cheap)
+        assert PRIMARY_TOO_CHEAP_MESSAGE in capsys.readouterr().out
+
+        print_primary_too_cheap_warning(_SAMPLE_MODEL)
+        assert capsys.readouterr().out == ""
+
+    def test_recommended_pipeline_default_index(self) -> None:
+        cheap = {"pricing": {"input_cost_per_token": 2e-06}}
+        expensive = {"pricing": {"input_cost_per_token": 3e-06}}
+        assert recommended_pipeline_default_index(cheap) == 0
+        assert recommended_pipeline_default_index(expensive) == 1
+        assert (
+            recommended_pipeline_default_index(
+                {"pricing": {"input_cost_per_token": 2.5e-06}},
+            )
+            == 0
+        )
+
+    def test_max_pruner_input_cost_per_token(self) -> None:
+        assert max_pruner_input_cost_per_token(_SAMPLE_MODEL) == pytest.approx(3e-07)
+
+    def test_filter_catalog_by_max_input_cost(self) -> None:
+        catalog: list[dict[str, Any]] = [
+            {"nick": "cheap", "pricing": {"input_cost_per_token": 2.5e-07}},
+            {"nick": "mid", "pricing": {"input_cost_per_token": 1e-06}},
+            {"nick": "no-price"},
+        ]
+        filtered = filter_catalog_by_max_input_cost(catalog, 3e-07)
+        assert [e["nick"] for e in filtered] == ["cheap"]
+
+    def test_pruner_input_cost_error(self) -> None:
+        max_cost = max_pruner_input_cost_per_token(_SAMPLE_MODEL)
+        assert max_cost is not None
+        assert max_cost == pytest.approx(3e-07)
+        assert (
+            pruner_input_cost_error(
+                {"pricing": {"input_cost_per_token": 2.5e-07}},
+                max_cost,
+            )
+            is None
+        )
+        error = pruner_input_cost_error(
+            {"pricing": {"input_cost_per_token": 1e-06}},
+            max_cost,
+        )
+        assert error is not None
+        assert "10x cheaper" in error
+        assert "$0.3" in error
+
+
+class TestFilterCatalogByUpstreams:
+    _CATALOG: list[dict[str, Any]] = [
+        {"nick": "openrouter-model", "domain_match": ["openrouter.ai"]},
+        {"nick": "anthropic-model", "domain_match": ["api.anthropic.com"]},
+        {"nick": "no-domain-match"},
+        {"nick": "openai-model", "domain_match": ["openai.com"]},
+    ]
+
+    def test_filters_by_upstream_hostname(self) -> None:
+        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
+        assert [e["nick"] for e in filtered] == ["anthropic-model"]
+
+    def test_returns_all_when_no_match(self) -> None:
+        upstreams = [{"host_url": "https://api.example.com"}]
+        filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
+        assert filtered == self._CATALOG
+
+    def test_returns_all_when_upstreams_empty(self) -> None:
+        assert filter_catalog_by_upstreams(self._CATALOG, []) == self._CATALOG
+        assert filter_catalog_by_upstreams(self._CATALOG, None) == self._CATALOG
+
+    def test_has_match_when_filtered(self) -> None:
+        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is True
+
+    def test_no_match_for_unknown_host(self) -> None:
+        upstreams = [{"host_url": "https://api.example.com"}]
+        assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is False
+
+
+class TestUpstreamBaseUrlDefault:
+    def test_keeps_api_path(self) -> None:
+        upstreams = [
+            {
+                "host_url": "https://api.openai.com",
+                "base_url": "https://api.openai.com/v1",
+            },
+        ]
+        assert upstream_base_url_default(upstreams) == "https://api.openai.com/v1"
+
+    def test_does_not_fall_back_to_host_url(self) -> None:
+        upstreams = [{"host_url": "https://api.openai.com"}]
+        assert upstream_base_url_default(upstreams) is None
+
+    def test_empty_upstreams(self) -> None:
+        assert upstream_base_url_default([]) is None
+
+
+class TestNormalizeBaseUrl:
+    def test_preserves_path(self) -> None:
+        assert normalize_base_url("https://api.openai.com/v1/") == "https://api.openai.com/v1"
+
+
+class TestNormalizeHostUrl:
+    def test_strips_path(self) -> None:
+        assert normalize_host_url("https://anthropic.com/v1/") == "https://anthropic.com"
+
+    def test_preserves_host_only_url(self) -> None:
+        assert normalize_host_url("https://api.anthropic.com") == "https://api.anthropic.com"
+
+    def test_adds_https_when_scheme_missing(self) -> None:
+        assert normalize_host_url("api.anthropic.com/v1") == "https://api.anthropic.com"
+
+    def test_openai_example(self) -> None:
+        assert normalize_host_url("https://api.openai.com/v1") == "https://api.openai.com"
+        assert normalize_base_url("https://api.openai.com/v1") == "https://api.openai.com/v1"
+
 
 class TestCostPerTokenParsing:
     def test_usd_per_million_dollar_sign(self) -> None:
         assert parse_cost_per_token("$5") == pytest.approx(5e-06)
+
+    def test_usd_per_million_fractional_dollar_sign(self) -> None:
+        assert parse_cost_per_token("$0.05") == 5e-08
+        assert parse_cost_per_token("$0.05") != 5.0000000000000004e-08
 
     def test_usd_per_million_plain_number(self) -> None:
         assert parse_cost_per_token("5") == pytest.approx(5e-06)
@@ -113,6 +294,7 @@ class TestCostPerTokenParsing:
     def test_format_prompt_default(self) -> None:
         assert format_cost_prompt_default(3e-06) == "$3"
         assert format_cost_prompt_default(5e-08) == "$0.05"
+        assert format_cost_prompt_default(0) == "$0"
 
 
 class TestDefaultModelNick:
@@ -166,6 +348,83 @@ class TestCollectKeyVarNames:
         ]
 
 
+class TestPromptCustomModel:
+    def test_omits_base_url_when_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(
+            [
+                "deepinfra",
+                "custom/reranker",
+                "",
+                "DEEPINFRA_API_KEY",
+                "32000",
+                "0.05",
+                "0",
+                "",
+                "",
+            ],
+        )
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        result = _prompt_custom_model(
+            kind_label="reranker model",
+            prompt_base_url=True,
+        )
+        assert "base_url" not in result
+
+    def test_prompts_base_url_when_requested(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(
+            [
+                "deepinfra",
+                "custom/reranker",
+                "",
+                "DEEPINFRA_API_KEY",
+                "32000",
+                "0.05",
+                "0",
+                "https://api.deepinfra.com/v1",
+                "",
+            ],
+        )
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        result = _prompt_custom_model(
+            kind_label="reranker model",
+            default_base_url="https://api.anthropic.com/v1",
+            prompt_base_url=True,
+        )
+        assert result["base_url"] == "https://api.deepinfra.com/v1"
+
+    def test_reprompts_when_input_cost_too_high(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(
+            [
+                "deepinfra",
+                "custom/reranker",
+                "",
+                "DEEPINFRA_API_KEY",
+                "32000",
+                "3",
+                "0.05",
+                "0",
+                "",
+            ],
+        )
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        result = _prompt_custom_model(
+            kind_label="reranker model",
+            max_input_cost_per_token=3e-07,
+        )
+        assert result["pricing"]["input_cost_per_token"] == pytest.approx(5e-08)
+
+
+class TestPromptKeyVarName:
+    def test_accepts_catalog_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "")
+        assert _prompt_key_var_name(default="OPENROUTER_API_KEY") == "OPENROUTER_API_KEY"
+
+    def test_reprompts_until_non_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["", "  ", "ANTHROPIC_API_KEY"])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        assert _prompt_key_var_name() == "ANTHROPIC_API_KEY"
+
+
 class TestFormatEnvLines:
     def test_one_line_per_key(self) -> None:
         text = format_env_lines({"A": "1", "B": "2"})
@@ -184,7 +443,9 @@ class TestBuildSetupOverlay:
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
-            upstreams=[{"upstream": "anthropic", "url": "https://x/api", "kind": "anthropic"}],
+            upstreams=[
+                {"upstream": "anthropic", "host_url": "https://x", "kind": "anthropic"},
+            ],
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
@@ -195,6 +456,13 @@ class TestBuildSetupOverlay:
         llm_remote = overlay["models"]["llm"]["remote"]
         assert len(llm_remote) == 1
         assert llm_remote[0]["nick"] == "sonnet"
+        saved_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
+        assert saved_upstream == {
+            "upstream": "anthropic",
+            "host_url": "https://x",
+            "kind": "anthropic",
+        }
+        assert "base_url" not in saved_upstream
 
     def test_both_pipeline_includes_pruner(self) -> None:
         overlay = build_setup_overlay(
@@ -207,7 +475,9 @@ class TestBuildSetupOverlay:
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
-            upstreams=[{"upstream": "anthropic", "url": "https://x/api", "kind": "anthropic"}],
+            upstreams=[
+                {"upstream": "anthropic", "host_url": "https://x", "kind": "anthropic"},
+            ],
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
@@ -224,6 +494,46 @@ class TestSaveUserConfig:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert loaded["custom"]["keep"] is True
         assert loaded["defaults"]["mcp_tool_policy"] == "prune_all"
+
+    def test_apply_bundled_sections_replaces_stale_ssl_and_per_tool(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "\n".join(
+                [
+                    "pruning:",
+                    "  per_tool:",
+                    "    Agent: prune_optional",
+                    "  pipeline:",
+                    "  - rerank",
+                    "network:",
+                    "  proxy:",
+                    "    reverse:",
+                    "      port: 8834",
+                    "      http2:",
+                    "        ssl:",
+                    "          keyfile: src/crt/key.pem",
+                    "          certfile: src/crt/cert.pem",
+                ],
+            ),
+            encoding="utf-8",
+        )
+        save_user_config(
+            path,
+            {"pruning": {"pipeline": ["rerank"]}},
+            apply_bundled_sections=True,
+        )
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        bundled = bundled_user_config_sections()
+        assert loaded["pruning"]["per_tool"] == bundled["pruning"]["per_tool"]
+        assert "Agent" not in loaded["pruning"]["per_tool"]
+        ssl = loaded["network"]["proxy"]["reverse"]["http2"]["ssl"]
+        assert ssl == bundled["network"]["proxy"]["reverse"]["http2"]["ssl"]
+        assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
+        assert ssl["certfile"] == "~/.config/cyt/crt/cert.pem"
+        assert loaded["network"]["proxy"]["reverse"]["port"] == 8834
 
 
 class TestEnvFile:

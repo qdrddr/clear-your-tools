@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib.resources
 import os
 import re
@@ -138,10 +139,53 @@ def resolve_config_path(path: Path | None = None) -> Path:
     return DEFAULT_USER_CONFIG_PATH.expanduser()
 
 
+def bundled_user_config_sections() -> dict[str, Any]:
+    """Packaged-default sections that belong in the on-disk user config file."""
+    bundled = _load_bundled_defaults_yaml()
+    result: dict[str, Any] = {}
+
+    pruning = bundled.get("pruning")
+    if isinstance(pruning, dict) and "per_tool" in pruning:
+        result["pruning"] = {"per_tool": copy.deepcopy(pruning["per_tool"])}
+
+    network = bundled.get("network")
+    if isinstance(network, dict):
+        proxy = network.get("proxy")
+        if isinstance(proxy, dict):
+            reverse = proxy.get("reverse")
+            if isinstance(reverse, dict):
+                reverse_overlay: dict[str, Any] = {}
+                for key in ("debug_log_dir", "debug_log_max_body_bytes", "http2"):
+                    if key in reverse:
+                        reverse_overlay[key] = copy.deepcopy(reverse[key])
+                if reverse_overlay:
+                    result.setdefault("network", {}).setdefault("proxy", {})["reverse"] = (
+                        reverse_overlay
+                    )
+
+    return result
+
+
+def _force_deep_assign(target: dict[str, Any], source: dict[str, Any]) -> None:
+    """Assign *source* onto *target*, replacing dict subtrees (including empty ones)."""
+    for key, value in source.items():
+        if isinstance(value, dict):
+            if not value:
+                target[key] = {}
+                continue
+            child = target.get(key)
+            if not isinstance(child, dict):
+                child = {}
+                target[key] = child
+            _force_deep_assign(child, value)
+            continue
+        target[key] = value
+
+
 def _default_user_config_dict() -> dict[str, Any]:
     """Starter config written when no config file exists anywhere."""
     return _deep_merge(
-        _DEFAULTS,
+        _deep_merge(_DEFAULTS, bundled_user_config_sections()),
         {
             "network": {
                 "proxy": {
@@ -150,7 +194,7 @@ def _default_user_config_dict() -> dict[str, Any]:
                         "upstreams": [
                             {
                                 "upstream": "anthropic",
-                                "url": "https://openrouter.ai/api",
+                                "host_url": "https://openrouter.ai",
                                 "kind": "anthropic",
                             },
                         ],
@@ -187,12 +231,21 @@ def default_model_nick(provider: str, name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", raw).strip("-").lower()
 
 
-def save_user_config(path: Path, overlay: dict[str, Any]) -> None:
+def save_user_config(
+    path: Path,
+    overlay: dict[str, Any],
+    *,
+    apply_bundled_sections: bool = False,
+) -> None:
     """Deep-merge *overlay* onto an existing user config file and write YAML."""
     path = path.expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, Any] = _load_yaml_dict(path) if path.exists() else {}
-    merged = _deep_merge(existing, overlay)
+    bundled_sections = bundled_user_config_sections() if apply_bundled_sections else {}
+    combined_overlay = _deep_merge(bundled_sections, overlay) if apply_bundled_sections else overlay
+    merged = _deep_merge(existing, combined_overlay)
+    if apply_bundled_sections:
+        _force_deep_assign(merged, bundled_sections)
     content = yaml.dump(merged, default_flow_style=False, sort_keys=False)
     path.write_text(content, encoding="utf-8")
 
@@ -403,10 +456,10 @@ def _append_upstream_env_vars(
     for item in reverse_cfg.get("upstreams", []):
         if not isinstance(item, dict):
             continue
-        url = item.get("url")
-        if not url:
+        host_url = item.get("host_url")
+        if not host_url:
             continue
-        host = urlparse(str(url)).hostname
+        host = urlparse(str(host_url)).hostname
         if not host:
             continue
         for name in _key_var_names_for_upstream_host(config, host):
