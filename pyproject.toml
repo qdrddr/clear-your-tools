@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.0.9"
+version = "0.0.10"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -21,7 +21,7 @@ dependencies = [
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
-    "pyyaml>=6.0.2",
+    "pyyaml==6.0.3",
     "tiktoken==0.12.0",
 ]
 
@@ -32,12 +32,12 @@ Issues = "https://github.com/qdrddr/clear-your-tools/issues"
 
 [project.optional-dependencies]
 proxy = [
-    "httpx>=0.28.0",
-    "uvicorn>=0.34.0",
-    "starlette>=0.46.0",
+    "httpx==0.28.1",
+    "uvicorn==0.48.0",
+    "starlette==1.1.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
-    "libsql-experimental>=0.0.55",
+    "libsql-experimental==0.0.55",
 ]
 pruners = [
     "litellm==1.83.14",
@@ -74,33 +74,33 @@ exclude = [
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities
 dev = [
-    "prek>=0.2.12",
-    "pytest~=9.0",
-    "pytest-cov>=6.1.1",
-    "pytest-dependency~=0.6",
-    "pytest-durations~=1.6.1",
-    "pytest-xdist~=3.3",
-    "python-semantic-release>=9.0.0",
-    "mypy>=1.4.0",
-    "ruff>=0.0.280",
-    "types-psutil>=7.2.2.20260508",
+    "prek==0.4.3",
+    "pytest==9.0.3",
+    "pytest-cov==7.1.0",
+    "pytest-dependency==0.6.1",
+    "pytest-durations==1.6.2",
+    "pytest-xdist==3.8.0",
+    "python-semantic-release==10.5.3",
+    "mypy==2.1.0",
+    "ruff==0.15.14",
+    "types-psutil~=7.2.2",
 ]
 
 # Test stack and utilities
 test = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.11.0",
-    "pytest-xdist>=3.3.0",
-    "pytest-timeout>=2.1.0",
-    "pytest-asyncio>=0.21.0",
-    "mypy>=1.4.0",
-    "httpx>=0.28.0",
-    "uvicorn>=0.34.0",
-    "starlette>=0.46.0",
+    "pytest==9.0.3",
+    "pytest-cov==7.1.0",
+    "pytest-mock==3.15.1",
+    "pytest-xdist==3.8.0",
+    "pytest-timeout==2.4.0",
+    "pytest-asyncio==1.4.0",
+    "mypy==2.1.0",
+    "httpx==0.28.1",
+    "uvicorn==0.48.0",
+    "starlette==1.1.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
-    "libsql-experimental>=0.0.55",
+    "libsql-experimental==0.0.55",
     "litellm==1.83.14",
 ]
 
