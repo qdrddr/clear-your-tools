@@ -22,6 +22,7 @@ from cyt.proxy.setup import (
     build_upstream_cli_overlay,
     catalog_has_upstream_domain_match,
     collect_key_var_names,
+    derive_second_level_domain_from_hostname,
     derive_upstream_name_from_url,
     domain_match_default_string,
     filter_catalog_by_max_input_cost,
@@ -29,12 +30,15 @@ from cyt.proxy.setup import (
     format_cost_prompt_default,
     format_env_lines,
     input_usd_per_million,
+    iter_incomplete_remote_models,
     max_pruner_input_cost_per_token,
     merge_endpoints,
     merge_model_entry,
     merge_setup_overlay,
     merge_upstream_entry,
     model_input_cost_per_token,
+    model_missing_metadata_fields,
+    model_output_cost_per_token,
     normalize_base_url,
     normalize_upstream_url,
     parse_cost_per_token,
@@ -44,6 +48,7 @@ from cyt.proxy.setup import (
     pipeline_from_choice,
     print_primary_too_cheap_warning,
     print_proxy_urls,
+    prompt_incomplete_models_in_config,
     pruner_input_cost_error,
     recommended_pipeline_default_index,
     upstream_hostnames_default,
@@ -147,6 +152,73 @@ class TestPrimaryModelPricing:
     def test_model_input_cost_per_token(self) -> None:
         assert model_input_cost_per_token(_SAMPLE_MODEL) == pytest.approx(3e-06)
         assert model_input_cost_per_token({}) is None
+
+    def test_model_output_cost_per_token(self) -> None:
+        assert model_output_cost_per_token(_SAMPLE_MODEL) == pytest.approx(15e-06)
+        assert model_output_cost_per_token(_RERANK_MODEL) is None
+        assert model_output_cost_per_token({}) is None
+
+    def test_model_missing_metadata_fields(self) -> None:
+        assert model_missing_metadata_fields(_SAMPLE_MODEL) == ["domain_match"]
+        assert model_missing_metadata_fields(_RERANK_MODEL) == [
+            "domain_match",
+            "output_cost_per_token",
+        ]
+        assert model_missing_metadata_fields({"name": "x"}) == [
+            "provider",
+            "domain_match",
+            "input_cost_per_token",
+            "output_cost_per_token",
+        ]
+        assert model_missing_metadata_fields({"provider": "  "}) == [
+            "provider",
+            "domain_match",
+            "input_cost_per_token",
+            "output_cost_per_token",
+        ]
+
+    def test_iter_incomplete_remote_models(self) -> None:
+        config = {
+            "models": {
+                "llm": {
+                    "remote": [
+                        _SAMPLE_MODEL,
+                        {"nick": "synced", "name": "provider/model"},
+                    ],
+                },
+                "rerankers": {
+                    "remote": [_RERANK_MODEL],
+                },
+            },
+        }
+        incomplete = iter_incomplete_remote_models(config)
+        assert [entry.get("nick") for _kind, entry in incomplete] == [
+            "sonnet",
+            "synced",
+            "rerank-qwen3-8b",
+        ]
+
+    def test_prompt_incomplete_models_in_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        config: dict[str, Any] = {
+            "models": {
+                "llm": {
+                    "remote": [
+                        {"nick": "synced", "name": "provider/model"},
+                    ],
+                },
+            },
+        }
+        responses = iter(["openrouter", "api.openrouter.ai", "3", "15"])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        changed = prompt_incomplete_models_in_config(config)
+        assert changed is True
+        entry = config["models"]["llm"]["remote"][0]
+        assert entry["provider"] == "openrouter"
+        assert entry["domain_match"] == ["api.openrouter.ai"]
+        pricing = entry["pricing"]
+        assert isinstance(pricing, dict)
+        assert pricing["input_cost_per_token"] == pytest.approx(3e-06)
+        assert pricing["output_cost_per_token"] == pytest.approx(15e-06)
 
     def test_input_usd_per_million(self) -> None:
         assert input_usd_per_million(_SAMPLE_MODEL) == pytest.approx(3)
@@ -264,6 +336,15 @@ class TestDeriveUpstreamNameFromUrl:
 
     def test_two_part_hostname(self) -> None:
         assert derive_upstream_name_from_url("https://openrouter.ai/api") == "openrouter"
+
+
+class TestDeriveSecondLevelDomainFromHostname:
+    def test_api_subdomain_uses_sld(self) -> None:
+        assert derive_second_level_domain_from_hostname("api.openrouter.ai") == "openrouter"
+        assert derive_second_level_domain_from_hostname("api.anthropic.com") == "anthropic"
+
+    def test_two_part_hostname(self) -> None:
+        assert derive_second_level_domain_from_hostname("openrouter.ai") == "openrouter"
 
 
 class TestBuildUpstreamCliOverlay:

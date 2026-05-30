@@ -77,6 +77,54 @@ def model_input_cost_per_token(entry: dict[str, Any]) -> float | None:
     return float(cost)
 
 
+def model_output_cost_per_token(entry: dict[str, Any]) -> float | None:
+    """Return ``output_cost_per_token`` from a catalog or confirmed model entry."""
+    pricing = entry.get("pricing")
+    if not isinstance(pricing, dict):
+        return None
+    cost = pricing.get("output_cost_per_token")
+    if cost is None:
+        return None
+    return float(cost)
+
+
+def model_missing_metadata_fields(entry: dict[str, Any]) -> list[str]:
+    """Return missing ``provider``, ``domain_match``, or pricing field names for a remote model."""
+    missing: list[str] = []
+    provider = entry.get("provider")
+    if not provider or not str(provider).strip():
+        missing.append("provider")
+    domain_match = entry.get("domain_match")
+    if not isinstance(domain_match, list) or not domain_match:
+        missing.append("domain_match")
+    if model_input_cost_per_token(entry) is None:
+        missing.append("input_cost_per_token")
+    if model_output_cost_per_token(entry) is None:
+        missing.append("output_cost_per_token")
+    return missing
+
+
+def iter_incomplete_remote_models(
+    config: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return ``(kind, entry)`` pairs for remote models missing provider, domain_match, or pricing."""
+    result: list[tuple[str, dict[str, Any]]] = []
+    models = config.get("models", {})
+    if not isinstance(models, dict):
+        return result
+    for kind in ("llm", "rerankers"):
+        section = models.get(kind, {})
+        if not isinstance(section, dict):
+            continue
+        remote = section.get("remote", [])
+        if not isinstance(remote, list):
+            continue
+        for entry in remote:
+            if isinstance(entry, dict) and model_missing_metadata_fields(entry):
+                result.append((kind, entry))
+    return result
+
+
 def input_usd_per_million(entry: dict[str, Any]) -> float | None:
     """Return input price as USD per 1M tokens, or ``None`` if unknown."""
     cost = model_input_cost_per_token(entry)
@@ -287,15 +335,20 @@ def normalize_upstream_url(raw: str) -> str:
 UPSTREAM_KIND_CHOICES: tuple[str, ...] = ("anthropic", "openai")
 
 
-def derive_upstream_name_from_url(raw: str) -> str:
-    """Derive upstream endpoint name from the URL hostname's second-level domain."""
-    hostname = _extract_hostname(normalize_upstream_url(raw)).lower()
-    parts = [part for part in hostname.split(".") if part]
+def derive_second_level_domain_from_hostname(hostname: str) -> str:
+    """Return the second-level domain label (e.g. ``openrouter`` from ``api.openrouter.ai``)."""
+    parts = [part for part in hostname.lower().split(".") if part]
     if len(parts) >= 3:
         return parts[-2]
     if parts:
         return parts[0]
-    raise ValueError(f"Cannot derive upstream name from URL: {raw}")
+    raise ValueError(f"Cannot derive second-level domain from hostname: {hostname}")
+
+
+def derive_upstream_name_from_url(raw: str) -> str:
+    """Derive upstream endpoint name from the URL hostname's second-level domain."""
+    hostname = _extract_hostname(normalize_upstream_url(raw))
+    return derive_second_level_domain_from_hostname(hostname)
 
 
 def build_upstream_cli_overlay(
@@ -731,13 +784,20 @@ def _prompt_domain_match(
     entry: dict[str, Any] | None,
     *,
     upstreams: list[dict[str, Any]] | None = None,
+    required: bool = False,
 ) -> list[str] | None:
     default = domain_match_default_string(provider, entry, upstreams=upstreams)
-    raw = _prompt(
-        "domain_match (comma-separated hostnames or API base URLs)",
-        default,
-    )
-    return parse_domain_match(raw)
+    while True:
+        raw = _prompt(
+            "domain_match (comma-separated hostnames or API base URLs)",
+            default,
+        )
+        parsed = parse_domain_match(raw)
+        if parsed is not None:
+            return parsed
+        if not required:
+            return None
+        print("domain_match is required (at least one hostname).", file=sys.stderr)
 
 
 def _prompt_cost_per_token(label: str, default_per_token: float | None = None) -> float:
@@ -897,6 +957,7 @@ def _confirm_model_fields(
         provider,
         entry,
         upstreams=domain_match_upstreams,
+        required=True,
     )
 
     result: dict[str, Any] = {
@@ -904,6 +965,7 @@ def _confirm_model_fields(
         "provider": provider,
         "nick": nick,
         "max_tokens": max_tokens,
+        "domain_match": domain_match,
         "pricing": {
             "input_cost_per_token": in_cost,
             "output_cost_per_token": out_cost,
@@ -911,8 +973,6 @@ def _confirm_model_fields(
     }
     if key_var is not None:
         result["key_var_name"] = key_var
-    if domain_match is not None:
-        result["domain_match"] = domain_match
     if allow_catalog_defaults and entry.get("base_url") is not None:
         result["base_url"] = copy.deepcopy(entry["base_url"])
     return result
@@ -965,9 +1025,9 @@ def _prompt_custom_model(
         provider,
         None,
         upstreams=domain_match_upstreams,
+        required=True,
     )
-    if domain_match is not None:
-        result["domain_match"] = domain_match
+    result["domain_match"] = domain_match
     return result
 
 
@@ -1070,6 +1130,105 @@ def _prompt_upstreams() -> tuple[
         if not _prompt_yes_no("\nAdd another upstream?", default_yes=False):
             break
     return upstreams, endpoints, primary_models
+
+
+def _apply_model_metadata_updates(entry: dict[str, Any], updates: dict[str, Any]) -> None:
+    if "provider" in updates:
+        entry["provider"] = updates["provider"]
+    if "domain_match" in updates:
+        entry["domain_match"] = updates["domain_match"]
+    pricing_updates = updates.get("pricing")
+    if not isinstance(pricing_updates, dict):
+        return
+    pricing = entry.get("pricing")
+    if not isinstance(pricing, dict):
+        pricing = {}
+        entry["pricing"] = pricing
+    pricing.update(pricing_updates)
+
+
+def _prompt_missing_model_metadata(
+    entry: dict[str, Any],
+    *,
+    domain_match_upstreams: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Prompt only for provider, domain_match, and pricing fields missing from *entry*."""
+    missing = model_missing_metadata_fields(entry)
+    if not missing:
+        return {}
+
+    nick = entry.get("nick", "?")
+    name = entry.get("name", "?")
+    print(f"\n--- Model: {nick} ({name}) ---")
+
+    updates: dict[str, Any] = {}
+    if "provider" in missing:
+        updates["provider"] = _prompt_required(
+            "Provider (https://docs.litellm.ai/docs/providers)",
+        )
+
+    if "domain_match" in missing:
+        provider = str(updates.get("provider") or entry.get("provider") or "")
+        domain_match = _prompt_domain_match(
+            provider,
+            entry,
+            upstreams=domain_match_upstreams,
+            required=True,
+        )
+        if domain_match is not None:
+            updates["domain_match"] = domain_match
+
+    pricing_updates: dict[str, float] = {}
+    in_cost = model_input_cost_per_token(entry)
+    out_cost = model_output_cost_per_token(entry)
+    if "input_cost_per_token" in missing:
+        in_cost = _prompt_cost_per_token("input_cost_per_token")
+        pricing_updates["input_cost_per_token"] = in_cost
+    if "output_cost_per_token" in missing:
+        default_out = out_cost if out_cost is not None else in_cost
+        out_cost = _prompt_cost_per_token("output_cost_per_token", default_out)
+        pricing_updates["output_cost_per_token"] = out_cost
+    if pricing_updates:
+        updates["pricing"] = pricing_updates
+    return updates
+
+
+def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
+    """Fill missing provider, domain_match, and pricing on remote models.
+
+    Returns True if anything changed.
+    """
+    incomplete = iter_incomplete_remote_models(config)
+    if not incomplete:
+        return False
+
+    reverse = _reverse_proxy_section(config)
+    upstreams_raw = reverse.get("upstreams", [])
+    upstreams = (
+        [u for u in upstreams_raw if isinstance(u, dict)]
+        if isinstance(upstreams_raw, list)
+        else None
+    )
+
+    print("\n--- Model pricing, provider & domain_match ---")
+    print(
+        "Some models in your config are missing provider, domain_match, or token pricing "
+        "(used by cyt-rproxy stats).",
+    )
+
+    changed = False
+    for _kind, entry in incomplete:
+        if not model_missing_metadata_fields(entry):
+            continue
+        updates = _prompt_missing_model_metadata(
+            entry,
+            domain_match_upstreams=upstreams,
+        )
+        if not updates:
+            continue
+        _apply_model_metadata_updates(entry, updates)
+        changed = True
+    return changed
 
 
 def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:
@@ -1195,7 +1354,11 @@ def run_setup(config_path: Path) -> None:
     save_user_config(config_path, merged, apply_bundled_sections=True)
     print(f"\nWrote {config_path.expanduser()}")
 
-    if _prompt_yes_no("Create a .env file for API keys?", default_yes=True):
+    if prompt_incomplete_models_in_config(merged):
+        save_user_config(config_path, merged, apply_bundled_sections=False)
+        print(f"Updated {config_path.expanduser()}")
+
+    if _prompt_yes_no("\nCreate a .env file for API keys?", default_yes=True):
         env_path = _prompt("Path for .env file", str(USER_ENV_PATH))
         _prompt_env_secrets(overlay.get("models", {}), Path(env_path))
     else:

@@ -13,6 +13,7 @@ from typing import Any
 from cyt import __version__
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
+    DEFAULT_USER_CONFIG_PATH,
     load_config,
     proxy_http2_settings,
     require_proxy_env,
@@ -31,8 +32,12 @@ _STATS_SUBCOMMANDS = ("totals", "summary", "events")
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     from cyt.common.pricing import compute_stats_costs, empty_costs
     from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
+    from cyt.proxy.stats_config_sync import sync_models_from_stats_db
 
     db_path = stats_db_path(config)
+    for line in sync_models_from_stats_db(db_path, DEFAULT_USER_CONFIG_PATH):
+        print(line, file=sys.stderr)
+    config = load_config(getattr(args, "config", None))
     db = StatsDB.open_for_query(db_path)
     try:
         if args.stats_command == "totals":

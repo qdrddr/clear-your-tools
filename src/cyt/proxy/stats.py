@@ -354,6 +354,29 @@ class StatsDB:
             return None
         return now - delta
 
+    def query_distinct_model_identities(
+        self,
+    ) -> list[tuple[str, str, str | None, str | None]]:
+        """Return distinct (stage, model_name, provider_dns_name, provider) rows."""
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT stage, model_name, provider_dns_name, provider
+            FROM model_request
+            WHERE model_name IS NOT NULL
+            AND stage IN ('llm', 'rerank', 'upstream')
+            ORDER BY stage, model_name, provider_dns_name
+            """,
+        ).fetchall()
+        return [
+            (
+                str(row[0]),
+                str(row[1]),
+                row[2] if row[2] is None else str(row[2]),
+                row[3] if row[3] is None else str(row[3]),
+            )
+            for row in rows
+        ]
+
     def query_stage_model_tokens(
         self,
         period: str = "all",
