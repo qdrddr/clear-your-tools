@@ -47,6 +47,11 @@ PROVIDER_DOMAIN_DEFAULTS: dict[str, str] = {
     "openai": "openai.com",
     "deepinfra": "deepinfra.com",
 }
+UPSTREAM_URL_DEFAULTS: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com",
+    "openai": "https://api.openai.com",
+    "gemini": "https://generativelanguage.googleapis.com",
+}
 
 
 def usd_per_million_to_per_token(usd_per_million: float | str) -> float:
@@ -149,14 +154,14 @@ def parse_cost_per_token(raw: str) -> float:
 
 
 def upstream_hostnames(upstreams: list[dict[str, Any]]) -> list[str]:
-    """Unique hostnames extracted from configured upstream host URLs."""
+    """Unique hostnames extracted from configured upstream URLs."""
     seen: set[str] = set()
     hostnames: list[str] = []
     for upstream in upstreams:
-        host_url = upstream.get("host_url")
-        if not host_url:
+        url = upstream.get("url") or upstream.get("host_url")
+        if not url:
             continue
-        host = _extract_hostname(str(host_url))
+        host = _extract_hostname(str(url))
         if host and host not in seen:
             seen.add(host)
             hostnames.append(host)
@@ -214,25 +219,28 @@ def filter_catalog_by_upstreams(
     return filtered if filtered else catalog
 
 
-def upstream_host_url_default(upstreams: list[dict[str, Any]]) -> str | None:
-    """First upstream API host URL (with path) entered during setup."""
+def upstream_url_default(upstreams: list[dict[str, Any]]) -> str | None:
+    """First upstream URL entered during setup (may include path)."""
     for upstream in upstreams:
-        host_url = upstream.get("host_url")
-        if host_url:
-            text = normalize_base_url(str(host_url))
+        url = upstream.get("url") or upstream.get("host_url")
+        if url:
+            text = normalize_upstream_url(str(url))
             if text:
                 return text
     return None
 
 
 def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Serialize upstream entries for saved config (``host_url`` with path preserved)."""
+    """Serialize upstream entries for saved config."""
     result: list[dict[str, Any]] = []
     for upstream in upstreams:
         entry: dict[str, Any] = {}
-        for key in ("upstream", "host_url", "kind"):
+        for key in ("upstream", "kind"):
             if key in upstream:
                 entry[key] = copy.deepcopy(upstream[key])
+        url = upstream.get("url") or upstream.get("host_url")
+        if url:
+            entry["url"] = normalize_upstream_url(str(url))
         result.append(entry)
     return result
 
@@ -269,9 +277,14 @@ def _extract_hostname(part: str) -> str:
     return text
 
 
+def normalize_upstream_url(raw: str) -> str:
+    """Return upstream URL, preserving path (e.g. ``/v1``); strip trailing slash only."""
+    return raw.strip().rstrip("/")
+
+
 def normalize_base_url(raw: str) -> str:
     """Return full API base URL, preserving path (e.g. ``/v1``); strip trailing slash only."""
-    return raw.strip().rstrip("/")
+    return normalize_upstream_url(raw)
 
 
 def parse_domain_match(raw: str) -> list[str] | None:
@@ -378,7 +391,7 @@ def build_setup_overlay(
     pipeline: list[str],
     reranker_model: dict[str, Any] | None,
     llm_pruner_model: dict[str, Any] | None,
-    upstream_llm_model: dict[str, Any],
+    upstream_llm_models: list[dict[str, Any]],
     llm_minimum_tools: int | None,
     reranker_minimum_tools: int | None,
     system_tool_policy: ToolPolicy,
@@ -389,7 +402,7 @@ def build_setup_overlay(
     stats_db_path: str,
 ) -> dict[str, Any]:
     """Build the user config overlay dict from wizard selections."""
-    llm_remote: list[dict[str, Any]] = [copy.deepcopy(upstream_llm_model)]
+    llm_remote: list[dict[str, Any]] = [copy.deepcopy(model) for model in upstream_llm_models]
     if llm_pruner_model is not None:
         llm_remote = merge_model_entry(llm_remote, copy.deepcopy(llm_pruner_model))
 
@@ -772,30 +785,72 @@ def _prompt_policy(label: str, default: ToolPolicy) -> ToolPolicy:
     )
 
 
-def _prompt_upstreams() -> tuple[list[dict[str, Any]], list[str]]:
-    upstreams: list[dict[str, Any]] = []
-    endpoints: list[str] = []
-    print("Configure upstream API endpoints (kind + host URL).")
-    while True:
-        kind = _prompt("Upstream kind (e.g. anthropic, openai, gemini)", "anthropic")
-        host_url = normalize_base_url(
-            _prompt_required(
-                "Host URL (required)",
-                "https://api.anthropic.com",
+def _prompt_primary_upstream_llms_for_upstream(
+    upstream: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Prompt for at least one primary/strong LLM tied to a single upstream."""
+    upstream_only = [upstream]
+    upstream_url = upstream_url_default(upstream_only)
+    print("\n--- Primary/Strong upstream LLM (for stats / cost tracking) ---")
+    models: list[dict[str, Any]] = [
+        _select_model_from_catalog(
+            "llm",
+            label="upstream LLM model",
+            prompt_key_var=False,
+            domain_match_upstreams=upstream_only,
+            filter_by_upstream_domains=True,
+            custom_default_base_url=upstream_url,
+        ),
+    ]
+    while _prompt_yes_no(
+        "\nAdd another Primary/Strong upstream LLM for this upstream?",
+        default_yes=False,
+    ):
+        models.append(
+            _select_model_from_catalog(
+                "llm",
+                label="upstream LLM model",
+                prompt_key_var=False,
+                domain_match_upstreams=upstream_only,
+                filter_by_upstream_domains=True,
+                custom_default_base_url=upstream_url,
             ),
         )
-        upstreams.append(
-            {
-                "upstream": kind,
-                "kind": kind,
-                "host_url": host_url,
-            },
+    return models
+
+
+def _prompt_upstreams() -> tuple[
+    list[dict[str, Any]],
+    list[str],
+    list[dict[str, Any]],
+]:
+    upstreams: list[dict[str, Any]] = []
+    endpoints: list[str] = []
+    primary_models: list[dict[str, Any]] = []
+    print(
+        "Configure upstream API endpoints (kind + URL) and at least one "
+        "primary model per upstream.",
+    )
+    while True:
+        kind = _prompt("Upstream kind (e.g. anthropic, openai, gemini)", "anthropic")
+        url = normalize_upstream_url(
+            _prompt_required(
+                "URL (required)",
+                UPSTREAM_URL_DEFAULTS.get(kind.strip().lower(), "https://api.anthropic.com"),
+            ),
         )
+        upstream: dict[str, Any] = {
+            "upstream": kind,
+            "kind": kind,
+            "url": url,
+        }
+        primary_models.extend(_prompt_primary_upstream_llms_for_upstream(upstream))
+        upstreams.append(upstream)
         if kind not in endpoints:
             endpoints.append(kind)
-        if not _prompt_yes_no("Add another upstream?", default_yes=False):
+        if not _prompt_yes_no("\nAdd another upstream?", default_yes=False):
             break
-    return upstreams, endpoints
+    return upstreams, endpoints, primary_models
 
 
 def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:
@@ -830,28 +885,22 @@ def run_setup(config_path: Path) -> None:
     """Run the interactive setup wizard and write config (and optional .env)."""
     print(f"CYT proxy setup → {config_path.expanduser()}\n")
 
-    print("--- Upstream API endpoints ---")
+    print("--- Proxy Port ---")
     reverse_port = _prompt_int("Reverse proxy port", DEFAULT_REVERSE_PORT)
     print()
-    upstreams, endpoints = _prompt_upstreams()
+    print("--- Upstream API endpoints ---")
+    upstreams, endpoints, upstream_llm_models = _prompt_upstreams()
+    upstream_url = upstream_url_default(upstreams)
+    primary_upstream_llm = upstream_llm_models[0]
 
-    print("\n--- Primary/Strong upstream LLM (for stats / cost tracking) ---")
-    upstream_llm_model = _select_model_from_catalog(
-        "llm",
-        label="upstream LLM model",
-        prompt_key_var=False,
-        domain_match_upstreams=upstreams,
-        filter_by_upstream_domains=True,
-        custom_default_base_url=upstream_host_url_default(upstreams),
-    )
-
-    print_primary_too_cheap_warning(upstream_llm_model)
+    for model in upstream_llm_models:
+        print_primary_too_cheap_warning(model)
 
     pipeline = _prompt_pipeline(
-        recommended_index=recommended_pipeline_default_index(upstream_llm_model),
+        recommended_index=recommended_pipeline_default_index(primary_upstream_llm),
     )
 
-    max_pruner_input_cost = max_pruner_input_cost_per_token(upstream_llm_model)
+    max_pruner_input_cost = max_pruner_input_cost_per_token(primary_upstream_llm)
 
     reranker_model: dict[str, Any] | None = None
     llm_pruner_model: dict[str, Any] | None = None
@@ -865,6 +914,7 @@ def run_setup(config_path: Path) -> None:
             label="reranker model",
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
+            custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
         reranker_minimum_tools = _prompt_int(
@@ -879,6 +929,7 @@ def run_setup(config_path: Path) -> None:
             label="LLM pruner model",
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
+            custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
         llm_minimum_tools = _prompt_int(
@@ -908,7 +959,7 @@ def run_setup(config_path: Path) -> None:
         pipeline=pipeline,
         reranker_model=reranker_model,
         llm_pruner_model=llm_pruner_model,
-        upstream_llm_model=upstream_llm_model,
+        upstream_llm_models=upstream_llm_models,
         llm_minimum_tools=llm_minimum_tools,
         reranker_minimum_tools=reranker_minimum_tools,
         system_tool_policy=system_policy,

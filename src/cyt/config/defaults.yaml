@@ -103,7 +103,7 @@ models:
         nick: gpt-5.4-nano
         key_var_name: OPENAI_API_KEY
         max_tokens: 400000
-        domain_match: ["openai.com"]
+        domain_match: ["api.openai.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 0.2e-06
@@ -114,7 +114,7 @@ models:
         nick: gpt-5.4-mini
         key_var_name: OPENAI_API_KEY
         max_tokens: 400000
-        domain_match: ["openai.com"]
+        domain_match: ["api.openai.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 0.75e-06
@@ -125,7 +125,7 @@ models:
         nick: gpt-5.5
         key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
-        domain_match: ["openai.com"]
+        domain_match: ["api.openai.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 5e-06
@@ -136,7 +136,7 @@ models:
         nick: gpt-5.5-pro
         key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
-        domain_match: ["openai.com"]
+        domain_match: ["api.openai.com"]
         pricing:
           # match_litellm:
           input_cost_per_token: 30e-06
@@ -181,10 +181,10 @@ network:
       port: 8834
       upstreams:
         - upstream: anthropic
-          host_url: https://api.anthropic.com
+          url: https://api.anthropic.com
           kind: anthropic
         - upstream: openai
-          host_url: https://api.openai.com
+          url: https://api.openai.com
           kind: openai
       endpoints:
         - anthropic

@@ -30,6 +30,7 @@ from cyt.proxy.setup import (
     merge_model_entry,
     model_input_cost_per_token,
     normalize_base_url,
+    normalize_upstream_url,
     parse_cost_per_token,
     parse_domain_match,
     parse_env_file,
@@ -39,8 +40,8 @@ from cyt.proxy.setup import (
     print_proxy_urls,
     pruner_input_cost_error,
     recommended_pipeline_default_index,
-    upstream_host_url_default,
     upstream_hostnames_default,
+    upstream_url_default,
     usd_per_million_to_per_token,
     write_env_file,
 )
@@ -110,10 +111,10 @@ class TestDomainMatchParsing:
             == "custom.example"
         )
 
-    def test_upstream_host_urls_default(self) -> None:
+    def test_upstream_urls_default(self) -> None:
         upstreams = [
-            {"host_url": "https://api.anthropic.com"},
-            {"host_url": "https://openrouter.ai/api"},
+            {"url": "https://api.anthropic.com"},
+            {"url": "https://openrouter.ai/api"},
         ]
         assert upstream_hostnames_default(upstreams) == ("api.anthropic.com,openrouter.ai")
         assert (
@@ -124,8 +125,8 @@ class TestDomainMatchParsing:
             == "api.anthropic.com,openrouter.ai"
         )
 
-    def test_upstream_host_urls_override_catalog_domain_match(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+    def test_upstream_urls_override_catalog_domain_match(self) -> None:
+        upstreams = [{"url": "https://api.anthropic.com"}]
         assert (
             domain_match_default_string(
                 "anthropic",
@@ -207,12 +208,12 @@ class TestFilterCatalogByUpstreams:
     ]
 
     def test_filters_by_upstream_hostname(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        upstreams = [{"url": "https://api.anthropic.com"}]
         filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
         assert [e["nick"] for e in filtered] == ["anthropic-model"]
 
     def test_returns_all_when_no_match(self) -> None:
-        upstreams = [{"host_url": "https://api.example.com/v1"}]
+        upstreams = [{"url": "https://api.example.com/v1"}]
         filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
         assert filtered == self._CATALOG
 
@@ -221,21 +222,33 @@ class TestFilterCatalogByUpstreams:
         assert filter_catalog_by_upstreams(self._CATALOG, None) == self._CATALOG
 
     def test_has_match_when_filtered(self) -> None:
-        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        upstreams = [{"url": "https://api.anthropic.com"}]
         assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is True
 
     def test_no_match_for_unknown_host(self) -> None:
-        upstreams = [{"host_url": "https://api.example.com/v1"}]
+        upstreams = [{"url": "https://api.example.com/v1"}]
         assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is False
 
 
-class TestUpstreamHostUrlDefault:
+class TestUpstreamUrlDefault:
     def test_keeps_api_path(self) -> None:
-        upstreams = [{"host_url": "https://api.openai.com/v1"}]
-        assert upstream_host_url_default(upstreams) == "https://api.openai.com/v1"
+        upstreams = [{"url": "https://api.openai.com/v1"}]
+        assert upstream_url_default(upstreams) == "https://api.openai.com/v1"
+
+    def test_falls_back_to_legacy_host_url(self) -> None:
+        upstreams = [{"host_url": "https://api.anthropic.com"}]
+        assert upstream_url_default(upstreams) == "https://api.anthropic.com"
 
     def test_empty_upstreams(self) -> None:
-        assert upstream_host_url_default([]) is None
+        assert upstream_url_default([]) is None
+
+
+class TestNormalizeUpstreamUrl:
+    def test_preserves_path(self) -> None:
+        assert normalize_upstream_url("https://api.openai.com/v1/") == "https://api.openai.com/v1"
+
+    def test_openrouter_api_path(self) -> None:
+        assert normalize_upstream_url("https://openrouter.ai/api/") == "https://openrouter.ai/api"
 
 
 class TestNormalizeBaseUrl:
@@ -415,7 +428,7 @@ class TestBuildSetupOverlay:
             pipeline=["rerank"],
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=None,
-            upstream_llm_model=_SAMPLE_MODEL,
+            upstream_llm_models=[_SAMPLE_MODEL],
             llm_minimum_tools=50,
             reranker_minimum_tools=29,
             system_tool_policy="prune_optional",
@@ -424,7 +437,7 @@ class TestBuildSetupOverlay:
             upstreams=[
                 {
                     "upstream": "anthropic",
-                    "host_url": "https://openrouter.ai/api",
+                    "url": "https://openrouter.ai/api",
                     "kind": "anthropic",
                 },
             ],
@@ -441,7 +454,7 @@ class TestBuildSetupOverlay:
         saved_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
         assert saved_upstream == {
             "upstream": "anthropic",
-            "host_url": "https://openrouter.ai/api",
+            "url": "https://openrouter.ai/api",
             "kind": "anthropic",
         }
 
@@ -450,7 +463,7 @@ class TestBuildSetupOverlay:
             pipeline=["rerank", "llm"],
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=_LLM_PRUNER,
-            upstream_llm_model=_SAMPLE_MODEL,
+            upstream_llm_models=[_SAMPLE_MODEL],
             llm_minimum_tools=50,
             reranker_minimum_tools=29,
             system_tool_policy="prune_optional",
@@ -459,7 +472,7 @@ class TestBuildSetupOverlay:
             upstreams=[
                 {
                     "upstream": "anthropic",
-                    "host_url": "https://openrouter.ai/api",
+                    "url": "https://openrouter.ai/api",
                     "kind": "anthropic",
                 },
             ],
@@ -469,6 +482,31 @@ class TestBuildSetupOverlay:
         nicks = {e["nick"] for e in overlay["models"]["llm"]["remote"]}
         assert nicks == {"sonnet", "mercury-2"}
         assert overlay["defaults"]["remote"]["llm_model_nick"] == "mercury-2"
+
+    def test_multiple_primary_upstream_models(self) -> None:
+        second_primary = {**_SAMPLE_MODEL, "nick": "opus", "name": "claude-opus-4-7"}
+        overlay = build_setup_overlay(
+            pipeline=["rerank"],
+            reranker_model=_RERANK_MODEL,
+            llm_pruner_model=None,
+            upstream_llm_models=[_SAMPLE_MODEL, second_primary],
+            llm_minimum_tools=50,
+            reranker_minimum_tools=29,
+            system_tool_policy="prune_optional",
+            mcp_tool_policy="prune_all",
+            reverse_port=8834,
+            upstreams=[
+                {
+                    "upstream": "anthropic",
+                    "url": "https://api.anthropic.com",
+                    "kind": "anthropic",
+                },
+            ],
+            endpoints=["anthropic"],
+            stats_db_path="~/.config/cyt/stats.db",
+        )
+        nicks = [e["nick"] for e in overlay["models"]["llm"]["remote"]]
+        assert nicks == ["sonnet", "opus"]
 
 
 class TestSaveUserConfig:

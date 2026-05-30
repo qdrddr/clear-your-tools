@@ -283,10 +283,10 @@ def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]
             raise ValueError(f"No upstream configured for endpoint: {endpoint}")
         entry = upstreams[endpoint]
         kind = entry.get("kind")
-        host_url = entry.get("host_url") or entry.get("base_url")
-        if not host_url:
-            raise ValueError(f"No host_url configured for upstream: {endpoint}")
-        routes[f"/{endpoint}"] = (str(host_url).rstrip("/"), kind)
+        url = entry.get("url") or entry.get("host_url") or entry.get("base_url")
+        if not url:
+            raise ValueError(f"No url configured for upstream: {endpoint}")
+        routes[f"/{endpoint}"] = (str(url).rstrip("/"), kind)
     if not routes:
         raise ValueError("No proxy endpoints configured")
     return routes
