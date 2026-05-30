@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.0.13"
+version = "0.1.0"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
