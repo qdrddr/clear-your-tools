@@ -17,9 +17,12 @@ from cyt.proxy.setup import (
     PRIMARY_TOO_CHEAP_MESSAGE,
     _prompt_custom_model,
     _prompt_key_var_name,
+    apply_upstream_cli_to_config,
     build_setup_overlay,
+    build_upstream_cli_overlay,
     catalog_has_upstream_domain_match,
     collect_key_var_names,
+    derive_upstream_name_from_url,
     domain_match_default_string,
     filter_catalog_by_max_input_cost,
     filter_catalog_by_upstreams,
@@ -27,7 +30,10 @@ from cyt.proxy.setup import (
     format_env_lines,
     input_usd_per_million,
     max_pruner_input_cost_per_token,
+    merge_endpoints,
     merge_model_entry,
+    merge_setup_overlay,
+    merge_upstream_entry,
     model_input_cost_per_token,
     normalize_base_url,
     normalize_upstream_url,
@@ -251,6 +257,131 @@ class TestNormalizeUpstreamUrl:
         assert normalize_upstream_url("https://openrouter.ai/api/") == "https://openrouter.ai/api"
 
 
+class TestDeriveUpstreamNameFromUrl:
+    def test_api_subdomain(self) -> None:
+        assert derive_upstream_name_from_url("https://api.anthropic.com") == "anthropic"
+        assert derive_upstream_name_from_url("https://api.openai.com/v1") == "openai"
+
+    def test_two_part_hostname(self) -> None:
+        assert derive_upstream_name_from_url("https://openrouter.ai/api") == "openrouter"
+
+
+class TestBuildUpstreamCliOverlay:
+    def test_minimal_anthropic_upstream(self) -> None:
+        overlay = build_upstream_cli_overlay(
+            "https://api.anthropic.com",
+            "anthropic",
+        )
+        assert overlay["network"]["proxy"]["reverse"] == {
+            "upstreams": [
+                {
+                    "upstream": "anthropic",
+                    "kind": "anthropic",
+                    "url": "https://api.anthropic.com",
+                },
+            ],
+            "endpoints": ["anthropic"],
+        }
+
+    def test_openai_kind_on_custom_host(self) -> None:
+        overlay = build_upstream_cli_overlay(
+            "https://openrouter.ai/api",
+            "openai",
+        )
+        reverse = overlay["network"]["proxy"]["reverse"]
+        assert reverse["upstreams"][0]["upstream"] == "openrouter"
+        assert reverse["upstreams"][0]["kind"] == "openai"
+        assert reverse["endpoints"] == ["openrouter"]
+
+    def test_explicit_upstream_name(self) -> None:
+        overlay = build_upstream_cli_overlay(
+            "https://openrouter.ai/api",
+            "anthropic",
+            upstream_name="anthropic",
+        )
+        reverse = overlay["network"]["proxy"]["reverse"]
+        assert reverse["upstreams"][0]["upstream"] == "anthropic"
+        assert reverse["endpoints"] == ["anthropic"]
+
+    def test_rejects_empty_upstream_name(self) -> None:
+        with pytest.raises(ValueError, match="upstream name must not be empty"):
+            build_upstream_cli_overlay(
+                "https://api.anthropic.com",
+                "anthropic",
+                upstream_name="  ",
+            )
+
+    def test_rejects_unknown_kind(self) -> None:
+        with pytest.raises(ValueError, match="Invalid upstream kind"):
+            build_upstream_cli_overlay("https://api.anthropic.com", "gemini")
+
+
+class TestApplyUpstreamCliToConfig:
+    def test_writes_to_config_yaml(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("stats:\n  enabled: true\n", encoding="utf-8")
+        apply_upstream_cli_to_config(
+            config_path,
+            upstream_url="https://api.anthropic.com",
+            upstream_kind="anthropic",
+        )
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert saved["stats"]["enabled"] is True
+        reverse = saved["network"]["proxy"]["reverse"]
+        assert reverse["upstreams"] == [
+            {
+                "upstream": "anthropic",
+                "kind": "anthropic",
+                "url": "https://api.anthropic.com",
+            },
+        ]
+        assert reverse["endpoints"] == ["anthropic"]
+
+    def test_explicit_upstream_name(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.yaml"
+        apply_upstream_cli_to_config(
+            config_path,
+            upstream_url="https://openrouter.ai/api",
+            upstream_kind="anthropic",
+            upstream_name="anthropic",
+        )
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        reverse = saved["network"]["proxy"]["reverse"]
+        assert reverse["upstreams"][0]["upstream"] == "anthropic"
+        assert reverse["endpoints"] == ["anthropic"]
+
+    def test_preserves_existing_upstreams(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "network:",
+                    "  proxy:",
+                    "    reverse:",
+                    "      upstreams:",
+                    "        - upstream: openai",
+                    "          kind: openai",
+                    "          url: https://api.openai.com",
+                    "      endpoints:",
+                    "      - openai",
+                ],
+            ),
+            encoding="utf-8",
+        )
+        apply_upstream_cli_to_config(
+            config_path,
+            upstream_url="https://api.anthropic.com",
+            upstream_kind="anthropic",
+        )
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        reverse = saved["network"]["proxy"]["reverse"]
+        assert [entry["upstream"] for entry in reverse["upstreams"]] == [
+            "openai",
+            "anthropic",
+        ]
+        assert reverse["endpoints"] == ["openai", "anthropic"]
+
+
 class TestNormalizeBaseUrl:
     def test_preserves_path(self) -> None:
         assert normalize_base_url("https://api.openai.com/v1/") == "https://api.openai.com/v1"
@@ -320,6 +451,98 @@ class TestMergeModelEntry:
         existing = [{"nick": "a"}]
         updated = merge_model_entry(existing, {"nick": "c"})
         assert len(updated) == 2
+
+
+class TestMergeUpstreamEntry:
+    def test_replaces_same_name(self) -> None:
+        existing = [
+            {"upstream": "anthropic", "url": "https://old.example"},
+            {"upstream": "openai", "url": "https://api.openai.com"},
+        ]
+        updated = merge_upstream_entry(
+            existing,
+            {"upstream": "anthropic", "url": "https://api.anthropic.com", "kind": "anthropic"},
+        )
+        assert len(updated) == 2
+        by_name = {e["upstream"]: e for e in updated}
+        assert by_name["anthropic"]["url"] == "https://api.anthropic.com"
+        assert by_name["openai"]["url"] == "https://api.openai.com"
+
+    def test_appends_new_name(self) -> None:
+        existing = [{"upstream": "anthropic", "url": "https://api.anthropic.com"}]
+        updated = merge_upstream_entry(
+            existing,
+            {"upstream": "openai", "url": "https://api.openai.com", "kind": "openai"},
+        )
+        assert len(updated) == 2
+
+
+class TestMergeEndpoints:
+    def test_preserves_existing_and_appends_new(self) -> None:
+        assert merge_endpoints(["anthropic"], ["openai", "anthropic"]) == [
+            "anthropic",
+            "openai",
+        ]
+
+
+class TestMergeSetupOverlay:
+    def test_merges_upstreams_and_endpoints(self) -> None:
+        existing = {
+            "network": {
+                "proxy": {
+                    "reverse": {
+                        "upstreams": [
+                            {
+                                "upstream": "openai",
+                                "kind": "openai",
+                                "url": "https://api.openai.com",
+                            },
+                        ],
+                        "endpoints": ["openai"],
+                    },
+                },
+            },
+            "stats": {"enabled": True},
+        }
+        overlay = build_upstream_cli_overlay(
+            "https://api.anthropic.com",
+            "anthropic",
+        )
+        merged = merge_setup_overlay(existing, overlay)
+        reverse = merged["network"]["proxy"]["reverse"]
+        assert reverse["upstreams"] == [
+            {
+                "upstream": "openai",
+                "kind": "openai",
+                "url": "https://api.openai.com",
+            },
+            {
+                "upstream": "anthropic",
+                "kind": "anthropic",
+                "url": "https://api.anthropic.com",
+            },
+        ]
+        assert reverse["endpoints"] == ["openai", "anthropic"]
+        assert merged["stats"]["enabled"] is True
+
+    def test_merges_remote_models_by_nick(self) -> None:
+        existing = {
+            "models": {
+                "llm": {
+                    "remote": [{"nick": "keep", "name": "old-model"}],
+                },
+            },
+        }
+        overlay = {
+            "models": {
+                "llm": {
+                    "remote": [{"nick": "new", "name": "new-model"}],
+                },
+            },
+        }
+        merged = merge_setup_overlay(existing, overlay)
+        nicks = {entry["nick"] for entry in merged["models"]["llm"]["remote"]}
+        assert nicks == {"keep", "new"}
 
 
 class TestCollectKeyVarNames:
@@ -575,3 +798,8 @@ class TestPrintProxyUrls:
         out = capsys.readouterr().out
         assert "http://localhost:8834/anthropic" in out
         assert "http://localhost:8834/openai" in out
+
+    def test_default_localhost(self, capsys: pytest.CaptureFixture[str]) -> None:
+        print_proxy_urls(8834, ["openrouter"])
+        out = capsys.readouterr().out
+        assert out.strip() == "http://localhost:8834/openrouter"

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 from urllib.parse import urlparse
 
+import yaml
+
 from cyt.config import (
     DEFAULT_MCP_TOOL_POLICY,
     DEFAULT_STATS_DB_PATH,
@@ -282,6 +284,75 @@ def normalize_upstream_url(raw: str) -> str:
     return raw.strip().rstrip("/")
 
 
+UPSTREAM_KIND_CHOICES: tuple[str, ...] = ("anthropic", "openai")
+
+
+def derive_upstream_name_from_url(raw: str) -> str:
+    """Derive upstream endpoint name from the URL hostname's second-level domain."""
+    hostname = _extract_hostname(normalize_upstream_url(raw)).lower()
+    parts = [part for part in hostname.split(".") if part]
+    if len(parts) >= 3:
+        return parts[-2]
+    if parts:
+        return parts[0]
+    raise ValueError(f"Cannot derive upstream name from URL: {raw}")
+
+
+def build_upstream_cli_overlay(
+    upstream_url: str,
+    upstream_kind: str,
+    *,
+    upstream_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a minimal config overlay from CLI ``--upstream`` / ``--upstream-kind``."""
+    kind = upstream_kind.strip().lower()
+    if kind not in UPSTREAM_KIND_CHOICES:
+        allowed = ", ".join(UPSTREAM_KIND_CHOICES)
+        raise ValueError(f"Invalid upstream kind {upstream_kind!r}; expected one of: {allowed}")
+    if upstream_name is not None:
+        resolved_name = upstream_name.strip()
+        if not resolved_name:
+            raise ValueError("upstream name must not be empty")
+    else:
+        resolved_name = derive_upstream_name_from_url(upstream_url)
+    upstream: dict[str, Any] = {
+        "upstream": resolved_name,
+        "kind": kind,
+        "url": normalize_upstream_url(upstream_url),
+    }
+    return {
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "upstreams": upstreams_for_config([upstream]),
+                    "endpoints": [resolved_name],
+                },
+            },
+        },
+    }
+
+
+def apply_upstream_cli_to_config(
+    config_path: Path,
+    *,
+    upstream_url: str,
+    upstream_kind: str,
+    upstream_name: str | None = None,
+) -> str:
+    """Persist CLI upstream settings into *config_path*; return the endpoint name."""
+    config_path = config_path.expanduser()
+    existing = _load_user_config(config_path)
+    overlay = build_upstream_cli_overlay(
+        upstream_url,
+        upstream_kind,
+        upstream_name=upstream_name,
+    )
+    merged = merge_setup_overlay(existing, overlay)
+    save_user_config(config_path, merged, apply_bundled_sections=False)
+    endpoints = overlay["network"]["proxy"]["reverse"]["endpoints"]
+    return str(endpoints[0])
+
+
 def normalize_base_url(raw: str) -> str:
     """Return full API base URL, preserving path (e.g. ``/v1``); strip trailing slash only."""
     return normalize_upstream_url(raw)
@@ -321,6 +392,154 @@ def merge_model_entry(
     result = [e for e in remote_list if not (nick and e.get("nick") == nick)]
     result.append(entry)
     return result
+
+
+def merge_upstream_entry(
+    upstream_list: list[dict[str, Any]],
+    entry: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Replace an existing upstream with the same name, or append."""
+    name = entry.get("upstream")
+    result = [e for e in upstream_list if not (name and e.get("upstream") == name)]
+    result.append(entry)
+    return result
+
+
+def merge_endpoints(
+    existing: list[str],
+    new_endpoints: list[str],
+) -> list[str]:
+    """Preserve order: keep *existing*, then append any new endpoint names."""
+    result = list(existing)
+    for endpoint in new_endpoints:
+        if endpoint not in result:
+            result.append(endpoint)
+    return result
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge *overlay* over *base* without mutating either."""
+    result: dict[str, Any] = {}
+    for key in {*base, *overlay}:
+        if (
+            key in base
+            and key in overlay
+            and isinstance(base[key], dict)
+            and isinstance(overlay[key], dict)
+        ):
+            result[key] = _deep_merge(base[key], overlay[key])
+        elif key in overlay:
+            result[key] = overlay[key]
+        else:
+            result[key] = base[key]
+    return result
+
+
+def _load_user_config(path: Path) -> dict[str, Any]:
+    path = path.expanduser()
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as f:
+        loaded = yaml.safe_load(f)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _merge_remote_models(
+    existing: list[Any],
+    overlay: list[Any],
+) -> list[dict[str, Any]]:
+    result = [copy.deepcopy(entry) for entry in existing if isinstance(entry, dict)]
+    for entry in overlay:
+        if isinstance(entry, dict):
+            result = merge_model_entry(result, copy.deepcopy(entry))
+    return result
+
+
+def _reverse_proxy_section(config: dict[str, Any]) -> dict[str, Any]:
+    network = config.get("network")
+    if not isinstance(network, dict):
+        return {}
+    proxy = network.get("proxy")
+    if not isinstance(proxy, dict):
+        return {}
+    reverse = proxy.get("reverse")
+    return reverse if isinstance(reverse, dict) else {}
+
+
+def _merge_reverse_overlay(
+    reverse: dict[str, Any],
+    existing_reverse: dict[str, Any],
+    overlay_reverse: dict[str, Any],
+) -> None:
+    overlay_upstreams = overlay_reverse.get("upstreams")
+    if isinstance(overlay_upstreams, list):
+        base_upstreams = existing_reverse.get("upstreams", [])
+        if not isinstance(base_upstreams, list):
+            base_upstreams = []
+        merged_upstreams = [
+            copy.deepcopy(entry) for entry in base_upstreams if isinstance(entry, dict)
+        ]
+        for entry in overlay_upstreams:
+            if isinstance(entry, dict):
+                merged_upstreams = merge_upstream_entry(
+                    merged_upstreams,
+                    copy.deepcopy(entry),
+                )
+        reverse["upstreams"] = merged_upstreams
+
+    overlay_endpoints = overlay_reverse.get("endpoints")
+    if isinstance(overlay_endpoints, list):
+        base_endpoints = existing_reverse.get("endpoints", [])
+        if not isinstance(base_endpoints, list):
+            base_endpoints = []
+        reverse["endpoints"] = merge_endpoints(
+            [str(endpoint) for endpoint in base_endpoints],
+            [str(endpoint) for endpoint in overlay_endpoints],
+        )
+
+
+def _merge_models_overlay(
+    merged: dict[str, Any],
+    existing: dict[str, Any],
+    overlay: dict[str, Any],
+) -> None:
+    existing_models = existing.get("models", {}) if isinstance(existing.get("models"), dict) else {}
+    overlay_models = overlay.get("models", {}) if isinstance(overlay.get("models"), dict) else {}
+    if not overlay_models:
+        return
+
+    models = merged.setdefault("models", {})
+    for kind in ("llm", "rerankers"):
+        overlay_section = overlay_models.get(kind)
+        if not isinstance(overlay_section, dict):
+            continue
+        overlay_remote = overlay_section.get("remote")
+        if not isinstance(overlay_remote, list):
+            continue
+        existing_section = existing_models.get(kind, {})
+        existing_remote = (
+            existing_section.get("remote", []) if isinstance(existing_section, dict) else []
+        )
+        if not isinstance(existing_remote, list):
+            existing_remote = []
+        section = models.setdefault(kind, {})
+        section["remote"] = _merge_remote_models(existing_remote, overlay_remote)
+
+
+def merge_setup_overlay(
+    existing: dict[str, Any],
+    overlay: dict[str, Any],
+) -> dict[str, Any]:
+    """Deep-merge *overlay* onto *existing*, merging list sections instead of replacing them."""
+    merged = _deep_merge(existing, overlay)
+    reverse = merged.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})
+    _merge_reverse_overlay(
+        reverse,
+        _reverse_proxy_section(existing),
+        _reverse_proxy_section(overlay),
+    )
+    _merge_models_overlay(merged, existing, overlay)
+    return merged
 
 
 def collect_key_var_names(models: dict[str, Any]) -> list[str]:
@@ -450,9 +669,9 @@ def build_setup_overlay(
     }
 
 
-def print_proxy_urls(port: int, endpoints: list[str]) -> None:
+def print_proxy_urls(port: int, endpoints: list[str], *, host: str = "localhost") -> None:
     for endpoint in endpoints:
-        print(f"http://localhost:{port}/{endpoint}")
+        print(f"http://{host}:{port}/{endpoint}")
 
 
 def _prompt(text: str, default: str | None = None) -> str:
@@ -970,7 +1189,10 @@ def run_setup(config_path: Path) -> None:
         stats_db_path=stats_db,
     )
 
-    save_user_config(config_path, overlay, apply_bundled_sections=True)
+    config_path = config_path.expanduser()
+    existing = _load_user_config(config_path)
+    merged = merge_setup_overlay(existing, overlay)
+    save_user_config(config_path, merged, apply_bundled_sections=True)
     print(f"\nWrote {config_path.expanduser()}")
 
     if _prompt_yes_no("Create a .env file for API keys?", default_yes=True):

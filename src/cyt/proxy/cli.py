@@ -16,12 +16,15 @@ from cyt.config import (
     load_config,
     proxy_http2_settings,
     require_proxy_env,
+    resolve_config_path,
     resolve_reverse_port,
     resolve_setup_config_path,
     stats_db_path,
 )
 
 logger = logging.getLogger(__name__)
+
+LOCAL_SERVE_HOST = "127.0.0.1"
 
 
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -83,7 +86,7 @@ async def run_reverse_server(
 
     await serve_reverse_async(
         config,
-        host="0.0.0.0",
+        host=LOCAL_SERVE_HOST,
         port=reverse_port,
         debug=debug,
         debug_terminate=debug_dry_run,
@@ -95,7 +98,7 @@ async def run_reverse_server(
     )
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Reverse HTTP proxy")
     parser.add_argument(
         "-V",
@@ -141,6 +144,23 @@ def main() -> None:
     serve_parser.add_argument("--http2-serve", action=argparse.BooleanOptionalAction, default=None)
     serve_parser.add_argument("--ssl-keyfile", type=Path, default=None)
     serve_parser.add_argument("--ssl-certfile", type=Path, default=None)
+    serve_parser.add_argument(
+        "--upstream",
+        metavar="URL",
+        default=None,
+        help="Upstream API base URL (writes minimal upstream config to config.yaml)",
+    )
+    serve_parser.add_argument(
+        "--upstream-kind",
+        choices=("anthropic", "openai"),
+        default=None,
+        help="Upstream protocol kind (required with --upstream)",
+    )
+    serve_parser.add_argument(
+        "--upstream-name",
+        default=None,
+        help="Upstream endpoint name (default: derived from URL second-level domain)",
+    )
 
     stats_parser = subparsers.add_parser("stats", help="Query persisted proxy stats")
     stats_sub = stats_parser.add_subparsers(dest="stats_command", required=True)
@@ -155,11 +175,10 @@ def main() -> None:
     stats_events.add_argument("--json", action="store_true")
     stats_events.add_argument("--config", type=Path, default=None)
 
-    setup_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "setup",
         help="Interactive wizard for ~/.config/cyt/config.yaml",
-    )
-    setup_parser.add_argument(
+    ).add_argument(
         "--config",
         type=Path,
         default=None,
@@ -171,30 +190,51 @@ def main() -> None:
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--debug-dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--debug-strict", action="store_true", help=argparse.SUPPRESS)
+    return parser
 
-    args = parser.parse_args()
 
-    if args.command == "stats":
-        config = load_config(getattr(args, "config", None))
-        _run_stats_cli(args, config)
+def _ensure_serve_defaults(args: argparse.Namespace) -> None:
+    if args.command is not None:
         return
+    args.command = "serve"
+    for attr, default in (
+        ("debug", False),
+        ("debug_dry_run", False),
+        ("debug_strict", False),
+        ("upstream", None),
+        ("upstream_kind", None),
+        ("upstream_name", None),
+    ):
+        if not hasattr(args, attr):
+            setattr(args, attr, default)
 
-    if args.command == "setup":
-        from cyt.proxy.setup import run_setup
 
-        run_setup(resolve_setup_config_path(getattr(args, "config", None)))
-        return
+def _apply_upstream_cli_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> str | None:
+    upstream_url = getattr(args, "upstream", None)
+    upstream_kind = getattr(args, "upstream_kind", None)
+    upstream_name = getattr(args, "upstream_name", None)
+    if (upstream_url is None) != (upstream_kind is None):
+        parser.error("--upstream and --upstream-kind must be supplied together")
+    if upstream_name is not None and (upstream_url is None or upstream_kind is None):
+        parser.error("--upstream-name requires --upstream and --upstream-kind")
+    if upstream_url is None or upstream_kind is None:
+        return None
 
-    if args.command is None:
-        args.command = "serve"
-        for attr, default in (
-            ("debug", False),
-            ("debug_dry_run", False),
-            ("debug_strict", False),
-        ):
-            if not hasattr(args, attr):
-                setattr(args, attr, default)
+    from cyt.proxy.setup import apply_upstream_cli_to_config
 
+    config_path = resolve_config_path(args.config)
+    return apply_upstream_cli_to_config(
+        config_path,
+        upstream_url=upstream_url,
+        upstream_kind=upstream_kind,
+        upstream_name=upstream_name,
+    )
+
+
+def _run_serve_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
     if args.debug or args.debug_dry_run:
         logging.basicConfig(
             level=logging.INFO,
@@ -203,6 +243,12 @@ def main() -> None:
         )
 
     config = load_config(args.config)
+    reverse_port = resolve_reverse_port(config, args.port)
+    if upstream_endpoint is not None:
+        from cyt.proxy.setup import print_proxy_urls
+
+        print_proxy_urls(reverse_port, [upstream_endpoint])
+
     try:
         require_proxy_env(config)
     except RuntimeError as exc:
@@ -230,7 +276,7 @@ def main() -> None:
     asyncio.run(
         run_reverse_server(
             config=config,
-            reverse_port=resolve_reverse_port(config, args.port),
+            reverse_port=reverse_port,
             debug=args.debug or args.debug_dry_run,
             debug_dry_run=args.debug_dry_run,
             debug_strict=args.debug_strict,
@@ -240,6 +286,26 @@ def main() -> None:
             ssl_certfile=ssl_certfile,
         ),
     )
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if args.command == "stats":
+        config = load_config(getattr(args, "config", None))
+        _run_stats_cli(args, config)
+        return
+
+    if args.command == "setup":
+        from cyt.proxy.setup import run_setup
+
+        run_setup(resolve_setup_config_path(getattr(args, "config", None)))
+        return
+
+    _ensure_serve_defaults(args)
+    upstream_endpoint = _apply_upstream_cli_args(parser, args)
+    _run_serve_command(args, upstream_endpoint=upstream_endpoint)
 
 
 if __name__ == "__main__":
