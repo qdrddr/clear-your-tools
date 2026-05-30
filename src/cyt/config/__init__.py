@@ -194,7 +194,7 @@ def _default_user_config_dict() -> dict[str, Any]:
                         "upstreams": [
                             {
                                 "upstream": "anthropic",
-                                "base_url": "https://api.anthropic.com",
+                                "host_url": "https://api.anthropic.com",
                                 "kind": "anthropic",
                             },
                         ],
@@ -456,10 +456,10 @@ def _append_upstream_env_vars(
     for item in reverse_cfg.get("upstreams", []):
         if not isinstance(item, dict):
             continue
-        base_url = item.get("base_url") or item.get("host_url")
-        if not base_url:
+        host_url = item.get("host_url") or item.get("base_url")
+        if not host_url:
             continue
-        host = urlparse(str(base_url)).hostname
+        host = urlparse(str(host_url)).hostname
         if not host:
             continue
         for name in _key_var_names_for_upstream_host(config, host):

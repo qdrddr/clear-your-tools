@@ -181,10 +181,10 @@ network:
       port: 8834
       upstreams:
         - upstream: anthropic
-          base_url: https://api.anthropic.com
+          host_url: https://api.anthropic.com
           kind: anthropic
         - upstream: openai
-          base_url: https://api.openai.com
+          host_url: https://api.openai.com
           kind: openai
       endpoints:
         - anthropic

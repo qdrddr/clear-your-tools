@@ -149,14 +149,14 @@ def parse_cost_per_token(raw: str) -> float:
 
 
 def upstream_hostnames(upstreams: list[dict[str, Any]]) -> list[str]:
-    """Unique hostnames extracted from configured upstream base URLs."""
+    """Unique hostnames extracted from configured upstream host URLs."""
     seen: set[str] = set()
     hostnames: list[str] = []
     for upstream in upstreams:
-        base_url = upstream.get("base_url")
-        if not base_url:
+        host_url = upstream.get("host_url")
+        if not host_url:
             continue
-        host = _extract_hostname(str(base_url))
+        host = _extract_hostname(str(host_url))
         if host and host not in seen:
             seen.add(host)
             hostnames.append(host)
@@ -214,23 +214,23 @@ def filter_catalog_by_upstreams(
     return filtered if filtered else catalog
 
 
-def upstream_base_url_default(upstreams: list[dict[str, Any]]) -> str | None:
-    """First upstream API base URL (with path) entered during setup."""
+def upstream_host_url_default(upstreams: list[dict[str, Any]]) -> str | None:
+    """First upstream API host URL (with path) entered during setup."""
     for upstream in upstreams:
-        base_url = upstream.get("base_url")
-        if base_url:
-            text = normalize_base_url(str(base_url))
+        host_url = upstream.get("host_url")
+        if host_url:
+            text = normalize_base_url(str(host_url))
             if text:
                 return text
     return None
 
 
 def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Serialize upstream entries for saved config (``base_url`` with path preserved)."""
+    """Serialize upstream entries for saved config (``host_url`` with path preserved)."""
     result: list[dict[str, Any]] = []
     for upstream in upstreams:
         entry: dict[str, Any] = {}
-        for key in ("upstream", "base_url", "kind"):
+        for key in ("upstream", "host_url", "kind"):
             if key in upstream:
                 entry[key] = copy.deepcopy(upstream[key])
         result.append(entry)
@@ -775,12 +775,12 @@ def _prompt_policy(label: str, default: ToolPolicy) -> ToolPolicy:
 def _prompt_upstreams() -> tuple[list[dict[str, Any]], list[str]]:
     upstreams: list[dict[str, Any]] = []
     endpoints: list[str] = []
-    print("Configure upstream API endpoints (kind + base URL).")
+    print("Configure upstream API endpoints (kind + host URL).")
     while True:
         kind = _prompt("Upstream kind (e.g. anthropic, openai, gemini)", "anthropic")
-        base_url = normalize_base_url(
+        host_url = normalize_base_url(
             _prompt_required(
-                "Base URL (required)",
+                "Host URL (required)",
                 "https://api.anthropic.com",
             ),
         )
@@ -788,7 +788,7 @@ def _prompt_upstreams() -> tuple[list[dict[str, Any]], list[str]]:
             {
                 "upstream": kind,
                 "kind": kind,
-                "base_url": base_url,
+                "host_url": host_url,
             },
         )
         if kind not in endpoints:
@@ -842,7 +842,7 @@ def run_setup(config_path: Path) -> None:
         prompt_key_var=False,
         domain_match_upstreams=upstreams,
         filter_by_upstream_domains=True,
-        custom_default_base_url=upstream_base_url_default(upstreams),
+        custom_default_base_url=upstream_host_url_default(upstreams),
     )
 
     print_primary_too_cheap_warning(upstream_llm_model)
