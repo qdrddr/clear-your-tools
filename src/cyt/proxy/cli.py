@@ -25,6 +25,7 @@ from cyt.config import (
 logger = logging.getLogger(__name__)
 
 LOCAL_SERVE_HOST = "127.0.0.1"
+_STATS_SUBCOMMANDS = ("totals", "summary", "events")
 
 
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -68,6 +69,19 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     finally:
         if db is not None:
             db.close()
+
+
+def _print_stats_options() -> None:
+    print(f"options: {', '.join(_STATS_SUBCOMMANDS)}")
+
+
+def _ensure_stats_defaults(args: argparse.Namespace) -> None:
+    if args.stats_command is not None:
+        return
+    _print_stats_options()
+    args.stats_command = "totals"
+    if not hasattr(args, "period"):
+        args.period = "all"
 
 
 async def run_reverse_server(
@@ -163,7 +177,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     stats_parser = subparsers.add_parser("stats", help="Query persisted proxy stats")
-    stats_sub = stats_parser.add_subparsers(dest="stats_command", required=True)
+    stats_sub = stats_parser.add_subparsers(dest="stats_command", required=False)
     stats_totals = stats_sub.add_parser("totals")
     stats_totals.add_argument("--period", choices=["day", "week", "month", "all"], default="all")
     stats_totals.add_argument("--config", type=Path, default=None)
@@ -293,6 +307,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "stats":
+        _ensure_stats_defaults(args)
         config = load_config(getattr(args, "config", None))
         _run_stats_cli(args, config)
         return
