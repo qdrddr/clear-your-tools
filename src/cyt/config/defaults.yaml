@@ -184,7 +184,7 @@ network:
           base_url: https://api.anthropic.com
           kind: anthropic
         - upstream: openai
-          base_url: https://api.openai.com/v1
+          base_url: https://api.openai.com
           kind: openai
       endpoints:
         - anthropic
