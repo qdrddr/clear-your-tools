@@ -13,6 +13,7 @@ DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_
 export DEEPINFRA_API_KEY
 
 # Start the proxy in the background (plain HTTP unless you enable http2.serve + TLS certs)
-cyt proxy
+cyt proxy --upstream https://api.openai.com --upstream-kind openai
+cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic
 
 curl -s "http://localhost:${PORT}/health"
