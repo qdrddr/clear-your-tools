@@ -12,11 +12,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import bm25s
 import numpy as np
 import Stemmer
-
-import bm25s
 from bm25s.tokenization import Tokenizer
+
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
     bm25_index_dir,
