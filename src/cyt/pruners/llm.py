@@ -16,7 +16,8 @@ from cyt.config import (
     remote_model_entry,
     resolve_model,
 )
-from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.indexer.build import catalog_tool_count
+from cyt.indexer.tokens import count_tokens, log_token_usage
 from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,

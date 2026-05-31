@@ -6,7 +6,7 @@ import copy
 import logging
 from typing import Any
 
-from cyt.indexer.build import count_json_tokens
+from cyt.indexer.tokens import count_json_tokens
 from cyt.proxy.anthropic import (
     PruneResult,
     _text_from_user_message,

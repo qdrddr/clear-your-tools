@@ -16,7 +16,8 @@ from cyt.config import (
     reranker_minimum_tools,
     resolve_model,
 )
-from cyt.indexer.build import catalog_tool_count, count_tokens, log_token_usage
+from cyt.indexer.build import catalog_tool_count
+from cyt.indexer.tokens import count_tokens, log_token_usage
 from cyt.pruners.documents import (
     extract_json_catalog_document,
     extract_md_catalog_document,

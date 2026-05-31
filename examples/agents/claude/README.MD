@@ -1,3 +1,5 @@
+# Claude Code
+
 Point Claude Code at the proxy:
 
 ```bash

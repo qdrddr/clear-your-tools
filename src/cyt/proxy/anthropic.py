@@ -22,10 +22,10 @@ from cyt.indexer.build import (
     build_catalog_index,
     catalog_tool_count,
     collect_enums,
-    count_json_tokens,
     prepare_tool_entry,
 )
 from cyt.indexer.retrieve import retrieve_tools
+from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
 from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (

@@ -522,11 +522,11 @@ def build_stats_record(
     tools_accepted_json: str | None = None
     tools_final_json: str | None = None
     if store_full_tools and pruning.tools_accepted is not None:
-        from cyt.indexer.build import compact_json
+        from cyt.indexer.tokens import compact_json
 
         tools_accepted_json = compact_json(pruning.tools_accepted)
     if store_full_tools and pruning.tools_final is not None:
-        from cyt.indexer.build import compact_json
+        from cyt.indexer.tokens import compact_json
 
         tools_final_json = compact_json(pruning.tools_final)
 
