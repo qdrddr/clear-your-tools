@@ -1,12 +1,14 @@
 # Clear Your Tools
 
 **Clear Your Tools** is a reverse proxy for coding agents such as
-[Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents). It sits between the agent and upstream
+[Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents).
+It sits between the agent and upstream
 LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts
 each request, and shrinks the tool payload before forwarding it upstream. Can be easily adopted for
 other harness agents.
 
 Supported and tested Agents:
+
 - **Claude Code CLI**
 - **Codex CLI**
 
@@ -26,7 +28,7 @@ Agent (Claude Code, etc.)
         ▼
 Clear Your Tools proxy  ──► extract user query from messages
         │                   decompose each tool schema
-        │                   score / filter with reranker (or LLM pruning)
+        │                   score / filter with BM25 (default), rerank, or LLM pruning
         │                   recompose pruned tool list
         ▼
 Upstream provider (OpenRouter, Anthropic, Novita, …)
@@ -37,22 +39,28 @@ On each intercepted request the proxy:
 1. **Extracts the user query** from the conversation (latest user turn, with message cleanup).
 2. **Decomposes tool schemas** into a catalog of chunks: each tool root keeps required properties;
    optional properties are split into separate searchable units.
-3. **Runs the pruning pipeline** configured in `config.yaml` (default: `rerank`; or `llm`).
+3. **Runs the pruning pipeline** configured in `config.yaml`. Out of the box the default is
+   **`bm25`** (local, no API keys). After `cyt setup`, choose between **`rerank`**
+   (optionally followed by **`llm`**).
 4. **Recomposes surviving tools** — required properties always remain; only optional properties
    that look relevant to the query are merged back in.
 5. **Forwards the modified request** to the upstream provider with the smaller `tools` array.
 
 ### Pruning pipeline
 
-| Stage    | Model (default)                        | When it runs                                                          | What it does                                                                                     |
-| -------- | -------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **29**)             | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
-| `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank`   | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.             |
+| Stage    | Model (default)                        | When it runs                                                                                                                     | What it does                                                                                                                       |
+| -------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `bm25`   | Local BM25 index (`bm25s`)             | Default pipeline when no remote pruner is configured; also fallback when rerank/llm fail or tool count is below their thresholds | Scores catalog chunks locally against the user query; no API keys or pruning cost. Indexes are cached under `~/.config/cyt/bm25/`. |
+| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **50**), after `cyt setup`                                                     | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.                                     |
+| `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank`                                                              | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.                                               |
 
 **Tool Recommendations:**
 
-- **50+ tools** — keep **`rerank`** or use **`llm`**. rerank can be pipelined into LLM as a second
-  stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on large catalogs.
+- **Getting started / no setup** — the default **`bm25`** pipeline works out of the box with no
+  remote API keys.
+- **50+ tools** — run **`cyt setup`** and use **`rerank`** or **`llm`**. Rerank can be pipelined
+  into LLM as a second stage (`pipeline: [rerank, llm]`) for stronger tool-level filtering on
+  large catalogs.
 
 **Pipeline & Model Recommendations**: Choose your pipeline based on model cost:
 
@@ -75,25 +83,14 @@ From PyPI (proxy + pruners):
 uv tool install 'clear-your-tools[all]'
 ```
 
-<details>
-<summary><strong>Though we strongly recommend using password vaults like macOS KeyChain</strong></summary>
-
-```shell
-# Store key in secure vault
-security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
-
-# Now you can access the key like this:
-export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
-```
-
-</details>
-
-### 2. Run the proxy --upstream <https://api.anthropic.com> --upstream-kind anthropic
+### 2. Run the proxy
 
 Installed CLI:
 
 ```bash
-uv run cyt proxy
+uv run cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic
+# Or
+uv run cyt proxy --upstream https://api.openai.com --upstream-kind openai
 ```
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
@@ -108,9 +105,8 @@ uv run cyt setup
 
 Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
 
-If this optional proxy setup step for the prunner pipeline and cost tracking is skipped,
-the system falls back to BM25 even though cost tracking has already begun.
-Run `cyt setup` to enable full cost tracking and advanced pruning pipelines.
+Without `cyt setup`, the proxy uses the **default BM25 pipeline** — local pruning with no
+remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost tracking.
 
 </details>
 
@@ -272,6 +268,20 @@ Use `http://localhost:8834/anthropic` unless you have enabled Hypercorn TLS in c
 
 </details>
 
+<details>
+<summary><strong>Should I use `.env?`</strong></summary>
+
+We strongly recommend using password vaults like macOS KeyChain
+
+```shell
+# Store key in secure vault
+security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
+
+# Now you can access the key like this:
+export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+```
+
+</details>
 ---
 
 ## Development

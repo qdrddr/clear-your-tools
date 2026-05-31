@@ -22,7 +22,7 @@ from cyt.config import (
     save_user_config,
 )
 
-PipelineChoice = Literal["rerank", "llm", "both"]
+PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
 DEFAULT_LLM_MINIMUM_TOOLS = 50
@@ -433,6 +433,8 @@ def pipeline_from_choice(choice: PipelineChoice) -> list[str]:
         return ["rerank"]
     if choice == "llm":
         return ["llm"]
+    if choice == "bm25":
+        return ["bm25"]
     return ["rerank", "llm"]
 
 
@@ -1032,7 +1034,7 @@ def _prompt_custom_model(
 
 
 def _pipeline_choice_labels(recommended_index: int) -> list[str]:
-    base = ("rerank only", "llm only", "rerank and llm (both)")
+    base = ("rerank only", "llm only", "rerank and llm (both)", "bm25 only")
     return [
         f"{label} (recommended)" if index == recommended_index else label
         for index, label in enumerate(base)
@@ -1051,6 +1053,7 @@ def _prompt_pipeline(*, recommended_index: int = 0) -> list[str]:
         "rerank only": "rerank",
         "llm only": "llm",
         "rerank and llm (both)": "both",
+        "bm25 only": "bm25",
     }
     normalized = choice.replace(" (recommended)", "")
     return pipeline_from_choice(mapping[normalized])

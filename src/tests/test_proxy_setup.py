@@ -515,6 +515,12 @@ class TestPipelineFromChoice:
     def test_rerank_only(self) -> None:
         assert pipeline_from_choice("rerank") == ["rerank"]
 
+    def test_llm_only(self) -> None:
+        assert pipeline_from_choice("llm") == ["llm"]
+
+    def test_bm25_only(self) -> None:
+        assert pipeline_from_choice("bm25") == ["bm25"]
+
     def test_both(self) -> None:
         assert pipeline_from_choice("both") == ["rerank", "llm"]
 
@@ -761,6 +767,32 @@ class TestBuildSetupOverlay:
             "url": "https://openrouter.ai/api",
             "kind": "anthropic",
         }
+
+    def test_bm25_only_pipeline(self) -> None:
+        overlay = build_setup_overlay(
+            pipeline=["bm25"],
+            reranker_model=None,
+            llm_pruner_model=None,
+            upstream_llm_models=[_SAMPLE_MODEL],
+            llm_minimum_tools=50,
+            reranker_minimum_tools=None,
+            system_tool_policy="prune_optional",
+            mcp_tool_policy="prune_all",
+            reverse_port=8834,
+            upstreams=[
+                {
+                    "upstream": "anthropic",
+                    "url": "https://api.anthropic.com",
+                    "kind": "anthropic",
+                },
+            ],
+            endpoints=["anthropic"],
+            stats_db_path="~/.config/cyt/stats.db",
+        )
+        assert overlay["pruning"]["pipeline"] == ["bm25"]
+        assert "remote" not in overlay["defaults"]
+        assert "reranking_enabled" not in overlay["defaults"]
+        assert "rerankers" not in overlay["models"]
 
     def test_both_pipeline_includes_pruner(self) -> None:
         overlay = build_setup_overlay(
