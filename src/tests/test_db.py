@@ -146,6 +146,32 @@ def test_query_upstream_saved_tokens_and_costs(temp_db: StatsDB) -> None:
     assert costs.tools_saved_usd == 600 * 2.5e-07
 
 
+def test_record_bm25_pruning_stage_identity(temp_db: StatsDB) -> None:
+    record = ProxyRequestRecord(
+        endpoint="anthropic",
+        tools_in=100,
+        tool_count_in=5,
+        tool_properties_count_in=10,
+        tools_out=80,
+        tool_count_out=4,
+        tool_properties_count_out=6,
+        prune_status="applied",
+        pipeline=["bm25"],
+        pruning_stages={
+            "bm25": StageTokenUsage(
+                model_name="bm25",
+                provider_dns_name="bm25",
+                provider="bm25",
+                usage_source="local:bm25",
+            ),
+        },
+    )
+    temp_db.record_proxy_request(record)
+
+    identities = temp_db.query_distinct_model_identities()
+    assert ("bm25", "bm25", "bm25", "bm25") in identities
+
+
 def test_stats_db_init_creates_parent_dir() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         db_path = str(Path(tmp) / "nested" / "stats.db")

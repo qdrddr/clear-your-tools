@@ -10,11 +10,13 @@ from unittest.mock import patch
 import pytest
 
 from cyt.config import effective_pruning_pipeline
-from cyt.indexer.build import build_catalog_index, catalog_tool_count
+from cyt.indexer.build import build_catalog_index
 from cyt.proxy.anthropic import filter_tools_for_query
 from cyt.pruners.bm25 import (
     BM25_SCORE,
+    BM25_STATS_ID,
     bm25_catalog_dict,
+    bm25_stage_usage,
     build_bm25_tokenizer,
     build_or_load_index,
     catalog_fingerprint,
@@ -74,7 +76,7 @@ def test_extract_document_text_includes_description_default_enum() -> None:
                 "description": "Output format",
                 "enum": ["json", "yaml"],
                 "default": "json",
-            }
+            },
         },
     }
     text = extract_document_text(content)
@@ -90,15 +92,18 @@ def test_extract_json_catalog_document_from_chunk() -> None:
             "inputSchema": {
                 "properties": {
                     "read_path": {"type": "string", "description": "Read files from disk path"},
-                }
-            }
-        }
+                },
+            },
+        },
     }
     text = extract_json_catalog_document(chunk)
     assert text == "Read files from disk path"
 
 
-def test_stemming_ranks_reading_above_unrelated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stemming_ranks_reading_above_unrelated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     data = _catalog_from_tools([_make_tool()])
     config = {
@@ -125,14 +130,12 @@ def test_stemming_ranks_reading_above_unrelated(tmp_path: Path, monkeypatch: pyt
     read_item = next(
         item
         for item in json_items
-        if isinstance(item, dict)
-        and "read_path" in str(item.get("file_path", ""))
+        if isinstance(item, dict) and "read_path" in str(item.get("file_path", ""))
     )
     write_item = next(
         item
         for item in json_items
-        if isinstance(item, dict)
-        and "write_path" in str(item.get("file_path", ""))
+        if isinstance(item, dict) and "write_path" in str(item.get("file_path", ""))
     )
     assert float(read_item["score"]) > float(write_item["score"])
 
@@ -235,7 +238,11 @@ def test_mitigate_empty_optional_properties_with_bm25_stage() -> None:
     catalog = index.to_catalog_dict()
     root_path_suffix = "mcp__test__empty_optional.json"
     root = copy.deepcopy(
-        next(item for item in catalog["json"] if str(item.get("file_path", "")).endswith(root_path_suffix))
+        next(
+            item
+            for item in catalog["json"]
+            if str(item.get("file_path", "")).endswith(root_path_suffix)
+        ),
     )
     optional = [
         copy.deepcopy(item)
@@ -268,7 +275,7 @@ def test_proxy_falls_back_to_bm25_when_rerank_fails(
             "name": "mcp__test__search",
             "description": "Search files",
             "input_schema": _schema_with_optional(),
-        }
+        },
     ]
 
     with patch("cyt.proxy.anthropic.rerank_catalog_dict", side_effect=RuntimeError("rerank down")):
@@ -288,10 +295,42 @@ def test_build_bm25_tokenizer_uses_stemmer() -> None:
         {
             "models": {
                 "bm25": {"stem_language": "english", "stopwords": "en"},
-            }
-        }
+            },
+        },
     )
     assert tokenizer.stemmer is not None
+
+
+def test_bm25_stage_usage_records_stats_identity() -> None:
+    usage = bm25_stage_usage()
+    assert usage.model_name == BM25_STATS_ID
+    assert usage.provider_dns_name == BM25_STATS_ID
+    assert usage.provider == BM25_STATS_ID
+
+
+def test_bm25_catalog_dict_returns_stage_usage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    data = _catalog_from_tools([_make_tool()])
+    config = {
+        "models": {
+            "bm25": {
+                "index_dir": str(tmp_path / "bm25"),
+                "mmap": True,
+                "stem_language": "english",
+                "stopwords": "en",
+            },
+            "rerankers": {"minimum_tools": 29},
+            "llm": {"minimum_tools": 50},
+        },
+        "pruning": {"pipeline": ["bm25"], "per_tool": {}},
+    }
+    _data, usage = bm25_catalog_dict(copy.deepcopy(data), "reading files", config=config)
+    assert usage.model_name == BM25_STATS_ID
+    assert usage.provider == BM25_STATS_ID
+    assert usage.provider_dns_name == BM25_STATS_ID
 
 
 def test_bm25_score_threshold_constant_matches_rerank() -> None:

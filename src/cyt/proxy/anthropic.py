@@ -298,6 +298,172 @@ def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, A
     return out
 
 
+_TOOL_SCHEMA_KEYS = ("parameters", "input_schema", "inputSchema")
+
+
+def _schema_value_from_api(api_tool: dict[str, Any], schema_key: str) -> Any | None:
+    if schema_key in api_tool:
+        return api_tool[schema_key]
+    if schema_key == "parameters" and "input_schema" in api_tool:
+        return api_tool["input_schema"]
+    if schema_key in ("input_schema", "inputSchema") and "parameters" in api_tool:
+        return api_tool["parameters"]
+    return None
+
+
+def merge_api_tool_onto_original(
+    original: dict[str, Any],
+    api_tool: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve all incoming tool root keys; overlay only pruned description/schema fields."""
+    out = copy.deepcopy(original)
+    if "description" in api_tool:
+        out["description"] = api_tool["description"]
+    for schema_key in _TOOL_SCHEMA_KEYS:
+        if schema_key not in original:
+            continue
+        schema_value = _schema_value_from_api(api_tool, schema_key)
+        if schema_value is not None:
+            out[schema_key] = schema_value
+    # #region agent log
+    if str(original.get("name", "")) == "apply_patch":
+        try:
+            import json as _json
+            import time as _time
+
+            _log_path = "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/asadani/tool-attention/.cursor/debug-1a6092.log"
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(
+                    _json.dumps(
+                        {
+                            "sessionId": "1a6092",
+                            "hypothesisId": "F",
+                            "location": "anthropic.py:merge_api_tool_onto_original",
+                            "message": "apply_patch merge result",
+                            "data": {
+                                "final_keys": sorted(out.keys()),
+                                "has_format": "format" in out,
+                                "has_parameters": "parameters" in out,
+                                "type": out.get("type"),
+                            },
+                            "timestamp": int(_time.time() * 1000),
+                            "runId": "post-fix",
+                        },
+                    )
+                    + "\n",
+                )
+        except OSError:
+            pass
+    # #endregion
+    return out
+
+
+def _original_tools_by_name(tools: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(t.get("name", "")): t for t in tools if isinstance(t, dict) and t.get("name")}
+
+
+def _pruned_tools_by_name(
+    original_tools: list[dict[str, Any]],
+    merged: list[dict[str, Any]],
+    to_api: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+) -> dict[str, dict[str, Any]]:
+    original_by_name = _original_tools_by_name(original_tools)
+    pruned_by_name: dict[str, dict[str, Any]] = {}
+    for tool in to_api(merged):
+        name = str(tool.get("name", ""))
+        if not name:
+            continue
+        original_tool = original_by_name.get(name)
+        pruned_by_name[name] = (
+            merge_api_tool_onto_original(original_tool, tool)
+            if original_tool
+            else copy.deepcopy(tool)
+        )
+    return pruned_by_name
+
+
+def _run_catalog_pruning(
+    entries: list[dict[str, Any]],
+    enums: list[Any],
+    query: str,
+    configured_pipeline: list[str] | None,
+    capture_decomposed_catalog: bool,
+    system_policy: SystemToolPolicy,
+    mcp_policy: MCPToolPolicy,
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, int],
+    dict[str, dict[str, int]],
+    dict[str, dict[str, Any]] | None,
+    dict[str, StageTokenUsage],
+    dict[str, int],
+    int,
+    int,
+]:
+    decomposed: dict[str, int] = {}
+    decomposed_breakdown: dict[str, dict[str, int]] = {}
+    decomposed_catalog: dict[str, dict[str, Any]] | None = None
+    pruning_token_usage: dict[str, StageTokenUsage] = {}
+    tool_properties_count_in = 0
+    tool_properties_count_out = 0
+    config = load_config()
+    index = build_catalog_index(entries, enums)
+    data = index.to_catalog_dict()
+    tool_properties_count_in = _count_optional_property_chunks(data)
+    pipeline = effective_pruning_pipeline(
+        config,
+        catalog_tool_count(data),
+        configured_pipeline=configured_pipeline,
+    )
+    (
+        data,
+        decomposed,
+        decomposed_breakdown,
+        post_rerank,
+        post_rerank_scored,
+        pinned,
+        decomposed_catalog,
+        pruning_token_usage,
+    ) = _run_pruning_pipeline(
+        data,
+        query,
+        pipeline,
+        capture_catalog=capture_decomposed_catalog,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+    )
+    tool_properties_count_out = _count_optional_property_chunks(data)
+    pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
+    recompose_data = _recompose_catalog_data(
+        data,
+        post_rerank,
+        pinned,
+        catalog_index=index,
+        post_rerank_scored=post_rerank_scored,
+        pruning_pipeline=pipeline,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+    )
+    merged = retrieve_tools(
+        recompose_data,
+        catalog=index,
+        apply_decomposed_score_filter=False,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+    )
+    merged = drop_recomposed_tools_with_empty_properties(merged, index)
+    return (
+        merged,
+        decomposed,
+        decomposed_breakdown,
+        decomposed_catalog,
+        pruning_token_usage,
+        pruning_model_tokens,
+        tool_properties_count_in,
+        tool_properties_count_out,
+    )
+
+
 def _count_catalog_items(data: dict[str, Any]) -> int:
     json_n, md_n = _count_json_md(data)
     return json_n + md_n
@@ -774,51 +940,24 @@ def filter_tools_for_query(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     try:
-        index = build_catalog_index(entries, enums)
-        data = index.to_catalog_dict()
-        tool_properties_count_in = _count_optional_property_chunks(data)
-        pipeline = effective_pruning_pipeline(
-            config,
-            catalog_tool_count(data),
-            configured_pipeline=configured_pipeline,
-        )
         (
-            data,
+            merged,
             decomposed,
             decomposed_breakdown,
-            post_rerank,
-            post_rerank_scored,
-            pinned,
             decomposed_catalog,
             pruning_token_usage,
-        ) = _run_pruning_pipeline(
-            data,
+            pruning_model_tokens,
+            tool_properties_count_in,
+            tool_properties_count_out,
+        ) = _run_catalog_pruning(
+            entries,
+            enums,
             query,
-            pipeline,
-            capture_catalog=capture_decomposed_catalog,
-            system_policy=system_policy,
-            mcp_policy=mcp_policy,
+            configured_pipeline,
+            capture_decomposed_catalog,
+            system_policy,
+            mcp_policy,
         )
-        tool_properties_count_out = _count_optional_property_chunks(data)
-        pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
-        recompose_data = _recompose_catalog_data(
-            data,
-            post_rerank,
-            pinned,
-            catalog_index=index,
-            post_rerank_scored=post_rerank_scored,
-            pruning_pipeline=pipeline,
-            system_policy=system_policy,
-            mcp_policy=mcp_policy,
-        )
-        merged = retrieve_tools(
-            recompose_data,
-            catalog=index,
-            apply_decomposed_score_filter=False,
-            system_policy=system_policy,
-            mcp_policy=mcp_policy,
-        )
-        merged = drop_recomposed_tools_with_empty_properties(merged, index)
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
         return PruneResult(
@@ -860,11 +999,7 @@ def filter_tools_for_query(
             decomposed_catalog=decomposed_catalog,
         )
 
-    pruned_by_name: dict[str, dict[str, Any]] = {}
-    for tool in to_api(merged):
-        name = str(tool.get("name", ""))
-        if name:
-            pruned_by_name[name] = tool
+    pruned_by_name = _pruned_tools_by_name(original_tools, merged, to_api)
     pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out

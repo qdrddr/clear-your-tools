@@ -7,15 +7,16 @@ import hashlib
 import json
 import logging
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import numpy as np
 import Stemmer
-from bm25s.tokenization import Tokenizer
 
 import bm25s
+from bm25s.tokenization import Tokenizer
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
     bm25_index_dir,
@@ -44,7 +45,18 @@ logger = logging.getLogger(__name__)
 BM25_SCORE: float = RERANK_SCORE
 BM25_ENUM_SCORE: float = RERANK_ENUM_SCORE
 BM25_ENUMS: bool = RERANK_ENUMS
+BM25_STATS_ID: str = "bm25"
 _MANIFEST_NAME = "manifest.json"
+
+
+def bm25_stage_usage() -> StageTokenUsage:
+    """Stage usage metadata recorded in stats when BM25 pruning runs."""
+    return StageTokenUsage(
+        model_name=BM25_STATS_ID,
+        provider_dns_name=BM25_STATS_ID,
+        provider=BM25_STATS_ID,
+        usage_source="local:bm25",
+    )
 
 
 def build_bm25_tokenizer(config: dict[str, Any] | None = None) -> Tokenizer:
@@ -344,7 +356,7 @@ def bm25_catalog_dict(
     if merge_pinned and pinned:
         data = merge_catalog(data, pinned)
 
-    return data, empty_usage()
+    return data, bm25_stage_usage()
 
 
 def main() -> None:

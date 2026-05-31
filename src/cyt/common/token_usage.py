@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 TIKTOKEN_CL100K = "tiktoken:cl100k_base"
+PRUNING_STAT_STAGES: tuple[str, ...] = ("rerank", "llm", "bm25")
 
 
 @dataclass

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from cyt.proxy.anthropic import PruneResult
+from cyt.proxy.anthropic import PruneResult, merge_api_tool_onto_original
 from cyt.proxy.openai_responses import (
+    _merged_tools_to_openai,
     clean_input,
     extract_user_query_from_input,
     transform_openai_request,
@@ -61,6 +62,47 @@ def test_extract_user_query_from_input_uses_latest_user_turn() -> None:
         extract_user_query_from_input(cleaned)
         == "The user stepped away and is coming back. Recap in under 40 words, 1-2 plain sentences."
     )
+
+
+def test_merge_api_tool_onto_original_preserves_openai_root_keys() -> None:
+    original = {
+        "type": "custom",
+        "name": "apply_patch",
+        "description": "FREEFORM patch tool",
+        "format": {
+            "type": "grammar",
+            "syntax": "lark",
+            "definition": "start: patch",
+        },
+    }
+    api_tool = _merged_tools_to_openai(
+        [{"name": "apply_patch", "description": "FREEFORM patch tool", "inputSchema": {}}],
+    )[0]
+    merged = merge_api_tool_onto_original(original, api_tool)
+    assert merged["type"] == "custom"
+    assert merged["format"] == original["format"]
+    assert "parameters" not in merged
+    assert merged["name"] == "apply_patch"
+
+
+def test_merge_api_tool_onto_original_updates_existing_schema_only() -> None:
+    original = {
+        "type": "function",
+        "name": "mcp__srv__tool_a",
+        "description": "A",
+        "strict": False,
+        "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+    }
+    api_tool = {
+        "type": "function",
+        "name": "mcp__srv__tool_a",
+        "description": "A pruned",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    merged = merge_api_tool_onto_original(original, api_tool)
+    assert merged["strict"] is False
+    assert merged["description"] == "A pruned"
+    assert merged["parameters"] == {"type": "object", "properties": {}}
 
 
 def test_transform_openai_request_only_changes_tools() -> None:

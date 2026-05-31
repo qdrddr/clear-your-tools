@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import libsql_experimental as libsql
 
-from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage
+from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -297,10 +297,13 @@ class StatsDB:
             ),
         )
 
-        for stage in ("rerank", "llm"):
+        for stage in PRUNING_STAT_STAGES:
             usage = record.pruning_stages.get(stage)
-            if usage is None or (usage.input_tokens == 0 and usage.output_tokens == 0):
+            if usage is None:
                 continue
+            if usage.input_tokens == 0 and usage.output_tokens == 0:
+                if stage != "bm25" or not usage.model_name:
+                    continue
             token_rows: list[TokenRecord] = []
             if usage.input_tokens > 0:
                 token_rows.append(
@@ -363,7 +366,7 @@ class StatsDB:
             SELECT DISTINCT stage, model_name, provider_dns_name, provider
             FROM model_request
             WHERE model_name IS NOT NULL
-            AND stage IN ('llm', 'rerank', 'upstream')
+            AND stage IN ('llm', 'rerank', 'bm25', 'upstream')
             ORDER BY stage, model_name, provider_dns_name
             """,
         ).fetchall()
@@ -391,7 +394,7 @@ class StatsDB:
             FROM tokens t
             JOIN model_request m ON t.model_request_id = m.id
             JOIN proxy_request p ON m.proxy_request_id = p.id
-            WHERE {period_clause}m.stage IN ('llm', 'rerank')
+            WHERE {period_clause}m.stage IN ('llm', 'rerank', 'bm25')
             AND t.is_saved = 0
             GROUP BY m.stage, m.model_name, t.type
             """,
