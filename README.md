@@ -112,17 +112,7 @@ remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost t
 
 ### 3. Run the the Agent
 
-Point Claude Code at the proxy:
-
-```bash
-export ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"
-export OPENROUTER_API_KEY="..."
-export ANTHROPIC_AUTH_TOKEN="${OPENROUTER_API_KEY}"
-claude --model haiku 'say hi' -p
-```
-
-The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpoint. Change
-`network.proxy.reverse.upstreams` to target a different provider URL.
+Examples for Coxed & Claude Code are in [./examples/agents](./examples/agents) dir.
 
 ### 4. View pruning stats savings
 
@@ -144,6 +134,7 @@ Stats are stored in `~/.config/cyt/stats.db` by default.
 <details>
 <summary><strong>Doesn't pruning burn more tokens than it saves?</strong></summary>
 
+The default is BM25 algorithm running locally on your computer it is free.
 The reranker and weak LLM used for pruning are **much cheaper per token** than the main model
 (e.g. Claude Sonnet). You may spend extra tokens on pruning, but they cost a fraction of what you
 save on the main request. Set `input_cost_per_token` and `output_cost_per_token` in
@@ -269,7 +260,7 @@ Use `http://localhost:8834/anthropic` unless you have enabled Hypercorn TLS in c
 </details>
 
 <details>
-<summary><strong>Should I use `.env?`</strong></summary>
+<summary><strong>Should I use .env</strong></summary>
 
 We strongly recommend using password vaults like macOS KeyChain
 
