@@ -335,7 +335,7 @@ def _catalog_file_paths(catalog: dict[str, Any], key: str) -> list[str]:
 def _format_decomposed_table_lines(pruning: dict[str, Any]) -> list[str]:
     breakdown = pruning.get("decomposed_breakdown") or {}
     decomposed = pruning.get("decomposed") or {}
-    stage_order = ("build_index", "rerank", "llm")
+    stage_order = ("build_index", "rerank", "bm25", "llm")
     stages = [s for s in stage_order if s in breakdown or s in decomposed]
     if not stages:
         return ["Decomposed items: (none)"]
@@ -370,7 +370,7 @@ def _format_decomposed_paths_lines(pruning: dict[str, Any]) -> list[str]:
         return []
 
     lines: list[str] = [""]
-    stage_order = ("build_index", "rerank", "llm")
+    stage_order = ("build_index", "rerank", "bm25", "llm")
     for stage in stage_order:
         catalog = catalog_by_stage.get(stage)
         if not isinstance(catalog, dict):
@@ -419,7 +419,7 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
         if pruning_model_tokens:
             parts = ", ".join(
                 f"{stage}={pruning_model_tokens[stage]}"
-                for stage in ("rerank", "llm")
+                for stage in ("rerank", "bm25", "llm")
                 if stage in pruning_model_tokens
             )
             lines.append(f"pruning model tokens: {parts}")

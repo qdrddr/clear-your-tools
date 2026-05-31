@@ -8,18 +8,25 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypedDict
 
 from cyt.common.token_usage import StageTokenUsage
-from cyt.config import DEFAULT_PRUNING_PIPELINE
+from cyt.config import (
+    DEFAULT_PRUNING_PIPELINE,
+    effective_pruning_pipeline,
+    load_config,
+    pruning_pipeline_from_config,
+)
 from cyt.indexer.build import (
     CatalogIndex,
     build_catalog_index,
+    catalog_tool_count,
     collect_enums,
     count_json_tokens,
     prepare_tool_entry,
 )
 from cyt.indexer.retrieve import retrieve_tools
+from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
 from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (
     MCPToolPolicy,
@@ -395,6 +402,89 @@ def _run_llm_stage(
     return data
 
 
+def _run_bm25_stage(
+    data: dict[str, Any],
+    query: str,
+    *,
+    capture_catalog: bool,
+    snapshots: dict[str, dict[str, Any]] | None,
+    decomposed_breakdown: dict[str, dict[str, int]],
+    decomposed: dict[str, int],
+    pruning_token_usage: dict[str, StageTokenUsage],
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    data, bm25_usage = bm25_catalog_dict(
+        data,
+        query,
+        prune=False,
+        system_policy=None,
+        mcp_policy=None,
+        merge_pinned=False,
+    )
+    pruning_token_usage["bm25"] = bm25_usage
+    if capture_catalog and snapshots is not None:
+        snapshots["bm25"] = _snapshot_catalog(data)
+    post_rerank_scored = copy.deepcopy(data)
+    data = prune_bm25_catalog(data)
+    post_rerank = copy.deepcopy(data)
+    decomposed_breakdown["bm25"] = _breakdown_entry(data)
+    decomposed["bm25"] = decomposed_breakdown["bm25"]["json"] + decomposed_breakdown["bm25"]["md"]
+    return data, post_rerank, post_rerank_scored
+
+
+class _StageKwargs(TypedDict):
+    data: dict[str, Any]
+    query: str
+    capture_catalog: bool
+    snapshots: dict[str, dict[str, Any]] | None
+    decomposed_breakdown: dict[str, dict[str, int]]
+    decomposed: dict[str, int]
+    pruning_token_usage: dict[str, StageTokenUsage]
+
+
+def _run_pipeline_stage(
+    stage: str,
+    *,
+    stage_index: int,
+    pruning_pipeline: list[str],
+    data: dict[str, Any],
+    query: str,
+    capture_catalog: bool,
+    snapshots: dict[str, dict[str, Any]] | None,
+    decomposed_breakdown: dict[str, dict[str, int]],
+    decomposed: dict[str, int],
+    pruning_token_usage: dict[str, StageTokenUsage],
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
+    stage_kwargs: _StageKwargs = {
+        "data": data,
+        "query": query,
+        "capture_catalog": capture_catalog,
+        "snapshots": snapshots,
+        "decomposed_breakdown": decomposed_breakdown,
+        "decomposed": decomposed,
+        "pruning_token_usage": pruning_token_usage,
+    }
+    if stage == "rerank":
+        try:
+            return _run_rerank_stage(**stage_kwargs)
+        except Exception as exc:
+            logger.warning("rerank failed, falling back to bm25: %s", exc)
+            return _run_bm25_stage(**stage_kwargs)
+    if stage == "llm":
+        try:
+            updated = _run_llm_stage(
+                **stage_kwargs,
+                trim_before_llm=stage_index > 0
+                and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
+            )
+            return updated, None, None
+        except Exception as exc:
+            logger.warning("llm pruning failed, falling back to bm25: %s", exc)
+            return _run_bm25_stage(**stage_kwargs)
+    if stage == "bm25":
+        return _run_bm25_stage(**stage_kwargs)
+    raise ValueError(f"unknown pruning stage: {stage}")
+
+
 def _run_pruning_pipeline(
     data: dict[str, Any],
     query: str,
@@ -432,29 +522,22 @@ def _run_pruning_pipeline(
         data, pinned = partition_catalog(data, system_policy, mcp_policy)
 
     for i, stage in enumerate(pruning_pipeline):
-        if stage == "rerank":
-            data, post_rerank, post_rerank_scored = _run_rerank_stage(
-                data,
-                query,
-                capture_catalog=capture_catalog,
-                snapshots=snapshots,
-                decomposed_breakdown=decomposed_breakdown,
-                decomposed=decomposed,
-                pruning_token_usage=pruning_token_usage,
-            )
-        elif stage == "llm":
-            data = _run_llm_stage(
-                data,
-                query,
-                trim_before_llm=i > 0 and pruning_pipeline[i - 1] == "rerank",
-                capture_catalog=capture_catalog,
-                snapshots=snapshots,
-                decomposed_breakdown=decomposed_breakdown,
-                decomposed=decomposed,
-                pruning_token_usage=pruning_token_usage,
-            )
-        else:
-            raise ValueError(f"unknown pruning stage: {stage}")
+        data, stage_post_rerank, stage_post_rerank_scored = _run_pipeline_stage(
+            stage,
+            stage_index=i,
+            pruning_pipeline=pruning_pipeline,
+            data=data,
+            query=query,
+            capture_catalog=capture_catalog,
+            snapshots=snapshots,
+            decomposed_breakdown=decomposed_breakdown,
+            decomposed=decomposed,
+            pruning_token_usage=pruning_token_usage,
+        )
+        if stage_post_rerank is not None:
+            post_rerank = stage_post_rerank
+        if stage_post_rerank_scored is not None:
+            post_rerank_scored = stage_post_rerank_scored
 
     if pinned:
         data = merge_catalog(data, pinned)
@@ -679,7 +762,10 @@ def filter_tools_for_query(
         )
     _log_tool_token_counts(tokens_in, None)
 
-    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
+    config = load_config()
+    configured_pipeline = (
+        pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
+    )
     decomposed: dict[str, int] = {}
     decomposed_breakdown: dict[str, dict[str, int]] = {}
     decomposed_catalog: dict[str, dict[str, Any]] | None = None
@@ -691,6 +777,11 @@ def filter_tools_for_query(
         index = build_catalog_index(entries, enums)
         data = index.to_catalog_dict()
         tool_properties_count_in = _count_optional_property_chunks(data)
+        pipeline = effective_pruning_pipeline(
+            config,
+            catalog_tool_count(data),
+            configured_pipeline=configured_pipeline,
+        )
         (
             data,
             decomposed,

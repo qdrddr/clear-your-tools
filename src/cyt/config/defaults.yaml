@@ -155,6 +155,11 @@ models:
           input_cost_per_token: 5e-08
           output_cost_per_token: 0
           # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
+  bm25:
+    index_dir: ~/.config/cyt/bm25
+    mmap: true
+    stem_language: english
+    stopwords: en
 
 pruning:
   per_tool: {}

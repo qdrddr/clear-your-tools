@@ -4,3 +4,6 @@
 [submodule "cocoindex-code"]
 	path = cocoindex-code
 	url = git@github.com:cocoindex-io/cocoindex-code.git
+[submodule "bm25s"]
+	path = bm25s
+	url = https://github.com/xhluca/bm25s.git

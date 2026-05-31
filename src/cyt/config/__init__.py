@@ -52,6 +52,10 @@ DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
 DEFAULT_DEBUG_LOG_DIR: str = ".debug"
 DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = 50
 DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = 10
+DEFAULT_BM25_INDEX_DIR: str = "~/.config/cyt/bm25"
+DEFAULT_BM25_STEM_LANGUAGE: str = "english"
+DEFAULT_BM25_STOPWORDS: str = "en"
+VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -85,6 +89,12 @@ _DEFAULTS: dict[str, Any] = {
         },
         "rerankers": {
             "minimum_tools": DEFAULT_MIN_TOOLS_RERANKER_PRUNINER,
+        },
+        "bm25": {
+            "index_dir": DEFAULT_BM25_INDEX_DIR,
+            "mmap": True,
+            "stem_language": DEFAULT_BM25_STEM_LANGUAGE,
+            "stopwords": DEFAULT_BM25_STOPWORDS,
         },
     },
     "pruning": {
@@ -362,6 +372,63 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
         raise ValueError("pruning.pipeline must be a list of stage names")
     return pipeline
+
+
+def effective_pruning_pipeline(
+    config: dict[str, Any],
+    tool_count: int,
+    *,
+    configured_pipeline: list[str] | None = None,
+) -> list[str]:
+    """Resolve configured pipeline, substituting bm25 when remote stages cannot run."""
+    configured = (
+        configured_pipeline
+        if configured_pipeline is not None
+        else pruning_pipeline_from_config(config)
+    )
+    if not configured:
+        return ["bm25"]
+
+    effective: list[str] = []
+    for stage in configured:
+        if stage not in VALID_PRUNING_STAGES:
+            raise ValueError(f"unknown pruning stage: {stage}")
+        if stage == "rerank":
+            if tool_count >= reranker_minimum_tools(config):
+                effective.append("rerank")
+        elif stage == "llm":
+            if tool_count >= llm_minimum_tools(config):
+                effective.append("llm")
+        elif stage == "bm25":
+            effective.append("bm25")
+
+    if not effective:
+        return ["bm25"]
+    return effective
+
+
+def _bm25_settings(config: dict[str, Any]) -> dict[str, Any]:
+    bm25 = _merged_config(config).get("models", {}).get("bm25", {})
+    return bm25 if isinstance(bm25, dict) else {}
+
+
+def bm25_index_dir(config: dict[str, Any] | None = None) -> Path:
+    path = _bm25_settings(config or load_config()).get("index_dir", DEFAULT_BM25_INDEX_DIR)
+    return Path(str(path)).expanduser()
+
+
+def bm25_mmap_enabled(config: dict[str, Any] | None = None) -> bool:
+    return bool(_bm25_settings(config or load_config()).get("mmap", True))
+
+
+def bm25_stem_language(config: dict[str, Any] | None = None) -> str:
+    value = _bm25_settings(config or load_config()).get("stem_language", DEFAULT_BM25_STEM_LANGUAGE)
+    return str(value)
+
+
+def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
+    value = _bm25_settings(config or load_config()).get("stopwords", DEFAULT_BM25_STOPWORDS)
+    return str(value)
 
 
 _PIPELINE_STAGE_MODEL_KEYS: dict[str, tuple[str, str]] = {

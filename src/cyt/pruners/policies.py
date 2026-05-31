@@ -749,7 +749,7 @@ def mitigate_empty_optional_properties(
         return entries
 
     last_stage = pipeline[-1]
-    if last_stage not in ("rerank", "llm"):
+    if last_stage not in ("rerank", "llm", "bm25"):
         return entries
 
     roots_by_tool = _tool_roots_from_entries(entries)
@@ -770,7 +770,7 @@ def mitigate_empty_optional_properties(
             tools_to_drop.add(tool_id)
             continue
 
-        if last_stage == "rerank" and scored_json:
+        if last_stage in ("rerank", "bm25") and scored_json:
             _append_rerank_fallback_chunks(tool_id, result, seen_paths, scored_json)
 
     return _drop_tools_from_entries(result, tools_to_drop)
