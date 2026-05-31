@@ -41,7 +41,7 @@ proxy = [
     "hypercorn==0.18.0",
     "h2==4.3.0",
     "libsql-experimental==0.0.55",
-    "uuid6==2025.0.1",
+    "uuid7==0.1.0",
 ]
 pruners = [
     "litellm==1.83.14",
@@ -106,7 +106,7 @@ test = [
     "hypercorn==0.18.0",
     "h2==4.3.0",
     "libsql-experimental==0.0.55",
-    "uuid6>=2025.0.1",
+    "uuid7==0.1.0",
     "litellm==1.83.14",
 ]
 
@@ -197,6 +197,7 @@ module = [
     "tiktoken.*",
     "google.*",
     "libsql_experimental.*",
+    "uuid_extensions.*",
     "bm25s.*",
     "Stemmer.*",
 ]

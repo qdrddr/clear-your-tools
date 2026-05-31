@@ -7,11 +7,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import libsql_experimental as libsql
-import uuid6
+from uuid_extensions import uuid7str
 
 from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
 
@@ -69,8 +69,8 @@ def expand_db_path(path: str) -> str:
 
 
 def new_uuid7() -> str:
-    """Generate a UUID7 string (time-ordered, RFC 9562)."""
-    return str(uuid6.uuid7())
+    """Generate a UUID7 string (time-ordered)."""
+    return cast(str, uuid7str())
 
 
 def provider_dns_from_url(url: str) -> str | None:
