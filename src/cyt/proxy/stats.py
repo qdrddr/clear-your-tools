@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import libsql_experimental as libsql
+import uuid6
 
 from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
 
@@ -70,12 +70,7 @@ def expand_db_path(path: str) -> str:
 
 def new_uuid7() -> str:
     """Generate a UUID7 string (time-ordered, RFC 9562)."""
-    ts_ms = int(time.time() * 1000)
-    rand_a = int.from_bytes(os.urandom(2), "big") & 0x0FFF
-    rand_b = int.from_bytes(os.urandom(8), "big") & ((1 << 62) - 1)
-    uuid_int = (ts_ms << 80) | (0x7 << 76) | (rand_a << 64) | (0x2 << 62) | rand_b
-    hex_str = f"{uuid_int:032x}"
-    return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+    return str(uuid6.uuid7())
 
 
 def provider_dns_from_url(url: str) -> str | None:
