@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 from cyt.proxy.anthropic import PruneResult, merge_api_tool_onto_original
 from cyt.proxy.openai_responses import (
+    _flatten_openai_tools_for_pruning,
+    _merge_openai_tools_preserving_order,
+    _merge_pruned_openai_tools,
     _merged_tools_to_openai,
+    _openai_tool_pass_through,
     clean_input,
     extract_user_query_from_input,
     transform_openai_request,
@@ -105,6 +110,98 @@ def test_merge_api_tool_onto_original_updates_existing_schema_only() -> None:
     assert merged["parameters"] == {"type": "object", "properties": {}}
 
 
+def test_openai_tool_pass_through_matches_unnamed_native_tools() -> None:
+    tool_search = {
+        "type": "tool_search",
+        "execution": "client",
+        "description": "Search deferred tools",
+        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }
+    assert _openai_tool_pass_through(tool_search) is True
+    assert _openai_tool_pass_through({"type": "function", "name": "grep"}) is False
+
+
+def test_merge_openai_tools_preserving_order_keeps_unnamed_tools() -> None:
+    tool_search = {
+        "type": "tool_search",
+        "execution": "client",
+        "description": "full catalog",
+        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }
+    original: list[dict[str, Any]] = [
+        {"type": "function", "name": "grep", "description": "A", "parameters": {}},
+        tool_search,
+        {"type": "web_search", "external_web_access": False},
+    ]
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "grep",
+            "description": "A pruned",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+    merged = _merge_openai_tools_preserving_order(original, pruned_named)
+    assert merged[0]["description"] == "A pruned"
+    assert merged[1] == tool_search
+    assert merged[2] == {"type": "web_search", "external_web_access": False}
+
+
+def test_transform_openai_request_preserves_tool_search_when_pruning() -> None:
+    tool_search = {
+        "type": "tool_search",
+        "execution": "client",
+        "description": "full catalog",
+        "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("find grep")],
+        "tools": [
+            {
+                "type": "function",
+                "name": "mcp__srv__tool_a",
+                "description": "A",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            tool_search,
+        ],
+    }
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "mcp__srv__tool_a",
+            "description": "A pruned",
+            "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+        },
+    ]
+    prune_result = PruneResult(
+        tools=pruned_named,
+        status="applied",
+        query="find grep",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+
+    with patch(
+        "cyt.proxy.openai_responses.filter_tools_for_query",
+        return_value=prune_result,
+    ) as mock_filter:
+        out, meta = transform_openai_request(body)
+
+    mock_filter.assert_called_once()
+    assert mock_filter.call_args.args[0] == [body["tools"][0]]
+    assert out["tools"][0]["description"] == "A pruned"
+    assert out["tools"][1] == tool_search
+    assert meta is not None
+    assert meta.status == "applied"
+    assert meta.tools_final is not None
+    assert meta.tools_final[1] == tool_search
+    assert meta.tools_out == 2
+
+
 def test_transform_openai_request_only_changes_tools() -> None:
     body = {
         "model": "gpt-5.4-mini",
@@ -145,7 +242,8 @@ def test_transform_openai_request_only_changes_tools() -> None:
     with patch("cyt.proxy.openai_responses.filter_tools_for_query", return_value=prune_result):
         out, meta = transform_openai_request(body)
 
-    assert out["tools"] == pruned_tools
+    assert out["tools"][0]["strict"] is False
+    assert out["tools"][0]["parameters"] == pruned_tools[0]["parameters"]
     assert out["input"] == body["input"]
     assert out["instructions"] == "You are Codex."
     assert out["stream"] is True
@@ -180,3 +278,189 @@ def test_transform_openai_request_passthrough_when_no_prune() -> None:
     assert out == body
     assert meta is not None
     assert meta.status == "failed"
+
+
+def _tool_search_output_namespace(*names: str) -> dict[str, Any]:
+    return {
+        "type": "namespace",
+        "name": "mcp__context7",
+        "description": "Context7 docs",
+        "tools": [
+            {
+                "type": "function",
+                "name": name,
+                "description": f"{name} tool",
+                "strict": False,
+                "parameters": {"type": "object", "properties": {}},
+            }
+            for name in names
+        ],
+    }
+
+
+def test_flatten_openai_tools_for_pruning_expands_namespace_tools() -> None:
+    tools = [_tool_search_output_namespace("resolve_library_id", "query_docs")]
+    flat = _flatten_openai_tools_for_pruning(tools)
+    assert [t["name"] for t in flat] == [
+        "mcp__context7__resolve_library_id",
+        "mcp__context7__query_docs",
+    ]
+
+
+def test_merge_pruned_openai_tools_rebuilds_namespace_structure() -> None:
+    original = [_tool_search_output_namespace("resolve_library_id", "query_docs")]
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "mcp__context7__resolve_library_id",
+            "description": "resolve pruned",
+            "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+        },
+    ]
+    merged = _merge_pruned_openai_tools(original, pruned_named)
+    assert merged[0]["type"] == "namespace"
+    assert merged[0]["name"] == "mcp__context7"
+    assert [t["name"] for t in merged[0]["tools"]] == ["resolve_library_id"]
+    assert merged[0]["tools"][0]["description"] == "resolve pruned"
+
+
+def test_transform_openai_request_prunes_tool_search_output_in_input() -> None:
+    tool_search_output = {
+        "call_id": "call_test",
+        "type": "tool_search_output",
+        "status": "completed",
+        "execution": "client",
+        "tools": [
+            _tool_search_output_namespace("resolve_library_id", "query_docs"),
+            {
+                "type": "namespace",
+                "name": "mcp__semble",
+                "description": "Semble search",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "search",
+                        "description": "search tool",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                ],
+            },
+        ],
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("context7 bm25s repo description"), tool_search_output],
+        "tools": [
+            {
+                "type": "tool_search",
+                "execution": "client",
+                "description": "Search deferred tools",
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        ],
+    }
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "mcp__context7__resolve_library_id",
+            "description": "resolve pruned",
+            "parameters": {"type": "object", "properties": {"libraryName": {"type": "string"}}},
+        },
+    ]
+    prune_result = PruneResult(
+        tools=pruned_named,
+        status="applied",
+        query="context7 bm25s repo description",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+
+    with patch(
+        "cyt.proxy.openai_responses.filter_tools_for_query",
+        return_value=prune_result,
+    ) as mock_filter:
+        out, meta = transform_openai_request(body)
+
+    mock_filter.assert_called_once()
+    flat_tools = mock_filter.call_args.args[0]
+    assert {t["name"] for t in flat_tools} == {
+        "mcp__context7__resolve_library_id",
+        "mcp__context7__query_docs",
+        "mcp__semble__search",
+    }
+    pruned_output = out["input"][1]
+    assert pruned_output["type"] == "tool_search_output"
+    assert [ns["name"] for ns in pruned_output["tools"]] == ["mcp__context7"]
+    assert [t["name"] for t in pruned_output["tools"][0]["tools"]] == ["resolve_library_id"]
+    assert pruned_output["tools"][0]["tools"][0]["description"] == "resolve pruned"
+    assert out["tools"][0]["type"] == "tool_search"
+    assert meta is not None
+    assert meta.status == "applied"
+
+
+def test_transform_openai_request_prunes_root_and_tool_search_output_separately() -> None:
+    body = {
+        "model": "gpt-test",
+        "input": [
+            _user_message("find grep"),
+            {
+                "type": "tool_search_output",
+                "tools": [_tool_search_output_namespace("resolve_library_id")],
+            },
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "name": "mcp__srv__tool_a",
+                "description": "A",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+    }
+    root_prune = PruneResult(
+        tools=[
+            {
+                "type": "function",
+                "name": "mcp__srv__tool_a",
+                "description": "A pruned",
+                "parameters": {"type": "object", "properties": {"q": {"type": "string"}}},
+            },
+        ],
+        status="applied",
+        query="find grep",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+    input_prune = PruneResult(
+        tools=[
+            {
+                "type": "function",
+                "name": "mcp__context7__resolve_library_id",
+                "description": "resolve pruned",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+        status="applied",
+        query="find grep",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+
+    with patch(
+        "cyt.proxy.openai_responses.filter_tools_for_query",
+        side_effect=[root_prune, input_prune],
+    ) as mock_filter:
+        out, meta = transform_openai_request(body)
+
+    assert mock_filter.call_count == 2
+    assert out["tools"][0]["description"] == "A pruned"
+    assert out["input"][1]["tools"][0]["tools"][0]["description"] == "resolve pruned"
+    assert meta is not None
+    assert meta.status == "applied"
+    assert meta.tools_in == 2
