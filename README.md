@@ -104,9 +104,9 @@ uv run cyt-rproxy serve
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
 
-When optional step of proxy setup with the prunner pipeline & costs was skipped, we fallback to BM25,
-though tracking costs has started.
-Run `cyt-rproxy setup` to setup tracking costs and advance prunning pipelines.
+If the optional proxy‑setup step for the prunner pipeline and cost tracking is skipped,
+the system falls back to BM25 even though cost tracking has already begun.
+Run `cyt-rproxy` setup to enable full cost tracking and advanced pruning pipelines.
 
 ### 3. Run the the Agent
 
