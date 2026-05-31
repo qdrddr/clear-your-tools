@@ -128,55 +128,55 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    serve_parser = subparsers.add_parser("serve", help="Run the reverse proxy")
-    serve_parser.add_argument(
+    proxy_parser = subparsers.add_parser("proxy", help="Run the reverse proxy")
+    proxy_parser.add_argument(
         "--port",
         type=int,
         default=None,
         help=f"Reverse listen port (default from config, else {DEFAULT_REVERSE_PORT})",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--config",
         type=Path,
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--debug",
         action="store_true",
         help="Log transformed requests to {endpoint}.log and forward to upstream",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--debug-dry-run",
         action="store_true",
         help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--debug-strict",
         action="store_true",
         help="With --debug-dry-run, return 502 when pruning did not apply",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--http2-upstream",
         action=argparse.BooleanOptionalAction,
         default=None,
     )
-    serve_parser.add_argument("--http2-serve", action=argparse.BooleanOptionalAction, default=None)
-    serve_parser.add_argument("--ssl-keyfile", type=Path, default=None)
-    serve_parser.add_argument("--ssl-certfile", type=Path, default=None)
-    serve_parser.add_argument(
+    proxy_parser.add_argument("--http2-serve", action=argparse.BooleanOptionalAction, default=None)
+    proxy_parser.add_argument("--ssl-keyfile", type=Path, default=None)
+    proxy_parser.add_argument("--ssl-certfile", type=Path, default=None)
+    proxy_parser.add_argument(
         "--upstream",
         metavar="URL",
         default=None,
         help="Upstream API base URL (writes minimal upstream config to config.yaml)",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--upstream-kind",
         choices=("anthropic", "openai"),
         default=None,
         help="Upstream protocol kind (required with --upstream)",
     )
-    serve_parser.add_argument(
+    proxy_parser.add_argument(
         "--upstream-name",
         default=None,
         help="Upstream endpoint name (default: derived from URL second-level domain)",
@@ -213,10 +213,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _ensure_serve_defaults(args: argparse.Namespace) -> None:
+def _ensure_proxy_defaults(args: argparse.Namespace) -> None:
     if args.command is not None:
         return
-    args.command = "serve"
+    args.command = "proxy"
     for attr, default in (
         ("debug", False),
         ("debug_dry_run", False),
@@ -257,7 +257,7 @@ def _apply_upstream_cli_args(
 _BM25_FALLBACK_MESSAGE = (
     "No pruner pipeline configured: fallback to BM25. "
     "Please run to configure more advanced pruning:\n"
-    "  cyt-rproxy setup"
+    "  cyt setup"
 )
 
 
@@ -271,7 +271,7 @@ def _apply_bm25_fallback_if_needed(config: dict[str, Any], config_path: Path) ->
         pruning["pipeline"] = ["bm25"]
 
 
-def _run_serve_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
+def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
     if args.debug or args.debug_dry_run:
         logging.basicConfig(
             level=logging.INFO,
@@ -337,9 +337,9 @@ def main() -> None:
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
         return
 
-    _ensure_serve_defaults(args)
+    _ensure_proxy_defaults(args)
     upstream_endpoint = _apply_upstream_cli_args(parser, args)
-    _run_serve_command(args, upstream_endpoint=upstream_endpoint)
+    _run_proxy_command(args, upstream_endpoint=upstream_endpoint)
 
 
 if __name__ == "__main__":

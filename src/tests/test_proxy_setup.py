@@ -1,4 +1,4 @@
-"""Tests for cyt-rproxy setup wizard helpers."""
+"""Tests for cyt setup wizard helpers."""
 
 from __future__ import annotations
 

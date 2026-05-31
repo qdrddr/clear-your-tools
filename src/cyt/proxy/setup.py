@@ -1,4 +1,4 @@
-"""Interactive wizard for ``cyt-rproxy setup``."""
+"""Interactive wizard for ``cyt setup``."""
 
 from __future__ import annotations
 
@@ -1213,7 +1213,7 @@ def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
     print("\n--- Model pricing, provider & domain_match ---")
     print(
         "Some models in your config are missing provider, domain_match, or token pricing "
-        "(used by cyt-rproxy stats).",
+        "(used by cyt stats).",
     )
 
     changed = False
@@ -1370,7 +1370,7 @@ def run_setup(config_path: Path) -> None:
     print("\nProxy base URL(s):")
     print_proxy_urls(reverse_port, endpoints)
     print("\nNow run proxy with:\n")
-    print("\tuv run cyt-rproxy serve")
+    print("\tuv run cyt proxy")
     print("\n\nAnd point Claude Code at the proxy:\n")
     print('\texport ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"')
     print("\tclaude 'say hi' -p")

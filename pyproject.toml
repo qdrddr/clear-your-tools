@@ -51,7 +51,7 @@ all = [
 ]
 
 [project.scripts]
-cyt-rproxy = "cyt.proxy.cli:main"
+cyt = "cyt.proxy.cli:main"
 cyt-rerank = "cyt.pruners.rerank:main"
 cyt-llm-prune = "cyt.pruners.llm:main"
 cyt-bm25-prune = "cyt.pruners.bm25:main"

@@ -9,7 +9,7 @@ From the repo (or any machine with the project deps):
 ```bash
 uv tool install 'clear-your-tools[all]'
 
-uv run cyt-rproxy serve --debug
+uv run cyt proxy --debug
 ```
 
 `--debug` logs each transformed request to `.debug/anthropic.log` (see `network.proxy.reverse.debug_log_dir` in config)
@@ -19,7 +19,7 @@ is active).
 Dry-run (no upstream call):
 
 ```bash
-uv run cyt-rproxy serve --debug-dry-run
+uv run cyt proxy --debug-dry-run
 ```
 
 Point Claude Code at the proxy:
@@ -106,8 +106,8 @@ WHERE id = '${ID}'
 CLI summaries (token totals, not per-tool JSON):
 
 ```bash
-cyt-rproxy stats totals
-cyt-rproxy stats events --limit 20
+cyt stats totals
+cyt stats events --limit 20
 ```
 
 To persist full tool JSON without `--debug`, set `stats.store_full_tools: true` in `~/.config/cyt/config.yaml`.

@@ -87,7 +87,7 @@ export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPEN
 Installed CLI:
 
 ```bash
-uv run cyt-rproxy serve
+uv run cyt proxy
 ```
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
@@ -97,14 +97,14 @@ Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/co
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
 ```bash
-uv run cyt-rproxy setup
+uv run cyt setup
 ```
 
 Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
 
 If this optional proxy setup step for the prunner pipeline and cost tracking is skipped,
 the system falls back to BM25 even though cost tracking has already begun.
-Run `cyt-rproxy` setup to enable full cost tracking and advanced pruning pipelines.
+Run `cyt setup` to enable full cost tracking and advanced pruning pipelines.
 
 </details>
 
@@ -125,12 +125,12 @@ The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpo
 ### 4. View pruning stats savings
 
 ```bash
-uv run cyt-rproxy stats totals
-uv run cyt-rproxy stats summary --period day
-uv run cyt-rproxy stats events --limit 20
+uv run cyt stats totals
+uv run cyt stats summary --period day
+uv run cyt stats events --limit 20
 
 # Optional (recommended):
-uv run cyt-rproxy setup
+uv run cyt setup
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.
@@ -186,7 +186,7 @@ To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
 To see statistics of actual net savings (input tokens) run:
 
 ```bash
-uv run cyt-rproxy stats totals
+uv run cyt stats totals
 ```
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
@@ -212,7 +212,7 @@ relevant. Unrelated tools (e.g. **Read file**) are dropped entirely.
 CYT's **pruner models** (the cheap reranker and LLM that decide which tools to keep) call providers through [LiteLLM](https://docs.litellm.ai/docs/providers).
 If LiteLLM supports your provider and model, you can use them in CYT.
 
-When you run `cyt-rproxy setup` and add a pruner model, you'll be prompted for:
+When you run `cyt setup` and add a pruner model, you'll be prompted for:
 
 - **Provider** — LiteLLM provider route, without a trailing slash (e.g. `openai`, `openrouter`).
 - **Model name** — LiteLLM model string (see the [provider docs](https://docs.litellm.ai/docs/providers)).
@@ -237,7 +237,7 @@ This usually means the proxy returned a **`Content-Encoding: gzip`** (or `deflat
 that was **already decompressed**. Claude Code’s `fetch` then tries to inflate plain JSON/SSE and fails.
 It is **not** a missing zlib install on your machine or in CYT.
 
-**Fix:** upgrade to a `cyt-rproxy` build that streams upstream bytes unchanged (`aiter_raw` pass-through).
+**Fix:** upgrade to a `cyt` build that streams upstream bytes unchanged (`aiter_raw` pass-through).
 After upgrading, verify:
 
 ```bash
@@ -248,7 +248,7 @@ head -c 4 /tmp/cyt-msg.body | xxd   # should show 1f8b when header says gzip
 ```
 
 **Also check:** `ANTHROPIC_BASE_URL` must use **`http://`** for the default plain-HTTP server,
-e.g. `http://localhost:8834/anthropic`. Using **`https://`** against `cyt-rproxy serve` (without TLS/`http2.serve`)
+e.g. `http://localhost:8834/anthropic`. Using **`https://`** against `cyt proxy` (without TLS/`http2.serve`)
 causes uvicorn’s `Invalid HTTP request received` and broken API calls.
 
 </details>
@@ -256,7 +256,7 @@ causes uvicorn’s `Invalid HTTP request received` and broken API calls.
 <details>
 <summary><strong>Uvicorn logs Invalid HTTP request received</strong></summary>
 
-`cyt-rproxy serve` listens for **HTTP/1.1** on the configured port (default **8834**).
+`cyt proxy` listens for **HTTP/1.1** on the configured port (default **8834**).
 This warning almost always means a client connected with the wrong protocol:
 
 - **`https://localhost:8834`** while the proxy is plain HTTP → TLS handshake bytes, not HTTP

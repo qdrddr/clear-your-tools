@@ -28,10 +28,10 @@ cp .env.example .env
 ## Run from a checkout
 
 ```bash
-uv run cyt-rproxy serve --port 8834
+uv run cyt proxy --port 8834
 ```
 
-Other CLI entry points work the same way with `uv run` (for example `uv run cyt-rproxy stats totals`).
+Other CLI entry points work the same way with `uv run` (for example `uv run cyt stats totals`).
 
 ## Repository layout
 
@@ -64,7 +64,7 @@ from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
 
 Main config file: `config.yaml` in the working directory, or
 [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml) (created on first run).
-Run `cyt-rproxy setup` for an interactive wizard that writes the user config and optional `~/.config/cyt/.env`.
+Run `cyt setup` for an interactive wizard that writes the user config and optional `~/.config/cyt/.env`.
 Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
 
 User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter vs OpenAI pruning models):
@@ -116,7 +116,7 @@ Run with HTTP/2:
 
 ```bash
 uv pip install h2 'hypercorn[h2]'
-cyt-rproxy serve --http2-serve \
+cyt proxy --http2-serve \
   --ssl-keyfile src/crt/key.pem \
   --ssl-certfile src/crt/cert.pem \
   --port 8834

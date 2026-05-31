@@ -55,7 +55,7 @@ On each intercepted request the proxy:
 
 ## Configuration
 
-User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt-rproxy` run). Values are layered on
+User settings live in **`~/.config/cyt/config.yaml`** (created on first `cyt proxy` run). Values are layered on
 top of the packaged [`defaults.yaml`](src/cyt/config/defaults.yaml). You can also use `./config.yaml` in the
 working directory or pass `--config`.
 
@@ -83,7 +83,7 @@ pruning:
 <details>
 <summary><strong>Update model pricing (stats)</strong></summary>
 
-`cyt-rproxy stats` uses `input_cost_per_token` and `output_cost_per_token` under each model entry in
+`cyt stats` uses `input_cost_per_token` and `output_cost_per_token` under each model entry in
 `models.llm.remote` (upstream models) and `models.rerankers.remote` (reranker). Update these when provider
 prices change so net-savings numbers stay accurate.
 
@@ -284,7 +284,7 @@ export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPEN
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
 ```bash
-cyt-rproxy setup
+cyt setup
 ```
 
 Or edit `~/.config/cyt/config.yaml` manually — see [Configuration](#configuration).
@@ -295,7 +295,7 @@ Bundled defaults include rerank via DeepInfra Qwen3-Reranker-8B (`DEEPINFRA_API_
 Installed CLI:
 
 ```bash
-uv run cyt-rproxy serve
+uv run cyt proxy
 ```
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
@@ -317,9 +317,9 @@ The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpo
 ### 5. View pruning stats savings
 
 ```bash
-uv run cyt-rproxy stats totals
-uv run cyt-rproxy stats summary --period day
-uv run cyt-rproxy stats events --limit 20
+uv run cyt stats totals
+uv run cyt stats summary --period day
+uv run cyt stats events --limit 20
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.
@@ -376,7 +376,7 @@ To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
 To see statistics of actual net savings (input tokens) run:
 
 ```bash
-uv run cyt-rproxy stats totals
+uv run cyt stats totals
 ```
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
@@ -403,7 +403,7 @@ The proxy must not decompress upstream responses while still forwarding `Content
 If it does, Claude Code’s `fetch` inflates already-plain JSON/SSE and raises **`ZlibError`**.
 This is not fixed by installing zlib for Node or Python.
 
-Upgrade `cyt-rproxy` to a version that pass-through streams compressed bytes to clients. Confirm with:
+Upgrade `cyt` to a version that pass-through streams compressed bytes to clients. Confirm with:
 
 ```bash
 curl --raw -sS -D - -o /tmp/cyt-msg.body ... # POST via http://127.0.0.1:8834/anthropic/...
@@ -418,7 +418,7 @@ not `https://`, unless you enable `network.proxy.reverse.http2.serve` with TLS c
 <details>
 <summary><strong>Uvicorn logs Invalid HTTP request received</strong></summary>
 
-Default `cyt-rproxy serve` uses **plain HTTP** (uvicorn).
+Default `cyt proxy` uses **plain HTTP** (uvicorn).
 Clients that open **`https://`** to that port send a TLS handshake; uvicorn logs this warning and rejects the connection.
 
 Use `http://` in `ANTHROPIC_BASE_URL`, or configure Hypercorn TLS via
