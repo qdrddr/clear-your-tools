@@ -82,7 +82,8 @@ export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPEN
 
 </details>
 
-### 2. Configure the proxy
+<details>
+<summary><strong>Configure the proxy (optional)</strong></summary>
 
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
@@ -91,8 +92,9 @@ uv run cyt-rproxy setup
 ```
 
 Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
+</details>
 
-### 3. Run the proxy
+### 2. Run the proxy --upstream <https://api.anthropic.com> --upstream-kind anthropic
 
 Installed CLI:
 
@@ -102,7 +104,11 @@ uv run cyt-rproxy serve
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
 
-### 4. Run the the Agent
+When optional step of proxy setup with the prunner pipeline & costs was skipped, we fallback to BM25,
+though tracking costs has started.
+Run `cyt-rproxy setup` to setup tracking costs and advance prunning pipelines.
+
+### 3. Run the the Agent
 
 Point Claude Code at the proxy:
 
