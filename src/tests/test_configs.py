@@ -123,3 +123,65 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
 
     assert loaded["defaults"]["is_persistent"] is False
     assert loaded["defaults"]["remote"]["reranking_model_nick"] == "bundled-rerank"
+
+
+def test_required_proxy_env_var_names_excludes_upstream_keys(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["network"]["proxy"]["reverse"]["upstreams"] = [
+        {
+            "upstream": "openai",
+            "url": "https://api.openai.com",
+            "kind": "openai",
+        },
+    ]
+    config["network"]["proxy"]["reverse"]["endpoints"] = ["openai"]
+
+    required = configs.required_proxy_env_var_names(config)
+
+    assert "OPENAI_API_KEY" not in required
+    assert "DEEPINFRA_API_KEY" in required
+
+
+def test_require_proxy_env_not_needed_for_serve_without_pipeline_keys(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["pipeline"] = ["bm25"]
+    monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    configs.require_proxy_env(config)
+
+
+def test_remote_pruning_pipeline_configured_requires_user_models() -> None:
+    assert configs.remote_pruning_pipeline_configured({}) is False
+    assert configs.remote_pruning_pipeline_configured({"pruning": {"pipeline": ["bm25"]}}) is False
+    assert (
+        configs.remote_pruning_pipeline_configured({"pruning": {"pipeline": ["rerank"]}}) is False
+    )
+
+    configured = {
+        "pruning": {"pipeline": ["rerank"]},
+        "defaults": {"remote": {"reranking_model_nick": "rerank-qwen3-8b"}},
+        "models": {
+            "rerankers": {
+                "remote": [{"nick": "rerank-qwen3-8b", "key_var_name": "DEEPINFRA_API_KEY"}],
+            },
+        },
+    }
+    assert configs.remote_pruning_pipeline_configured(configured) is True
+
+
+def test_load_user_config_overlay_reads_on_disk_only(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    cwd_config = isolated_config_paths["cwd_config"]
+    cwd_config.write_text("network:\n  proxy:\n    reverse:\n      port: 7777\n", encoding="utf-8")
+
+    overlay = configs.load_user_config_overlay()
+
+    assert overlay["network"]["proxy"]["reverse"]["port"] == 7777
+    assert "defaults" not in overlay

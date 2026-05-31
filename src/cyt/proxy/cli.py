@@ -15,8 +15,9 @@ from cyt.config import (
     DEFAULT_REVERSE_PORT,
     DEFAULT_USER_CONFIG_PATH,
     load_config,
+    load_user_config_overlay,
     proxy_http2_settings,
-    require_proxy_env,
+    remote_pruning_pipeline_configured,
     resolve_config_path,
     resolve_reverse_port,
     resolve_setup_config_path,
@@ -253,6 +254,23 @@ def _apply_upstream_cli_args(
     )
 
 
+_BM25_FALLBACK_MESSAGE = (
+    "No pruner pipeline configured: fallback to BM25. "
+    "Please run to configure more advanced pruning:\n"
+    "  cyt-rproxy setup"
+)
+
+
+def _apply_bm25_fallback_if_needed(config: dict[str, Any], config_path: Path) -> None:
+    user_config = load_user_config_overlay(config_path)
+    if remote_pruning_pipeline_configured(user_config):
+        return
+    print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
+    pruning = config.setdefault("pruning", {})
+    if isinstance(pruning, dict):
+        pruning["pipeline"] = ["bm25"]
+
+
 def _run_serve_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
     if args.debug or args.debug_dry_run:
         logging.basicConfig(
@@ -261,18 +279,14 @@ def _run_serve_command(args: argparse.Namespace, *, upstream_endpoint: str | Non
             force=True,
         )
 
+    config_path = resolve_config_path(args.config)
     config = load_config(args.config)
+    _apply_bm25_fallback_if_needed(config, config_path)
     reverse_port = resolve_reverse_port(config, args.port)
     if upstream_endpoint is not None:
         from cyt.proxy.setup import print_proxy_urls
 
         print_proxy_urls(reverse_port, [upstream_endpoint])
-
-    try:
-        require_proxy_env(config)
-    except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
 
     from cyt.pruners.policies import configure_policies_from_config
 

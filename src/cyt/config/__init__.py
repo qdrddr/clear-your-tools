@@ -9,7 +9,6 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlparse
 
 import yaml
 from dotenv import load_dotenv
@@ -315,6 +314,14 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     return _config_with_bundled_defaults(user_config)
 
 
+def load_user_config_overlay(path: Path | None = None) -> dict[str, Any]:
+    """Load on-disk ``config.yaml`` without merging bundled or built-in defaults."""
+    config_path = resolve_config_path(path)
+    if not config_path.exists():
+        return {}
+    return _load_yaml_dict(config_path)
+
+
 def reverse_proxy_cfg(proxy_cfg: dict[str, Any]) -> dict[str, Any]:
     reverse = proxy_cfg.get("reverse")
     if isinstance(reverse, dict):
@@ -437,6 +444,70 @@ _PIPELINE_STAGE_MODEL_KEYS: dict[str, tuple[str, str]] = {
 }
 
 
+def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:
+    pruning = user_config.get("pruning")
+    if not isinstance(pruning, dict):
+        return []
+    pipeline = pruning.get("pipeline")
+    if not isinstance(pipeline, list):
+        return []
+    return pipeline
+
+
+def _user_remote_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
+    defaults = user_config.get("defaults")
+    if not isinstance(defaults, dict):
+        return {}
+    remote = defaults.get("remote")
+    return remote if isinstance(remote, dict) else {}
+
+
+def _remote_model_configured(
+    user_config: dict[str, Any],
+    *,
+    model_kind: str,
+    model_nick: str,
+) -> bool:
+    models = user_config.get("models")
+    if not isinstance(models, dict):
+        return False
+    kind_models = models.get(model_kind, {})
+    if not isinstance(kind_models, dict):
+        return False
+    remote_entries = kind_models.get("remote", [])
+    if not isinstance(remote_entries, list):
+        return False
+    return any(
+        isinstance(entry, dict) and entry.get("nick") == model_nick for entry in remote_entries
+    )
+
+
+def _remote_pruning_stage_configured(
+    user_config: dict[str, Any],
+    stage: str,
+    remote_defaults: dict[str, Any],
+) -> bool:
+    stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
+    if stage_keys is None:
+        return False
+    model_kind, nick_key = stage_keys
+    model_nick = remote_defaults.get(nick_key)
+    if not model_nick:
+        return False
+    return _remote_model_configured(user_config, model_kind=model_kind, model_nick=str(model_nick))
+
+
+def remote_pruning_pipeline_configured(user_config: dict[str, Any]) -> bool:
+    """True when ``config.yaml`` explicitly configures a remote rerank/llm pruning stage."""
+    pipeline = _user_pruning_pipeline(user_config)
+    if not pipeline:
+        return False
+    remote_defaults = _user_remote_defaults(user_config)
+    return any(
+        _remote_pruning_stage_configured(user_config, stage, remote_defaults) for stage in pipeline
+    )
+
+
 def _remote_defaults(config: dict[str, Any]) -> dict[str, Any]:
     remote = _merged_config(config).get("defaults", {}).get("remote", {})
     return remote if isinstance(remote, dict) else {}
@@ -472,30 +543,6 @@ def key_var_name_for_model_nick(
     return str(key_var_name)
 
 
-def _key_var_names_for_upstream_host(config: dict[str, Any], host: str) -> list[str]:
-    """Collect ``key_var_name`` values from remote models that match an upstream host."""
-    names: list[str] = []
-    seen: set[str] = set()
-    for model_kind in ("llm", "rerankers"):
-        for entry in _remote_model_entries(config, model_kind):
-            key_var_name = entry.get("key_var_name")
-            if not key_var_name:
-                continue
-            domain_match = entry.get("domain_match")
-            if isinstance(domain_match, list) and host in domain_match:
-                name = str(key_var_name)
-            else:
-                base_url = entry.get("base_url")
-                base_host = urlparse(str(base_url)).hostname if base_url else None
-                if base_host != host:
-                    continue
-                name = str(key_var_name)
-            if name not in seen:
-                seen.add(name)
-                names.append(name)
-    return names
-
-
 def _append_pipeline_stage_env_vars(
     config: dict[str, Any],
     remote_defaults: dict[str, Any],
@@ -514,28 +561,8 @@ def _append_pipeline_stage_env_vars(
         add(key_var_name_for_model_nick(config, model_kind, str(model_nick)))
 
 
-def _append_upstream_env_vars(
-    config: dict[str, Any],
-    merged: dict[str, Any],
-    add: Callable[[str], None],
-) -> None:
-    reverse_cfg = reverse_proxy_cfg(merged["network"]["proxy"])
-    for item in reverse_cfg.get("upstreams", []):
-        if not isinstance(item, dict):
-            continue
-        url = item.get("url") or item.get("host_url") or item.get("base_url")
-        if not url:
-            continue
-        host = urlparse(str(url)).hostname
-        if not host:
-            continue
-        for name in _key_var_names_for_upstream_host(config, host):
-            add(name)
-
-
 def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
-    """Environment variable names required for ``proxy serve``."""
-    merged = _merged_config(config)
+    """Environment variable names required by configured pruning pipeline stages."""
     remote_defaults = _remote_defaults(config)
     required: list[str] = []
     seen: set[str] = set()
@@ -546,13 +573,12 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
             required.append(name)
 
     _append_pipeline_stage_env_vars(config, remote_defaults, add)
-    _append_upstream_env_vars(config, merged, add)
 
     return required
 
 
 def require_proxy_env(config: dict[str, Any]) -> None:
-    """Ensure required API keys are set after loading .env fallbacks."""
+    """Ensure pruning pipeline API keys are set after loading .env fallbacks."""
     load_proxy_env()
     missing = [name for name in required_proxy_env_var_names(config) if not os.environ.get(name)]
     if missing:
