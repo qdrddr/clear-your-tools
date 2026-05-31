@@ -112,7 +112,7 @@ remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost t
 
 ### 3. Run the the Agent
 
-Examples for Coxed & Claude Code are in [./examples/agents](./examples/agents) dir.
+Examples for **Codex** & **Claude Code** are in [./examples/agents](./examples/agents) dir.
 
 ### 4. View pruning stats savings
 
