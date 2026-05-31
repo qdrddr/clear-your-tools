@@ -10,7 +10,7 @@ Supported and tested Agents:
 - **Claude Code CLI**
 - **Codex CLI**
 
-Examples of how to run these agents with the proxy can be found in the [`./agents`](./agents) directory.
+Examples of how to run these agents with the proxy can be found in the [`./examples/agents`](./examples/agents) directory.
 
 Large MCP catalogs can add tens of thousands of tokens of tool-schema overhead on every turn.
 Clear Your Tools removes irrelevant tools and trims irrelevant optional parameters while always
