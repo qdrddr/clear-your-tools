@@ -128,6 +128,9 @@ The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpo
 uv run cyt-rproxy stats totals
 uv run cyt-rproxy stats summary --period day
 uv run cyt-rproxy stats events --limit 20
+
+# Optional (recommended):
+uv run cyt-rproxy setup
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.
