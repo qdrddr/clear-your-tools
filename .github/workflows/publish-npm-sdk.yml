@@ -1,0 +1,183 @@
+# Publish cyt-indexer-sdk to npm when a GitHub Release is published.
+#
+# One-time setup (repository maintainer with admin access):
+#
+# 1. npm — Trusted Publisher (https://www.npmjs.com/package/cyt-indexer-sdk/access):
+#    - Package: cyt-indexer-sdk (unscoped)
+#    - Owner: qdrddr
+#    - Repository: clear-your-tools
+#    - Workflow: publish-npm-sdk.yml
+#    - Environment: npm-sdk
+#
+# 2. GitHub — Environment (Settings → Environments → New environment):
+#    - Name: npm-sdk (approval gate + npm trusted publishing environment)
+#    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#    - No NPM_TOKEN secret needed when using npm trusted publishing (OIDC)
+#
+# 3. Create a release to trigger this workflow.
+#    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+
+name: Publish cyt-indexer-sdk to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approve-deployment:
+    name: Approve npm SDK deployment
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-sdk
+      url: https://www.npmjs.com/package/cyt-indexer-sdk
+    steps:
+      - name: Deployment approved
+        run: echo "Proceeding to build and publish cyt-indexer-sdk"
+
+  build-native:
+    name: Build native (${{ matrix.target }})
+    needs: approve-deployment
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        working-directory: sdk/typescript
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Build native binding
+        working-directory: sdk/typescript
+        shell: bash
+        run: |
+          napi build --platform --release \
+            --cargo-cwd ../rust/cyt-indexer \
+            --features node \
+            --cargo-name cyt_indexer \
+            --cargo-flags=--no-default-features \
+            --js native.cjs \
+            --dts native.d.ts \
+            --target "${{ matrix.target }}"
+
+      - name: Upload native binding
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: |
+            sdk/typescript/*.node
+            sdk/typescript/native.cjs
+            sdk/typescript/native.d.ts
+
+  publish:
+    name: Upload SDK to npm
+    needs: build-native
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-sdk
+      url: https://www.npmjs.com/package/cyt-indexer-sdk
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        working-directory: sdk/typescript
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Download native bindings
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-*
+          merge-multiple: true
+          path: sdk/typescript
+
+      - name: Assemble platform packages
+        working-directory: sdk/typescript
+        run: napi artifacts
+
+      - name: Build JavaScript package
+        working-directory: sdk/typescript
+        run: npm run build:js
+
+      - name: Publish to npm
+        working-directory: sdk/typescript
+        run: npm publish --provenance --access public

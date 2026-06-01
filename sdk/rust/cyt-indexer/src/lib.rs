@@ -6,6 +6,9 @@ pub mod tokens;
 #[cfg(feature = "python")]
 pub mod python;
 
+#[cfg(feature = "node")]
+pub mod node;
+
 pub use build::{
     build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,
     truncate_description, CatalogIndex,

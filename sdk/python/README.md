@@ -2,6 +2,9 @@
 
 Python bindings for the [cyt-indexer](https://crates.io/crates/cyt-indexer) Rust library.
 
+Platforms supported: Linux/Windows11/macOS
+CPU Architectures: x86/ARM
+
 ## Development
 
 ```bash

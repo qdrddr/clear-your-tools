@@ -15,15 +15,23 @@ name = "cyt_indexer"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["cli"]
+cli = []
 python = ["pyo3"]
+node = ["napi", "napi-derive"]
 
 [dependencies]
 serde_json = "1"
 tiktoken-rs = "0.7"
 clap = { version = "4", features = ["derive"] }
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py312"], optional = true }
+napi = { version = "2", features = ["napi4", "serde-json"], optional = true }
+napi-derive = { version = "2", optional = true }
+
+[build-dependencies]
+napi-build = "2"
 
 [[bin]]
 name = "cyt-indexer"
 path = "src/bin/cyt-indexer.rs"
+required-features = ["cli"]
