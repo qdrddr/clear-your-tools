@@ -1,0 +1,46 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: use-walrus-operator
+message: Use walrus operator (:=) to combine assignment and condition check
+severity: info
+language: Python
+rule:
+  follows:
+    pattern:
+      context: $VAR = $$$EXPR
+      selector: expression_statement
+  pattern: "if $VAR: $$$B"
+fix: |-
+  if $VAR := $$$EXPR:
+    $$$B
+note: |
+  **Walrus Operator (`:=`)**: Python 3.8+ introduced the walrus operator for assignment expressions.
+
+  This rule identifies cases where a variable is assigned and immediately checked in an `if` statement,
+  and suggests using the walrus operator to combine both operations.
+
+  **Benefits**:
+  1. **Concise code**: Reduces variable declarations
+  2. **Clearer intent**: Shows the assignment is only for the condition
+  3. **Scope reduction**: Variable only exists where needed
+  4. **Modern Python**: Aligns with Python 3.8+ best practices
+
+  **How to fix**:
+  Combine assignment and condition using `:=`:
+
+  ```python
+  # Before
+  data = fetch_data()
+  if data:
+      process(data)
+
+  # After
+  if data := fetch_data():
+      process(data)
+  ```
+
+  **Use cases**:
+  - Checking if a function returns a truthy value
+  - Validating data before processing
+  - Reducing temporary variables in FastAPI dependencies
+
+  **Note**: This requires Python 3.8+. Your project targets Python 3.13, so this is safe to use.

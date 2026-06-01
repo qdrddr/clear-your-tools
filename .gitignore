@@ -82,6 +82,10 @@ docs/
 fastmcp/
 .codegraph
 node_modules
+sdk/typescript/dist/
+sdk/typescript/*.node
+sdk/typescript/native.cjs
+sdk/typescript/native.d.ts
 fastmcp
 src/catalog
 cocoindex-code

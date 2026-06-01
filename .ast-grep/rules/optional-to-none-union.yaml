@@ -1,0 +1,37 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: optional-to-none-union
+message: Use PEP 604 syntax - convert Optional[T] to T | None for Python 3.10+
+severity: info
+language: Python
+rule:
+  pattern:
+    context: "a: Optional[$T]"
+    selector: generic_type
+fix: $T | None
+note: |
+  **PEP 604 Union Syntax**: Python 3.10+ supports the modern union syntax using the `|` operator.
+
+  This rule converts `Optional[T]` to `T | None`, which is more concise and readable.
+
+  **Benefits**:
+  1. **Cleaner syntax**: `str | None` is shorter than `Optional[str]`
+  2. **Modern Python**: Aligns with Python 3.10+ best practices
+  3. **Consistency**: Works with other union types using `|` operator
+  4. **Type checker friendly**: All modern type checkers support this syntax
+
+  **How to fix**:
+  Replace `Optional[T]` with `T | None`:
+
+  ```python
+  # Before
+  from typing import Optional
+
+  def process(value: Optional[str]) -> Optional[int]:
+      return None
+
+  # After
+  def process(value: str | None) -> int | None:
+      return None
+  ```
+
+  **Note**: This requires Python 3.10+. Your project targets Python 3.13, so this is safe to use.

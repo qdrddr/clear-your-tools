@@ -1,0 +1,13 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: sqlalchemy-mapped-column
+message: Use Mapped type hints with mapped_column() for modern SQLAlchemy 2.0 style
+severity: info
+language: Python
+
+rule:
+  any:
+    - pattern: $FIELD = mapped_column(String, $$$ARGS)
+    - pattern: $FIELD = mapped_column(Integer, $$$ARGS)
+    - pattern: $FIELD = mapped_column(Boolean, $$$ARGS)
+    - pattern: $FIELD = mapped_column(Float, $$$ARGS)
+    - pattern: $FIELD = mapped_column(DateTime, $$$ARGS)

@@ -244,6 +244,7 @@ exclude_lines = [
 ]
 
 [tool.codespell]
+skip = [ ]
 ignore-words-list = [
     "fallow",
     "Bui",

@@ -1,0 +1,52 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: incorrect-return-type
+message: Function annotated to return None but actually returns a value - causes incorrect OpenAPI schema
+severity: warning
+language: Python
+rule:
+  all:
+    - pattern: |
+        def $FUNC($$$ARGS) -> None:
+          $$$BODY
+    - has:
+        pattern: return $VALUE
+        stopBy:
+          kind: function_definition
+note: |
+  **Type Hint Mismatch**: Function is annotated to return `None` but actually returns a value.
+
+  This causes problems:
+  1. **Incorrect OpenAPI Schema**: FastAPI generates wrong API documentation
+  2. **Type Checker Errors**: mypy/pyright will report type errors
+  3. **Client Confusion**: API clients don't know what to expect
+  4. **IDE Issues**: IDE autocomplete and hints are wrong
+
+  **How to fix**:
+  Update the return type annotation to match what the function actually returns:
+
+  ```python
+  # Before
+  def update_chunks(
+      document_group_id: uuid.UUID,
+      document_id: uuid.UUID,
+      data: UpdateChunksInput,
+      db: Session = Depends(get_db),
+  ) -> None:
+      # ... code ...
+      return [row.model_dump(exclude={"embedding"}) for row in document_chunks]
+
+  # After
+  def update_chunks(
+      document_group_id: uuid.UUID,
+      document_id: uuid.UUID,
+      data: UpdateChunksInput,
+      db: Session = Depends(get_db),
+  ) -> list[dict]:  # or list[DocumentChunkResponse]
+      # ... code ...
+      return [row.model_dump(exclude={"embedding"}) for row in document_chunks]
+  ```
+
+  **Best practice**:
+  - Use specific return types (list[dict], dict, str, etc.)
+  - Use Pydantic models for complex returns
+  - Only use `None` when function doesn't return anything

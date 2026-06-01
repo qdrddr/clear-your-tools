@@ -1,0 +1,39 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: pytest-fixture-type-hints
+message: Add type hints to pytest fixture arguments for better IDE support and type checking
+severity: info
+language: Python
+
+utils:
+  is-fixture-function:
+    kind: function_definition
+    follows:
+      kind: decorator
+      has:
+        kind: identifier
+        regex: ^fixture$
+        stopBy: end
+  is-test-function:
+    kind: function_definition
+    has:
+      field: name
+      regex: ^test_
+  is-pytest-context:
+    inside:
+      stopBy: end
+      any:
+        - matches: is-fixture-function
+        - matches: is-test-function
+
+rule:
+  # Match fixture/test function parameters without type hints
+  # Pattern: parameter name not followed by colon (which indicates type annotation)
+  kind: identifier
+  inside:
+    kind: parameters
+  matches: is-pytest-context
+  # Exclude parameters that already have type hints (followed by colon)
+  not:
+    follows:
+      pattern: ":"
+      stopBy: end

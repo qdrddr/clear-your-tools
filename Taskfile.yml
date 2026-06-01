@@ -1,6 +1,44 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
 version: "3"
 
+vars:
+  PYTHON_VERSION: "3.13"
+
+env:
+  PATH: "{{.ROOT_DIR}}/app/.venv/bin:{{.PATH}}"
+
 tasks:
+  up:
+    desc: Start Docker services (PostgreSQL/VectorChord, MinIO)
+    cmds:
+      - docker-compose up -d
+
+  down:
+    desc: Stop Docker services
+    cmds:
+      - docker-compose down
+
+  check:
+    desc: Run ty type checker
+    cmds:
+      - uv run ty check app/ --python-version {{.PYTHON_VERSION}} --output-format=concise
+
+  ruff:
+    desc: Lint with auto-fix
+    cmds:
+      - uv run ruff check --fix app/
+
+  format:
+    desc: Format code
+    cmds:
+      - uv run ruff format app/
+
+  pytest:
+    desc: Run tests
+    cmds:
+      - cd app/ && uv run pytest -v -m integration
+
   ast-test:
     desc: Test ast-grep lint rules
     cmds:
@@ -9,4 +47,40 @@ tasks:
   ast-scan:
     desc: Pattern-based security/quality scan
     cmds:
-      - uv run ast-grep scan ui/
+      - uv run ast-grep scan app/
+
+  right:
+    desc: Run BasedPyright static analysis
+    cmds:
+      - cd app/ && uv run basedpyright --venvpath .venv --pythonversion {{.PYTHON_VERSION}} .
+
+  backlog:
+    desc: Open backlog browser (requires npm install -g backlog.md)
+    cmds:
+      - backlog browser
+
+  all-tests:
+    desc: Run all checks, continue on failure
+    cmds:
+      - task: check
+        ignore_error: true
+      - task: ruff
+        ignore_error: true
+      - task: format
+        ignore_error: true
+      - task: pytest
+        ignore_error: true
+      - task: ast-scan
+        ignore_error: true
+      - task: right
+        ignore_error: true
+
+  all-seq:
+    desc: Run all checks sequentially, stop on failure
+    cmds:
+      - task: check
+      - task: ruff
+      - task: format
+      - task: pytest
+      - task: ast-scan
+      - task: right
