@@ -857,6 +857,10 @@ def create_app(
     )
 
 
+def _ssl_file_exists(path: str | None) -> bool:
+    return bool(path and Path(path).is_file())
+
+
 async def serve_reverse_async(
     config: dict[str, Any],
     *,
@@ -908,8 +912,8 @@ async def serve_reverse_async(
                 "http2_upstream": http2_upstream,
                 "ssl_keyfile": ssl_keyfile,
                 "ssl_certfile": ssl_certfile,
-                "ssl_key_exists": bool(ssl_keyfile and Path(ssl_keyfile).exists()),
-                "ssl_cert_exists": bool(ssl_certfile and Path(ssl_certfile).exists()),
+                "ssl_key_exists": _ssl_file_exists(ssl_keyfile),
+                "ssl_cert_exists": _ssl_file_exists(ssl_certfile),
                 "transport": "hypercorn+tls" if http2_serve else "uvicorn+plain-http",
             },
         )

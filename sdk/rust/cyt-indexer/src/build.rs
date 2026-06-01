@@ -117,6 +117,16 @@ pub fn truncate_description(description: Option<&str>, max_tokens: usize) -> Str
     }
 }
 
+/// Plain-text form for decomposed enum `.md` files (matches Python ``str(val)``).
+fn enum_markdown_value(val: &Value) -> String {
+    match val {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }
+}
+
 pub fn dedupe_enums(all_enums: &[Value]) -> Vec<Value> {
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
@@ -475,8 +485,9 @@ pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex
     }
 
     for val in dedupe_enums(all_enums) {
-        let key = format!("{DECOMPOSED_PREFIX}{val}{}", paths::MD_EXT);
-        files.insert(key, val.to_string());
+        let text = enum_markdown_value(&val);
+        let key = format!("{DECOMPOSED_PREFIX}{text}{}", paths::MD_EXT);
+        files.insert(key, text);
     }
 
     for tool_info in tools {

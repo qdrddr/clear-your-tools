@@ -14,3 +14,8 @@ git checkout main
 git pull origin main
 git tag "${tag}"
 git push origin "${tag}"
+
+# export CARGO_REGISTRY_TOKEN="$(security find-generic-password -s "nono" -a "CARGO_REGISTRY_TOKEN" -w)"
+# cargo build -p cyt-indexer
+# cargo publish --token "$CARGO_REGISTRY_TOKEN"
+# gh workflow run publish-crates.yml --ref rust -f version=0.1.0

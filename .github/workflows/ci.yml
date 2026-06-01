@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --group dev --group test --locked
 
+      - name: Verify cyt-indexer-sdk import
+        run: uv run python -c "from cyt_indexer._native import count_tokens; assert count_tokens('hello') > 0"
+
       - name: Ruff lint
         run: uv run ruff check src/cyt src/tests
 

@@ -1,0 +1,31 @@
+[project]
+name = "cyt-indexer-sdk"
+version = "0.1.0"
+description = "Python SDK for cyt-indexer — tool schema decomposition and catalog indexing"
+requires-python = ">=3.13,<4.0"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Damien Berezenko" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+]
+
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "../rust/cyt-indexer/Cargo.toml"
+features = ["python"]
+module-name = "cyt_indexer._native"
+python-source = "src"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.7,<2.0",
+]

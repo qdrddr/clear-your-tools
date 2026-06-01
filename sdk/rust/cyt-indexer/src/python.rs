@@ -22,27 +22,27 @@ fn py_to_value(obj: Bound<'_, PyAny>) -> PyResult<Value> {
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
 }
 
-#[pyfunction]
+#[pyfunction(name = "compact_json")]
 fn compact_json_py(obj: Bound<'_, PyAny>) -> PyResult<String> {
     Ok(compact_json(&py_to_value(obj)?))
 }
 
-#[pyfunction]
+#[pyfunction(name = "count_tokens")]
 fn count_tokens_py(text: &str) -> PyResult<usize> {
     Ok(count_tokens(text))
 }
 
-#[pyfunction]
+#[pyfunction(name = "count_json_tokens")]
 fn count_json_tokens_py(obj: Bound<'_, PyAny>) -> PyResult<usize> {
     Ok(count_json_tokens(&py_to_value(obj)?))
 }
 
-#[pyfunction]
+#[pyfunction(name = "catalog_tool_count")]
 fn catalog_tool_count_py(data: Bound<'_, PyAny>) -> PyResult<usize> {
     Ok(catalog_tool_count(&py_to_value(data)?))
 }
 
-#[pyfunction]
+#[pyfunction(name = "build_catalog_index")]
 fn build_catalog_index_py(
     tools: Bound<'_, PyAny>,
     all_enums: Bound<'_, PyAny>,
@@ -72,20 +72,40 @@ fn process_groups_from_policy_dict(
     };
     let prune_optional_tools = policy
         .get_item("prune_optional_tools")?
-        .map(|v| v.extract::<Vec<String>>())
+        .map(|v| {
+            if v.is_none() {
+                Ok(Vec::new())
+            } else {
+                v.extract::<Vec<String>>()
+            }
+        })
         .transpose()?
         .unwrap_or_default()
         .into_iter()
         .collect();
     let system_preserve = policy
         .get_item("system_preserve")?
-        .map(|v| v.extract::<Vec<String>>())
+        .map(|v| {
+            if v.is_none() {
+                Ok(None)
+            } else {
+                v.extract::<Vec<String>>().map(|items| Some(items))
+            }
+        })
         .transpose()?
+        .flatten()
         .map(|v| v.into_iter().collect());
     let mcp_preserve = policy
         .get_item("mcp_preserve")?
-        .map(|v| v.extract::<Vec<String>>())
+        .map(|v| {
+            if v.is_none() {
+                Ok(None)
+            } else {
+                v.extract::<Vec<String>>().map(|items| Some(items))
+            }
+        })
         .transpose()?
+        .flatten()
         .map(|v| v.into_iter().collect());
     let mut required_by_tool = std::collections::HashMap::new();
     if let Some(item) = policy.get_item("required_by_tool")? {
@@ -101,7 +121,7 @@ fn process_groups_from_policy_dict(
     })
 }
 
-#[pyfunction]
+#[pyfunction(name = "retrieve_core")]
 #[pyo3(signature = (data, store_json_files, survivor_json_files, apply_decomposed_score_filter=true, policy_options=None))]
 fn retrieve_core_py(
     py: Python<'_>,
@@ -146,7 +166,7 @@ fn dict_to_required_by_tool(
     Ok(map)
 }
 
-#[pyfunction]
+#[pyfunction(name = "load_catalog")]
 fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
     Python::with_gil(|py| {
         let catalog = load_catalog_from_dir(dir_path)

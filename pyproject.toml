@@ -18,11 +18,11 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
+    "cyt-indexer-sdk==0.1.0",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
     "pyyaml==6.0.3",
-    "tiktoken==0.12.0",
     "numpy>=2.0",
     "pystemmer==3.1.0",
     "bm25s[core]==0.3.9",
@@ -114,6 +114,9 @@ test = [
 package = true
 default-groups = ["dev", "test"]
 
+[tool.uv.sources]
+cyt-indexer-sdk = { path = "sdk/python", editable = true }
+
 [tool.ruff]
 target-version = "py313"
 line-length = 100
@@ -194,12 +197,12 @@ module = [
     "yaml.*",
     "pandas.*",
     "litellm.*",
-    "tiktoken.*",
     "google.*",
     "libsql_experimental.*",
     "uuid_extensions.*",
     "bm25s.*",
     "Stemmer.*",
+    "cyt_indexer.*",
 ]
 ignore_missing_imports = true
 

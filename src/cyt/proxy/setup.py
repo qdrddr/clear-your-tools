@@ -7,7 +7,7 @@ import getpass
 import sys
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -841,10 +841,11 @@ def _prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
     return raw in ("y", "yes", "1", "true")
 
 
-ChoiceT = TypeVar("ChoiceT", bound=str)
-
-
-def _prompt_choice(text: str, choices: list[ChoiceT], default_index: int = 0) -> ChoiceT:
+def _prompt_choice[ChoiceT: str](
+    text: str,
+    choices: list[ChoiceT],
+    default_index: int = 0,
+) -> ChoiceT:
     for i, choice in enumerate(choices, start=1):
         print(f"  {i}. {choice}")
     while True:
