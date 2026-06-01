@@ -14,7 +14,8 @@
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
-# 3. Create a release (tag e.g. cyt-indexer-sdk-v0.1.0) or use workflow_dispatch.
+# 3. Create a release to trigger this workflow.
+#    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
 
 name: Publish cyt-indexer-sdk to PyPI
 
@@ -71,9 +72,17 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
-          VERSION="${VERSION#cyt-indexer-sdk-v}"
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
           cd sdk/python
           uv version "$VERSION"
 
@@ -102,6 +111,9 @@ jobs:
     name: Upload SDK to PyPI
     needs: build-wheels
     runs-on: ubuntu-latest
+    environment:
+      name: pypi-sdk
+      url: https://pypi.org/p/cyt-indexer-sdk
     permissions:
       id-token: write
     steps:
@@ -118,9 +130,17 @@ jobs:
         if: github.event_name == 'release'
         shell: bash
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
-          VERSION="${VERSION#cyt-indexer-sdk-v}"
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
           cd sdk/python
           uv version "$VERSION"
 
