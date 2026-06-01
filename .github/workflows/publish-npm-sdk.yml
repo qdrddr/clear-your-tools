@@ -224,7 +224,7 @@ jobs:
 
       - name: Create npm platform dirs
         working-directory: sdk/typescript
-        run: npx napi create-npm-dir
+        run: npx napi create-npm-dir -t .
 
       - name: Assemble platform packages
         working-directory: sdk/typescript
