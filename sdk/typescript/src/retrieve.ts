@@ -1,5 +1,9 @@
 import { CatalogIndex } from "./build.js";
-import { loadCatalog as loadCatalogNative, retrieveCore, type PolicyOptions } from "./native.js";
+import {
+  loadCatalog as loadCatalogNative,
+  retrieveCore,
+  type PolicyOptions,
+} from "./native.js";
 import {
   DECOMPOSED_PREFIX,
   getRootToolKey,
@@ -25,10 +29,7 @@ export class DecomposedCatalog {
   static fromCatalogIndex(index: CatalogIndex): DecomposedCatalog {
     const jsonFiles: Record<string, JsonRecord> = {};
     for (const [relPath, content] of Object.entries(index.files)) {
-      if (
-        relPath.startsWith(DECOMPOSED_PREFIX) &&
-        relPath.endsWith(JSON_EXT)
-      ) {
+      if (relPath.startsWith(DECOMPOSED_PREFIX) && relPath.endsWith(JSON_EXT)) {
         jsonFiles[relPath] = JSON.parse(content) as JsonRecord;
       }
     }
@@ -46,7 +47,11 @@ export class DecomposedCatalog {
         const record = entry as JsonRecord;
         const filePath = record.file_path;
         const content = record.content;
-        if (typeof filePath !== "string" || !content || typeof content !== "object") {
+        if (
+          typeof filePath !== "string" ||
+          !content ||
+          typeof content !== "object"
+        ) {
           continue;
         }
         const key = toDecomposedKey(filePath);
@@ -108,8 +113,11 @@ export function retrieveTools(
   data: unknown,
   options: RetrieveToolsOptions,
 ): JsonRecord[] {
-  const { catalog, applyDecomposedScoreFilter = true, policyOptions = null } =
-    options;
+  const {
+    catalog,
+    applyDecomposedScoreFilter = true,
+    policyOptions = null,
+  } = options;
 
   let store: DecomposedCatalog;
   if (catalog instanceof DecomposedCatalog) {

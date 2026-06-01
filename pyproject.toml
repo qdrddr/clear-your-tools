@@ -244,7 +244,7 @@ exclude_lines = [
 ]
 
 [tool.codespell]
-skip = [ ]
+# skip = [ "/file", ]
 ignore-words-list = [
     "fallow",
     "Bui",
