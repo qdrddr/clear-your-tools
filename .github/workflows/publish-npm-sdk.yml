@@ -112,6 +112,7 @@ jobs:
             -p cyt-indexer \
             --features node \
             --no-default-features \
+            --output-dir . \
             --js native.cjs \
             --dts native.d.ts \
             --target "${{ matrix.target }}"
@@ -120,10 +121,11 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          files=(sdk/typescript/cyt-indexer-sdk.*.node)
+          files=(sdk/typescript/cyt-indexer-sdk.*.node sdk/rust/cyt-indexer/cyt-indexer-sdk.*.node)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No .node file produced by napi build"
             ls -la sdk/typescript/
+            ls -la sdk/rust/cyt-indexer/ || true
             exit 1
           fi
           mkdir -p "artifacts/bindings-${{ matrix.target }}"
