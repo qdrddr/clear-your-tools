@@ -99,7 +99,7 @@ jobs:
         working-directory: sdk/typescript
         shell: bash
         run: |
-          napi build --platform --release \
+          npx napi build --platform --release \
             --cargo-cwd ../rust/cyt-indexer \
             --features node \
             --cargo-name cyt_indexer \
@@ -172,7 +172,7 @@ jobs:
 
       - name: Assemble platform packages
         working-directory: sdk/typescript
-        run: napi artifacts
+        run: npx napi artifacts
 
       - name: Build JavaScript package
         working-directory: sdk/typescript
