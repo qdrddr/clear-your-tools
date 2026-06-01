@@ -108,10 +108,10 @@ jobs:
         shell: bash
         run: |
           npx napi build --platform --release \
-            --cargo-cwd ../rust/cyt-indexer \
+            --manifest-path ../rust/cyt-indexer/Cargo.toml \
+            -p cyt-indexer \
             --features node \
-            --cargo-name cyt_indexer \
-            --cargo-flags=--no-default-features \
+            --no-default-features \
             --js native.cjs \
             --dts native.d.ts \
             --target "${{ matrix.target }}"
@@ -126,15 +126,15 @@ jobs:
             ls -la sdk/typescript/
             exit 1
           fi
-          mkdir -p "native-bindings/${{ matrix.target }}"
-          cp "${files[@]}" "native-bindings/${{ matrix.target }}/"
-          ls -la "native-bindings/${{ matrix.target }}/"
+          mkdir -p "artifacts/bindings-${{ matrix.target }}"
+          cp "${files[@]}" "artifacts/bindings-${{ matrix.target }}/"
+          ls -la "artifacts/bindings-${{ matrix.target }}/"
 
       - name: Upload native binding
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
-          path: native-bindings/${{ matrix.target }}/
+          path: artifacts/bindings-${{ matrix.target }}/
           if-no-files-found: error
 
       - name: Upload native loader stubs
@@ -210,25 +210,19 @@ jobs:
         with:
           pattern: bindings-*
           merge-multiple: true
-          path: sdk/typescript/artifacts
+          path: sdk/typescript
 
-      - name: Flatten native bindings
+      - name: List downloaded bindings
         working-directory: sdk/typescript
-        shell: bash
-        run: |
-          shopt -s nullglob
-          while IFS= read -r -d '' file; do
-            mv -f "$file" artifacts/
-          done < <(find artifacts -mindepth 2 -name '*.node' -print0)
-          ls -la artifacts/
+        run: find artifacts -name '*.node' -print
 
       - name: Create npm platform dirs
         working-directory: sdk/typescript
-        run: npx napi create-npm-dir -t .
+        run: npx napi create-npm-dirs
 
       - name: Assemble platform packages
         working-directory: sdk/typescript
-        run: npx napi artifacts -d artifacts
+        run: npx napi artifacts --output-dir artifacts
 
       - name: Verify platform packages
         working-directory: sdk/typescript

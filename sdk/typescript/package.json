@@ -34,12 +34,12 @@
   "scripts": {
     "build": "npm run build:native && npm run build:js",
     "build:js": "tsc",
-    "build:native": "napi build --platform --release --cargo-cwd ../rust/cyt-indexer --features node --cargo-name cyt_indexer --cargo-flags=--no-default-features --js native.cjs --dts native.d.ts",
+    "build:native": "napi build --platform --release --manifest-path ../rust/cyt-indexer/Cargo.toml -p cyt-indexer --features node --no-default-features --js native.cjs --dts native.d.ts",
     "prepublishOnly": "napi prepublish -t npm --skip-gh-release",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.4",
+    "@napi-rs/cli": "^3.7.0",
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"
   },
@@ -53,22 +53,12 @@
     "node": ">=20"
   },
   "napi": {
-    "name": "cyt-indexer-sdk",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "aarch64-pc-windows-msvc"
-      ]
-    },
-    "cargo": {
-      "name": "cyt_indexer",
-      "path": "../rust/cyt-indexer",
-      "features": [
-        "node"
-      ],
-      "flags": [
-        "--no-default-features"
-      ]
-    }
+    "binaryName": "cyt-indexer-sdk",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-pc-windows-msvc"
+    ]
   }
 }
