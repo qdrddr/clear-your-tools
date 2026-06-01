@@ -26,5 +26,5 @@ git push origin "${tag}"
 # git tag cyt-indexer-rust-v0.1.4
 # git push origin cyt-indexer-rust-v0.1.4
 
-# git tag cyt-indexer-sdk-v0.1.3
-# git push origin cyt-indexer-sdk-v0.1.3
+# git tag cyt-indexer-sdk-v0.1.4
+# git push origin cyt-indexer-sdk-v0.1.4
