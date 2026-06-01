@@ -10,6 +10,7 @@ export {
   ENUM_SCORE,
   loadCatalog,
   retrieveTools,
+  type JsonRecord,
   type PolicyOptions,
   type RetrieveToolsOptions,
 } from "./retrieve.js";

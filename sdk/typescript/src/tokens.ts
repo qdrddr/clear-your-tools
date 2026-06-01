@@ -1,7 +1,7 @@
 import {
-  compactJson as compactJsonNative,
-  countJsonTokens as countJsonTokensNative,
-  countTokens as countTokensNative,
+  compactJsonNative,
+  countJsonTokensNative,
+  countTokensNative,
 } from "./native.js";
 
 export function compactJson(obj: unknown): string {

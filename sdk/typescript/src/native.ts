@@ -4,14 +4,12 @@ const require = createRequire(import.meta.url);
 
 const native = require("../native.cjs") as typeof import("../native.d.ts");
 
-export const {
-  buildCatalogIndex,
-  catalogToolCount,
-  compactJson,
-  countJsonTokens,
-  countTokens,
-  loadCatalog,
-  retrieveCore,
-} = native;
+export const buildCatalogIndexNative = native.buildCatalogIndex;
+export const catalogToolCountNative = native.catalogToolCount;
+export const compactJsonNative = native.compactJson;
+export const countJsonTokensNative = native.countJsonTokens;
+export const countTokensNative = native.countTokens;
+export const loadCatalogNative = native.loadCatalog;
+export const retrieveCoreNative = native.retrieveCore;
 
-export type { CatalogIndexResult, PolicyOptions } from "../native.d.ts";
+export type { PolicyOptions } from "../native.d.ts";
