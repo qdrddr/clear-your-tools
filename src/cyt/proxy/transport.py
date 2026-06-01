@@ -82,8 +82,7 @@ async def save_debug_snapshot(
 
 
 def new_debug_session_id() -> str:
-    env_value = os.environ.get("CYT_DEBUG_SESSION_ID")
-    if env_value:
+    if env_value := os.environ.get("CYT_DEBUG_SESSION_ID"):
         return env_value
     return uuid4().hex[:12]
 

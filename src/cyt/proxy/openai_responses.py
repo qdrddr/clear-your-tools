@@ -58,8 +58,7 @@ def extract_user_query_from_input(cleaned_messages: list[dict[str, Any]]) -> str
             continue
         if not _user_message_has_text(msg):
             continue
-        text = _text_from_user_message(msg)
-        if text:
+        if text := _text_from_user_message(msg):
             return text
     return None
 

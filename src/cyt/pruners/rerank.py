@@ -176,8 +176,7 @@ def _prepare_rerank_documents(
     indexed_docs: list[tuple[int, str]] = []
     for i, item in enumerate(items):
         item["score"] = f"{0.0:.20f}"
-        doc_text = extract_fn(item)
-        if doc_text:
+        if doc_text := extract_fn(item):
             indexed_docs.append((i, doc_text))
     return indexed_docs
 

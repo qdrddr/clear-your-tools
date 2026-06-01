@@ -580,8 +580,9 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
 def require_proxy_env(config: dict[str, Any]) -> None:
     """Ensure pruning pipeline API keys are set after loading .env fallbacks."""
     load_proxy_env()
-    missing = [name for name in required_proxy_env_var_names(config) if not os.environ.get(name)]
-    if missing:
+    if missing := [
+        name for name in required_proxy_env_var_names(config) if not os.environ.get(name)
+    ]:
         env_locations = " or ".join(str(p) for p in (CWD_ENV_PATH, USER_ENV_PATH))
         raise RuntimeError(
             "Required environment variable(s) not set: "

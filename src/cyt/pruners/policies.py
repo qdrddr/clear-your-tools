@@ -785,8 +785,7 @@ def drop_recomposed_tools_with_empty_properties(
     for tool in tools:
         name = str(tool.get("name", ""))
         schema = tool.get("inputSchema") or tool.get("input_schema") or {}
-        props = schema.get("properties") if isinstance(schema, dict) else None
-        if props:
+        if schema.get("properties") if isinstance(schema, dict) else None:
             kept.append(tool)
             continue
         if (

@@ -177,8 +177,7 @@ _PRINTABLE_RUN = re.compile(rb"[\x09\x0a\x0d\x20-\x7e\xc2-\xf4][\x20-\x7e\x80-\x
 
 
 def _extract_printable_text(body: bytes) -> str:
-    runs = _PRINTABLE_RUN.findall(body)
-    if runs:
+    if runs := _PRINTABLE_RUN.findall(body):
         return "\n".join(part.decode("utf-8", errors="replace") for part in runs)
     return body.decode("utf-8", errors="replace")
 
@@ -326,8 +325,7 @@ def _catalog_file_paths(catalog: dict[str, Any], key: str) -> list[str]:
     paths: list[str] = []
     for item in items:
         if isinstance(item, dict):
-            path = item.get("file_path")
-            if path:
+            if path := item.get("file_path"):
                 paths.append(str(path))
     return sorted(paths)
 
@@ -398,8 +396,7 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
         lines.append("")
         lines.extend(_format_decomposed_table_lines(pruning))
         lines.extend(_format_decomposed_paths_lines(pruning))
-        status = pruning.get("status")
-        if status:
+        if status := pruning.get("status"):
             tools_in = pruning.get("tools_in")
             tools_out = pruning.get("tools_out")
             lines.append(f"pruning status: {status} (tools {tools_in} -> {tools_out})")
@@ -415,16 +412,14 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
                 )
             else:
                 lines.append(f"tool tokens (compact JSON): input={tokens_in}")
-        pruning_model_tokens = pruning.get("pruning_model_tokens") or {}
-        if pruning_model_tokens:
+        if pruning_model_tokens := pruning.get("pruning_model_tokens") or {}:
             parts = ", ".join(
                 f"{stage}={pruning_model_tokens[stage]}"
                 for stage in ("rerank", "bm25", "llm")
                 if stage in pruning_model_tokens
             )
             lines.append(f"pruning model tokens: {parts}")
-        error = pruning.get("error")
-        if error:
+        if error := pruning.get("error"):
             lines.append(f"pruning error: {error}")
     lines.append("")
     print("\n".join(lines), flush=True)

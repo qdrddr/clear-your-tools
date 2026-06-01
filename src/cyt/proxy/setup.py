@@ -272,10 +272,8 @@ def filter_catalog_by_upstreams(
 def upstream_url_default(upstreams: list[dict[str, Any]]) -> str | None:
     """First upstream URL entered during setup (may include path)."""
     for upstream in upstreams:
-        url = upstream.get("url") or upstream.get("host_url")
-        if url:
-            text = normalize_upstream_url(str(url))
-            if text:
+        if url := upstream.get("url") or upstream.get("host_url"):
+            if text := normalize_upstream_url(str(url)):
                 return text
     return None
 
@@ -288,8 +286,7 @@ def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]
         for key in ("upstream", "kind"):
             if key in upstream:
                 entry[key] = copy.deepcopy(upstream[key])
-        url = upstream.get("url") or upstream.get("host_url")
-        if url:
+        if url := upstream.get("url") or upstream.get("host_url"):
             entry["url"] = normalize_upstream_url(str(url))
         result.append(entry)
     return result
@@ -303,8 +300,7 @@ def domain_match_default_string(
 ) -> str:
     """Default comma-separated hostnames for domain_match prompts."""
     if upstreams:
-        from_upstreams = upstream_hostnames_default(upstreams)
-        if from_upstreams:
+        if from_upstreams := upstream_hostnames_default(upstreams):
             return from_upstreams
     if entry:
         domain_match = entry.get("domain_match")
@@ -743,8 +739,7 @@ def _prompt(text: str, default: str | None = None) -> str:
 def _prompt_required(text: str, default: str | None = None) -> str:
     """Like ``_prompt``, but re-prompt until a non-empty value is entered."""
     while True:
-        value = _prompt(text, default).strip()
-        if value:
+        if value := _prompt(text, default).strip():
             return value
         print("This field is required.", file=sys.stderr)
 
@@ -1016,13 +1011,12 @@ def _prompt_custom_model(
     if key_var is not None:
         result["key_var_name"] = key_var
     if prompt_base_url or default_base_url is not None:
-        base_url = normalize_base_url(
+        if base_url := normalize_base_url(
             _prompt(
                 "base_url (may leave blank if one of the https://docs.litellm.ai/docs/providers selected)",
                 default_base_url or "",
             ),
-        )
-        if base_url:
+        ):
             result["base_url"] = base_url
     domain_match = _prompt_domain_match(
         provider,
@@ -1249,8 +1243,7 @@ def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:
                 default_yes=False,
             ):
                 continue
-        secret = getpass.getpass(f"{key_var}: ")
-        if secret:
+        if secret := getpass.getpass(f"{key_var}: "):
             updates[key_var] = secret
     if updates:
         write_env_file(

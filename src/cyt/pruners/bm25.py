@@ -132,8 +132,7 @@ def prepare_bm25_documents(
     indexed: list[tuple[int, str]] = []
     for item_index, item in enumerate(items):
         item["score"] = f"{0.0:.20f}"
-        text = extract_fn(item)
-        if text:
+        if text := extract_fn(item):
             indexed.append((item_index, text))
     return indexed
 
