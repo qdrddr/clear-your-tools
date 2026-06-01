@@ -3,10 +3,19 @@ id: prefer-generator-expressions
 message: Use generator expression instead of list comprehension for memory efficiency
 severity: info
 language: Python
+
+utils:
+  is-iterable-consuming-call:
+    kind: call
+    has:
+      field: function
+      regex: ^(any|all|sum|max|min|sorted|list|tuple|set)$
+
 rule:
   kind: list_comprehension
   inside:
-    kind: argument_list
+    matches: is-iterable-consuming-call
+    stopBy: end
 note: |
   **Generator Expressions**: More memory-efficient than list comprehensions when used with functions
   that consume iterables.

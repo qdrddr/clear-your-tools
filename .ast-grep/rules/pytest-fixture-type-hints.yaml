@@ -7,33 +7,32 @@ language: Python
 utils:
   is-fixture-function:
     kind: function_definition
-    follows:
-      kind: decorator
-      has:
-        kind: identifier
-        regex: ^fixture$
-        stopBy: end
-  is-test-function:
-    kind: function_definition
-    has:
-      field: name
-      regex: ^test_
-  is-pytest-context:
     inside:
-      stopBy: end
-      any:
-        - matches: is-fixture-function
-        - matches: is-test-function
+      kind: decorated_definition
+      has:
+        kind: decorator
+        has:
+          kind: identifier
+          regex: ^fixture$
+          stopBy: end
 
 rule:
-  # Match fixture/test function parameters without type hints
-  # Pattern: parameter name not followed by colon (which indicates type annotation)
-  kind: identifier
-  inside:
-    kind: parameters
-  matches: is-pytest-context
-  # Exclude parameters that already have type hints (followed by colon)
-  not:
-    follows:
-      pattern: ":"
-      stopBy: end
+  all:
+    - kind: identifier
+      pattern: $PARAM
+      inside:
+        kind: parameters
+        inside:
+          matches: is-fixture-function
+    - not:
+        pattern: self
+    - not:
+        pattern: cls
+    - not:
+        inside:
+          kind: type
+          stopBy: end
+    - not:
+        follows:
+          pattern: ":"
+          stopBy: end

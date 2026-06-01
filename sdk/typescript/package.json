@@ -43,6 +43,12 @@
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"
   },
+  "optionalDependencies": {
+    "cyt-indexer-sdk-darwin-x64": "0.0.1",
+    "cyt-indexer-sdk-linux-x64-gnu": "0.0.1",
+    "cyt-indexer-sdk-win32-arm64-msvc": "0.0.1",
+    "cyt-indexer-sdk-win32-x64-msvc": "0.0.1"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -64,11 +70,5 @@
         "--no-default-features"
       ]
     }
-  },
-  "optionalDependencies": {
-    "cyt-indexer-sdk-win32-x64-msvc": "0.0.1",
-    "cyt-indexer-sdk-darwin-x64": "0.0.1",
-    "cyt-indexer-sdk-linux-x64-gnu": "0.0.1",
-    "cyt-indexer-sdk-win32-arm64-msvc": "0.0.1"
   }
 }

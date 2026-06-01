@@ -3,8 +3,35 @@ id: no-print-statements
 message: Use logging instead of print() for output
 severity: warning
 language: Python
+ignores:
+  - "**/tests/**"
+  - "**/test_*.py"
+  - "**/cli.py"
+  - "**/setup.py"
+  - "src/cyt/pruners/**"
+  - "sdk/**"
 rule:
-  pattern: print($$$ARGS)
+  all:
+    - pattern: print($$$ARGS)
+    - not:
+        has:
+          kind: keyword_argument
+          all:
+            - has:
+                field: name
+                regex: ^file$
+            - has:
+                field: value
+                regex: stderr
+          stopBy: end
+    # Proxy/SDK helpers that intentionally mirror logging to stdout for operators.
+    - not:
+        inside:
+          kind: function_definition
+          has:
+            field: name
+            regex: ^(_log_|_print_)
+          stopBy: end
 note: |
   Using print() statements in production code bypasses the logging framework and makes it difficult to:
 
@@ -31,3 +58,6 @@ note: |
   from logger import logger
   logger.info(f"Processing file: {filename}")
   ```
+
+  CLI entrypoints (`cli.py`, `setup.py`, pruner scripts), tests, SDK helpers, and stderr diagnostics
+  are excluded from this rule.
