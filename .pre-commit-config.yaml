@@ -247,6 +247,12 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: ast-scan
+        name: Ast rule scan
+        entry: bash -c 'ast-grep scan src/ sdk/'
+        language: system
+        pass_filenames: false
+
       - id: typescript-test
         name: TypeScript SDK test
         entry: bash -c 'cd sdk/typescript && npm test'
