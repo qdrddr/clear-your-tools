@@ -17,9 +17,7 @@ export function toolIdFromDecomposedRel(relPath: string): string {
     ? relPath.slice(DECOMPOSED_PREFIX.length)
     : relPath;
   const first = rel.split(/[/\\]/)[0] ?? rel;
-  return first.endsWith(JSON_EXT)
-    ? first.slice(0, -JSON_EXT.length)
-    : first;
+  return first.endsWith(JSON_EXT) ? first.slice(0, -JSON_EXT.length) : first;
 }
 
 function rootToolKeyFromDecomposedKey(key: string | null): string | null {
