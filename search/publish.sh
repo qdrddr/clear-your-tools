@@ -42,3 +42,12 @@ git push origin "${tag}"
 # npm version 0.1.4 --no-git-tag-version
 # npm ci
 # npm test
+
+# one-time:
+npm login
+npm whoami
+
+cd sdk/typescript || exit
+npm ci
+npm run build # builds for your local platform only
+npm publish --access public

@@ -6,16 +6,24 @@
 #    - Package: cyt-indexer-sdk (unscoped)
 #    - Owner: qdrddr
 #    - Repository: clear-your-tools
-#    - Workflow: publish-npm-sdk.yml
-#    - Environment: npm-sdk
+#    - Workflow filename: publish-npm-sdk.yml (exact match, case-sensitive)
+#    - Environment: npm-sdk (must match the GitHub Environment name below exactly)
 #
 # 2. GitHub — Environment (Settings → Environments → New environment):
 #    - Name: npm-sdk (approval gate + npm trusted publishing environment)
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No NPM_TOKEN secret needed when using npm trusted publishing (OIDC)
 #
-# 3. Create a release to trigger this workflow.
+# 3. First publish must be manual (`npm login` + `npm publish --access public`).
+#    OIDC cannot create a brand-new package; it only works after the package exists.
+#
+# 4. Create a release to trigger this workflow.
 #    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+#
+# Troubleshooting misleading E404 on publish:
+#   - Trusted publisher repo / workflow / environment mismatch → npm returns 404, not 403
+#   - npm CLI must be >= 11.5.1 (this workflow upgrades npm explicitly)
+#   - Cannot republish an existing version (bump semver before re-running CI)
 
 name: 2. Publish cyt-indexer-sdk to npm
 
@@ -108,14 +116,36 @@ jobs:
             --dts native.d.ts \
             --target "${{ matrix.target }}"
 
+      - name: Stage native binding
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(sdk/typescript/cyt-indexer-sdk.*.node)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No .node file produced by napi build"
+            ls -la sdk/typescript/
+            exit 1
+          fi
+          mkdir -p "native-bindings/${{ matrix.target }}"
+          cp "${files[@]}" "native-bindings/${{ matrix.target }}/"
+          ls -la "native-bindings/${{ matrix.target }}/"
+
       - name: Upload native binding
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
+          path: native-bindings/${{ matrix.target }}/
+          if-no-files-found: error
+
+      - name: Upload native loader stubs
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-loader-stubs
           path: |
-            sdk/typescript/*.node
             sdk/typescript/native.cjs
             sdk/typescript/native.d.ts
+          if-no-files-found: error
 
   publish:
     name: Upload SDK to npm
@@ -134,10 +164,16 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+          node --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -163,16 +199,50 @@ jobs:
           echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Download native loader stubs
+        uses: actions/download-artifact@v4
+        with:
+          name: native-loader-stubs
+          path: sdk/typescript
+
       - name: Download native bindings
         uses: actions/download-artifact@v4
         with:
           pattern: bindings-*
           merge-multiple: true
-          path: sdk/typescript
+          path: sdk/typescript/artifacts
+
+      - name: Flatten native bindings
+        working-directory: sdk/typescript
+        shell: bash
+        run: |
+          shopt -s nullglob
+          while IFS= read -r -d '' file; do
+            mv -f "$file" artifacts/
+          done < <(find artifacts -mindepth 2 -name '*.node' -print0)
+          ls -la artifacts/
+
+      - name: Create npm platform dirs
+        working-directory: sdk/typescript
+        run: npx napi create-npm-dirs
 
       - name: Assemble platform packages
         working-directory: sdk/typescript
-        run: npx napi artifacts
+        run: npx napi artifacts --output-dir artifacts
+
+      - name: Verify platform packages
+        working-directory: sdk/typescript
+        shell: bash
+        run: |
+          ls -R npm/
+          missing=0
+          for dir in npm/*/; do
+            if ! compgen -G "${dir}*.node" > /dev/null; then
+              echo "::error::Missing .node in ${dir}"
+              missing=1
+            fi
+          done
+          exit "${missing}"
 
       - name: Build JavaScript package
         working-directory: sdk/typescript
@@ -180,4 +250,4 @@ jobs:
 
       - name: Publish to npm
         working-directory: sdk/typescript
-        run: npm publish --provenance --access public
+        run: npm publish --access public
