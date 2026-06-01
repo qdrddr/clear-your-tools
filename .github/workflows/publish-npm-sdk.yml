@@ -93,7 +93,7 @@ jobs:
             exit 1
           fi
           echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
-          npm version "$VERSION" --no-git-tag-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Build native binding
         working-directory: sdk/typescript
@@ -161,7 +161,7 @@ jobs:
             exit 1
           fi
           echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
-          npm version "$VERSION" --no-git-tag-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Download native bindings
         uses: actions/download-artifact@v4
