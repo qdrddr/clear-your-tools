@@ -1,11 +1,16 @@
 # Publish cyt-indexer to crates.io when a GitHub Release is published.
 #
-# One-time setup (repository maintainer):
+# One-time setup (repository maintainer with admin access):
 #
 # 1. crates.io — create API token at https://crates.io/settings/tokens
-# 2. GitHub — Environment `crates` with secret CARGO_REGISTRY_TOKEN
-# 3. Create a release (tag e.g. v0.1.0) to trigger this workflow.
-#    Version is taken from the tag (without leading "v") via cargo set-version.
+#
+# 2. GitHub — Environment (Settings → Environments → New environment):
+#    - Name: crates
+#    - Secret: CARGO_REGISTRY_TOKEN (crates.io API token)
+#    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#
+# 3. Create a release to trigger this workflow.
+#    Tag must end with a semver (e.g. cyt-indexer-rust-v0.1.2 → publishes 0.1.2).
 
 name: Publish to crates.io
 
@@ -41,10 +46,20 @@ jobs:
 
       - name: Set version from release tag
         if: github.event_name == 'release'
+        shell: bash
         working-directory: sdk/rust/cyt-indexer
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer version to ${VERSION} (from tag ${TAG})"
           cargo set-version "$VERSION"
 
       - name: Set version from workflow input

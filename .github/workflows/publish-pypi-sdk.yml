@@ -1,6 +1,6 @@
 # Publish cyt-indexer-sdk to PyPI when a GitHub Release is published.
 #
-# One-time setup (repository maintainer):
+# One-time setup (repository maintainer with admin access):
 #
 # 1. PyPI — Trusted Publisher (https://pypi.org/manage/account/publishing/):
 #    - PyPI project: cyt-indexer-sdk
@@ -9,7 +9,10 @@
 #    - Workflow: publish-pypi-sdk.yml
 #    - Environment name: pypi-sdk
 #
-# 2. GitHub — Environment: pypi-sdk (optional reviewers / main-only rules)
+# 2. GitHub — Environment (Settings → Environments → New environment):
+#    - Name: pypi-sdk
+#    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
 # 3. Create a release (tag e.g. cyt-indexer-sdk-v0.1.0) or use workflow_dispatch.
 
@@ -24,8 +27,19 @@ permissions:
   contents: read
 
 jobs:
+  approve-deployment:
+    name: Approve PyPI deployment
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-sdk
+      url: https://pypi.org/p/cyt-indexer-sdk
+    steps:
+      - name: Deployment approved
+        run: echo "Proceeding to build and publish cyt-indexer-sdk"
+
   build-wheels:
     name: Build wheels (${{ matrix.os }})
+    needs: approve-deployment
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
