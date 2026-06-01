@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # update pyproject.toml version first
 
-export ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export version="$(
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ROOT
+version="$(
 	grep -E '^version[[:space:]]*=' "${ROOT}/pyproject.toml" |
 		head -1 |
 		sed -E 's/^version[[:space:]]*=[[:space:]]*"(.*)".*/\1/'
 )"
+export version
 export tag="v${version}"
 
 oco -n
