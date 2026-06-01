@@ -74,4 +74,4 @@ jobs:
         working-directory: sdk/rust/cyt-indexer
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
+        run: cargo publish
