@@ -27,8 +27,8 @@ Propagate VERSION to all manifests and lockfiles:
   - Cargo.lock (cyt-indexer)
   - sdk/python/pyproject.toml
   - uv.lock (clear-your-tools + cyt-indexer-sdk)
-  - sdk/typescript/package.json (root + optionalDependencies)
-  - sdk/typescript/package-lock.json (root + packages[""] + optionalDependencies)
+  - sdk/typescript/package.json
+  - sdk/typescript/package-lock.json
 
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
 EOF
@@ -104,16 +104,6 @@ update_uv_lock_package_version() {
     { print }
   ' "${UV_LOCK}" >"${tmp}"
 	mv "${tmp}" "${UV_LOCK}"
-}
-
-update_optional_native_deps() {
-	local file="$1"
-	local version="$2"
-	local tmp
-	tmp="$(mktemp)"
-	sed -E "s/(\"cyt-indexer-sdk-[^\"]+\": \")[^\"]+(\")/\1${version}\2/g" \
-		"${file}" >"${tmp}"
-	mv "${tmp}" "${file}"
 }
 
 update_package_json_version() {
@@ -198,9 +188,7 @@ update_toml_version "${SDK_PYPROJECT}" "${version}"
 update_uv_lock_package_version "clear-your-tools" "${version}"
 update_uv_lock_package_version "cyt-indexer-sdk" "${version}"
 update_package_json_version "${version}"
-update_optional_native_deps "${PACKAGE_JSON}" "${version}"
 update_package_lock_version "${version}"
-update_optional_native_deps "${PACKAGE_LOCK}" "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 
 cat <<EOF
@@ -210,7 +198,7 @@ synced version ${version} to:
   ${CARGO_LOCK} (cyt-indexer)
   ${SDK_PYPROJECT}
   ${UV_LOCK} (clear-your-tools + cyt-indexer-sdk)
-  ${PACKAGE_JSON} (root + optionalDependencies)
-  ${PACKAGE_LOCK} (root + packages[""] + optionalDependencies)
+  ${PACKAGE_JSON}
+  ${PACKAGE_LOCK}
   ${TAG_FILE} (tag=${tag})
 EOF

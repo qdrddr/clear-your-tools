@@ -28,6 +28,7 @@
     "dist",
     "native.cjs",
     "native.d.ts",
+    "cyt-indexer-sdk.*.node",
     "README.md",
     "LICENSE"
   ],
@@ -35,21 +36,12 @@
     "build": "npm run build:native && npm run build:js",
     "build:js": "tsc",
     "build:native": "napi build --platform --release --manifest-path ../rust/cyt-indexer/Cargo.toml -p cyt-indexer --features node --no-default-features --output-dir . --js native.cjs --dts native.d.ts",
-    "prepublishOnly": "napi prepublish -t npm --no-gh-release",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.7.0",
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"
-  },
-  "optionalDependencies": {
-    "cyt-indexer-sdk-darwin-arm64": "0.1.10",
-    "cyt-indexer-sdk-darwin-x64": "0.1.10",
-    "cyt-indexer-sdk-linux-arm64-gnu": "0.1.10",
-    "cyt-indexer-sdk-linux-x64-gnu": "0.1.10",
-    "cyt-indexer-sdk-win32-arm64-msvc": "0.1.10",
-    "cyt-indexer-sdk-win32-x64-msvc": "0.1.10"
   },
   "engines": {
     "node": ">=20"

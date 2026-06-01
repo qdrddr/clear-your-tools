@@ -49,5 +49,8 @@ npm whoami
 
 cd sdk/typescript || exit
 npm ci
-npm run build # builds for your local platform only
+npm run build:js
+# Release publishes all platforms via publish-npm-sdk.yml (single fat package).
+# Manual publish is only for bootstrapping or emergencies; you need every
+# cyt-indexer-sdk.*.node in this directory before npm publish.
 npm publish --access public

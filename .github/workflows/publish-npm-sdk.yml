@@ -1,5 +1,8 @@
 # Publish cyt-indexer-sdk to npm when a GitHub Release is published.
 #
+# Single-package layout: all platform .node binaries ship in cyt-indexer-sdk
+# (no separate cyt-indexer-sdk-* platform packages on npm).
+#
 # One-time setup (repository maintainer with admin access):
 #
 # 1. npm — Trusted Publisher (https://www.npmjs.com/package/cyt-indexer-sdk/access):
@@ -214,47 +217,25 @@ jobs:
           merge-multiple: true
           path: sdk/typescript/artifacts
 
-      - name: Flatten native bindings
+      - name: Stage all platform binaries in package root
         working-directory: sdk/typescript
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts
           shopt -s nullglob
-          # merge-multiple may place files under artifacts/bindings-<target>/; napi expects flat artifacts/*.node
           while IFS= read -r -d '' file; do
-            mv -f "$file" artifacts/
-          done < <(find artifacts -mindepth 2 -name '*.node' -print0)
-          mapfile -t nodes < <(find artifacts -maxdepth 1 -name '*.node' -print)
-          if [ "${#nodes[@]}" -eq 0 ]; then
-            echo "::error::No .node files under sdk/typescript/artifacts after download"
-            find artifacts -print || true
+            mv -f "$file" .
+          done < <(find artifacts -name '*.node' -print0)
+          rm -rf artifacts
+          mapfile -t nodes < <(find . -maxdepth 1 -name 'cyt-indexer-sdk.*.node' -print | sort)
+          expected=6
+          if [ "${#nodes[@]}" -ne "${expected}" ]; then
+            echo "::error::Expected ${expected} platform .node files in package root, found ${#nodes[@]}"
+            printf '%s\n' "${nodes[@]}"
             exit 1
           fi
           printf '%s\n' "${nodes[@]}"
-          ls -la artifacts/
-
-      - name: Create npm platform dirs
-        working-directory: sdk/typescript
-        run: npx napi create-npm-dirs
-
-      - name: Assemble platform packages
-        working-directory: sdk/typescript
-        run: npx napi artifacts --output-dir artifacts
-
-      - name: Verify platform packages
-        working-directory: sdk/typescript
-        shell: bash
-        run: |
-          ls -R npm/
-          missing=0
-          for dir in npm/*/; do
-            if ! compgen -G "${dir}*.node" > /dev/null; then
-              echo "::error::Missing .node in ${dir}"
-              missing=1
-            fi
-          done
-          exit "${missing}"
+          ls -la cyt-indexer-sdk.*.node
 
       - name: Build JavaScript package
         working-directory: sdk/typescript
