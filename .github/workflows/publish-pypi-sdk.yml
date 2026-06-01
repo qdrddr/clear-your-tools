@@ -38,7 +38,7 @@ jobs:
         run: echo "Proceeding to build and publish cyt-indexer-sdk"
 
   build-wheels:
-    name: Build wheels (${{ matrix.os }})
+    name: Build wheels (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }}${{ matrix.linux_archs && format(' {0}', matrix.linux_archs) || '' }})
     needs: approve-deployment
     runs-on: ${{ matrix.os }}
     strategy:
@@ -46,10 +46,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            linux_archs: x86_64
+          - os: ubuntu-24.04-arm
+            linux_archs: aarch64
           - os: macos-latest
           - os: windows-latest
             arch: AMD64
-          - os: windows-latest
+          - os: windows-11-arm
             arch: ARM64
     steps:
       - name: Checkout
@@ -79,17 +82,20 @@ jobs:
         env:
           CIBW_BUILD: cp313-*
           CIBW_SKIP: "*-musllinux_* pp*"
-          CIBW_BEFORE_BUILD: pip install maturin
           CIBW_BUILD_FRONTEND: build[uv]
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.13"
-          CIBW_ARCHS_WINDOWS: ${{ matrix.arch || 'AMD64' }}
+          CIBW_ARCHS_LINUX: ${{ matrix.linux_archs }}
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
+          CIBW_BEFORE_BUILD_LINUX: rm -f src/cyt_indexer/_native*.so && pip install maturin
+          CIBW_BEFORE_BUILD_MACOS: rm -f src/cyt_indexer/_native*.so && pip install maturin
+          CIBW_BEFORE_BUILD_WINDOWS: pip install maturin && if exist src\cyt_indexer\_native.abi3.so del /q src\cyt_indexer\_native*.so
         with:
           package-dir: sdk/python
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.arch || 'default' }}
+          name: wheels-${{ matrix.os }}-${{ matrix.arch || matrix.linux_archs || 'default' }}
           path: wheelhouse/*.whl
 
   publish:
