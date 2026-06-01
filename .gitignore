@@ -86,6 +86,8 @@ sdk/typescript/dist/
 sdk/typescript/*.node
 sdk/typescript/native.cjs
 sdk/typescript/native.d.ts
+sdk/typescript/artifacts/
+sdk/typescript/npm/
 fastmcp
 src/catalog
 cocoindex-code

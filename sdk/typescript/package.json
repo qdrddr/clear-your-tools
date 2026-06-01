@@ -44,7 +44,9 @@
     "typescript": "^5.8.3"
   },
   "optionalDependencies": {
+    "cyt-indexer-sdk-darwin-arm64": "0.1.10",
     "cyt-indexer-sdk-darwin-x64": "0.1.10",
+    "cyt-indexer-sdk-linux-arm64-gnu": "0.1.10",
     "cyt-indexer-sdk-linux-x64-gnu": "0.1.10",
     "cyt-indexer-sdk-win32-arm64-msvc": "0.1.10",
     "cyt-indexer-sdk-win32-x64-msvc": "0.1.10"
@@ -56,9 +58,11 @@
     "binaryName": "cyt-indexer-sdk",
     "targets": [
       "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
       "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
       "x86_64-apple-darwin",
-      "aarch64-pc-windows-msvc"
+      "aarch64-apple-darwin"
     ]
   }
 }

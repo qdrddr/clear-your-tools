@@ -3,7 +3,9 @@
     "src/test/**/*.test.ts"
   ],
   "ignoreDependencies": [
+    "cyt-indexer-sdk-darwin-arm64",
     "cyt-indexer-sdk-darwin-x64",
+    "cyt-indexer-sdk-linux-arm64-gnu",
     "cyt-indexer-sdk-linux-x64-gnu",
     "cyt-indexer-sdk-win32-arm64-msvc",
     "cyt-indexer-sdk-win32-x64-msvc"
