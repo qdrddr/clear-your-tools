@@ -1,6 +1,6 @@
 {
   "name": "cyt-indexer-sdk",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "TypeScript SDK for cyt-indexer — tool schema decomposition and catalog indexing",
   "keywords": [
     "mcp",
@@ -44,10 +44,10 @@
     "typescript": "^5.8.3"
   },
   "optionalDependencies": {
-    "cyt-indexer-sdk-win32-x64-msvc": "0.1.9",
-    "cyt-indexer-sdk-darwin-x64": "0.1.9",
-    "cyt-indexer-sdk-linux-x64-gnu": "0.1.9",
-    "cyt-indexer-sdk-win32-arm64-msvc": "0.1.9"
+    "cyt-indexer-sdk-darwin-x64": "0.1.10",
+    "cyt-indexer-sdk-linux-x64-gnu": "0.1.10",
+    "cyt-indexer-sdk-win32-arm64-msvc": "0.1.10",
+    "cyt-indexer-sdk-win32-x64-msvc": "0.1.10"
   },
   "engines": {
     "node": ">=20"
