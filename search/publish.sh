@@ -29,3 +29,11 @@ git push origin "${tag}"
 # git tag cyt-indexer-sdk-v0.1.5
 # git push origin cyt-indexer-sdk-v0.1.5
 # (triggers PyPI + npm SDK publish workflows)
+
+# npm login
+# npm whoami
+# npm view cyt-indexer-sdk
+# cd sdk/typescript
+# npm version 0.1.4 --no-git-tag-version
+# npm ci
+# npm test

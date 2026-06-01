@@ -2,88 +2,85 @@
 
 version: "3"
 
+dir: "{{.TASKFILE_DIR}}"
+
+vars:
+  REPO_ROOT:
+    sh: cd "{{.TASKFILE_DIR}}/../.." && pwd
+
 tasks:
-  prek:
-    desc: Run all pre-commits
+  install:
+    desc: Install npm dependencies
     cmds:
-      - prek run --all-files
-
-  check-json:
-    desc: Check JSON FILES
-    cmds:
-      - prek run check-json --all-files
-
-  ui:
-    cmds:
-      - npm run dev
+      - npm ci
 
   test:
     desc: Run tests
     cmds:
-      - npm test -- --run
+      - npm test
 
   tsc:
-    desc: Run tests
+    desc: Typecheck without emit
     cmds:
       - npx tsc --noEmit -p .
 
   build:
+    desc: Build native + JS artifacts
     cmds:
       - npm run build
 
+  audit:
+    desc: npm audit (high severity and above)
+    cmds:
+      - npm audit --audit-level=high
+
+  sort-package-json:
+    desc: Sort package.json keys
+    cmds:
+      - npx --yes sort-package-json package.json
+
   ast-scan:
     desc: Pattern-based security/quality scan
+    dir: "{{.REPO_ROOT}}"
     cmds:
-      - uv run ast-grep scan app/
+      - ast-grep scan sdk/typescript --globs "!sdk/typescript/src/test/**"
 
-  preview:
+  prek:
+    desc: Run TypeScript SDK pre-commit hooks
+    dir: "{{.REPO_ROOT}}"
     cmds:
-      - npm run preview
-
-  lint:
-    cmds:
-      - npm run lint
-
-  dead-code:
-    cmds:
-      - fallow dead-code
+      - uv run prek run typescript-typecheck typescript-test typescript-npm-audit typescript-sort-package-json typescript-ast-scan --all-files
 
   dupes:
     cmds:
       - fallow dupes
-
   health:
     cmds:
       - fallow health
-
   fallow-auto:
     cmds:
       - fallow fix
   #      - fallow fix --dry-run        # Preview automatic cleanup
 
-  backlog:
-    desc: Open backlog browser (requires npm install -g backlog.md)
-    cmds:
-      - backlog browser
-
   all-tests:
     desc: Run all checks, continue on failure
     cmds:
-      - task: prek
+      - task: tsc
         ignore_error: true
       - task: test
         ignore_error: true
       - task: build
         ignore_error: true
-      - task: lint
+      - task: audit
         ignore_error: true
-  #      - task: ast-scan
-  #        ignore_error: true
+      - task: ast-scan
+        ignore_error: true
 
   all-seq:
     desc: Run all checks sequentially, stop on failure
     cmds:
-      - task: prek
+      - task: tsc
       - task: test
       - task: build
-      - task: lint
+      - task: audit
+      - task: ast-scan
