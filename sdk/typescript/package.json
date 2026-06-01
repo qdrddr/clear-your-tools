@@ -36,7 +36,7 @@
     "build:js": "tsc",
     "build:native": "napi build --platform --release --cargo-cwd ../rust/cyt-indexer --features node --cargo-name cyt_indexer --cargo-flags=--no-default-features --js native.cjs --dts native.d.ts",
     "prepublishOnly": "napi prepublish -t npm --skip-gh-release",
-    "test": "npm run build && node --test dist/test/smoke.test.js"
+    "test": "npm run build && node --test dist/test/*.test.js"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",

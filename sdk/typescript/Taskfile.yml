@@ -51,15 +51,21 @@ tasks:
     cmds:
       - uv run prek run typescript-typecheck typescript-test typescript-npm-audit typescript-sort-package-json typescript-ast-scan --all-files
 
-  dupes:
+  fallow-dupes:
     cmds:
       - fallow dupes
-  health:
+  fallow-dead:
     cmds:
-      - fallow health
+      - fallow dead-code
+  fallow-audit:
+    cmds:
+      - fallow audit --format json
+  fallow-health:
+    cmds:
+      - fallow health --score --hotspots --targets
   fallow-auto:
     cmds:
-      - fallow fix
+      - fallow fix --yes
   #      - fallow fix --dry-run        # Preview automatic cleanup
 
   all-tests:
@@ -84,3 +90,12 @@ tasks:
       - task: build
       - task: audit
       - task: ast-scan
+
+  all-fallow:
+    desc: Run all fallow checks sequentially, stop on failure
+    cmds:
+      - task: fallow-dupes
+      - task: fallow-dead
+      - task: fallow-audit
+      - task: fallow-health
+      - task: fallow-auto

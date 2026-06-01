@@ -2,15 +2,22 @@
 #
 # One-time setup (repository maintainer with admin access):
 #
-# 1. crates.io — create API token at https://crates.io/settings/tokens
+# 1. crates.io — Trusted Publisher (https://crates.io/crates/cyt-indexer/settings/publishing):
+#    - Crate: cyt-indexer (must have at least one manual publish first)
+#    - Owner: qdrddr
+#    - Repository: clear-your-tools
+#    - Workflow: publish-crates.yml
+#    - Environment name: crates
 #
 # 2. GitHub — Environment (Settings → Environments → New environment):
 #    - Name: crates
-#    - Secret: CARGO_REGISTRY_TOKEN (crates.io API token)
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#    - No secrets needed when using crates.io trusted publishing (OIDC)
 #
 # 3. Create a release to trigger this workflow.
 #    Tag must end with a semver (e.g. cyt-indexer-rust-v0.1.2 → publishes 0.1.2).
+#
+# See RFC 3691: https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html
 
 name: Publish to crates.io
 
@@ -34,6 +41,8 @@ jobs:
     environment:
       name: crates
       url: https://crates.io/crates/cyt-indexer
+    permissions:
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -70,8 +79,12 @@ jobs:
       - name: Test crate
         run: cargo test -p cyt-indexer
 
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Publish to crates.io
         working-directory: sdk/rust/cyt-indexer
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish
