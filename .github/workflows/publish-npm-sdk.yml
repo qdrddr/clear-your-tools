@@ -212,11 +212,27 @@ jobs:
         with:
           pattern: bindings-*
           merge-multiple: true
-          path: sdk/typescript
+          path: sdk/typescript/artifacts
 
-      - name: List downloaded bindings
+      - name: Flatten native bindings
         working-directory: sdk/typescript
-        run: find artifacts -name '*.node' -print
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          shopt -s nullglob
+          # merge-multiple may place files under artifacts/bindings-<target>/; napi expects flat artifacts/*.node
+          while IFS= read -r -d '' file; do
+            mv -f "$file" artifacts/
+          done < <(find artifacts -mindepth 2 -name '*.node' -print0)
+          mapfile -t nodes < <(find artifacts -maxdepth 1 -name '*.node' -print)
+          if [ "${#nodes[@]}" -eq 0 ]; then
+            echo "::error::No .node files under sdk/typescript/artifacts after download"
+            find artifacts -print || true
+            exit 1
+          fi
+          printf '%s\n' "${nodes[@]}"
+          ls -la artifacts/
 
       - name: Create npm platform dirs
         working-directory: sdk/typescript
