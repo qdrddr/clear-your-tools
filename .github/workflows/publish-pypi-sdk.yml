@@ -99,7 +99,7 @@ jobs:
           path: wheelhouse/*.whl
 
   publish:
-    name: Upload to PyPI
+    name: Upload SDK to PyPI
     needs: build-wheels
     runs-on: ubuntu-latest
     environment:
@@ -108,6 +108,25 @@ jobs:
     permissions:
       id-token: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          VERSION="${VERSION#cyt-indexer-sdk-v}"
+          cd sdk/python
+          uv version "$VERSION"
+
       - name: Download wheels
         uses: actions/download-artifact@v4
         with:
