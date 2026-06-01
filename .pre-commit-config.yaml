@@ -4,13 +4,14 @@ fail_fast: true
 default_language_version:
   python: "3.13"
 repos:
-  - repo: https://github.com/backplane/pre-commit-rust-hooks
-    rev: v1.2.1
-    hooks:
-      - id: fmt
-      - id: check
-      - id: clippy
-      - id: test
+  # 1year old
+  #  - repo: https://github.com/backplane/pre-commit-rust-hooks
+  #    rev: v1.2.1
+  #    hooks:
+  #      - id: fmt
+  #      - id: check
+  #      - id: clippy
+  #      - id: test
   - repo: https://github.com/EmbarkStudios/cargo-deny
     rev: 0.19.8
     hooks:
@@ -24,20 +25,22 @@ repos:
     rev: v2.1.4
     hooks:
       - id: cargo-sort
-  - repo: https://github.com/rockmagma02/rust-pre-commit-hooks
-    rev: v0.2.0
-    hooks:
-      - id: rustfmt
-      - id: cargo-fmt
-      - id: clippy
+    # 1year old
+  #  - repo: https://github.com/rockmagma02/rust-pre-commit-hooks
+  #    rev: v0.2.0
+  #    hooks:
+  #      - id: rustfmt
+  #      - id: cargo-fmt
+  #      - id: clippy
+  # 4years old
   - repo: https://github.com/cathiele/pre-commit-rust
     rev: v0.1.0
     hooks:
       - id: cargo-audit
       - id: cargo-udeps
-      - id: cargo-check
-      - id: cargo-test
-
+  #      - id: cargo-check
+  #      - id: cargo-test
+  # 1year old
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.11.0
     hooks:

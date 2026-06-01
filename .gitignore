@@ -36,6 +36,7 @@ src/nogo_
 *.swp
 
 # Build outputs
+/target/
 *.pdf.bak
 paper.tex.bak
 

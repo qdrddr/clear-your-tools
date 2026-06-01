@@ -1,0 +1,29 @@
+[package]
+name = "cyt-indexer"
+version = "0.1.0"
+edition = "2021"
+authors = ["Damien Berezenko"]
+description = "Tool schema decomposition and catalog indexing for MCP tool gating"
+readme = "README.md"
+license = "Apache-2.0"
+repository = "https://github.com/qdrddr/clear-your-tools"
+keywords = ["mcp", "json-schema", "tool-gating"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "cyt_indexer"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+python = ["pyo3"]
+
+[dependencies]
+serde_json = "1"
+tiktoken-rs = "0.7"
+clap = { version = "4", features = ["derive"] }
+pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py312"], optional = true }
+
+[[bin]]
+name = "cyt-indexer"
+path = "src/bin/cyt-indexer.rs"
