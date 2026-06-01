@@ -228,7 +228,7 @@ jobs:
 
       - name: Assemble platform packages
         working-directory: sdk/typescript
-        run: npx napi artifacts --output-dir artifacts
+        run: npx napi artifacts -d artifacts
 
       - name: Verify platform packages
         working-directory: sdk/typescript
