@@ -18,7 +18,7 @@
 #    The tag name (without leading "v") is the PyPI version; pyproject.toml
 #    is updated in CI before the build.
 
-name: Publish to PyPI
+name: 3. Publish clear-your-tools to PyPI
 
 on:
   release:

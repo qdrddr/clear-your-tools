@@ -17,7 +17,7 @@
 # 3. Create a release to trigger this workflow.
 #    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
 
-name: Publish cyt-indexer-sdk to PyPI
+name: 2. Publish cyt-indexer-sdk to PyPI
 
 on:
   release:

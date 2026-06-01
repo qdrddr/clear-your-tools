@@ -19,7 +19,7 @@
 #
 # See RFC 3691: https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html
 
-name: Publish to crates.io
+name: 1. Publish cyt-indexer to crates.io
 
 on:
   release:
