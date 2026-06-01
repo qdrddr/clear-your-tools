@@ -20,7 +20,7 @@ git push origin "${tag}"
 # cargo build -p cyt-indexer
 # cargo test -p cyt-indexer
 # cargo publish -p cyt-indexer --dry-run
-# cargo publish --token "$CARGO_REGISTRY_TOKEN"
+# cargo publish
 # gh workflow run publish-crates.yml --ref rust -f version=0.1.0
 
 # git tag cyt-indexer-rust-v0.1.4
