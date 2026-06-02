@@ -244,7 +244,7 @@ exclude_lines = [
 ]
 
 [tool.codespell]
-# skip = [ "/file", ]
+skip = [ "sdk/typescript/package-lock.json", ]
 ignore-words-list = [
     "fallow",
     "Bui",

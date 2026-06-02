@@ -108,3 +108,16 @@ Untitled
 .codex
 .debug/
 sdk/typescript/coverage/
+
+# Registry E2E — rendered manifests and install artifacts (from sdk/e2e/scripts/render-manifests.sh)
+sdk/e2e/rust/Cargo.toml
+sdk/e2e/rust/Cargo.lock
+sdk/e2e/python/pyproject.toml
+sdk/e2e/python/uv.lock
+sdk/e2e/python/.venv/
+sdk/e2e/typescript/package.json
+sdk/e2e/typescript/package-lock.json
+sdk/e2e/typescript/node_modules/
+sdk/e2e/clear-your-tools/pyproject.toml
+sdk/e2e/clear-your-tools/uv.lock
+sdk/e2e/clear-your-tools/.venv/
