@@ -248,8 +248,7 @@ def extract_user_query(cleaned_messages: list[dict[str, Any]]) -> str | None:
             continue
         if not _user_message_has_text(msg):
             continue
-        text = _text_from_user_message(msg)
-        if text:
+        if text := _text_from_user_message(msg):
             candidates.append(text)
 
     if not candidates:
@@ -496,8 +495,7 @@ def _count_optional_property_chunks(data: dict[str, Any]) -> int:
 def _pruning_tokens_summary(usage_map: dict[str, StageTokenUsage]) -> dict[str, int]:
     summary: dict[str, int] = {}
     for stage, usage in usage_map.items():
-        total = usage.input_tokens + usage.output_tokens + (usage.reasoning_tokens or 0)
-        if total:
+        if total := usage.input_tokens + usage.output_tokens + (usage.reasoning_tokens or 0):
             summary[stage] = total
     return summary
 
@@ -709,15 +707,12 @@ def _run_pruning_pipeline(
         data = merge_catalog(data, pinned)
 
     if pruning_token_usage:
-        parts = ", ".join(
+        if parts := ", ".join(
             f"{stage}={usage.input_tokens + usage.output_tokens}"
             for stage, usage in pruning_token_usage.items()
             if usage.input_tokens or usage.output_tokens
-        )
-        if parts:
-            breakdown_msg = f"pruning model tokens: {parts}"
-            logger.info(breakdown_msg)
-            print(breakdown_msg, flush=True)
+        ):
+            _log_operator_message(f"pruning model tokens: {parts}")
 
     return (
         data,
@@ -829,14 +824,19 @@ def _recompose_catalog_data(
     return recompose
 
 
+def _log_operator_message(msg: str) -> None:
+    """Mirror a message to the module logger and stdout for proxy operators."""
+    logger.info(msg)
+    print(msg, flush=True)
+
+
 def _log_tool_token_counts(tokens_in: int, tokens_out: int | None) -> None:
     msg = f"tool tokens (compact JSON): input={tokens_in}"
     if tokens_out is not None:
         saved = tokens_in - tokens_out
         pct = (100.0 * saved / tokens_in) if tokens_in else 0.0
         msg += f", output={tokens_out}, saved={saved} ({pct:.1f}%)"
-    logger.info(msg)
-    print(msg, flush=True)
+    _log_operator_message(msg)
 
 
 def filter_tools_for_query(
@@ -900,8 +900,7 @@ def filter_tools_for_query(
     entries, enums = to_catalog(catalog_source)
     entries = entries_for_policy(entries, system_policy, mcp_policy)
     if not entries:
-        restored = merge_tools_preserving_order(original_tools, {}, stashed_by_name)
-        if restored:
+        if restored := merge_tools_preserving_order(original_tools, {}, stashed_by_name):
             tokens_out = count_json_tokens(restored)
             return PruneResult(
                 tools=restored,

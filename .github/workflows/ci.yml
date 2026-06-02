@@ -23,8 +23,14 @@ jobs:
           python-version: "3.13"
           enable-cache: true
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: uv sync --all-extras --group dev --group test --locked
+
+      - name: Verify cyt-indexer-sdk import
+        run: uv run python -c "from cyt_indexer._native import count_tokens; assert count_tokens('hello') > 0"
 
       - name: Ruff lint
         run: uv run ruff check src/cyt src/tests
@@ -38,5 +44,37 @@ jobs:
       - name: Pytest
         run: uv run pytest src/tests
 
+      - name: Rust tests (cyt-indexer)
+        run: cargo test -p cyt-indexer
+
       - name: Build package
         run: uv build
+
+  test-typescript-sdk:
+    name: Test (TypeScript SDK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Build TypeScript SDK
+        working-directory: sdk/typescript
+        run: npm run build
+
+      - name: Test TypeScript SDK
+        working-directory: sdk/typescript
+        run: npm test

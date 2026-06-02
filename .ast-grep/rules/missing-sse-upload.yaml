@@ -1,0 +1,52 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: missing-sse-upload
+message: S3 upload_fileobj call missing ServerSideEncryption parameter - objects may be stored unencrypted
+severity: error
+language: Python
+rule:
+  pattern: |
+    await client.upload_fileobj($FILE, $BUCKET, $KEY)
+  not:
+    pattern: |
+      await client.upload_fileobj($FILE, $BUCKET, $KEY, ExtraArgs=$$$ARGS)
+note: |
+  **Security Vulnerability**: S3/MinIO uploads without ServerSideEncryption parameter may store objects unencrypted.
+
+  Even if bucket encryption is configured, explicitly passing SSE parameters ensures:
+  - Objects are always encrypted regardless of bucket policy
+  - Encryption algorithm is explicitly controlled
+  - Compliance with security requirements
+  - Protection against bucket policy misconfiguration
+
+  **Why it matters**:
+  1. Bucket encryption policies can be misconfigured or disabled
+  2. Explicit SSE parameters guarantee encryption at object level
+  3. Sensitive data (PDFs, documents) should always be encrypted
+
+  **How to fix**:
+  Add `ExtraArgs` with ServerSideEncryption configuration:
+  ```python
+  # Before
+  await client.upload_fileobj(file, bucket_name, file_name)
+
+  # After
+  await client.upload_fileobj(
+      file,
+      bucket_name,
+      file_name,
+      ExtraArgs={
+          "ServerSideEncryption": "AES256"
+          # or "aws:kms" for KMS encryption
+      }
+  )
+  ```
+
+  **Or use put_object with ServerSideEncryption**:
+  ```python
+  await client.put_object(
+      Bucket=bucket_name,
+      Key=file_name,
+      Body=file,
+      ServerSideEncryption="AES256"
+  )
+  ```

@@ -1,36 +1,101 @@
 #!/usr/bin/env bash
-# Update pyproject.toml first!
+# Propagate a single semver to all package manifests and lockfiles.
+#
+# Usage:
+#   ./search/sync-version.sh [VERSION]
+#
+# If VERSION is omitted, read it from the root pyproject.toml.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYPROJECT="${ROOT}/pyproject.toml"
+ROOT_PYPROJECT="${ROOT}/pyproject.toml"
+CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
+CARGO_LOCK="${ROOT}/Cargo.lock"
+SDK_PYPROJECT="${ROOT}/sdk/python/pyproject.toml"
+PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
+PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
 UV_LOCK="${ROOT}/uv.lock"
-PUBLISH="${ROOT}/search/publish.sh"
 TAG_FILE="${ROOT}/search/.publish-tag"
 
-read_version() {
-	grep -E '^version[[:space:]]*=' "${PYPROJECT}" |
+usage() {
+	cat <<EOF
+Usage: $(basename "$0") [VERSION]
+
+Propagate VERSION to all manifests and lockfiles:
+  - pyproject.toml (clear-your-tools + cyt-indexer-sdk dependency)
+  - sdk/rust/cyt-indexer/Cargo.toml
+  - Cargo.lock (cyt-indexer)
+  - sdk/python/pyproject.toml
+  - uv.lock (clear-your-tools + cyt-indexer-sdk)
+  - sdk/typescript/package.json
+  - sdk/typescript/package-lock.json
+
+If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
+EOF
+}
+
+read_root_pyproject_version() {
+	grep -E '^version[[:space:]]*=' "${ROOT_PYPROJECT}" |
 		head -1 |
 		sed -E 's/^version[[:space:]]*=[[:space:]]*"(.*)".*/\1/'
 }
 
-read_uv_lock_version() {
-	awk '
-    /^name = "clear-your-tools"$/ { found=1; next }
-    found && /^version = / {
-      gsub(/^version = "|"$/, "", $0)
-      print $0
-      exit
-    }
-  ' "${UV_LOCK}"
+validate_version() {
+	local version="$1"
+	if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+		echo "error: invalid semver: ${version}" >&2
+		exit 1
+	fi
 }
 
-update_uv_lock_version() {
+update_toml_version() {
+	local file="$1"
+	local version="$2"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v version="${version}" '
+    !done && /^version[[:space:]]*=/ {
+      print "version = \"" version "\""
+      done=1
+      next
+    }
+    { print }
+  ' "${file}" >"${tmp}"
+	mv "${tmp}" "${file}"
+}
+
+update_root_pyproject_dependency() {
+	local version="$1"
+	local tmp
+	tmp="$(mktemp)"
+	sed -E "s/\"cyt-indexer-sdk==[^\"]+\"/\"cyt-indexer-sdk==${version}\"/" \
+		"${ROOT_PYPROJECT}" >"${tmp}"
+	mv "${tmp}" "${ROOT_PYPROJECT}"
+}
+
+update_cargo_lock_version() {
 	local version="$1"
 	local tmp
 	tmp="$(mktemp)"
 	awk -v version="${version}" '
-    /^name = "clear-your-tools"$/ { found=1 }
+    /^name = "cyt-indexer"$/ { found=1 }
+    found && /^version = / {
+      print "version = \"" version "\""
+      found=0
+      next
+    }
+    { print }
+  ' "${CARGO_LOCK}" >"${tmp}"
+	mv "${tmp}" "${CARGO_LOCK}"
+}
+
+update_uv_lock_package_version() {
+	local package_name="$1"
+	local version="$2"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v package="${package_name}" -v version="${version}" '
+    $0 == "name = \"" package "\"" { found=1 }
     found && /^version = / {
       print "version = \"" version "\""
       found=0
@@ -41,50 +106,99 @@ update_uv_lock_version() {
 	mv "${tmp}" "${UV_LOCK}"
 }
 
-version="$(read_version)"
+update_package_json_version() {
+	local version="$1"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v version="${version}" '
+    !done && /^  "version": "/ {
+      print "  \"version\": \"" version "\","
+      done=1
+      next
+    }
+    { print }
+  ' "${PACKAGE_JSON}" >"${tmp}"
+	mv "${tmp}" "${PACKAGE_JSON}"
+}
 
-if [[ -z "${version}" ]]; then
-	echo "error: could not read version from ${PYPROJECT}" >&2
-	exit 1
-fi
+update_package_lock_version() {
+	local version="$1"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v version="${version}" '
+    BEGIN { root_done=0; pkg_done=0 }
+    !root_done && /^  "version": "/ {
+      print "  \"version\": \"" version "\","
+      root_done=1
+      next
+    }
+    !pkg_done && /^      "version": "/ {
+      print "      \"version\": \"" version "\","
+      pkg_done=1
+      next
+    }
+    { print }
+  ' "${PACKAGE_LOCK}" >"${tmp}"
+	mv "${tmp}" "${PACKAGE_LOCK}"
+}
 
-if [[ ! -f "${UV_LOCK}" ]]; then
-	echo "error: missing ${UV_LOCK}" >&2
-	exit 1
-fi
-
-tag="v${version}"
-lock_version="$(read_uv_lock_version)"
-
-if [[ -z "${lock_version}" ]]; then
-	echo "error: could not read clear-your-tools version from ${UV_LOCK}" >&2
-	exit 1
-fi
-
-tag_synced=false
-lock_synced=false
-
-if [[ -f "${TAG_FILE}" ]] && grep -qxF "tag=${tag}" "${TAG_FILE}"; then
-	tag_synced=true
-fi
-
-if [[ "${lock_version}" == "${version}" ]]; then
-	lock_synced=true
-fi
-
-if [[ "${tag_synced}" == true && "${lock_synced}" == true ]]; then
-	echo "${PUBLISH} tag=${tag} and uv.lock clear-your-tools=${version} already synced (pyproject version ${version})"
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+	usage
 	exit 0
 fi
 
-if [[ "${tag_synced}" != true ]]; then
-	printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
-	echo "set ${PUBLISH} tag=${tag} (from pyproject version ${version})"
+if [[ $# -gt 1 ]]; then
+	usage >&2
+	exit 1
 fi
 
-if [[ "${lock_synced}" != true ]]; then
-	update_uv_lock_version "${version}"
-	echo "set uv.lock clear-your-tools version=${version} (from pyproject version ${version})"
+if [[ $# -eq 1 ]]; then
+	version="$1"
+else
+	version="$(read_root_pyproject_version)"
+	if [[ -z "${version}" ]]; then
+		echo "error: could not read version from ${ROOT_PYPROJECT}" >&2
+		exit 1
+	fi
 fi
 
-exit 0
+validate_version "${version}"
+
+for file in \
+	"${ROOT_PYPROJECT}" \
+	"${CARGO_TOML}" \
+	"${CARGO_LOCK}" \
+	"${SDK_PYPROJECT}" \
+	"${UV_LOCK}" \
+	"${PACKAGE_JSON}" \
+	"${PACKAGE_LOCK}"; do
+	if [[ ! -f "${file}" ]]; then
+		echo "error: missing ${file}" >&2
+		exit 1
+	fi
+done
+
+tag="v${version}"
+
+update_toml_version "${ROOT_PYPROJECT}" "${version}"
+update_root_pyproject_dependency "${version}"
+update_toml_version "${CARGO_TOML}" "${version}"
+update_cargo_lock_version "${version}"
+update_toml_version "${SDK_PYPROJECT}" "${version}"
+update_uv_lock_package_version "clear-your-tools" "${version}"
+update_uv_lock_package_version "cyt-indexer-sdk" "${version}"
+update_package_json_version "${version}"
+update_package_lock_version "${version}"
+printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
+
+cat <<EOF
+synced version ${version} to:
+  ${ROOT_PYPROJECT} (project + cyt-indexer-sdk dependency)
+  ${CARGO_TOML}
+  ${CARGO_LOCK} (cyt-indexer)
+  ${SDK_PYPROJECT}
+  ${UV_LOCK} (clear-your-tools + cyt-indexer-sdk)
+  ${PACKAGE_JSON}
+  ${PACKAGE_LOCK}
+  ${TAG_FILE} (tag=${tag})
+EOF

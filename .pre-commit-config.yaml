@@ -4,6 +4,43 @@ fail_fast: true
 default_language_version:
   python: "3.13"
 repos:
+  # 1year old
+  #  - repo: https://github.com/backplane/pre-commit-rust-hooks
+  #    rev: v1.2.1
+  #    hooks:
+  #      - id: fmt
+  #      - id: check
+  #      - id: clippy
+  #      - id: test
+  - repo: https://github.com/EmbarkStudios/cargo-deny
+    rev: 0.19.8
+    hooks:
+      - id: cargo-deny
+        args: ["--all-features", "check"] # optionally modify the arguments for cargo-deny (default arguments shown here)
+  #  - repo: https://github.com/drahnr/cargo-spellcheck
+  #    rev: v0.15.7
+  #    hooks:
+  #      - id: cargo-spellcheck
+  - repo: https://github.com/DevinR528/cargo-sort
+    rev: v2.1.4
+    hooks:
+      - id: cargo-sort
+    # 1year old
+  #  - repo: https://github.com/rockmagma02/rust-pre-commit-hooks
+  #    rev: v0.2.0
+  #    hooks:
+  #      - id: rustfmt
+  #      - id: cargo-fmt
+  #      - id: clippy
+  # 4years old
+  - repo: https://github.com/cathiele/pre-commit-rust
+    rev: v0.1.0
+    hooks:
+      - id: cargo-audit
+      - id: cargo-udeps
+  #      - id: cargo-check
+  #      - id: cargo-test
+  # 1year old
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.11.0
     hooks:
@@ -14,18 +51,18 @@ repos:
       - id: shfmt
 
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
+    rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        types_or: [yaml, json5, bash]
+        types_or: [yaml, json5, bash, javascript, ts, tsx]
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.46.1
+    rev: v1.47.0
     hooks:
       - id: typos
-        args: [--force-exclude]
+        args: ["--force-exclude", "--locale", "en"]
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell # See pyproject.toml for args
         additional_dependencies:
@@ -62,7 +99,7 @@ repos:
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
-    rev: 0.11.14
+    rev: 0.11.17
     hooks:
       - id: uv-export
         args:
@@ -96,7 +133,7 @@ repos:
         exclude: ^(CLAUDE|AGENTS|GEMINI)\.md$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.5
+    rev: v0.15.15
     hooks:
       # Run the Ruff formatter.
       - id: ruff-format
@@ -126,12 +163,15 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
+        exclude: ^.ast-grep/rules/.*$
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
+      - id: mixed-line-ending
       - id: detect-private-key
       - id: check-case-conflict
       - id: check-merge-conflict
+      - id: check-symlinks
       - id: check-builtin-literals
         args: ["--no-allow-dict-kwargs"]
         exclude: bumpity.py$
@@ -190,7 +230,7 @@ repos:
         files: ^(src/.*\.py|src/tests/.*)$
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
-    rev: 1.39.4
+    rev: 1.39.6
     hooks:
       - id: basedpyright
         name: basedpyright
@@ -201,6 +241,44 @@ repos:
 
   - repo: local
     hooks:
+      - id: typescript-typecheck
+        name: TypeScript SDK typecheck
+        entry: bash -c 'cd sdk/typescript && npx tsc --noEmit'
+        language: system
+        pass_filenames: false
+
+      - id: ast-scan
+        name: Ast rule scan
+        entry: bash -c 'ast-grep scan src/ sdk/'
+        language: system
+        pass_filenames: false
+
+      - id: typescript-test
+        name: TypeScript SDK test
+        entry: bash -c 'cd sdk/typescript && npm test'
+        language: system
+        files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
+        pass_filenames: false
+
+      - id: typescript-npm-audit
+        name: TypeScript SDK npm audit
+        entry: bash -c 'cd sdk/typescript && npm audit --audit-level=high'
+        language: system
+        pass_filenames: false
+
+      - id: typescript-sort-package-json
+        name: TypeScript SDK sort-package-json
+        entry: bash -c 'cd sdk/typescript && npx --yes sort-package-json package.json'
+        language: system
+        files: ^sdk/typescript/package\.json$
+        pass_filenames: false
+
+      - id: typescript-ast-scan
+        name: TypeScript SDK ast-scan
+        entry: bash -c 'ast-grep scan sdk/typescript --globs "!sdk/typescript/src/test/**"'
+        language: system
+        pass_filenames: false
+
       # Keep `suggestion` last
       - id: suggestion
         name: Suggestion

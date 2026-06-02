@@ -1,0 +1,162 @@
+# Publish cyt-indexer-sdk to PyPI when a GitHub Release is published.
+#
+# One-time setup (repository maintainer with admin access):
+#
+# 1. PyPI — Trusted Publisher (https://pypi.org/manage/account/publishing/):
+#    - PyPI project: cyt-indexer-sdk
+#    - Owner: qdrddr
+#    - Repository: clear-your-tools
+#    - Workflow: publish-pypi-sdk.yml
+#    - Environment name: (leave blank — upload job does not use a GitHub Environment)
+#
+# 2. GitHub — Environment (Settings → Environments → New environment):
+#    - Name: pypi-sdk (used only by "Approve PyPI SDK deployment" for a single gate)
+#    - Optional: required reviewers, wait timer, deployment branch rule (main only)
+#    - No secrets needed when using PyPI trusted publishing (OIDC)
+#
+# 3. Create a release to trigger this workflow.
+#    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+
+name: 2. Publish cyt-indexer-sdk to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approve-deployment:
+    name: Approve PyPI SDK deployment
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-sdk
+      url: https://pypi.org/p/cyt-indexer-sdk
+    steps:
+      - name: Deployment approved
+        run: echo "Proceeding to build and publish cyt-indexer-sdk"
+
+  build-wheels:
+    name: Build wheels (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }}${{ matrix.linux_archs && format(' {0}', matrix.linux_archs) || '' }})
+    needs: approve-deployment
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            linux_archs: x86_64
+          - os: ubuntu-24.04-arm
+            linux_archs: aarch64
+          - os: macos-latest
+          - os: windows-latest
+            arch: AMD64
+          - os: windows-11-arm
+            arch: ARM64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          cd sdk/python
+          uv version "$VERSION"
+
+      - name: Build wheels with cibuildwheel
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          CIBW_BUILD: cp313-*
+          CIBW_SKIP: "*-musllinux_* pp*"
+          CIBW_BUILD_FRONTEND: build[uv]
+          CIBW_PROJECT_REQUIRES_PYTHON: ">=3.13"
+          CIBW_ARCHS_LINUX: ${{ matrix.linux_archs }}
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
+          CIBW_BEFORE_BUILD_LINUX: rm -f src/cyt_indexer/_native*.so && pip install maturin
+          CIBW_BEFORE_BUILD_MACOS: rm -f src/cyt_indexer/_native*.so && pip install maturin
+          CIBW_BEFORE_BUILD_WINDOWS: pip install maturin && if exist src\cyt_indexer\_native.abi3.so del /q src\cyt_indexer\_native*.so
+        with:
+          package-dir: sdk/python
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.arch || matrix.linux_archs || 'default' }}
+          path: wheelhouse/*.whl
+
+  publish:
+    name: Upload SDK to PyPI
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-sdk
+      url: https://pypi.org/p/cyt-indexer-sdk
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          cd sdk/python
+          uv version "$VERSION"
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Build sdist
+        run: |
+          cd sdk/python
+          uv build --sdist --out-dir ../../dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

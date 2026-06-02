@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-PORT=8834
+export PORT=8834
 
 export ANTHROPIC_API_KEY=""
 ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"

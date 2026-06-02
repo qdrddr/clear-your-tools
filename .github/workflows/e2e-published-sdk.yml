@@ -1,0 +1,146 @@
+# End-to-end tests against published packages (crates.io, PyPI, npm).
+# Triggered when a GitHub Release is published — does not use monorepo SDK sources.
+#
+# Polls each registry until CYT_RELEASE_VERSION (from the release tag) is installable,
+# then runs isolated harnesses under sdk/e2e/.
+
+name: E2E published packages
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: e2e-published-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - name: Parse semver from release tag
+        id: parse
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not parse semver from release tag: ${TAG}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "CYT_RELEASE_VERSION=${VERSION}"
+
+  e2e-rust:
+    name: E2E cyt-indexer (crates.io)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for crates.io
+        run: sdk/e2e/scripts/wait-registry.sh crate
+
+      - name: Test published crate
+        working-directory: sdk/e2e/rust
+        run: cargo test
+
+  e2e-python-sdk:
+    name: E2E cyt-indexer-sdk (PyPI)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: false
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for PyPI (cyt-indexer-sdk)
+        run: sdk/e2e/scripts/wait-registry.sh pypi-sdk
+
+      - name: Test published Python SDK
+        working-directory: sdk/e2e/python
+        run: |
+          uv sync --group test
+          uv run pytest
+
+  e2e-typescript:
+    name: E2E cyt-indexer-sdk (npm)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for npm
+        run: sdk/e2e/scripts/wait-registry.sh npm
+
+      - name: Test published npm package
+        working-directory: sdk/e2e/typescript
+        run: |
+          npm install
+          npm test
+
+  e2e-clear-your-tools:
+    name: E2E clear-your-tools (PyPI)
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: false
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for PyPI (SDK then app)
+        run: sdk/e2e/scripts/wait-registry.sh pypi-app
+
+      - name: Test published app package
+        working-directory: sdk/e2e/clear-your-tools
+        env:
+          CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          uv sync --group test
+          uv run pytest

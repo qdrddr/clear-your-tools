@@ -1,0 +1,11 @@
+[project]
+name = "clear-your-tools-registry-e2e"
+version = "0.0.0"
+requires-python = ">=3.13,<4.0"
+dependencies = ["clear-your-tools==@CYT_RELEASE_VERSION@"]
+
+[dependency-groups]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -49,8 +49,7 @@ def collect_used_nicks(config: dict[str, Any]) -> set[str]:
     used: set[str] = set()
     for kind in ("llm", "rerankers"):
         for entry in _remote_entries(config, kind):
-            nick = entry.get("nick")
-            if nick:
+            if nick := entry.get("nick"):
                 used.add(str(nick))
     return used
 

@@ -1,0 +1,63 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: no-print-statements
+message: Use logging instead of print() for output
+severity: warning
+language: Python
+ignores:
+  - "**/tests/**"
+  - "**/test_*.py"
+  - "**/cli.py"
+  - "**/setup.py"
+  - "src/cyt/pruners/**"
+  - "sdk/**"
+rule:
+  all:
+    - pattern: print($$$ARGS)
+    - not:
+        has:
+          kind: keyword_argument
+          all:
+            - has:
+                field: name
+                regex: ^file$
+            - has:
+                field: value
+                regex: stderr
+          stopBy: end
+    # Proxy/SDK helpers that intentionally mirror logging to stdout for operators.
+    - not:
+        inside:
+          kind: function_definition
+          has:
+            field: name
+            regex: ^(_log_|_print_)
+          stopBy: end
+note: |
+  Using print() statements in production code bypasses the logging framework and makes it difficult to:
+
+  1. **Control Output**: Logging allows you to configure output levels (DEBUG, INFO, WARNING, ERROR)
+  2. **Format Messages**: Logging provides consistent formatting and context (timestamps, module names, etc.)
+  3. **Route Output**: Logging can send messages to files, syslog, or other handlers
+  4. **Filter Messages**: Logging allows filtering by module, level, or other criteria
+  5. **Debug Production**: Print statements are lost in production; logs are persistent
+
+  **How to fix**:
+  Replace `print(message)` with `logger.info(message)` or appropriate log level:
+  - `logger.debug()` for detailed diagnostic information
+  - `logger.info()` for general informational messages
+  - `logger.warning()` for warning messages
+  - `logger.error()` for error messages
+  - `logger.critical()` for critical errors
+
+  **Example**:
+  ```python
+  # Before
+  print(f"Processing file: {filename}")
+
+  # After
+  from logger import logger
+  logger.info(f"Processing file: {filename}")
+  ```
+
+  CLI entrypoints (`cli.py`, `setup.py`, pruner scripts), tests, SDK helpers, and stderr diagnostics
+  are excluded from this rule.

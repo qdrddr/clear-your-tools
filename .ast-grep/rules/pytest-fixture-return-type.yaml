@@ -1,0 +1,22 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: pytest-fixture-return-type
+message: Add return type hints to pytest fixtures for better IDE support and type checking
+severity: info
+language: Python
+
+rule:
+  # Match pytest fixtures that don't have return type annotations
+  all:
+    # Must be a function definition that follows a fixture decorator
+    - kind: function_definition
+      follows:
+        kind: decorator
+        has:
+          kind: identifier
+          regex: ^fixture$
+          stopBy: end
+    # Must NOT match the pattern with return type annotation
+    - not:
+        pattern: |
+          def $FUNC($$$ARGS) -> $RETURN_TYPE:
+            $$$BODY

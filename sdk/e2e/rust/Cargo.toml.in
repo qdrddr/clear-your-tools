@@ -1,0 +1,11 @@
+[workspace]
+
+[package]
+name = "cyt-indexer-registry-e2e"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cyt-indexer = { version = "=@CYT_RELEASE_VERSION@" }
+serde_json = "1"

@@ -1,0 +1,53 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: prefer-generator-expressions
+message: Use generator expression instead of list comprehension for memory efficiency
+severity: info
+language: Python
+
+utils:
+  is-iterable-consuming-call:
+    kind: call
+    has:
+      field: function
+      regex: ^(any|all|sum|max|min|sorted|list|tuple|set)$
+
+rule:
+  kind: list_comprehension
+  inside:
+    matches: is-iterable-consuming-call
+    stopBy: end
+note: |
+  **Generator Expressions**: More memory-efficient than list comprehensions when used with functions
+  that consume iterables.
+
+  This rule converts list comprehensions to generator expressions when passed to functions like
+  `any()`, `all()`, `sum()`, `max()`, `min()`, `sorted()`, `list()`, `tuple()`, or `set()`.
+
+  **Benefits**:
+  1. **Memory efficiency**: Generators produce values on-demand, not all at once
+  2. **Performance**: Faster for large datasets
+  3. **Lazy evaluation**: Stops early if condition is met (e.g., `any()`)
+  4. **Pythonic**: Idiomatic Python style
+
+  **How to fix**:
+  Replace square brackets with parentheses:
+
+  ```python
+  # Before
+  if any([x > 10 for x in items]):
+      process()
+
+  # After
+  if any(x > 10 for x in items):
+      process()
+  ```
+
+  **Safe conversions**:
+  - `any([...])` → `any(...)`
+  - `all([...])` → `all(...)`
+  - `sum([...])` → `sum(...)`
+  - `max([...])` → `max(...)`
+  - `min([...])` → `min(...)`
+
+  **Note**: Not all list comprehensions can be converted. Only convert when the list is consumed
+  immediately by a function that accepts iterables.

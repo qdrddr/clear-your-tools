@@ -1,0 +1,49 @@
+# python-language-server: $schema=https://raw.githubusercontent.com/ast-grep/ast-grep/main/schemas/python_rule.json
+id: insecure-cors-config
+message: CORS configuration is insecure - allow_origins=['*'] with allow_credentials=True exposes credentials to any origin
+severity: error
+language: Python
+rule:
+  pattern: |
+    app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["*"],
+      allow_credentials=True,
+      $$$REST
+    )
+note: |
+  **Security Vulnerability**: Combining `allow_origins=['*']` with `allow_credentials=True` is a critical security issue.
+
+  This configuration allows any origin to make authenticated requests to your API, exposing:
+  - Session cookies
+  - Authorization tokens
+  - User credentials
+  - Sensitive data in authenticated endpoints
+
+  **Why it's dangerous**:
+  1. Any malicious website can make requests on behalf of authenticated users
+  2. Credentials (cookies, tokens) are automatically sent with cross-origin requests
+  3. Attackers can perform actions as the authenticated user
+
+  **How to fix**:
+  1. **Specify allowed origins explicitly** (recommended):
+     ```python
+     app.add_middleware(
+         CORSMiddleware,
+         allow_origins=["https://example.com"],
+         allow_credentials=True,
+         allow_methods=["GET", "POST"],
+         allow_headers=["Content-Type"],
+     )
+     ```
+
+  2. **Or disable credentials for wildcard origins**:
+     ```python
+     app.add_middleware(
+         CORSMiddleware,
+         allow_origins=["*"],
+         allow_credentials=False,
+         allow_methods=["GET", "POST"],
+         allow_headers=["Content-Type"],
+     )
+     ```

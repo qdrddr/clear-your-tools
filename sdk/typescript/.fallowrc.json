@@ -1,0 +1,5 @@
+{
+  "entry": [
+    "src/test/**/*.test.ts"
+  ]
+}

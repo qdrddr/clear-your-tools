@@ -3,7 +3,15 @@ message: Avoid console.log or console.debug in production code. Use console.erro
 language: typescript
 severity: warning
 rule:
-  pattern: console.$METHOD($$$)
+  all:
+    - pattern: console.$METHOD($$$)
+    - not:
+        inside:
+          kind: function_declaration
+          has:
+            field: name
+            regex: ^logTokenUsage$
+          stopBy: end
 constraints:
   METHOD:
     regex: "log|debug"

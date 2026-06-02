@@ -81,10 +81,8 @@ def _entry_provider_dns(entry: dict[str, Any]) -> str | None:
     domain_match = entry.get("domain_match")
     if isinstance(domain_match, list) and domain_match:
         return str(domain_match[0])
-    base_url = entry.get("base_url")
-    if base_url:
-        hostname = urlparse(str(base_url)).hostname
-        if hostname:
+    if base_url := entry.get("base_url"):
+        if hostname := urlparse(str(base_url)).hostname:
             return hostname
     return None
 
@@ -118,8 +116,9 @@ def lookup_llm_pricing(
         entry for entry in _llm_remote_entries(config) if _model_name_matches(entry, model_name)
     ]
     if provider_dns_name:
-        by_dns = [entry for entry in candidates if _entry_provider_dns(entry) == provider_dns_name]
-        if by_dns:
+        if by_dns := [
+            entry for entry in candidates if _entry_provider_dns(entry) == provider_dns_name
+        ]:
             candidates = by_dns
 
     if len(candidates) == 1:

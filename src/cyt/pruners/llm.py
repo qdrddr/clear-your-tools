@@ -267,8 +267,7 @@ def call_llm(
     except Exception:
         import re
 
-        json_match = re.search(r"\{.*\}", content_val, re.DOTALL)
-        if json_match:
+        if json_match := re.search(r"\{.*\}", content_val, re.DOTALL):
             parsed = RelevantChunkIds.model_validate_json(json_match.group(0))
         else:
             raise ValueError(f"Could not parse LLM response: {content_val}") from None

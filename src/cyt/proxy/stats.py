@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from urllib.parse import urlparse
 
 import libsql_experimental as libsql
@@ -70,7 +70,7 @@ def expand_db_path(path: str) -> str:
 
 def new_uuid7() -> str:
     """Generate a UUID7 string (time-ordered)."""
-    return cast(str, uuid7str())
+    return str(uuid7str())
 
 
 def provider_dns_from_url(url: str) -> str | None:

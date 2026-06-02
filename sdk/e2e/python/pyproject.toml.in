@@ -1,0 +1,11 @@
+[project]
+name = "cyt-indexer-sdk-registry-e2e"
+version = "0.0.0"
+requires-python = ">=3.13,<4.0"
+dependencies = ["cyt-indexer-sdk==@CYT_RELEASE_VERSION@"]
+
+[dependency-groups]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
