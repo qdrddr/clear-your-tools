@@ -6,7 +6,7 @@ import pytest
 
 from cyt_indexer import build_catalog_index
 
-from test_example_snapshot import (
+from example_snapshot import (
     catalog_dict_from_snapshot,
     extract_snapshot_parts,
     load_snapshot,
