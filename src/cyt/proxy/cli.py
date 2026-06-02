@@ -213,9 +213,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _uses_legacy_proxy_flags(args: argparse.Namespace) -> bool:
+    return any(
+        (
+            args.port is not None,
+            args.config is not None,
+            args.debug,
+            args.debug_dry_run,
+            args.debug_strict,
+        ),
+    )
+
+
 def _ensure_proxy_defaults(args: argparse.Namespace) -> None:
-    if args.command is not None:
-        return
     args.command = "proxy"
     for attr, default in (
         ("debug", False),
@@ -341,7 +351,11 @@ def main() -> None:
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
         return
 
-    _ensure_proxy_defaults(args)
+    if args.command is None:
+        if _uses_legacy_proxy_flags(args):
+            _ensure_proxy_defaults(args)
+        else:
+            parser.error("the following arguments are required: proxy or stats")
     upstream_endpoint = _apply_upstream_cli_args(parser, args)
     _run_proxy_command(args, upstream_endpoint=upstream_endpoint)
 
