@@ -33,7 +33,7 @@ tools from the payload:
 - Cloud-hosted applications cannot use this approach, because their traffic does not pass through
   the locally running proxy.
 
-If the provider enforces a fixed tools→system→messages order at the API level, there’s a tradeoff: input tokens are saved,
-but any change to tools or invalidates the entire downstream cache. Worth investigating further.
-One thing is certain, have too much information leads to Context Rot,
-removing garbage information improves LLM connitive abilities.
+If the provider enforces a fixed *tools → system → messages* ordering at the API level, you gain input‑token savings,
+but you also introduce a tradeoff: any change to the tool list invalidates the entire downstream cache.
+This deserves deeper investigation. What is obvious is that excess context leads to [context rot](https://www.trychroma.com/research/context-rot),
+and removing irrelevant information consistently improves an LLM’s cognitive performance.
