@@ -10,13 +10,16 @@
 #    - Environment name: pypi
 #
 # 2. GitHub — Environment (Settings → Environments → New environment):
-#    - Name: pypi
+#    - Name: pypi (approval gate on the publish job only; build/wait run without it)
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
 # 3. Create a release (tag e.g. v0.0.2) to trigger this workflow.
 #    The tag name (without leading "v") is the PyPI version; pyproject.toml
 #    is updated in CI before the build.
+#
+# Release order: publish-pypi-sdk.yml must finish first. This workflow polls
+# PyPI for cyt-indexer-sdk before building clear-your-tools.
 
 name: 3. Publish clear-your-tools to PyPI
 
@@ -24,24 +27,53 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Semver to wait for on PyPI (cyt-indexer-sdk; manual runs only; release tag used on release events)
+        required: false
 
 permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Upload to PyPI
+  build:
+    name: Build clear-your-tools
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/clear-your-tools
-    permissions:
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Parse semver for registry wait
+        id: parse
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION=""
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+            elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+            else
+              VERSION="${TAG#v}"
+            fi
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${VERSION}" ]]; then
+            echo "CYT_RELEASE_VERSION=${VERSION}"
+          fi
+
+      - name: Wait for PyPI (cyt-indexer-sdk)
+        if: steps.parse.outputs.version != ''
+        env:
+          CYT_RELEASE_VERSION: ${{ steps.parse.outputs.version }}
+        run: sdk/e2e/scripts/wait-registry.sh pypi-sdk
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -58,6 +90,29 @@ jobs:
 
       - name: Build sdist and wheel
         run: uv build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Upload to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/clear-your-tools
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

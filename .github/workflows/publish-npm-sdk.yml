@@ -13,7 +13,7 @@
 #    - Environment: npm-sdk (must match the GitHub Environment name below exactly)
 #
 # 2. GitHub — Environment (Settings → Environments → New environment):
-#    - Name: npm-sdk (approval gate + npm trusted publishing environment)
+#    - Name: npm-sdk (approval gate on the publish job + npm trusted publishing)
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No NPM_TOKEN secret needed when using npm trusted publishing (OIDC)
 #
@@ -22,6 +22,9 @@
 #
 # 4. Create a release to trigger this workflow.
 #    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+#
+# Release order: publish-crates.yml (vX.Y.Z tag) must finish first. This workflow
+# polls crates.io for cyt-indexer before building native bindings.
 #
 # Troubleshooting misleading E404 on publish:
 #   - Trusted publisher repo / workflow / environment mismatch → npm returns 404, not 403
@@ -34,24 +37,65 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Semver to wait for on crates.io (manual runs only; release tag used on release events)
+        required: false
 
 permissions:
   contents: read
 
 jobs:
-  approve-deployment:
-    name: Approve npm SDK deployment
+  resolve-version:
+    name: Resolve release version
     runs-on: ubuntu-latest
-    environment:
-      name: npm-sdk
-      url: https://www.npmjs.com/package/cyt-indexer-sdk
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
     steps:
-      - name: Deployment approved
-        run: echo "Proceeding to build and publish cyt-indexer-sdk"
+      - name: Parse semver
+        id: parse
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION=""
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+            elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+            else
+              echo "::error::Could not parse semver from release tag: ${TAG}"
+              exit 1
+            fi
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${VERSION}" ]]; then
+            echo "CYT_RELEASE_VERSION=${VERSION}"
+          fi
+
+  wait-for-crate:
+    name: Wait for cyt-indexer on crates.io
+    needs: resolve-version
+    if: needs.resolve-version.outputs.version != ''
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Wait for crates.io
+        run: sdk/e2e/scripts/wait-registry.sh crate
 
   build-native:
     name: Build native (${{ matrix.target }})
-    needs: approve-deployment
+    needs: [resolve-version, wait-for-crate]
+    if: |
+      needs.resolve-version.result == 'success' &&
+      (needs.wait-for-crate.result == 'success' || needs.wait-for-crate.result == 'skipped')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
