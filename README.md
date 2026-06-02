@@ -49,6 +49,7 @@ On each intercepted request the proxy:
 <details>
 <summary><strong>Pruning pipelines</strong></summary>
 
+
 | Stage    | Model (default)                        | When it runs                                                                                                                     | What it does                                                                                                                       |
 | -------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `bm25`   | Local BM25 index (`bm25s`)             | Default pipeline when no remote pruner is configured; also fallback when rerank/llm fail or tool count is below their thresholds | Scores catalog chunks locally against the user query; no API keys or pruning cost. Indexes are cached under `~/.config/cyt/bm25/`. |
