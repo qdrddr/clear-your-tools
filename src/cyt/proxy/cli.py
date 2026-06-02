@@ -224,6 +224,10 @@ def _ensure_proxy_defaults(args: argparse.Namespace) -> None:
         ("upstream", None),
         ("upstream_kind", None),
         ("upstream_name", None),
+        ("http2_upstream", None),
+        ("http2_serve", None),
+        ("ssl_keyfile", None),
+        ("ssl_certfile", None),
     ):
         if not hasattr(args, attr):
             setattr(args, attr, default)
