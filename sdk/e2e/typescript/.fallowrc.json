@@ -1,5 +1,9 @@
 {
   "entry": [
     "test/**/*.test.mjs"
+  ],
+  "ignorePatterns": [
+    "test/example-snapshot.mjs",
+    "test/run.mjs"
   ]
 }

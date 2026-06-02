@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node test/run.mjs"
   },
   "devDependencies": {
     "cyt-indexer-sdk": "@CYT_RELEASE_VERSION@"
