@@ -1,0 +1,8 @@
+{
+  "name": "cyt-indexer-sdk-registry-e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "cyt-indexer-sdk": "@CYT_RELEASE_VERSION@"
+  }
+}
