@@ -55,6 +55,12 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, json5, bash, javascript, ts, tsx]
+        exclude: ^\.github/workflows/.*\.ya?ml$
+      - id: prettier
+        name: prettier github workflow yaml
+        files: ^\.github/workflows/.*\.ya?ml$
+        types_or: [yaml]
+        always_run: true
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.47.0
@@ -163,7 +169,11 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
-        exclude: ^.ast-grep/rules/.*$
+        exclude: ^(.ast-grep/rules/.*|\.github/workflows/.*)$
+      - id: check-yaml
+        name: check github workflow yaml
+        files: ^\.github/workflows/.*\.ya?ml$
+        always_run: true
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
