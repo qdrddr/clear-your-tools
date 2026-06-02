@@ -17,5 +17,4 @@ uv run maturin develop --release
 
 ```python
 from cyt_indexer.build import build_catalog_index, CatalogIndex
-from cyt_indexer.tokens import count_tokens
 ```

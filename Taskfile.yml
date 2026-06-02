@@ -1,4 +1,6 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
+# All:
+# task sync ruff-check format-check build verify-sdk prek ci all-tests
 
 version: "3"
 
@@ -64,7 +66,7 @@ tasks:
   right:
     desc: Run BasedPyright static analysis
     cmds:
-      - basedpyright src sdk/python
+      - basedpyright src sdk/python/src
 
   build:
     desc: Build Python package wheel/sdist
@@ -74,7 +76,7 @@ tasks:
   verify-sdk:
     desc: Verify cyt-indexer-sdk native import
     cmds:
-      - uv run python -c "from cyt_indexer._native import count_tokens; assert count_tokens('hello') > 0"
+      - uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
 
   prek:
     desc: Run Python pre-commit hooks

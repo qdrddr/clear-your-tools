@@ -2,7 +2,6 @@ use crate::build::{build_catalog_index, catalog_tool_count};
 use crate::retrieve::{
     load_catalog_from_dir, retrieve_core, DecomposedCatalog, ProcessGroupsOptions, RetrieveOptions,
 };
-use crate::tokens::{compact_json, count_json_tokens, count_tokens};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use serde_json::Value;
@@ -20,21 +19,6 @@ fn py_to_value(obj: Bound<'_, PyAny>) -> PyResult<Value> {
     let s: String = dumped.extract()?;
     serde_json::from_str(&s)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
-}
-
-#[pyfunction(name = "compact_json")]
-fn compact_json_py(obj: Bound<'_, PyAny>) -> PyResult<String> {
-    Ok(compact_json(&py_to_value(obj)?))
-}
-
-#[pyfunction(name = "count_tokens")]
-fn count_tokens_py(text: &str) -> PyResult<usize> {
-    Ok(count_tokens(text))
-}
-
-#[pyfunction(name = "count_json_tokens")]
-fn count_json_tokens_py(obj: Bound<'_, PyAny>) -> PyResult<usize> {
-    Ok(count_json_tokens(&py_to_value(obj)?))
 }
 
 #[pyfunction(name = "catalog_tool_count")]
@@ -177,9 +161,6 @@ fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
 
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(compact_json_py, m)?)?;
-    m.add_function(wrap_pyfunction!(count_tokens_py, m)?)?;
-    m.add_function(wrap_pyfunction!(count_json_tokens_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_tool_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_catalog_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(retrieve_core_py, m)?)?;

@@ -1,4 +1,4 @@
-use cyt_indexer::{build_catalog_index, count_tokens};
+use cyt_indexer::build_catalog_index;
 use serde_json::json;
 
 #[test]
@@ -40,9 +40,4 @@ fn enum_md_files_without_json_quotes() {
         index.files.get("schemas/decomposed/auto.md").map(String::as_str),
         Some("auto"),
     );
-}
-
-#[test]
-fn count_tokens_basic() {
-    assert!(count_tokens("hello world") > 0);
 }

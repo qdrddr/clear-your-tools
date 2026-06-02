@@ -6,10 +6,6 @@ use crate::retrieve::{
     load_catalog_from_dir, retrieve_core as core_retrieve_core, DecomposedCatalog,
     ProcessGroupsOptions, RetrieveOptions,
 };
-use crate::tokens::{
-    compact_json as core_compact_json, count_json_tokens as core_count_json_tokens,
-    count_tokens as core_count_tokens,
-};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value;
@@ -51,21 +47,6 @@ fn process_groups_from_policy(policy: Option<PolicyOptions>) -> ProcessGroupsOpt
         required_by_tool,
         prune_optional_tools: policy.prune_optional_tools.unwrap_or_default().into_iter().collect(),
     }
-}
-
-#[napi]
-pub fn compact_json(obj: Value) -> Result<String> {
-    Ok(core_compact_json(&obj))
-}
-
-#[napi]
-pub fn count_tokens(text: String) -> Result<u32> {
-    Ok(core_count_tokens(&text) as u32)
-}
-
-#[napi]
-pub fn count_json_tokens(obj: Value) -> Result<u32> {
-    Ok(core_count_json_tokens(&obj) as u32)
 }
 
 #[napi]

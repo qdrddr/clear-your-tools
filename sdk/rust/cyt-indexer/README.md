@@ -10,7 +10,7 @@ cyt-indexer = "0.1"
 ```
 
 ```rust
-use cyt_indexer::{build_catalog_index, count_tokens, CatalogIndex};
+use cyt_indexer::{build_catalog_index, CatalogIndex};
 use serde_json::json;
 
 let tools = vec![/* ... */];

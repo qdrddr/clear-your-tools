@@ -1,6 +1,6 @@
 [package]
 name = "cyt-indexer"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 authors = ["Damien Berezenko"]
 description = "Tool schema decomposition and catalog indexing for MCP tool gating"
@@ -22,7 +22,6 @@ node = ["napi", "napi-derive"]
 
 [dependencies]
 serde_json = "1"
-tiktoken-rs = "0.7"
 clap = { version = "4", features = ["derive"] }
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py312"], optional = true }
 napi = { version = "3", features = ["napi4", "serde-json"], optional = true }

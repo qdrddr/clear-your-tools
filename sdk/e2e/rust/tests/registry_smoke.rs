@@ -1,17 +1,12 @@
 #[path = "support/example_snapshot.rs"]
 mod example_snapshot;
 
-use cyt_indexer::{build_catalog_index, count_tokens};
+use cyt_indexer::build_catalog_index;
 use example_snapshot::{
     catalog_dict_from_snapshot, extract_snapshot_parts, load_snapshot, parse_test_args,
     resolve_snapshot_path, write_output,
 };
 use serde_json::json;
-
-#[test]
-fn count_tokens_from_registry_crate() {
-    assert!(count_tokens("hello world") > 0);
-}
 
 #[test]
 fn build_catalog_index_from_registry_crate() {

@@ -30,6 +30,5 @@ CI stages every `cyt-indexer-sdk.*.node` into the package root and runs `npm pub
 import {
   buildCatalogIndex,
   CatalogIndex,
-  countTokens,
 } from "cyt-indexer-sdk";
 ```

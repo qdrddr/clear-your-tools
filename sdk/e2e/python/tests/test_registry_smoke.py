@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cyt_indexer import build_catalog_index, count_tokens
+from cyt_indexer import build_catalog_index
 
 from test_example_snapshot import (
     catalog_dict_from_snapshot,
@@ -13,10 +13,6 @@ from test_example_snapshot import (
     resolve_snapshot_path,
     write_output,
 )
-
-
-def test_count_tokens_from_registry() -> None:
-    assert count_tokens("hello") > 0
 
 
 def test_build_catalog_index_from_registry() -> None:

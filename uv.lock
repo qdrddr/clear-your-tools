@@ -262,7 +262,7 @@ wheels = [
 
 [[package]]
 name = "clear-your-tools"
-version = "0.2.4"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s", extra = ["core"] },
@@ -272,6 +272,7 @@ dependencies = [
     { name = "pystemmer" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "tiktoken" },
     { name = "typing-extensions" },
 ]
 
@@ -346,6 +347,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = "==1.2.2" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "starlette", marker = "extra == 'proxy'", specifier = "==1.2.0" },
+    { name = "tiktoken", specifier = "==0.12.0" },
     { name = "typing-extensions", specifier = "==4.15.0" },
     { name = "uuid7", marker = "extra == 'proxy'", specifier = "==0.1.0" },
     { name = "uvicorn", marker = "extra == 'proxy'", specifier = "==0.48.0" },
@@ -487,7 +489,7 @@ wheels = [
 
 [[package]]
 name = "cyt-indexer-sdk"
-version = "0.2.4"
+version = "0.2.5"
 source = { editable = "sdk/python" }
 
 [package.metadata]

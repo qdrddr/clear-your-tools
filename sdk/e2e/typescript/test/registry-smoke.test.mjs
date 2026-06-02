@@ -4,14 +4,9 @@ import test from "node:test";
 import {
   buildCatalogIndex,
   CatalogIndex,
-  countTokens,
   DecomposedCatalog,
   retrieveTools,
 } from "cyt-indexer-sdk";
-
-test("countTokens from npm package", () => {
-  assert.ok(countTokens("hello") > 0);
-});
 
 test("buildCatalogIndex from npm package", () => {
   const tool = {

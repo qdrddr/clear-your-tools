@@ -1,7 +1,6 @@
 pub mod build;
 pub mod paths;
 pub mod retrieve;
-pub mod tokens;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -19,4 +18,3 @@ pub use retrieve::{
     group_files, load_catalog_from_dir, parse_json_input, process_groups, retrieve_core,
     DecomposedCatalog, ProcessGroupsOptions, RetrieveOptions, DECOMPOSED_SCORE, ENUM_SCORE,
 };
-pub use tokens::{compact_json, count_json_tokens, count_tokens};

@@ -4,12 +4,7 @@ import test from "node:test";
 import { CatalogIndex } from "../build.js";
 import { DecomposedCatalog } from "../decomposed-catalog.js";
 import { DECOMPOSED_SCORE, ENUM_SCORE, retrieveTools } from "../retrieve.js";
-import { countTokens } from "../tokens.js";
 import { DECOMPOSED_PREFIX } from "../paths.js";
-
-test("countTokens returns a positive count", () => {
-  assert.ok(countTokens("hello") > 0);
-});
 
 test("score constants match Python SDK", () => {
   assert.equal(DECOMPOSED_SCORE, 0.5);

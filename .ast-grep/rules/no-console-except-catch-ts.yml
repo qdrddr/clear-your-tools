@@ -5,13 +5,6 @@ severity: warning
 rule:
   all:
     - pattern: console.$METHOD($$$)
-    - not:
-        inside:
-          kind: function_declaration
-          has:
-            field: name
-            regex: ^logTokenUsage$
-          stopBy: end
 constraints:
   METHOD:
     regex: "log|debug"
