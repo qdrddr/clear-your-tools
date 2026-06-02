@@ -114,7 +114,7 @@ jobs:
         working-directory: sdk/e2e/typescript
         run: |
           npm install
-          node --test test/*.test.mjs
+          npm test
 
   e2e-clear-your-tools:
     name: E2E clear-your-tools (PyPI)

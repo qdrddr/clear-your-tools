@@ -35,7 +35,11 @@ if ver not in releases or not releases[ver]:
 crate_has_version() {
 	local ver="$1"
 	local url="https://crates.io/api/v1/crates/cyt-indexer/${ver}"
-	curl -fsSL -o /dev/null -w "%{http_code}" "$url" | grep -q '^200$'
+	# crates.io API requires a descriptive User-Agent (see https://crates.io/data-access)
+	local ua="${CRATES_IO_USER_AGENT:-tool-attention-e2e (https://github.com/asadani/tool-attention)}"
+	local code
+	code="$(curl -sSL -o /dev/null -w "%{http_code}" -H "User-Agent: ${ua}" "$url")"
+	[[ "$code" == "200" ]]
 }
 
 npm_has_version() {

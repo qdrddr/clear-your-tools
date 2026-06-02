@@ -2,7 +2,10 @@
   "name": "cyt-indexer-sdk-registry-e2e",
   "private": true,
   "type": "module",
-  "dependencies": {
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
     "cyt-indexer-sdk": "@CYT_RELEASE_VERSION@"
   }
 }

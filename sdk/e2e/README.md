@@ -21,24 +21,39 @@ Complements:
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — source-tree tests on PR/push
 - Publish workflows — `publish-crates.yml`, `publish-pypi-sdk.yml`, `publish-npm-sdk.yml`, `publish-pypi.yml`
 
-## Local run (after a release is on registries)
+## Local run
+
+Use [`scripts/run-local.sh`](scripts/run-local.sh) after a release is on registries. It renders manifests, optionally
+polls registries, and runs the harness tests.
 
 ```bash
-export CYT_RELEASE_VERSION=0.1.10   # must match a published version
-./sdk/e2e/scripts/render-manifests.sh
+# Workspace version from sdk/rust/cyt-indexer/Cargo.toml, all four targets
+./sdk/e2e/scripts/run-local.sh
+
+# Explicit version (packages must already be published)
+./sdk/e2e/scripts/run-local.sh 0.1.10
+
+# One target, skip registry polling when you know the version is live
+./sdk/e2e/scripts/run-local.sh --skip-wait python
+./sdk/e2e/scripts/run-local.sh v0.1.10 rust typescript
+```
+
+Targets: `rust`, `python`, `typescript`, `clear-your-tools`, `all` (default).
+
+**Prerequisites:** `cargo`, `uv` (Python 3.13+), `node`/`npm`, network access to public registries.
+
+### CI-style run
+
+For parity with the GitHub workflow (e.g. in automation), set the version explicitly and use
+[`scripts/run-all.sh`](scripts/run-all.sh):
+
+```bash
+export CYT_RELEASE_VERSION=0.1.10   # or TAG=v0.1.10
 ./sdk/e2e/scripts/run-all.sh
 ```
 
-Or run one target:
-
-```bash
-export CYT_RELEASE_VERSION=0.1.10
-./sdk/e2e/scripts/render-manifests.sh
-./sdk/e2e/scripts/wait-registry.sh pypi-sdk
-cd sdk/e2e/python && uv sync --group test && uv run pytest
-```
-
-`wait-registry.sh` targets: `crate`, `pypi-sdk`, `pypi-app`, `npm`.
+Low-level registry polling: [`scripts/wait-registry.sh`](scripts/wait-registry.sh) targets `crate`, `pypi-sdk`,
+`pypi-app`, `npm`. Set `SKIP_REGISTRY_WAIT=1` to skip waits in `run-local.sh`, `run-all.sh`, or `run-target.sh`.
 
 ## Manifest templates
 
@@ -49,7 +64,9 @@ Version pins live in `*.in` templates (`@CYT_RELEASE_VERSION@` placeholder). `re
 
 | Script | Purpose |
 | ------ | ------- |
+| [`scripts/run-local.sh`](scripts/run-local.sh) | **Local entry point** — defaults, per-target runs, `--skip-wait` |
+| [`scripts/run-all.sh`](scripts/run-all.sh) | Run all four targets (CI-style; requires `CYT_RELEASE_VERSION` or `TAG`) |
+| [`scripts/run-target.sh`](scripts/run-target.sh) | Run one harness (`rust`, `python`, `typescript`, `clear-your-tools`) |
 | [`scripts/parse-version.sh`](scripts/parse-version.sh) | Parse semver from `TAG` or `CYT_RELEASE_VERSION` |
 | [`scripts/render-manifests.sh`](scripts/render-manifests.sh) | Generate manifests from `.in` templates |
 | [`scripts/wait-registry.sh`](scripts/wait-registry.sh) | Poll registry until version is installable |
-| [`scripts/run-all.sh`](scripts/run-all.sh) | Full local smoke (all four targets) |

@@ -1,0 +1,195 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+vars:
+  REPO_ROOT:
+    sh: cd "{{.TASKFILE_DIR}}/.." && pwd
+  TYPESCRIPT_DIR: "{{.TASKFILE_DIR}}/typescript"
+  E2E_TYPESCRIPT_DIR: "{{.TASKFILE_DIR}}/e2e/typescript"
+
+tasks:
+  install:
+    desc: Install npm dependencies
+    cmds:
+      - task: _npm-ci
+        vars: { WORKDIR: "{{.TYPESCRIPT_DIR}}" }
+      - task: _npm-install
+        vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}" }
+
+  test:
+    desc: Run tests
+    dir: "{{.TYPESCRIPT_DIR}}"
+    cmds:
+      - npm test
+
+  tsc:
+    desc: Typecheck without emit
+    cmds:
+      - task: _tsc
+        vars: { TSC_PROJECT: "." }
+      - task: _tsc
+        vars: { TSC_PROJECT: "../e2e/typescript" }
+
+  build:
+    desc: Build native + JS artifacts
+    dir: "{{.TYPESCRIPT_DIR}}"
+    cmds:
+      - npm run build
+
+  audit:
+    desc: npm audit (high severity and above)
+    cmds:
+      - task: _npm-audit
+        vars: { WORKDIR: "{{.TYPESCRIPT_DIR}}" }
+      - task: _npm-audit
+        vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}" }
+
+  sort-package-json:
+    desc: Sort package.json keys
+    cmds:
+      - task: _sort-package-json
+        vars:
+          WORKDIR: "{{.TYPESCRIPT_DIR}}"
+          MANIFEST: package.json
+      - task: _sort-package-json
+        vars:
+          WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}"
+          MANIFEST: package.json.in
+
+  ast-scan:
+    desc: Pattern-based security/quality scan
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - ast-grep scan sdk/typescript sdk/e2e/typescript --globs "!sdk/typescript/src/test/**"
+
+  e2e-test:
+    desc: Run TypeScript registry E2E smoke tests against published npm package
+    cmds:
+      - "{{.TASKFILE_DIR}}/e2e/scripts/run-local.sh --skip-wait typescript"
+
+  prek:
+    desc: Run TypeScript SDK pre-commit hooks
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - uv run prek run typescript-typecheck typescript-test typescript-npm-audit typescript-sort-package-json typescript-ast-scan --all-files
+
+  fallow-dupes:
+    cmds:
+      - task: _fallow
+        vars: { WORKDIR: "{{.TYPESCRIPT_DIR}}", FALLOW_CMD: dupes }
+      - task: _fallow
+        vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}", FALLOW_CMD: dupes }
+
+  fallow-dead:
+    cmds:
+      - task: _fallow
+        vars: { WORKDIR: "{{.TYPESCRIPT_DIR}}", FALLOW_CMD: dead-code }
+      - task: _fallow
+        vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}", FALLOW_CMD: dead-code }
+
+  fallow-audit:
+    cmds:
+      - task: _fallow
+        vars:
+          { WORKDIR: "{{.TYPESCRIPT_DIR}}", FALLOW_CMD: "audit --format json" }
+      - task: _fallow
+        vars:
+          {
+            WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}",
+            FALLOW_CMD: "audit --format json",
+          }
+
+  fallow-health:
+    cmds:
+      - task: _fallow
+        vars:
+          {
+            WORKDIR: "{{.TYPESCRIPT_DIR}}",
+            FALLOW_CMD: "health --score --hotspots --targets",
+          }
+      - task: _fallow
+        vars:
+          {
+            WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}",
+            FALLOW_CMD: "health --score --hotspots --targets",
+          }
+
+  fallow-auto:
+    cmds:
+      - task: _fallow
+        vars: { WORKDIR: "{{.TYPESCRIPT_DIR}}", FALLOW_CMD: "fix --yes" }
+      - task: _fallow
+        vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}", FALLOW_CMD: "fix --yes" }
+  #      - fallow fix --dry-run        # Preview automatic cleanup
+
+  _tsc:
+    internal: true
+    dir: "{{.TYPESCRIPT_DIR}}"
+    cmds:
+      - npx tsc --noEmit -p {{.TSC_PROJECT}}
+
+  _npm-ci:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - npm ci
+
+  _npm-install:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - npm install
+
+  _npm-audit:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - npm audit --audit-level=high
+
+  _sort-package-json:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - npx --yes sort-package-json {{.MANIFEST}}
+
+  _fallow:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - fallow {{.FALLOW_CMD}}
+
+  all-tests:
+    desc: Run all checks, continue on failure
+    cmds:
+      - task: tsc
+        ignore_error: true
+      - task: test
+        ignore_error: true
+      - task: build
+        ignore_error: true
+      - task: audit
+        ignore_error: true
+      - task: sort-package-json
+        ignore_error: true
+      - task: ast-scan
+        ignore_error: true
+
+  all-seq:
+    desc: Run all checks sequentially, stop on failure
+    cmds:
+      - task: tsc
+      - task: test
+      - task: build
+      - task: audit
+      - task: sort-package-json
+      - task: ast-scan
+
+  all-fallow:
+    desc: Run all fallow checks sequentially, stop on failure
+    cmds:
+      - task: fallow-dupes
+      - task: fallow-dead
+      - task: fallow-audit
+      - task: fallow-health
+      - task: fallow-auto
