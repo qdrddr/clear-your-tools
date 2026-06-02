@@ -192,6 +192,7 @@ repos:
       #      - id: double-quote-string-fixer
       - id: name-tests-test
         args: [--pytest-test-first]
+        exclude: ^sdk/e2e/python/tests/(.*)\.py$
 
   - repo: local
     hooks:
