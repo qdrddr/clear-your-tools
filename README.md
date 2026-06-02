@@ -46,7 +46,8 @@ On each intercepted request the proxy:
    that look relevant to the query are merged back in.
 5. **Forwards the modified request** to the upstream provider with the smaller `tools` array.
 
-### Pruning pipeline
+<details>
+<summary><strong>Pruning pipelines</strong></summary>
 
 | Stage    | Model (default)                        | When it runs                                                                                                                     | What it does                                                                                                                       |
 | -------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -67,6 +68,8 @@ On each intercepted request the proxy:
 - **Expensive models** (≥$3/M input tokens, e.g. Sonnet): Use an **LLM pruner** pipeline.
 - **Cheap models** ($0.10–$1/M input tokens, e.g. Haiku, Gemini 3 Flash): Use a **rerank** pipeline with a low-cost model.
 - **Premium models** (e.g. Opus): Use an **LLM pruner + rerank** combined pipeline.
+
+</details>
 
 ---
 
