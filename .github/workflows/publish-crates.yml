@@ -1,4 +1,4 @@
-# Publish cyt-indexer to crates.io when a version tag is pushed or a GitHub Release is published.
+# Publish cyt-indexer to crates.io when a semver tag vX.Y.Z is pushed (not on branch commits).
 #
 # One-time setup (repository maintainer with admin access):
 #
@@ -14,8 +14,7 @@
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using crates.io trusted publishing (OIDC)
 #
-# 3. Push a semver tag or publish a GitHub Release with that tag.
-#    Examples: v0.2.0, cyt-indexer-rust-v0.1.2 (semver is parsed from the tag).
+# 3. Push a semver tag: v0.2.0, v1.0.0 (exact form vX.Y.Z only).
 #
 # See RFC 3691: https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html
 
@@ -24,9 +23,8 @@ name: 1. Publish cyt-indexer to crates.io
 on:
   push:
     tags:
-      - "v*"
-  release:
-    types: [published]
+      # GitHub glob: digits only, no prerelease suffix (validated again in the job).
+      - "v[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
 
 permissions:
@@ -51,25 +49,23 @@ jobs:
       - name: Install cargo-edit
         run: cargo install cargo-edit --locked
 
+      - name: Validate tag format
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag must be vX.Y.Z (e.g. v0.1.2), got: ${TAG}"
+            exit 1
+          fi
+
       - name: Set version from tag
-        if: github.event_name == 'release' || github.event_name == 'push'
+        if: github.event_name == 'push'
         shell: bash
         working-directory: sdk/rust/cyt-indexer
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG="${{ github.event.release.tag_name }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from tag: ${TAG}"
-            exit 1
-          fi
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
           echo "Setting cyt-indexer version to ${VERSION} (from tag ${TAG})"
           cargo set-version "$VERSION"
 
