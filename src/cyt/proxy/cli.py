@@ -118,6 +118,23 @@ async def run_reverse_server(
     )
 
 
+def _top_level_subcommands(parser: argparse.ArgumentParser) -> list[str]:
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return list(action.choices)
+    return []
+
+
+def _require_top_level_command(parser: argparse.ArgumentParser) -> None:
+    names = ", ".join(_top_level_subcommands(parser))
+    print(
+        f"{parser.prog}: error: the following arguments are required: {names}",
+        file=sys.stderr,
+    )
+    parser.print_help(file=sys.stderr)
+    raise SystemExit(2)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Reverse HTTP proxy")
     parser.add_argument(
@@ -355,7 +372,7 @@ def main() -> None:
         if _uses_legacy_proxy_flags(args):
             _ensure_proxy_defaults(args)
         else:
-            parser.error("the following arguments are required: proxy or stats")
+            _require_top_level_command(parser)
     upstream_endpoint = _apply_upstream_cli_args(parser, args)
     _run_proxy_command(args, upstream_endpoint=upstream_endpoint)
 
