@@ -2,6 +2,9 @@
 
 **Clear Your Tools** is a reverse proxy for coding agents such as
 [Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents).
+Excess context leads to [context rot](https://www.trychroma.com/research/context-rot),
+and removing irrelevant information consistently improves an LLM’s cognitive performance.
+
 It sits between the agent and upstream
 LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts
 each request, and shrinks the tool payload before forwarding it upstream. Can be easily adopted for
@@ -48,7 +51,6 @@ On each intercepted request the proxy:
 
 <details>
 <summary><strong>Pruning pipelines</strong></summary>
-
 
 | Stage    | Model (default)                        | When it runs                                                                                                                     | What it does                                                                                                                       |
 | -------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
