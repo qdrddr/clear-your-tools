@@ -1,4 +1,4 @@
-# Publish clear-your-tools to PyPI when a GitHub Release is published.
+# Publish clear-your-tools to PyPI after cyt-indexer-sdk is on PyPI.
 #
 # One-time setup (repository maintainer with admin access):
 #
@@ -14,60 +14,49 @@
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
-# 3. Create a release (tag e.g. v0.0.2) to trigger this workflow.
-#    The tag name (without leading "v") is the PyPI version; pyproject.toml
-#    is updated in CI before the build.
+# 3. Push tag vX.Y.Z (publish-crates.yml), then SDK PyPI publish; this workflow
+#    runs when publish-pypi-sdk.yml succeeds.
+#    When that workflow succeeds, this workflow runs automatically (workflow_run).
+#    The version comes from the SDK publish run artifact; pyproject.toml is
+#    updated in CI before the build.
 #
-# Release order: publish-pypi-sdk.yml must finish first. This workflow polls
-# PyPI for cyt-indexer-sdk before building clear-your-tools.
+# Manual runs: workflow_dispatch (optional version input to wait on PyPI only).
 
 name: 3. Publish clear-your-tools to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["2. Publish cyt-indexer-sdk to PyPI"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: Semver to wait for on PyPI (cyt-indexer-sdk; manual runs only; release tag used on release events)
+        description: Semver to wait for on PyPI (cyt-indexer-sdk; manual runs only)
         required: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
     name: Build clear-your-tools
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Parse semver for registry wait
+      - name: Resolve version
         id: parse
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION=""
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            else
-              VERSION="${TAG#v}"
-            fi
-          elif [[ -n "${INPUT_VERSION}" ]]; then
-            VERSION="${INPUT_VERSION}"
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          if [[ -n "${VERSION}" ]]; then
-            echo "CYT_RELEASE_VERSION=${VERSION}"
-          fi
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: sdk/e2e/scripts/resolve-version-from-parent.sh
 
       - name: Wait for PyPI (cyt-indexer-sdk)
         if: steps.parse.outputs.version != ''
@@ -81,12 +70,9 @@ jobs:
           python-version: "3.13"
           enable-cache: true
 
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
-          uv version "$VERSION"
+      - name: Set version for build
+        if: steps.parse.outputs.version != ''
+        run: uv version "${{ steps.parse.outputs.version }}"
 
       - name: Build sdist and wheel
         run: uv build

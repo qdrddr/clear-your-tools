@@ -14,62 +14,55 @@
 #    - Optional: required reviewers, wait timer, deployment branch rule (main only)
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
-# 3. Create a release to trigger this workflow.
-#    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+# 3. Push tag vX.Y.Z to trigger publish-crates.yml; when that workflow succeeds,
+#    this workflow runs automatically (workflow_run). Version comes from the
+#    crates publish artifact. Polls crates.io briefly before building wheels.
 #
-# Release order: publish-crates.yml (vX.Y.Z tag) must finish first. This workflow
-# polls crates.io for cyt-indexer before building wheels.
+# Manual runs: workflow_dispatch (optional version input).
 
 name: 2. Publish cyt-indexer-sdk to PyPI
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["1. Publish cyt-indexer to crates.io"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: Semver to wait for on crates.io (manual runs only; release tag used on release events)
+        description: Semver to wait for on crates.io (manual runs only)
         required: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   resolve-version:
     name: Resolve release version
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse.outputs.version }}
     steps:
-      - name: Parse semver
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
         id: parse
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION=""
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            else
-              echo "::error::Could not parse semver from release tag: ${TAG}"
-              exit 1
-            fi
-          elif [[ -n "${INPUT_VERSION}" ]]; then
-            VERSION="${INPUT_VERSION}"
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          if [[ -n "${VERSION}" ]]; then
-            echo "CYT_RELEASE_VERSION=${VERSION}"
-          fi
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: sdk/e2e/scripts/resolve-version-from-parent.sh
 
   wait-for-crate:
     name: Wait for cyt-indexer on crates.io
     needs: resolve-version
-    if: needs.resolve-version.outputs.version != ''
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
+      needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -83,6 +76,8 @@ jobs:
     name: Build wheels (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }}${{ matrix.linux_archs && format(' {0}', matrix.linux_archs) || '' }})
     needs: [resolve-version, wait-for-crate]
     if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
       needs.resolve-version.result == 'success' &&
       (needs.wait-for-crate.result == 'success' || needs.wait-for-crate.result == 'skipped')
     runs-on: ${{ matrix.os }}
@@ -112,23 +107,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        shell: bash
+      - name: Set package version
+        if: needs.resolve-version.outputs.version != ''
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from release tag: ${TAG}"
-            exit 1
-          fi
-          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          echo "Setting cyt-indexer-sdk version to ${{ needs.resolve-version.outputs.version }}"
           cd sdk/python
-          uv version "$VERSION"
+          uv version "${{ needs.resolve-version.outputs.version }}"
 
       - name: Build wheels with cibuildwheel
         uses: pypa/cibuildwheel@v2.22.0
@@ -153,7 +137,10 @@ jobs:
 
   publish:
     name: Upload SDK to PyPI
-    needs: build-wheels
+    needs: [build-wheels, resolve-version]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment:
       name: pypi-sdk
@@ -170,23 +157,12 @@ jobs:
           python-version: "3.13"
           enable-cache: true
 
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        shell: bash
+      - name: Set package version
+        if: needs.resolve-version.outputs.version != ''
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          # Strip any prefix; keep semver from the end of the tag (…-v0.1.2 or …-0.1.2).
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from release tag: ${TAG}"
-            exit 1
-          fi
-          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
+          echo "Setting cyt-indexer-sdk version to ${{ needs.resolve-version.outputs.version }}"
           cd sdk/python
-          uv version "$VERSION"
+          uv version "${{ needs.resolve-version.outputs.version }}"
 
       - name: Download wheels
         uses: actions/download-artifact@v4
@@ -204,3 +180,15 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+      - name: Upload release version for downstream workflows
+        if: needs.resolve-version.outputs.version != ''
+        run: printf '%s' "${{ needs.resolve-version.outputs.version }}" > cyt-release-version.txt
+
+      - name: Store release version artifact
+        if: needs.resolve-version.outputs.version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyt-release-version
+          path: cyt-release-version.txt
+          if-no-files-found: error

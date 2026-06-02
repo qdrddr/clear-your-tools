@@ -13,13 +13,14 @@ Smoke tests that install **only published packages** from public registries—no
 
 Workflow: [`.github/workflows/e2e-published-sdk.yml`](../../.github/workflows/e2e-published-sdk.yml)
 
-Runs on **`release: published`**, parses semver from the release tag, polls each registry until that version is
-available, then runs the harness tests.
+Runs after **`publish-crates.yml`** succeeds (`workflow_run`), reads semver from the crates publish artifact, polls
+each registry until that version is available, then runs the harness tests.
 
 Complements:
 
 - [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) — source-tree tests on PR/push
-- Publish workflows — `publish-crates.yml`, `publish-pypi-sdk.yml`, `publish-npm-sdk.yml`, `publish-pypi.yml`
+- Publish chain — push tag `vX.Y.Z` → `publish-crates.yml` → (`publish-pypi-sdk.yml`, `publish-npm-sdk.yml`,
+`e2e-published-sdk.yml` via `workflow_run`) → `publish-pypi.yml` after SDK PyPI
 
 ## Local run
 

@@ -1,49 +1,47 @@
 # End-to-end tests against published packages (crates.io, PyPI, npm).
-# Triggered when a GitHub Release is published — does not use monorepo SDK sources.
+# Does not use monorepo SDK sources — installs from public registries only.
 #
-# Polls each registry until CYT_RELEASE_VERSION (from the release tag) is installable,
-# then runs isolated harnesses under sdk/e2e/.
+# Runs after publish-crates.yml succeeds (workflow_run). Polls each registry until
+# CYT_RELEASE_VERSION is installable, then runs isolated harnesses under sdk/e2e/.
 
 name: E2E published packages
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["1. Publish cyt-indexer to crates.io"]
+    types: [completed]
 
 concurrency:
-  group: e2e-published-${{ github.event.release.tag_name }}
+  group: e2e-published-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   resolve-version:
     name: Resolve release version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse.outputs.version }}
     steps:
-      - name: Parse semver from release tag
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
         id: parse
         env:
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from release tag: ${TAG}"
-            exit 1
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "CYT_RELEASE_VERSION=${VERSION}"
+          GH_TOKEN: ${{ github.token }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: sdk/e2e/scripts/resolve-version-from-parent.sh
 
   e2e-rust:
     name: E2E cyt-indexer (crates.io)
     needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -66,6 +64,8 @@ jobs:
   e2e-python-sdk:
     name: E2E cyt-indexer-sdk (PyPI)
     needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -93,6 +93,8 @@ jobs:
   e2e-typescript:
     name: E2E cyt-indexer-sdk (npm)
     needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -119,6 +121,8 @@ jobs:
   e2e-clear-your-tools:
     name: E2E clear-your-tools (PyPI)
     needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}

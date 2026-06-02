@@ -20,11 +20,11 @@
 # 3. First publish must be manual (`npm login` + `npm publish --access public`).
 #    OIDC cannot create a brand-new package; it only works after the package exists.
 #
-# 4. Create a release to trigger this workflow.
-#    Tag must end with a semver (e.g. cyt-indexer-sdk-v0.1.0 → publishes 0.1.0).
+# 4. Push tag vX.Y.Z to trigger publish-crates.yml; when that workflow succeeds,
+#    this workflow runs automatically (workflow_run). Polls crates.io briefly
+#    before building native bindings.
 #
-# Release order: publish-crates.yml (vX.Y.Z tag) must finish first. This workflow
-# polls crates.io for cyt-indexer before building native bindings.
+# Manual runs: workflow_dispatch (optional version input).
 #
 # Troubleshooting misleading E404 on publish:
 #   - Trusted publisher repo / workflow / environment mismatch → npm returns 404, not 403
@@ -34,53 +34,46 @@
 name: 2. Publish cyt-indexer-sdk to npm
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["1. Publish cyt-indexer to crates.io"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: Semver to wait for on crates.io (manual runs only; release tag used on release events)
+        description: Semver to wait for on crates.io (manual runs only)
         required: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   resolve-version:
     name: Resolve release version
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse.outputs.version }}
     steps:
-      - name: Parse semver
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
         id: parse
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION=""
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-            else
-              echo "::error::Could not parse semver from release tag: ${TAG}"
-              exit 1
-            fi
-          elif [[ -n "${INPUT_VERSION}" ]]; then
-            VERSION="${INPUT_VERSION}"
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          if [[ -n "${VERSION}" ]]; then
-            echo "CYT_RELEASE_VERSION=${VERSION}"
-          fi
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: sdk/e2e/scripts/resolve-version-from-parent.sh
 
   wait-for-crate:
     name: Wait for cyt-indexer on crates.io
     needs: resolve-version
-    if: needs.resolve-version.outputs.version != ''
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
+      needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     env:
       CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -94,6 +87,8 @@ jobs:
     name: Build native (${{ matrix.target }})
     needs: [resolve-version, wait-for-crate]
     if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
       needs.resolve-version.result == 'success' &&
       (needs.wait-for-crate.result == 'success' || needs.wait-for-crate.result == 'skipped')
     runs-on: ${{ matrix.os }}
@@ -133,22 +128,12 @@ jobs:
         working-directory: sdk/typescript
         run: npm ci
 
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        shell: bash
+      - name: Set package version
+        if: needs.resolve-version.outputs.version != ''
         working-directory: sdk/typescript
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from release tag: ${TAG}"
-            exit 1
-          fi
-          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "Setting cyt-indexer-sdk version to ${{ needs.resolve-version.outputs.version }}"
+          npm version "${{ needs.resolve-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build native binding
         working-directory: sdk/typescript
@@ -198,7 +183,10 @@ jobs:
 
   publish:
     name: Upload SDK to npm
-    needs: build-native
+    needs: [build-native, resolve-version]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment:
       name: npm-sdk
@@ -231,22 +219,12 @@ jobs:
         working-directory: sdk/typescript
         run: npm ci
 
-      - name: Set version from release tag
-        if: github.event_name == 'release'
-        shell: bash
+      - name: Set package version
+        if: needs.resolve-version.outputs.version != ''
         working-directory: sdk/typescript
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [[ "$TAG" =~ v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not parse semver from release tag: ${TAG}"
-            exit 1
-          fi
-          echo "Setting cyt-indexer-sdk version to ${VERSION} (from tag ${TAG})"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "Setting cyt-indexer-sdk version to ${{ needs.resolve-version.outputs.version }}"
+          npm version "${{ needs.resolve-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Download native loader stubs
         uses: actions/download-artifact@v4
