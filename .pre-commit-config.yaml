@@ -245,23 +245,39 @@ repos:
     hooks:
       - id: basedpyright
         name: basedpyright
-        entry: bash -c 'source .venv/bin/activate && basedpyright src'
+        entry: bash -c 'source .venv/bin/activate && basedpyright src sdk/python/src'
         language: system
         pass_filenames: false
-        files: '^src/.*\.py$'
+        files: '^(src/.*\.py|sdk/python/.*\.py)$'
 
   - repo: local
     hooks:
-      - id: typescript-typecheck
-        name: TypeScript SDK typecheck
-        entry: bash -c 'cd sdk/typescript && npx tsc --noEmit'
+      - id: ast-test
+        name: ast-grep rule tests
+        entry: bash -c 'ast-grep test --skip-snapshot-tests'
         language: system
+        files: ^\.ast-grep/
         pass_filenames: false
 
-      - id: ast-scan
-        name: Ast rule scan
-        entry: bash -c 'ast-grep scan src/ sdk/'
+      - id: uv-build
+        name: Python package build
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && uv build'
         language: system
+        files: ^(pyproject\.toml|src/)
+        pass_filenames: false
+
+      - id: verify-sdk
+        name: Verify cyt-indexer-sdk native import
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"'
+        language: system
+        files: ^(sdk/(rust|python)/|pyproject\.toml)
+        pass_filenames: false
+
+      - id: typescript-typecheck
+        name: TypeScript SDK typecheck
+        entry: bash -c 'cd sdk/typescript && npx tsc --noEmit && npx tsc --noEmit -p ../e2e/typescript'
+        language: system
+        files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       - id: typescript-test
@@ -271,23 +287,38 @@ repos:
         files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
         pass_filenames: false
 
+      - id: typescript-build
+        name: TypeScript SDK build
+        entry: bash -c 'cd sdk/typescript && npm run build'
+        language: system
+        files: ^sdk/typescript/
+        pass_filenames: false
+
       - id: typescript-npm-audit
         name: TypeScript SDK npm audit
-        entry: bash -c 'cd sdk/typescript && npm audit --audit-level=high'
+        entry: bash -c 'cd sdk/typescript && npm audit --audit-level=high && cd ../e2e/typescript && npm audit --audit-level=high'
         language: system
+        files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       - id: typescript-sort-package-json
         name: TypeScript SDK sort-package-json
-        entry: bash -c 'cd sdk/typescript && npx --yes sort-package-json package.json'
+        entry: bash -c 'cd sdk/typescript && npx --yes sort-package-json package.json && cd ../e2e/typescript && npx --yes sort-package-json package.json.in'
         language: system
-        files: ^sdk/typescript/package\.json$
+        files: ^sdk/(typescript/package\.json|e2e/typescript/package\.json\.in)$
+        pass_filenames: false
+
+      - id: ast-scan
+        name: Ast rule scan
+        entry: bash -c 'ast-grep scan src/ sdk/'
+        language: system
         pass_filenames: false
 
       - id: typescript-ast-scan
         name: TypeScript SDK ast-scan
-        entry: bash -c 'ast-grep scan sdk/typescript --globs "!sdk/typescript/src/test/**"'
+        entry: bash -c 'ast-grep scan sdk/typescript sdk/e2e/typescript --globs "!sdk/typescript/src/test/**"'
         language: system
+        files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       # Keep `suggestion` last
