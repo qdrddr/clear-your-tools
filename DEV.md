@@ -12,6 +12,20 @@ Dependencies are managed with [`uv`](https://docs.astral.sh/uv/):
 uv sync --all-extras
 ```
 
+### TypeScript SDK (for `prek run -a`)
+
+`native.cjs`, `native.d.ts`, `*.node`, and `dist/` under `sdk/typescript/` are **gitignored** — they are built from Rust,
+not copied from another checkout. After clone:
+
+```bash
+cd sdk/typescript
+npm ci
+npm run build   # needs Node ≥20 and a Rust toolchain
+```
+
+Run this before the first full `prek run -a` (typecheck runs before the `typescript-build` hook).
+Python-only work needs only `uv sync`.
+
 From PyPI (proxy + pruners):
 
 ```bash

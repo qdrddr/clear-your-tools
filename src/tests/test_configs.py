@@ -156,6 +156,40 @@ def test_require_proxy_env_not_needed_for_serve_without_pipeline_keys(
     configs.require_proxy_env(config)
 
 
+def test_missing_proxy_env_var_names(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = configs.load_config()
+    monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
+
+    missing = configs.missing_proxy_env_var_names(config)
+
+    assert "DEEPINFRA_API_KEY" in missing
+
+
+def test_format_proxy_env_help_lists_alternatives() -> None:
+    message = configs.format_proxy_env_help(["DEEPINFRA_API_KEY", "OPENAI_API_KEY"])
+
+    assert "\tDEEPINFRA_API_KEY" in message
+    assert "\tOPENAI_API_KEY" in message
+    assert f"\t{configs.CWD_ENV_PATH}" in message
+    assert f"\t{configs.USER_ENV_PATH}" in message
+    assert "cyt proxy --upstream" in message
+    assert "cyt setup" in message
+
+
+def test_require_proxy_env_raises_with_help_text(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = configs.load_config()
+    monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="cyt setup"):
+        configs.require_proxy_env(config)
+
+
 def test_remote_pruning_pipeline_configured_requires_user_models() -> None:
     assert configs.remote_pruning_pipeline_configured({}) is False
     assert configs.remote_pruning_pipeline_configured({"pruning": {"pipeline": ["bm25"]}}) is False

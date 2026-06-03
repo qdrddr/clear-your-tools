@@ -622,17 +622,32 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
     return required
 
 
+def missing_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Return unset env var names required by the configured pruning pipeline."""
+    load_proxy_env()
+    return [name for name in required_proxy_env_var_names(config) if not os.environ.get(name)]
+
+
+def format_proxy_env_help(missing: list[str]) -> str:
+    """Human-readable guidance when pruning pipeline API keys are unset."""
+    vars_block = "\n".join(f"\t{name}" for name in missing)
+    env_locations = "\n".join(f"\t{p}" for p in (CWD_ENV_PATH, USER_ENV_PATH))
+    return (
+        f"Required environment variable(s) not set:\n{vars_block}\n"
+        f"Export them in the shell or define them in\n{env_locations}\n"
+        "\n"
+        "To run without API keys, use BM25-only pruning via upstream CLI flags:\n"
+        "\tcyt proxy --upstream URL --upstream-kind anthropic|openai\n"
+        "\n"
+        "Or configure pruning and keys interactively:\n"
+        "\tcyt setup"
+    )
+
+
 def require_proxy_env(config: dict[str, Any]) -> None:
     """Ensure pruning pipeline API keys are set after loading .env fallbacks."""
-    load_proxy_env()
-    if missing := [
-        name for name in required_proxy_env_var_names(config) if not os.environ.get(name)
-    ]:
-        env_locations = " or ".join(str(p) for p in (CWD_ENV_PATH, USER_ENV_PATH))
-        raise RuntimeError(
-            "Required environment variable(s) not set: "
-            f"{', '.join(missing)}. Export them in the shell or define them in {env_locations}.",
-        )
+    if missing := missing_proxy_env_var_names(config):
+        raise RuntimeError(format_proxy_env_help(missing))
 
 
 def llm_minimum_tools(config: dict[str, Any] | None = None) -> int:

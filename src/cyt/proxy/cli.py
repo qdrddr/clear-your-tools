@@ -14,11 +14,12 @@ from cyt import __version__
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
     DEFAULT_USER_CONFIG_PATH,
+    format_proxy_env_help,
     load_config,
     load_user_config_overlay,
+    missing_proxy_env_var_names,
     proxy_http2_settings,
     remote_pruning_pipeline_configured,
-    require_proxy_env,
     resolve_config_path,
     resolve_reverse_port,
     resolve_setup_config_path,
@@ -314,7 +315,9 @@ def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | Non
     config_path = resolve_config_path(args.config)
     config = load_config(args.config)
     _apply_bm25_fallback_if_needed(config, config_path)
-    require_proxy_env(config)
+    if missing := missing_proxy_env_var_names(config):
+        print(format_proxy_env_help(missing), file=sys.stderr)
+        raise SystemExit(1)
     reverse_port = resolve_reverse_port(config, args.port)
     if upstream_endpoint is not None:
         from cyt.proxy.setup import print_proxy_urls

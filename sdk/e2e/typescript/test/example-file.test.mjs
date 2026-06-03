@@ -41,7 +41,7 @@ test(
     );
     assert.ok(
       jsonChunks.some(
-        (entry) =>
+        (/** @type {{ file_path?: string }} */ entry) =>
           typeof entry.file_path === "string" &&
           entry.file_path.includes("/schemas/decomposed/") &&
           entry.file_path.endsWith(".json"),
