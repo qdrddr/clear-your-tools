@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 BUNDLED_DEFAULTS_NAME = "defaults.yaml"
 USER_ENV_PATH = Path("~/.config/cyt/.env").expanduser()
 CWD_ENV_PATH = Path.cwd() / ".env"
-_env_path = USER_ENV_PATH  # backward-compatible alias for resolve_model callers
 
 _proxy_env_loaded = False
 
@@ -43,7 +42,6 @@ load_proxy_env()
 
 # Default fallbacks - single source of truth for hard-coded values
 DEFAULT_REVERSE_PORT: int = 8000
-DEFAULT_MCP_AGGREGATOR_PORT: int = 8000
 DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")

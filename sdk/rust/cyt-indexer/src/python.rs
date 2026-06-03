@@ -1,19 +1,29 @@
-use crate::build::{build_catalog_index, catalog_tool_count};
+#[path = "policies_python.rs"]
+mod policies_python;
+
+use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
+use crate::paths::{self, collect_enums, PathConfig};
+use crate::retrieve::process_groups_options_from_fields;
+use std::path::PathBuf;
+use crate::policies::policy_context_from_values;
 use crate::retrieve::{
-    load_catalog_from_dir, retrieve_core, DecomposedCatalog, ProcessGroupsOptions, RetrieveOptions,
+    build_process_groups_options, load_catalog_from_dir, retrieve_core, DecomposedCatalog,
+    ProcessGroupsOptions, RetrieveOptions,
 };
+use crate::runtime_config::{self, RuntimeConfig};
+use policies_python::ctx_from_py_any;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyType};
 use serde_json::Value;
 
-fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
+pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
     let json_str = serde_json::to_string(value)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
     let json_mod = py.import("json")?;
     Ok(json_mod.call_method1("loads", (json_str,))?.into())
 }
 
-fn py_to_value(obj: Bound<'_, PyAny>) -> PyResult<Value> {
+pub(crate) fn py_to_value(obj: Bound<'_, PyAny>) -> PyResult<Value> {
     let json_mod = obj.py().import("json")?;
     let dumped = json_mod.call_method1("dumps", (obj,))?;
     let s: String = dumped.extract()?;
@@ -48,61 +58,65 @@ fn build_catalog_index_py(
     Ok(dict.into())
 }
 
+fn optional_string_list(key: &str, policy: &Bound<'_, PyDict>) -> PyResult<Option<Vec<String>>> {
+    match policy.get_item(key)? {
+        None => Ok(None),
+        Some(v) if v.is_none() => Ok(None),
+        Some(v) => Ok(Some(v.extract()?)),
+    }
+}
+
+fn string_list_or_empty(key: &str, policy: &Bound<'_, PyDict>) -> PyResult<Option<Vec<String>>> {
+    Ok(Some(
+        policy
+            .get_item(key)?
+            .map(|v| {
+                if v.is_none() {
+                    Ok(Vec::new())
+                } else {
+                    v.extract::<Vec<String>>()
+                }
+            })
+            .transpose()?
+            .unwrap_or_default(),
+    ))
+}
+
 fn process_groups_from_policy_dict(
     policy: Option<Bound<'_, PyDict>>,
 ) -> PyResult<ProcessGroupsOptions> {
     let Some(policy) = policy else {
         return Ok(ProcessGroupsOptions::default());
     };
-    let prune_optional_tools = policy
-        .get_item("prune_optional_tools")?
-        .map(|v| {
-            if v.is_none() {
-                Ok(Vec::new())
-            } else {
-                v.extract::<Vec<String>>()
+    let prune_optional_tools = string_list_or_empty("prune_optional_tools", &policy)?;
+    let system_preserve = optional_string_list("system_preserve", &policy)?;
+    let mcp_preserve = optional_string_list("mcp_preserve", &policy)?;
+    let mut required_by_tool = None;
+    let mut required_enum_values_by_tool = None;
+    for key in ["required_by_tool", "required_enum_values_by_tool"] {
+        if let Some(item) = policy.get_item(key)? {
+            if let Ok(dict) = item.downcast_into::<PyDict>() {
+                let map = dict_to_required_by_tool(dict)?;
+                let vec_map: std::collections::HashMap<String, Vec<String>> = map
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_iter().collect()))
+                    .collect();
+                if key == "required_by_tool" {
+                    required_by_tool = Some(vec_map);
+                } else {
+                    required_enum_values_by_tool = Some(vec_map);
+                }
+                break;
             }
-        })
-        .transpose()?
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
-    let system_preserve = policy
-        .get_item("system_preserve")?
-        .map(|v| {
-            if v.is_none() {
-                Ok(None)
-            } else {
-                v.extract::<Vec<String>>().map(|items| Some(items))
-            }
-        })
-        .transpose()?
-        .flatten()
-        .map(|v| v.into_iter().collect());
-    let mcp_preserve = policy
-        .get_item("mcp_preserve")?
-        .map(|v| {
-            if v.is_none() {
-                Ok(None)
-            } else {
-                v.extract::<Vec<String>>().map(|items| Some(items))
-            }
-        })
-        .transpose()?
-        .flatten()
-        .map(|v| v.into_iter().collect());
-    let mut required_by_tool = std::collections::HashMap::new();
-    if let Some(item) = policy.get_item("required_by_tool")? {
-        if let Ok(dict) = item.downcast_into::<PyDict>() {
-            required_by_tool = dict_to_required_by_tool(dict)?;
         }
     }
-    Ok(ProcessGroupsOptions {
+    Ok(process_groups_options_from_fields(
         system_preserve,
         mcp_preserve,
         required_by_tool,
+        required_enum_values_by_tool,
         prune_optional_tools,
-    })
+    ))
 }
 
 #[pyfunction(name = "retrieve_core")]
@@ -150,6 +164,171 @@ fn dict_to_required_by_tool(
     Ok(map)
 }
 
+#[pyfunction(name = "to_decomposed_key")]
+fn to_decomposed_key_py(file_path: &str) -> Option<String> {
+    paths::to_decomposed_key(file_path)
+}
+
+#[pyfunction(name = "tool_id_from_decomposed_rel")]
+fn tool_id_from_decomposed_rel_py(rel_path: &str) -> String {
+    paths::tool_id_from_decomposed_rel(rel_path)
+}
+
+#[pyfunction(name = "get_root_tool_key")]
+fn get_root_tool_key_py(file_path: &str) -> Option<String> {
+    paths::get_root_tool_key(file_path)
+}
+
+#[pyfunction(name = "collect_enums")]
+fn collect_enums_py(py: Python<'_>, schema: Bound<'_, PyAny>) -> PyResult<PyObject> {
+    let val = py_to_value(schema)?;
+    let found = collect_enums(&val);
+    value_to_py(py, &Value::Array(found))
+}
+
+#[pyfunction(name = "configure_path_constants")]
+#[pyo3(signature = (md_ext, json_ext, decomposed_prefix, decomposed_root, catalog_prefix, builder_memory_only, default_catalog_dir, write_catalog_prune))]
+fn configure_path_constants_py(
+    md_ext: &str,
+    json_ext: &str,
+    decomposed_prefix: &str,
+    decomposed_root: &str,
+    catalog_prefix: &str,
+    builder_memory_only: bool,
+    default_catalog_dir: &str,
+    write_catalog_prune: bool,
+) {
+    paths::configure(PathConfig {
+        md_ext: md_ext.to_string(),
+        json_ext: json_ext.to_string(),
+        decomposed_prefix: decomposed_prefix.to_string(),
+        decomposed_root: PathBuf::from(decomposed_root),
+        catalog_prefix: catalog_prefix.to_string(),
+        builder_memory_only,
+        default_catalog_dir: PathBuf::from(default_catalog_dir),
+        write_catalog_prune,
+    });
+}
+
+#[pyfunction(name = "path_md_ext")]
+fn path_md_ext_py() -> String {
+    paths::md_ext()
+}
+
+#[pyfunction(name = "path_json_ext")]
+fn path_json_ext_py() -> String {
+    paths::json_ext()
+}
+
+#[pyfunction(name = "path_decomposed_prefix")]
+fn path_decomposed_prefix_py() -> String {
+    paths::decomposed_prefix()
+}
+
+#[pyfunction(name = "path_decomposed_root")]
+fn path_decomposed_root_py() -> String {
+    paths::decomposed_root().to_string_lossy().into_owned()
+}
+
+#[pyfunction(name = "path_catalog_prefix")]
+fn path_catalog_prefix_py() -> String {
+    paths::catalog_prefix()
+}
+
+#[pyfunction(name = "path_builder_memory_only")]
+fn path_builder_memory_only_py() -> bool {
+    paths::builder_memory_only()
+}
+
+#[pyfunction(name = "path_default_catalog_dir")]
+fn path_default_catalog_dir_py() -> String {
+    paths::default_catalog_dir().to_string_lossy().into_owned()
+}
+
+#[pyfunction(name = "path_write_catalog_prune")]
+fn path_write_catalog_prune_py() -> bool {
+    paths::write_catalog_prune()
+}
+
+#[pyfunction(name = "configure_runtime_defaults")]
+#[pyo3(signature = (
+    decomposed_score,
+    enum_score,
+    rerank_score,
+    empty_optional_fallback_k,
+    default_system_policy,
+    default_mcp_policy,
+))]
+fn configure_runtime_defaults_py(
+    decomposed_score: f64,
+    enum_score: f64,
+    rerank_score: f64,
+    empty_optional_fallback_k: usize,
+    default_system_policy: &str,
+    default_mcp_policy: &str,
+) -> PyResult<()> {
+    runtime_config::configure(RuntimeConfig {
+        decomposed_score,
+        enum_score,
+        rerank_score,
+        empty_optional_fallback_k,
+        default_system_policy: default_system_policy.to_string(),
+        default_mcp_policy: default_mcp_policy.to_string(),
+    });
+    Python::with_gil(|py| -> PyResult<()> {
+        if let Ok(m) = py.import("cyt_indexer._native") {
+            policies_python::refresh_runtime_attrs(&m)?;
+        }
+        Ok(())
+    })
+}
+
+#[pyfunction(name = "runtime_decomposed_score")]
+fn runtime_decomposed_score_py() -> f64 {
+    runtime_config::decomposed_score()
+}
+
+#[pyfunction(name = "runtime_enum_score")]
+fn runtime_enum_score_py() -> f64 {
+    runtime_config::enum_score()
+}
+
+#[pyfunction(name = "runtime_rerank_score")]
+fn runtime_rerank_score_py() -> f64 {
+    runtime_config::rerank_score()
+}
+
+#[pyfunction(name = "runtime_empty_optional_fallback_k")]
+fn runtime_empty_optional_fallback_k_py() -> usize {
+    runtime_config::empty_optional_fallback_k()
+}
+
+pub(crate) fn catalog_index_from_py(obj: Bound<'_, PyAny>) -> PyResult<crate::build::CatalogIndex> {
+    if obj.getattr("tools").is_ok() && obj.getattr("files").is_ok() {
+        let val = serde_json::json!({
+            "tools": py_to_value(obj.getattr("tools")?)?,
+            "files": py_to_value(obj.getattr("files")?)?,
+        });
+        return Ok(catalog_index_from_value(&val));
+    }
+    Ok(catalog_index_from_value(&py_to_value(obj)?))
+}
+
+#[pyfunction(name = "catalog_index_to_catalog_dict")]
+#[pyo3(signature = (index, catalog_prefix=None))]
+fn catalog_index_to_catalog_dict_py(
+    py: Python<'_>,
+    index: Bound<'_, PyAny>,
+    catalog_prefix: Option<&str>,
+) -> PyResult<PyObject> {
+    let idx = catalog_index_from_py(index)?;
+    let val = match catalog_prefix {
+        Some(prefix) => idx.to_catalog_dict_with_prefix(prefix),
+        None => idx.to_catalog_dict(),
+    };
+    value_to_py(py, &val)
+}
+
 #[pyfunction(name = "load_catalog")]
 fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
     Python::with_gil(|py| {
@@ -159,11 +338,118 @@ fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
     })
 }
 
+/// In-memory decomposed catalog JSON (backed by Rust [`DecomposedCatalog`]).
+#[pyclass(name = "DecomposedCatalog")]
+#[derive(Clone)]
+struct PyDecomposedCatalog {
+    inner: DecomposedCatalog,
+}
+
+#[pymethods]
+impl PyDecomposedCatalog {
+    #[classmethod]
+    fn from_catalog_index(_cls: &Bound<'_, PyType>, index: Bound<'_, PyAny>) -> PyResult<Self> {
+        let idx = catalog_index_from_py(index)?;
+        Ok(Self {
+            inner: DecomposedCatalog::from_catalog_index(&idx),
+        })
+    }
+
+    #[classmethod]
+    fn from_catalog_dict(_cls: &Bound<'_, PyType>, data: Bound<'_, PyAny>) -> PyResult<Self> {
+        let val = py_to_value(data)?;
+        Ok(Self {
+            inner: DecomposedCatalog::from_catalog_dict(&val),
+        })
+    }
+
+    fn has_json(&self, key: &str) -> bool {
+        self.inner.has_json(key)
+    }
+
+    fn get_json(&self, py: Python<'_>, key: &str) -> PyResult<Option<PyObject>> {
+        Ok(self
+            .inner
+            .get_json(key)
+            .map(|v| value_to_py(py, v))
+            .transpose()?)
+    }
+}
+
+fn catalog_to_decomposed(catalog: Bound<'_, PyAny>) -> PyResult<DecomposedCatalog> {
+    if let Ok(py_cat) = catalog.extract::<PyRef<PyDecomposedCatalog>>() {
+        return Ok(py_cat.inner.clone());
+    }
+    let idx = catalog_index_from_py(catalog)?;
+    Ok(DecomposedCatalog::from_catalog_index(&idx))
+}
+
+#[pyfunction(name = "retrieve_tools")]
+#[pyo3(signature = (data, catalog, apply_decomposed_score_filter=true, preserve_values=None, ctx=None))]
+fn retrieve_tools_py(
+    py: Python<'_>,
+    data: Bound<'_, PyAny>,
+    catalog: Bound<'_, PyAny>,
+    apply_decomposed_score_filter: bool,
+    preserve_values: Option<Vec<String>>,
+    ctx: Option<Bound<'_, PyAny>>,
+) -> PyResult<PyObject> {
+    let policy_ctx = match ctx {
+        Some(c) => ctx_from_py_any(c)?,
+        None => policy_context_from_values(&Value::Object(serde_json::Map::new())),
+    };
+    let store = catalog_to_decomposed(catalog)?;
+    let data_val = py_to_value(data)?;
+    let catalog_dict = if data_val.is_object() {
+        data_val
+    } else {
+        Value::Object(serde_json::Map::new())
+    };
+    let survivor = DecomposedCatalog::from_catalog_dict(&catalog_dict);
+    let preserve_set = preserve_values.map(|items| items.into_iter().collect());
+    let process_groups =
+        build_process_groups_options(&policy_ctx, &catalog_dict, &store, preserve_set);
+    let mut store_mut = store;
+    let result = retrieve_core(
+        &catalog_dict,
+        &mut store_mut,
+        &survivor,
+        &RetrieveOptions {
+            apply_decomposed_score_filter,
+            process_groups,
+        },
+    );
+    value_to_py(py, &Value::Array(result))
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    policies_python::refresh_runtime_attrs(m)?;
+    m.add_function(wrap_pyfunction!(configure_runtime_defaults_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_decomposed_score_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_enum_score_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_rerank_score_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_empty_optional_fallback_k_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_tool_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_catalog_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(retrieve_core_py, m)?)?;
     m.add_function(wrap_pyfunction!(load_catalog_py, m)?)?;
+    m.add_function(wrap_pyfunction!(to_decomposed_key_py, m)?)?;
+    m.add_function(wrap_pyfunction!(tool_id_from_decomposed_rel_py, m)?)?;
+    m.add_function(wrap_pyfunction!(get_root_tool_key_py, m)?)?;
+    m.add_function(wrap_pyfunction!(collect_enums_py, m)?)?;
+    m.add_function(wrap_pyfunction!(configure_path_constants_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_md_ext_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_json_ext_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_decomposed_prefix_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_decomposed_root_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_catalog_prefix_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_builder_memory_only_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_default_catalog_dir_py, m)?)?;
+    m.add_function(wrap_pyfunction!(path_write_catalog_prune_py, m)?)?;
+    m.add_function(wrap_pyfunction!(catalog_index_to_catalog_dict_py, m)?)?;
+    m.add_class::<PyDecomposedCatalog>()?;
+    m.add_function(wrap_pyfunction!(retrieve_tools_py, m)?)?;
+    policies_python::register(m)?;
     Ok(())
 }

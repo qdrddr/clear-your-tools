@@ -146,20 +146,20 @@ select = [
   "ASYNC" # async
 ]
 ignore = [
-  "C408",   # Unnecessary `dict()` call (rewrite as a literal)
+  # "C408",   # Unnecessary `dict()` call (rewrite as a literal)
   "E501",   # Line too long, handled by ruff formatter
-  "D107",   # "Missing docstring in __init__",
-  "F401",   # imported but unused; consider using `importlib.util.find_spec` to test for "
-  "F811",   # "redefinition of the same function"
-  "PL",     # Pylint
-  "RUF012", # Mutable Class Attributes
-  "UP006",  # List vs list, etc
-  "UP007",  # Option and Union
-  "UP035",  # `typing.Set` is deprecated, use `set` instead"
+  # "D107",   # "Missing docstring in __init__",
+  # "F401",   # imported but unused; consider using `importlib.util.find_spec` to test for "
+  # "F811",   # "redefinition of the same function"
+  # "PL",     # Pylint
+  # "RUF012", # Mutable Class Attributes
+  # "UP006",  # List vs list, etc
+  # "UP007",  # Option and Union
+  # "UP035",  # `typing.Set` is deprecated, use `set` instead"
   # "A005",   # Module `code` shadows a Python standard-library module
   # "ANN101",  # Missing type annotation for self
   # "ANN102",  # Missing type annotation for cls
-  "ANN401",  # Dynamically typed expressions (Any)
+  # "ANN401",  # Dynamically typed expressions (Any)
 ]
 
 [tool.ruff.lint.pep8-naming]

@@ -1,12 +1,78 @@
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
-pub const JSON_EXT: &str = ".json";
-pub const MD_EXT: &str = ".md";
-pub const DECOMPOSED_PREFIX: &str = "schemas/decomposed/";
+/// SDK runtime defaults (paths + catalog I/O); override from the host app via `configure`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathConfig {
+    pub json_ext: String,
+    pub md_ext: String,
+    pub decomposed_prefix: String,
+    pub decomposed_root: PathBuf,
+    pub catalog_prefix: String,
+    pub builder_memory_only: bool,
+    pub default_catalog_dir: PathBuf,
+    pub write_catalog_prune: bool,
+}
+
+impl Default for PathConfig {
+    fn default() -> Self {
+        Self {
+            json_ext: ".json".to_string(),
+            md_ext: ".md".to_string(),
+            decomposed_prefix: "schemas/decomposed/".to_string(),
+            decomposed_root: PathBuf::from("schemas/decomposed"),
+            catalog_prefix: "catalog".to_string(),
+            builder_memory_only: false,
+            default_catalog_dir: PathBuf::from("catalog"),
+            write_catalog_prune: true,
+        }
+    }
+}
+
+fn config_lock() -> &'static RwLock<PathConfig> {
+    static CONFIG: OnceLock<RwLock<PathConfig>> = OnceLock::new();
+    CONFIG.get_or_init(|| RwLock::new(PathConfig::default()))
+}
+
+pub fn configure(cfg: PathConfig) {
+    *config_lock().write().expect("path config lock") = cfg;
+}
+
+pub fn snapshot() -> PathConfig {
+    config_lock().read().expect("path config lock").clone()
+}
+
+pub fn json_ext() -> String {
+    snapshot().json_ext
+}
+
+pub fn md_ext() -> String {
+    snapshot().md_ext
+}
+
+pub fn decomposed_prefix() -> String {
+    snapshot().decomposed_prefix
+}
 
 pub fn decomposed_root() -> PathBuf {
-    PathBuf::from("schemas/decomposed")
+    snapshot().decomposed_root
+}
+
+pub fn catalog_prefix() -> String {
+    snapshot().catalog_prefix
+}
+
+pub fn builder_memory_only() -> bool {
+    snapshot().builder_memory_only
+}
+
+pub fn default_catalog_dir() -> PathBuf {
+    snapshot().default_catalog_dir
+}
+
+pub fn write_catalog_prune() -> bool {
+    snapshot().write_catalog_prune
 }
 
 pub fn to_decomposed_key(file_path: &str) -> Option<String> {
@@ -23,7 +89,8 @@ pub fn to_decomposed_key(file_path: &str) -> Option<String> {
 }
 
 pub fn tool_id_from_decomposed_rel(rel_path: &str) -> String {
-    let rel = if let Some(stripped) = rel_path.strip_prefix(DECOMPOSED_PREFIX) {
+    let cfg = snapshot();
+    let rel = if let Some(stripped) = rel_path.strip_prefix(&cfg.decomposed_prefix) {
         stripped
     } else {
         rel_path
@@ -38,16 +105,17 @@ pub fn tool_id_from_decomposed_rel(rel_path: &str) -> String {
             .into_owned();
     }
     let first = parts[0].as_os_str().to_string_lossy();
-    if first.ends_with(JSON_EXT) {
-        first.trim_end_matches(JSON_EXT).to_string()
+    if first.ends_with(&cfg.json_ext) {
+        first.trim_end_matches(&cfg.json_ext).to_string()
     } else {
         first.into_owned()
     }
 }
 
 pub fn get_root_tool_key(file_path: &str) -> Option<String> {
+    let cfg = snapshot();
     let key = to_decomposed_key(file_path)?;
-    let root = decomposed_root();
+    let root = cfg.decomposed_root.clone();
     let rel = Path::new(&key).strip_prefix(&root).ok()?;
     if rel.as_os_str().is_empty() {
         return None;
@@ -55,12 +123,15 @@ pub fn get_root_tool_key(file_path: &str) -> Option<String> {
     let parts: Vec<_> = rel.components().collect();
     if parts.len() == 1 {
         let name = parts[0].as_os_str().to_string_lossy();
-        if name.ends_with(JSON_EXT) {
+        if name.ends_with(&cfg.json_ext) {
             return Some(key);
         }
     }
     let tool_id = parts[0].as_os_str().to_string_lossy();
-    Some(format!("schemas/decomposed/{tool_id}{JSON_EXT}"))
+    Some(format!(
+        "{}{}{}",
+        cfg.decomposed_prefix, tool_id, cfg.json_ext
+    ))
 }
 
 pub fn collect_enums(schema: &Value) -> Vec<Value> {
@@ -89,5 +160,18 @@ fn collect_enums_inner(node: &Value, found: &mut Vec<Value>) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_prefix_round_trip() {
+        let cfg = PathConfig::default();
+        configure(cfg.clone());
+        let rel = format!("{}tool.json", decomposed_prefix());
+        assert_eq!(tool_id_from_decomposed_rel(&rel), "tool");
     }
 }

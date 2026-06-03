@@ -1,4 +1,4 @@
-use crate::paths::{self, DECOMPOSED_PREFIX, JSON_EXT};
+use crate::paths::{self, decomposed_prefix, json_ext, md_ext};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
@@ -8,20 +8,42 @@ pub struct CatalogIndex {
     pub files: HashMap<String, String>,
 }
 
+/// Parse a catalog index from a JSON value (`{ "tools": [...], "files": {...} }`).
+pub fn catalog_index_from_value(val: &Value) -> CatalogIndex {
+    let tools = val
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut files = HashMap::new();
+    if let Some(map) = val.get("files").and_then(|v| v.as_object()) {
+        for (k, v) in map {
+            if let Some(s) = v.as_str() {
+                files.insert(k.clone(), s.to_string());
+            }
+        }
+    }
+    CatalogIndex { tools, files }
+}
+
 impl CatalogIndex {
-    pub fn to_catalog_dict(&self, catalog_prefix: &str) -> Value {
+    pub fn to_catalog_dict(&self) -> Value {
+        self.to_catalog_dict_with_prefix(&crate::paths::catalog_prefix())
+    }
+
+    pub fn to_catalog_dict_with_prefix(&self, catalog_prefix: &str) -> Value {
         let mut md_entries = Vec::new();
         let mut json_entries = Vec::new();
         let mut paths: Vec<_> = self.files.keys().cloned().collect();
         paths.sort();
 
         for rel_path in paths {
-            if !rel_path.starts_with(DECOMPOSED_PREFIX) {
+            if !rel_path.starts_with(&decomposed_prefix()) {
                 continue;
             }
             let content = &self.files[&rel_path];
             let file_path = format!("{catalog_prefix}/{rel_path}");
-            if rel_path.ends_with(paths::MD_EXT) {
+            if rel_path.ends_with(&md_ext()) {
                 let id = path_stem(&rel_path);
                 md_entries.push(json!({
                     "id": id,
@@ -32,8 +54,13 @@ impl CatalogIndex {
                     "language": "markdown",
                     "content": content,
                 }));
-            } else if rel_path.ends_with(JSON_EXT) {
-                let parsed: Value = serde_json::from_str(content).unwrap_or(Value::Null);
+            } else if rel_path.ends_with(&json_ext()) {
+                let Ok(parsed) = serde_json::from_str::<Value>(content) else {
+                    continue;
+                };
+                if !parsed.is_object() {
+                    continue;
+                }
                 let line_count = content.lines().count();
                 let entry_id = parsed.get("id").cloned().unwrap_or_else(|| {
                     Value::String(paths::tool_id_from_decomposed_rel(&rel_path))
@@ -427,7 +454,7 @@ pub fn decompose_tool_schema(tool_info: &Value) -> (Value, Vec<Extraction>) {
 }
 
 fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_name: &str) -> String {
-    let prefix = DECOMPOSED_PREFIX.trim_end_matches('/');
+    let prefix = decomposed_prefix().trim_end_matches('/').to_string();
     let mut parts = vec![prefix.to_string(), tool_id.to_string()];
     for seg in path_segments
         .iter()
@@ -448,7 +475,7 @@ fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_nam
             _ => {}
         }
     }
-    parts.push(format!("{prop_name}{JSON_EXT}"));
+    parts.push(format!("{prop_name}{}", json_ext()));
     parts.join("/")
 }
 
@@ -459,7 +486,7 @@ pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex
         let tool_id = tool_info.get("id").and_then(|v| v.as_str()).unwrap_or("");
         if let Some(full_schema) = tool_info.get("full_schema") {
             files.insert(
-                format!("schemas/full/{tool_id}{JSON_EXT}"),
+                format!("schemas/full/{tool_id}{}", json_ext()),
                 serde_json::to_string_pretty(full_schema).unwrap_or_default(),
             );
         }
@@ -467,7 +494,7 @@ pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex
 
     for val in dedupe_enums(all_enums) {
         let text = enum_markdown_value(&val);
-        let key = format!("{DECOMPOSED_PREFIX}{text}{}", paths::MD_EXT);
+        let key = format!("{}{text}{}", decomposed_prefix(), md_ext());
         files.insert(key, text);
     }
 
@@ -475,7 +502,7 @@ pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex
         let tool_id = tool_info.get("id").and_then(|v| v.as_str()).unwrap_or("");
         let (root_schema, extractions) = decompose_tool_schema(tool_info);
         files.insert(
-            format!("{DECOMPOSED_PREFIX}{tool_id}{JSON_EXT}"),
+            format!("{}{tool_id}{}", decomposed_prefix(), json_ext()),
             serde_json::to_string_pretty(&root_schema).unwrap_or_default(),
         );
         for (path_segments, prop_schema) in extractions {

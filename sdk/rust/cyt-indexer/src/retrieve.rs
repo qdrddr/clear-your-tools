@@ -1,11 +1,13 @@
-use crate::build::CatalogIndex;
-use crate::paths::{self, JSON_EXT, MD_EXT};
+use crate::build::{catalog_index_from_value, CatalogIndex};
+use crate::paths::{self, decomposed_prefix, get_root_tool_key, json_ext, md_ext, tool_id_from_decomposed_rel};
+use crate::policies::{
+    effective_policy, mcp_required_enum_values, required_enum_values_by_tool,
+    system_required_enum_values, PolicyContext, ToolPolicy,
+};
+use crate::runtime_config;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-
-pub const DECOMPOSED_SCORE: f64 = 0.5;
-pub const ENUM_SCORE: f64 = 0.2;
 
 #[derive(Debug, Clone, Default)]
 pub struct DecomposedCatalog {
@@ -23,9 +25,11 @@ impl DecomposedCatalog {
     pub fn from_catalog_index(index: &CatalogIndex) -> Self {
         let mut json_files = HashMap::new();
         for (rel_path, content) in &index.files {
-            if rel_path.starts_with("schemas/decomposed/") && rel_path.ends_with(JSON_EXT) {
-                if let Ok(parsed) = serde_json::from_str(content) {
-                    json_files.insert(rel_path.clone(), parsed);
+            if rel_path.starts_with(&decomposed_prefix()) && rel_path.ends_with(&json_ext()) {
+                if let Ok(parsed) = serde_json::from_str::<Value>(content) {
+                    if parsed.is_object() {
+                        json_files.insert(rel_path.clone(), parsed);
+                    }
                 }
             }
         }
@@ -80,6 +84,26 @@ impl DecomposedCatalog {
     }
 }
 
+/// Parse a host catalog value into [`DecomposedCatalog`] (index dict or json-files map).
+pub fn decomposed_catalog_from_value(val: &Value) -> DecomposedCatalog {
+    if val.get("tools").is_some() && val.get("files").is_some() {
+        let idx = catalog_index_from_value(val);
+        return DecomposedCatalog::from_catalog_index(&idx);
+    }
+    if let Some(map) = val.as_object() {
+        let mut json_files = HashMap::new();
+        for (k, v) in map {
+            if v.is_object() {
+                json_files.insert(k.clone(), v.clone());
+            }
+        }
+        if !json_files.is_empty() {
+            return DecomposedCatalog::from_json_files(json_files);
+        }
+    }
+    DecomposedCatalog::default()
+}
+
 pub fn deep_merge(base: &Value, override_val: &Value) -> Value {
     match (base, override_val) {
         (Value::Object(base_map), Value::Object(override_map)) => {
@@ -123,12 +147,13 @@ pub fn climb_and_merge(leaf_path: &str, catalog: &DecomposedCatalog) -> Value {
         }
 
         let parent_key = format!(
-            "{}/{}{JSON_EXT}",
+            "{}/{}{}",
             parent_dir.to_string_lossy(),
             current_path
                 .file_name()
                 .unwrap_or_default()
-                .to_string_lossy()
+                .to_string_lossy(),
+            json_ext(),
         );
         if let Some(parent) = catalog.get_json(&parent_key) {
             current = deep_merge(parent, &current);
@@ -187,7 +212,7 @@ fn extract_from_dict(
                     if let Some(fp) = e.get("file_path").and_then(|v| v.as_str()) {
                         if key == "json" && apply_decomposed_score_filter {
                             let score = e.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            if score <= DECOMPOSED_SCORE {
+                            if score <= runtime_config::decomposed_score() {
                                 continue;
                             }
                         }
@@ -237,12 +262,12 @@ fn filter_items(items_with_scores: &[(Value, f64)]) -> Vec<Value> {
     let first_3_above = items_with_scores
         .iter()
         .take(3)
-        .all(|(_, score)| *score >= ENUM_SCORE);
+        .all(|(_, score)| *score >= runtime_config::enum_score());
 
     if first_3_above {
         items_with_scores
             .iter()
-            .filter(|(_, score)| *score >= ENUM_SCORE)
+            .filter(|(_, score)| *score >= runtime_config::enum_score())
             .map(|(item, _)| item.clone())
             .collect()
     } else {
@@ -324,7 +349,7 @@ pub fn group_files(
             .unwrap_or(Path::new(&key));
         let parts: Vec<_> = rel.components().collect();
         let is_tool =
-            parts.len() == 1 && parts[0].as_os_str().to_string_lossy().ends_with(JSON_EXT);
+            parts.len() == 1 && parts[0].as_os_str().to_string_lossy().ends_with(&json_ext());
 
         let Some(root_tool) = paths::get_root_tool_key(&key) else {
             continue;
@@ -348,6 +373,40 @@ fn tool_shell_from_root_key(root_tool: &str) -> Value {
     })
 }
 
+/// Build retrieve ``ProcessGroupsOptions`` from policy context and catalog state.
+pub fn build_process_groups_options(
+    ctx: &PolicyContext,
+    catalog_dict: &Value,
+    store: &DecomposedCatalog,
+    preserve_values: Option<HashSet<String>>,
+) -> ProcessGroupsOptions {
+    let mut system_preserve = system_required_enum_values(catalog_dict);
+    if let Some(pv) = preserve_values {
+        if system_preserve.is_empty() {
+            system_preserve = pv;
+        }
+    }
+    let mcp_preserve = mcp_required_enum_values(catalog_dict);
+    let required_by_tool = required_enum_values_by_tool(catalog_dict);
+
+    let mut prune_optional_tools = HashSet::new();
+    for key in store.json_files().keys() {
+        if let Some(root_tool) = get_root_tool_key(key) {
+            let tool_name = tool_id_from_decomposed_rel(&root_tool);
+            if effective_policy(ctx, &tool_name) == ToolPolicy::PruneOptional {
+                prune_optional_tools.insert(tool_name);
+            }
+        }
+    }
+
+    ProcessGroupsOptions {
+        system_preserve: (!system_preserve.is_empty()).then_some(system_preserve),
+        mcp_preserve: (!mcp_preserve.is_empty()).then_some(mcp_preserve),
+        required_by_tool,
+        prune_optional_tools,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProcessGroupsOptions {
     pub system_preserve: Option<HashSet<String>>,
@@ -355,6 +414,31 @@ pub struct ProcessGroupsOptions {
     pub required_by_tool: HashMap<String, HashSet<String>>,
     /// Tool names where effective_policy == "prune_optional" (enum filtering applies).
     pub prune_optional_tools: HashSet<String>,
+}
+
+/// Build [`ProcessGroupsOptions`] from optional policy fields (Python/Node FFI).
+pub fn process_groups_options_from_fields(
+    system_preserve: Option<Vec<String>>,
+    mcp_preserve: Option<Vec<String>>,
+    required_by_tool: Option<HashMap<String, Vec<String>>>,
+    required_enum_values_by_tool: Option<HashMap<String, Vec<String>>>,
+    prune_optional_tools: Option<Vec<String>>,
+) -> ProcessGroupsOptions {
+    let required_by_tool = required_by_tool
+        .or(required_enum_values_by_tool)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().collect()))
+        .collect();
+    ProcessGroupsOptions {
+        system_preserve: system_preserve.map(|items| items.into_iter().collect()),
+        mcp_preserve: mcp_preserve.map(|items| items.into_iter().collect()),
+        required_by_tool,
+        prune_optional_tools: prune_optional_tools
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+    }
 }
 
 pub fn process_groups(
@@ -461,7 +545,7 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
             continue;
         }
         let suffix = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        if suffix.eq_ignore_ascii_case(trim_dot(MD_EXT)) {
+        if suffix.eq_ignore_ascii_case(trim_dot(&md_ext())) {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 md_entries.push(json!({
                     "id": path.file_stem().unwrap_or_default().to_string_lossy(),
@@ -473,7 +557,7 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
                     "content": content,
                 }));
             }
-        } else if suffix.eq_ignore_ascii_case(trim_dot(JSON_EXT)) {
+        } else if suffix.eq_ignore_ascii_case(trim_dot(&json_ext())) {
             let raw_text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
             let content: Value = serde_json::from_str(&raw_text).map_err(|e| e.to_string())?;
             let line_count = raw_text.lines().count();

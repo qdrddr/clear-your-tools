@@ -45,7 +45,7 @@ Other CLI entry points work the same way with `uv run` (for example `uv run cyt 
 └── src/
     └── cyt/                       # installable package (Clear Your Tools)
         ├── config/                # load_config, defaults.yaml
-        ├── common/                # catalog_paths, token_usage, pricing
+        ├── common/                # path_constants, runtime_constants, token_usage, pricing
         ├── indexer/               # build, retrieve, catalog_io, tokens (tiktoken)
         ├── pruners/               # llm, rerank, policies
         └── proxy/                 # transport, reverse, anthropic, stats, cli
@@ -58,6 +58,15 @@ from cyt.indexer import CatalogIndex, build_catalog_index, load_catalog, retriev
 from cyt.pruners import rerank_catalog_dict, llm_catalog_dict
 from cyt.pruners.policies import configure_policies_from_config
 from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
+```
+
+Advanced (submodules — not re-exported from `cyt.indexer`):
+
+```python
+from cyt.indexer.catalog_io import CatalogBuilder, write_catalog_index
+from cyt.indexer.tokens import count_tokens, count_json_tokens, compact_json
+from cyt.indexer.build import collect_enums, prepare_tool_entry, prepare_system_tool_entry
+from cyt.common.path_constants import DECOMPOSED_PREFIX
 ```
 
 ## Configuration reference

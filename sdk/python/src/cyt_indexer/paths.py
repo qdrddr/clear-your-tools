@@ -1,61 +1,62 @@
-"""Decomposed catalog path helpers (SDK-local copy)."""
+"""Path helpers and runtime config (defaults and overrides live in Rust PathConfig)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-JSON_EXT = ".json"
-MD_EXT = ".md"
-DECOMPOSED_PREFIX = "schemas/decomposed/"
-DECOMPOSED_ROOT = Path("schemas/decomposed")
+from cyt_indexer._native import (
+    collect_enums as _collect_enums,
+)
+from cyt_indexer._native import (
+    configure_path_constants as _configure_path_constants_native,
+)
+from cyt_indexer._native import (
+    get_root_tool_key as _get_root_tool_key,
+)
+from cyt_indexer._native import (
+    to_decomposed_key as _to_decomposed_key,
+)
+from cyt_indexer._native import (
+    tool_id_from_decomposed_rel as _tool_id_from_decomposed_rel,
+)
+
+
+def configure_path_constants(
+    *,
+    md_ext: str,
+    json_ext: str,
+    decomposed_prefix: str,
+    decomposed_root: str | Path,
+    catalog_prefix: str,
+    builder_memory_only: bool,
+    default_catalog_dir: str | Path,
+    write_catalog_prune: bool,
+) -> None:
+    """Push host app overrides into native PathConfig (Rust defaults when not called)."""
+    _configure_path_constants_native(
+        md_ext,
+        json_ext,
+        decomposed_prefix,
+        str(decomposed_root),
+        catalog_prefix,
+        builder_memory_only,
+        str(default_catalog_dir),
+        write_catalog_prune,
+    )
 
 
 def to_decomposed_key(file_path: str) -> str | None:
-    parts = Path(file_path).parts
-    for i in range(len(parts) - 1):
-        if parts[i] == "schemas" and parts[i + 1] == "decomposed":
-            return str(Path(*parts[i:]))
-    return None
+    return _to_decomposed_key(file_path)
 
 
 def tool_id_from_decomposed_rel(rel_path: str) -> str:
-    if rel_path.startswith(DECOMPOSED_PREFIX):
-        rel = rel_path[len(DECOMPOSED_PREFIX) :]
-    else:
-        rel = rel_path
-    parts = Path(rel).parts
-    if not parts:
-        return Path(rel).stem
-    first = parts[0]
-    if first.endswith(JSON_EXT):
-        return first[: -len(JSON_EXT)]
-    return first
+    return _tool_id_from_decomposed_rel(rel_path)
 
 
 def get_root_tool_key(file_path: str) -> str | None:
-    key = to_decomposed_key(file_path)
-    if key is None:
-        return None
-    rel = Path(key).relative_to(DECOMPOSED_ROOT)
-    if not rel.parts:
-        return None
-    if len(rel.parts) == 1 and rel.parts[0].endswith(JSON_EXT):
-        return key
-    tool_id = rel.parts[0]
-    return str(DECOMPOSED_ROOT / f"{tool_id}{JSON_EXT}")
+    return _get_root_tool_key(file_path)
 
 
-def collect_enums(schema: Any) -> list[Any]:
-    found: list[Any] = []
-    if isinstance(schema, dict):
-        if "enum" in schema and isinstance(schema["enum"], list):
-            found.extend(schema["enum"])
-        for val in schema.values():
-            if isinstance(val, dict | list):
-                found.extend(collect_enums(val))
-    elif isinstance(schema, list):
-        for item in schema:
-            if isinstance(item, dict | list):
-                found.extend(collect_enums(item))
-    return found
+def collect_enums(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(_collect_enums(schema))

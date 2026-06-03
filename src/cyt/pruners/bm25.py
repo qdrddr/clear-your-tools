@@ -29,14 +29,14 @@ from cyt.indexer.build import catalog_tool_count
 from cyt.pruners.documents import extract_json_catalog_document, extract_md_catalog_document
 from cyt.pruners.policies import (
     MCPToolPolicy,
+    PolicyContext,
     SystemToolPolicy,
     catalog_needs_partition,
     configure_policies_from_config,
     full_pass_through,
-    mcp_tool_policy,
     merge_catalog,
     partition_catalog,
-    system_tool_policy,
+    policy_context_from_config,
 )
 from cyt.pruners.rerank import RERANK_ENUM_SCORE, RERANK_ENUMS, RERANK_SCORE
 
@@ -71,12 +71,7 @@ def build_bm25_tokenizer(config: dict[str, Any] | None = None) -> Tokenizer:
     )
 
 
-def _catalog_documents(
-    data: dict[str, Any],
-    *,
-    stem_language: str,
-    stopwords: str,
-) -> list[tuple[str, str, str, int]]:
+def _catalog_documents(data: dict[str, Any]) -> list[tuple[str, str, str, int]]:
     """Return sorted (list_key, file_path, text, item_index) for fingerprinting and indexing."""
     docs: list[tuple[str, str, str, int]] = []
     for list_key in ("json", "md"):
@@ -108,7 +103,7 @@ def catalog_fingerprint(
     cfg = config or load_config()
     stem_language = bm25_stem_language(cfg)
     stopwords = bm25_stopwords(cfg)
-    docs = _catalog_documents(data, stem_language=stem_language, stopwords=stopwords)
+    docs = _catalog_documents(data)
     hasher = hashlib.sha256()
     hasher.update(stem_language.encode("utf-8"))
     hasher.update(b"\0")
@@ -204,7 +199,7 @@ def build_or_load_index(
     mmap = bm25_mmap_enabled(cfg)
     tokenizer = build_bm25_tokenizer(cfg)
 
-    docs = _catalog_documents(data, stem_language=stem_language, stopwords=stopwords)
+    docs = _catalog_documents(data)
     if not docs:
         return None
 
@@ -316,23 +311,24 @@ def bm25_catalog_dict(
     query: str,
     *,
     prune: bool = True,
-    system_policy: SystemToolPolicy | None = system_tool_policy,
-    mcp_policy: MCPToolPolicy | None = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
+    system_policy: SystemToolPolicy | None = None,
+    mcp_policy: MCPToolPolicy | None = None,
     merge_pinned: bool = True,
     config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
-    if (
-        system_policy is not None
-        and mcp_policy is not None
-        and full_pass_through(system_policy, mcp_policy)
-    ):
+    policy_ctx = ctx
+    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
+        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy, config=config)
+
+    if policy_ctx is not None and full_pass_through(policy_ctx):
         return data, empty_usage()
 
     cfg = config or load_config()
     pinned: dict[str, Any] = {}
-    if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
-        data, pinned = partition_catalog(data, system_policy, mcp_policy)
+    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
+        data, pinned = partition_catalog(data, policy_ctx)
 
     index = build_or_load_index(data, config=cfg)
     if index is None:
@@ -374,7 +370,7 @@ def main() -> None:
     parser.add_argument("query", help="Search query")
 
     args = parser.parse_args()
-    configure_policies_from_config()
+    ctx = configure_policies_from_config()
 
     if args.json:
         try:
@@ -392,7 +388,7 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    data, _tokens = bm25_catalog_dict(data, args.query)
+    data, _tokens = bm25_catalog_dict(data, args.query, ctx=ctx)
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:

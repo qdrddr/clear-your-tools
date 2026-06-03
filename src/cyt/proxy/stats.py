@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import libsql_experimental as libsql
 from uuid_extensions import uuid7str
 
+from cyt.common.pricing import StatsCosts
 from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,7 @@ class ProxyRequestRecord:
 
 
 class StatsDB:
-    def __init__(self, conn: Any) -> None:
+    def __init__(self, conn: libsql.Connection) -> None:
         self._conn = conn
 
     @classmethod
@@ -576,7 +577,10 @@ def empty_totals() -> dict[str, int]:
     }
 
 
-def format_totals(totals: dict[str, int], costs: Any | None = None) -> str:
+def format_totals(
+    totals: dict[str, int],
+    costs: StatsCosts | None = None,
+) -> str:
     tools_accepted = totals.get("tools_accepted", 0)
     tools_saved = totals.get("tools_saved", 0)
     tools_saved_pct = (100.0 * tools_saved / tools_accepted) if tools_accepted else 0.0

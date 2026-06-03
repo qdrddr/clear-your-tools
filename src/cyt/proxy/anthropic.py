@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from cyt.common.token_usage import StageTokenUsage
 from cyt.config import (
@@ -19,6 +19,7 @@ from cyt.config import (
 )
 from cyt.indexer.build import (
     CatalogIndex,
+    ToolSchemaSource,
     build_catalog_index,
     catalog_tool_count,
     collect_enums,
@@ -29,21 +30,19 @@ from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
 from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (
-    MCPToolPolicy,
-    SystemToolPolicy,
+    PolicyContext,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
     is_decomposed_optional_property_chunk,
-    mcp_tool_policy,
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
     partition_catalog,
+    policy_context_from_config,
     request_pass_through,
-    system_tool_policy,
     tool_pass_through,
     tools_for_catalog,
 )
@@ -276,7 +275,7 @@ def anthropic_tools_to_catalog_entries(
             description=tool.get("description", "") or "",
             inputSchema=copy.deepcopy(input_schema),
         )
-        entry = prepare_tool_entry("", tool_obj)
+        entry = prepare_tool_entry("", cast(ToolSchemaSource, tool_obj))
         all_enums.extend(collect_enums(entry["full_schema"]["inputSchema"]))
         entries.append(entry)
     return entries, all_enums
@@ -300,13 +299,13 @@ def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, A
 _TOOL_SCHEMA_KEYS = ("parameters", "input_schema", "inputSchema")
 
 
-def _schema_value_from_api(api_tool: dict[str, Any], schema_key: str) -> Any | None:
+def _schema_value_from_api(api_tool: dict[str, Any], schema_key: str) -> object | None:
     if schema_key in api_tool:
-        return api_tool[schema_key]
+        return cast(object, api_tool[schema_key])
     if schema_key == "parameters" and "input_schema" in api_tool:
-        return api_tool["input_schema"]
+        return cast(object, api_tool["input_schema"])
     if schema_key in ("input_schema", "inputSchema") and "parameters" in api_tool:
-        return api_tool["parameters"]
+        return cast(object, api_tool["parameters"])
     return None
 
 
@@ -387,8 +386,7 @@ def _run_catalog_pruning(
     query: str,
     configured_pipeline: list[str] | None,
     capture_decomposed_catalog: bool,
-    system_policy: SystemToolPolicy,
-    mcp_policy: MCPToolPolicy,
+    ctx: PolicyContext,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, int],
@@ -428,8 +426,7 @@ def _run_catalog_pruning(
         query,
         pipeline,
         capture_catalog=capture_decomposed_catalog,
-        system_policy=system_policy,
-        mcp_policy=mcp_policy,
+        ctx=ctx,
     )
     tool_properties_count_out = _count_optional_property_chunks(data)
     pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
@@ -440,17 +437,15 @@ def _run_catalog_pruning(
         catalog_index=index,
         post_rerank_scored=post_rerank_scored,
         pruning_pipeline=pipeline,
-        system_policy=system_policy,
-        mcp_policy=mcp_policy,
+        ctx=ctx,
     )
     merged = retrieve_tools(
         recompose_data,
         catalog=index,
         apply_decomposed_score_filter=False,
-        system_policy=system_policy,
-        mcp_policy=mcp_policy,
+        ctx=ctx,
     )
-    merged = drop_recomposed_tools_with_empty_properties(merged, index)
+    merged = drop_recomposed_tools_with_empty_properties(merged, index, ctx)
     return (
         merged,
         decomposed,
@@ -521,8 +516,6 @@ def _run_rerank_stage(
         data,
         query,
         prune=False,
-        system_policy=None,
-        mcp_policy=None,
         merge_pinned=False,
     )
     pruning_token_usage["rerank"] = rerank_usage
@@ -551,13 +544,7 @@ def _run_llm_stage(
 ) -> dict[str, Any]:
     if trim_before_llm:
         data = trim_catalog_dict(data)
-    data, llm_usage = llm_catalog_dict(
-        data,
-        query,
-        system_policy=None,
-        mcp_policy=None,
-        merge_pinned=False,
-    )
+    data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
     pruning_token_usage["llm"] = llm_usage
     decomposed_breakdown["llm"] = _breakdown_entry(data)
     decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
@@ -576,14 +563,7 @@ def _run_bm25_stage(
     decomposed: dict[str, int],
     pruning_token_usage: dict[str, StageTokenUsage],
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
-    data, bm25_usage = bm25_catalog_dict(
-        data,
-        query,
-        prune=False,
-        system_policy=None,
-        mcp_policy=None,
-        merge_pinned=False,
-    )
+    data, bm25_usage = bm25_catalog_dict(data, query, prune=False, merge_pinned=False)
     pruning_token_usage["bm25"] = bm25_usage
     if capture_catalog and snapshots is not None:
         snapshots["bm25"] = _snapshot_catalog(data)
@@ -654,8 +634,7 @@ def _run_pruning_pipeline(
     query: str,
     pruning_pipeline: list[str],
     capture_catalog: bool = False,
-    system_policy: SystemToolPolicy = system_tool_policy,
-    mcp_policy: MCPToolPolicy = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -681,9 +660,10 @@ def _run_pruning_pipeline(
     if capture_catalog and snapshots is not None:
         snapshots["build_index"] = _snapshot_catalog(data)
 
+    policy_ctx = ctx or policy_context_from_config()
     pinned: dict[str, Any] = {}
-    if catalog_needs_partition(data):
-        data, pinned = partition_catalog(data, system_policy, mcp_policy)
+    if catalog_needs_partition(data, policy_ctx):
+        data, pinned = partition_catalog(data, policy_ctx)
 
     for i, stage in enumerate(pruning_pipeline):
         data, stage_post_rerank, stage_post_rerank_scored = _run_pipeline_stage(
@@ -734,28 +714,29 @@ def _json_entries_for_recompose(
     catalog_index: CatalogIndex,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
-    system_policy: SystemToolPolicy = system_tool_policy,
-    mcp_policy: MCPToolPolicy = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
+    policy_ctx = ctx or policy_context_from_config()
     entries: list[dict[str, Any]] = []
-    seen_paths: set[Any] = set()
+    seen_paths: set[object] = set()
 
-    def _append_unique(items: Any) -> None:
+    def _append_unique(items: object) -> None:
         if not isinstance(items, list):
             return
-        for item in items:
+        for item in cast(list[object], items):
             if not isinstance(item, dict):
                 continue
-            file_path = item.get("file_path")
+            chunk = cast(dict[str, Any], item)
+            file_path = chunk.get("file_path")
             if file_path in seen_paths:
                 continue
             seen_paths.add(file_path)
-            entries.append(copy.deepcopy(item))
+            entries.append(copy.deepcopy(chunk))
 
     if isinstance(pinned, dict):
         _append_unique(pinned.get("json"))
-    if catalog_needs_pruned_recompose(data) and post_rerank is not None:
+    if catalog_needs_pruned_recompose(data, policy_ctx) and post_rerank is not None:
         _append_unique(post_rerank.get("json"))
     llm_json = data.get("json") if isinstance(data.get("json"), list) else None
     _append_unique(llm_json)
@@ -769,12 +750,12 @@ def _json_entries_for_recompose(
 
     filtered = filter_recompose_json_entries(
         entries,
-        system_policy=system_policy,
-        mcp_policy=mcp_policy,
+        ctx=policy_ctx,
         llm_selected_paths=llm_selected_paths,
     )
     mitigated = mitigate_empty_optional_properties(
         filtered,
+        ctx=policy_ctx,
         catalog_index=catalog_index,
         post_rerank_scored=post_rerank_scored,
         pipeline=pipeline,
@@ -790,8 +771,7 @@ def _recompose_catalog_data(
     catalog_index: CatalogIndex,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
-    system_policy: SystemToolPolicy = system_tool_policy,
-    mcp_policy: MCPToolPolicy = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
 ) -> dict[str, Any]:
     """Build catalog dict for retrieve_tools after pruning.
 
@@ -807,8 +787,7 @@ def _recompose_catalog_data(
             catalog_index=catalog_index,
             post_rerank_scored=post_rerank_scored,
             pruning_pipeline=pruning_pipeline,
-            system_policy=system_policy,
-            mcp_policy=mcp_policy,
+            ctx=ctx,
         ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
@@ -844,8 +823,7 @@ def filter_tools_for_query(
     query: str,
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
-    system_policy: SystemToolPolicy = system_tool_policy,
-    mcp_policy: MCPToolPolicy = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
     tools_to_catalog_entries: Callable[
         [list[dict[str, Any]]],
         tuple[list[dict[str, Any]], list[Any]],
@@ -856,7 +834,8 @@ def filter_tools_for_query(
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
-    if request_pass_through(original_tools):
+    policy_ctx = ctx or policy_context_from_config()
+    if request_pass_through(original_tools, policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
             tools=original_tools,
@@ -891,14 +870,14 @@ def filter_tools_for_query(
         for tool in original_tools
         if isinstance(tool, dict)
         and (name := str(tool.get("name", "")))
-        and tool_pass_through(name)
+        and tool_pass_through(name, policy_ctx)
     }
 
-    catalog_source = tools_for_catalog(original_tools, system_policy, mcp_policy)
+    catalog_source = tools_for_catalog(original_tools, policy_ctx)
     to_catalog = tools_to_catalog_entries or anthropic_tools_to_catalog_entries
     to_api = merged_to_api_tools or _merged_tools_to_anthropic
     entries, enums = to_catalog(catalog_source)
-    entries = entries_for_policy(entries, system_policy, mcp_policy)
+    entries = entries_for_policy(entries, policy_ctx)
     if not entries:
         if restored := merge_tools_preserving_order(original_tools, {}, stashed_by_name):
             tokens_out = count_json_tokens(restored)
@@ -954,8 +933,7 @@ def filter_tools_for_query(
             query,
             configured_pipeline,
             capture_decomposed_catalog,
-            system_policy,
-            mcp_policy,
+            policy_ctx,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
@@ -1038,7 +1016,7 @@ def transform_anthropic_request(
     if not tools:
         return original, None
 
-    if request_pass_through(tools):
+    if request_pass_through(tools, policy_context_from_config()):
         tokens_in = count_json_tokens(tools)
         return original, PruneResult(
             tools=None,

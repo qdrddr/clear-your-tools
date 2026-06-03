@@ -1,3 +1,5 @@
+/** TypeScript SDK for cyt-indexer (Rust-backed catalog indexing). */
+
 export {
   CatalogIndex,
   buildCatalogIndex,
@@ -5,12 +7,38 @@ export {
   collectEnums,
 } from "./build.js";
 export {
-  DECOMPOSED_SCORE,
   DecomposedCatalog,
-  ENUM_SCORE,
   loadCatalog,
   retrieveTools,
   type JsonRecord,
+  type PolicyContextJs,
   type PolicyOptions,
   type RetrieveToolsOptions,
 } from "./retrieve.js";
+export {
+  configureRuntimeDefaults,
+  decomposedScore,
+  emptyOptionalFallbackK,
+  enumScore,
+  rerankScore,
+  type RuntimeDefaultsConfig,
+} from "./runtime-defaults.js";
+export {
+  configurePathConstants,
+  decomposedPrefix,
+  getRootToolKey,
+  jsonExt,
+  mdExt,
+  toDecomposedKey,
+  toolIdFromDecomposedRel,
+} from "./paths.js";
+export { CatalogBuilder, writeCatalogIndex } from "./catalog-io.js";
+export {
+  extractDocumentText,
+  extractJsonCatalogDocument,
+  extractLevelInfo,
+  extractMdCatalogDocument,
+} from "./documents.js";
+
+// Full policy surface (mirrors cyt_indexer.policies).
+export * from "./policies.js";

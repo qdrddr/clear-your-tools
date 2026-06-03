@@ -1,10 +1,11 @@
 """Tests for cyt.indexer.tokens (tiktoken cl100k_base)."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import tiktoken
 
-from cyt.indexer.build import prepare_tool_entry, truncate_description
+from cyt.indexer.build import ToolSchemaSource, prepare_tool_entry, truncate_description
 from cyt.indexer.tokens import compact_json, count_json_tokens, count_tokens
 from cyt.pruners.rerank import count_rerank_request_tokens, rerank_bulk_base_tokens
 
@@ -61,8 +62,7 @@ def test_truncate_description_word_boundary() -> None:
     words = ["intro"] + [f"word{i}" for i in range(200)]
     text = " ".join(words)
     result = truncate_description(text, max_tokens=25)
-    body = result.removesuffix("...")
-    if body:
+    if body := result.removesuffix("..."):
         assert body.split()[-1] in words
 
 
@@ -78,7 +78,7 @@ def test_prepare_tool_entry_summary_within_token_budget() -> None:
         description="x " * 400,
         inputSchema={"type": "object"},
     )
-    entry = prepare_tool_entry("srv", tool)
+    entry = prepare_tool_entry("srv", cast(ToolSchemaSource, tool))
     assert count_tokens(entry["summary"]) <= 60
 
 

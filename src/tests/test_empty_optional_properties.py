@@ -6,8 +6,7 @@ import json
 import unittest
 from typing import Any
 
-import cyt.pruners.policies as tool_policies
-from cyt.common.catalog_paths import DECOMPOSED_PREFIX
+from cyt.common.path_constants import DECOMPOSED_PREFIX
 from cyt.indexer.build import CatalogIndex, build_catalog_index
 from cyt.indexer.retrieve import retrieve_tools
 from cyt.pruners.policies import (
@@ -16,10 +15,13 @@ from cyt.pruners.policies import (
     drop_recomposed_tools_with_empty_properties,
     filter_recompose_json_entries,
     mitigate_empty_optional_properties,
+    policy_context_from_config,
     root_chunk_properties_empty,
     tool_id_had_empty_original_root_properties,
     tool_id_has_empty_decomposed_root,
 )
+
+_PRUNE_CTX = policy_context_from_config(system="prune_optional", mcp="prune_all")
 
 TOOL_ID = "mcp__test__empty_optional_tool"
 ORIGINALLY_EMPTY_TOOL_ID = "mcp__test__originally_empty_tool"
@@ -143,9 +145,10 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         self.post_rerank_scored = {"json": [self.root, *self.optional]}
 
     def test_rerank_adds_top_three_direct_root_optional(self) -> None:
-        filtered = filter_recompose_json_entries([self.root])
+        filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         result = mitigate_empty_optional_properties(
             filtered,
+            ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored=self.post_rerank_scored,
             pipeline=["rerank"],
@@ -160,9 +163,10 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         self.assertEqual(names, {"alpha", "beta", "gamma"})
 
     def test_rerank_recompose_has_three_properties(self) -> None:
-        filtered = filter_recompose_json_entries([self.root])
+        filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         mitigated = mitigate_empty_optional_properties(
             filtered,
+            ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored=self.post_rerank_scored,
             pipeline=["rerank"],
@@ -177,9 +181,10 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         self.assertEqual(set(schema.get("properties", {}).keys()), {"alpha", "beta", "gamma"})
 
     def test_llm_drops_tool_with_no_optional_survivors(self) -> None:
-        filtered = filter_recompose_json_entries([self.root])
+        filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         result = mitigate_empty_optional_properties(
             filtered,
+            ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored=self.post_rerank_scored,
             pipeline=["rerank", "llm"],
@@ -187,23 +192,16 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_always_include_not_dropped_by_safety_net(self) -> None:
-        old_system = tool_policies.system_tool_policy
-        old_per = dict(tool_policies.PER_TOOL_POLICIES)
-        try:
-            tool_policies.PER_TOOL_POLICIES[TOOL_ID] = "always_include"
-            tools = [
-                {
-                    "name": TOOL_ID,
-                    "description": "x",
-                    "inputSchema": {"type": "object", "properties": {}},
-                },
-            ]
-            kept = drop_recomposed_tools_with_empty_properties(tools, self.index)
-            self.assertEqual(len(kept), 1)
-        finally:
-            tool_policies.system_tool_policy = old_system
-            tool_policies.PER_TOOL_POLICIES.clear()
-            tool_policies.PER_TOOL_POLICIES.update(old_per)
+        ctx = policy_context_from_config(per_tool={TOOL_ID: "always_include"})
+        tools = [
+            {
+                "name": TOOL_ID,
+                "description": "x",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+        ]
+        kept = drop_recomposed_tools_with_empty_properties(tools, self.index, ctx)
+        self.assertEqual(len(kept), 1)
 
 
 class TestOriginallyEmptyRootException(unittest.TestCase):
@@ -225,9 +223,10 @@ class TestOriginallyEmptyRootException(unittest.TestCase):
         )
 
     def test_rerank_does_not_add_fallback_properties(self) -> None:
-        filtered = filter_recompose_json_entries([self.root])
+        filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         result = mitigate_empty_optional_properties(
             filtered,
+            ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored={"json": [self.root]},
             pipeline=["rerank"],
@@ -236,9 +235,10 @@ class TestOriginallyEmptyRootException(unittest.TestCase):
         self.assertEqual(direct_root_optional_chunks_for_tool(result, ORIGINALLY_EMPTY_TOOL_ID), [])
 
     def test_llm_keeps_tool_with_empty_properties(self) -> None:
-        filtered = filter_recompose_json_entries([self.root])
+        filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         result = mitigate_empty_optional_properties(
             filtered,
+            ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored={"json": [self.root]},
             pipeline=["rerank", "llm"],
@@ -254,7 +254,7 @@ class TestOriginallyEmptyRootException(unittest.TestCase):
                 "inputSchema": {"type": "object", "properties": {}},
             },
         ]
-        kept = drop_recomposed_tools_with_empty_properties(tools, self.index)
+        kept = drop_recomposed_tools_with_empty_properties(tools, self.index, _PRUNE_CTX)
         self.assertEqual(len(kept), 1)
 
 

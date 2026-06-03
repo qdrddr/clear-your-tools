@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import copy
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
-from cyt.common.catalog_paths import collect_enums
-from cyt.indexer.build import build_catalog_index, prepare_system_tool_entry, prepare_tool_entry
+from cyt.indexer.build import (
+    ToolSchemaSource,
+    build_catalog_index,
+    collect_enums,
+    prepare_system_tool_entry,
+    prepare_tool_entry,
+)
 from cyt.pruners.policies import (
     RERANK_SCORE,
     filter_recompose_json_entries,
@@ -18,11 +23,17 @@ from cyt.pruners.policies import (
     is_system_optional_chunk,
     is_system_root_chunk,
     partition_catalog,
+    policy_context_from_config,
 )
+
+_PRUNE_CTX = policy_context_from_config(system="prune_optional", mcp="prune_all")
 
 
 def _make_entry(name: str, schema: dict[str, Any], *, mcp: bool) -> dict[str, Any]:
-    tool = SimpleNamespace(name=name, description="Tool description", inputSchema=schema)
+    tool = cast(
+        ToolSchemaSource,
+        SimpleNamespace(name=name, description="Tool description", inputSchema=schema),
+    )
     if mcp:
         return prepare_tool_entry("srv", tool)
     return prepare_system_tool_entry(tool)
@@ -96,7 +107,7 @@ def test_partition_pins_system_roots_via_file_path() -> None:
         collect_enums(sys_entry["full_schema"]["inputSchema"]),
     ).to_catalog_dict()
 
-    _, pinned = partition_catalog(catalog, "prune_optional", "prune_all")
+    _, pinned = partition_catalog(catalog, _PRUNE_CTX)
     assert len(pinned["json"]) == 1
     assert is_system_root_chunk(pinned["json"][0])
     assert "optional_field" not in str(pinned["json"][0]["content"])
@@ -114,19 +125,14 @@ def test_filter_recompose_json_entries_drops_pruned_optionals() -> None:
 
     low_score_opt = copy.deepcopy(optionals[0])
     low_score_opt["score"] = 0.0001
-    filtered = filter_recompose_json_entries(
-        [roots[0], low_score_opt],
-        system_policy="prune_optional",
-        mcp_policy="prune_all",
-    )
+    filtered = filter_recompose_json_entries([roots[0], low_score_opt], ctx=_PRUNE_CTX)
     assert filtered == [roots[0]]
 
     below_threshold_opt = copy.deepcopy(optionals[0])
     below_threshold_opt["score"] = 0.0005
     filtered_weak = filter_recompose_json_entries(
         [roots[0], below_threshold_opt],
-        system_policy="prune_optional",
-        mcp_policy="prune_all",
+        ctx=_PRUNE_CTX,
     )
     assert filtered_weak == [roots[0]]
     assert below_threshold_opt["score"] < RERANK_SCORE
@@ -135,7 +141,6 @@ def test_filter_recompose_json_entries_drops_pruned_optionals() -> None:
 def test_bash_optional_not_restored_from_full_catalog_index() -> None:
     """Survivor-only recompose must not merge optional chunks present only in the full index."""
     from cyt.indexer.retrieve import retrieve_tools
-    from cyt.pruners.policies import partition_catalog
 
     bash_schema = {
         "type": "object",
@@ -148,14 +153,14 @@ def test_bash_optional_not_restored_from_full_catalog_index() -> None:
     sys_entry = _make_entry("Bash", bash_schema, mcp=False)
     index = build_catalog_index([sys_entry], [])
     catalog = index.to_catalog_dict()
-    _, pinned = partition_catalog(catalog, "prune_optional", "prune_all")
+    _, pinned = partition_catalog(catalog, _PRUNE_CTX)
 
     recompose_data = {"json": list(pinned["json"]), "md": []}
     tools = retrieve_tools(
         recompose_data,
         catalog=index,
         apply_decomposed_score_filter=False,
-        system_policy="prune_optional",
+        ctx=_PRUNE_CTX,
     )
     bash = next(t for t in tools if t.get("name") == "Bash")
     assert list(bash["inputSchema"]["properties"].keys()) == ["command"]

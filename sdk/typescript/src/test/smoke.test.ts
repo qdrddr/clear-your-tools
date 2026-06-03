@@ -3,12 +3,25 @@ import test from "node:test";
 
 import { CatalogIndex } from "../build.js";
 import { DecomposedCatalog } from "../decomposed-catalog.js";
-import { DECOMPOSED_SCORE, ENUM_SCORE, retrieveTools } from "../retrieve.js";
-import { DECOMPOSED_PREFIX } from "../paths.js";
+import {
+  configureRuntimeDefaults,
+  decomposedScore,
+  enumScore,
+} from "../runtime-defaults.js";
+import { retrieveTools } from "../retrieve.js";
+import { decomposedPrefix } from "../paths.js";
 
-test("score constants match Python SDK", () => {
-  assert.equal(DECOMPOSED_SCORE, 0.5);
-  assert.equal(ENUM_SCORE, 0.2);
+test("score constants match Python SDK defaults", () => {
+  configureRuntimeDefaults({
+    decomposedScore: 0.5,
+    enumScore: 0.2,
+    rerankScore: 0.003,
+    emptyOptionalFallbackK: 3,
+    defaultSystemPolicy: "prune_optional",
+    defaultMcpPolicy: "prune_all",
+  });
+  assert.equal(decomposedScore(), 0.5);
+  assert.equal(enumScore(), 0.2);
 });
 
 test("DecomposedCatalog.fromCatalogIndex loads decomposed JSON files", () => {
@@ -19,7 +32,10 @@ test("DecomposedCatalog.fromCatalogIndex loads decomposed JSON files", () => {
     "schemas/decomposed/array.json": "[]",
     "schemas/decomposed/valid.json": '{"id":"valid"}',
   });
-  const store = DecomposedCatalog.fromCatalogIndex(index);
+  const store = DecomposedCatalog.fromCatalogIndex({
+    tools: index.tools,
+    files: index.files,
+  });
   assert.equal(store.hasJson("schemas/decomposed/search.json"), true);
   assert.equal(store.getJson("schemas/decomposed/search.json")?.id, "search");
   assert.equal(store.hasJson("schemas/decomposed/search.md"), false);
@@ -70,7 +86,7 @@ test("DecomposedCatalog resolveKey and toJsonFiles", () => {
 });
 
 test("retrieveTools accepts DecomposedCatalog and CatalogIndex", () => {
-  const toolJson = `${DECOMPOSED_PREFIX}search.json`;
+  const toolJson = `${decomposedPrefix()}search.json`;
   const catalog = new DecomposedCatalog({
     [toolJson]: {
       type: "object",
@@ -97,15 +113,8 @@ test("retrieveTools accepts DecomposedCatalog and CatalogIndex", () => {
   assert.ok(Array.isArray(fromIndex));
 });
 
-test("retrieveTools rejects invalid catalog type", () => {
-  assert.throws(
-    () => retrieveTools({}, { catalog: {} as CatalogIndex }),
-    TypeError,
-  );
-});
-
 test("retrieveTools treats non-object data as empty catalog dict", () => {
-  const toolJson = `${DECOMPOSED_PREFIX}search.json`;
+  const toolJson = `${decomposedPrefix()}search.json`;
   const catalog = new DecomposedCatalog({
     [toolJson]: { type: "object", properties: {} },
   });

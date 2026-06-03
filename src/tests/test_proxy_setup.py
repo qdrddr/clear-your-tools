@@ -277,35 +277,48 @@ class TestPrimaryModelPricing:
         assert "$0.3" in error
 
 
-class TestFilterCatalogByUpstreams:
-    _CATALOG: list[dict[str, Any]] = [
-        {"nick": "openrouter-model", "domain_match": ["openrouter.ai"]},
-        {"nick": "anthropic-model", "domain_match": ["api.anthropic.com"]},
-        {"nick": "no-domain-match"},
-        {"nick": "openai-model", "domain_match": ["openai.com"]},
-    ]
+_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES: list[dict[str, Any]] = [
+    {"nick": "openrouter-model", "domain_match": ["openrouter.ai"]},
+    {"nick": "anthropic-model", "domain_match": ["api.anthropic.com"]},
+    {"nick": "no-domain-match"},
+    {"nick": "openai-model", "domain_match": ["openai.com"]},
+]
 
+
+class TestFilterCatalogByUpstreams:
     def test_filters_by_upstream_hostname(self) -> None:
         upstreams = [{"url": "https://api.anthropic.com"}]
-        filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
+        filtered = filter_catalog_by_upstreams(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, upstreams)
         assert [e["nick"] for e in filtered] == ["anthropic-model"]
 
     def test_returns_all_when_no_match(self) -> None:
         upstreams = [{"url": "https://api.example.com/v1"}]
-        filtered = filter_catalog_by_upstreams(self._CATALOG, upstreams)
-        assert filtered == self._CATALOG
+        filtered = filter_catalog_by_upstreams(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, upstreams)
+        assert filtered == _FILTER_CATALOG_BY_UPSTREAMS_ENTRIES
 
     def test_returns_all_when_upstreams_empty(self) -> None:
-        assert filter_catalog_by_upstreams(self._CATALOG, []) == self._CATALOG
-        assert filter_catalog_by_upstreams(self._CATALOG, None) == self._CATALOG
+        assert (
+            filter_catalog_by_upstreams(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, [])
+            == _FILTER_CATALOG_BY_UPSTREAMS_ENTRIES
+        )
+        assert (
+            filter_catalog_by_upstreams(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, None)
+            == _FILTER_CATALOG_BY_UPSTREAMS_ENTRIES
+        )
 
     def test_has_match_when_filtered(self) -> None:
         upstreams = [{"url": "https://api.anthropic.com"}]
-        assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is True
+        assert (
+            catalog_has_upstream_domain_match(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, upstreams)
+            is True
+        )
 
     def test_no_match_for_unknown_host(self) -> None:
         upstreams = [{"url": "https://api.example.com/v1"}]
-        assert catalog_has_upstream_domain_match(self._CATALOG, upstreams) is False
+        assert (
+            catalog_has_upstream_domain_match(_FILTER_CATALOG_BY_UPSTREAMS_ENTRIES, upstreams)
+            is False
+        )
 
 
 class TestUpstreamUrlDefault:
@@ -666,7 +679,6 @@ class TestPromptCustomModel:
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         result = _prompt_custom_model(
-            kind_label="reranker model",
             prompt_base_url=True,
         )
         assert "base_url" not in result
@@ -687,7 +699,6 @@ class TestPromptCustomModel:
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         result = _prompt_custom_model(
-            kind_label="reranker model",
             default_base_url="https://api.anthropic.com",
             prompt_base_url=True,
         )
@@ -709,7 +720,6 @@ class TestPromptCustomModel:
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         result = _prompt_custom_model(
-            kind_label="reranker model",
             max_input_cost_per_token=3e-07,
         )
         assert result["pricing"]["input_cost_per_token"] == pytest.approx(5e-08)

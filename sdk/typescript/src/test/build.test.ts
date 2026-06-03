@@ -23,14 +23,11 @@ test("CatalogIndex.toCatalogDict builds json and markdown entries", () => {
   assert.equal(dict.json[0]?.id, "search");
 });
 
-test("CatalogIndex.toCatalogDict rejects non-object JSON", () => {
-  assert.throws(
-    () =>
-      new CatalogIndex([], {
-        "schemas/decomposed/broken.json": "[]",
-      }).toCatalogDict(),
-    TypeError,
-  );
+test("CatalogIndex.toCatalogDict skips non-object JSON", () => {
+  const dict = new CatalogIndex([], {
+    "schemas/decomposed/broken.json": "[]",
+  }).toCatalogDict();
+  assert.equal(dict.json.length, 0);
 });
 
 test("buildCatalogIndex returns in-memory catalog", () => {

@@ -14,7 +14,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.proxy.anthropic import PruneResult
+    from cyt.proxy.stats import ProxyRequestRecord, StatsDB
 
 import httpx
 from starlette.applications import Starlette
@@ -194,12 +198,12 @@ def _bytes_to_log_text(body: bytes, content_type: str | None = None) -> str:
 
 
 def _maybe_truncated_payload(
-    payload: Any,
+    payload: object,
     *,
     original_len: int,
     max_bytes: int | None,
     wrap_key: str,
-) -> Any:
+) -> object:
     if max_bytes is not None and original_len > max_bytes:
         return {
             wrap_key: payload,
@@ -214,7 +218,7 @@ def _snapshot_decoded_json(
     *,
     original_len: int,
     max_bytes: int | None,
-) -> Any | None:
+) -> object | None:
     try:
         value = json.loads(decoded)
     except json.JSONDecodeError:
@@ -233,7 +237,7 @@ def body_for_snapshot(
     *,
     content_encoding: str | None = None,
     max_bytes: int | None = None,
-) -> Any:
+) -> object | None:
     if not body:
         return None
     original_len = len(body)
@@ -504,10 +508,10 @@ def build_stats_record(
     target_url: str,
     upstream_model: str | None,
     pruning_pipeline: list[str] | None,
-    pruning: Any,
+    pruning: PruneResult,
     config: dict[str, Any],
     store_full_tools: bool,
-) -> Any:
+) -> ProxyRequestRecord:
     from cyt.proxy.stats import ProxyRequestRecord, lookup_model_provider, provider_dns_from_url
 
     provider, provider_dns = lookup_model_provider(upstream_model, config)
@@ -546,7 +550,7 @@ def build_stats_record(
     )
 
 
-def _record_stats_async(stats_db: Any, record: Any) -> None:
+def _record_stats_async(stats_db: StatsDB, record: ProxyRequestRecord) -> None:
     try:
         stats_db.record_proxy_request(record)
     except Exception as exc:
@@ -568,7 +572,7 @@ def _extract_upstream_model(
     return str(model) if model is not None else None
 
 
-def _schedule_stats_record(stats_db: Any, record: Any) -> None:
+def _schedule_stats_record(stats_db: StatsDB, record: ProxyRequestRecord) -> None:
     task = asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
@@ -690,7 +694,7 @@ async def _proxy_request(
     debug_log_max_body_bytes: int | None,
     debug_log_dir: Path | None,
     debug_trace: DebugTrace | None,
-    stats_db: Any | None,
+    stats_db: StatsDB | None,
     store_full_tools: bool,
     config: dict[str, Any] | None,
 ) -> Response:
@@ -804,7 +808,7 @@ def create_app(
     debug_log_max_body_bytes: int | None = None,
     debug_log_dir: Path | None = None,
     debug_trace: DebugTrace | None = None,
-    stats_db: Any | None = None,
+    stats_db: StatsDB | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
     http2_upstream: bool = False,

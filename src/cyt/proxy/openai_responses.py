@@ -15,7 +15,7 @@ from cyt.proxy.anthropic import (
     filter_tools_for_query,
     merge_api_tool_onto_original,
 )
-from cyt.pruners.policies import request_pass_through
+from cyt.pruners.policies import policy_context_from_config, request_pass_through
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +250,7 @@ def _prune_openai_tools_array(
     if not tools:
         return None, None
 
-    if request_pass_through(tools):
+    if request_pass_through(tools, policy_context_from_config()):
         tokens_in = count_json_tokens(tools)
         return tools, PruneResult(
             tools=None,

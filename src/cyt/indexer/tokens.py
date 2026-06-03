@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from functools import lru_cache
-from typing import Any
 
 import tiktoken
 
@@ -25,7 +24,7 @@ def _encoding() -> tiktoken.Encoding:
     return tiktoken.get_encoding("cl100k_base")
 
 
-def compact_json(obj: Any) -> str:
+def compact_json(obj: object) -> str:
     """Serialize JSON without indentation (stable token accounting)."""
     try:
         return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
@@ -38,7 +37,7 @@ def count_tokens(text: str) -> int:
     return len(_encoding().encode(text, allowed_special="all"))
 
 
-def count_json_tokens(obj: Any) -> int:
+def count_json_tokens(obj: object) -> int:
     """Compact-serialize obj and return its token count."""
     return count_tokens(compact_json(obj))
 
@@ -65,10 +64,8 @@ def truncate_description(description: str | None, max_tokens: int = 60) -> str:
             hi = mid - 1
 
     body = description[:lo]
-    if " " in body:
-        trimmed = body.rsplit(" ", 1)[0]
-        if trimmed:
-            body = trimmed
+    if " " in body and (trimmed := body.rsplit(" ", 1)[0]):
+        body = trimmed
 
     return f"{body}{suffix}"
 

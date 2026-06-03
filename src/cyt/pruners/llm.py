@@ -14,20 +14,21 @@ from cyt.config import (
     llm_minimum_tools,
     load_config,
     remote_model_entry,
+    require_proxy_env,
     resolve_model,
 )
 from cyt.indexer.build import catalog_tool_count
 from cyt.indexer.tokens import compact_json, count_tokens, log_token_usage
 from cyt.pruners.policies import (
     MCPToolPolicy,
+    PolicyContext,
     SystemToolPolicy,
     catalog_needs_partition,
     configure_policies_from_config,
     full_pass_through,
-    mcp_tool_policy,
     merge_catalog,
     partition_catalog,
-    system_tool_policy,
+    policy_context_from_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ def count_llm_request_tokens(query: str, chunks_text: str) -> int:
 
 
 def _usage_from_litellm_response(
-    response: Any,
+    response: object,
     fallback_output_text: str,
     *,
     settings: LlmPruningSettings,
@@ -351,16 +352,17 @@ def llm_catalog_dict(
     data: dict[str, Any],
     query: str,
     *,
-    system_policy: SystemToolPolicy | None = system_tool_policy,
-    mcp_policy: MCPToolPolicy | None = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
+    system_policy: SystemToolPolicy | None = None,
+    mcp_policy: MCPToolPolicy | None = None,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
-    if (
-        system_policy is not None
-        and mcp_policy is not None
-        and full_pass_through(system_policy, mcp_policy)
-    ):
+    policy_ctx = ctx
+    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
+        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy)
+
+    if policy_ctx is not None and full_pass_through(policy_ctx):
         return data, empty_usage()
 
     minimum_tools = llm_minimum_tools()
@@ -375,8 +377,8 @@ def llm_catalog_dict(
 
     settings = llm_pruning_settings()
     pinned: dict[str, Any] = {}
-    if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
-        data, pinned = partition_catalog(data, system_policy, mcp_policy)
+    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
+        data, pinned = partition_catalog(data, policy_ctx)
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 
@@ -425,7 +427,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    configure_policies_from_config()
+    config = load_config()
+    require_proxy_env(config)
+    ctx = configure_policies_from_config(config)
 
     if args.json:
         data = read_json_input(args.json)
@@ -439,7 +443,7 @@ def main() -> None:
             sys.exit(1)
 
     try:
-        result, _tokens = llm_catalog_dict(data, args.query)
+        result, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
             with open(args.output_json, "w") as f:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Any, Protocol
 
 from cyt_indexer.build import (
     CatalogIndex,
@@ -16,6 +16,7 @@ from cyt.indexer.tokens import truncate_description
 
 __all__ = [
     "CatalogIndex",
+    "ToolSchemaSource",
     "build_catalog_index",
     "catalog_tool_count",
     "collect_enums",
@@ -25,15 +26,24 @@ __all__ = [
 ]
 
 
-def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:
-    """Build one non-system (mcp__ id) or generic tool catalog entry without file I/O."""
-    tool_id: str = tool.name
+class ToolSchemaSource(Protocol):
+    """MCP / agent tool object with name, description, and JSON Schema input."""
 
+    name: str
+    description: str | None
+    inputSchema: dict[str, Any]  # noqa: N815 — matches MCP tool objects
+
+
+def prepare_tool_entry(server_name: str, tool: ToolSchemaSource) -> dict[str, Any]:
+    """Build one non-system (mcp__ id) or generic tool catalog entry without file I/O."""
+    tool_id = str(tool.name)
+    description = tool.description
     input_schema = copy.deepcopy(tool.inputSchema)
+
     full_schema = {
         "id": tool_id,
         "name": tool_id,
-        "description": tool.description,
+        "description": description,
         "inputSchema": input_schema,
     }
 
@@ -41,11 +51,11 @@ def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:
         "id": tool_id,
         "server": server_name,
         "tool": tool_id,
-        "summary": truncate_description(tool.description or ""),
+        "summary": truncate_description(description or ""),
         "full_schema": full_schema,
     }
 
 
-def prepare_system_tool_entry(tool: Any) -> dict[str, Any]:
+def prepare_system_tool_entry(tool: ToolSchemaSource) -> dict[str, Any]:
     """Build a system tool entry (id does not use mcp__ prefix)."""
     return prepare_tool_entry("", tool)

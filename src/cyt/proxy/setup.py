@@ -906,7 +906,6 @@ def _select_model_from_catalog(
         )
 
     return _prompt_custom_model(
-        kind_label=label,
         prompt_key_var=prompt_key_var,
         domain_match_upstreams=domain_match_upstreams,
         default_base_url=custom_default_base_url,
@@ -978,7 +977,6 @@ def _confirm_model_fields(
 
 def _prompt_custom_model(
     *,
-    kind_label: str,
     prompt_key_var: bool = True,
     domain_match_upstreams: list[dict[str, Any]] | None = None,
     default_base_url: str | None = None,

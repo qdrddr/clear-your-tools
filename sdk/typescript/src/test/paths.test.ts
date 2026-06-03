@@ -3,18 +3,18 @@ import test from "node:test";
 
 import { collectEnums } from "../build.js";
 import {
-  DECOMPOSED_PREFIX,
+  decomposedPrefix,
   getRootToolKey,
-  JSON_EXT,
-  MD_EXT,
+  jsonExt,
+  mdExt,
   toDecomposedKey,
   toolIdFromDecomposedRel,
 } from "../paths.js";
 
 test("path constants are stable", () => {
-  assert.equal(JSON_EXT, ".json");
-  assert.equal(MD_EXT, ".md");
-  assert.equal(DECOMPOSED_PREFIX, "schemas/decomposed/");
+  assert.equal(jsonExt(), ".json");
+  assert.equal(mdExt(), ".md");
+  assert.equal(decomposedPrefix(), "schemas/decomposed/");
 });
 
 test("toDecomposedKey normalizes catalog paths", () => {
@@ -27,7 +27,7 @@ test("toDecomposedKey normalizes catalog paths", () => {
 
 test("toolIdFromDecomposedRel extracts tool ids", () => {
   assert.equal(
-    toolIdFromDecomposedRel(`${DECOMPOSED_PREFIX}search/query.json`),
+    toolIdFromDecomposedRel(`${decomposedPrefix()}search/query.json`),
     "search",
   );
   assert.equal(toolIdFromDecomposedRel("search/query.json"), "search");
@@ -35,15 +35,15 @@ test("toolIdFromDecomposedRel extracts tool ids", () => {
 
 test("getRootToolKey resolves nested paths to root tool json", () => {
   assert.equal(
-    getRootToolKey(`${DECOMPOSED_PREFIX}search/query/fields/name.json`),
-    `${DECOMPOSED_PREFIX}search.json`,
+    getRootToolKey(`${decomposedPrefix()}search/query/fields/name.json`),
+    `${decomposedPrefix()}search.json`,
   );
   assert.equal(
-    getRootToolKey(`${DECOMPOSED_PREFIX}search.json`),
-    `${DECOMPOSED_PREFIX}search.json`,
+    getRootToolKey(`${decomposedPrefix()}search.json`),
+    `${decomposedPrefix()}search.json`,
   );
   assert.equal(getRootToolKey("not/a/decomposed/path.json"), null);
-  assert.equal(getRootToolKey(`${DECOMPOSED_PREFIX}`), null);
+  assert.equal(getRootToolKey(`${decomposedPrefix()}`), null);
 });
 
 test("collectEnums walks nested schema objects", () => {

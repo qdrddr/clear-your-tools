@@ -264,9 +264,13 @@ def test_mitigate_empty_optional_properties_with_bm25_stage() -> None:
         prop = str(item.get("file_path", "")).split("/")[-1].replace(".json", "")
         item["score"] = f"{scores.get(prop, 0.0):.20f}"
 
-    filtered = filter_recompose_json_entries([root])
+    from cyt.pruners.policies import policy_context_from_config
+
+    ctx = policy_context_from_config(system="prune_optional", mcp="prune_all")
+    filtered = filter_recompose_json_entries([root], ctx=ctx)
     mitigated = mitigate_empty_optional_properties(
         filtered,
+        ctx=ctx,
         catalog_index=index,
         post_rerank_scored={"json": [root, *optional]},
         pipeline=["bm25"],

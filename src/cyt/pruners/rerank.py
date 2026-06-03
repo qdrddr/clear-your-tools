@@ -2,7 +2,8 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from litellm import rerank
@@ -13,6 +14,7 @@ from cyt.config import (
     key_var_name_for_model_nick,
     load_config,
     remote_model_entry,
+    require_proxy_env,
     reranker_minimum_tools,
     resolve_model,
 )
@@ -23,21 +25,20 @@ from cyt.pruners.documents import (
     extract_md_catalog_document,
 )
 from cyt.pruners.policies import (
+    RERANK_SCORE,
     MCPToolPolicy,
+    PolicyContext,
     SystemToolPolicy,
     catalog_needs_partition,
     configure_policies_from_config,
     full_pass_through,
-    mcp_tool_policy,
     merge_catalog,
     partition_catalog,
-    system_tool_policy,
+    policy_context_from_config,
 )
 from cyt.pruners.split import split_into_bulks
 
 logger = logging.getLogger(__name__)
-
-RERANK_SCORE: float = 0.003
 RERANK_ENUMS: bool = True
 RERANK_ENUM_SCORE: float = 0.0001
 
@@ -91,17 +92,23 @@ def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruni
     )
 
 
-def process_response(response: Any, valid_indices: list[int], items: list[dict[str, Any]]) -> None:
+def process_response(
+    response: object,
+    valid_indices: list[int],
+    items: list[dict[str, Any]],
+) -> None:
     """Processes the rerank response and updates item scores."""
     # LiteLLM's rerank response usually has a 'results' attribute or key
-    results_list = []
-    if hasattr(response, "results"):
-        results_list = response.results
-    elif isinstance(response, dict) and "results" in response:
-        results_list = response["results"]
-    else:
-        # Fallback if it's already a list
-        results_list = response
+    results_list: list[Any] = []
+    results_attr = getattr(response, "results", None)
+    if results_attr is not None:
+        results_list = list(cast(Any, results_attr))
+    elif isinstance(response, dict):
+        resp_dict = cast(dict[str, Any], response)
+        if "results" in resp_dict:
+            results_list = cast(list[Any], resp_dict["results"])
+    elif isinstance(response, list):
+        results_list = list(response)
 
     for result in results_list:
         try:
@@ -110,12 +117,14 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
             relevance_score = getattr(result, "relevance_score", None)
 
             # Fallback to dictionary access
-            if doc_idx is None:
+            if doc_idx is None and isinstance(result, dict):
                 doc_idx = result["index"]
-            if relevance_score is None:
+            if relevance_score is None and isinstance(result, dict):
                 relevance_score = result["relevance_score"]
 
-            original_idx = valid_indices[doc_idx]
+            if doc_idx is None or relevance_score is None:
+                continue
+            original_idx = valid_indices[int(doc_idx)]
             # Store as string with 20 decimal places to avoid scientific notation in JSON
             items[original_idx]["score"] = f"{relevance_score:.20f}"
         except (KeyError, TypeError, IndexError) as e:
@@ -176,7 +185,7 @@ def _rerank_single_bulk(
 
 def _prepare_rerank_documents(
     items: list[dict[str, Any]],
-    extract_fn: Any,
+    extract_fn: Callable[[dict[str, Any]], str | None],
 ) -> list[tuple[int, str]]:
     indexed_docs: list[tuple[int, str]] = []
     for i, item in enumerate(items):
@@ -232,7 +241,7 @@ def rerank_items(
     query: str,
     items: list[dict[str, Any]],
     settings: RerankPruningSettings,
-    extract_fn: Any,
+    extract_fn: Callable[[dict[str, Any]], str | None],
     min_score: float | None = None,
 ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
     """Generic reranking logic for both json and md items."""
@@ -296,16 +305,17 @@ def rerank_catalog_dict(
     query: str,
     *,
     prune: bool = True,
-    system_policy: SystemToolPolicy | None = system_tool_policy,
-    mcp_policy: MCPToolPolicy | None = mcp_tool_policy,
+    ctx: PolicyContext | None = None,
+    system_policy: SystemToolPolicy | None = None,
+    mcp_policy: MCPToolPolicy | None = None,
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
-    if (
-        system_policy is not None
-        and mcp_policy is not None
-        and full_pass_through(system_policy, mcp_policy)
-    ):
+    policy_ctx = ctx
+    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
+        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy)
+
+    if policy_ctx is not None and full_pass_through(policy_ctx):
         return data, empty_usage()
 
     if _below_reranker_minimum_tools(data):
@@ -314,8 +324,8 @@ def rerank_catalog_dict(
     settings = rerank_pruning_settings()
     total_usage = empty_usage()
     pinned: dict[str, Any] = {}
-    if system_policy is not None and mcp_policy is not None and catalog_needs_partition(data):
-        data, pinned = partition_catalog(data, system_policy, mcp_policy)
+    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
+        data, pinned = partition_catalog(data, policy_ctx)
 
     if "json" in data and isinstance(data["json"], list):
         data["json"], json_usage = rerank_items(
@@ -366,7 +376,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    configure_policies_from_config()
+    config = load_config()
+    require_proxy_env(config)
+    ctx = configure_policies_from_config(config)
 
     if args.json:
         try:
@@ -384,7 +396,7 @@ def main() -> None:
             print(f"Error loading catalog directory: {e}", file=sys.stderr)
             sys.exit(1)
 
-    data, _tokens = rerank_catalog_dict(data, args.query)
+    data, _tokens = rerank_catalog_dict(data, args.query, ctx=ctx)
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:

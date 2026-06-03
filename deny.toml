@@ -14,11 +14,11 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "0BSD",
     "ISC",
     "Unicode-3.0",
     "Unlicense",
     "Zlib",
-    "0BSD",
 ]
 confidence-threshold = 0.8
 
