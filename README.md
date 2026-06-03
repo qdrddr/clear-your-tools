@@ -25,6 +25,23 @@ Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM2
 ![TypeScript][typescript-shield]
 ![Rust][rust-tech-shield]
 
+[![Windows][windows-shield]](#supported-platforms)
+[![macOS][macos-shield]](#supported-platforms)
+[![Linux][linux-shield]](#supported-platforms)
+
+  <table>
+    <tr>
+      <td align="center" width="120">
+        <img src="assets/claude.png" width="60" alt="Claude Code"/><br/>
+        <b>Claude Code</b>
+      </td>
+      <td align="center" width="120">
+        <img src="assets/codex.png" width="60" alt="Codex"/><br/>
+        <b>Codex</b>
+      </td>
+    </tr>
+  </table>
+
 </div>
 <!-- markdownlint-enable MD041 -->
 
@@ -43,11 +60,6 @@ Our Proxy sits between the agent and upstream
 LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts
 each request, and shrinks the tool payload before forwarding it upstream. Can be easily adopted for
 other harness agents.
-
-Supported and tested Agents:
-
-- **Claude Code CLI**
-- **Codex CLI**
 
 Examples of how to run these agents with the proxy can be found in the [`./examples/agents`](./examples/agents) directory.
 
@@ -107,6 +119,12 @@ On each intercepted request the proxy:
 - **Premium models** (e.g. Opus): Use an **LLM pruner + rerank** combined pipeline.
 
 </details>
+
+---
+
+## Supported platforms
+
+Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and **Linux**.
 
 ---
 
@@ -367,6 +385,9 @@ See [`LICENSE`](LICENSE).
 [python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
 [typescript-shield]: https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white
 [rust-tech-shield]: https://img.shields.io/badge/-Rust-3776AB?logo=rust&logoColor=white
+[windows-shield]: https://img.shields.io/badge/Windows-supported-0078D6?logo=windows&logoColor=white
+[macos-shield]: https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white
+[linux-shield]: https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black
 [license-link]: LICENSE
 [telemetry-shield]: https://img.shields.io/badge/No%20Telemetry-4EAA25?logo=shield&logoColor=white
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white

@@ -18,3 +18,8 @@ config:
       - strong
       - div
       - img
+      - table
+      - tr
+      - td
+      - b
+      - br
