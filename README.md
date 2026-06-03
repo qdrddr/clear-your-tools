@@ -9,12 +9,14 @@ Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM2
 
 [![version][version-shield]][release-link]
 [![license][license-shield]][license-link]
+![No Telemetry][telemetry-shield]
 [![discord][discord-shield]][discord-link]
 
 [![npm cyt-indexer-sdk][npm-sdk-shield]][npm-link]
 [![PyPI clear-your-tools][pypi-cyt-shield]][pypi-cyt-link]
 [![PyPI cyt-indexer-sdk][pypi-sdk-shield]][pypi-sdk-link]
-[![crates.io cyt-indexer][rust-crate-shield]][rust-link]
+[![crates.io cyt-indexer][rust-version-shield]][rust-link]
+[![crates.io downloads][rust-downloads-shield]][rust-link]
 
 ![Shell][shell-shield]
 ![Python][python-tech-shield]
@@ -354,13 +356,15 @@ See [`LICENSE`](LICENSE).
 [pypi-cyt-link]: https://pypi.org/project/clear-your-tools/
 [pypi-sdk-shield]: https://img.shields.io/pypi/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=pypi&logoColor=white&color=4EAA25
 [pypi-sdk-link]: https://pypi.org/project/cyt-indexer-sdk/
-[rust-crate-shield]: https://img.shields.io/crates/d/cyt-indexer?label=cyt-indexer%20downloads&logo=rust&color=3776AB&logoColor=white
+[rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?color=%23e6522c
+[rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?color=%23e6522c
 [rust-link]: https://crates.io/crates/cyt-indexer
 [shell-shield]: https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white
 [python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
 [typescript-shield]: https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white
 [rust-tech-shield]: https://img.shields.io/badge/-Rust-3776AB?logo=rust&logoColor=white
-[license-shield]: https://img.shields.io/badge/license-Apache--2.0-4385BE?style=flat-square&logoColor=white
+[license-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
 [license-link]: LICENSE
-[discord-shield]: https://img.shields.io/badge/Discord-AI%20Sky-3178C6?style=flat-square&logo=discord&logoColor=white
+[telemetry-shield]: https://img.shields.io/badge/No-Opt--in%20Only-4EAA25?logo=shield&logoColor=white
+[discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
