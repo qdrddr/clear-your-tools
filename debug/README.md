@@ -2,6 +2,11 @@
 
 How to run the reverse proxy with pruning debug output and inspect which tools were kept vs dropped.
 
+## cyt-indexer CLI
+
+Check how the app mutates the requests by decomposing tools and then re-composed based on survivors
+to see what the tool will change using [cyt-indexer-cli.sh](../search/cyt-indexer-cli.sh) script.
+
 ## Install and run
 
 From the repo (or any machine with the project deps):
