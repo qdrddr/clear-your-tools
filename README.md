@@ -14,9 +14,9 @@ Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM2
 ![No Telemetry][telemetry-shield]
 [![discord][discord-shield]][discord-link]
 
-[![npm cyt-indexer-sdk][npm-sdk-shield]][npm-link]
-[![PyPI clear-your-tools][pypi-cyt-shield]][pypi-cyt-link]
-[![PyPI cyt-indexer-sdk][pypi-sdk-shield]][pypi-sdk-link]
+[![npm][npm-sdk-shield]][npm-link]
+[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
+[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
 [![crates.io cyt-indexer][rust-version-shield]][rust-link]
 [![crates.io downloads][rust-downloads-shield]][rust-link]
 
@@ -372,11 +372,11 @@ See [`LICENSE`](LICENSE).
 [license-badge-shield]: https://img.shields.io/badge/License-Apache_2.0-yellow?style=for-the-badge
 [version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version&color=4385BE&logoColor=white
 [release-link]: https://github.com/qdrddr/clear-your-tools/releases
-[npm-sdk-shield]: https://img.shields.io/npm/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=npm&color=3178C6&logoColor=white
+[npm-sdk-shield]: https://img.shields.io/npm/dw/cyt-indexer-sdk?logo=npm&color=3178C6&logoColor=white
 [npm-link]: https://www.npmjs.com/package/cyt-indexer-sdk
-[pypi-cyt-shield]: https://img.shields.io/pypi/dw/clear-your-tools?label=clear-your-tools%20weekly%20downloads&logo=pypi&logoColor=white&color=2E8B57
+[pypi-cyt-shield]: https://img.shields.io/pypi/dw/clear-your-tools?logo=pypi&logoColor=white&color=2E8B57&label=CYT
 [pypi-cyt-link]: https://pypi.org/project/clear-your-tools/
-[pypi-sdk-shield]: https://img.shields.io/pypi/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=pypi&logoColor=white&color=4EAA25
+[pypi-sdk-shield]: https://img.shields.io/pypi/dw/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25&label=SDK
 [pypi-sdk-link]: https://pypi.org/project/cyt-indexer-sdk/
 [rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?color=%23e6522c
 [rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?color=%23e6522c
