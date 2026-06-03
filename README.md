@@ -7,8 +7,10 @@
 
 Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM25 default, no API keys required.
 
+[![Quick Start][quick-start-shield]](#quick-start)
+[![License][license-badge-shield]][license-link]
+
 [![version][version-shield]][release-link]
-[![license][license-shield]][license-link]
 ![No Telemetry][telemetry-shield]
 [![discord][discord-shield]][discord-link]
 
@@ -348,6 +350,8 @@ and can improve tool selection accuracy and overall agent reliability.
 
 See [`LICENSE`](LICENSE).
 
+[quick-start-shield]: https://img.shields.io/badge/Quick_Start-5_min-blue?style=for-the-badge
+[license-badge-shield]: https://img.shields.io/badge/License-Apache_2.0-yellow?style=for-the-badge
 [version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version&color=4385BE&logoColor=white
 [release-link]: https://github.com/qdrddr/clear-your-tools/releases
 [npm-sdk-shield]: https://img.shields.io/npm/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=npm&color=3178C6&logoColor=white
@@ -363,7 +367,6 @@ See [`LICENSE`](LICENSE).
 [python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
 [typescript-shield]: https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white
 [rust-tech-shield]: https://img.shields.io/badge/-Rust-3776AB?logo=rust&logoColor=white
-[license-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
 [license-link]: LICENSE
 [telemetry-shield]: https://img.shields.io/badge/No%20Telemetry-4EAA25?logo=shield&logoColor=white
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
