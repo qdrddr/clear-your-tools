@@ -16,3 +16,5 @@ config:
       - details
       - summary
       - strong
+      - div
+      - img

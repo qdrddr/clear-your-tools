@@ -1,4 +1,21 @@
+<!-- markdownlint-disable MD041 -->
+<div align="center">
+
+<img src="assets/logo.png" alt="Clear Your Tools" width="240">
+
 # Clear Your Tools
+
+Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM25 default, no API keys required.
+
+[![version][version-shield]][release-link]
+[![python][python-shield]][python-link]
+[![npm][npm-shield]][npm-link]
+[![rust][rust-shield]][rust-link]
+[![license][license-shield]][license-link]
+[![discord][discord-shield]][discord-link]
+
+</div>
+<!-- markdownlint-enable MD041 -->
 
 **Clear Your Tools** is a reverse proxy for coding agents such as
 [Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents).
@@ -321,3 +338,16 @@ and can improve tool selection accuracy and overall agent reliability.
 </details>
 
 See [`LICENSE`](LICENSE).
+
+[version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version
+[release-link]: https://github.com/qdrddr/clear-your-tools/releases
+[python-shield]: https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white
+[python-link]: https://www.python.org/downloads/
+[npm-shield]: https://img.shields.io/npm/v/cyt-indexer-sdk?style=flat-square&logo=npm&logoColor=white
+[npm-link]: https://www.npmjs.com/package/cyt-indexer-sdk
+[rust-shield]: https://img.shields.io/crates/v/cyt-indexer?style=flat-square&logo=rust&logoColor=white
+[rust-link]: https://crates.io/crates/cyt-indexer
+[license-shield]: https://img.shields.io/badge/license-Apache--2.0-4385BE?style=flat-square
+[license-link]: LICENSE
+[discord-shield]: https://img.shields.io/badge/Discord-AI%20Sky-5865F2?style=flat-square&logo=discord&logoColor=white
+[discord-link]: https://discord.com/invite/FhACaAAW9C
