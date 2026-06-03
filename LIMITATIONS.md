@@ -37,3 +37,31 @@ If the provider enforces a fixed *tools → system → messages* ordering at the
 but you also introduce a tradeoff: any change to the tool list invalidates the entire downstream cache.
 This deserves deeper investigation. What is obvious is that excess context leads to [context rot](https://www.trychroma.com/research/context-rot),
 and removing irrelevant information consistently improves an LLM’s cognitive performance.
+
+Codex already reduces tool sets by removing unused tools, but CYT goes further:
+it also prunes irrelevant optional fields and enums, something Codex never touches.
+Even when both are used together, CYT still cuts input tokens by an additional ~20%.
+
+Pruner Strategy and Accuracy  
+CYT’s default pruner is BM25: fast, local, and free. It isn’t the most advanced method,
+but you can swap it for a reranker or a small, cheap LLM if you want higher‑quality pruning.
+This is often worthwhile when using Claude Code, since Sonnet is expensive.
+
+A common worry is that pruning might cause multi‑step agents to “lose” tools or degrade semantics
+by removing tools. In practice, we haven’t seen this happen, for two reasons:
+
+1. **The user query is always preserved.**
+Each step is a new agent message, but the original user query is always included.
+Pruning is anchored to that query—not to intermediate reasoning—so every step receives the same stable,
+pruned tool list.
+
+2. **Losing intent is hallucination, not pruning failure.**
+If an agent drifts away from the user’s goal or tries to use irrelevant tools,
+that’s agent behavior, not missing tools. A larger tool list doesn’t fix hallucinations.
+
+- Dynamic tool reduction remains stable across multi‑step reasoning because pruning
+is tied to the user query.
+- If an agent “forgets” what it’s doing, that’s a hallucination issue,
+not a limitation of the pruning mechanism.
+- Semantic degradation is a legitimate concern that should be tested,
+and it can be reduced by using a stronger pruner pipeline and higher‑quality models.
