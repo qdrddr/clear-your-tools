@@ -38,7 +38,7 @@ jobs:
         run: sdk/e2e/scripts/resolve-version-from-parent.sh
 
   e2e-rust:
-    name: E2E cyt-indexer (crates.io)
+    name: 1. E2E cyt-indexer (crates.io)
     needs: resolve-version
     if: |
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
@@ -62,7 +62,7 @@ jobs:
         run: cargo test
 
   e2e-python-sdk:
-    name: E2E cyt-indexer-sdk (PyPI)
+    name: 2. E2E cyt-indexer-sdk (PyPI)
     needs: resolve-version
     if: |
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
@@ -91,7 +91,7 @@ jobs:
           uv run pytest
 
   e2e-typescript:
-    name: E2E cyt-indexer-sdk (npm)
+    name: 2. E2E cyt-indexer-sdk (npm)
     needs: resolve-version
     if: |
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
@@ -119,7 +119,7 @@ jobs:
           npm test
 
   e2e-clear-your-tools:
-    name: E2E clear-your-tools (PyPI)
+    name: 3. E2E clear-your-tools (PyPI)
     needs: resolve-version
     if: |
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
