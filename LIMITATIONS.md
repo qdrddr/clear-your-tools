@@ -42,7 +42,7 @@ Codex already reduces tool sets by removing unused tools, but CYT goes further:
 it also prunes irrelevant optional fields and enums, something Codex never touches.
 Even when both are used together, CYT still cuts input tokens by an additional ~20%.
 
-Pruner Strategy and Accuracy  
+Pruner Strategy and Accuracy
 CYT’s default pruner is BM25: fast, local, and free. It isn’t the most advanced method,
 but you can swap it for a reranker or a small, cheap LLM if you want higher‑quality pruning.
 This is often worthwhile when using Claude Code, since Sonnet is expensive.

@@ -15,7 +15,7 @@ Output:
 import argparse
 import json
 
-import tiktoken
+from cyt.indexer.tokens import count_json_tokens
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--requestfile", required=True, help="Path to the request JSON file")
@@ -25,12 +25,9 @@ args = parser.parse_args()
 with open(args.requestfile) as f:
     data = json.load(f)
 
-compact = json.dumps(data, separators=(",", ":"))
-enc = tiktoken.get_encoding("cl100k_base")
-tokens = len(enc.encode(compact))
+tokens = count_json_tokens(data)
 tools = data.get("tools", [])
-compact_tools = json.dumps(tools, separators=(",", ":"))
-tools_tokens = len(enc.encode(compact_tools))
+tools_tokens = count_json_tokens(tools)
 
 print(f"Total Request Tokens: {tokens}")
 print(f"Amount of Tools: {len(tools)}")

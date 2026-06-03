@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import importlib.resources
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -12,6 +13,9 @@ from typing import Any, Literal
 
 import yaml
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+
 
 BUNDLED_DEFAULTS_NAME = "defaults.yaml"
 USER_ENV_PATH = Path("~/.config/cyt/.env").expanduser()
@@ -381,6 +385,55 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     return pipeline
 
 
+def _resolve_pruning_stages(
+    configured: list[str],
+    tool_count: int,
+    *,
+    rerank_min: int,
+    llm_min: int,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    effective: list[str] = []
+    skipped: list[dict[str, Any]] = []
+    for stage in configured:
+        if stage not in VALID_PRUNING_STAGES:
+            raise ValueError(f"unknown pruning stage: {stage}")
+        if stage == "bm25":
+            effective.append("bm25")
+            continue
+        minimum = rerank_min if stage == "rerank" else llm_min
+        if tool_count >= minimum:
+            effective.append(stage)
+        else:
+            skipped.append(
+                {"stage": stage, "tool_count": tool_count, "minimum_tools": minimum},
+            )
+    return effective, skipped
+
+
+def _warn_pruning_pipeline_adjustments(
+    configured: list[str],
+    effective: list[str],
+    skipped_stages: list[dict[str, Any]],
+) -> None:
+    if not skipped_stages or effective == configured:
+        return
+    for skip in skipped_stages:
+        model_key = "rerankers" if skip["stage"] == "rerank" else "llm"
+        logger.warning(
+            "Pruning stage %r skipped: %d tools below models.%s.minimum_tools %d",
+            skip["stage"],
+            skip["tool_count"],
+            model_key,
+            skip["minimum_tools"],
+        )
+    if effective == ["bm25"] and "bm25" not in configured:
+        logger.warning(
+            "Pruning pipeline fallback: configured %s -> %s",
+            configured,
+            effective,
+        )
+
+
 def effective_pruning_pipeline(
     config: dict[str, Any],
     tool_count: int,
@@ -396,21 +449,15 @@ def effective_pruning_pipeline(
     if not configured:
         return ["bm25"]
 
-    effective: list[str] = []
-    for stage in configured:
-        if stage not in VALID_PRUNING_STAGES:
-            raise ValueError(f"unknown pruning stage: {stage}")
-        if stage == "rerank":
-            if tool_count >= reranker_minimum_tools(config):
-                effective.append("rerank")
-        elif stage == "llm":
-            if tool_count >= llm_minimum_tools(config):
-                effective.append("llm")
-        elif stage == "bm25":
-            effective.append("bm25")
-
+    effective, skipped = _resolve_pruning_stages(
+        configured,
+        tool_count,
+        rerank_min=reranker_minimum_tools(config),
+        llm_min=llm_minimum_tools(config),
+    )
     if not effective:
-        return ["bm25"]
+        effective = ["bm25"]
+    _warn_pruning_pipeline_adjustments(configured, effective, skipped)
     return effective
 
 

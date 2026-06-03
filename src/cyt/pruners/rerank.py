@@ -17,7 +17,7 @@ from cyt.config import (
     resolve_model,
 )
 from cyt.indexer.build import catalog_tool_count
-from cyt.indexer.tokens import count_tokens, log_token_usage
+from cyt.indexer.tokens import count_json_tokens, log_token_usage
 from cyt.pruners.documents import (
     extract_json_catalog_document,
     extract_md_catalog_document,
@@ -123,9 +123,14 @@ def process_response(response: Any, valid_indices: list[int], items: list[dict[s
             continue
 
 
+def rerank_bulk_base_tokens(query: str) -> int:
+    """Tiktoken budget reserved per rerank bulk (query + empty documents payload)."""
+    return count_json_tokens({"query": query, "documents": []})
+
+
 def count_rerank_request_tokens(query: str, documents: list[str]) -> int:
     """Estimate input tokens sent to the rerank API for one request."""
-    return count_tokens(query) + sum(count_tokens(doc) for doc in documents)
+    return count_json_tokens({"query": query, "documents": documents})
 
 
 def _rerank_single_bulk(
@@ -235,7 +240,7 @@ def rerank_items(
     if not indexed_docs:
         return items, empty_usage()
 
-    base_tokens = count_tokens(query) + 200
+    base_tokens = rerank_bulk_base_tokens(query)
 
     try:
         return _rerank_prepared_bulks(

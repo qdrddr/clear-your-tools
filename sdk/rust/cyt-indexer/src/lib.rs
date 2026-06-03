@@ -9,8 +9,7 @@ pub mod python;
 pub mod node;
 
 pub use build::{
-    build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,
-    truncate_description, CatalogIndex,
+    build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums, CatalogIndex,
 };
 pub use paths::{collect_enums, get_root_tool_key, to_decomposed_key, tool_id_from_decomposed_rel};
 pub use retrieve::{

@@ -12,6 +12,8 @@ from cyt_indexer.build import (
     collect_enums,
 )
 
+from cyt.indexer.tokens import truncate_description
+
 __all__ = [
     "CatalogIndex",
     "build_catalog_index",
@@ -19,16 +21,8 @@ __all__ = [
     "collect_enums",
     "prepare_system_tool_entry",
     "prepare_tool_entry",
+    "truncate_description",
 ]
-
-
-def truncate_description(description: str | None, max_tokens: int = 60) -> str:
-    if not description:
-        return ""
-    max_chars = max_tokens * 4
-    if len(description) <= max_chars:
-        return description
-    return description[:max_chars].rsplit(" ", 1)[0] + "..."
 
 
 def prepare_tool_entry(server_name: str, tool: Any) -> dict[str, Any]:

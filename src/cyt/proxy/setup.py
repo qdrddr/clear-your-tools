@@ -26,7 +26,7 @@ PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
 DEFAULT_LLM_MINIMUM_TOOLS = 50
-DEFAULT_RERANKER_MINIMUM_TOOLS = 29
+DEFAULT_RERANKER_MINIMUM_TOOLS = 50
 DEFAULT_REVERSE_PORT = 8834
 TOKENS_PER_MILLION = 1_000_000
 # Values at or above this (without scientific notation) are treated as USD per 1M tokens.

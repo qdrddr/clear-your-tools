@@ -114,7 +114,7 @@ def test_stemming_ranks_reading_above_unrelated(
                 "stem_language": "english",
                 "stopwords": "en",
             },
-            "rerankers": {"minimum_tools": 29},
+            "rerankers": {"minimum_tools": 50},
             "llm": {"minimum_tools": 50},
         },
         "pruning": {"pipeline": ["bm25"], "per_tool": {}},
@@ -170,7 +170,7 @@ def test_fingerprint_changes_with_stem_language() -> None:
     base_config: dict[str, Any] = {
         "models": {
             "bm25": {"stem_language": "english", "stopwords": "en"},
-            "rerankers": {"minimum_tools": 29},
+            "rerankers": {"minimum_tools": 50},
             "llm": {"minimum_tools": 50},
         },
         "pruning": {"pipeline": ["bm25"], "per_tool": {}},
@@ -190,10 +190,10 @@ def test_fingerprint_changes_with_stem_language() -> None:
 
 
 def test_effective_pruning_pipeline_fallbacks() -> None:
-    config = {
+    config: dict[str, Any] = {
         "pruning": {"pipeline": [], "per_tool": {}},
         "models": {
-            "rerankers": {"minimum_tools": 29},
+            "rerankers": {"minimum_tools": 50},
             "llm": {"minimum_tools": 50},
             "bm25": {"stem_language": "english", "stopwords": "en"},
         },
@@ -205,7 +205,17 @@ def test_effective_pruning_pipeline_fallbacks() -> None:
     assert effective_pruning_pipeline(config_rerank, tool_count=50) == ["rerank"]
 
     config_both = {**config, "pruning": {"pipeline": ["rerank", "llm"], "per_tool": {}}}
-    assert effective_pruning_pipeline(config_both, tool_count=40) == ["rerank"]
+    assert effective_pruning_pipeline(config_both, tool_count=40) == ["bm25"]
+    assert effective_pruning_pipeline(config_both, tool_count=50) == ["rerank", "llm"]
+
+    config_both_partial = {
+        **config_both,
+        "models": {
+            **config_both["models"],
+            "rerankers": {"minimum_tools": 40},
+        },
+    }
+    assert effective_pruning_pipeline(config_both_partial, tool_count=40) == ["rerank"]
 
 
 def test_mitigate_empty_optional_properties_with_bm25_stage() -> None:
@@ -322,7 +332,7 @@ def test_bm25_catalog_dict_returns_stage_usage(
                 "stem_language": "english",
                 "stopwords": "en",
             },
-            "rerankers": {"minimum_tools": 29},
+            "rerankers": {"minimum_tools": 50},
             "llm": {"minimum_tools": 50},
         },
         "pruning": {"pipeline": ["bm25"], "per_tool": {}},

@@ -40,7 +40,7 @@ On each intercepted request the proxy:
 
 | Stage    | Model (default)                        | When it runs                                                          | What it does                                                                                     |
 | -------- | -------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **29**)             | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
+| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **50**)             | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
 | `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank`   | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.             |
 
 **Recommendations:**
@@ -68,7 +68,7 @@ Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml)
 ```yaml
 models:
   rerankers:
-    minimum_tools: 29
+    minimum_tools: 50
   llm:
     minimum_tools: 50
 

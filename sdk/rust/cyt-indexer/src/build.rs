@@ -98,25 +98,6 @@ pub fn catalog_tool_count(data: &Value) -> usize {
     tool_ids.len()
 }
 
-pub fn truncate_description(description: Option<&str>, max_tokens: usize) -> String {
-    let Some(description) = description else {
-        return String::new();
-    };
-    if description.is_empty() {
-        return String::new();
-    }
-    let max_chars = max_tokens * 4;
-    if description.len() <= max_chars {
-        return description.to_string();
-    }
-    let truncated = &description[..max_chars];
-    if let Some(idx) = truncated.rfind(' ') {
-        format!("{}...", &truncated[..idx])
-    } else {
-        format!("{truncated}...")
-    }
-}
-
 /// Plain-text form for decomposed enum `.md` files (matches Python ``str(val)``).
 fn enum_markdown_value(val: &Value) -> String {
     match val {

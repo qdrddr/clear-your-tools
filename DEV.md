@@ -46,7 +46,7 @@ Other CLI entry points work the same way with `uv run` (for example `uv run cyt 
     └── cyt/                       # installable package (Clear Your Tools)
         ├── config/                # load_config, defaults.yaml
         ├── common/                # catalog_paths, token_usage, pricing
-        ├── indexer/               # build, retrieve, catalog_io
+        ├── indexer/               # build, retrieve, catalog_io, tokens (tiktoken)
         ├── pruners/               # llm, rerank, policies
         └── proxy/                 # transport, reverse, anthropic, stats, cli
 ```

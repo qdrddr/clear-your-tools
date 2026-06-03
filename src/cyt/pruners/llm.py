@@ -17,7 +17,7 @@ from cyt.config import (
     resolve_model,
 )
 from cyt.indexer.build import catalog_tool_count
-from cyt.indexer.tokens import count_tokens, log_token_usage
+from cyt.indexer.tokens import compact_json, count_tokens, log_token_usage
 from cyt.pruners.policies import (
     MCPToolPolicy,
     SystemToolPolicy,
@@ -193,8 +193,8 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
                 for k in model_excluded_fields:
                     item_for_llm.pop(k, None)
 
-                compact_json = json.dumps(item_for_llm, separators=(",", ":"))
-                formatted_chunks.append(f"<chunk id={global_chunk_id}>\n{compact_json}\n</chunk>\n")
+                chunk_body = compact_json(item_for_llm)
+                formatted_chunks.append(f"<chunk id={global_chunk_id}>\n{chunk_body}\n</chunk>\n")
                 global_chunk_id += 1
 
     return formatted_chunks, item_metadata_storage, list_keys
