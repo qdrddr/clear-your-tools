@@ -1,3 +1,15 @@
 # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
 fastmcp/
 cocoindex-code/
+target/
+.venv/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+.debug/
+.codegraph/
+.code-review-graph/
+debug/
+sdk/**/target/
+sdk/**/node_modules/
