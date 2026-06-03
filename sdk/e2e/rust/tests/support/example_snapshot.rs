@@ -166,7 +166,7 @@ pub fn catalog_dict_from_snapshot(data: &Value) -> Value {
         .unwrap_or(&[]);
     let enums = enums_from_md(md_entries);
     let index = build_catalog_index(&build_tools, &enums);
-    index.to_catalog_dict("src/catalog")
+    index.to_catalog_dict()
 }
 
 pub fn write_output(catalog: &Value, output_path: Option<&str>) -> io::Result<()> {

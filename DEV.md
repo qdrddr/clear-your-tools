@@ -2,7 +2,19 @@
 
 Guide for working on Clear Your Tools from a source checkout or integrating the Python package.
 
-Requires Python 3.13+ (see [`pyproject.toml`](pyproject.toml)).
+## Prerequisites
+
+Install on your machine before the setup steps below:
+
+| Tool | Used for |
+| ---- | -------- |
+| [`uv`](https://docs.astral.sh/uv/) | Python deps, `prek`, `uv run` |
+| Python **3.13+** | App and SDK (see [`pyproject.toml`](pyproject.toml)) |
+| **Rust** (stable) | Editable `cyt-indexer-sdk` (maturin), `cargo` prek hooks, TypeScript native build |
+| **Node.js ≥20** | TypeScript SDK build and prek hooks under `sdk/typescript/` |
+| **`ast-grep`** CLI | `ast-grep` / `ast-scan` prek hooks ([install](https://ast-grep.github.io/guide/quick-start.html#install)) |
+
+Registry E2E (published crates/PyPI/npm only) needs `cargo`, `npm`, and network access — see [`sdk/e2e/README.md`](sdk/e2e/README.md).
 
 ## Setup
 
@@ -38,6 +50,19 @@ Copy API keys (or use `~/.config/cyt/.env`):
 cp .env.example .env
 # Edit .env — at minimum DEEPINFRA_API_KEY (reranker) and OPENROUTER_API_KEY (upstream + optional LLM stage)
 ```
+
+## Checks
+
+After setup, run hooks locally before pushing:
+
+```bash
+uv run prek run -a          # all pre-commit hooks (build TS SDK first; see above)
+task ci                     # Python checks mirroring CI (sync, ruff, mypy, pytest, build)
+```
+
+TypeScript-only hooks: `task -d sdk prek` or `cd sdk/typescript && npm test`.
+
+Skip one hook: `SKIP=<hook-id> git commit …` (for example `SKIP=pytest`). Registry E2E against live packages: [`sdk/e2e/scripts/run-local.sh`](sdk/e2e/scripts/run-local.sh).
 
 ## Run from a checkout
 
@@ -103,7 +128,7 @@ User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter v
 | `network.proxy.reverse`                                   | Listen port, upstream URLs, HTTP/2, TLS                  |
 | `stats`                                                   | Stats DB path, optional full tool JSON storage           |
 
-Environment variables (see [`src/.env.example`](src/.env.example)):
+Environment variables (see [`.env.example`](.env.example)):
 
 - `DEEPINFRA_API_KEY` — reranker stage
 - `OPENROUTER_API_KEY` — upstream forwarding and optional LLM stage

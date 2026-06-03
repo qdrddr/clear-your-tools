@@ -296,7 +296,7 @@ repos:
 
       - id: typescript-npm-audit
         name: TypeScript SDK npm audit
-        entry: bash -c 'cd sdk/typescript && npm audit --audit-level=high && cd ../e2e/typescript && npm audit --audit-level=high'
+        entry: bash -c 'set -euo pipefail; audit_if_locked() { if [[ -f package-lock.json ]]; then npm audit --audit-level=high; fi; }; (cd sdk/typescript && audit_if_locked); (cd sdk/e2e/typescript && audit_if_locked)'
         language: system
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false

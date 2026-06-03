@@ -148,7 +148,12 @@ tasks:
     internal: true
     dir: "{{.WORKDIR}}"
     cmds:
-      - npm audit --audit-level=high
+      - |
+        if [[ ! -f package-lock.json ]]; then
+          echo "skip npm audit: no package-lock.json in $(pwd)"
+          exit 0
+        fi
+        npm audit --audit-level=high
 
   _sort-package-json:
     internal: true
