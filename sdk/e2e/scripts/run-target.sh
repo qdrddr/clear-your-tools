@@ -28,7 +28,7 @@ rust)
 python)
 	echo "=== Python SDK (PyPI) ==="
 	maybe_wait "PyPI/cyt-indexer-sdk" pypi-sdk
-	(cd "${ROOT}/python" && uv sync --group test && uv run pytest)
+	(cd "${ROOT}/python" && "${ROOT}/scripts/uv-sync-with-retry.sh" --group test && uv run pytest)
 	;;
 typescript)
 	echo "=== TypeScript SDK (npm) ==="
@@ -38,7 +38,7 @@ typescript)
 clear-your-tools)
 	echo "=== clear-your-tools (PyPI) ==="
 	maybe_wait "PyPI/clear-your-tools" pypi-app
-	(cd "${ROOT}/clear-your-tools" && uv sync --group test && uv run pytest)
+	(cd "${ROOT}/clear-your-tools" && "${ROOT}/scripts/uv-sync-with-retry.sh" --group test && uv run pytest)
 	;;
 *)
 	echo "unknown target: ${TARGET}" >&2

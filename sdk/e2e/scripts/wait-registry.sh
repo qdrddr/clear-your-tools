@@ -16,6 +16,11 @@ SLEEP_SECS="${WAIT_REGISTRY_SLEEP_SECS:-30}"
 pypi_has_version() {
 	local package="$1"
 	local ver="$2"
+	# Prefer uv resolution (same index as `uv sync`) when available.
+	if command -v uv >/dev/null 2>&1; then
+		uv pip install "${package}==${ver}" --dry-run -q >/dev/null 2>&1
+		return
+	fi
 	PYPI_PACKAGE="$package" PYPI_VERSION="$ver" python3 -c "
 import json
 import os

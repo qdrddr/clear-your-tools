@@ -71,3 +71,4 @@ Version pins live in `*.in` templates (`@CYT_RELEASE_VERSION@` placeholder). `re
 | [`scripts/parse-version.sh`](scripts/parse-version.sh) | Parse semver from `TAG` or `CYT_RELEASE_VERSION` |
 | [`scripts/render-manifests.sh`](scripts/render-manifests.sh) | Generate manifests from `.in` templates |
 | [`scripts/wait-registry.sh`](scripts/wait-registry.sh) | Poll registry until version is installable |
+| [`scripts/uv-sync-with-retry.sh`](scripts/uv-sync-with-retry.sh) | Retry `uv sync` while PyPI index propagates (`UV_SYNC_MAX_ATTEMPTS`, `UV_SYNC_RETRY_SECS`) |
