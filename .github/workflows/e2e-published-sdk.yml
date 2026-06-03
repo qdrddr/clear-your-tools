@@ -4,7 +4,7 @@
 # Runs after publish-crates.yml succeeds (workflow_run). Polls each registry until
 # CYT_RELEASE_VERSION is installable, then runs isolated harnesses under sdk/e2e/.
 
-name: E2E published packages
+name: 4. E2E published packages
 
 on:
   workflow_run:
@@ -62,7 +62,7 @@ jobs:
         run: cargo test
 
   e2e-python-sdk:
-    name: 4. E2E cyt-indexer-sdk (PyPI)
+    name: E2E cyt-indexer-sdk (PyPI)
     needs: resolve-version
     if: |
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
