@@ -8,11 +8,18 @@
 Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM25 default, no API keys required.
 
 [![version][version-shield]][release-link]
-[![python][python-shield]][python-link]
-[![npm][npm-shield]][npm-link]
-[![rust][rust-shield]][rust-link]
 [![license][license-shield]][license-link]
 [![discord][discord-shield]][discord-link]
+
+[![npm cyt-indexer-sdk][npm-sdk-shield]][npm-link]
+[![PyPI clear-your-tools][pypi-cyt-shield]][pypi-cyt-link]
+[![PyPI cyt-indexer-sdk][pypi-sdk-shield]][pypi-sdk-link]
+[![crates.io cyt-indexer][rust-crate-shield]][rust-link]
+
+![Shell][shell-shield]
+![Python][python-tech-shield]
+![TypeScript][typescript-shield]
+![Rust][rust-tech-shield]
 
 </div>
 <!-- markdownlint-enable MD041 -->
@@ -339,15 +346,21 @@ and can improve tool selection accuracy and overall agent reliability.
 
 See [`LICENSE`](LICENSE).
 
-[version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version
+[version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version&color=4385BE&logoColor=white
 [release-link]: https://github.com/qdrddr/clear-your-tools/releases
-[python-shield]: https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white
-[python-link]: https://www.python.org/downloads/
-[npm-shield]: https://img.shields.io/npm/v/cyt-indexer-sdk?style=flat-square&logo=npm&logoColor=white
+[npm-sdk-shield]: https://img.shields.io/npm/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=npm&color=3178C6&logoColor=white
 [npm-link]: https://www.npmjs.com/package/cyt-indexer-sdk
-[rust-shield]: https://img.shields.io/crates/v/cyt-indexer?style=flat-square&logo=rust&logoColor=white
+[pypi-cyt-shield]: https://img.shields.io/pypi/dw/clear-your-tools?label=clear-your-tools%20weekly%20downloads&logo=pypi&logoColor=white&color=2E8B57
+[pypi-cyt-link]: https://pypi.org/project/clear-your-tools/
+[pypi-sdk-shield]: https://img.shields.io/pypi/dw/cyt-indexer-sdk?label=cyt-indexer-sdk%20weekly%20downloads&logo=pypi&logoColor=white&color=4EAA25
+[pypi-sdk-link]: https://pypi.org/project/cyt-indexer-sdk/
+[rust-crate-shield]: https://img.shields.io/crates/d/cyt-indexer?label=cyt-indexer%20downloads&logo=rust&color=3776AB&logoColor=white
 [rust-link]: https://crates.io/crates/cyt-indexer
-[license-shield]: https://img.shields.io/badge/license-Apache--2.0-4385BE?style=flat-square
+[shell-shield]: https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white
+[python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
+[typescript-shield]: https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white
+[rust-tech-shield]: https://img.shields.io/badge/-Rust-3776AB?logo=rust&logoColor=white
+[license-shield]: https://img.shields.io/badge/license-Apache--2.0-4385BE?style=flat-square&logoColor=white
 [license-link]: LICENSE
-[discord-shield]: https://img.shields.io/badge/Discord-AI%20Sky-5865F2?style=flat-square&logo=discord&logoColor=white
+[discord-shield]: https://img.shields.io/badge/Discord-AI%20Sky-3178C6?style=flat-square&logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
