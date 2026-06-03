@@ -365,6 +365,6 @@ See [`LICENSE`](LICENSE).
 [rust-tech-shield]: https://img.shields.io/badge/-Rust-3776AB?logo=rust&logoColor=white
 [license-shield]: https://img.shields.io/badge/License-Apache%202.0-blue.svg
 [license-link]: LICENSE
-[telemetry-shield]: https://img.shields.io/badge/No-Opt--in%20Only-4EAA25?logo=shield&logoColor=white
+[telemetry-shield]: https://img.shields.io/badge/No%20Telemetry-4EAA25?logo=shield&logoColor=white
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
