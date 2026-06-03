@@ -39,11 +39,39 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		uv sync --all-extras --group dev --group test --locked
 	}
 
+	cyt_test_indexer_build() {
+		require_cmd cargo
+		require_cmd jq
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+
+		local example="${CYT_REPO_ROOT}/debug/full_example.json"
+		[[ -f "${example}" ]] || die "missing ${example}"
+
+		info "cargo build -p cyt-indexer --release"
+		cargo build -p cyt-indexer --release
+
+		local tools_json catalog indexer
+		tools_json="$(mktemp "${TMPDIR:-/tmp}/cyt-tools.XXXXXX.json")"
+		catalog="${CYT_REPO_ROOT}/.catalog"
+		indexer="${CYT_REPO_ROOT}/target/release/cyt-indexer"
+
+		info "extract tools from debug/full_example.json"
+		jq '.body.tools' "${example}" >"${tools_json}"
+
+		[[ -x "${indexer}" ]] || die "cyt-indexer binary not found at ${indexer}"
+		info "cyt-indexer build --tools ${tools_json} --output ${catalog}"
+		"${indexer}" build --tools "${tools_json}" --output "${catalog}"
+		rm -f "${tools_json}"
+
+		[[ -f "${catalog}/tools.json" ]] || die "catalog build did not produce ${catalog}/tools.json"
+	}
+
 	cyt_build_rust() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "cargo test -p cyt-indexer"
 		cargo test -p cyt-indexer
+		cyt_test_indexer_build
 	}
 
 	cyt_build_sdk_python() {

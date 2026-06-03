@@ -11,7 +11,7 @@
 #
 # Commands:
 #   setup              uv sync workspace (local SDK source override)
-#   rust               cargo test -p cyt-indexer
+#   rust               cargo test -p cyt-indexer + release CLI catalog build
 #   sdk-python         maturin develop --release
 #   sdk-typescript     npm ci, build, test
 #   verify             assert SDK is local editable + native import works
