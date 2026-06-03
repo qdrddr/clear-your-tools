@@ -19,8 +19,29 @@ let index = build_catalog_index(&tools, &[]);
 
 ## CLI
 
+Accepts Anthropic API tools (`name`, `description`, `input_schema`) or pre-built catalog entries (`id`, `full_schema`).
+
 ```bash
 cargo install cyt-indexer
-cyt-indexer build --tools tools.json --output ./catalog
-cyt-indexer retrieve --catalog ./catalog --input survivors.json --output out.json
+jq '.body.tools' debug/full_example.json > /tmp/tools.json
+cyt-indexer build --tools /tmp/tools.json --output ./.catalog
+cyt-indexer retrieve --catalog ./.catalog --input survivors.json --output out.json \
+  --config config.json \
+  --system-policy prune_optional \
+  --mcp-policy prune_all \
+  --tool-policy Agent=always_include \
+  --tool-policy mcp__fff__multi_grep=always_include \
+  --per-tool per-tool.json
 ```
+
+Score filter is **off by default** (rerank survivor scores are ~0.003, not 0–1).
+Use `--score-filter` only for LLM-stage catalogs where json scores exceed the decomposed threshold (0.5).
+
+Policies (in precedence order, later wins):
+
+1. `--config` → `defaults.system_tool_policy`, `defaults.mcp_tool_policy`, `pruning.per_tool`
+2. `--system-policy` / `--mcp-policy` CLI overrides
+3. `--per-tool` JSON file: `{"Agent": "always_include", "Bash": "prune_optional"}`
+4. `--tool-policy TOOL=POLICY` (repeatable)
+
+Valid policies: `always_include`, `prune_optional`, `prune_all`.

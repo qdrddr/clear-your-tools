@@ -1,22 +1,29 @@
-"""Catalog build — Rust-backed core with Python-only tool entry helpers."""
+"""Catalog build — re-exports cyt-indexer-sdk with app-facing tool object helpers."""
 
 from __future__ import annotations
 
-import copy
 from typing import Any, Protocol
 
 from cyt_indexer.build import (
     CatalogIndex,
+    anthropic_tool_to_catalog_entry,
+    anthropic_tools_to_catalog_entries,
+    build_catalog_from_tools,
     build_catalog_index,
     catalog_tool_count,
     collect_enums,
+    truncate_description,
 )
-
-from cyt.indexer.tokens import truncate_description
+from cyt_indexer.build import (
+    prepare_tool_entry as _prepare_tool_entry_flat,
+)
 
 __all__ = [
     "CatalogIndex",
     "ToolSchemaSource",
+    "anthropic_tool_to_catalog_entry",
+    "anthropic_tools_to_catalog_entries",
+    "build_catalog_from_tools",
     "build_catalog_index",
     "catalog_tool_count",
     "collect_enums",
@@ -35,25 +42,13 @@ class ToolSchemaSource(Protocol):
 
 
 def prepare_tool_entry(server_name: str, tool: ToolSchemaSource) -> dict[str, Any]:
-    """Build one non-system (mcp__ id) or generic tool catalog entry without file I/O."""
-    tool_id = str(tool.name)
-    description = tool.description
-    input_schema = copy.deepcopy(tool.inputSchema)
-
-    full_schema = {
-        "id": tool_id,
-        "name": tool_id,
-        "description": description,
-        "inputSchema": input_schema,
-    }
-
-    return {
-        "id": tool_id,
-        "server": server_name,
-        "tool": tool_id,
-        "summary": truncate_description(description or ""),
-        "full_schema": full_schema,
-    }
+    """Build one catalog entry from a tool object (Rust-backed)."""
+    return _prepare_tool_entry_flat(
+        server_name,
+        str(tool.name),
+        tool.description or "",
+        tool.inputSchema,
+    )
 
 
 def prepare_system_tool_entry(tool: ToolSchemaSource) -> dict[str, Any]:

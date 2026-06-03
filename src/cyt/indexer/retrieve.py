@@ -26,7 +26,7 @@ def retrieve_tools(
     data: dict[str, Any],
     *,
     catalog: DecomposedCatalog | CatalogIndex,
-    apply_decomposed_score_filter: bool = True,
+    apply_decomposed_score_filter: bool = False,
     preserve_values: frozenset[str] | None = None,
     ctx: PolicyContext | None = None,
     system_policy: str | None = None,

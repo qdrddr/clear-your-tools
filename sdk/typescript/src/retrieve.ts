@@ -99,7 +99,7 @@ export function retrieveTools(
 ): JsonRecord[] {
   const {
     catalog,
-    applyDecomposedScoreFilter = true,
+    applyDecomposedScoreFilter = false,
     preserveValues,
     ctx = null,
     policyOptions = null,

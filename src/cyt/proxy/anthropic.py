@@ -7,7 +7,6 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 
 from cyt.common.token_usage import StageTokenUsage
@@ -19,11 +18,9 @@ from cyt.config import (
 )
 from cyt.indexer.build import (
     CatalogIndex,
-    ToolSchemaSource,
+    anthropic_tools_to_catalog_entries,
     build_catalog_index,
     catalog_tool_count,
-    collect_enums,
-    prepare_tool_entry,
 )
 from cyt.indexer.retrieve import retrieve_tools
 from cyt.indexer.tokens import count_json_tokens
@@ -256,29 +253,6 @@ def extract_user_query(cleaned_messages: list[dict[str, Any]]) -> str | None:
     non_junk = [text for text in candidates if not _is_junk_user_query(text)]
     pool = non_junk if non_junk else candidates
     return max(pool, key=_query_rank)
-
-
-def anthropic_tools_to_catalog_entries(
-    tools: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[Any]]:
-    entries: list[dict[str, Any]] = []
-    all_enums: list[Any] = []
-    for tool in tools:
-        name = tool.get("name", "")
-        if not name:
-            continue
-        input_schema = (
-            tool.get("input_schema") or tool.get("inputSchema") or tool.get("parameters") or {}
-        )
-        tool_obj = SimpleNamespace(
-            name=name,
-            description=tool.get("description", "") or "",
-            inputSchema=copy.deepcopy(input_schema),
-        )
-        entry = prepare_tool_entry("", cast(ToolSchemaSource, tool_obj))
-        all_enums.extend(collect_enums(entry["full_schema"]["inputSchema"]))
-        entries.append(entry)
-    return entries, all_enums
 
 
 def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, Any]]:

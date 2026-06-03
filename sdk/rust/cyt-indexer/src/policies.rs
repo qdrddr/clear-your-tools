@@ -124,6 +124,43 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
     ctx
 }
 
+/// Parse `TOOL=POLICY` (e.g. `Agent=always_include`).
+pub fn parse_tool_policy_pair(s: &str) -> Result<(String, ToolPolicy), String> {
+    let (tool_id, policy_str) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected TOOL=POLICY, got: {s}"))?;
+    let tool_id = tool_id.trim();
+    if tool_id.is_empty() {
+        return Err(format!("expected TOOL=POLICY, got: {s}"));
+    }
+    let policy = ToolPolicy::from_str(policy_str.trim())
+        .ok_or_else(|| format!("invalid policy for {tool_id}: {policy_str}"))?;
+    Ok((tool_id.to_string(), policy))
+}
+
+/// Load per-tool overrides from a JSON object (`{"Agent": "always_include", ...}`).
+pub fn per_tool_policies_from_value(val: &Value) -> Result<HashMap<String, ToolPolicy>, String> {
+    let Some(map) = val.as_object() else {
+        return Err("per-tool policies must be a JSON object".into());
+    };
+    let mut out = HashMap::new();
+    for (tool_id, policy_val) in map {
+        let Some(policy_str) = policy_val.as_str() else {
+            return Err(format!("policy for {tool_id} must be a string"));
+        };
+        let policy = ToolPolicy::from_str(policy_str).ok_or_else(|| {
+            format!("invalid policy for {tool_id}: {policy_str}")
+        })?;
+        out.insert(tool_id.clone(), policy);
+    }
+    Ok(out)
+}
+
+/// Apply per-tool overrides; later entries win for duplicate tool ids.
+pub fn apply_per_tool_overrides(ctx: &mut PolicyContext, overrides: HashMap<String, ToolPolicy>) {
+    ctx.per_tool.extend(overrides);
+}
+
 fn item_object(item: &Value) -> Option<&Map<String, Value>> {
     item.as_object()
 }
@@ -1066,5 +1103,23 @@ mod tests {
     fn mcp_tool_id_detection() {
         assert!(is_non_system_tool_id("mcp__foo"));
         assert!(!is_system_tool_id("mcp__foo"));
+    }
+
+    #[test]
+    fn parse_tool_policy_pair_valid() {
+        let (tool, policy) = parse_tool_policy_pair("Agent=always_include").unwrap();
+        assert_eq!(tool, "Agent");
+        assert_eq!(policy, ToolPolicy::AlwaysInclude);
+    }
+
+    #[test]
+    fn per_tool_policies_from_value_parses_object() {
+        let val = json!({
+            "Agent": "prune_optional",
+            "mcp__fff__grep": "always_include"
+        });
+        let map = per_tool_policies_from_value(&val).unwrap();
+        assert_eq!(map.get("Agent"), Some(&ToolPolicy::PruneOptional));
+        assert_eq!(map.get("mcp__fff__grep"), Some(&ToolPolicy::AlwaysInclude));
     }
 }

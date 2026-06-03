@@ -12,6 +12,10 @@
 # Commands:
 #   setup              uv sync workspace (local SDK source override)
 #   rust               cargo test -p cyt-indexer + release CLI catalog build
+#   indexer [subcmd]   cyt-indexer build/retrieve from debug/full_example.json
+#                      subcmd: build | survivors | retrieve | all (default: all)
+#                      env: CYT_CATALOG_DIR, CYT_INDEXER_SYSTEM_POLICY, CYT_INDEXER_MCP_POLICY,
+#                           CYT_INDEXER_TOOL_POLICIES (default: AskUserQuestion=always_include)
 #   sdk-python         maturin develop --release
 #   sdk-typescript     npm ci, build, test
 #   verify             assert SDK is local editable + native import works
@@ -34,7 +38,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/local-dev-lib.sh"
 
 usage() {
-	sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 cmd="${1:-}"
@@ -48,6 +52,54 @@ setup)
 rust)
 	require_repo_root
 	cyt_build_rust
+	;;
+indexer)
+	require_repo_root
+	require_cmd jq
+	sub="${1:-all}"
+	shift || true
+	case "${sub}" in
+	build)
+		cyt_indexer_build_catalog
+		;;
+	survivors)
+		cyt_indexer_extract_survivors
+		;;
+	retrieve)
+		cyt_indexer_retrieve "$@"
+		;;
+	all)
+		cyt_indexer_all "$@"
+		;;
+	-h | --help | help)
+		cat <<EOF
+Usage: ./search/local-dev.sh indexer [build|survivors|retrieve|all] [retrieve args...]
+
+  build      jq '.body.tools' debug/full_example.json -> cyt-indexer build -> .catalog/
+  survivors  jq rerank json/md -> .catalog/survivors.json (scores as numbers)
+  retrieve   cyt-indexer retrieve with default policies (score filter off for rerank survivors)
+  all        build + survivors + retrieve (default)
+
+Retrieve defaults:
+  --system-policy prune_optional
+  --mcp-policy prune_all
+  --tool-policy AskUserQuestion=always_include
+
+Override via env:
+  CYT_CATALOG_DIR  CYT_EXAMPLE_JSON  CYT_SURVIVORS_JSON  CYT_RETRIEVE_OUT
+  CYT_INDEXER_SYSTEM_POLICY  CYT_INDEXER_MCP_POLICY
+  CYT_INDEXER_TOOL_POLICIES='AskUserQuestion=always_include Agent=prune_optional'
+
+Examples:
+  ./search/local-dev.sh indexer
+  ./search/local-dev.sh indexer build
+  ./search/local-dev.sh indexer retrieve --tool-policy Bash=always_include
+EOF
+		;;
+	*)
+		die "unknown indexer subcommand: ${sub} (try: build, survivors, retrieve, all)"
+		;;
+	esac
 	;;
 sdk-python)
 	require_repo_root

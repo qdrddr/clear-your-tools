@@ -16,5 +16,11 @@ uv run maturin develop --release
 ## Usage
 
 ```python
-from cyt_indexer.build import build_catalog_index, CatalogIndex
+from cyt_indexer import (
+    build_catalog_from_tools,
+    build_catalog_index,
+    anthropic_tools_to_catalog_entries,
+    prepare_tool_entry,
+    retrieve_tools,
+)
 ```

@@ -9,6 +9,13 @@ use crate::build::{
     build_catalog_index as core_build_catalog_index,
     catalog_index_from_value, catalog_tool_count as core_catalog_tool_count,
 };
+use crate::tool_entries::{
+    anthropic_tool_to_catalog_entry as core_anthropic_tool_to_catalog_entry,
+    anthropic_tools_to_catalog_entries as core_anthropic_tools_to_catalog_entries,
+    build_catalog_from_tools as core_build_catalog_from_tools,
+    prepare_tool_entry as core_prepare_tool_entry,
+    truncate_description as core_truncate_description,
+};
 use crate::paths::{self, collect_enums as paths_collect_enums};
 use crate::policies::tool_policy_strings;
 use crate::retrieve::{
@@ -114,6 +121,52 @@ pub fn build_catalog_index(tools: Vec<Value>, all_enums: Vec<Value>) -> Result<C
     })
 }
 
+#[napi(object)]
+pub struct AnthropicCatalogEntriesResult {
+    pub entries: Vec<Value>,
+    pub enums: Vec<Value>,
+}
+
+#[napi]
+pub fn build_catalog_from_tools(tools: Vec<Value>) -> Result<CatalogIndexResult> {
+    let index = core_build_catalog_from_tools(&tools);
+    Ok(CatalogIndexResult {
+        tools: index.tools,
+        files: index.files,
+    })
+}
+
+#[napi]
+pub fn prepare_tool_entry(
+    server_name: String,
+    name: String,
+    description: String,
+    input_schema: Value,
+) -> Result<Value> {
+    Ok(core_prepare_tool_entry(
+        &server_name,
+        &name,
+        &description,
+        input_schema,
+    ))
+}
+
+#[napi]
+pub fn anthropic_tool_to_catalog_entry(tool: Value) -> Option<Value> {
+    core_anthropic_tool_to_catalog_entry(&tool)
+}
+
+#[napi]
+pub fn anthropic_tools_to_catalog_entries(tools: Vec<Value>) -> AnthropicCatalogEntriesResult {
+    let (entries, enums) = core_anthropic_tools_to_catalog_entries(&tools);
+    AnthropicCatalogEntriesResult { entries, enums }
+}
+
+#[napi]
+pub fn truncate_description(description: String, max_tokens: Option<u32>) -> String {
+    core_truncate_description(&description, max_tokens.unwrap_or(60) as usize)
+}
+
 #[napi]
 pub fn tool_policies() -> Vec<String> {
     tool_policy_strings()
@@ -143,7 +196,7 @@ pub fn retrieve_tools(
         build_process_groups_options(&policy_ctx, &catalog_dict, &store, preserve_set);
     let mut store_mut = store;
     let opts = RetrieveOptions {
-        apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(true),
+        apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(false),
         process_groups,
     };
     Ok(core_retrieve_core(
@@ -165,7 +218,7 @@ pub fn retrieve_core(
     let mut store = json_files_from_map(store_json_files);
     let survivor = json_files_from_map(survivor_json_files);
     let opts = RetrieveOptions {
-        apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(true),
+        apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(false),
         process_groups: process_groups_from_policy(policy_options),
     };
     Ok(core_retrieve_core(&data, &mut store, &survivor, &opts))

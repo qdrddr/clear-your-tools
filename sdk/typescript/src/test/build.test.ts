@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCatalogIndex, CatalogIndex, catalogToolCount } from "../build.js";
+import {
+  buildCatalogFromTools,
+  buildCatalogIndex,
+  CatalogIndex,
+  catalogToolCount,
+} from "../build.js";
 
 test("catalogToolCount counts tools in catalog dict", () => {
   const dict = {
@@ -36,4 +41,19 @@ test("buildCatalogIndex returns in-memory catalog", () => {
   assert.ok(index instanceof CatalogIndex);
   assert.ok(index.tools.length >= 1);
   assert.ok(Object.keys(index.files).length >= 1);
+});
+
+test("buildCatalogFromTools accepts Anthropic API tool shape", () => {
+  const index = buildCatalogFromTools([
+    {
+      name: "Agent",
+      description: "Launch agents",
+      input_schema: {
+        type: "object",
+        properties: { prompt: { type: "string" } },
+        required: ["prompt"],
+      },
+    },
+  ]);
+  assert.ok(Object.keys(index.files).some((k) => k.includes("Agent.json")));
 });

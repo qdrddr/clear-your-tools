@@ -6,6 +6,13 @@ const native = require("../native.cjs") as typeof import("../native.d.ts");
 
 // Build / catalog
 export const buildCatalogIndexNative = native.buildCatalogIndex;
+export const buildCatalogFromToolsNative = native.buildCatalogFromTools;
+export const prepareToolEntryNative = native.prepareToolEntry;
+export const anthropicToolToCatalogEntryNative =
+  native.anthropicToolToCatalogEntry;
+export const anthropicToolsToCatalogEntriesNative =
+  native.anthropicToolsToCatalogEntries;
+export const truncateDescriptionNative = native.truncateDescription;
 export const catalogToolCountNative = native.catalogToolCount;
 export const catalogIndexToCatalogDictNative = native.catalogIndexToCatalogDict;
 

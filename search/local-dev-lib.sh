@@ -39,31 +39,169 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		uv sync --all-extras --group dev --group test --locked
 	}
 
-	cyt_test_indexer_build() {
+	cyt_indexer_release() {
 		require_cmd cargo
-		require_cmd jq
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		info "cargo build -p cyt-indexer --release"
+		# Use workspace target/; ignore sandbox CARGO_TARGET_DIR if set by the IDE.
+		env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
+	}
 
-		local example="${CYT_REPO_ROOT}/debug/full_example.json"
+	cyt_indexer_paths() {
+		CYT_INDEXER_BIN="${CYT_REPO_ROOT}/target/release/cyt-indexer"
+		CYT_CATALOG_DIR="${CYT_CATALOG_DIR:-${CYT_REPO_ROOT}/.catalog}"
+		CYT_EXAMPLE_JSON="${CYT_EXAMPLE_JSON:-${CYT_REPO_ROOT}/debug/full_example.json}"
+		CYT_SURVIVORS_JSON="${CYT_SURVIVORS_JSON:-${CYT_CATALOG_DIR}/survivors.json}"
+		CYT_RETRIEVE_OUT="${CYT_RETRIEVE_OUT:-${CYT_CATALOG_DIR}/out.json}"
+	}
+
+	cyt_indexer_build_catalog() {
+		require_cmd jq
+		cyt_indexer_paths
+
+		local example="${CYT_EXAMPLE_JSON}"
 		[[ -f "${example}" ]] || die "missing ${example}"
 
-		info "cargo build -p cyt-indexer --release"
-		cargo build -p cyt-indexer --release
+		cyt_indexer_release
+		[[ -x "${CYT_INDEXER_BIN}" ]] || die "cyt-indexer binary not found at ${CYT_INDEXER_BIN}"
 
-		local tools_json catalog indexer
+		local tools_json
 		tools_json="$(mktemp "${TMPDIR:-/tmp}/cyt-tools.XXXXXX.json")"
-		catalog="${CYT_REPO_ROOT}/.catalog"
-		indexer="${CYT_REPO_ROOT}/target/release/cyt-indexer"
 
-		info "extract tools from debug/full_example.json"
+		info "extract tools from ${example}"
 		jq '.body.tools' "${example}" >"${tools_json}"
 
-		[[ -x "${indexer}" ]] || die "cyt-indexer binary not found at ${indexer}"
-		info "cyt-indexer build --tools ${tools_json} --output ${catalog}"
-		"${indexer}" build --tools "${tools_json}" --output "${catalog}"
+		mkdir -p "${CYT_CATALOG_DIR}"
+		info "cyt-indexer build --tools ${tools_json} --output ${CYT_CATALOG_DIR}"
+		"${CYT_INDEXER_BIN}" build --tools "${tools_json}" --output "${CYT_CATALOG_DIR}"
 		rm -f "${tools_json}"
 
-		[[ -f "${catalog}/tools.json" ]] || die "catalog build did not produce ${catalog}/tools.json"
+		[[ -f "${CYT_CATALOG_DIR}/tools.json" ]] || die "catalog build did not produce ${CYT_CATALOG_DIR}/tools.json"
+		local decomposed_count
+		decomposed_count="$(find "${CYT_CATALOG_DIR}/schemas/decomposed" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
+		[[ "${decomposed_count}" -gt 1 ]] || die "expected multiple decomposed json files, got ${decomposed_count}"
+		info "catalog build ok (${decomposed_count} decomposed json files)"
+	}
+
+	cyt_indexer_extract_survivors() {
+		require_cmd jq
+		cyt_indexer_paths
+
+		local example="${CYT_EXAMPLE_JSON}"
+		[[ -f "${example}" ]] || die "missing ${example}"
+		mkdir -p "${CYT_CATALOG_DIR}"
+
+		info "extract rerank survivors from ${example} -> ${CYT_SURVIVORS_JSON}"
+		jq '{
+		  json: [.pruning.decomposed_catalog.rerank.json[]? | .score |= (tonumber)],
+		  md:   [.pruning.decomposed_catalog.rerank.md[]?   | .score |= (tonumber)]
+		}' "${example}" >"${CYT_SURVIVORS_JSON}"
+
+		local json_count md_count
+		json_count="$(jq '.json | length' "${CYT_SURVIVORS_JSON}")"
+		md_count="$(jq '.md | length' "${CYT_SURVIVORS_JSON}")"
+		[[ "${json_count}" -gt 0 || "${md_count}" -gt 0 ]] ||
+			die "no rerank survivors in ${example} (.pruning.decomposed_catalog.rerank)"
+		info "survivors ok (json=${json_count}, md=${md_count})"
+	}
+
+	cyt_indexer_retrieve() {
+		cyt_indexer_paths
+		[[ -d "${CYT_CATALOG_DIR}" ]] || die "missing catalog dir ${CYT_CATALOG_DIR}; run indexer build first"
+		[[ -f "${CYT_SURVIVORS_JSON}" ]] || cyt_indexer_extract_survivors
+		[[ -x "${CYT_INDEXER_BIN}" ]] || cyt_indexer_release
+		[[ -x "${CYT_INDEXER_BIN}" ]] || die "cyt-indexer binary not found at ${CYT_INDEXER_BIN}"
+
+		local system_policy="${CYT_INDEXER_SYSTEM_POLICY:-prune_optional}"
+		local mcp_policy="${CYT_INDEXER_MCP_POLICY:-prune_all}"
+		local tool_policies=()
+		local default_tool_policies="AskUserQuestion=always_include"
+		local policy_source="${CYT_INDEXER_TOOL_POLICIES-${default_tool_policies}}"
+		if [[ -n "${policy_source}" ]]; then
+			local spec
+			for spec in ${policy_source}; do
+				tool_policies+=(--tool-policy "${spec}")
+			done
+		fi
+
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+			--tool-policy)
+				[[ $# -ge 2 ]] || die "missing value for --tool-policy"
+				tool_policies+=(--tool-policy "$2")
+				shift 2
+				;;
+			--tool-policy=*)
+				tool_policies+=("$1")
+				shift
+				;;
+			--system-policy)
+				[[ $# -ge 2 ]] || die "missing value for --system-policy"
+				system_policy="$2"
+				shift 2
+				;;
+			--system-policy=*)
+				system_policy="${1#*=}"
+				shift
+				;;
+			--mcp-policy)
+				[[ $# -ge 2 ]] || die "missing value for --mcp-policy"
+				mcp_policy="$2"
+				shift 2
+				;;
+			--mcp-policy=*)
+				mcp_policy="${1#*=}"
+				shift
+				;;
+			--output)
+				[[ $# -ge 2 ]] || die "missing value for --output"
+				CYT_RETRIEVE_OUT="$2"
+				shift 2
+				;;
+			--output=*)
+				CYT_RETRIEVE_OUT="${1#*=}"
+				shift
+				;;
+			--per-tool | --per-tool=* | --config | --config=*)
+				tool_policies+=("$1")
+				if [[ "$1" != *=* ]]; then
+					[[ $# -ge 2 ]] || die "missing value for $1"
+					tool_policies+=("$2")
+					shift
+				fi
+				shift
+				;;
+			*)
+				die "unknown indexer retrieve arg: $1"
+				;;
+			esac
+		done
+
+		info "cyt-indexer retrieve -> ${CYT_RETRIEVE_OUT}"
+		"${CYT_INDEXER_BIN}" retrieve \
+			--catalog "${CYT_CATALOG_DIR}" \
+			--input "${CYT_SURVIVORS_JSON}" \
+			--output "${CYT_RETRIEVE_OUT}" \
+			--system-policy "${system_policy}" \
+			--mcp-policy "${mcp_policy}" \
+			"${tool_policies[@]}"
+
+		[[ -s "${CYT_RETRIEVE_OUT}" ]] || die "retrieve produced empty ${CYT_RETRIEVE_OUT}"
+		require_cmd jq
+		local tool_count
+		tool_count="$(jq 'length' "${CYT_RETRIEVE_OUT}")"
+		[[ "${tool_count}" -gt 0 ]] || die "retrieve produced no tools in ${CYT_RETRIEVE_OUT}"
+		info "retrieve ok (${tool_count} tools -> ${CYT_RETRIEVE_OUT})"
+	}
+
+	cyt_indexer_all() {
+		cyt_indexer_build_catalog
+		cyt_indexer_extract_survivors
+		cyt_indexer_retrieve "$@"
+	}
+
+	cyt_test_indexer_build() {
+		cyt_indexer_build_catalog
 	}
 
 	cyt_build_rust() {

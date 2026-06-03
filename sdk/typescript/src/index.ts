@@ -2,9 +2,14 @@
 
 export {
   CatalogIndex,
+  anthropicToolToCatalogEntry,
+  anthropicToolsToCatalogEntries,
+  buildCatalogFromTools,
   buildCatalogIndex,
   catalogToolCount,
   collectEnums,
+  prepareToolEntry,
+  truncateDescription,
 } from "./build.js";
 export {
   DecomposedCatalog,

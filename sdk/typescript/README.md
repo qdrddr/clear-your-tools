@@ -28,7 +28,9 @@ CI stages every `cyt-indexer-sdk.*.node` into the package root and runs `npm pub
 
 ```typescript
 import {
+  anthropicToolsToCatalogEntries,
+  buildCatalogFromTools,
   buildCatalogIndex,
-  CatalogIndex,
+  retrieveTools,
 } from "cyt-indexer-sdk";
 ```

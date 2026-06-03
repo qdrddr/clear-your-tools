@@ -175,7 +175,7 @@ pub fn extract_scores(data: &Value) -> HashMap<String, f64> {
             if let Some(e) = entry.as_object() {
                 if let (Some(content), Some(score)) = (
                     e.get("content").and_then(|v| v.as_str()),
-                    e.get("score").and_then(|v| v.as_f64()),
+                    json_f64(e.get("score")),
                 ) {
                     scores.insert(content.to_string(), score);
                 }
@@ -187,7 +187,7 @@ pub fn extract_scores(data: &Value) -> HashMap<String, f64> {
             if let Some(e) = entry.as_object() {
                 if let (Some(fp), Some(score)) = (
                     e.get("file_path").and_then(|v| v.as_str()),
-                    e.get("score").and_then(|v| v.as_f64()),
+                    json_f64(e.get("score")),
                 ) {
                     scores.insert(fp.to_string(), score);
                 }
@@ -195,6 +195,16 @@ pub fn extract_scores(data: &Value) -> HashMap<String, f64> {
         }
     }
     scores
+}
+
+/// Parse a JSON number or numeric string (pruner snapshots often store scores as strings).
+fn json_f64(value: Option<&Value>) -> Option<f64> {
+    let v = value?;
+    if let Some(n) = v.as_f64() {
+        return Some(n);
+    }
+    v.as_str()
+        .and_then(|s| s.trim().parse::<f64>().ok())
 }
 
 fn extract_from_dict(
@@ -211,7 +221,7 @@ fn extract_from_dict(
                 if let Some(e) = entry.as_object() {
                     if let Some(fp) = e.get("file_path").and_then(|v| v.as_str()) {
                         if key == "json" && apply_decomposed_score_filter {
-                            let score = e.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let score = json_f64(e.get("score")).unwrap_or(0.0);
                             if score <= runtime_config::decomposed_score() {
                                 continue;
                             }
@@ -622,4 +632,34 @@ fn walkdir_light(root: &Path) -> Result<Vec<PathBuf>, String> {
         }
     }
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn low_rerank_scores_kept_without_score_filter() {
+        let data = json!({
+            "json": [{
+                "file_path": "schemas/decomposed/Agent.json",
+                "score": "0.003",
+            }]
+        });
+        let files = extract_input_files(&data, false);
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn low_rerank_scores_dropped_with_score_filter() {
+        let data = json!({
+            "json": [{
+                "file_path": "schemas/decomposed/Agent.json",
+                "score": "0.003",
+            }]
+        });
+        let files = extract_input_files(&data, true);
+        assert!(files.is_empty());
+    }
 }

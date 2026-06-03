@@ -2,6 +2,10 @@
 mod policies_python;
 
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
+use crate::tool_entries::{
+    anthropic_tool_to_catalog_entry, build_catalog_from_tools, prepare_tool_entry,
+    truncate_description,
+};
 use crate::paths::{self, collect_enums, PathConfig};
 use crate::retrieve::process_groups_options_from_fields;
 use std::path::PathBuf;
@@ -120,7 +124,7 @@ fn process_groups_from_policy_dict(
 }
 
 #[pyfunction(name = "retrieve_core")]
-#[pyo3(signature = (data, store_json_files, survivor_json_files, apply_decomposed_score_filter=true, policy_options=None))]
+#[pyo3(signature = (data, store_json_files, survivor_json_files, apply_decomposed_score_filter=false, policy_options=None))]
 fn retrieve_core_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,
@@ -384,8 +388,22 @@ fn catalog_to_decomposed(catalog: Bound<'_, PyAny>) -> PyResult<DecomposedCatalo
     Ok(DecomposedCatalog::from_catalog_index(&idx))
 }
 
+#[pyfunction(name = "anthropic_tools_to_catalog_entries")]
+fn anthropic_tools_to_catalog_entries_py(
+    py: Python<'_>,
+    tools: Bound<'_, PyAny>,
+) -> PyResult<PyObject> {
+    let tools_val = py_to_value(tools)?;
+    let tools_arr = tools_val.as_array().cloned().unwrap_or_default();
+    let (entries, enums) = crate::tool_entries::anthropic_tools_to_catalog_entries(&tools_arr);
+    let dict = PyDict::new(py);
+    dict.set_item("entries", value_to_py(py, &Value::Array(entries))?)?;
+    dict.set_item("enums", value_to_py(py, &Value::Array(enums))?)?;
+    Ok(dict.into())
+}
+
 #[pyfunction(name = "retrieve_tools")]
-#[pyo3(signature = (data, catalog, apply_decomposed_score_filter=true, preserve_values=None, ctx=None))]
+#[pyo3(signature = (data, catalog, apply_decomposed_score_filter=false, preserve_values=None, ctx=None))]
 fn retrieve_tools_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,
@@ -422,6 +440,54 @@ fn retrieve_tools_py(
     value_to_py(py, &Value::Array(result))
 }
 
+#[pyfunction(name = "truncate_description")]
+#[pyo3(signature = (description, max_tokens=60))]
+fn truncate_description_py(description: &str, max_tokens: usize) -> String {
+    truncate_description(description, max_tokens)
+}
+
+#[pyfunction(name = "prepare_tool_entry")]
+fn prepare_tool_entry_py(
+    py: Python<'_>,
+    server_name: &str,
+    name: &str,
+    description: &str,
+    input_schema: Bound<'_, PyAny>,
+) -> PyResult<PyObject> {
+    let entry = prepare_tool_entry(
+        server_name,
+        name,
+        description,
+        py_to_value(input_schema)?,
+    );
+    value_to_py(py, &entry)
+}
+
+#[pyfunction(name = "anthropic_tool_to_catalog_entry")]
+fn anthropic_tool_to_catalog_entry_py(
+    py: Python<'_>,
+    tool: Bound<'_, PyAny>,
+) -> PyResult<Option<PyObject>> {
+    anthropic_tool_to_catalog_entry(&py_to_value(tool)?)
+        .map(|entry| value_to_py(py, &entry))
+        .transpose()
+}
+
+#[pyfunction(name = "build_catalog_from_tools")]
+fn build_catalog_from_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+    let tools_val = py_to_value(tools)?;
+    let tools_arr = tools_val.as_array().cloned().unwrap_or_default();
+    let index = build_catalog_from_tools(&tools_arr);
+    let dict = PyDict::new(py);
+    dict.set_item("tools", value_to_py(py, &Value::Array(index.tools))?)?;
+    let files_dict = PyDict::new(py);
+    for (k, v) in &index.files {
+        files_dict.set_item(k, v)?;
+    }
+    dict.set_item("files", files_dict)?;
+    Ok(dict.into())
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     policies_python::refresh_runtime_attrs(m)?;
@@ -432,6 +498,11 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(runtime_empty_optional_fallback_k_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_tool_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_catalog_index_py, m)?)?;
+    m.add_function(wrap_pyfunction!(anthropic_tools_to_catalog_entries_py, m)?)?;
+    m.add_function(wrap_pyfunction!(build_catalog_from_tools_py, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_tool_entry_py, m)?)?;
+    m.add_function(wrap_pyfunction!(anthropic_tool_to_catalog_entry_py, m)?)?;
+    m.add_function(wrap_pyfunction!(truncate_description_py, m)?)?;
     m.add_function(wrap_pyfunction!(retrieve_core_py, m)?)?;
     m.add_function(wrap_pyfunction!(load_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(to_decomposed_key_py, m)?)?;

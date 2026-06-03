@@ -7,6 +7,7 @@ pub mod paths;
 pub mod policies;
 pub mod retrieve;
 pub mod runtime_config;
+pub mod tool_entries;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -35,6 +36,7 @@ pub use policies::{
     needs_partition, needs_pruned_recompose, optional_chunks_for_tool, optional_leaf_survived_rerank,
     partition_catalog, policy_context_from_values, request_pass_through, restore_mcp_tools,
     restore_system_tools, root_chunk_properties_empty, root_tool_id_from_chunk,
+    apply_per_tool_overrides, parse_tool_policy_pair, per_tool_policies_from_value,
     split_anthropic_tools, stash_mcp_tools, stash_system_tools, system_required_enum_values,
     system_tools_pass_through, tool_id_had_empty_original_root_properties,
     tool_id_has_empty_decomposed_root, tool_pass_through, tools_for_catalog, uses_pruned_recompose,
@@ -53,4 +55,8 @@ pub use retrieve::{
     climb_and_merge, deep_merge, extract_input_files, extract_scores, filter_and_sort_enums,
     group_files, load_catalog_from_dir, parse_json_input, process_groups, retrieve_core,
     build_process_groups_options, DecomposedCatalog, ProcessGroupsOptions, RetrieveOptions,
+};
+pub use tool_entries::{
+    anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,
+    is_catalog_tool_entry, normalize_tools_for_catalog, prepare_tool_entry, truncate_description,
 };

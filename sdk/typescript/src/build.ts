@@ -1,7 +1,12 @@
 import {
+  anthropicToolToCatalogEntryNative,
+  anthropicToolsToCatalogEntriesNative,
+  buildCatalogFromToolsNative,
   buildCatalogIndexNative,
   catalogIndexToCatalogDictNative,
   catalogToolCountNative,
+  prepareToolEntryNative,
+  truncateDescriptionNative,
 } from "./native.js";
 import { collectEnums } from "./paths.js";
 import type { JsonRecord } from "./types.js";
@@ -34,10 +39,59 @@ export class CatalogIndex {
   }
 }
 
+function catalogIndexFromRaw(raw: {
+  tools: JsonRecord[];
+  files: Record<string, string>;
+}): CatalogIndex {
+  return new CatalogIndex([...raw.tools], { ...raw.files });
+}
+
 export function buildCatalogIndex(
   tools: JsonRecord[],
   allEnums: unknown[],
 ): CatalogIndex {
   const raw = buildCatalogIndexNative(tools, allEnums);
-  return new CatalogIndex([...raw.tools], { ...raw.files });
+  return catalogIndexFromRaw(raw);
+}
+
+export function buildCatalogFromTools(tools: JsonRecord[]): CatalogIndex {
+  const raw = buildCatalogFromToolsNative(tools);
+  return catalogIndexFromRaw(raw);
+}
+
+export function prepareToolEntry(
+  serverName: string,
+  name: string,
+  description: string,
+  inputSchema: JsonRecord,
+): JsonRecord {
+  return prepareToolEntryNative(
+    serverName,
+    name,
+    description,
+    inputSchema,
+  ) as JsonRecord;
+}
+
+export function anthropicToolToCatalogEntry(
+  tool: JsonRecord,
+): JsonRecord | null {
+  return anthropicToolToCatalogEntryNative(tool) as JsonRecord | null;
+}
+
+export function anthropicToolsToCatalogEntries(tools: JsonRecord[]): {
+  entries: JsonRecord[];
+  enums: unknown[];
+} {
+  return anthropicToolsToCatalogEntriesNative(tools) as {
+    entries: JsonRecord[];
+    enums: unknown[];
+  };
+}
+
+export function truncateDescription(
+  description: string,
+  maxTokens = 60,
+): string {
+  return truncateDescriptionNative(description, maxTokens);
 }
