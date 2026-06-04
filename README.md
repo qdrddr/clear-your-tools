@@ -18,7 +18,7 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
 ✅ BM25 ranking by default
 ✅ No API keys required
-✅ Works transparently with your agents
+✅ Works transparently
 
 </td>
   </tr>
