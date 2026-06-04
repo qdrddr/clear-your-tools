@@ -164,7 +164,6 @@ chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./se
     <td valign="top">
 
 Python SDK (`cyt_indexer`)
-
     </td>
     <td valign="top">
 
@@ -201,7 +200,11 @@ Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
   <tr>
     <td valign="top">
 
-**`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).
+**`cyt-indexer`** ([crates.io][rust-link])
+    </td>
+    <td valign="top">
+
+Rust library and CLI (`build` / `retrieve`)
     </td>
     <td valign="top">
 
