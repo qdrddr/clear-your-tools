@@ -11,11 +11,18 @@ from cyt_indexer.build import (
     truncate_description,
 )
 from cyt_indexer.paths import collect_enums
-from cyt_indexer.retrieve import DecomposedCatalog, load_catalog, retrieve_tools
+from cyt_indexer.retrieve import (
+    DecomposedCatalog,
+    chunk_survivor_key,
+    load_catalog,
+    removed_chunks,
+    retrieve_tools,
+)
 
 __all__ = [
     "CatalogIndex",
     "DecomposedCatalog",
+    "chunk_survivor_key",
     "anthropic_tool_to_catalog_entry",
     "anthropic_tools_to_catalog_entries",
     "build_catalog_from_tools",
@@ -23,6 +30,7 @@ __all__ = [
     "catalog_tool_count",
     "collect_enums",
     "load_catalog",
+    "removed_chunks",
     "prepare_tool_entry",
     "retrieve_tools",
     "truncate_description",

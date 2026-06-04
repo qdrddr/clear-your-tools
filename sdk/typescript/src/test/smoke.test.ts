@@ -8,7 +8,7 @@ import {
   decomposedScore,
   enumScore,
 } from "../runtime-defaults.js";
-import { retrieveTools } from "../retrieve.js";
+import { chunkSurvivorKey, removedChunks, retrieveTools } from "../retrieve.js";
 import { decomposedPrefix } from "../paths.js";
 
 test("score constants match Python SDK defaults", () => {
@@ -111,6 +111,43 @@ test("retrieveTools accepts DecomposedCatalog and CatalogIndex", () => {
     }),
   });
   assert.ok(Array.isArray(fromIndex));
+});
+
+test("removedChunks excludes survivors by decomposed key", () => {
+  const prefix = decomposedPrefix();
+  const full = {
+    json: [
+      {
+        file_path: `${prefix}Agent.json`,
+        content: { name: "Agent" },
+      },
+      {
+        file_path: `${prefix}Agent/extra.json`,
+        content: {},
+      },
+    ],
+    md: [
+      { file_path: `${prefix}haiku.md`, content: "haiku" },
+      { file_path: `${prefix}sonnet.md`, content: "sonnet" },
+    ],
+  };
+  const surviving = {
+    json: [{ file_path: `src/catalog/${prefix}Agent.json` }],
+    md: [{ file_path: `src/catalog/${prefix}haiku.md` }],
+  };
+  const removed = removedChunks(full, surviving);
+  assert.equal(removed.json.length, 1);
+  assert.equal(removed.json[0]?.file_path, `${prefix}Agent/extra.json`);
+  assert.equal(removed.md.length, 1);
+  assert.equal(removed.md[0]?.file_path, `${prefix}sonnet.md`);
+});
+
+test("chunkSurvivorKey normalizes file paths", () => {
+  const prefix = decomposedPrefix();
+  assert.equal(
+    chunkSurvivorKey({ file_path: `src/catalog/${prefix}Agent.json` }, "json"),
+    `${prefix}Agent.json`,
+  );
 });
 
 test("retrieveTools treats non-object data as empty catalog dict", () => {

@@ -20,7 +20,13 @@ from cyt_indexer import (
     build_catalog_from_tools,
     build_catalog_index,
     anthropic_tools_to_catalog_entries,
+    load_catalog,
     prepare_tool_entry,
+    removed_chunks,
     retrieve_tools,
 )
+
+full = load_catalog(".catalog")
+surviving = ...  # survivors.json
+removed = removed_chunks(full, surviving)
 ```

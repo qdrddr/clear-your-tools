@@ -32,10 +32,26 @@ cyt-indexer retrieve --catalog ./.catalog --input survivors.json --output out.js
   --tool-policy Agent=always_include \
   --tool-policy mcp__fff__multi_grep=always_include \
   --per-tool per-tool.json
+
+# Optional: write non-surviving decomposed chunks (same {json, md} shape as survivors.json)
+cyt-indexer retrieve ... --removed-output ./.catalog/removed.json
+
+# Or as a dedicated command (use --full for build_index snapshot vs on-disk catalog)
+cyt-indexer removed --catalog ./.catalog --input survivors.json --output ./.catalog/removed.json
 ```
 
 Score filter is **off by default** (rerank survivor scores are ~0.003, not 0–1).
 Use `--score-filter` only for LLM-stage catalogs where json scores exceed the decomposed threshold (0.5).
+
+Library:
+
+```rust
+use cyt_indexer::{load_catalog_from_dir, removed_chunks, RemovedChunksOptions};
+
+let full = load_catalog_from_dir(".catalog")?;
+let surviving: serde_json::Value = /* survivors.json */;
+let removed = removed_chunks(&full, &surviving, &RemovedChunksOptions::default());
+```
 
 Policies (in precedence order, later wins):
 

@@ -1,7 +1,9 @@
 import { CatalogIndex } from "./build.js";
 import { DecomposedCatalog } from "./decomposed-catalog.js";
 import {
+  chunkSurvivorKeyNative,
   loadCatalogNative,
+  removedChunksNative,
   retrieveCoreNative,
   retrieveToolsNative,
   type PolicyContextJs,
@@ -24,6 +26,41 @@ export function loadCatalog(dirPath: string): {
     json: JsonRecord[];
     tools: JsonRecord[];
   };
+}
+
+/** Catalog dict shape produced by {@link loadCatalog} and rerank survivors output. */
+export interface DecomposedCatalogDict {
+  json: JsonRecord[];
+  md: JsonRecord[];
+}
+
+export interface RemovedChunksOptions {
+  /** When true, json entries in `surviving` with score <= decomposed threshold count as removed. */
+  applyDecomposedScoreFilter?: boolean;
+}
+
+/** Normalized identity for a catalog chunk (`json` or `md` array item). */
+export function chunkSurvivorKey(
+  item: JsonRecord,
+  section: "json" | "md",
+): string | null {
+  return chunkSurvivorKeyNative(item, section);
+}
+
+/**
+ * Decomposed chunks in `fullCatalog` that are not in `surviving` (same shape as survivors.json).
+ */
+export function removedChunks(
+  fullCatalog: DecomposedCatalogDict,
+  surviving: DecomposedCatalogDict,
+  options: RemovedChunksOptions = {},
+): DecomposedCatalogDict {
+  const { applyDecomposedScoreFilter = false } = options;
+  return removedChunksNative(
+    fullCatalog,
+    surviving,
+    applyDecomposedScoreFilter,
+  ) as DecomposedCatalogDict;
 }
 
 export interface RetrieveToolsOptions {

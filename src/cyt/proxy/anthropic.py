@@ -539,6 +539,8 @@ def _run_rerank_stage(
         snapshots["rerank"] = _snapshot_catalog(data)
     post_rerank_scored = copy.deepcopy(data)
     data = prune_reranked_catalog(data)
+    if capture_catalog and snapshots is not None:
+        snapshots["rerank_pruned"] = _snapshot_catalog(data)
     post_rerank = copy.deepcopy(data)
     decomposed_breakdown["rerank"] = _breakdown_entry(data)
     decomposed["rerank"] = (
@@ -585,6 +587,8 @@ def _run_bm25_stage(
         snapshots["bm25"] = _snapshot_catalog(data)
     post_rerank_scored = copy.deepcopy(data)
     data = prune_bm25_catalog(data)
+    if capture_catalog and snapshots is not None:
+        snapshots["bm25_pruned"] = _snapshot_catalog(data)
     post_rerank = copy.deepcopy(data)
     decomposed_breakdown["bm25"] = _breakdown_entry(data)
     decomposed["bm25"] = decomposed_breakdown["bm25"]["json"] + decomposed_breakdown["bm25"]["md"]

@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
     load_catalog_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
-    policy_context_from_values, retrieve_core, DecomposedCatalog, PolicyContext, RetrieveOptions,
-    ToolPolicy,
+    policy_context_from_values, removed_chunks, retrieve_core, DecomposedCatalog, PolicyContext,
+    RemovedChunksOptions, RetrieveOptions, ToolPolicy,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -58,6 +58,26 @@ enum Commands {
         /// Deprecated alias for default behavior (score filter already off unless --score-filter).
         #[arg(long, hide = true)]
         no_score_filter: bool,
+        /// Optional path to write non-surviving decomposed chunks (`{json, md}` like survivors.json).
+        #[arg(long)]
+        removed_output: Option<PathBuf>,
+    },
+    /// List decomposed chunks in the full catalog that are not in the survivors input.
+    Removed {
+        /// Full decomposed catalog directory (or use --full for a pre-built catalog JSON).
+        #[arg(long)]
+        catalog: PathBuf,
+        /// Survivors JSON (`{json, md}` arrays), e.g. rerank output or `.catalog/survivors.json`.
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        /// Full catalog JSON instead of walking --catalog (e.g. `decomposed_catalog.build_index`).
+        #[arg(long)]
+        full: Option<PathBuf>,
+        /// Treat json chunks in --input with score <= decomposed threshold as non-surviving.
+        #[arg(long)]
+        score_filter: bool,
     },
 }
 
@@ -139,6 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             preserve,
             score_filter,
             no_score_filter: _no_score_filter,
+            removed_output,
         } => {
             let apply_score_filter = score_filter && !_no_score_filter;
             let ctx = policy_context_from_cli(
@@ -168,6 +189,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             fs::write(output, serde_json::to_string_pretty(&tools)?)?;
+            if let Some(removed_path) = removed_output {
+                let removed = removed_chunks(
+                    &catalog_dict,
+                    &data,
+                    &RemovedChunksOptions {
+                        apply_decomposed_score_filter: apply_score_filter,
+                    },
+                );
+                fs::write(removed_path, serde_json::to_string_pretty(&removed)?)?;
+            }
+        }
+        Commands::Removed {
+            catalog,
+            input,
+            output,
+            full,
+            score_filter,
+        } => {
+            let full_catalog = match full {
+                Some(path) => {
+                    let raw = fs::read_to_string(path)?;
+                    serde_json::from_str(&raw)?
+                }
+                None => load_catalog_from_dir(catalog.to_str().unwrap())?,
+            };
+            let input_raw = fs::read_to_string(input)?;
+            let surviving: Value = serde_json::from_str(&input_raw)?;
+            let removed = removed_chunks(
+                &full_catalog,
+                &surviving,
+                &RemovedChunksOptions {
+                    apply_decomposed_score_filter: score_filter,
+                },
+            );
+            fs::write(output, serde_json::to_string_pretty(&removed)?)?;
         }
     }
     Ok(())

@@ -293,3 +293,36 @@ def test_input_tools_from_payload_deep_copies_tools() -> None:
     assert meta is not None
     assert meta["input"]["tools"] == [{"name": "a", "input_schema": {"x": 2}}]
     assert _pruning_meta_for_debug(None, copied) is None
+
+
+def test_format_removed_chunks_lines_lists_rerank_pruned_paths() -> None:
+    from cyt.proxy.pruning_debug import format_removed_chunks_lines
+
+    pruning = {
+        "decomposed_catalog": {
+            "build_index": {
+                "json": [
+                    {"file_path": "schemas/decomposed/Keep.json"},
+                    {"file_path": "schemas/decomposed/Drop.json"},
+                ],
+                "md": [],
+            },
+            "rerank": {
+                "json": [
+                    {"file_path": "schemas/decomposed/Keep.json"},
+                    {"file_path": "schemas/decomposed/Drop.json"},
+                ],
+                "md": [],
+            },
+            "rerank_pruned": {
+                "json": [{"file_path": "schemas/decomposed/Keep.json"}],
+                "md": [],
+            },
+        },
+    }
+    lines = format_removed_chunks_lines(pruning)
+    text = "\n".join(lines)
+    assert "Decomposed removed" in text
+    assert "rerank pruned away" in text
+    assert "schemas/decomposed/Drop.json" in text
+    assert "removed since build_index" in text

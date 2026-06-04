@@ -540,6 +540,97 @@ pub fn retrieve_core(
     process_groups(&groups, &tool_files, &scores, store, &opts.process_groups)
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RemovedChunksOptions {
+    /// When true, json entries in `surviving` with score <= decomposed threshold are treated
+    /// as non-surviving (matches [`RetrieveOptions::apply_decomposed_score_filter`]).
+    pub apply_decomposed_score_filter: bool,
+}
+
+/// Normalized identity for a catalog chunk entry (`json` or `md` array item).
+pub fn chunk_survivor_key(entry: &Value, section: &str) -> Option<String> {
+    let obj = entry.as_object()?;
+    if let Some(fp) = obj.get("file_path").and_then(|v| v.as_str()) {
+        return paths::to_decomposed_key(fp).or_else(|| Some(fp.to_string()));
+    }
+    if section == "md" {
+        if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
+            return Some(format!("md:content:{content}"));
+        }
+    }
+    None
+}
+
+fn survivor_key_sets(
+    surviving: &Value,
+    apply_decomposed_score_filter: bool,
+) -> (HashSet<String>, HashSet<String>) {
+    let mut json_keys = HashSet::new();
+    let mut md_keys = HashSet::new();
+    let Some(obj) = surviving.as_object() else {
+        return (json_keys, md_keys);
+    };
+    if let Some(arr) = obj.get("json").and_then(|v| v.as_array()) {
+        for entry in arr {
+            let Some(e) = entry.as_object() else {
+                continue;
+            };
+            if apply_decomposed_score_filter {
+                let score = json_f64(e.get("score")).unwrap_or(0.0);
+                if score <= runtime_config::decomposed_score() {
+                    continue;
+                }
+            }
+            if let Some(key) = chunk_survivor_key(entry, "json") {
+                json_keys.insert(key);
+            }
+        }
+    }
+    if let Some(arr) = obj.get("md").and_then(|v| v.as_array()) {
+        for entry in arr {
+            if let Some(key) = chunk_survivor_key(entry, "md") {
+                md_keys.insert(key);
+            }
+        }
+    }
+    (json_keys, md_keys)
+}
+
+fn removed_section(
+    full: &Value,
+    section: &str,
+    survivor_keys: &HashSet<String>,
+) -> Vec<Value> {
+    let Some(arr) = full.get(section).and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut removed = Vec::new();
+    for entry in arr {
+        let key = chunk_survivor_key(entry, section);
+        if key.as_ref().is_some_and(|k| survivor_keys.contains(k)) {
+            continue;
+        }
+        removed.push(entry.clone());
+    }
+    removed
+}
+
+/// Chunks present in `full_catalog` but not in `surviving` (same `{json, md}` shape as survivors).
+pub fn removed_chunks(
+    full_catalog: &Value,
+    surviving: &Value,
+    opts: &RemovedChunksOptions,
+) -> Value {
+    let (json_keys, md_keys) =
+        survivor_key_sets(surviving, opts.apply_decomposed_score_filter);
+    let json = removed_section(full_catalog, "json", &json_keys);
+    let md = removed_section(full_catalog, "md", &md_keys);
+    json!({
+        "json": json,
+        "md": md,
+    })
+}
+
 pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
     let root = Path::new(dir_path);
     if !root.is_dir() {
@@ -552,6 +643,10 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
     for entry in walkdir_light(root)? {
         let path = entry;
         if !path.is_file() {
+            continue;
+        }
+        let path_str = path.to_string_lossy();
+        if paths::to_decomposed_key(&path_str).is_none() {
             continue;
         }
         let suffix = path.extension().and_then(|s| s.to_str()).unwrap_or("");
@@ -661,5 +756,62 @@ mod tests {
         });
         let files = extract_input_files(&data, true);
         assert!(files.is_empty());
+    }
+
+    #[test]
+    fn removed_chunks_excludes_survivors_by_decomposed_key() {
+        let full = json!({
+            "json": [
+                {"file_path": "schemas/decomposed/Agent.json", "content": {"name": "Agent"}},
+                {"file_path": "schemas/decomposed/Agent/extra.json", "content": {}},
+            ],
+            "md": [
+                {"file_path": "schemas/decomposed/haiku.md", "content": "haiku"},
+                {"file_path": "schemas/decomposed/sonnet.md", "content": "sonnet"},
+            ],
+        });
+        let surviving = json!({
+            "json": [{"file_path": "src/catalog/schemas/decomposed/Agent.json"}],
+            "md": [{"file_path": "src/catalog/schemas/decomposed/haiku.md"}],
+        });
+        let removed = removed_chunks(&full, &surviving, &RemovedChunksOptions::default());
+        assert_eq!(removed["json"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            removed["json"][0]["file_path"].as_str().unwrap(),
+            "schemas/decomposed/Agent/extra.json"
+        );
+        assert_eq!(removed["md"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            removed["md"][0]["file_path"].as_str().unwrap(),
+            "schemas/decomposed/sonnet.md"
+        );
+    }
+
+    #[test]
+    fn removed_chunks_respects_score_filter_on_survivors() {
+        let full = json!({
+            "json": [
+                {"file_path": "schemas/decomposed/Keep.json", "score": 0.9},
+                {"file_path": "schemas/decomposed/Drop.json", "score": 0.9},
+            ],
+        });
+        let surviving = json!({
+            "json": [
+                {"file_path": "schemas/decomposed/Keep.json", "score": 0.9},
+                {"file_path": "schemas/decomposed/Drop.json", "score": 0.1},
+            ],
+        });
+        let removed = removed_chunks(
+            &full,
+            &surviving,
+            &RemovedChunksOptions {
+                apply_decomposed_score_filter: true,
+            },
+        );
+        assert_eq!(removed["json"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            removed["json"][0]["file_path"].as_str().unwrap(),
+            "schemas/decomposed/Drop.json"
+        );
     }
 }

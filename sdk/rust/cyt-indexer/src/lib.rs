@@ -52,9 +52,10 @@ pub use runtime_config::{
     RuntimeConfig,
 };
 pub use retrieve::{
-    climb_and_merge, deep_merge, extract_input_files, extract_scores, filter_and_sort_enums,
-    group_files, load_catalog_from_dir, parse_json_input, process_groups, retrieve_core,
-    build_process_groups_options, DecomposedCatalog, ProcessGroupsOptions, RetrieveOptions,
+    build_process_groups_options, chunk_survivor_key, climb_and_merge, deep_merge,
+    extract_input_files, extract_scores, filter_and_sort_enums, group_files, load_catalog_from_dir,
+    parse_json_input, process_groups, removed_chunks, retrieve_core, DecomposedCatalog,
+    ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
 };
 pub use tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,

@@ -19,9 +19,10 @@ use crate::tool_entries::{
 use crate::paths::{self, collect_enums as paths_collect_enums};
 use crate::policies::tool_policy_strings;
 use crate::retrieve::{
-    build_process_groups_options, decomposed_catalog_from_value, load_catalog_from_dir,
-    process_groups_options_from_fields, retrieve_core as core_retrieve_core, DecomposedCatalog,
-    ProcessGroupsOptions, RetrieveOptions,
+    build_process_groups_options, chunk_survivor_key, decomposed_catalog_from_value,
+    load_catalog_from_dir, process_groups_options_from_fields, removed_chunks,
+    retrieve_core as core_retrieve_core, DecomposedCatalog, ProcessGroupsOptions,
+    RemovedChunksOptions, RetrieveOptions,
 };
 use crate::runtime_config;
 use napi::bindgen_prelude::*;
@@ -227,6 +228,26 @@ pub fn retrieve_core(
 #[napi]
 pub fn load_catalog(dir_path: String) -> Result<Value> {
     load_catalog_from_dir(&dir_path).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+#[napi]
+pub fn chunkSurvivorKey(item: Value, section: String) -> Option<String> {
+    chunk_survivor_key(&item, &section)
+}
+
+#[napi]
+pub fn removedChunks(
+    full_catalog: Value,
+    surviving: Value,
+    apply_decomposed_score_filter: Option<bool>,
+) -> Result<Value> {
+    Ok(removed_chunks(
+        &full_catalog,
+        &surviving,
+        &RemovedChunksOptions {
+            apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(false),
+        },
+    ))
 }
 
 #[napi]

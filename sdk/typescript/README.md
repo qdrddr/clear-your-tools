@@ -31,6 +31,12 @@ import {
   anthropicToolsToCatalogEntries,
   buildCatalogFromTools,
   buildCatalogIndex,
+  loadCatalog,
+  removedChunks,
   retrieveTools,
 } from "cyt-indexer-sdk";
+
+const full = loadCatalog(".catalog");
+const surviving = /* survivors.json */;
+const removed = removedChunks(full, surviving);
 ```

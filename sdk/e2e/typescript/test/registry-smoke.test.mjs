@@ -5,6 +5,7 @@ import {
   buildCatalogIndex,
   CatalogIndex,
   DecomposedCatalog,
+  removedChunks,
   retrieveTools,
 } from "cyt-indexer-sdk";
 
@@ -32,6 +33,24 @@ test("buildCatalogIndex from npm package", () => {
   assert.ok(
     Object.hasOwn(index.files, "schemas/decomposed/mcp__test__foo.json"),
   );
+});
+
+test("removedChunks from npm package", () => {
+  const prefix = "schemas/decomposed/";
+  const full = {
+    json: [
+      { file_path: `${prefix}Agent.json`, content: { name: "Agent" } },
+      { file_path: `${prefix}Agent/extra.json`, content: {} },
+    ],
+    md: [],
+  };
+  const surviving = {
+    json: [{ file_path: `src/catalog/${prefix}Agent.json` }],
+    md: [],
+  };
+  const removed = removedChunks(full, surviving);
+  assert.equal(removed.json.length, 1);
+  assert.equal(removed.json[0].file_path, `${prefix}Agent/extra.json`);
 });
 
 test("retrieveTools from npm package", () => {

@@ -17,6 +17,7 @@ from cyt.proxy.anthropic import (
     format_search_query,
     merge_api_tool_onto_original,
 )
+from cyt.proxy.pruning_debug import merge_decomposed_catalog_snapshots
 from cyt.pruners.policies import policy_context_from_config, request_pass_through
 
 logger = logging.getLogger(__name__)
@@ -238,7 +239,10 @@ def _combine_prune_results(
         pruning_token_usage={**existing.pruning_token_usage, **new.pruning_token_usage},
         decomposed={**existing.decomposed, **new.decomposed},
         decomposed_breakdown={**existing.decomposed_breakdown, **new.decomposed_breakdown},
-        decomposed_catalog=new.decomposed_catalog or existing.decomposed_catalog,
+        decomposed_catalog=merge_decomposed_catalog_snapshots(
+            existing.decomposed_catalog,
+            new.decomposed_catalog,
+        ),
     )
 
 

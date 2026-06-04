@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from cyt_indexer.retrieve import DecomposedCatalog, load_catalog
+from cyt_indexer.retrieve import (
+    DecomposedCatalog,
+    chunk_survivor_key,
+    load_catalog,
+)
+from cyt_indexer.retrieve import (
+    removed_chunks as _removed_chunks,
+)
 from cyt_indexer.retrieve import (
     retrieve_tools as _retrieve_tools,
 )
@@ -17,9 +24,25 @@ if TYPE_CHECKING:
 __all__ = [
     "DecomposedCatalog",
     "PolicyContext",
+    "chunk_survivor_key",
     "load_catalog",
+    "removed_chunks",
     "retrieve_tools",
 ]
+
+
+def removed_chunks(
+    full_catalog: dict[str, Any],
+    surviving: dict[str, Any],
+    *,
+    apply_decomposed_score_filter: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
+    """Return decomposed chunks in ``full_catalog`` not present in ``surviving``."""
+    return _removed_chunks(
+        full_catalog,
+        surviving,
+        apply_decomposed_score_filter=apply_decomposed_score_filter,
+    )
 
 
 def retrieve_tools(

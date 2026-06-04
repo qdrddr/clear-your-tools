@@ -13,11 +13,15 @@ export {
 } from "./build.js";
 export {
   DecomposedCatalog,
+  chunkSurvivorKey,
   loadCatalog,
+  removedChunks,
   retrieveTools,
+  type DecomposedCatalogDict,
   type JsonRecord,
   type PolicyContextJs,
   type PolicyOptions,
+  type RemovedChunksOptions,
   type RetrieveToolsOptions,
 } from "./retrieve.js";
 export {

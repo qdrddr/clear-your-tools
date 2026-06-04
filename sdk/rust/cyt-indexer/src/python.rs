@@ -11,8 +11,8 @@ use crate::retrieve::process_groups_options_from_fields;
 use std::path::PathBuf;
 use crate::policies::policy_context_from_values;
 use crate::retrieve::{
-    build_process_groups_options, load_catalog_from_dir, retrieve_core, DecomposedCatalog,
-    ProcessGroupsOptions, RetrieveOptions,
+    build_process_groups_options, chunk_survivor_key, load_catalog_from_dir, removed_chunks,
+    retrieve_core, DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
 };
 use crate::runtime_config::{self, RuntimeConfig};
 use policies_python::ctx_from_py_any;
@@ -342,6 +342,29 @@ fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
     })
 }
 
+#[pyfunction(name = "chunk_survivor_key")]
+fn chunk_survivor_key_py(item: Bound<'_, PyAny>, section: &str) -> PyResult<Option<String>> {
+    Ok(chunk_survivor_key(&py_to_value(item)?, section))
+}
+
+#[pyfunction(name = "removed_chunks")]
+#[pyo3(signature = (full_catalog, surviving, apply_decomposed_score_filter=false))]
+fn removed_chunks_py(
+    py: Python<'_>,
+    full_catalog: Bound<'_, PyAny>,
+    surviving: Bound<'_, PyAny>,
+    apply_decomposed_score_filter: bool,
+) -> PyResult<PyObject> {
+    let removed = removed_chunks(
+        &py_to_value(full_catalog)?,
+        &py_to_value(surviving)?,
+        &RemovedChunksOptions {
+            apply_decomposed_score_filter,
+        },
+    );
+    value_to_py(py, &removed)
+}
+
 /// In-memory decomposed catalog JSON (backed by Rust [`DecomposedCatalog`]).
 #[pyclass(name = "DecomposedCatalog")]
 #[derive(Clone)]
@@ -505,6 +528,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(truncate_description_py, m)?)?;
     m.add_function(wrap_pyfunction!(retrieve_core_py, m)?)?;
     m.add_function(wrap_pyfunction!(load_catalog_py, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_survivor_key_py, m)?)?;
+    m.add_function(wrap_pyfunction!(removed_chunks_py, m)?)?;
     m.add_function(wrap_pyfunction!(to_decomposed_key_py, m)?)?;
     m.add_function(wrap_pyfunction!(tool_id_from_decomposed_rel_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_root_tool_key_py, m)?)?;

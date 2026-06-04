@@ -20,6 +20,8 @@ export const catalogIndexToCatalogDictNative = native.catalogIndexToCatalogDict;
 export const loadCatalogNative = native.loadCatalog;
 export const retrieveCoreNative = native.retrieveCore;
 export const retrieveToolsNative = native.retrieveTools;
+export const chunkSurvivorKeyNative = native.chunkSurvivorKey;
+export const removedChunksNative = native.removedChunks;
 export const DecomposedCatalogNative = native.DecomposedCatalog;
 
 // Paths

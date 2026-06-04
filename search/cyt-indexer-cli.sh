@@ -22,7 +22,8 @@ jq '{
 	--output ./.catalog/out.json \
 	--system-policy prune_optional \
 	--mcp-policy prune_all \
-	--tool-policy AskUserQuestion=always_include
+	--tool-policy AskUserQuestion=always_include \
+	--removed-output ./.catalog/removed.json
 
 ./search/local-dev.sh all
 

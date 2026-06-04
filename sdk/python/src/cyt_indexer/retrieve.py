@@ -11,6 +11,12 @@ from cyt_indexer._native import (
     load_catalog as _load_catalog,
 )
 from cyt_indexer._native import (
+    chunk_survivor_key as _chunk_survivor_key,
+)
+from cyt_indexer._native import (
+    removed_chunks as _removed_chunks,
+)
+from cyt_indexer._native import (
     retrieve_tools as _retrieve_tools,
 )
 from cyt_indexer.runtime_defaults import decomposed_score, enum_score
@@ -26,7 +32,9 @@ __all__ = [
     "DECOMPOSED_SCORE",
     "ENUM_SCORE",
     "DecomposedCatalog",
+    "chunk_survivor_key",
     "load_catalog",
+    "removed_chunks",
     "retrieve_tools",
 ]
 
@@ -34,6 +42,25 @@ __all__ = [
 def load_catalog(dir_path: str) -> dict[str, list[dict[str, Any]]]:
     """Walk directory and build catalog dict for rerank/llm."""
     return _load_catalog(dir_path)
+
+
+def chunk_survivor_key(item: dict[str, Any], section: str) -> str | None:
+    """Normalized identity for a catalog chunk entry (``json`` or ``md`` section)."""
+    return _chunk_survivor_key(item, section)
+
+
+def removed_chunks(
+    full_catalog: dict[str, Any],
+    surviving: dict[str, Any],
+    *,
+    apply_decomposed_score_filter: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
+    """Return decomposed chunks in ``full_catalog`` not present in ``surviving``."""
+    return _removed_chunks(
+        full_catalog,
+        surviving,
+        apply_decomposed_score_filter,
+    )
 
 
 def retrieve_tools(
