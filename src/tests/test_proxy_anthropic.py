@@ -7,7 +7,9 @@ from unittest.mock import patch
 from cyt.proxy.anthropic import (
     PruneResult,
     clean_messages,
+    extract_last_assistant_message,
     extract_user_query,
+    format_search_query,
     transform_anthropic_request,
 )
 
@@ -99,6 +101,35 @@ def test_extract_user_query_skips_malformed_retry_turn() -> None:
     ]
     cleaned = clean_messages(messages)
     assert extract_user_query(cleaned) == "update src/retrieve_catalog.py"
+
+
+def test_format_search_query_without_assistant() -> None:
+    assert format_search_query("say hi!") == "User_Asks: say hi!"
+
+
+def test_format_search_query_with_assistant() -> None:
+    assert (
+        format_search_query("say hi!", "hi back") == "User_Asks: say hi!; Assistant_Says: hi back"
+    )
+
+
+def test_extract_last_assistant_message_prefers_latest_turn() -> None:
+    messages = [
+        {"role": "assistant", "content": [{"type": "text", "text": "older"}]},
+        {"role": "user", "content": [{"type": "text", "text": "again"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "**Greeting**\n\nPreparing hi.",
+                },
+                {"type": "text", "text": "hi!"},
+            ],
+        },
+    ]
+    cleaned = clean_messages(messages)
+    assert extract_last_assistant_message(cleaned) == "**Greeting**\n\nPreparing hi.\nhi!"
 
 
 def test_extract_user_query_skips_recap_meta_turn() -> None:

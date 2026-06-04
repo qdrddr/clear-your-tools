@@ -255,6 +255,48 @@ def extract_user_query(cleaned_messages: list[dict[str, Any]]) -> str | None:
     return max(pool, key=_query_rank)
 
 
+def _text_from_assistant_message(msg: dict[str, Any]) -> str | None:
+    content = msg.get("content")
+    if isinstance(content, str):
+        stripped = content.strip()
+        return stripped if stripped and not _is_junk_text(stripped) else None
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type == "text":
+                text = block.get("text", "")
+                if isinstance(text, str) and not _is_junk_text(text):
+                    parts.append(text.strip())
+            elif block_type == "thinking":
+                thinking = block.get("thinking", "")
+                if isinstance(thinking, str) and thinking.strip():
+                    parts.append(thinking.strip())
+        if parts:
+            return "\n".join(parts)
+    return None
+
+
+def extract_last_assistant_message(cleaned_messages: list[dict[str, Any]]) -> str | None:
+    """Return text from the latest assistant message (text and thinking blocks)."""
+    for msg in reversed(cleaned_messages):
+        if msg.get("role") != "assistant":
+            continue
+        if text := _text_from_assistant_message(msg):
+            return text
+    return None
+
+
+def format_search_query(user_query: str, assistant_message: str | None = None) -> str:
+    """Combine user and assistant turns for bm25/rerank/llm tool search."""
+    base = f"User_Asks: {user_query}"
+    if assistant_message:
+        return f"{base}; Assistant_Says: {assistant_message}"
+    return base
+
+
 def _merged_tools_to_anthropic(merged: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for tool in merged:
@@ -1006,8 +1048,8 @@ def transform_anthropic_request(
         )
 
     cleaned = clean_messages(messages)
-    query = extract_user_query(cleaned)
-    if not query:
+    user_query = extract_user_query(cleaned)
+    if not user_query:
         logger.warning("no user query extracted; forwarding original tools")
         return original, PruneResult(
             tools=None,
@@ -1019,6 +1061,7 @@ def transform_anthropic_request(
             error="no user query extracted",
         )
 
+    query = format_search_query(user_query, extract_last_assistant_message(cleaned))
     result = filter_tools_for_query(
         tools,
         query,

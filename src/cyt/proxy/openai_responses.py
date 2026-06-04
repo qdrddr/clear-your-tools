@@ -12,7 +12,9 @@ from cyt.proxy.anthropic import (
     _text_from_user_message,
     _user_message_has_text,
     clean_messages,
+    extract_last_assistant_message,
     filter_tools_for_query,
+    format_search_query,
     merge_api_tool_onto_original,
 )
 from cyt.pruners.policies import policy_context_from_config, request_pass_through
@@ -322,8 +324,8 @@ def transform_openai_request(
         return original, None
 
     cleaned = clean_input(input_items)
-    query = extract_user_query_from_input(cleaned)
-    if not query and (tools or tool_search_outputs):
+    user_query = extract_user_query_from_input(cleaned)
+    if not user_query:
         logger.warning("no user query extracted; forwarding original tools")
         return original, PruneResult(
             tools=None,
@@ -335,6 +337,7 @@ def transform_openai_request(
             error="no user query extracted",
         )
 
+    query = format_search_query(user_query, extract_last_assistant_message(cleaned))
     result: PruneResult | None = None
 
     if tools:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from cyt.proxy.anthropic import PruneResult, merge_api_tool_onto_original
+from cyt.proxy.anthropic import PruneResult, format_search_query, merge_api_tool_onto_original
 from cyt.proxy.openai_responses import (
     _flatten_openai_tools_for_pruning,
     _merge_openai_tools_preserving_order,
@@ -23,6 +23,15 @@ def _user_message(*texts: str) -> dict:
         "type": "message",
         "role": "user",
         "content": [{"type": "input_text", "text": text} for text in texts],
+    }
+
+
+def _assistant_message(text: str) -> dict:
+    return {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": text}],
+        "phase": "final_answer",
     }
 
 
@@ -52,6 +61,39 @@ def test_extract_user_query_from_openai_input_finds_last_user_message() -> None:
     ]
     cleaned = clean_input(input_items)
     assert extract_user_query_from_input(cleaned) == "say hi!"
+
+
+def test_transform_openai_request_search_query_includes_assistant_reply() -> None:
+    tools: list[dict[str, Any]] = [
+        {
+            "type": "function",
+            "name": "mcp__srv__tool_a",
+            "description": "A",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("say hi!"), _assistant_message("hi!")],
+        "tools": tools,
+    }
+    prune_result = PruneResult(
+        tools=tools,
+        status="applied",
+        query="unused",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+
+    with patch(
+        "cyt.proxy.openai_responses.filter_tools_for_query",
+        return_value=prune_result,
+    ) as mock_filter:
+        transform_openai_request(body)
+
+    assert mock_filter.call_args.args[1] == format_search_query("say hi!", "hi!")
 
 
 def test_extract_user_query_from_input_uses_latest_user_turn() -> None:
