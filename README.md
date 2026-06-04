@@ -159,47 +159,55 @@ chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./se
   <tr>
     <td valign="top">
 
-**`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).
-</td>
+**`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link])
+    </td>
+    <td valign="top">
+
+Python SDK (`cyt_indexer`)
+
+    </td>
     <td valign="top">
 
 [![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
-
-</td>
+    </td>
   <tr>
     <td valign="top">
 
-**`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.
-</td>
+**`cyt-indexer-sdk`** ([npm][npm-link])
+    </td>
+    <td valign="top">
+
+TypeScript SDK
+    </td>
     <td valign="top">
 
 [![npm][npm-sdk-shield]][npm-link]
-
-</td>
+    </td>
   </tr>
   <tr>
     <td valign="top">
 
-**`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
+**`clear-your-tools`** ([PyPI][pypi-cyt-link])
+    </td>
+    <td valign="top">
 
-</td>
+Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
+    </td>
     <td valign="top">
 
 [![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
-
 </td>
   </tr>
   <tr>
     <td valign="top">
 
 **`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).
-</td>
+    </td>
     <td valign="top">
 
 [![crates.io cyt-indexer][rust-version-shield]][rust-link]
 [![crates.io downloads][rust-downloads-shield]][rust-link]
-
-</td>
+    </td>
   </tr>
 </table>
 <!-- markdownlint-disable MD013 -->
