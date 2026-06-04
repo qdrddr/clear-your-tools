@@ -167,6 +167,7 @@ Python SDK (`cyt_indexer`)
     <td valign="top">
 
 [![PyPI cyt-indexer-sdk][pypi-sdk-version-shield]][pypi-sdk-link]
+
 [![PyPI downloads][pypi-sdk-downloads-shield]][pypi-sdk-link]
     </td>
   </tr>
@@ -182,6 +183,7 @@ TypeScript SDK
     <td valign="top">
 
 [![npm cyt-indexer-sdk][npm-sdk-version-shield]][npm-link]
+
 [![npm downloads][npm-sdk-downloads-shield]][npm-link]
     </td>
   </tr>
@@ -197,6 +199,7 @@ Python SDK (`import cyt`) and CLI (`cyt`: `proxy` / `pruners`)
     <td valign="top">
 
 [![PyPI clear-your-tools][pypi-cyt-version-shield]][pypi-cyt-link]
+
 [![PyPI downloads][pypi-cyt-downloads-shield]][pypi-cyt-link]
     </td>
   </tr>
@@ -212,6 +215,7 @@ Rust library and CLI (`build` / `retrieve`)
     <td valign="top">
 
 [![crates.io cyt-indexer][rust-version-shield]][rust-link]
+
 [![crates.io downloads][rust-downloads-shield]][rust-link]
     </td>
   </tr>
