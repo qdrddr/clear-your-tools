@@ -150,9 +150,35 @@ On each intercepted request the proxy:
 
 Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and **Linux**.
 
----
+<div align="center">
 
-## SDK & CLI
+[![Windows][windows-shield]](#supported-platforms)
+[![macOS][macos-shield]](#supported-platforms)
+[![Linux][linux-shield]](#supported-platforms)
+
+</div>
+
+<details>
+<summary><strong>SDK & CLI</strong></summary>
+
+<div align="center">
+
+[![npm][npm-sdk-shield]][npm-link]
+[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
+[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
+[![crates.io cyt-indexer][rust-version-shield]][rust-link]
+[![crates.io downloads][rust-downloads-shield]][rust-link]
+
+![Shell][shell-shield]
+![Python][python-tech-shield]
+![TypeScript][typescript-shield]
+![Rust][rust-tech-shield]
+
+[![Windows][windows-shield]](#supported-platforms)
+[![macOS][macos-shield]](#supported-platforms)
+[![Linux][linux-shield]](#supported-platforms)
+
+</div>
 
 All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
 chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
@@ -161,6 +187,8 @@ chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./se
 - **`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.
 - **`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).
 - **`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
+
+</details>
 
 ---
 
