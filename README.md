@@ -41,11 +41,11 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
   <table>
     <tr>
-      <td align="center" width="120">
+      <td align="center" width="240">
         <img src="assets/claude.png" width="60" alt="Claude Code"/><br/>
         <b>Claude Code</b>, <b>Claude Code Desktop</b>, <b>Claude Cowork</b>
       </td>
-      <td align="center" width="120">
+      <td align="center" width="240">
         <img src="assets/codex.png" width="60" alt="Codex"/><br/>
         <b>Codex</b>
       </td>
