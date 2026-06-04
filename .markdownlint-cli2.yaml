@@ -24,3 +24,5 @@ config:
       - b
       - br
       - p
+  MD046:
+    style: fenced

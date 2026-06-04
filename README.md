@@ -1,12 +1,13 @@
 <!-- markdownlint-disable MD041 -->
-<div align="center">
-
-<img src="assets/logo.png" alt="Clear Your Tools" width="240">
-
-</div>
-<!-- markdownlint-enable MD041 -->
 
 # Clear Your Tools
+
+<table border="0">
+  <tr>
+    <td valign="top" width="260">
+      <img src="assets/logo.png" alt="Clear Your Tools" width="240">
+    </td>
+    <td valign="top">
 
 Think token reduction is only about cost?
 
@@ -18,6 +19,10 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 ✅ BM25 ranking by default
 ✅ No API keys required
 ✅ Works transparently with your agents
+
+</td>
+  </tr>
+</table>
 
 <!-- markdownlint-disable MD041 -->
 <div align="center">
@@ -353,7 +358,7 @@ Use `http://localhost:8834/anthropic` unless you have enabled Hypercorn TLS in c
 
 We strongly recommend using password vaults like macOS KeyChain
 
-```shell
+```bash
 # Store key in secure vault
 security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
 
