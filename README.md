@@ -155,28 +155,25 @@ All language bindings wrap the same Rust core: decompose tool schemas into searc
 chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
 <!-- markdownlint-disable MD013 -->
 <table border="0">
-  <tr>
-    <td valign="top">**`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).</td>
-    <td valign="top" align="center">
-
-[![crates.io cyt-indexer][rust-version-shield]][rust-link]
-[![crates.io downloads][rust-downloads-shield]][rust-link]
-
-</td>
   </tr>
   <tr>
-    <td valign="top">**`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.</td>
-    <td valign="top" align="center">
+    <td valign="top">
 
-[![npm][npm-sdk-shield]][npm-link]
-
+**`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).
 </td>
-  </tr>
-  <tr>
-    <td valign="top">**`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).</td>
-    <td valign="top" align="center">
+    <td valign="top">
 
 [![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
+
+</td>
+  <tr>
+    <td valign="top">
+
+**`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.
+</td>
+    <td valign="top">
+
+[![npm][npm-sdk-shield]][npm-link]
 
 </td>
   </tr>
@@ -186,9 +183,21 @@ chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./se
 **`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
 
 </td>
-    <td valign="top" align="center">
+    <td valign="top">
 
 [![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
+
+</td>
+  </tr>
+  <tr>
+    <td valign="top">
+
+**`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).
+</td>
+    <td valign="top">
+
+[![crates.io cyt-indexer][rust-version-shield]][rust-link]
+[![crates.io downloads][rust-downloads-shield]][rust-link]
 
 </td>
   </tr>
