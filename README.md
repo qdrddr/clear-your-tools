@@ -203,7 +203,7 @@ Python SDK (`import cyt`) and CLI (`cyt proxy`): `proxy` / `pruners`
   <tr>
     <td valign="top">
 
-**`cyt-indexer`** [![crates.io][rust-crates-shield]][rust-link]
+**`cyt-indexer`** ([crates.io][rust-link])
     </td>
     <td valign="top">
 
