@@ -155,7 +155,6 @@ All language bindings wrap the same Rust core: decompose tool schemas into searc
 chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
 <!-- markdownlint-disable MD013 -->
 <table border="0">
-  </tr>
   <tr>
     <td valign="top">
 
@@ -167,8 +166,10 @@ Python SDK (`cyt_indexer`)
     </td>
     <td valign="top">
 
-[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
+[![PyPI cyt-indexer-sdk][pypi-sdk-version-shield]][pypi-sdk-link]
+[![PyPI downloads][pypi-sdk-downloads-shield]][pypi-sdk-link]
     </td>
+  </tr>
   <tr>
     <td valign="top">
 
@@ -180,7 +181,8 @@ TypeScript SDK
     </td>
     <td valign="top">
 
-[![npm][npm-sdk-shield]][npm-link]
+[![npm cyt-indexer-sdk][npm-sdk-version-shield]][npm-link]
+[![npm downloads][npm-sdk-downloads-shield]][npm-link]
     </td>
   </tr>
   <tr>
@@ -194,13 +196,14 @@ Python SDK (`import cyt`) and CLI (`cyt proxy`): `proxy` / `pruners`
     </td>
     <td valign="top">
 
-[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
-</td>
+[![PyPI clear-your-tools][pypi-cyt-version-shield]][pypi-cyt-link]
+[![PyPI downloads][pypi-cyt-downloads-shield]][pypi-cyt-link]
+    </td>
   </tr>
   <tr>
     <td valign="top">
 
-**`cyt-indexer`** ([crates.io][rust-link])
+**`cyt-indexer`** [![crates.io][rust-crates-shield]][rust-link]
     </td>
     <td valign="top">
 
@@ -462,14 +465,18 @@ See [`LICENSE`](LICENSE).
 [license-badge-shield]: https://img.shields.io/badge/License-Apache_2.0-yellow?style=for-the-badge
 [version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=version&color=4385BE&logoColor=white
 [release-link]: https://github.com/qdrddr/clear-your-tools/releases
-[npm-sdk-shield]: https://img.shields.io/npm/dw/cyt-indexer-sdk?logo=npm&color=3178C6&logoColor=white
+[npm-sdk-version-shield]: https://img.shields.io/npm/v/cyt-indexer-sdk?logo=npm&color=3178C6&logoColor=white
+[npm-sdk-downloads-shield]: https://img.shields.io/npm/dm/cyt-indexer-sdk?logo=npm&color=3178C6&logoColor=white
 [npm-link]: https://www.npmjs.com/package/cyt-indexer-sdk
-[pypi-cyt-shield]: https://img.shields.io/pypi/dw/clear-your-tools?logo=pypi&logoColor=white&color=2E8B57&label=CYT
+[pypi-cyt-version-shield]: https://img.shields.io/pypi/v/clear-your-tools?logo=pypi&logoColor=white&color=2E8B57
+[pypi-cyt-downloads-shield]: https://img.shields.io/pypi/dm/clear-your-tools?logo=pypi&logoColor=white&color=2E8B57
 [pypi-cyt-link]: https://pypi.org/project/clear-your-tools/
-[pypi-sdk-shield]: https://img.shields.io/pypi/dw/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25&label=SDK
+[pypi-sdk-version-shield]: https://img.shields.io/pypi/v/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25
+[pypi-sdk-downloads-shield]: https://img.shields.io/pypi/dm/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25
 [pypi-sdk-link]: https://pypi.org/project/cyt-indexer-sdk/
-[rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?color=%23e6522c
-[rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?color=%23e6522c
+[rust-crates-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white&label=crates.io
+[rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?logo=rust&color=e6522c&logoColor=white
+[rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-link]: https://crates.io/crates/cyt-indexer
 [shell-shield]: https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white
 [python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
