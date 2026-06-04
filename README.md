@@ -11,8 +11,8 @@
 
 Think token reduction is only about cost?
 
-- ⚡ Faster local & cloud LLMs — fewer tokens, less context delusion.
-- 🎯 Better results — reduce context rot, keep the model focused on the task.
+- ⚡ Faster local & cloud LLMs: fewer tokens, less Context Delusion.
+- 🎯 Better results: reduce Context Rot, keep the model focused on the task.
 
 Your AI agent sees only the tools relevant to the current user task and intent.
 
@@ -29,25 +29,15 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
 [![Quick Start][quick-start-shield]](#quick-start)
 [![License][license-badge-shield]][license-link]
+![No Telemetry][telemetry-shield]
 
 [![version][version-shield]][release-link]
-![No Telemetry][telemetry-shield]
 [![discord][discord-shield]][discord-link]
-
-[![npm][npm-sdk-shield]][npm-link]
-[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
-[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
-[![crates.io cyt-indexer][rust-version-shield]][rust-link]
-[![crates.io downloads][rust-downloads-shield]][rust-link]
 
 ![Shell][shell-shield]
 ![Python][python-tech-shield]
 ![TypeScript][typescript-shield]
 ![Rust][rust-tech-shield]
-
-[![Windows][windows-shield]](#supported-platforms)
-[![macOS][macos-shield]](#supported-platforms)
-[![Linux][linux-shield]](#supported-platforms)
 
   <table>
     <tr>
@@ -161,24 +151,49 @@ Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and 
 <details>
 <summary><strong>SDK & CLI</strong></summary>
 
-<div align="center">
+All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
+chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
+<!-- markdownlint-disable MD013 -->
+<table border="0">
+  <tr>
+    <td valign="top">**`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).</td>
+    <td valign="top" align="center">
 
-[![npm][npm-sdk-shield]][npm-link]
-[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
-[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
 [![crates.io cyt-indexer][rust-version-shield]][rust-link]
 [![crates.io downloads][rust-downloads-shield]][rust-link]
 
-</div>
+</td>
+  </tr>
+  <tr>
+    <td valign="top">**`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.</td>
+    <td valign="top" align="center">
 
-All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
-chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
+[![npm][npm-sdk-shield]][npm-link]
 
-- **`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).
-- **`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.
-- **`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).
-- **`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
+</td>
+  </tr>
+  <tr>
+    <td valign="top">**`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).</td>
+    <td valign="top" align="center">
 
+[![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
+
+</td>
+  </tr>
+  <tr>
+    <td valign="top">
+
+**`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
+
+</td>
+    <td valign="top" align="center">
+
+[![PyPI CYT][pypi-cyt-shield]][pypi-cyt-link]
+
+</td>
+  </tr>
+</table>
+<!-- markdownlint-disable MD013 -->
 </details>
 
 ---
@@ -444,6 +459,6 @@ See [`LICENSE`](LICENSE).
 [macos-shield]: https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white
 [linux-shield]: https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black
 [license-link]: LICENSE
-[telemetry-shield]: https://img.shields.io/badge/No%20Telemetry-4EAA25?logo=shield&logoColor=white
+[telemetry-shield]: https://img.shields.io/badge/No_Telemetry-none-green?style=for-the-badge
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
