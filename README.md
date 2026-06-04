@@ -43,7 +43,7 @@ Your AI agent sees only the tools relevant to the current user task and intent.
     <tr>
       <td align="center" width="120">
         <img src="assets/claude.png" width="60" alt="Claude Code"/><br/>
-        <b>Claude Code</b>
+        <b>Claude Code</b>, <b>Claude Code Desktop</b>, <b>Claude Cowork</b>
       </td>
       <td align="center" width="120">
         <img src="assets/codex.png" width="60" alt="Codex"/><br/>

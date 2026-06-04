@@ -25,7 +25,8 @@ OVERLAY_COMPACT="$(echo "${OVERLAY_PARSED}" | jq -c .)"
 
 mkdir -p "$(dirname "${TARGET_JSON}")"
 
-JQ_DEEPMERGE="$(cat <<'EOF'
+JQ_DEEPMERGE="$(
+	cat <<'EOF'
 def deepmerge(a; b):
   if (a | type) == "object" and (b | type) == "object" then
     (a | to_entries) + (b | to_entries)
