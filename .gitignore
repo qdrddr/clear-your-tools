@@ -96,6 +96,7 @@ cocoindex-code
 /.cocoindex_code/
 
 temp_*
+temp.*
 
 *.log
 .mcp.json

@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from collections.abc import AsyncIterator
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +19,11 @@ import uvicorn
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
+
+debug_endpoint_log_path: ContextVar[Path | None] = ContextVar(
+    "debug_endpoint_log_path",
+    default=None,
+)
 
 HOP_BY_HOP = frozenset(
     {
@@ -49,10 +55,14 @@ def header_content_encoding(headers: dict[str, str]) -> str | None:
     return headers.get("content-encoding") or headers.get("connect-content-encoding")
 
 
-def _rotate_debug_log(path: Path) -> None:
-    backup = path.with_name(f"{path.name}.1")
-    backup.unlink(missing_ok=True)
-    path.replace(backup)
+def append_debug_log_block(path: Path, *, label: str, content: str) -> None:
+    """Append a labeled block to the endpoint debug log (never rotates/truncates)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).isoformat()
+    body = content if content.endswith("\n") else f"{content}\n"
+    block = f"--- {timestamp} {label} ---\n{body}"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(block)
 
 
 def append_debug_snapshot(
@@ -61,14 +71,12 @@ def append_debug_snapshot(
     *,
     max_bytes: int | None = None,
 ) -> None:
-    timestamp = datetime.now(UTC).isoformat()
-    block = f"--- {timestamp} ---\n{json.dumps(snapshot, indent=2)}\n"
-    if max_bytes is not None and max_bytes > 0 and path.exists():
-        block_size = len(block.encode("utf-8"))
-        if path.stat().st_size + block_size > max_bytes:
-            _rotate_debug_log(path)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(block)
+    del max_bytes  # body truncation is applied when building the snapshot
+    append_debug_log_block(
+        path,
+        label="snapshot",
+        content=json.dumps(snapshot, indent=2),
+    )
 
 
 async def save_debug_snapshot(
@@ -96,6 +104,47 @@ def reverse_debug_log_path(
     if debug_log_dir is not None:
         return debug_log_dir / name
     return Path(name)
+
+
+def reverse_debug_original_log_path(
+    endpoint_name: str,
+    *,
+    debug_log_dir: Path | None = None,
+) -> Path:
+    """Pre-mutation request log (raw body) for diffing against ``reverse_debug_log_path``."""
+    name = f"{endpoint_name}-original.log"
+    if debug_log_dir is not None:
+        return debug_log_dir / name
+    return Path(name)
+
+
+def append_original_debug_snapshot(
+    path: Path,
+    snapshot: dict[str, Any],
+    *,
+    max_bytes: int | None = None,
+) -> None:
+    del max_bytes
+    append_debug_log_block(
+        path,
+        label="original-request",
+        content=json.dumps(snapshot, indent=2),
+    )
+
+
+async def save_original_debug_snapshot(
+    path: Path,
+    snapshot: dict[str, Any],
+    *,
+    max_bytes: int | None = None,
+) -> Path:
+    await asyncio.to_thread(
+        append_original_debug_snapshot,
+        path,
+        snapshot,
+        max_bytes=max_bytes,
+    )
+    return path
 
 
 def agent_trace_log_path(debug_log_dir: Path, session_id: str) -> Path:

@@ -3,16 +3,20 @@
 # Build the cyt-indexer release binary locally
 env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
 
+mkdir -p ./.catalog
 # Extract the tools from the full example JSON
-jq '.body.tools' debug/full_example.json >/tmp/tools.json
+jq '.body.tools' debug/temp.json >./.catalog/input.json
+
+# Build the application locally
+./search/local-dev.sh all
 
 # Build the catalog from the tools file
-./target/release/cyt-indexer build --tools /tmp/tools.json --output ./.catalog
+./target/release/cyt-indexer build --tools ./.catalog/input.json --output ./.catalog
 
 # Extract the survivors from the full example JSON
 jq '{
-  json: .pruning.decomposed_catalog.rerank.json,
-  md:   .pruning.decomposed_catalog.rerank.md
+  json: .pruning.decomposed_catalog.build_index.json,
+  md:   .pruning.decomposed_catalog.build_index.md
 }' debug/full_example.json >.catalog/survivors.json
 
 # Retrieve the tools from the catalog using the survivors file
@@ -23,9 +27,8 @@ jq '{
 	--system-policy prune_optional \
 	--mcp-policy prune_all \
 	--tool-policy AskUserQuestion=always_include \
+	--tool-policy mcp__fff__find_files=prune_optional \
 	--removed-output ./.catalog/removed.json
-
-./search/local-dev.sh all
 
 OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
 export OPENROUTER_API_KEY

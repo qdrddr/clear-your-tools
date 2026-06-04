@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import gzip
 import json
@@ -13,6 +14,7 @@ import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -46,15 +48,19 @@ from cyt.proxy.setup import normalize_upstream_kind
 from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
+    append_debug_log_block,
+    debug_endpoint_log_path,
     filter_headers,
     forward_upstream,
     header_content_encoding,
     http2_package_available,
     new_debug_session_id,
     reverse_debug_log_path,
+    reverse_debug_original_log_path,
     run_hypercorn_async,
     run_uvicorn_async,
     save_debug_snapshot,
+    save_original_debug_snapshot,
 )
 
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
@@ -62,6 +68,8 @@ BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 logger = logging.getLogger(__name__)
+
+_debug_request_seq = 0
 
 
 @dataclass(frozen=True)
@@ -241,6 +249,39 @@ def _snapshot_decoded_json(
     )
 
 
+def body_for_original_snapshot(
+    body: bytes,
+    content_type: str | None = None,
+    *,
+    max_bytes: int | None = None,
+) -> object | None:
+    """Request body as received (no connect decode or decompress); JSON is parsed for logging."""
+    if not body:
+        return None
+    original_len = len(body)
+    truncated = body
+    if max_bytes is not None and len(body) > max_bytes:
+        truncated = body[:max_bytes]
+    if content_type and "json" in content_type.lower():
+        json_value = _snapshot_decoded_json(
+            truncated,
+            original_len=original_len,
+            max_bytes=max_bytes,
+        )
+        if json_value is not None:
+            return json_value
+    try:
+        payload: object = truncated.decode("utf-8")
+    except UnicodeDecodeError:
+        payload = {"_base64": base64.standard_b64encode(truncated).decode("ascii")}
+    return _maybe_truncated_payload(
+        payload,
+        original_len=original_len,
+        max_bytes=max_bytes,
+        wrap_key="_body",
+    )
+
+
 def body_for_snapshot(
     body: bytes,
     content_type: str | None,
@@ -333,8 +374,30 @@ def _needs_request_buffer(
     return method.upper() in BODY_METHODS
 
 
-def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
-    lines: list[str] = [""]
+def _next_debug_request_seq() -> int:
+    global _debug_request_seq
+    _debug_request_seq += 1
+    return _debug_request_seq
+
+
+def _format_debug_pruning_lines(
+    pruning: dict[str, Any] | None,
+    *,
+    request_seq: int,
+    endpoint: str | None = None,
+    request_path: str | None = None,
+) -> list[str]:
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    header_parts = [f"debug request #{request_seq} @ {stamp}"]
+    if endpoint:
+        header_parts.append(f"endpoint={endpoint}")
+    if request_path:
+        header_parts.append(f"path={request_path}")
+    lines: list[str] = [
+        "",
+        f"--- {' | '.join(header_parts)} ---",
+        "",
+    ]
     if pruning is None:
         lines.extend(["user query:", "(none — body was not transformed)", ""])
     else:
@@ -371,7 +434,28 @@ def _print_debug_pruning(pruning: dict[str, Any] | None) -> None:
         if error := pruning.get("error"):
             lines.append(f"pruning error: {error}")
     lines.append("")
-    print("\n".join(lines), flush=True)
+    return lines
+
+
+def _print_debug_pruning(
+    pruning: dict[str, Any] | None,
+    *,
+    request_seq: int,
+    endpoint: str | None = None,
+    request_path: str | None = None,
+    log_path: Path | None = None,
+) -> None:
+    text = "\n".join(
+        _format_debug_pruning_lines(
+            pruning,
+            request_seq=request_seq,
+            endpoint=endpoint,
+            request_path=request_path,
+        ),
+    )
+    print(text, flush=True)
+    if log_path is not None:
+        append_debug_log_block(log_path, label="pruning", content=text)
 
 
 def _input_tools_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -523,6 +607,47 @@ def _schedule_stats_record(stats_db: StatsDB, record: ProxyRequestRecord) -> Non
     task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
+async def _save_debug_original_request(
+    *,
+    request: Request,
+    query: str,
+    target_url: str,
+    endpoint_name: str,
+    request_path: str,
+    body: bytes,
+    request_seq: int,
+    debug_log_max_body_bytes: int | None,
+    debug_log_dir: Path | None,
+) -> Path:
+    content_type = request.headers.get("content-type")
+    log_path = reverse_debug_original_log_path(endpoint_name, debug_log_dir=debug_log_dir)
+    snapshot = {
+        "debug_request_seq": request_seq,
+        "method": request.method,
+        "path": request_path,
+        "query": query or None,
+        "target_url": target_url,
+        "headers": dict(request.headers),
+        "body": body_for_original_snapshot(
+            body,
+            content_type,
+            max_bytes=debug_log_max_body_bytes,
+        ),
+    }
+    saved_to = await save_original_debug_snapshot(
+        log_path,
+        snapshot,
+        max_bytes=debug_log_max_body_bytes,
+    )
+    logger.info(
+        "debug original request appended: endpoint=%s path=%s file=%s",
+        endpoint_name,
+        request_path,
+        saved_to,
+    )
+    return saved_to
+
+
 async def _handle_debug_snapshot(
     *,
     request: Request,
@@ -534,6 +659,7 @@ async def _handle_debug_snapshot(
     body: bytes,
     content_type: str | None,
     pruning_meta: dict[str, Any] | None,
+    request_seq: int,
     debug_terminate: bool,
     debug_strict: bool,
     debug_log_max_body_bytes: int | None,
@@ -546,8 +672,16 @@ async def _handle_debug_snapshot(
             pruning_meta.get("status"),
             pruning_meta.get("error"),
         )
-    _print_debug_pruning(pruning_meta)
+    log_path = reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir)
+    _print_debug_pruning(
+        pruning_meta,
+        request_seq=request_seq,
+        endpoint=endpoint_name,
+        request_path=request_path,
+        log_path=log_path,
+    )
     snapshot = {
+        "debug_request_seq": request_seq,
         "method": request.method,
         "path": request_path,
         "query": query or None,
@@ -562,7 +696,7 @@ async def _handle_debug_snapshot(
         "pruning": pruning_meta,
     }
     saved_to = await save_debug_snapshot(
-        reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
+        log_path,
         snapshot,
         max_bytes=debug_log_max_body_bytes,
     )
@@ -582,6 +716,99 @@ async def _handle_debug_snapshot(
         saved_to=saved_to,
         body=body,
         debug_trace=debug_trace,
+    )
+
+
+def _log_proxy_request_entry(debug_trace: DebugTrace | None, request: Request) -> None:
+    if debug_trace is None:
+        return
+    debug_trace.log(
+        hypothesis_id="D",
+        location="reverse.py:_proxy_request:entry",
+        message="valid HTTP request reached proxy handler",
+        data={
+            "method": request.method,
+            "path": request.url.path,
+            "scheme": request.url.scheme,
+        },
+    )
+
+
+async def _process_buffered_proxy_body(
+    *,
+    request: Request,
+    body: bytes,
+    content_type: str | None,
+    kind: str | None,
+    query: str,
+    target_url: str,
+    endpoint_name: str,
+    request_path: str,
+    pruning_pipeline: list[str] | None,
+    debug: bool,
+    debug_log_max_body_bytes: int | None,
+    debug_log_dir: Path | None,
+) -> tuple[bytes, Any | None, list[dict[str, Any]] | None, dict[str, Any] | None, int | None]:
+    debug_request_seq: int | None = None
+    if debug:
+        debug_request_seq = _next_debug_request_seq()
+        await _save_debug_original_request(
+            request=request,
+            query=query,
+            target_url=target_url,
+            endpoint_name=endpoint_name,
+            request_path=request_path,
+            body=body,
+            request_seq=debug_request_seq,
+            debug_log_max_body_bytes=debug_log_max_body_bytes,
+            debug_log_dir=debug_log_dir,
+        )
+
+    pruning = None
+    input_tools: list[dict[str, Any]] | None = None
+    debug_log_token = None
+    if debug:
+        debug_log_token = debug_endpoint_log_path.set(
+            reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
+        )
+    try:
+        body, pruning, input_tools = await transform_request_body(
+            body,
+            content_type,
+            kind,
+            pruning_pipeline,
+            debug,
+        )
+    finally:
+        if debug_log_token is not None:
+            debug_endpoint_log_path.reset(debug_log_token)
+
+    pruning_meta = pruning.to_dict() if pruning is not None else None
+    if debug:
+        pruning_meta = _pruning_meta_for_debug(pruning_meta, input_tools)
+    return body, pruning, input_tools, pruning_meta, debug_request_seq
+
+
+def _log_proxy_forward_upstream(
+    debug_trace: DebugTrace | None,
+    *,
+    endpoint_name: str,
+    request_path: str,
+    target_url: str,
+    buffer_body: bool,
+) -> None:
+    if debug_trace is None:
+        return
+    debug_trace.log(
+        hypothesis_id="B",
+        location="reverse.py:_proxy_request:forward_upstream",
+        message="forwarding request to upstream",
+        data={
+            "endpoint": endpoint_name,
+            "path": request_path,
+            "target_url": target_url,
+            "buffer_body": buffer_body,
+        },
     )
 
 
@@ -643,17 +870,7 @@ async def _proxy_request(
     store_full_tools: bool,
     config: dict[str, Any] | None,
 ) -> Response:
-    if debug_trace is not None:
-        debug_trace.log(
-            hypothesis_id="D",
-            location="reverse.py:_proxy_request:entry",
-            message="valid HTTP request reached proxy handler",
-            data={
-                "method": request.method,
-                "path": request.url.path,
-                "scheme": request.url.scheme,
-            },
-        )
+    _log_proxy_request_entry(debug_trace, request)
     match = resolve_upstream(request.url.path, routes)
     if match is None:
         return Response("Not Found", status_code=404)
@@ -674,18 +891,23 @@ async def _proxy_request(
     upstream_model = _extract_upstream_model(body, content_type, buffer_body=buffer_body)
 
     pruning = None
-    input_tools: list[dict[str, Any]] | None = None
+    pruning_meta: dict[str, Any] | None = None
+    debug_request_seq: int | None = None
     if buffer_body:
-        body, pruning, input_tools = await transform_request_body(
-            body,
-            content_type,
-            kind,
-            pruning_pipeline,
-            debug,
+        body, pruning, _, pruning_meta, debug_request_seq = await _process_buffered_proxy_body(
+            request=request,
+            body=body,
+            content_type=content_type,
+            kind=kind,
+            query=query,
+            target_url=target_url,
+            endpoint_name=endpoint_name,
+            request_path=request.url.path,
+            pruning_pipeline=pruning_pipeline,
+            debug=debug,
+            debug_log_max_body_bytes=debug_log_max_body_bytes,
+            debug_log_dir=debug_log_dir,
         )
-    pruning_meta = pruning.to_dict() if pruning is not None else None
-    if debug:
-        pruning_meta = _pruning_meta_for_debug(pruning_meta, input_tools)
 
     if stats_db is not None and pruning is not None:
         record = build_stats_record(
@@ -700,7 +922,7 @@ async def _proxy_request(
         _schedule_stats_record(stats_db, record)
     forward_headers = filter_headers(dict(request.headers))
 
-    if debug:
+    if debug and debug_request_seq is not None:
         early = await _handle_debug_snapshot(
             request=request,
             query=query,
@@ -711,6 +933,7 @@ async def _proxy_request(
             body=body,
             content_type=content_type,
             pruning_meta=pruning_meta,
+            request_seq=debug_request_seq,
             debug_terminate=debug_terminate,
             debug_strict=debug_strict,
             debug_log_max_body_bytes=debug_log_max_body_bytes,
@@ -721,18 +944,13 @@ async def _proxy_request(
             return early
 
     client: httpx.AsyncClient = request.app.state.http_client
-    if debug_trace is not None:
-        debug_trace.log(
-            hypothesis_id="B",
-            location="reverse.py:_proxy_request:forward_upstream",
-            message="forwarding request to upstream",
-            data={
-                "endpoint": endpoint_name,
-                "path": request.url.path,
-                "target_url": target_url,
-                "buffer_body": buffer_body,
-            },
-        )
+    _log_proxy_forward_upstream(
+        debug_trace,
+        endpoint_name=endpoint_name,
+        request_path=request.url.path,
+        target_url=target_url,
+        buffer_body=buffer_body,
+    )
     return await forward_upstream(
         client,
         method=request.method,

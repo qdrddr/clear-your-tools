@@ -824,9 +824,13 @@ def _recompose_catalog_data(
 
 
 def _log_operator_message(msg: str) -> None:
-    """Mirror a message to the module logger and stdout for proxy operators."""
+    """Mirror a message to the module logger, stdout, and the active debug log file."""
+    from cyt.proxy.transport import append_debug_log_block, debug_endpoint_log_path
+
     logger.info(msg)
     print(msg, flush=True)
+    if (log_path := debug_endpoint_log_path.get()) is not None:
+        append_debug_log_block(log_path, label="operator", content=msg)
 
 
 def _log_tool_token_counts(tokens_in: int, tokens_out: int | None) -> None:
