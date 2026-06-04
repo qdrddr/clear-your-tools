@@ -1,3 +1,11 @@
+<!-- markdownlint-disable MD041 -->
+<div align="center">
+
+<img src="assets/logo.png" alt="Clear Your Tools" width="240">
+
+</div>
+<!-- markdownlint-enable MD041 -->
+
 # Clear Your Tools
 
 Think token reduction is only about cost?
@@ -7,14 +15,12 @@ Think token reduction is only about cost?
 
 Your AI agent sees only the tools relevant to the current user task and intent.
 
-<!-- markdownlint-disable MD041 -->
-<div align="center">
-
-<img src="assets/logo.png" alt="Clear Your Tools" width="240">
-
 ✅ BM25 ranking by default
 ✅ No API keys required
 ✅ Works transparently with your agents
+
+<!-- markdownlint-disable MD041 -->
+<div align="center">
 
 [![Quick Start][quick-start-shield]](#quick-start)
 [![License][license-badge-shield]][license-link]
