@@ -9,7 +9,7 @@
     </td>
     <td valign="top">
 
-Think token reduction is only about cost?
+Think token reduction is only about lowering costs by 30%?
 
 - ⚡ Faster local & cloud LLMs: fewer tokens, less Context Delusion.
 - 🎯 Better results: reduce Context Rot, keep the model focused on the task.
@@ -478,7 +478,6 @@ See [`LICENSE`](LICENSE).
 [pypi-sdk-version-shield]: https://img.shields.io/pypi/v/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25
 [pypi-sdk-downloads-shield]: https://img.shields.io/pypi/dm/cyt-indexer-sdk?logo=pypi&logoColor=white&color=4EAA25
 [pypi-sdk-link]: https://pypi.org/project/cyt-indexer-sdk/
-[rust-crates-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white&label=crates.io
 [rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-link]: https://crates.io/crates/cyt-indexer
