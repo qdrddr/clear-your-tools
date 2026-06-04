@@ -192,7 +192,7 @@ TypeScript SDK
     </td>
     <td valign="top">
 
-Python SDK (`import cyt`) and CLI (`cyt proxy`): `proxy` / `pruners`
+Python SDK (`import cyt`) and CLI (`cyt`: `proxy` / `pruners`)
     </td>
     <td valign="top">
 
