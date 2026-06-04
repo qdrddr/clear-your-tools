@@ -1,8 +1,3 @@
-<!-- markdownlint-disable MD041 -->
-<div align="center">
-
-<img src="assets/logo.png" alt="Clear Your Tools" width="240">
-
 # Clear Your Tools
 
 Think token reduction is only about cost?
@@ -11,6 +6,11 @@ Think token reduction is only about cost?
 - 🎯 Better results — reduce context rot, keep the model focused on the task.
 
 Your AI agent sees only the tools relevant to the current user task and intent.
+
+<!-- markdownlint-disable MD041 -->
+<div align="center">
+
+<img src="assets/logo.png" alt="Clear Your Tools" width="240">
 
 ✅ BM25 ranking by default
 ✅ No API keys required
