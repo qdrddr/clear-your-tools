@@ -5,7 +5,16 @@
 
 # Clear Your Tools
 
-Reverse proxy for coding agents. Shrinks MCP tool catalogs on every turn — BM25 default, no API keys required.
+Think token reduction is only about cost?
+
+- ⚡ Faster local & cloud LLMs — fewer tokens, less context delusion.
+- 🎯 Better results — reduce context rot, keep the model focused on the task.
+
+Your AI agent sees only the tools relevant to the current user task and intent.
+
+✅ BM25 ranking by default
+✅ No API keys required
+✅ Works transparently with your agents
 
 [![Quick Start][quick-start-shield]](#quick-start)
 [![License][license-badge-shield]][license-link]
@@ -71,6 +80,10 @@ keeping required fields for tools that stay in the request.
 
 ## How it works
 
+<p align="center">
+  <img src="assets/cyt-savings1.gif" alt="Example cyt stats output showing token savings" />
+</p>
+
 ```text
 Agent (Claude Code, etc.)
         │
@@ -125,6 +138,18 @@ On each intercepted request the proxy:
 ## Supported platforms
 
 Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and **Linux**.
+
+---
+
+## SDK & CLI
+
+All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
+chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
+
+- **`cyt-indexer`** ([crates.io][rust-link]) — Rust library and CLI (`build` / `retrieve`).
+- **`cyt-indexer-sdk`** ([npm][npm-link]) — TypeScript SDK.
+- **`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link]) — Python SDK (`cyt_indexer`).
+- **`clear-your-tools`** ([PyPI][pypi-cyt-link]) — Python proxy and pruners; CLI (`cyt proxy`) or SDK (`import cyt`).
 
 ---
 
