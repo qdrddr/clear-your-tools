@@ -148,8 +148,6 @@ On each intercepted request the proxy:
 
 ## Supported platforms
 
-Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and **Linux**.
-
 <div align="center">
 
 [![Windows][windows-shield]](#supported-platforms)
@@ -157,6 +155,8 @@ Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and 
 [![Linux][linux-shield]](#supported-platforms)
 
 </div>
+
+Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and **Linux**.
 
 <details>
 <summary><strong>SDK & CLI</strong></summary>
@@ -168,15 +168,6 @@ Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and 
 [![PyPI SDK][pypi-sdk-shield]][pypi-sdk-link]
 [![crates.io cyt-indexer][rust-version-shield]][rust-link]
 [![crates.io downloads][rust-downloads-shield]][rust-link]
-
-![Shell][shell-shield]
-![Python][python-tech-shield]
-![TypeScript][typescript-shield]
-![Rust][rust-tech-shield]
-
-[![Windows][windows-shield]](#supported-platforms)
-[![macOS][macos-shield]](#supported-platforms)
-[![Linux][linux-shield]](#supported-platforms)
 
 </div>
 
