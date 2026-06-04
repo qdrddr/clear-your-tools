@@ -1,6 +1,6 @@
 {
   "name": "cyt-indexer-sdk",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "TypeScript SDK for cyt-indexer — tool schema decomposition and catalog indexing",
   "keywords": [
     "mcp",

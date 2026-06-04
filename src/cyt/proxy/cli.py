@@ -25,6 +25,7 @@ from cyt.config import (
     resolve_setup_config_path,
     stats_db_path,
 )
+from cyt.proxy.setup import normalize_upstream_kind
 
 logger = logging.getLogger(__name__)
 
@@ -191,9 +192,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     proxy_parser.add_argument(
         "--upstream-kind",
-        choices=("anthropic", "openai"),
+        type=normalize_upstream_kind,
         default=None,
-        help="Upstream protocol kind (required with --upstream)",
+        help=(
+            "Upstream protocol kind (required with --upstream): "
+            "anthropic, openai, or aliases claude/claude-code, codex"
+        ),
     )
     proxy_parser.add_argument(
         "--upstream-name",
@@ -294,14 +298,29 @@ _BM25_FALLBACK_MESSAGE = (
 )
 
 
-def _apply_bm25_fallback_if_needed(config: dict[str, Any], config_path: Path) -> None:
-    user_config = load_user_config_overlay(config_path)
-    if remote_pruning_pipeline_configured(user_config):
-        return
+def _apply_bm25_fallback_pipeline(config: dict[str, Any]) -> None:
     print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
     pruning = config.setdefault("pruning", {})
     if isinstance(pruning, dict):
         pruning["pipeline"] = ["bm25"]
+
+
+def _apply_bm25_fallback_if_needed(
+    config: dict[str, Any],
+    config_path: Path,
+    *,
+    upstream_cli: bool,
+) -> None:
+    if upstream_cli:
+        if not missing_proxy_env_var_names(config):
+            return
+        _apply_bm25_fallback_pipeline(config)
+        return
+
+    user_config = load_user_config_overlay(config_path)
+    if remote_pruning_pipeline_configured(user_config):
+        return
+    _apply_bm25_fallback_pipeline(config)
 
 
 def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
@@ -314,7 +333,8 @@ def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | Non
 
     config_path = resolve_config_path(args.config)
     config = load_config(args.config)
-    _apply_bm25_fallback_if_needed(config, config_path)
+    upstream_cli = getattr(args, "upstream", None) is not None
+    _apply_bm25_fallback_if_needed(config, config_path, upstream_cli=upstream_cli)
     if missing := missing_proxy_env_var_names(config):
         print(format_proxy_env_help(missing), file=sys.stderr)
         raise SystemExit(1)

@@ -285,7 +285,10 @@ def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]
         entry: dict[str, Any] = {}
         for key in ("upstream", "kind"):
             if key in upstream:
-                entry[key] = copy.deepcopy(upstream[key])
+                value = upstream[key]
+                if key == "kind":
+                    value = normalize_upstream_kind(str(value))
+                entry[key] = copy.deepcopy(value)
         if url := upstream.get("url") or upstream.get("host_url"):
             entry["url"] = normalize_upstream_url(str(url))
         result.append(entry)
@@ -329,6 +332,28 @@ def normalize_upstream_url(raw: str) -> str:
 
 
 UPSTREAM_KIND_CHOICES: tuple[str, ...] = ("anthropic", "openai")
+UPSTREAM_KIND_ALIASES: dict[str, str] = {
+    "claude": "anthropic",
+    "claude-code": "anthropic",
+    "codex": "openai",
+}
+
+
+def _upstream_kind_allowed_display() -> str:
+    return ", ".join([*UPSTREAM_KIND_CHOICES, *sorted(UPSTREAM_KIND_ALIASES)])
+
+
+def normalize_upstream_kind(raw: str) -> str:
+    """Return canonical upstream kind (``anthropic`` or ``openai``).
+
+    Accepts aliases ``claude`` / ``claude-code`` (anthropic) and ``codex`` (openai).
+    """
+    kind = raw.strip().lower()
+    kind = UPSTREAM_KIND_ALIASES.get(kind, kind)
+    if kind not in UPSTREAM_KIND_CHOICES:
+        allowed = _upstream_kind_allowed_display()
+        raise ValueError(f"Invalid upstream kind {raw!r}; expected one of: {allowed}")
+    return kind
 
 
 def derive_second_level_domain_from_hostname(hostname: str) -> str:
@@ -354,10 +379,7 @@ def build_upstream_cli_overlay(
     upstream_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a minimal config overlay from CLI ``--upstream`` / ``--upstream-kind``."""
-    kind = upstream_kind.strip().lower()
-    if kind not in UPSTREAM_KIND_CHOICES:
-        allowed = ", ".join(UPSTREAM_KIND_CHOICES)
-        raise ValueError(f"Invalid upstream kind {upstream_kind!r}; expected one of: {allowed}")
+    kind = normalize_upstream_kind(upstream_kind)
     if upstream_name is not None:
         resolved_name = upstream_name.strip()
         if not resolved_name:
@@ -1107,11 +1129,16 @@ def _prompt_upstreams() -> tuple[
         "primary model per upstream.",
     )
     while True:
-        kind = _prompt("Upstream kind (e.g. anthropic, openai, gemini)", "anthropic")
+        kind = normalize_upstream_kind(
+            _prompt(
+                "Upstream kind (anthropic/claude/claude-code, openai/codex, or gemini)",
+                "anthropic",
+            ),
+        )
         url = normalize_upstream_url(
             _prompt_required(
                 "URL (required)",
-                UPSTREAM_URL_DEFAULTS.get(kind.strip().lower(), "https://api.anthropic.com"),
+                UPSTREAM_URL_DEFAULTS.get(kind, "https://api.anthropic.com"),
             ),
         )
         upstream: dict[str, Any] = {

@@ -40,6 +40,7 @@ from cyt.proxy.setup import (
     model_missing_metadata_fields,
     model_output_cost_per_token,
     normalize_base_url,
+    normalize_upstream_kind,
     normalize_upstream_url,
     parse_cost_per_token,
     parse_domain_match,
@@ -53,6 +54,7 @@ from cyt.proxy.setup import (
     recommended_pipeline_default_index,
     upstream_hostnames_default,
     upstream_url_default,
+    upstreams_for_config,
     usd_per_million_to_per_token,
     write_env_file,
 )
@@ -408,6 +410,28 @@ class TestBuildUpstreamCliOverlay:
     def test_rejects_unknown_kind(self) -> None:
         with pytest.raises(ValueError, match="Invalid upstream kind"):
             build_upstream_cli_overlay("https://api.anthropic.com", "gemini")
+
+    @pytest.mark.parametrize(
+        ("alias", "canonical"),
+        [
+            ("claude", "anthropic"),
+            ("claude-code", "anthropic"),
+            ("codex", "openai"),
+        ],
+    )
+    def test_upstream_kind_aliases(self, alias: str, canonical: str) -> None:
+        overlay = build_upstream_cli_overlay("https://api.example.com", alias)
+        assert overlay["network"]["proxy"]["reverse"]["upstreams"][0]["kind"] == canonical
+
+    def test_normalize_upstream_kind(self) -> None:
+        assert normalize_upstream_kind("Claude-Code") == "anthropic"
+        assert normalize_upstream_kind("CODEX") == "openai"
+
+    def test_upstreams_for_config_normalizes_kind_aliases(self) -> None:
+        serialized = upstreams_for_config(
+            [{"upstream": "anthropic", "kind": "claude-code", "url": "https://api.anthropic.com"}],
+        )
+        assert serialized[0]["kind"] == "anthropic"
 
 
 class TestApplyUpstreamCliToConfig:

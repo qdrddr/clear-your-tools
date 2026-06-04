@@ -18,3 +18,5 @@ cyt proxy --upstream https://openrouter.ai/api --upstream-kind anthropic
 
 export PORT=8834
 curl -s "http://localhost:${PORT}/health"
+
+# Using context7 search qdrddr/clear-your-tools and explain it's main purpose.

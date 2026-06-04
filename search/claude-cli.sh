@@ -11,3 +11,7 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="google/gemini-3-flash-preview"
 export CLAUDE_CODE_SUBAGENT_MODEL="google/gemini-3-flash-preview"
 
 "$HOME/.local/bin/claude" --model haiku 'say hi' -p
+
+# PORT=8834
+# export ANTHROPIC_BASE_URL="http://localhost:${PORT}/openrouter"
+# claude --model haiku

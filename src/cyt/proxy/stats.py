@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -577,9 +579,25 @@ def empty_totals() -> dict[str, int]:
     }
 
 
+def _terminal_color_enabled(explicit: bool | None) -> bool:
+    if explicit is not None:
+        return explicit
+    if os.environ.get("NO_COLOR"):
+        return False
+    return sys.stdout.isatty()
+
+
+def _green(text: str, *, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"\033[32m{text}\033[0m"
+
+
 def format_totals(
     totals: dict[str, int],
     costs: StatsCosts | None = None,
+    *,
+    color: bool | None = None,
 ) -> str:
     tools_accepted = totals.get("tools_accepted", 0)
     tools_saved = totals.get("tools_saved", 0)
@@ -600,6 +618,11 @@ def format_totals(
             tools_accepted,
             costs,
         )
+        use_color = _terminal_color_enabled(color)
+        savings_tokens = _green(
+            f"{net_savings_tokens} ({net_savings_pct:.1f}%)",
+            enabled=use_color,
+        )
         lines.extend(
             [
                 "",
@@ -615,7 +638,7 @@ def format_totals(
                 "",
                 "net savings (input tokens):",
                 f"  cost:         {format_usd(costs.net_savings_usd)}",
-                f"  tokens:     {net_savings_tokens} ({net_savings_pct:.1f}%)",
+                f"  tokens:     {savings_tokens}",
             ],
         )
     else:

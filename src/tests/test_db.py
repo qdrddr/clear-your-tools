@@ -106,6 +106,33 @@ def test_query_totals_format() -> None:
     assert "  tokens:     1892 (63.1%)" in text
 
 
+def test_query_totals_format_green_net_savings_tokens() -> None:
+    from cyt.common.pricing import StatsCosts
+
+    costs = StatsCosts(
+        tools_saved_usd=0.0005,
+        llm_input_usd=0.000015,
+        llm_output_usd=0.000012,
+        rerank_input_usd=0.0,
+        rerank_output_usd=0.0,
+    )
+    totals = {
+        "events": 3,
+        "tools_accepted": 3000,
+        "tools_sent_upstream": 1000,
+        "tools_saved": 2000,
+        "llm_input": 100,
+        "llm_output": 20,
+        "rerank_input": 0,
+        "rerank_output": 0,
+    }
+    plain = format_totals(totals, costs, color=False)
+    colored = format_totals(totals, costs, color=True)
+    assert "  tokens:     1892 (63.1%)" in plain
+    assert "\033[32m1892 (63.1%)\033[0m" in colored
+    assert "  tokens:     \033[32m1892 (63.1%)\033[0m" in colored
+
+
 def test_query_upstream_saved_tokens_and_costs(temp_db: StatsDB) -> None:
     from cyt.common.pricing import compute_stats_costs
 

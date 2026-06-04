@@ -33,6 +33,7 @@ from cyt.config import (
     reverse_proxy_cfg,
     stats_db_path,
 )
+from cyt.proxy.setup import normalize_upstream_kind
 from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
@@ -285,7 +286,8 @@ def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]
         if endpoint not in upstreams:
             raise ValueError(f"No upstream configured for endpoint: {endpoint}")
         entry = upstreams[endpoint]
-        kind = entry.get("kind")
+        kind_raw = entry.get("kind")
+        kind = normalize_upstream_kind(str(kind_raw)) if kind_raw is not None else None
         url = entry.get("url") or entry.get("host_url") or entry.get("base_url")
         if not url:
             raise ValueError(f"No url configured for upstream: {endpoint}")
