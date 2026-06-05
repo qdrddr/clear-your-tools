@@ -13,6 +13,7 @@ Think token reduction is only about lowering costs by 30%?
 
 - ⚡ Faster local & cloud LLMs: fewer tokens, less Context Delusion.
 - 🎯 Better results: reduce Context Rot, keep the model focused on the task.
+- 🧠 More context for you: less tool bloat, less memory compaction.
 
 Your AI agent sees only the tools relevant to the current user task and intent.
 
