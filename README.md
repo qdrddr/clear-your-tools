@@ -165,6 +165,22 @@ chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./se
   <tr>
     <td valign="top">
 
+**`clear-your-tools`** ([PyPI][pypi-cyt-link])
+    </td>
+    <td valign="top">
+
+Python SDK (`import cyt`) and CLI (`cyt`: `proxy` / `pruners`)
+    </td>
+    <td valign="top">
+
+[![PyPI clear-your-tools][pypi-cyt-version-shield]][pypi-cyt-link]
+
+[![PyPI downloads][pypi-cyt-downloads-shield]][pypi-cyt-link]
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+
 **`cyt-indexer-sdk`** ([PyPI][pypi-sdk-link])
     </td>
     <td valign="top">
@@ -192,22 +208,6 @@ TypeScript SDK
 [![npm cyt-indexer-sdk][npm-sdk-version-shield]][npm-link]
 
 [![npm downloads][npm-sdk-downloads-shield]][npm-link]
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-
-**`clear-your-tools`** ([PyPI][pypi-cyt-link])
-    </td>
-    <td valign="top">
-
-Python SDK (`import cyt`) and CLI (`cyt`: `proxy` / `pruners`)
-    </td>
-    <td valign="top">
-
-[![PyPI clear-your-tools][pypi-cyt-version-shield]][pypi-cyt-link]
-
-[![PyPI downloads][pypi-cyt-downloads-shield]][pypi-cyt-link]
     </td>
   </tr>
   <tr>
@@ -272,9 +272,28 @@ remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost t
 
 </details>
 
-### 3. Run the the Agent
+### 3. Run the agent
 
-Examples for **Codex** & **Claude Code** are in [./examples/agents](./examples/agents) dir.
+Point the agent at the proxy (default port **8834**). More examples are in
+[./examples/agents](./examples/agents).
+
+**Codex** (OpenAI Responses API via the proxy):
+
+```bash
+codex \
+    -c 'model_provider="cyt"' \
+    -c 'model_providers.cyt.name="Clear-Your-Tools-Proxy/"' \
+    -c 'model_providers.cyt.base_url="http://127.0.0.1:8834/openai/v1"' \
+    -c 'model_providers.cyt.wire_api="responses"'
+```
+
+**Claude Code** (Anthropic-compatible API via OpenRouter path):
+
+```bash
+PORT=8834
+export ANTHROPIC_BASE_URL="http://localhost:${PORT}/openrouter"
+claude
+```
 
 ### 4. View pruning stats savings
 
