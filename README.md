@@ -288,7 +288,7 @@ codex \
     -c 'model_providers.cyt.wire_api="responses"'
 ```
 
-**Claude Code** (Anthropic-compatible API via OpenRouter path):
+**Claude Code** (Anthropic-compatible API):
 
 ```bash
 PORT=8834
