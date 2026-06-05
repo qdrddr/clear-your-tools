@@ -280,10 +280,11 @@ Point the agent at the proxy (default port **8834**). More examples are in
 **Codex** (OpenAI Responses API via the proxy):
 
 ```bash
+PORT=8834
 codex \
     -c 'model_provider="cyt"' \
     -c 'model_providers.cyt.name="Clear-Your-Tools-Proxy/"' \
-    -c 'model_providers.cyt.base_url="http://127.0.0.1:8834/openai/v1"' \
+    -c "model_providers.cyt.base_url=\"http://127.0.0.1:${PORT}/openai/v1\"" \
     -c 'model_providers.cyt.wire_api="responses"'
 ```
 
