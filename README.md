@@ -292,7 +292,7 @@ codex \
 
 ```bash
 PORT=8834
-export ANTHROPIC_BASE_URL="http://localhost:${PORT}/openrouter"
+export ANTHROPIC_BASE_URL="http://localhost:${PORT}/anthropic"
 claude
 ```
 
