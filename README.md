@@ -341,7 +341,7 @@ To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
 To see statistics of actual net savings (input tokens) run:
 
 ```bash
-cyt stats totals
+cyt stats
 ```
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+

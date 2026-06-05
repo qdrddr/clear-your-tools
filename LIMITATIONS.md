@@ -20,7 +20,7 @@ has several limitations that make this difficult in practice:
 - Because of this, an MCP Aggregator cannot reliably determine which agent session or sub-agent should
   see a specific subset of tools, making dynamic tool pruning unreliable.
 
-The savings shown in the `cyt stats totals` output are estimated using the `tiktoken`
+The savings shown in the `cyt stats` output are estimated using the `tiktoken`
 tokenizer, because the pruned content is never actually sent to the LLM provider. As a result,
 the reported token savings may slightly differ from the provider's own token counts. However,
 since the pruned content is never transmitted, this discrepancy does not affect the actual billed
@@ -35,7 +35,10 @@ tools from the payload:
 
 If the provider enforces a fixed *tools → system → messages* ordering at the API level, you gain input‑token savings,
 but you also introduce a tradeoff: any change to the tool list invalidates the entire downstream cache.
-This deserves deeper investigation. What is obvious is that excess context leads to [context rot](https://www.trychroma.com/research/context-rot),
+This deserves deeper investigation. What is obvious is that excess context leads to
+[context rot](https://www.trychroma.com/research/context-rot),
+[Context Bloat](https://eval.16x.engineer/blog/llm-context-management-guide),
+[Context Delusion](https://diffray.ai/blog/context-dilution/)
 and removing irrelevant information consistently improves an LLM’s cognitive performance.
 
 Codex already reduces tool sets by removing unused tools, but CYT goes further:
@@ -58,6 +61,11 @@ pruned tool list.
 2. **Losing intent is hallucination, not pruning failure.**
 If an agent drifts away from the user’s goal or tries to use irrelevant tools,
 that’s agent behavior, not missing tools. A larger tool list doesn’t fix hallucinations.
+
+3. **The latest assistant turn refines pruning.**
+On multi-step requests, CYT scores tools against both the original user query and
+the agent's most recent assistant message (`User_Asks: …; Assistant_Says: …`).
+The user's goal stays anchored across steps; the latest turn adds context for what the agent is doing now.
 
 - Dynamic tool reduction remains stable across multi‑step reasoning because pruning
 is tied to the user query.
