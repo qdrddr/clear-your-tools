@@ -11,9 +11,10 @@
 
 Think token reduction is only about lowering costs by 30%?
 
-- ⚡ Faster local & cloud LLMs: fewer tokens, less Context Delusion.
-- 🎯 Better results: reduce Context Rot, keep LLM focused on the task.
-- 🧠 More context for you: less tool bloat, less memory compaction.
+- ⚡ Faster local & cloud LLMs: fewer tokens, less [Context Delusion](https://diffray.ai/blog/context-dilution/).
+- 🎯 Better results: reduce [Context Rot](https://www.trychroma.com/research/context-rot), keep LLM focused on the task.
+- 🧠 More context for you: less [Context Bloat](https://eval.16x.engineer/blog/llm-context-management-guide),
+less memory compaction.
 
 Your AI agent sees only the tools relevant to the current user task and intent.
 
@@ -61,11 +62,16 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
 **The problem:**
 
-- Excess context leads to [Context Rot](https://www.trychroma.com/research/context-rot),
-and removing irrelevant information consistently improves an LLM’s cognitive performance.
-- [Context Dilution](https://diffray.ai/blog/context-dilution/): 11 out of 12 models dropped below 50%
-of their baseline performance at just 32K tokens.
-- Locally running LLMs to work faster needs less context at the input.
+- **[Context Rot](https://www.trychroma.com/research/context-rot):**
+Model accuracy and reasoning degrade as input length grows,
+even when task difficulty stays the same.
+Removing irrelevant content consistently improves results.
+- **[Context Dilution](https://diffray.ai/blog/context-dilution/):** On the NoLiMa benchmark, 11 of 12 models
+fell below 50% of their short-context baseline at just 32K tokens.
+- **[Context Bloat](https://eval.16x.engineer/blog/llm-context-management-guide):** Even frontier models lose recall and
+reasoning quality as context grows into the 32-200K of tokens—and every extra token adds
+API cost, because providers resend the full history on each turn.
+- **Local inference:** Smaller inputs reduce memory pressure and speed up generation on self-hosted models.
 
 Our Proxy sits between the agent and upstream
 LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts
