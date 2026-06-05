@@ -250,9 +250,9 @@ uv tool install 'clear-your-tools[all]'
 Installed CLI:
 
 ```bash
-uv run cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic
+cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic
 # Or
-uv run cyt proxy --upstream https://api.openai.com --upstream-kind openai
+cyt proxy --upstream https://api.openai.com --upstream-kind openai
 ```
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
@@ -262,7 +262,7 @@ Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/co
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
 ```bash
-uv run cyt setup
+cyt setup
 ```
 
 Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
@@ -279,12 +279,12 @@ Examples for **Codex** & **Claude Code** are in [./examples/agents](./examples/a
 ### 4. View pruning stats savings
 
 ```bash
-uv run cyt stats totals
-uv run cyt stats summary --period day
-uv run cyt stats events --limit 20
+cyt stats totals
+cyt stats summary --period day
+cyt stats events --limit 20
 
 # Optional (recommended):
-uv run cyt setup
+cyt setup
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.
@@ -341,7 +341,7 @@ To estimate savings on a captured request JSON, see [`DEV.md`](DEV.md).
 To see statistics of actual net savings (input tokens) run:
 
 ```bash
-uv run cyt stats totals
+cyt stats totals
 ```
 
 With ~100 tools and `prune_all`, expect **~85–95% savings on tool tokens** and typically **~30%+
