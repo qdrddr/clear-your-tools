@@ -4,7 +4,6 @@ defaults:
   reranking_enabled: true
 models:
   llm:
-    minimum_tools: 50
     remote:
       - name: openai/gpt-oss-120b
         provider: openrouter
@@ -98,6 +97,7 @@ models:
         key_var_name: OPENAI_API_KEY
         max_tokens: 400000
         domain_match: ["api.openai.com"]
+        responses_api: false
         pricing:
           # match_litellm:
           input_cost_per_token: 0.2e-06
@@ -109,6 +109,7 @@ models:
         key_var_name: OPENAI_API_KEY
         max_tokens: 400000
         domain_match: ["api.openai.com"]
+        responses_api: false
         pricing:
           # match_litellm:
           input_cost_per_token: 0.75e-06
@@ -120,6 +121,7 @@ models:
         key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
         domain_match: ["api.openai.com"]
+        responses_api: false
         pricing:
           # match_litellm:
           input_cost_per_token: 5e-06
@@ -131,13 +133,13 @@ models:
         key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
         domain_match: ["api.openai.com"]
+        responses_api: false
         pricing:
           # match_litellm:
           input_cost_per_token: 30e-06
           output_cost_per_token: 180e-06
         # base_url: https://api.openai.com/v1
   rerankers:
-    minimum_tools: 50
     remote:
       - name: Qwen/Qwen3-Reranker-8B
         provider: deepinfra
@@ -158,6 +160,7 @@ pruning:
   policy:
     system_tool: prune_optional
     mcp_tool: prune_all
+    minimum_tools: 50
 
   rerank:
     model:

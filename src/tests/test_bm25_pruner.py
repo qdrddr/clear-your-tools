@@ -114,10 +114,12 @@ def test_stemming_ranks_reading_above_unrelated(
                 "stem_language": "english",
                 "stopwords": "en",
             },
-            "rerankers": {"minimum_tools": 50},
-            "llm": {"minimum_tools": 50},
         },
-        "pruning": {"pipeline": ["bm25"], "per_tool": {}},
+        "pruning": {
+            "pipeline": ["bm25"],
+            "per_tool": {},
+            "policy": {"minimum_tools": 50},
+        },
     }
 
     scored, _usage = bm25_catalog_dict(
@@ -170,10 +172,12 @@ def test_fingerprint_changes_with_stem_language() -> None:
     base_config: dict[str, Any] = {
         "models": {
             "bm25": {"stem_language": "english", "stopwords": "en"},
-            "rerankers": {"minimum_tools": 50},
-            "llm": {"minimum_tools": 50},
         },
-        "pruning": {"pipeline": ["bm25"], "per_tool": {}},
+        "pruning": {
+            "pipeline": ["bm25"],
+            "per_tool": {},
+            "policy": {"minimum_tools": 50},
+        },
     }
     fp_en = catalog_fingerprint(data, config=base_config)
     fp_other = catalog_fingerprint(
@@ -191,31 +195,36 @@ def test_fingerprint_changes_with_stem_language() -> None:
 
 def test_effective_pruning_pipeline_fallbacks() -> None:
     config: dict[str, Any] = {
-        "pruning": {"pipeline": [], "per_tool": {}},
+        "pruning": {
+            "pipeline": [],
+            "per_tool": {},
+            "policy": {"minimum_tools": 50},
+        },
         "models": {
-            "rerankers": {"minimum_tools": 50},
-            "llm": {"minimum_tools": 50},
             "bm25": {"stem_language": "english", "stopwords": "en"},
         },
     }
     assert effective_pruning_pipeline(config, tool_count=5) == ["bm25"]
 
-    config_rerank = {**config, "pruning": {"pipeline": ["rerank"], "per_tool": {}}}
+    config_rerank = {
+        **config,
+        "pruning": {**config["pruning"], "pipeline": ["rerank"]},
+    }
     assert effective_pruning_pipeline(config_rerank, tool_count=5) == ["bm25"]
     assert effective_pruning_pipeline(config_rerank, tool_count=50) == ["rerank"]
 
-    config_both = {**config, "pruning": {"pipeline": ["rerank", "llm"], "per_tool": {}}}
+    config_both = {
+        **config,
+        "pruning": {**config["pruning"], "pipeline": ["rerank", "llm"]},
+    }
     assert effective_pruning_pipeline(config_both, tool_count=40) == ["bm25"]
     assert effective_pruning_pipeline(config_both, tool_count=50) == ["rerank", "llm"]
 
-    config_both_partial = {
-        **config_both,
-        "models": {
-            **config_both["models"],
-            "rerankers": {"minimum_tools": 40},
-        },
-    }
-    assert effective_pruning_pipeline(config_both_partial, tool_count=40) == ["rerank"]
+    config_both_partial = copy.deepcopy(config_both)
+    pruning_policy = config_both_partial["pruning"]["policy"]
+    assert isinstance(pruning_policy, dict)
+    pruning_policy["minimum_tools"] = 40
+    assert effective_pruning_pipeline(config_both_partial, tool_count=40) == ["rerank", "llm"]
 
 
 def test_mitigate_empty_optional_properties_with_bm25_stage() -> None:
@@ -336,10 +345,12 @@ def test_bm25_catalog_dict_returns_stage_usage(
                 "stem_language": "english",
                 "stopwords": "en",
             },
-            "rerankers": {"minimum_tools": 50},
-            "llm": {"minimum_tools": 50},
         },
-        "pruning": {"pipeline": ["bm25"], "per_tool": {}},
+        "pruning": {
+            "pipeline": ["bm25"],
+            "per_tool": {},
+            "policy": {"minimum_tools": 50},
+        },
     }
     _data, usage = bm25_catalog_dict(copy.deepcopy(data), "reading files", config=config)
     assert usage.model_name == BM25_STATS_ID

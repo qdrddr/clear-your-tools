@@ -25,8 +25,7 @@ from cyt.config import (
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
 
-DEFAULT_LLM_MINIMUM_TOOLS = 50
-DEFAULT_RERANKER_MINIMUM_TOOLS = 50
+DEFAULT_MINIMUM_TOOLS = 50
 DEFAULT_REVERSE_PORT = 8834
 TOKENS_PER_MILLION = 1_000_000
 # Values at or above this (without scientific notation) are treated as USD per 1M tokens.
@@ -684,8 +683,7 @@ def build_setup_overlay(
     reranker_model: dict[str, Any] | None,
     llm_pruner_model: dict[str, Any] | None,
     upstream_llm_models: list[dict[str, Any]],
-    llm_minimum_tools: int | None,
-    reranker_minimum_tools: int | None,
+    minimum_tools: int | None,
     system_tool_policy: ToolPolicy,
     mcp_tool_policy: ToolPolicy,
     reverse_port: int,
@@ -698,24 +696,21 @@ def build_setup_overlay(
     if llm_pruner_model is not None:
         llm_remote = merge_model_entry(llm_remote, copy.deepcopy(llm_pruner_model))
 
-    llm_section: dict[str, Any] = {"remote": llm_remote}
-    if llm_minimum_tools is not None:
-        llm_section["minimum_tools"] = llm_minimum_tools
-
-    models: dict[str, Any] = {"llm": llm_section}
+    models: dict[str, Any] = {"llm": {"remote": llm_remote}}
 
     if reranker_model is not None:
-        rerankers_section: dict[str, Any] = {"remote": [copy.deepcopy(reranker_model)]}
-        if reranker_minimum_tools is not None:
-            rerankers_section["minimum_tools"] = reranker_minimum_tools
-        models["rerankers"] = rerankers_section
+        models["rerankers"] = {"remote": [copy.deepcopy(reranker_model)]}
+
+    policy: dict[str, Any] = {
+        "system_tool": system_tool_policy,
+        "mcp_tool": mcp_tool_policy,
+    }
+    if minimum_tools is not None:
+        policy["minimum_tools"] = minimum_tools
 
     pruning: dict[str, Any] = {
         "pipeline": pipeline,
-        "policy": {
-            "system_tool": system_tool_policy,
-            "mcp_tool": mcp_tool_policy,
-        },
+        "policy": policy,
     }
     if reranker_model is not None and "rerank" in pipeline:
         pruning["rerank"] = {
@@ -1317,8 +1312,7 @@ def run_setup(config_path: Path) -> None:
 
     reranker_model: dict[str, Any] | None = None
     llm_pruner_model: dict[str, Any] | None = None
-    reranker_minimum_tools: int | None = None
-    llm_minimum_tools: int | None = None
+    minimum_tools: int | None = None
 
     if "rerank" in pipeline:
         print("\n--- Reranker (weak pruning) model ---")
@@ -1330,11 +1324,6 @@ def run_setup(config_path: Path) -> None:
             custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
-        reranker_minimum_tools = _prompt_int(
-            "models.rerankers.minimum_tools",
-            DEFAULT_RERANKER_MINIMUM_TOOLS,
-        )
-
     if "llm" in pipeline:
         print("\n--- LLM pruner (weak pruning) model ---")
         llm_pruner_model = _select_model_from_catalog(
@@ -1345,15 +1334,10 @@ def run_setup(config_path: Path) -> None:
             custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
-        llm_minimum_tools = _prompt_int(
-            "models.llm.minimum_tools",
-            DEFAULT_LLM_MINIMUM_TOOLS,
-        )
-
-    if llm_minimum_tools is None:
-        llm_minimum_tools = _prompt_int(
-            "models.llm.minimum_tools",
-            DEFAULT_LLM_MINIMUM_TOOLS,
+    if "rerank" in pipeline or "llm" in pipeline:
+        minimum_tools = _prompt_int(
+            "pruning.policy.minimum_tools",
+            DEFAULT_MINIMUM_TOOLS,
         )
 
     print("\n--- Tool policies ---")
@@ -1373,8 +1357,7 @@ def run_setup(config_path: Path) -> None:
         reranker_model=reranker_model,
         llm_pruner_model=llm_pruner_model,
         upstream_llm_models=upstream_llm_models,
-        llm_minimum_tools=llm_minimum_tools,
-        reranker_minimum_tools=reranker_minimum_tools,
+        minimum_tools=minimum_tools,
         system_tool_policy=system_policy,
         mcp_tool_policy=mcp_policy,
         reverse_port=reverse_port,

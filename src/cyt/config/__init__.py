@@ -51,8 +51,9 @@ DEFAULT_SYSTEM_TOOL_POLICY: ToolPolicy = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: ToolPolicy = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
 DEFAULT_DEBUG_LOG_DIR: str = ".debug"
-DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = 50
-DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = 10
+DEFAULT_MIN_TOOLS_PRUNING: int = 50
+DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = DEFAULT_MIN_TOOLS_PRUNING
+DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = DEFAULT_MIN_TOOLS_PRUNING
 DEFAULT_BM25_INDEX_DIR: str = "~/.config/cyt/bm25"
 DEFAULT_BM25_STEM_LANGUAGE: str = "english"
 DEFAULT_BM25_STOPWORDS: str = "en"
@@ -85,12 +86,6 @@ _DEFAULTS: dict[str, Any] = {
         "reranking_enabled": False,
     },
     "models": {
-        "llm": {
-            "minimum_tools": DEFAULT_MIN_TOOLS_LLM_PRUNINER,
-        },
-        "rerankers": {
-            "minimum_tools": DEFAULT_MIN_TOOLS_RERANKER_PRUNINER,
-        },
         "bm25": {
             "index_dir": DEFAULT_BM25_INDEX_DIR,
             "mmap": True,
@@ -104,6 +99,7 @@ _DEFAULTS: dict[str, Any] = {
         "policy": {
             "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
             "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
+            "minimum_tools": DEFAULT_MIN_TOOLS_PRUNING,
         },
         "rerank": {
             "model": {
@@ -437,12 +433,10 @@ def _warn_pruning_pipeline_adjustments(
     if not skipped_stages or effective == configured:
         return
     for skip in skipped_stages:
-        model_key = "rerankers" if skip["stage"] == "rerank" else "llm"
         logger.warning(
-            "Pruning stage %r skipped: %d tools below models.%s.minimum_tools %d",
+            "Pruning stage %r skipped: %d tools below pruning.policy.minimum_tools %d",
             skip["stage"],
             skip["tool_count"],
-            model_key,
             skip["minimum_tools"],
         )
     if effective == ["bm25"] and "bm25" not in configured:
@@ -481,6 +475,8 @@ def effective_pruning_pipeline(
 
 
 def _nested_dict_value(root: dict[str, Any], *keys: str) -> object | None:
+    if not keys:
+        return None
     current: object = root
     for key in keys:
         if not isinstance(current, dict):
@@ -836,12 +832,72 @@ def require_proxy_env(config: dict[str, Any]) -> None:
         raise RuntimeError(format_proxy_env_help(missing))
 
 
-def llm_minimum_tools(config: dict[str, Any] | None = None) -> int:
-    return int(_merged_config(config or load_config())["models"]["llm"]["minimum_tools"])
+def _stage_minimum_tools(
+    config: dict[str, Any] | None,
+    stage: Literal["rerank", "llm"],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> int:
+    """Resolve stage threshold from shared and legacy config paths."""
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    user = _user_overlay_for_config(cfg, user_config=user_config)
+    model_kind = "rerankers" if stage == "rerank" else "llm"
+
+    shared = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", "policy", "minimum_tools"),
+        legacy_keys=("models", model_kind, "minimum_tools"),
+    )
+    if shared is not None:
+        return int(cast(int | str, shared))
+
+    stage_specific = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", "policy", stage, "minimum_tools"),
+        legacy_keys=(),
+    )
+    if stage_specific is not None:
+        return int(cast(int | str, stage_specific))
+
+    return DEFAULT_MIN_TOOLS_PRUNING
 
 
-def reranker_minimum_tools(config: dict[str, Any] | None = None) -> int:
-    return int(_merged_config(config or load_config())["models"]["rerankers"]["minimum_tools"])
+def llm_minimum_tools(
+    config: dict[str, Any] | None = None,
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> int:
+    """Resolve LLM stage threshold from ``pruning.policy.minimum_tools`` and legacy paths."""
+    return _stage_minimum_tools(config, "llm", user_config=user_config)
+
+
+def reranker_minimum_tools(
+    config: dict[str, Any] | None = None,
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> int:
+    """Resolve rerank threshold from ``pruning.policy.minimum_tools`` and legacy paths."""
+    return _stage_minimum_tools(config, "rerank", user_config=user_config)
+
+
+def litellm_model_name(entry: dict[str, Any]) -> str:
+    """Build the LiteLLM model string for a ``models.<kind>.remote`` entry."""
+    provider = entry.get("provider")
+    full_model_name = entry.get("name")
+    if not provider or not full_model_name:
+        nick = entry.get("nick", "<unknown>")
+        raise ValueError(
+            f"models remote entry {nick!r} is missing provider or name for LiteLLM",
+        )
+    return f"{provider}/{full_model_name}"
+
+
+def model_responses_api(entry: dict[str, Any]) -> bool:
+    """True when the model entry should call LiteLLM's Responses API (``/v1/responses``)."""
+    return bool(entry.get("responses_api", False))
 
 
 def resolve_model(
@@ -855,19 +911,16 @@ def resolve_model(
     merged = _merged_config(config or load_config())
     for entry in merged.get("models", {}).get(model_kind, {}).get(model_type, []):
         if entry.get("nick") == model_nick:
-            provider = entry.get("provider", None)
-            full_model_name = entry.get("name")
             if model_type == "remote":
                 load_proxy_env()
                 key_var_name = entry.get("key_var_name")
                 api_key_value = os.environ.get(key_var_name) if key_var_name else None
                 base_url = entry.get("base_url")
-                if provider:
-                    return f"{provider}/{full_model_name}", api_key_value, base_url
-                else:
-                    raise ValueError(
-                        f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format",
-                    )
-            else:
-                return f"{full_model_name}", None, None
+                if entry.get("provider"):
+                    return litellm_model_name(entry), api_key_value, base_url
+                raise ValueError(
+                    f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format",
+                )
+            full_model_name = entry.get("name")
+            return f"{full_model_name}", None, None
     raise ValueError(f"Unknown model nick: {model_nick}, kind: {model_kind}, type: {model_type}")

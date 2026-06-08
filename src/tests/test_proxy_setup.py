@@ -773,8 +773,7 @@ class TestBuildSetupOverlay:
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=None,
             upstream_llm_models=[_SAMPLE_MODEL],
-            llm_minimum_tools=50,
-            reranker_minimum_tools=50,
+            minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
@@ -793,6 +792,7 @@ class TestBuildSetupOverlay:
         assert "llm" not in overlay["pruning"]
         assert overlay["pruning"]["policy"]["system_tool"] == "prune_optional"
         assert overlay["pruning"]["policy"]["mcp_tool"] == "prune_all"
+        assert overlay["pruning"]["policy"]["minimum_tools"] == 50
         assert overlay["defaults"]["reranking_enabled"] is True
         llm_remote = overlay["models"]["llm"]["remote"]
         assert len(llm_remote) == 1
@@ -810,8 +810,7 @@ class TestBuildSetupOverlay:
             reranker_model=None,
             llm_pruner_model=None,
             upstream_llm_models=[_SAMPLE_MODEL],
-            llm_minimum_tools=50,
-            reranker_minimum_tools=None,
+            minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
@@ -837,8 +836,7 @@ class TestBuildSetupOverlay:
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=_LLM_PRUNER,
             upstream_llm_models=[_SAMPLE_MODEL],
-            llm_minimum_tools=50,
-            reranker_minimum_tools=50,
+            minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
@@ -864,8 +862,7 @@ class TestBuildSetupOverlay:
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=None,
             upstream_llm_models=[_SAMPLE_MODEL, second_primary],
-            llm_minimum_tools=50,
-            reranker_minimum_tools=50,
+            minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,

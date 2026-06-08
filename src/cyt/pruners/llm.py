@@ -4,7 +4,7 @@ import logging
 import sys
 from typing import Any, TypeVar
 
-from litellm import completion
+from litellm import completion, responses
 from pydantic import BaseModel
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
@@ -14,6 +14,7 @@ from cyt.config import (
     llm_minimum_tools,
     load_config,
     load_user_config_overlay,
+    model_responses_api,
     remote_model_entry,
     require_proxy_env,
     resolve_model,
@@ -65,7 +66,14 @@ class RelevantChunkIds(BaseModel):
 class LlmPruningSettings:
     """Resolved LLM pruning model and credentials from config."""
 
-    __slots__ = ("api_key", "base_url", "model_name", "provider", "provider_dns")
+    __slots__ = (
+        "api_key",
+        "base_url",
+        "model_name",
+        "provider",
+        "provider_dns",
+        "responses_api",
+    )
 
     def __init__(
         self,
@@ -74,12 +82,15 @@ class LlmPruningSettings:
         base_url: str | None,
         provider: str | None,
         provider_dns: str | None,
+        *,
+        responses_api: bool = False,
     ) -> None:
         self.model_name = model_name
         self.api_key = api_key
         self.base_url = base_url
         self.provider = provider
         self.provider_dns = provider_dns
+        self.responses_api = responses_api
 
 
 def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
@@ -114,6 +125,7 @@ def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSett
         base_url=base_url,
         provider=str(provider) if provider else None,
         provider_dns=provider_dns,
+        responses_api=model_responses_api(entry),
     )
 
 
@@ -225,7 +237,11 @@ def _usage_from_litellm_response(
     usage = getattr(response, "usage", None)
     if usage is not None:
         prompt = getattr(usage, "prompt_tokens", None)
+        if prompt is None:
+            prompt = getattr(usage, "input_tokens", None)
         completion = getattr(usage, "completion_tokens", None)
+        if completion is None:
+            completion = getattr(usage, "output_tokens", None)
         if prompt is not None or completion is not None:
             return StageTokenUsage(
                 input_tokens=int(prompt or 0),
@@ -253,20 +269,25 @@ def call_llm(
     user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
     input_tokens = count_llm_request_tokens(query, chunks_text)
 
-    completion_kwargs: dict[str, Any] = {
+    request_kwargs: dict[str, Any] = {
         "model": settings.model_name,
-        "messages": [
-            {"role": "system", "content": SELECTOR_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
         "api_key": settings.api_key,
-        "response_format": RelevantChunkIds,
     }
     if settings.base_url:
-        completion_kwargs["api_base"] = settings.base_url
+        request_kwargs["api_base"] = settings.base_url
 
-    # litellm.completion returns a ModelResponse object but it's often treated as Any
-    response: Any = completion(**completion_kwargs)
+    if settings.responses_api:
+        request_kwargs["instructions"] = SELECTOR_SYSTEM_PROMPT
+        request_kwargs["input"] = user_message
+        request_kwargs["text_format"] = RelevantChunkIds
+        response: Any = responses(**request_kwargs)
+    else:
+        request_kwargs["messages"] = [
+            {"role": "system", "content": SELECTOR_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
+        request_kwargs["response_format"] = RelevantChunkIds
+        response = completion(**request_kwargs)
 
     content_val: Any = response.choices[0].message.content
     if not isinstance(content_val, str):

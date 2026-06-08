@@ -248,6 +248,18 @@ def test_pruning_policy_prefers_new_path() -> None:
     assert configs.pruning_mcp_tool_policy(config) == "prune_optional"
 
 
+def test_minimum_tools_shared_across_stages() -> None:
+    config = {"pruning": {"policy": {"minimum_tools": 30}}}
+    assert configs.llm_minimum_tools(config) == 30
+    assert configs.reranker_minimum_tools(config) == 30
+
+
+def test_minimum_tools_legacy_models_fallback() -> None:
+    config = {"models": {"rerankers": {"minimum_tools": 40}, "llm": {"minimum_tools": 40}}}
+    assert configs.llm_minimum_tools(config) == 40
+    assert configs.reranker_minimum_tools(config) == 40
+
+
 def test_bm25_index_dir_prefers_pruning_path() -> None:
     config = {
         "pruning": {"bm25": {"index_dir": "/tmp/pruning-bm25"}},
@@ -255,6 +267,34 @@ def test_bm25_index_dir_prefers_pruning_path() -> None:
     }
     assert str(configs.bm25_index_dir(config)) == "/tmp/pruning-bm25"
     assert configs.bm25_mmap_enabled(config) is False
+
+
+def test_litellm_model_name_uses_chat_completions_by_default() -> None:
+    entry = {
+        "provider": "openai",
+        "name": "gpt-5.5",
+        "nick": "gpt-5.5",
+    }
+    assert configs.litellm_model_name(entry) == "openai/gpt-5.5"
+
+
+def test_model_responses_api_defaults_to_false() -> None:
+    entry = {
+        "provider": "openai",
+        "name": "gpt-5.5",
+        "nick": "gpt-5.5",
+    }
+    assert configs.model_responses_api(entry) is False
+
+
+def test_model_responses_api_reads_entry_flag() -> None:
+    entry = {
+        "provider": "openai",
+        "name": "gpt-5.5",
+        "nick": "gpt-5.5",
+        "responses_api": True,
+    }
+    assert configs.model_responses_api(entry) is True
 
 
 def test_remote_pruning_pipeline_configured_accepts_new_paths() -> None:

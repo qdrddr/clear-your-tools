@@ -40,8 +40,8 @@ On each intercepted request the proxy:
 
 | Stage    | Model (default)                        | When it runs                                                          | What it does                                                                                     |
 | -------- | -------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `models.rerankers.minimum_tools` tools (default **50**)             | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
-| `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `models.llm.minimum_tools` tools (default **50**), after `rerank`   | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.             |
+| `rerank` | Qwen3-Reranker-8B (DeepInfra)          | ≥ `pruning.policy.minimum_tools` (default **50**)                     | Scores every catalog chunk against the user query; drops low-scoring tools and optional props.   |
+| `llm`    | Mercury 2 or GPT-OSS-120B (OpenRouter) | ≥ `pruning.policy.minimum_tools` (default **50**), after `rerank`     | LLM selects which catalog chunks to keep; can remove entire tools more aggressively.             |
 
 **Recommendations:**
 
@@ -66,17 +66,16 @@ Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml)
 [`defaults.yaml`](src/cyt/config/defaults.yaml); see [Configuration](#configuration) below).
 
 ```yaml
-models:
-  rerankers:
-    minimum_tools: 50
-  llm:
-    minimum_tools: 50
-
 pruning:
+  policy:
+    minimum_tools: 50
   pipeline:
     - rerank
     # - llm
 ```
+
+Legacy `models.rerankers.minimum_tools` / `models.llm.minimum_tools` still work; per-pipeline
+keys take precedence when both are set.
 
 </details>
 
@@ -130,14 +129,12 @@ pruning:
   pipeline:
     - llm          # LLM only (no reranker)
     # - rerank     # or: [rerank, llm] for two-stage filtering
+  policy:
+    minimum_tools: 50   # remote stages run when tool count ≥ this (default 50)
   llm:
     model:
       remote:
         model_nick: mercury-2   # must match a nick under models.llm.remote
-
-models:
-  llm:
-    minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
 ```
 
 Legacy `defaults.remote.llm_model_nick` / `reranking_model_nick` still work; per-pipeline
