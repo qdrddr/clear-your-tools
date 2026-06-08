@@ -273,6 +273,13 @@ repos:
         files: ^(sdk/(rust|python)/|pyproject\.toml)
         pass_filenames: false
 
+      - id: cargo-clippy
+        name: cargo clippy (cyt-indexer)
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc'
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
+        pass_filenames: false
+
       - id: typescript-typecheck
         name: TypeScript SDK typecheck
         entry: bash -c 'cd sdk/typescript && npx tsc --noEmit && npx tsc --noEmit -p ../e2e/typescript'
