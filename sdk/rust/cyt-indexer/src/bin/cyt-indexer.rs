@@ -2,13 +2,13 @@ use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
     load_catalog_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
-    policy_context_from_values, removed_chunks, retrieve_tools_from_catalog, DecomposedCatalog,
-    PolicyContext, RemovedChunksOptions, RetrieveOptions, ToolPolicy,
+    parse_tool_policy, policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
+    DecomposedCatalog, PolicyContext, RemovedChunksOptions, RetrieveOptions,
 };
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "cyt-indexer")]
@@ -35,17 +35,17 @@ enum Commands {
         input: PathBuf,
         #[arg(long)]
         output: PathBuf,
-        /// JSON config with pruning.policy / pruning.per_tool (legacy: defaults.*_tool_policy)
+        /// JSON config with pruning.policy / `pruning.per_tool` (legacy: defaults.*_`tool_policy`)
         #[arg(long)]
         config: Option<PathBuf>,
         #[arg(long)]
         system_policy: Option<String>,
         #[arg(long)]
         mcp_policy: Option<String>,
-        /// Per-tool policy overrides as JSON object: {"Agent":"always_include",...}
+        /// Per-tool policy overrides as JSON object: {"`Agent":"always_include`",...}
         #[arg(long)]
         per_tool: Option<PathBuf>,
-        /// Per-tool override (repeatable): TOOL=POLICY e.g. Agent=always_include
+        /// Per-tool override (repeatable): TOOL=POLICY e.g. `Agent=always_include`
         #[arg(long = "tool-policy", value_name = "TOOL=POLICY")]
         tool_policies: Vec<String>,
         /// Comma-separated enum values to preserve during retrieve (system tools)
@@ -92,10 +92,10 @@ fn load_tools_array(tools: &PathBuf) -> Result<Vec<Value>, Box<dyn std::error::E
 }
 
 fn policy_context_from_cli(
-    config: Option<&PathBuf>,
+    config: Option<&Path>,
     system_policy: Option<&str>,
     mcp_policy: Option<&str>,
-    per_tool: Option<&PathBuf>,
+    per_tool: Option<&Path>,
     tool_policies: &[String],
 ) -> Result<PolicyContext, Box<dyn std::error::Error>> {
     let mut ctx = match config {
@@ -107,11 +107,11 @@ fn policy_context_from_cli(
     };
 
     if let Some(s) = system_policy {
-        ctx.system_policy = ToolPolicy::from_str(s)
+        ctx.system_policy = parse_tool_policy(s)
             .ok_or_else(|| format!("invalid system policy: {s}"))?;
     }
     if let Some(m) = mcp_policy {
-        ctx.mcp_policy = ToolPolicy::from_str(m)
+        ctx.mcp_policy = parse_tool_policy(m)
             .ok_or_else(|| format!("invalid mcp policy: {m}"))?;
     }
 
@@ -131,22 +131,119 @@ fn policy_context_from_cli(
     Ok(ctx)
 }
 
+fn catalog_path_utf8(catalog: &Path) -> Result<&str, Box<dyn std::error::Error>> {
+    catalog.to_str().ok_or_else(|| {
+        format!("catalog path is not valid UTF-8: {}", catalog.display()).into()
+    })
+}
+
+fn run_build(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let tools_arr = load_tools_array(&tools.to_path_buf())?;
+    let index = build_catalog_from_tools(&tools_arr);
+    fs::create_dir_all(output)?;
+    for (rel, content) in &index.files {
+        let path = output.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, content)?;
+    }
+    eprintln!("Wrote {} files to {}", index.files.len(), output.display());
+    Ok(())
+}
+
+struct RetrieveArgs<'a> {
+    catalog: &'a Path,
+    input: &'a Path,
+    output: &'a Path,
+    config: Option<&'a Path>,
+    system_policy: Option<&'a str>,
+    mcp_policy: Option<&'a str>,
+    per_tool: Option<&'a Path>,
+    tool_policies: &'a [String],
+    preserve: &'a [String],
+    score_filter: bool,
+    no_score_filter: bool,
+    removed_output: Option<&'a Path>,
+}
+
+fn run_retrieve(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    let apply_score_filter = args.score_filter && !args.no_score_filter;
+    let ctx = policy_context_from_cli(
+        args.config,
+        args.system_policy,
+        args.mcp_policy,
+        args.per_tool,
+        args.tool_policies,
+    )?;
+    let catalog_dict = load_catalog_from_dir(catalog_path_utf8(args.catalog)?)?;
+    let mut store = DecomposedCatalog::from_catalog_dict(&catalog_dict);
+    let input_raw = fs::read_to_string(args.input)?;
+    let data: Value = serde_json::from_str(&input_raw)?;
+    let preserve_set = (!args.preserve.is_empty()).then(|| args.preserve.to_vec());
+    let process_groups =
+        build_process_groups_options(&ctx, &catalog_dict, &store, preserve_set);
+    let opts = RetrieveOptions {
+        apply_decomposed_score_filter: apply_score_filter,
+        process_groups,
+    };
+    let tools = retrieve_tools_from_catalog(&ctx, &data, &catalog_dict, &mut store, &opts);
+    if tools.is_empty() && apply_score_filter {
+        eprintln!(
+            "Warning: retrieve produced 0 tools; rerank/pruner survivors usually need \
+             score filter disabled (omit --score-filter)"
+        );
+    }
+    fs::write(args.output, serde_json::to_string_pretty(&tools)?)?;
+    if let Some(removed_path) = args.removed_output {
+        let removed = removed_chunks(
+            &catalog_dict,
+            &data,
+            &RemovedChunksOptions {
+                apply_decomposed_score_filter: apply_score_filter,
+            },
+        );
+        fs::write(removed_path, serde_json::to_string_pretty(&removed)?)?;
+    }
+    Ok(())
+}
+
+fn load_full_catalog(
+    catalog: &Path,
+    full: Option<&Path>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    if let Some(path) = full {
+        let raw = fs::read_to_string(path)?;
+        return Ok(serde_json::from_str(&raw)?);
+    }
+    load_catalog_from_dir(catalog_path_utf8(catalog)?).map_err(Into::into)
+}
+
+fn run_removed(
+    catalog: &Path,
+    input: &Path,
+    output: &Path,
+    full: Option<&Path>,
+    score_filter: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let full_catalog = load_full_catalog(catalog, full)?;
+    let input_raw = fs::read_to_string(input)?;
+    let surviving: Value = serde_json::from_str(&input_raw)?;
+    let removed = removed_chunks(
+        &full_catalog,
+        &surviving,
+        &RemovedChunksOptions {
+            apply_decomposed_score_filter: score_filter,
+        },
+    );
+    fs::write(output, serde_json::to_string_pretty(&removed)?)?;
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build { tools, output } => {
-            let tools_arr = load_tools_array(&tools)?;
-            let index = build_catalog_from_tools(&tools_arr);
-            fs::create_dir_all(&output)?;
-            for (rel, content) in &index.files {
-                let path = output.join(rel);
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(path, content)?;
-            }
-            eprintln!("Wrote {} files to {}", index.files.len(), output.display());
-        }
+        Commands::Build { tools, output } => run_build(&tools, &output)?,
         Commands::Retrieve {
             catalog,
             input,
@@ -158,46 +255,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tool_policies,
             preserve,
             score_filter,
-            no_score_filter: _no_score_filter,
+            no_score_filter,
             removed_output,
         } => {
-            let apply_score_filter = score_filter && !_no_score_filter;
-            let ctx = policy_context_from_cli(
-                config.as_ref(),
-                system_policy.as_deref(),
-                mcp_policy.as_deref(),
-                per_tool.as_ref(),
-                &tool_policies,
-            )?;
-            let catalog_dict = load_catalog_from_dir(catalog.to_str().unwrap())?;
-            let mut store = DecomposedCatalog::from_catalog_dict(&catalog_dict);
-            let input_raw = fs::read_to_string(input)?;
-            let data: Value = serde_json::from_str(&input_raw)?;
-            let preserve_set = (!preserve.is_empty()).then(|| preserve.into_iter().collect::<HashSet<_>>());
-            let process_groups =
-                build_process_groups_options(&ctx, &catalog_dict, &store, preserve_set);
-            let opts = RetrieveOptions {
-                apply_decomposed_score_filter: apply_score_filter,
-                process_groups,
+            let retrieve_args = RetrieveArgs {
+                catalog: &catalog,
+                input: &input,
+                output: &output,
+                config: config.as_deref(),
+                system_policy: system_policy.as_deref(),
+                mcp_policy: mcp_policy.as_deref(),
+                per_tool: per_tool.as_deref(),
+                tool_policies: &tool_policies,
+                preserve: &preserve,
+                score_filter,
+                no_score_filter,
+                removed_output: removed_output.as_deref(),
             };
-            let tools = retrieve_tools_from_catalog(&ctx, &data, &catalog_dict, &mut store, &opts);
-            if tools.is_empty() && apply_score_filter {
-                eprintln!(
-                    "Warning: retrieve produced 0 tools; rerank/pruner survivors usually need \
-                     score filter disabled (omit --score-filter)"
-                );
-            }
-            fs::write(output, serde_json::to_string_pretty(&tools)?)?;
-            if let Some(removed_path) = removed_output {
-                let removed = removed_chunks(
-                    &catalog_dict,
-                    &data,
-                    &RemovedChunksOptions {
-                        apply_decomposed_score_filter: apply_score_filter,
-                    },
-                );
-                fs::write(removed_path, serde_json::to_string_pretty(&removed)?)?;
-            }
+            run_retrieve(&retrieve_args)?;
         }
         Commands::Removed {
             catalog,
@@ -205,25 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             output,
             full,
             score_filter,
-        } => {
-            let full_catalog = match full {
-                Some(path) => {
-                    let raw = fs::read_to_string(path)?;
-                    serde_json::from_str(&raw)?
-                }
-                None => load_catalog_from_dir(catalog.to_str().unwrap())?,
-            };
-            let input_raw = fs::read_to_string(input)?;
-            let surviving: Value = serde_json::from_str(&input_raw)?;
-            let removed = removed_chunks(
-                &full_catalog,
-                &surviving,
-                &RemovedChunksOptions {
-                    apply_decomposed_score_filter: score_filter,
-                },
-            );
-            fs::write(output, serde_json::to_string_pretty(&removed)?)?;
-        }
+        } => run_removed(&catalog, &input, &output, full.as_deref(), score_filter)?,
     }
     Ok(())
 }

@@ -21,16 +21,16 @@ export function configurePathConstants(opts: {
   defaultCatalogDir: string;
   writeCatalogPrune: boolean;
 }): void {
-  configurePathConstantsNative(
-    opts.mdExt,
-    opts.jsonExt,
-    opts.decomposedPrefix,
-    opts.decomposedRoot,
-    opts.catalogPrefix,
-    opts.builderMemoryOnly,
-    opts.defaultCatalogDir,
-    opts.writeCatalogPrune,
-  );
+  configurePathConstantsNative({
+    mdExt: opts.mdExt,
+    jsonExt: opts.jsonExt,
+    decomposedPrefix: opts.decomposedPrefix,
+    decomposedRoot: opts.decomposedRoot,
+    catalogPrefix: opts.catalogPrefix,
+    builderMemoryOnly: opts.builderMemoryOnly,
+    defaultCatalogDir: opts.defaultCatalogDir,
+    writeCatalogPrune: opts.writeCatalogPrune,
+  });
 }
 
 export function mdExt(): string {

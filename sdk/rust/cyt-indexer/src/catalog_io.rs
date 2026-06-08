@@ -17,6 +17,9 @@ pub fn resolve_write_catalog_paths(
 }
 
 /// Write catalog index using optional output dir / prune (defaults from [`crate::paths`]).
+///
+/// # Errors
+/// Returns an error string when the output directory cannot be created or catalog files cannot be written.
 pub fn write_catalog_index_resolved(
     index: &CatalogIndex,
     output_dir: Option<&Path>,
@@ -26,6 +29,10 @@ pub fn write_catalog_index_resolved(
     write_catalog_index(index, &dir, prune)
 }
 
+/// Write catalog index files under `output_dir`, optionally pruning stale entries.
+///
+/// # Errors
+/// Returns an error string when the output directory cannot be created, files cannot be written, or pruning fails.
 pub fn write_catalog_index(
     index: &CatalogIndex,
     output_dir: &Path,
@@ -51,13 +58,11 @@ pub fn write_catalog_index(
 
 fn apply_outputs(output_map: &HashMap<PathBuf, String>) -> Result<(), String> {
     for (path, content) in output_map {
-        if path.exists() {
-            if let Ok(existing) = fs::read_to_string(path) {
-                if existing == *content {
+        if path.exists()
+            && let Ok(existing) = fs::read_to_string(path)
+                && existing == *content {
                     continue;
                 }
-            }
-        }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -69,11 +74,10 @@ fn apply_outputs(output_map: &HashMap<PathBuf, String>) -> Result<(), String> {
 fn should_skip_hidden(path: &Path, root: &Path) -> bool {
     path.strip_prefix(root)
         .ok()
-        .map(|rel| {
+        .is_some_and(|rel| {
             rel.components()
                 .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
         })
-        .unwrap_or(false)
 }
 
 fn prune_stale_files(root: &Path, expected_paths: &HashSet<PathBuf>) -> Result<(), String> {
@@ -82,7 +86,7 @@ fn prune_stale_files(root: &Path, expected_paths: &HashSet<PathBuf>) -> Result<(
     }
 
     let mut all_paths: Vec<PathBuf> = Vec::new();
-    collect_paths(root, root, &mut all_paths)?;
+    collect_paths(root, &mut all_paths)?;
 
     for path in &all_paths {
         if should_skip_hidden(path, root) {
@@ -98,16 +102,15 @@ fn prune_stale_files(root: &Path, expected_paths: &HashSet<PathBuf>) -> Result<(
         if should_skip_hidden(&path, root) {
             continue;
         }
-        if path.is_dir() {
-            if path.read_dir().map(|mut d| d.next().is_none()).unwrap_or(false) {
+        if path.is_dir()
+            && path.read_dir().is_ok_and(|mut d| d.next().is_none()) {
                 let _ = fs::remove_dir(path);
             }
-        }
     }
     Ok(())
 }
 
-fn collect_paths(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+fn collect_paths(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -116,7 +119,7 @@ fn collect_paths(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         let path = entry.path();
         out.push(path.clone());
         if path.is_dir() {
-            collect_paths(&path, root, out)?;
+            collect_paths(&path, out)?;
         }
     }
     Ok(())

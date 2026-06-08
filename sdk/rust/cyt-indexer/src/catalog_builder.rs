@@ -14,6 +14,7 @@ pub struct CatalogBuilder {
 }
 
 impl CatalogBuilder {
+    #[must_use]
     pub fn new_with_options(
         memory_only: Option<bool>,
         output_dir: Option<PathBuf>,
@@ -29,6 +30,7 @@ impl CatalogBuilder {
         }
     }
 
+    #[must_use]
     pub fn new(memory_only: bool, output_dir: Option<PathBuf>) -> Self {
         Self::new_with_options(Some(memory_only), output_dir)
     }
@@ -57,26 +59,32 @@ impl CatalogBuilder {
         self.index = None;
     }
 
+    #[must_use]
     pub fn get_tool_info(&self, server_name: &str, tool_name: &str) -> Option<&Value> {
         let key = (server_name.to_string(), tool_name.to_string());
         self.lookup.get(&key).and_then(|&i| self.tools.get(i))
     }
 
+    #[must_use]
     pub fn build_index(&mut self) -> &CatalogIndex {
-        if self.index.is_none() {
-            self.index = Some(build_catalog_index(&self.tools, &self.all_enums));
-        }
-        self.index.as_ref().unwrap()
+        self.index
+            .get_or_insert_with(|| build_catalog_index(&self.tools, &self.all_enums))
     }
 
+    /// Persist the catalog index to disk when not in `memory_only` mode.
+    ///
+    /// # Errors
+    /// Returns an error string when catalog files cannot be written to `output_dir`.
     pub fn write_catalog(&mut self) -> Result<&CatalogIndex, String> {
-        let index = self.build_index().clone();
-        if !self.memory_only {
+        let memory_only = self.memory_only;
+        let output_dir = self.output_dir.clone();
+        let index_ref = self.build_index();
+        if !memory_only {
             let default_dir = crate::paths::default_catalog_dir();
-            let dir = self.output_dir.as_deref().unwrap_or(&default_dir);
-            write_catalog_index(&index, dir, crate::paths::write_catalog_prune())?;
+            let dir = output_dir.as_deref().unwrap_or(&default_dir);
+            write_catalog_index(index_ref, dir, crate::paths::write_catalog_prune())?;
         }
-        Ok(self.index.as_ref().unwrap())
+        Ok(index_ref)
     }
 
     pub fn to_catalog_dict(&mut self) -> Value {

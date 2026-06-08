@@ -40,9 +40,8 @@ def configure_path_constants(
         decomposed_prefix,
         str(decomposed_root),
         catalog_prefix,
-        builder_memory_only,
         str(default_catalog_dir),
-        write_catalog_prune,
+        (builder_memory_only, write_catalog_prune),
     )
 
 

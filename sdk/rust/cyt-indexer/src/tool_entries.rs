@@ -5,12 +5,13 @@ use crate::build::{build_catalog_index, CatalogIndex};
 use crate::paths::collect_enums;
 use serde_json::{json, Value};
 
-/// Rough cl100k_base token estimate for summary truncation (conservative vs tiktoken).
+/// Rough `cl100k_base` token estimate for summary truncation (conservative vs tiktoken).
 fn approximate_token_count(text: &str) -> usize {
     text.chars().map(|c| if c.is_ascii() { 1u32 } else { 2 }).sum::<u32>() as usize / 2 + 1
 }
 
 /// Truncate text to at most `max_tokens` (approximate), preferring a word boundary.
+#[must_use]
 pub fn truncate_description(description: &str, max_tokens: usize) -> String {
     if description.is_empty() {
         return String::new();
@@ -30,7 +31,7 @@ pub fn truncate_description(description: &str, max_tokens: usize) -> String {
     let mut lo = 0usize;
     let mut hi = chars.len();
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let slice: String = chars[..mid].iter().collect();
         if approximate_token_count(&slice) <= body_budget {
             lo = mid;
@@ -40,11 +41,10 @@ pub fn truncate_description(description: &str, max_tokens: usize) -> String {
     }
 
     let mut body: String = chars[..lo].iter().collect();
-    if let Some(sp) = body.rfind(' ') {
-        if sp > 0 {
+    if let Some(sp) = body.rfind(' ')
+        && sp > 0 {
             body.truncate(sp);
         }
-    }
 
     format!("{body}{suffix}")
 }
@@ -66,11 +66,12 @@ pub fn is_catalog_tool_entry(tool: &Value) -> bool {
 }
 
 /// Build one catalog entry from tool metadata (no file I/O).
+#[must_use]
 pub fn prepare_tool_entry(
     server_name: &str,
     name: &str,
     description: &str,
-    input_schema: Value,
+    input_schema: &Value,
 ) -> Value {
     let full_schema = json!({
         "id": name,
@@ -97,15 +98,12 @@ pub fn anthropic_tool_to_catalog_entry(tool: &Value) -> Option<Value> {
         .get("description")
         .and_then(Value::as_str)
         .unwrap_or("");
-    Some(prepare_tool_entry(
-        "",
-        name,
-        description,
-        anthropic_input_schema(tool),
-    ))
+    let input_schema = anthropic_input_schema(tool);
+    Some(prepare_tool_entry("", name, description, &input_schema))
 }
 
 /// Normalize a tool list (Anthropic API and/or catalog entries) for indexing.
+#[must_use]
 pub fn normalize_tools_for_catalog(tools: &[Value]) -> (Vec<Value>, Vec<Value>) {
     let mut entries = Vec::with_capacity(tools.len());
     let mut all_enums = Vec::new();
@@ -129,12 +127,14 @@ pub fn normalize_tools_for_catalog(tools: &[Value]) -> (Vec<Value>, Vec<Value>) 
 }
 
 /// Build a decomposed catalog index from Anthropic API tools or pre-built catalog entries.
+#[must_use]
 pub fn build_catalog_from_tools(tools: &[Value]) -> CatalogIndex {
     let (entries, enums) = normalize_tools_for_catalog(tools);
     build_catalog_index(&entries, &enums)
 }
 
 /// Convert Anthropic API tools to catalog entries and collected enum values.
+#[must_use]
 pub fn anthropic_tools_to_catalog_entries(tools: &[Value]) -> (Vec<Value>, Vec<Value>) {
     let mut entries = Vec::new();
     let mut all_enums = Vec::new();

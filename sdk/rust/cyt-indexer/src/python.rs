@@ -99,9 +99,9 @@ fn process_groups_from_policy_dict(
     let mut required_by_tool = None;
     let mut required_enum_values_by_tool = None;
     for key in ["required_by_tool", "required_enum_values_by_tool"] {
-        if let Some(item) = policy.get_item(key)? {
-            if let Ok(dict) = item.downcast_into::<PyDict>() {
-                let map = dict_to_required_by_tool(dict)?;
+        if let Some(item) = policy.get_item(key)?
+            && let Ok(dict) = item.downcast_into::<PyDict>() {
+                let map = dict_to_required_by_tool(&dict)?;
                 let vec_map: std::collections::HashMap<String, Vec<String>> = map
                     .into_iter()
                     .map(|(k, v)| (k, v.into_iter().collect()))
@@ -113,7 +113,6 @@ fn process_groups_from_policy_dict(
                 }
                 break;
             }
-        }
     }
     Ok(process_groups_options_from_fields(
         system_preserve,
@@ -158,7 +157,7 @@ fn json_files_from_py(obj: Bound<'_, PyAny>) -> PyResult<DecomposedCatalog> {
 }
 
 fn dict_to_required_by_tool(
-    d: Bound<'_, PyDict>,
+    d: &Bound<'_, PyDict>,
 ) -> PyResult<std::collections::HashMap<String, std::collections::HashSet<String>>> {
     let mut map = std::collections::HashMap::new();
     for (k, v) in d.iter() {
@@ -192,17 +191,17 @@ fn collect_enums_py(py: Python<'_>, schema: Bound<'_, PyAny>) -> PyResult<PyObje
 }
 
 #[pyfunction(name = "configure_path_constants")]
-#[pyo3(signature = (md_ext, json_ext, decomposed_prefix, decomposed_root, catalog_prefix, builder_memory_only, default_catalog_dir, write_catalog_prune))]
+#[pyo3(signature = (md_ext, json_ext, decomposed_prefix, decomposed_root, catalog_prefix, default_catalog_dir, builder_flags))]
 fn configure_path_constants_py(
     md_ext: &str,
     json_ext: &str,
     decomposed_prefix: &str,
     decomposed_root: &str,
     catalog_prefix: &str,
-    builder_memory_only: bool,
     default_catalog_dir: &str,
-    write_catalog_prune: bool,
+    builder_flags: (bool, bool),
 ) {
+    let (builder_memory_only, write_catalog_prune) = builder_flags;
     paths::configure(PathConfig {
         md_ext: md_ext.to_string(),
         json_ext: json_ext.to_string(),
@@ -327,10 +326,10 @@ fn catalog_index_to_catalog_dict_py(
     catalog_prefix: Option<&str>,
 ) -> PyResult<PyObject> {
     let idx = catalog_index_from_py(index)?;
-    let val = match catalog_prefix {
-        Some(prefix) => idx.to_catalog_dict_with_prefix(prefix),
-        None => idx.to_catalog_dict(),
-    };
+    let val = catalog_prefix.map_or_else(
+        || idx.to_catalog_dict(),
+        |prefix| idx.to_catalog_dict_with_prefix(prefix),
+    );
     value_to_py(py, &val)
 }
 
@@ -396,11 +395,11 @@ impl PyDecomposedCatalog {
     }
 
     fn get_json(&self, py: Python<'_>, key: &str) -> PyResult<Option<PyObject>> {
-        Ok(self
+        self
             .inner
             .get_json(key)
             .map(|v| value_to_py(py, v))
-            .transpose()?)
+            .transpose()
     }
 }
 
@@ -445,13 +444,13 @@ fn retrieve_tools_py(
     ctx: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
     let policy_ctx = match ctx {
-        Some(c) => ctx_from_py_any(c)?,
+        Some(c) => ctx_from_py_any(&c)?,
         None => policy_context_from_values(&Value::Object(serde_json::Map::new())),
     };
     let data_val = py_to_value(data)?;
     let build_catalog = catalog_build_dict(&catalog, &data_val)?;
     let mut store = catalog_to_decomposed(catalog)?;
-    let preserve_set = preserve_values.map(|items| items.into_iter().collect());
+    let preserve_set = preserve_values;
     let process_groups =
         build_process_groups_options(&policy_ctx, &build_catalog, &store, preserve_set);
     let result = retrieve_tools_from_catalog(
@@ -481,12 +480,8 @@ fn prepare_tool_entry_py(
     description: &str,
     input_schema: Bound<'_, PyAny>,
 ) -> PyResult<PyObject> {
-    let entry = prepare_tool_entry(
-        server_name,
-        name,
-        description,
-        py_to_value(input_schema)?,
-    );
+    let input_schema = py_to_value(input_schema)?;
+    let entry = prepare_tool_entry(server_name, name, description, &input_schema);
     value_to_py(py, &entry)
 }
 

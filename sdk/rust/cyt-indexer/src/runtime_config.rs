@@ -32,33 +32,45 @@ fn config_lock() -> &'static RwLock<RuntimeConfig> {
 }
 
 pub fn configure(cfg: RuntimeConfig) {
-    *config_lock().write().expect("runtime config lock") = cfg;
+    *config_lock()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = cfg;
 }
 
+#[must_use]
 pub fn snapshot() -> RuntimeConfig {
-    config_lock().read().expect("runtime config lock").clone()
+    config_lock()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
+#[must_use]
 pub fn decomposed_score() -> f64 {
     snapshot().decomposed_score
 }
 
+#[must_use]
 pub fn enum_score() -> f64 {
     snapshot().enum_score
 }
 
+#[must_use]
 pub fn rerank_score() -> f64 {
     snapshot().rerank_score
 }
 
+#[must_use]
 pub fn empty_optional_fallback_k() -> usize {
     snapshot().empty_optional_fallback_k
 }
 
+#[must_use]
 pub fn default_system_policy() -> String {
     snapshot().default_system_policy
 }
 
+#[must_use]
 pub fn default_mcp_policy() -> String {
     snapshot().default_mcp_policy
 }

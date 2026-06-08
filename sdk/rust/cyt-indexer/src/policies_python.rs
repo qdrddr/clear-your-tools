@@ -1,7 +1,7 @@
-//! PyO3 bindings for policies (included from python.rs).
+//! `PyO3` bindings for policies (included from python.rs).
 
 use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
-use crate::policies::{self, policy_context_from_values, PolicyContext, ToolPolicy};
+use crate::policies::{self, parse_tool_policy, policy_context_from_values, PolicyContext};
 use crate::runtime_config;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 /// Refresh module-level score constants after [`runtime_config::configure`].
-pub(crate) fn refresh_runtime_attrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn refresh_runtime_attrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("DECOMPOSED_SCORE", runtime_config::decomposed_score())?;
     m.add("ENUM_SCORE", runtime_config::enum_score())?;
     m.add("RERANK_SCORE", runtime_config::rerank_score())?;
@@ -35,8 +35,8 @@ impl PyPolicyContext {
     fn new(system_policy: Option<String>, mcp_policy: Option<String>) -> Self {
         Self {
             inner: PolicyContext::with_overrides(
-                system_policy.and_then(|s| ToolPolicy::from_str(&s)),
-                mcp_policy.and_then(|s| ToolPolicy::from_str(&s)),
+                system_policy.and_then(|s| parse_tool_policy(&s)),
+                mcp_policy.and_then(|s| parse_tool_policy(&s)),
                 HashMap::new(),
             ),
         }
@@ -48,8 +48,8 @@ impl PyPolicyContext {
     }
 
     #[setter]
-    fn set_system_policy(&mut self, value: String) {
-        if let Some(p) = ToolPolicy::from_str(&value) {
+    fn set_system_policy(&mut self, value: &str) {
+        if let Some(p) = parse_tool_policy(value) {
             self.inner.system_policy = p;
         }
     }
@@ -60,8 +60,8 @@ impl PyPolicyContext {
     }
 
     #[setter]
-    fn set_mcp_policy(&mut self, value: String) {
-        if let Some(p) = ToolPolicy::from_str(&value) {
+    fn set_mcp_policy(&mut self, value: &str) {
+        if let Some(p) = parse_tool_policy(value) {
             self.inner.mcp_policy = p;
         }
     }
@@ -82,7 +82,7 @@ impl PyPolicyContext {
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
                 let pol: String = v.extract()?;
-                if let Some(p) = ToolPolicy::from_str(&pol) {
+                if let Some(p) = parse_tool_policy(&pol) {
                     per_tool.insert(key, p);
                 }
             }
@@ -92,39 +92,38 @@ impl PyPolicyContext {
     }
 }
 
-pub(crate) fn ctx_from_py_any(obj: Bound<'_, PyAny>) -> PyResult<PolicyContext> {
+pub fn ctx_from_py_any(obj: &Bound<'_, PyAny>) -> PyResult<PolicyContext> {
     if let Ok(ctx) = obj.extract::<PyRef<PyPolicyContext>>() {
         return Ok(ctx.inner.clone());
     }
     let dict = obj.downcast::<PyDict>()?;
-    ctx_from_py(dict.clone())
+    ctx_from_py(dict)
 }
 
-pub(crate) fn ctx_from_py(dict: Bound<'_, PyDict>) -> PyResult<PolicyContext> {
+pub fn ctx_from_py(dict: &Bound<'_, PyDict>) -> PyResult<PolicyContext> {
     let system_policy = dict
         .get_item("system_policy")?
         .and_then(|v| v.extract::<String>().ok())
-        .and_then(|s| ToolPolicy::from_str(&s))
+        .and_then(|s| parse_tool_policy(&s))
         .or_else(|| {
-            ToolPolicy::from_str(&runtime_config::default_system_policy())
+            parse_tool_policy(&runtime_config::default_system_policy())
         });
     let mcp_policy = dict
         .get_item("mcp_policy")?
         .and_then(|v| v.extract::<String>().ok())
-        .and_then(|s| ToolPolicy::from_str(&s))
-        .or_else(|| ToolPolicy::from_str(&runtime_config::default_mcp_policy()));
+        .and_then(|s| parse_tool_policy(&s))
+        .or_else(|| parse_tool_policy(&runtime_config::default_mcp_policy()));
     let mut per_tool = HashMap::new();
-    if let Some(item) = dict.get_item("per_tool")? {
-        if let Ok(sub) = item.downcast_into::<PyDict>() {
+    if let Some(item) = dict.get_item("per_tool")?
+        && let Ok(sub) = item.downcast_into::<PyDict>() {
             for (k, v) in sub.iter() {
                 let key: String = k.extract()?;
                 let pol: String = v.extract()?;
-                if let Some(p) = ToolPolicy::from_str(&pol) {
+                if let Some(p) = parse_tool_policy(&pol) {
                     per_tool.insert(key, p);
                 }
             }
         }
-    }
     Ok(PolicyContext::with_overrides(system_policy, mcp_policy, per_tool))
 }
 
@@ -238,13 +237,13 @@ fn policy_context_from_values_py(config: Bound<'_, PyAny>) -> PyResult<PyPolicyC
 }
 
 #[pyfunction(name = "effective_policy")]
-fn effective_policy_py(ctx: Bound<'_, PyAny>, tool_id: &str) -> PyResult<String> {
+fn effective_policy_py(ctx: &Bound<'_, PyAny>, tool_id: &str) -> PyResult<String> {
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::effective_policy(&ctx, tool_id).as_str().to_string())
 }
 
 #[pyfunction(name = "tool_pass_through")]
-fn tool_pass_through_py(ctx: Bound<'_, PyAny>, tool_id: &str) -> PyResult<bool> {
+fn tool_pass_through_py(ctx: &Bound<'_, PyAny>, tool_id: &str) -> PyResult<bool> {
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::tool_pass_through(&ctx, tool_id))
 }
@@ -253,7 +252,7 @@ fn tool_pass_through_py(ctx: Bound<'_, PyAny>, tool_id: &str) -> PyResult<bool> 
 fn partition_catalog_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
 ) -> PyResult<(PyObject, PyObject)> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
@@ -272,25 +271,25 @@ fn merge_catalog_py(
 ) -> PyResult<PyObject> {
     let proc = super::py_to_value(processed)?;
     let pin = super::py_to_value(pinned)?;
-    Ok(super::value_to_py(py, &policies::merge_catalog(&proc, &pin))?)
+    super::value_to_py(py, &policies::merge_catalog(&proc, &pin))
 }
 
 #[pyfunction(name = "catalog_needs_partition")]
-fn catalog_needs_partition_py(data: Bound<'_, PyAny>, ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn catalog_needs_partition_py(data: Bound<'_, PyAny>, ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::catalog_needs_partition(&data_val, &ctx))
 }
 
 #[pyfunction(name = "catalog_needs_pruned_recompose")]
-fn catalog_needs_pruned_recompose_py(data: Bound<'_, PyAny>, ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn catalog_needs_pruned_recompose_py(data: Bound<'_, PyAny>, ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::catalog_needs_pruned_recompose(&data_val, &ctx))
 }
 
 #[pyfunction(name = "request_pass_through")]
-fn request_pass_through_py(ctx: Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<bool> {
+fn request_pass_through_py(ctx: &Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<bool> {
     let ctx = ctx_from_py_any(ctx)?;
     let val = super::py_to_value(tools)?;
     let arr = val.as_array().cloned().unwrap_or_default();
@@ -298,7 +297,7 @@ fn request_pass_through_py(ctx: Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> Py
 }
 
 #[pyfunction(name = "full_pass_through")]
-fn full_pass_through_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn full_pass_through_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::full_pass_through(&ctx))
 }
@@ -318,7 +317,7 @@ fn is_decomposed_optional_property_chunk_py(item: Bound<'_, PyAny>) -> PyResult<
 fn filter_recompose_json_entries_py(
     py: Python<'_>,
     json_list: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
     rerank_score: Option<f64>,
     llm_selected_paths: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
@@ -329,7 +328,7 @@ fn filter_recompose_json_entries_py(
     let filtered = policies::filter_recompose_json_entries(
         &ctx,
         &arr,
-        rerank_score.unwrap_or(runtime_config::rerank_score()),
+        rerank_score.unwrap_or_else(runtime_config::rerank_score),
         paths_set.as_ref(),
     );
     super::value_to_py(py, &Value::Array(filtered))
@@ -340,9 +339,9 @@ fn mitigate_empty_optional_properties_py(
     py: Python<'_>,
     entries: Bound<'_, PyAny>,
     catalog_index: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
     post_rerank_scored: Option<Bound<'_, PyAny>>,
-    pipeline: Vec<String>,
+    pipeline: &Bound<'_, PyAny>,
 ) -> PyResult<PyObject> {
     let ctx = ctx_from_py_any(ctx)?;
     let entries_val = super::py_to_value(entries)?;
@@ -351,12 +350,13 @@ fn mitigate_empty_optional_properties_py(
     let scored = post_rerank_scored
         .map(super::py_to_value)
         .transpose()?;
+    let pipeline_vec = pipeline.extract::<Vec<String>>()?;
     let result = policies::mitigate_empty_optional_properties(
         &ctx,
         &arr,
         &index,
         scored.as_ref(),
-        &pipeline,
+        &pipeline_vec,
     );
     super::value_to_py(py, &Value::Array(result))
 }
@@ -367,7 +367,7 @@ fn append_description_reinstate_entries_py(
     entries: Bound<'_, PyAny>,
     build_catalog: Bound<'_, PyAny>,
     catalog_index: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
 ) -> PyResult<PyObject> {
     let ctx = ctx_from_py_any(ctx)?;
     let entries_val = super::py_to_value(entries)?;
@@ -379,22 +379,22 @@ fn append_description_reinstate_entries_py(
 }
 
 #[pyfunction(name = "needs_description_reinstate")]
-fn needs_description_reinstate_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn needs_description_reinstate_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::needs_description_reinstate(&ctx))
 }
 
 #[pyfunction(name = "is_description_policy")]
-fn is_description_policy_py(policy: &str) -> PyResult<bool> {
-    let Some(p) = ToolPolicy::from_str(policy) else {
-        return Ok(false);
+fn is_description_policy_py(policy: &str) -> bool {
+    let Some(p) = parse_tool_policy(policy) else {
+        return false;
     };
-    Ok(policies::is_description_policy(p))
+    policies::is_description_policy(p)
 }
 
 #[pyfunction(name = "scoring_policy")]
 fn scoring_policy_py(policy: &str) -> PyResult<String> {
-    let p = ToolPolicy::from_str(policy)
+    let p = parse_tool_policy(policy)
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(format!("invalid policy: {policy}")))?;
     Ok(policies::scoring_policy(p).as_str().to_string())
 }
@@ -404,7 +404,7 @@ fn drop_recomposed_tools_with_empty_properties_py(
     py: Python<'_>,
     tools: Bound<'_, PyAny>,
     catalog_index: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
 ) -> PyResult<PyObject> {
     let ctx = ctx_from_py_any(ctx)?;
     let val = super::py_to_value(tools)?;
@@ -518,8 +518,8 @@ fn restore_mcp_tools_py(py: Python<'_>, stash: Bound<'_, PyAny>) -> PyResult<PyO
 fn merge_tools_preserving_order_py(
     py: Python<'_>,
     original: Bound<'_, PyAny>,
-    pruned_by_name: Bound<'_, PyDict>,
-    stashed_by_name: Bound<'_, PyDict>,
+    pruned_by_name: &Bound<'_, PyDict>,
+    stashed_by_name: &Bound<'_, PyDict>,
 ) -> PyResult<PyObject> {
     let orig = py_list_values(original)?;
     let mut pruned = HashMap::new();
@@ -548,14 +548,14 @@ fn split_anthropic_tools_py(
 }
 
 #[pyfunction(name = "entries_for_policy")]
-fn entries_for_policy_py(py: Python<'_>, ctx: Bound<'_, PyAny>, all_entries: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn entries_for_policy_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, all_entries: Bound<'_, PyAny>) -> PyResult<PyObject> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(all_entries)?;
     super::value_to_py(py, &Value::Array(policies::entries_for_policy(&ctx, &arr)))
 }
 
 #[pyfunction(name = "tools_for_catalog")]
-fn tools_for_catalog_py(py: Python<'_>, ctx: Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn tools_for_catalog_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(tools)?;
     super::value_to_py(py, &Value::Array(policies::tools_for_catalog(&ctx, &arr)))
@@ -592,7 +592,7 @@ fn required_enum_values_by_tool_py<'py>(
 #[pyo3(signature = (item, ctx, rerank_score=None, llm_selected_paths=None))]
 fn optional_leaf_survived_rerank_py(
     item: Bound<'_, PyAny>,
-    ctx: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
     rerank_score: Option<f64>,
     llm_selected_paths: Option<Bound<'_, PyAny>>,
 ) -> PyResult<bool> {
@@ -602,28 +602,28 @@ fn optional_leaf_survived_rerank_py(
     Ok(policies::optional_leaf_survived_rerank(
         &ctx,
         &item_val,
-        rerank_score.unwrap_or(runtime_config::rerank_score()),
+        rerank_score.unwrap_or_else(runtime_config::rerank_score),
         paths_set.as_ref(),
     ))
 }
 
 #[pyfunction(name = "needs_partition")]
-fn needs_partition_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn needs_partition_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(policies::needs_partition(&ctx_from_py_any(ctx)?))
 }
 
 #[pyfunction(name = "needs_pruned_recompose")]
-fn needs_pruned_recompose_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn needs_pruned_recompose_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(policies::needs_pruned_recompose(&ctx_from_py_any(ctx)?))
 }
 
 #[pyfunction(name = "system_tools_pass_through")]
-fn system_tools_pass_through_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn system_tools_pass_through_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(policies::system_tools_pass_through(&ctx_from_py_any(ctx)?))
 }
 
 #[pyfunction(name = "mcp_tools_pass_through")]
-fn mcp_tools_pass_through_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+fn mcp_tools_pass_through_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(policies::mcp_tools_pass_through(&ctx_from_py_any(ctx)?))
 }
 
@@ -707,11 +707,11 @@ impl PyCatalogBuilder {
     }
 
     fn get_tool_info(&self, py: Python<'_>, server_name: &str, tool_name: &str) -> PyResult<Option<PyObject>> {
-        Ok(self
+        self
             .inner
             .get_tool_info(server_name, tool_name)
             .map(|v| super::value_to_py(py, v))
-            .transpose()?)
+            .transpose()
     }
 
     fn build_index(&mut self, py: Python<'_>) -> PyResult<PyObject> {
@@ -729,7 +729,7 @@ impl PyCatalogBuilder {
         let index = self
             .inner
             .write_catalog()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyOSError, _>(e))?;
+            .map_err(PyErr::new::<pyo3::exceptions::PyOSError, _>)?;
         super::value_to_py(
             py,
             &serde_json::json!({
@@ -739,8 +739,8 @@ impl PyCatalogBuilder {
         )
     }
 
-    #[pyo3(signature = (catalog_prefix=None))]
-    fn to_catalog_dict(
+    #[pyo3(name = "to_catalog_dict", signature = (catalog_prefix=None))]
+    fn build_catalog_dict(
         &mut self,
         py: Python<'_>,
         catalog_prefix: Option<&str>,

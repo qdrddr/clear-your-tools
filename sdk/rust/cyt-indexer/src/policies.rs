@@ -11,6 +11,7 @@ use crate::paths::{
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 
 const ALWAYS_INCLUDE: &str = "always_include";
 const PRUNE_OPTIONAL: &str = "prune_optional";
@@ -18,9 +19,19 @@ const PRUNE_ALL: &str = "prune_all";
 const PRUNE_OPTIONAL_DESCRIPTIONS: &str = "prune_optional_descriptions";
 const PRUNE_ALL_DESCRIPTIONS: &str = "prune_all_descriptions";
 
+const PARTITION_METADATA_KEYS: &[&str] = &[
+    "json",
+    "md",
+    "system_required_enum_values",
+    "mcp_required_enum_values",
+    "required_enum_values_by_tool",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum ToolPolicy {
     AlwaysInclude,
+    #[default]
     PruneOptional,
     PruneAll,
     PruneOptionalDescriptions,
@@ -28,7 +39,8 @@ pub enum ToolPolicy {
 }
 
 /// Canonical policy string literals (for host language typing / validation).
-pub fn tool_policy_strings() -> [&'static str; 5] {
+#[must_use]
+pub const fn tool_policy_strings() -> [&'static str; 5] {
     [
         ALWAYS_INCLUDE,
         PRUNE_OPTIONAL,
@@ -38,19 +50,40 @@ pub fn tool_policy_strings() -> [&'static str; 5] {
     ]
 }
 
-impl ToolPolicy {
-    pub fn from_str(s: &str) -> Option<Self> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseToolPolicyError;
+
+impl std::fmt::Display for ParseToolPolicyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("unknown tool policy")
+    }
+}
+
+impl std::error::Error for ParseToolPolicyError {}
+
+impl FromStr for ToolPolicy {
+    type Err = ParseToolPolicyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            ALWAYS_INCLUDE => Some(Self::AlwaysInclude),
-            PRUNE_OPTIONAL => Some(Self::PruneOptional),
-            PRUNE_ALL => Some(Self::PruneAll),
-            PRUNE_OPTIONAL_DESCRIPTIONS => Some(Self::PruneOptionalDescriptions),
-            PRUNE_ALL_DESCRIPTIONS => Some(Self::PruneAllDescriptions),
-            _ => None,
+            ALWAYS_INCLUDE => Ok(Self::AlwaysInclude),
+            PRUNE_OPTIONAL => Ok(Self::PruneOptional),
+            PRUNE_ALL => Ok(Self::PruneAll),
+            PRUNE_OPTIONAL_DESCRIPTIONS => Ok(Self::PruneOptionalDescriptions),
+            PRUNE_ALL_DESCRIPTIONS => Ok(Self::PruneAllDescriptions),
+            _ => Err(ParseToolPolicyError),
         }
     }
+}
 
-    pub fn as_str(self) -> &'static str {
+#[must_use]
+pub fn parse_tool_policy(s: &str) -> Option<ToolPolicy> {
+    s.parse().ok()
+}
+
+impl ToolPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::AlwaysInclude => ALWAYS_INCLUDE,
             Self::PruneOptional => PRUNE_OPTIONAL,
@@ -61,7 +94,8 @@ impl ToolPolicy {
     }
 }
 
-pub fn is_description_policy(policy: ToolPolicy) -> bool {
+#[must_use]
+pub const fn is_description_policy(policy: ToolPolicy) -> bool {
     matches!(
         policy,
         ToolPolicy::PruneOptionalDescriptions | ToolPolicy::PruneAllDescriptions
@@ -69,7 +103,8 @@ pub fn is_description_policy(policy: ToolPolicy) -> bool {
 }
 
 /// Map description variants to base scoring policies (`prune_optional` / `prune_all`).
-pub fn scoring_policy(policy: ToolPolicy) -> ToolPolicy {
+#[must_use]
+pub const fn scoring_policy(policy: ToolPolicy) -> ToolPolicy {
     match policy {
         ToolPolicy::PruneOptionalDescriptions => ToolPolicy::PruneOptional,
         ToolPolicy::PruneAllDescriptions => ToolPolicy::PruneAll,
@@ -77,6 +112,7 @@ pub fn scoring_policy(policy: ToolPolicy) -> ToolPolicy {
     }
 }
 
+#[must_use]
 pub fn needs_description_reinstate(ctx: &PolicyContext) -> bool {
     if is_description_policy(ctx.system_policy) || is_description_policy(ctx.mcp_policy) {
         return true;
@@ -84,11 +120,6 @@ pub fn needs_description_reinstate(ctx: &PolicyContext) -> bool {
     ctx.per_tool.values().any(|p| is_description_policy(*p))
 }
 
-impl Default for ToolPolicy {
-    fn default() -> Self {
-        Self::PruneOptional
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct PolicyContext {
@@ -99,17 +130,19 @@ pub struct PolicyContext {
 
 impl PolicyContext {
     /// Defaults from [`runtime_config`] (overridable by the host app before use).
+    #[must_use]
     pub fn new() -> Self {
         let system = runtime_config::default_system_policy();
         let mcp = runtime_config::default_mcp_policy();
         Self {
-            system_policy: ToolPolicy::from_str(&system).unwrap_or(ToolPolicy::PruneOptional),
-            mcp_policy: ToolPolicy::from_str(&mcp).unwrap_or(ToolPolicy::PruneAll),
+            system_policy: parse_tool_policy(&system).unwrap_or(ToolPolicy::PruneOptional),
+            mcp_policy: parse_tool_policy(&mcp).unwrap_or(ToolPolicy::PruneAll),
             per_tool: HashMap::new(),
         }
     }
 
     /// Start from [`Self::new`] and apply optional overrides (used by Python/Node bindings).
+    #[must_use]
     pub fn with_overrides(
         system_policy: Option<ToolPolicy>,
         mcp_policy: Option<ToolPolicy>,
@@ -144,7 +177,7 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
         if let Some(s) = policy
             .get("system_tool")
             .and_then(Value::as_str)
-            .and_then(ToolPolicy::from_str)
+            .and_then(parse_tool_policy)
         {
             ctx.system_policy = s;
             system_from_pruning = true;
@@ -152,31 +185,29 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
         if let Some(m) = policy
             .get("mcp_tool")
             .and_then(Value::as_str)
-            .and_then(ToolPolicy::from_str)
+            .and_then(parse_tool_policy)
         {
             ctx.mcp_policy = m;
             mcp_from_pruning = true;
         }
     }
     if let Some(defaults) = config.get("defaults").and_then(Value::as_object) {
-        if !system_from_pruning {
-            if let Some(s) = defaults
+        if !system_from_pruning
+            && let Some(s) = defaults
                 .get("system_tool_policy")
                 .and_then(Value::as_str)
-                .and_then(ToolPolicy::from_str)
+                .and_then(parse_tool_policy)
             {
                 ctx.system_policy = s;
             }
-        }
-        if !mcp_from_pruning {
-            if let Some(m) = defaults
+        if !mcp_from_pruning
+            && let Some(m) = defaults
                 .get("mcp_tool_policy")
                 .and_then(Value::as_str)
-                .and_then(ToolPolicy::from_str)
+                .and_then(parse_tool_policy)
             {
                 ctx.mcp_policy = m;
             }
-        }
     }
     if let Some(per_tool) = config
         .get("pruning")
@@ -185,7 +216,7 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
         .and_then(Value::as_object)
     {
         for (tool_id, policy) in per_tool {
-            if let Some(p) = policy.as_str().and_then(ToolPolicy::from_str) {
+            if let Some(p) = policy.as_str().and_then(parse_tool_policy) {
                 ctx.per_tool.insert(tool_id.clone(), p);
             }
         }
@@ -194,6 +225,10 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
 }
 
 /// Parse `TOOL=POLICY` (e.g. `Agent=always_include`).
+///
+/// # Errors
+///
+/// Returns an error when the input is not `TOOL=POLICY` or the policy name is unknown.
 pub fn parse_tool_policy_pair(s: &str) -> Result<(String, ToolPolicy), String> {
     let (tool_id, policy_str) = s
         .split_once('=')
@@ -202,12 +237,17 @@ pub fn parse_tool_policy_pair(s: &str) -> Result<(String, ToolPolicy), String> {
     if tool_id.is_empty() {
         return Err(format!("expected TOOL=POLICY, got: {s}"));
     }
-    let policy = ToolPolicy::from_str(policy_str.trim())
+    let policy = parse_tool_policy(policy_str.trim())
         .ok_or_else(|| format!("invalid policy for {tool_id}: {policy_str}"))?;
     Ok((tool_id.to_string(), policy))
 }
 
 /// Load per-tool overrides from a JSON object (`{"Agent": "always_include", ...}`).
+///
+/// # Errors
+///
+/// Returns an error when `val` is not a JSON object, a policy value is not a string,
+/// or a policy name is unknown.
 pub fn per_tool_policies_from_value(val: &Value) -> Result<HashMap<String, ToolPolicy>, String> {
     let Some(map) = val.as_object() else {
         return Err("per-tool policies must be a JSON object".into());
@@ -217,7 +257,7 @@ pub fn per_tool_policies_from_value(val: &Value) -> Result<HashMap<String, ToolP
         let Some(policy_str) = policy_val.as_str() else {
             return Err(format!("policy for {tool_id} must be a string"));
         };
-        let policy = ToolPolicy::from_str(policy_str).ok_or_else(|| {
+        let policy = parse_tool_policy(policy_str).ok_or_else(|| {
             format!("invalid policy for {tool_id}: {policy_str}")
         })?;
         out.insert(tool_id.clone(), policy);
@@ -226,7 +266,10 @@ pub fn per_tool_policies_from_value(val: &Value) -> Result<HashMap<String, ToolP
 }
 
 /// Apply per-tool overrides; later entries win for duplicate tool ids.
-pub fn apply_per_tool_overrides(ctx: &mut PolicyContext, overrides: HashMap<String, ToolPolicy>) {
+pub fn apply_per_tool_overrides<S: std::hash::BuildHasher>(
+    ctx: &mut PolicyContext,
+    overrides: HashMap<String, ToolPolicy, S>,
+) {
     ctx.per_tool.extend(overrides);
 }
 
@@ -245,8 +288,7 @@ fn copy_dict_list(items: &Value) -> Vec<Value> {
         return Vec::new();
     };
     arr.iter()
-        .filter(|x| x.is_object())
-        .map(|x| x.clone())
+        .filter(|x| x.is_object()).cloned()
         .collect()
 }
 
@@ -259,14 +301,17 @@ fn properties_field_empty(schema: &Map<String, Value>) -> bool {
     }
 }
 
+#[must_use]
 pub fn is_non_system_tool_id(tool_id: &str) -> bool {
     tool_id.starts_with("mcp__")
 }
 
+#[must_use]
 pub fn is_system_tool_id(tool_id: &str) -> bool {
     !is_non_system_tool_id(tool_id)
 }
 
+#[must_use]
 pub fn chunk_tool_id(item: &Value) -> String {
     let Some(obj) = item_object(item) else {
         return String::new();
@@ -280,6 +325,7 @@ pub fn chunk_tool_id(item: &Value) -> String {
     String::new()
 }
 
+#[must_use]
 pub fn effective_policy(ctx: &PolicyContext, tool_id: &str) -> ToolPolicy {
     if let Some(p) = ctx.per_tool.get(tool_id) {
         return *p;
@@ -291,10 +337,12 @@ pub fn effective_policy(ctx: &PolicyContext, tool_id: &str) -> ToolPolicy {
     }
 }
 
+#[must_use]
 pub fn tool_pass_through(ctx: &PolicyContext, tool_id: &str) -> bool {
     effective_policy(ctx, tool_id) == ToolPolicy::AlwaysInclude
 }
 
+#[must_use]
 pub fn root_tool_id_from_chunk(item: &Value) -> String {
     let Some(obj) = item_object(item) else {
         return chunk_tool_id(item);
@@ -320,14 +368,17 @@ pub fn request_pass_through(ctx: &PolicyContext, tools: &[Value]) -> bool {
         .all(|obj| tool_pass_through(ctx, &str_field(obj, "name")))
 }
 
+#[must_use]
 pub fn is_non_system_chunk(item: &Value) -> bool {
     is_non_system_tool_id(&chunk_tool_id(item))
 }
 
+#[must_use]
 pub fn is_system_chunk(item: &Value) -> bool {
     is_system_tool_id(&chunk_tool_id(item))
 }
 
+#[must_use]
 pub fn is_decomposed_tool_root_chunk(item: &Value) -> bool {
     let Some(obj) = item_object(item) else {
         return false;
@@ -345,6 +396,7 @@ pub fn is_decomposed_tool_root_chunk(item: &Value) -> bool {
     root_key == decomposed_key
 }
 
+#[must_use]
 pub fn is_decomposed_optional_property_chunk(item: &Value) -> bool {
     let Some(obj) = item_object(item) else {
         return false;
@@ -362,28 +414,34 @@ pub fn is_decomposed_optional_property_chunk(item: &Value) -> bool {
     root_key != decomposed_key
 }
 
+#[must_use]
 pub fn is_system_root_chunk(item: &Value) -> bool {
     is_system_chunk(item) && is_decomposed_tool_root_chunk(item)
 }
 
+#[must_use]
 pub fn is_mcp_root_chunk(item: &Value) -> bool {
     is_non_system_chunk(item) && is_decomposed_tool_root_chunk(item)
 }
 
+#[must_use]
 pub fn is_system_optional_chunk(item: &Value) -> bool {
     is_system_chunk(item) && is_decomposed_optional_property_chunk(item)
 }
 
+#[must_use]
 pub fn is_mcp_optional_chunk(item: &Value) -> bool {
     is_non_system_chunk(item) && is_decomposed_optional_property_chunk(item)
 }
 
+#[must_use]
 pub fn needs_partition(ctx: &PolicyContext) -> bool {
     scoring_policy(ctx.system_policy) == ToolPolicy::PruneOptional
         || scoring_policy(ctx.mcp_policy) == ToolPolicy::PruneOptional
 }
 
-pub fn uses_pruned_recompose(policy: ToolPolicy) -> bool {
+#[must_use]
+pub const fn uses_pruned_recompose(policy: ToolPolicy) -> bool {
     matches!(
         policy,
         ToolPolicy::PruneOptional
@@ -393,10 +451,12 @@ pub fn uses_pruned_recompose(policy: ToolPolicy) -> bool {
     )
 }
 
-pub fn needs_pruned_recompose(ctx: &PolicyContext) -> bool {
+#[must_use]
+pub const fn needs_pruned_recompose(ctx: &PolicyContext) -> bool {
     uses_pruned_recompose(ctx.system_policy) || uses_pruned_recompose(ctx.mcp_policy)
 }
 
+#[must_use]
 pub fn chunk_policy(item: &Value, ctx: &PolicyContext) -> Option<ToolPolicy> {
     if is_system_chunk(item) {
         Some(ctx.system_policy)
@@ -407,18 +467,22 @@ pub fn chunk_policy(item: &Value, ctx: &PolicyContext) -> Option<ToolPolicy> {
     }
 }
 
+#[must_use]
 pub fn system_tools_pass_through(ctx: &PolicyContext) -> bool {
     ctx.system_policy == ToolPolicy::AlwaysInclude
 }
 
+#[must_use]
 pub fn mcp_tools_pass_through(ctx: &PolicyContext) -> bool {
     ctx.mcp_policy == ToolPolicy::AlwaysInclude
 }
 
+#[must_use]
 pub fn full_pass_through(ctx: &PolicyContext) -> bool {
     ctx.system_policy == ToolPolicy::AlwaysInclude && ctx.mcp_policy == ToolPolicy::AlwaysInclude
 }
 
+#[must_use]
 pub fn collect_enum_values_from_chunks(chunks: &[Value]) -> HashSet<String> {
     let mut values = HashSet::new();
     for item in chunks {
@@ -495,16 +559,15 @@ pub fn catalog_needs_pruned_recompose(data: &Value, ctx: &PolicyContext) -> bool
     false
 }
 
-fn partition_json_items(
-    ctx: &PolicyContext,
-    json_list: &[Value],
-) -> (
-    Vec<Value>,
-    Vec<Value>,
-    HashSet<String>,
-    HashSet<String>,
-    HashMap<String, HashSet<String>>,
-) {
+struct JsonPartition {
+    pinned_json: Vec<Value>,
+    processable_json: Vec<Value>,
+    system_required_enums: HashSet<String>,
+    mcp_required_enums: HashSet<String>,
+    required_enums_by_tool: HashMap<String, HashSet<String>>,
+}
+
+fn partition_json_items(ctx: &PolicyContext, json_list: &[Value]) -> JsonPartition {
     let mut pinned_json = Vec::new();
     let mut processable_json = Vec::new();
     let mut system_required_enums = HashSet::new();
@@ -534,13 +597,13 @@ fn partition_json_items(
         }
     }
 
-    (
+    JsonPartition {
         pinned_json,
         processable_json,
         system_required_enums,
         mcp_required_enums,
         required_enums_by_tool,
-    )
+    }
 }
 
 fn partition_md_items(
@@ -572,21 +635,13 @@ pub fn partition_catalog(data: &Value, ctx: &PolicyContext) -> (Value, Value) {
 
     let json_list = data.get("json").and_then(Value::as_array);
     let md_list = data.get("md").and_then(Value::as_array);
-    let json_list = json_list.map(|a| a.as_slice()).unwrap_or(&[]);
-    let md_list = md_list.map(|a| a.as_slice()).unwrap_or(&[]);
-
-    const METADATA_KEYS: &[&str] = &[
-        "json",
-        "md",
-        "system_required_enum_values",
-        "mcp_required_enum_values",
-        "required_enum_values_by_tool",
-    ];
+    let json_list = json_list.map_or(&[] as &[Value], std::vec::Vec::as_slice);
+    let md_list = md_list.map_or(&[] as &[Value], std::vec::Vec::as_slice);
 
     let mut processable = Map::new();
     if let Some(obj) = data.as_object() {
         for (k, v) in obj {
-            if !METADATA_KEYS.contains(&k.as_str()) {
+            if !PARTITION_METADATA_KEYS.contains(&k.as_str()) {
                 processable.insert(k.clone(), v.clone());
             }
         }
@@ -605,13 +660,13 @@ pub fn partition_catalog(data: &Value, ctx: &PolicyContext) -> (Value, Value) {
         Value::Object(Map::new()),
     );
 
-    let (
+    let JsonPartition {
         pinned_json,
         processable_json,
         system_required_enums,
         mcp_required_enums,
         required_enums_by_tool,
-    ) = partition_json_items(ctx, json_list);
+    } = partition_json_items(ctx, json_list);
 
     let mut pinned_enum_values = HashSet::new();
     for vals in required_enums_by_tool.values() {
@@ -654,7 +709,9 @@ pub fn partition_catalog(data: &Value, ctx: &PolicyContext) -> (Value, Value) {
 
 pub fn merge_catalog(processed: &Value, pinned: &Value) -> Value {
     let mut merged = processed.clone();
-    let merged_obj = merged.as_object_mut().expect("catalog must be object");
+    let Some(merged_obj) = merged.as_object_mut() else {
+        return merged;
+    };
 
     if let Some(pinned_json) = pinned.get("json").and_then(Value::as_array) {
         let arr = merged_obj
@@ -672,60 +729,60 @@ pub fn merge_catalog(processed: &Value, pinned: &Value) -> Value {
             merged_md.extend(pinned_md.iter().cloned());
         }
     }
-    if pinned.get("system_required_enum_values").is_some() {
-        if let Some(v) = pinned.get("system_required_enum_values") {
+    if pinned.get("system_required_enum_values").is_some()
+        && let Some(v) = pinned.get("system_required_enum_values") {
             merged_obj.insert("system_required_enum_values".into(), v.clone());
         }
-    }
-    if pinned.get("mcp_required_enum_values").is_some() {
-        if let Some(v) = pinned.get("mcp_required_enum_values") {
+    if pinned.get("mcp_required_enum_values").is_some()
+        && let Some(v) = pinned.get("mcp_required_enum_values") {
             merged_obj.insert("mcp_required_enum_values".into(), v.clone());
         }
-    }
-    if pinned.get("required_enum_values_by_tool").is_some() {
-        if let Some(v) = pinned.get("required_enum_values_by_tool") {
+    if pinned.get("required_enum_values_by_tool").is_some()
+        && let Some(v) = pinned.get("required_enum_values_by_tool") {
             merged_obj.insert("required_enum_values_by_tool".into(), v.clone());
         }
-    }
     merged
 }
 
+#[must_use]
 pub fn stash_system_tools(tools: &[Value]) -> Vec<Value> {
     tools
         .iter()
         .filter(|t| {
             item_object(t)
-                .map(|o| is_system_tool_id(&str_field(o, "name")))
-                .unwrap_or(false)
+                .is_some_and(|o| is_system_tool_id(&str_field(o, "name")))
         })
         .cloned()
         .collect()
 }
 
+#[must_use]
 pub fn restore_system_tools(stash: &[Value]) -> Vec<Value> {
     stash.to_vec()
 }
 
+#[must_use]
 pub fn stash_mcp_tools(tools: &[Value]) -> Vec<Value> {
     tools
         .iter()
         .filter(|t| {
             item_object(t)
-                .map(|o| is_non_system_tool_id(&str_field(o, "name")))
-                .unwrap_or(false)
+                .is_some_and(|o| is_non_system_tool_id(&str_field(o, "name")))
         })
         .cloned()
         .collect()
 }
 
+#[must_use]
 pub fn restore_mcp_tools(stash: &[Value]) -> Vec<Value> {
     stash.to_vec()
 }
 
-pub fn merge_tools_preserving_order(
+#[must_use]
+pub fn merge_tools_preserving_order<S: std::hash::BuildHasher>(
     original: &[Value],
-    pruned_by_name: &HashMap<String, Value>,
-    stashed_by_name: &HashMap<String, Value>,
+    pruned_by_name: &HashMap<String, Value, S>,
+    stashed_by_name: &HashMap<String, Value, S>,
 ) -> Vec<Value> {
     let mut result = Vec::new();
     for tool in original {
@@ -745,18 +802,19 @@ pub fn merge_tools_preserving_order(
     result
 }
 
+#[must_use]
 pub fn anthropic_tool_is_system(tool: &Value) -> bool {
     item_object(tool)
-        .map(|o| is_system_tool_id(&str_field(o, "name")))
-        .unwrap_or(false)
+        .is_some_and(|o| is_system_tool_id(&str_field(o, "name")))
 }
 
+#[must_use]
 pub fn anthropic_tool_is_mcp(tool: &Value) -> bool {
     item_object(tool)
-        .map(|o| is_non_system_tool_id(&str_field(o, "name")))
-        .unwrap_or(false)
+        .is_some_and(|o| is_non_system_tool_id(&str_field(o, "name")))
 }
 
+#[must_use]
 pub fn split_anthropic_tools(tools: &[Value]) -> (Vec<Value>, Vec<Value>) {
     let mut non_system = Vec::new();
     let mut system = Vec::new();
@@ -770,6 +828,7 @@ pub fn split_anthropic_tools(tools: &[Value]) -> (Vec<Value>, Vec<Value>) {
     (non_system, system)
 }
 
+#[must_use]
 pub fn entries_for_policy(ctx: &PolicyContext, all_entries: &[Value]) -> Vec<Value> {
     let mut result = Vec::new();
     for entry in all_entries {
@@ -784,6 +843,7 @@ pub fn entries_for_policy(ctx: &PolicyContext, all_entries: &[Value]) -> Vec<Val
     result
 }
 
+#[must_use]
 pub fn tools_for_catalog(ctx: &PolicyContext, tools: &[Value]) -> Vec<Value> {
     let mut result = Vec::new();
     for tool in tools {
@@ -828,11 +888,11 @@ pub fn required_enum_values_by_tool(data: &Value) -> HashMap<String, HashSet<Str
         .collect()
 }
 
-pub fn optional_leaf_survived_rerank(
+pub fn optional_leaf_survived_rerank<S: std::hash::BuildHasher>(
     ctx: &PolicyContext,
     item: &Value,
     rerank_score: f64,
-    llm_selected_paths: Option<&HashSet<String>>,
+    llm_selected_paths: Option<&HashSet<String, S>>,
 ) -> bool {
     if !is_decomposed_optional_property_chunk(item) {
         return false;
@@ -840,11 +900,10 @@ pub fn optional_leaf_survived_rerank(
     let file_path = item_object(item)
         .map(|o| str_field(o, "file_path"))
         .unwrap_or_default();
-    if let Some(paths) = llm_selected_paths {
-        if paths.contains(&file_path) {
+    if let Some(paths) = llm_selected_paths
+        && paths.contains(&file_path) {
             return true;
         }
-    }
     let policy = scoring_policy(effective_policy(ctx, &root_tool_id_from_chunk(item)));
     match policy {
         ToolPolicy::PruneAll => true,
@@ -853,33 +912,31 @@ pub fn optional_leaf_survived_rerank(
             .and_then(Value::as_f64)
             .unwrap_or(0.0)
             >= rerank_score,
-        ToolPolicy::AlwaysInclude => false,
-        ToolPolicy::PruneOptionalDescriptions | ToolPolicy::PruneAllDescriptions => false,
+        ToolPolicy::AlwaysInclude
+        | ToolPolicy::PruneOptionalDescriptions
+        | ToolPolicy::PruneAllDescriptions => false,
     }
 }
 
-pub fn filter_recompose_json_entries(
+#[must_use]
+pub fn filter_recompose_json_entries<S: std::hash::BuildHasher>(
     ctx: &PolicyContext,
     json_list: &[Value],
     rerank_score: f64,
-    llm_selected_paths: Option<&HashSet<String>>,
+    llm_selected_paths: Option<&HashSet<String, S>>,
 ) -> Vec<Value> {
     let mut filtered = Vec::new();
     for item in json_list {
-        if is_decomposed_tool_root_chunk(item) {
-            filtered.push(item.clone());
-        } else if optional_leaf_survived_rerank(
-            ctx,
-            item,
-            rerank_score,
-            llm_selected_paths,
-        ) {
+        if is_decomposed_tool_root_chunk(item)
+            || optional_leaf_survived_rerank(ctx, item, rerank_score, llm_selected_paths)
+        {
             filtered.push(item.clone());
         }
     }
     filtered
 }
 
+#[must_use]
 pub fn is_direct_root_optional_property_chunk(item: &Value) -> bool {
     if !is_decomposed_optional_property_chunk(item) {
         return false;
@@ -919,6 +976,7 @@ fn chunk_input_schema(item: &Value) -> Map<String, Value> {
     Map::new()
 }
 
+#[must_use]
 pub fn root_chunk_properties_empty(item: &Value) -> bool {
     if !is_decomposed_tool_root_chunk(item) {
         return false;
@@ -944,34 +1002,32 @@ pub fn tool_id_has_empty_decomposed_root(catalog_index: &CatalogIndex, tool_id: 
 
 fn original_tool_input_schema(catalog_index: &CatalogIndex, tool_id: &str) -> Map<String, Value> {
     let full_rel = format!("schemas/full/{tool_id}{}", json_ext());
-    if let Some(raw) = catalog_index.files.get(&full_rel) {
-        if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
-            if let Some(schema) = parsed
+    if let Some(raw) = catalog_index.files.get(&full_rel)
+        && let Ok(parsed) = serde_json::from_str::<Value>(raw)
+            && let Some(schema) = parsed
                 .get("inputSchema")
                 .or_else(|| parsed.get("input_schema"))
                 .and_then(Value::as_object)
             {
                 return schema.clone();
             }
-        }
-    }
     for entry in &catalog_index.tools {
         if item_object(entry).map(|o| str_field(o, "id")).as_deref() != Some(tool_id) {
             continue;
         }
-        if let Some(full_schema) = entry.get("full_schema").and_then(Value::as_object) {
-            if let Some(schema) = full_schema
+        if let Some(full_schema) = entry.get("full_schema").and_then(Value::as_object)
+            && let Some(schema) = full_schema
                 .get("inputSchema")
                 .or_else(|| full_schema.get("input_schema"))
                 .and_then(Value::as_object)
             {
                 return schema.clone();
             }
-        }
     }
     Map::new()
 }
 
+#[must_use]
 pub fn tool_id_had_empty_original_root_properties(
     catalog_index: &CatalogIndex,
     tool_id: &str,
@@ -979,11 +1035,13 @@ pub fn tool_id_had_empty_original_root_properties(
     properties_field_empty(&original_tool_input_schema(catalog_index, tool_id))
 }
 
+#[must_use]
 pub fn needs_empty_optional_mitigation(catalog_index: &CatalogIndex, tool_id: &str) -> bool {
     tool_id_has_empty_decomposed_root(catalog_index, tool_id)
         && !tool_id_had_empty_original_root_properties(catalog_index, tool_id)
 }
 
+#[must_use]
 pub fn optional_chunks_for_tool(items: &[Value], tool_id: &str) -> Vec<Value> {
     items
         .iter()
@@ -999,7 +1057,7 @@ pub fn optional_chunks_for_tool(items: &[Value], tool_id: &str) -> Vec<Value> {
 pub fn direct_root_optional_chunks_for_tool(items: &[Value], tool_id: &str) -> Vec<Value> {
     optional_chunks_for_tool(items, tool_id)
         .into_iter()
-        .filter(|item| is_direct_root_optional_property_chunk(item))
+        .filter(is_direct_root_optional_property_chunk)
         .collect()
 }
 
@@ -1095,7 +1153,7 @@ pub fn mitigate_empty_optional_properties(
     if pipeline.is_empty() || entries.is_empty() {
         return entries.to_vec();
     }
-    let last_stage = pipeline.last().map(String::as_str).unwrap_or("");
+    let last_stage = pipeline.last().map_or("", String::as_str);
     if !matches!(last_stage, "rerank" | "llm" | "bm25") {
         return entries.to_vec();
     }
@@ -1345,8 +1403,7 @@ mod tests {
             PRUNE_OPTIONAL_DESCRIPTIONS,
             PRUNE_ALL_DESCRIPTIONS,
         ] {
-            let p = ToolPolicy::from_str(s).unwrap();
-            assert_eq!(p.as_str(), s);
+            assert_eq!(parse_tool_policy(s).map(ToolPolicy::as_str), Some(s));
         }
     }
 
@@ -1370,9 +1427,10 @@ mod tests {
 
     #[test]
     fn parse_tool_policy_pair_valid() {
-        let (tool, policy) = parse_tool_policy_pair("Agent=always_include").unwrap();
-        assert_eq!(tool, "Agent");
-        assert_eq!(policy, ToolPolicy::AlwaysInclude);
+        assert!(matches!(
+            parse_tool_policy_pair("Agent=always_include"),
+            Ok((ref tool, ToolPolicy::AlwaysInclude)) if tool == "Agent"
+        ));
     }
 
     #[test]
@@ -1381,9 +1439,12 @@ mod tests {
             "Agent": "prune_optional",
             "mcp__fff__grep": "always_include"
         });
-        let map = per_tool_policies_from_value(&val).unwrap();
-        assert_eq!(map.get("Agent"), Some(&ToolPolicy::PruneOptional));
-        assert_eq!(map.get("mcp__fff__grep"), Some(&ToolPolicy::AlwaysInclude));
+        assert!(matches!(
+            per_tool_policies_from_value(&val),
+            Ok(ref map)
+                if map.get("Agent") == Some(&ToolPolicy::PruneOptional)
+                    && map.get("mcp__fff__grep") == Some(&ToolPolicy::AlwaysInclude)
+        ));
     }
 
     #[test]

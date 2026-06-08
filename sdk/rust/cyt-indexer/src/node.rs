@@ -1,10 +1,3 @@
-#[path = "policies_node.rs"]
-mod policies_node;
-
-pub use policies_node::{
-    CatalogBuilderNapi, CatalogIndexResult, PolicyContextJs, PolicyContextNapi, SplitAnthropicToolsResult,
-};
-
 use crate::build::{
     build_catalog_index as core_build_catalog_index,
     catalog_index_from_value, catalog_tool_count as core_catalog_tool_count,
@@ -17,7 +10,8 @@ use crate::tool_entries::{
     truncate_description as core_truncate_description,
 };
 use crate::paths::{self, collect_enums as paths_collect_enums};
-use crate::policies::tool_policy_strings;
+use crate::policies::{self as policies, parse_tool_policy, policy_context_from_values, tool_policy_strings, PolicyContext};
+use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
 use crate::retrieve::{
     build_process_groups_options, chunk_survivor_key, decomposed_catalog_from_value,
     load_catalog_from_dir, process_groups_options_from_fields, removed_chunks,
@@ -27,9 +21,9 @@ use crate::retrieve::{
 use crate::runtime_config;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use policies_node::ctx_from_any;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::RandomState;
 
 #[napi(object)]
 pub struct PolicyOptions {
@@ -40,7 +34,19 @@ pub struct PolicyOptions {
     pub required_enum_values_by_tool: Option<HashMap<String, Vec<String>>>,
 }
 
-fn json_files_from_map(map: HashMap<String, Value>) -> DecomposedCatalog {
+#[napi(object)]
+pub struct PathConfigNapi {
+    pub md_ext: String,
+    pub json_ext: String,
+    pub decomposed_prefix: String,
+    pub decomposed_root: String,
+    pub catalog_prefix: String,
+    pub builder_memory_only: bool,
+    pub default_catalog_dir: String,
+    pub write_catalog_prune: bool,
+}
+
+const fn json_files_from_map(map: HashMap<String, Value>) -> DecomposedCatalog {
     DecomposedCatalog::from_json_files(map)
 }
 
@@ -66,14 +72,18 @@ pub struct DecomposedCatalogNapi {
 #[napi]
 impl DecomposedCatalogNapi {
     #[napi(constructor)]
+    #[must_use]
     pub fn new(json_files: Option<HashMap<String, Value>>) -> Self {
         Self {
             inner: DecomposedCatalog::from_json_files(json_files.unwrap_or_default()),
         }
     }
 
+    /// # Errors
+    /// Does not fail; invalid index shapes yield an empty decomposed catalog.
     #[napi(factory)]
     pub fn from_catalog_index(index: Value) -> Result<Self> {
+        let index = Box::new(index);
         let idx = catalog_index_from_value(&index);
         Ok(Self {
             inner: DecomposedCatalog::from_catalog_index(&idx),
@@ -81,40 +91,58 @@ impl DecomposedCatalogNapi {
     }
 
     #[napi(factory)]
+    #[must_use]
     pub fn from_catalog_dict(data: Value) -> Self {
+        let data = Box::new(data);
         Self {
             inner: DecomposedCatalog::from_catalog_dict(&data),
         }
     }
 
     #[napi]
+    #[must_use]
     pub fn has_json(&self, key: String) -> bool {
-        self.inner.has_json(&key)
+        let key = key.into_boxed_str();
+        self.inner.has_json(key.as_ref())
     }
 
     #[napi]
+    #[must_use]
     pub fn get_json(&self, key: String) -> Option<Value> {
-        self.inner.get_json(&key).cloned()
+        let key = key.into_boxed_str();
+        self.inner.get_json(key.as_ref()).cloned()
     }
 
     #[napi]
+    #[must_use]
     pub fn resolve_key(&self, file_path: String) -> Option<String> {
-        self.inner.resolve_key(&file_path)
+        let file_path = file_path.into_boxed_str();
+        self.inner.resolve_key(file_path.as_ref())
     }
 
     #[napi]
+    #[must_use]
     pub fn to_json_files(&self) -> HashMap<String, Value> {
         self.inner.json_files().clone()
     }
 }
 
+/// # Errors
+/// Returns an error when the tool count exceeds `u32::MAX`.
 #[napi]
 pub fn catalog_tool_count(data: Value) -> Result<u32> {
-    Ok(core_catalog_tool_count(&data) as u32)
+    let data = Box::new(data);
+    u32::try_from(core_catalog_tool_count(&data)).map_err(|_| {
+        Error::from_reason("catalog tool count exceeds u32::MAX")
+    })
 }
 
+/// # Errors
+/// Does not fail; malformed tool entries are skipped during indexing.
 #[napi]
 pub fn build_catalog_index(tools: Vec<Value>, all_enums: Vec<Value>) -> Result<CatalogIndexResult> {
+    let tools = tools.into_boxed_slice();
+    let all_enums = all_enums.into_boxed_slice();
     let index = core_build_catalog_index(&tools, &all_enums);
     Ok(CatalogIndexResult {
         tools: index.tools,
@@ -128,8 +156,11 @@ pub struct AnthropicCatalogEntriesResult {
     pub enums: Vec<Value>,
 }
 
+/// # Errors
+/// Does not fail; malformed tool entries are skipped during indexing.
 #[napi]
 pub fn build_catalog_from_tools(tools: Vec<Value>) -> Result<CatalogIndexResult> {
+    let tools = tools.into_boxed_slice();
     let index = core_build_catalog_from_tools(&tools);
     Ok(CatalogIndexResult {
         tools: index.tools,
@@ -137,6 +168,8 @@ pub fn build_catalog_from_tools(tools: Vec<Value>) -> Result<CatalogIndexResult>
     })
 }
 
+/// # Errors
+/// Does not fail; invalid schema fragments are omitted from the entry.
 #[napi]
 pub fn prepare_tool_entry(
     server_name: String,
@@ -144,28 +177,38 @@ pub fn prepare_tool_entry(
     description: String,
     input_schema: Value,
 ) -> Result<Value> {
+    let server_name = server_name.into_boxed_str();
+    let name = name.into_boxed_str();
+    let description = description.into_boxed_str();
+    let input_schema = Box::new(input_schema);
     Ok(core_prepare_tool_entry(
-        &server_name,
-        &name,
-        &description,
-        input_schema,
+        server_name.as_ref(),
+        name.as_ref(),
+        description.as_ref(),
+        &input_schema,
     ))
 }
 
 #[napi]
+#[must_use]
 pub fn anthropic_tool_to_catalog_entry(tool: Value) -> Option<Value> {
+    let tool = Box::new(tool);
     core_anthropic_tool_to_catalog_entry(&tool)
 }
 
 #[napi]
+#[must_use]
 pub fn anthropic_tools_to_catalog_entries(tools: Vec<Value>) -> AnthropicCatalogEntriesResult {
+    let tools = tools.into_boxed_slice();
     let (entries, enums) = core_anthropic_tools_to_catalog_entries(&tools);
     AnthropicCatalogEntriesResult { entries, enums }
 }
 
 #[napi]
+#[must_use]
 pub fn truncate_description(description: String, max_tokens: Option<u32>) -> String {
-    core_truncate_description(&description, max_tokens.unwrap_or(60) as usize)
+    let description = description.into_boxed_str();
+    core_truncate_description(description.as_ref(), max_tokens.unwrap_or(60) as usize)
 }
 
 #[napi]
@@ -176,6 +219,8 @@ pub fn tool_policies() -> Vec<String> {
         .collect()
 }
 
+/// # Errors
+/// Does not fail; missing catalog data is treated as empty.
 #[napi]
 pub fn retrieve_tools(
     data: Value,
@@ -186,13 +231,14 @@ pub fn retrieve_tools(
 ) -> Result<Vec<Value>> {
     let policy_ctx = ctx_from_any(policy_ctx);
     let survivor_data = if data.is_object() {
-        data.clone()
+        data
     } else {
         Value::Object(serde_json::Map::new())
     };
+    let catalog = Box::new(catalog);
     let build_catalog = resolve_build_catalog(&catalog, &survivor_data);
     let mut store = decomposed_catalog_from_value(&catalog);
-    let preserve_set = preserve_values.map(|items| items.into_iter().collect());
+    let preserve_set = preserve_values;
     let process_groups =
         build_process_groups_options(&policy_ctx, &build_catalog, &store, preserve_set);
     let opts = RetrieveOptions {
@@ -208,16 +254,19 @@ pub fn retrieve_tools(
     ))
 }
 
+/// # Errors
+/// Does not fail; malformed survivor or store entries are skipped.
 #[napi]
 pub fn retrieve_core(
     data: Value,
-    store_json_files: HashMap<String, Value>,
-    survivor_json_files: HashMap<String, Value>,
+    store_json_files: HashMap<String, Value, RandomState>,
+    survivor_json_files: HashMap<String, Value, RandomState>,
     apply_decomposed_score_filter: Option<bool>,
     policy_options: Option<PolicyOptions>,
 ) -> Result<Vec<Value>> {
     let mut store = json_files_from_map(store_json_files);
     let survivor = json_files_from_map(survivor_json_files);
+    let data = Box::new(data);
     let opts = RetrieveOptions {
         apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(false),
         process_groups: process_groups_from_policy(policy_options),
@@ -225,22 +274,32 @@ pub fn retrieve_core(
     Ok(core_retrieve_core(&data, &mut store, &survivor, &opts))
 }
 
+/// # Errors
+/// Returns an error when the catalog directory cannot be read or parsed.
 #[napi]
 pub fn load_catalog(dir_path: String) -> Result<Value> {
-    load_catalog_from_dir(&dir_path).map_err(|e| Error::from_reason(e.to_string()))
+    let dir_path = dir_path.into_boxed_str();
+    load_catalog_from_dir(dir_path.as_ref()).map_err(Error::from_reason)
 }
 
-#[napi]
-pub fn chunkSurvivorKey(item: Value, section: String) -> Option<String> {
-    chunk_survivor_key(&item, &section)
+#[napi(js_name = "chunkSurvivorKey")]
+#[must_use]
+pub fn chunk_survivor_key_napi(item: Value, section: String) -> Option<String> {
+    let item = Box::new(item);
+    let section = section.into_boxed_str();
+    chunk_survivor_key(&item, section.as_ref())
 }
 
-#[napi]
-pub fn removedChunks(
+/// # Errors
+/// Does not fail; missing catalog sections are treated as empty.
+#[napi(js_name = "removedChunks")]
+pub fn removed_chunks_napi(
     full_catalog: Value,
     surviving: Value,
     apply_decomposed_score_filter: Option<bool>,
 ) -> Result<Value> {
+    let full_catalog = Box::new(full_catalog);
+    let surviving = Box::new(surviving);
     Ok(removed_chunks(
         &full_catalog,
         &surviving,
@@ -250,35 +309,31 @@ pub fn removedChunks(
     ))
 }
 
+/// # Errors
+/// Does not fail; updates in-process path configuration.
 #[napi]
-pub fn configure_path_constants(
-    md_ext: String,
-    json_ext: String,
-    decomposed_prefix: String,
-    decomposed_root: String,
-    catalog_prefix: String,
-    builder_memory_only: bool,
-    default_catalog_dir: String,
-    write_catalog_prune: bool,
-) -> Result<()> {
+pub fn configure_path_constants(config: PathConfigNapi) -> Result<()> {
     paths::configure(paths::PathConfig {
-        md_ext,
-        json_ext,
-        decomposed_prefix,
-        decomposed_root: std::path::PathBuf::from(decomposed_root),
-        catalog_prefix,
-        builder_memory_only,
-        default_catalog_dir: std::path::PathBuf::from(default_catalog_dir),
-        write_catalog_prune,
+        md_ext: config.md_ext,
+        json_ext: config.json_ext,
+        decomposed_prefix: config.decomposed_prefix,
+        decomposed_root: std::path::PathBuf::from(config.decomposed_root),
+        catalog_prefix: config.catalog_prefix,
+        builder_memory_only: config.builder_memory_only,
+        default_catalog_dir: std::path::PathBuf::from(config.default_catalog_dir),
+        write_catalog_prune: config.write_catalog_prune,
     });
     Ok(())
 }
 
 #[napi]
+#[must_use]
 pub fn catalog_prefix() -> String {
     paths::catalog_prefix()
 }
 
+/// # Errors
+/// Does not fail; updates in-process runtime configuration.
 #[napi]
 pub fn configure_runtime_defaults(
     decomposed_score: f64,
@@ -299,94 +354,118 @@ pub fn configure_runtime_defaults(
     Ok(())
 }
 
-#[napi]
-#[allow(non_snake_case)]
-pub fn decomposedScore() -> f64 {
+#[napi(js_name = "decomposedScore")]
+#[must_use]
+pub fn decomposed_score_napi() -> f64 {
     runtime_config::decomposed_score()
 }
 
-#[napi]
-#[allow(non_snake_case)]
-pub fn enumScore() -> f64 {
+#[napi(js_name = "enumScore")]
+#[must_use]
+pub fn enum_score_napi() -> f64 {
     runtime_config::enum_score()
 }
 
-#[napi]
-#[allow(non_snake_case)]
-pub fn rerankScore() -> f64 {
+#[napi(js_name = "rerankScore")]
+#[must_use]
+pub fn rerank_score_napi() -> f64 {
     runtime_config::rerank_score()
 }
 
-#[napi]
-#[allow(non_snake_case)]
-pub fn emptyOptionalFallbackK() -> u32 {
-    runtime_config::empty_optional_fallback_k() as u32
+#[napi(js_name = "emptyOptionalFallbackK")]
+#[must_use]
+pub fn empty_optional_fallback_k_napi() -> u32 {
+    u32::try_from(runtime_config::empty_optional_fallback_k())
+        .unwrap_or(u32::MAX)
 }
 
 #[napi]
+#[must_use]
 pub fn path_builder_memory_only() -> bool {
     paths::builder_memory_only()
 }
 
 #[napi]
+#[must_use]
 pub fn path_default_catalog_dir() -> String {
     paths::default_catalog_dir().to_string_lossy().into_owned()
 }
 
 #[napi]
+#[must_use]
 pub fn path_write_catalog_prune() -> bool {
     paths::write_catalog_prune()
 }
 
+/// # Errors
+/// Does not fail; invalid index shapes yield an empty catalog dict.
 #[napi]
 pub fn catalog_index_to_catalog_dict(
     index: Value,
     catalog_prefix: Option<String>,
 ) -> Result<Value> {
+    let index = Box::new(index);
     let idx = catalog_index_from_value(&index);
-    let val = match catalog_prefix {
-        Some(prefix) => idx.to_catalog_dict_with_prefix(&prefix),
-        None => idx.to_catalog_dict(),
-    };
+    let val = catalog_prefix.map_or_else(
+        || idx.to_catalog_dict(),
+        |prefix| {
+            let prefix = prefix.into_boxed_str();
+            idx.to_catalog_dict_with_prefix(prefix.as_ref())
+        },
+    );
     Ok(val)
 }
 
 #[napi]
+#[must_use]
 pub fn md_ext() -> String {
     paths::md_ext()
 }
 
 #[napi]
+#[must_use]
 pub fn json_ext() -> String {
     paths::json_ext()
 }
 
 #[napi]
+#[must_use]
 pub fn decomposed_prefix() -> String {
     paths::decomposed_prefix()
 }
 
 #[napi]
+#[must_use]
 pub fn decomposed_root() -> String {
     paths::decomposed_root().to_string_lossy().into_owned()
 }
 
 #[napi]
+#[must_use]
 pub fn to_decomposed_key(file_path: String) -> Option<String> {
-    paths::to_decomposed_key(&file_path)
+    let file_path = file_path.into_boxed_str();
+    paths::to_decomposed_key(file_path.as_ref())
 }
 
 #[napi]
+#[must_use]
 pub fn tool_id_from_decomposed_rel(rel_path: String) -> String {
-    paths::tool_id_from_decomposed_rel(&rel_path)
+    let rel_path = rel_path.into_boxed_str();
+    paths::tool_id_from_decomposed_rel(rel_path.as_ref())
 }
 
 #[napi]
+#[must_use]
 pub fn get_root_tool_key(file_path: String) -> Option<String> {
-    paths::get_root_tool_key(&file_path)
+    let file_path = file_path.into_boxed_str();
+    paths::get_root_tool_key(file_path.as_ref())
 }
 
 #[napi]
+#[must_use]
 pub fn collect_enums(schema: Value) -> Vec<Value> {
+    let schema = Box::new(schema);
     paths_collect_enums(&schema)
 }
+
+include!("policies_node.rs");

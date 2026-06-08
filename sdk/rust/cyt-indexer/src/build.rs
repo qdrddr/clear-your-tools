@@ -9,6 +9,7 @@ pub struct CatalogIndex {
 }
 
 /// Parse a catalog index from a JSON value (`{ "tools": [...], "files": {...} }`).
+#[must_use]
 pub fn catalog_index_from_value(val: &Value) -> CatalogIndex {
     let tools = val
         .get("tools")
@@ -27,10 +28,12 @@ pub fn catalog_index_from_value(val: &Value) -> CatalogIndex {
 }
 
 impl CatalogIndex {
+    #[must_use]
     pub fn to_catalog_dict(&self) -> Value {
         self.to_catalog_dict_with_prefix(&crate::paths::catalog_prefix())
     }
 
+    #[must_use]
     pub fn to_catalog_dict_with_prefix(&self, catalog_prefix: &str) -> Value {
         let mut md_entries = Vec::new();
         let mut json_entries = Vec::new();
@@ -93,12 +96,12 @@ fn path_stem(path: &str) -> String {
         .into_owned()
 }
 
+#[must_use]
 pub fn catalog_tool_count(data: &Value) -> usize {
-    if let Some(tools) = data.get("tools").and_then(|v| v.as_array()) {
-        if !tools.is_empty() {
+    if let Some(tools) = data.get("tools").and_then(|v| v.as_array())
+        && !tools.is_empty() {
             return tools.len();
         }
-    }
     let Some(json_items) = data.get("json").and_then(|v| v.as_array()) else {
         return 0;
     };
@@ -107,12 +110,11 @@ pub fn catalog_tool_count(data: &Value) -> usize {
         let Some(obj) = item.as_object() else {
             continue;
         };
-        if let Some(fp) = obj.get("file_path").and_then(|v| v.as_str()) {
-            if !fp.is_empty() {
+        if let Some(fp) = obj.get("file_path").and_then(|v| v.as_str())
+            && !fp.is_empty() {
                 tool_ids.insert(paths::tool_id_from_decomposed_rel(fp));
                 continue;
             }
-        }
         let id = obj
             .get("id")
             .or_else(|| obj.get("name"))
@@ -135,6 +137,7 @@ fn enum_markdown_value(val: &Value) -> String {
     }
 }
 
+#[must_use]
 pub fn dedupe_enums(all_enums: &[Value]) -> Vec<Value> {
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
@@ -215,7 +218,7 @@ fn build_property_file(tool_name: &str, path: &[PathSegment], leaf_schema: Value
 fn process_node(
     node: &Value,
     tool_name: &str,
-    _server_name: &str,
+    server_name: &str,
     path: &[PathSegment],
     extractions: &mut Vec<Extraction>,
 ) -> Value {
@@ -223,7 +226,7 @@ fn process_node(
         return node.clone();
     };
     let mut result: Map<String, Value> = obj.clone();
-    process_compositions(&mut result, tool_name, _server_name, path, extractions);
+    process_compositions(&mut result, tool_name, server_name, path, extractions);
 
     if let Some(props) = result
         .get("properties")
@@ -254,7 +257,7 @@ fn process_node(
                     process_node(
                         &prop_schema,
                         tool_name,
-                        _server_name,
+                        server_name,
                         &child_path,
                         extractions,
                     ),
@@ -263,7 +266,7 @@ fn process_node(
                 let filtered_child = process_node(
                     &prop_schema,
                     tool_name,
-                    _server_name,
+                    server_name,
                     &child_path,
                     extractions,
                 );
@@ -421,6 +424,7 @@ fn handle_miscellaneous_keywords(
     }
 }
 
+#[must_use]
 pub fn decompose_tool_schema(tool_info: &Value) -> (Value, Vec<Extraction>) {
     let tool_id = tool_info.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let t_desc = tool_info
@@ -455,7 +459,7 @@ pub fn decompose_tool_schema(tool_info: &Value) -> (Value, Vec<Extraction>) {
 
 fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_name: &str) -> String {
     let prefix = decomposed_prefix().trim_end_matches('/').to_string();
-    let mut parts = vec![prefix.to_string(), tool_id.to_string()];
+    let mut parts = vec![prefix, tool_id.to_string()];
     for seg in path_segments
         .iter()
         .take(path_segments.len().saturating_sub(1))
@@ -479,6 +483,7 @@ fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_nam
     parts.join("/")
 }
 
+#[must_use]
 pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex {
     let mut files = HashMap::new();
 

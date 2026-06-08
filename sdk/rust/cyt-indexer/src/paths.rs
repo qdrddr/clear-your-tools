@@ -36,45 +36,60 @@ fn config_lock() -> &'static RwLock<PathConfig> {
 }
 
 pub fn configure(cfg: PathConfig) {
-    *config_lock().write().expect("path config lock") = cfg;
+    *config_lock()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = cfg;
 }
 
+#[must_use]
 pub fn snapshot() -> PathConfig {
-    config_lock().read().expect("path config lock").clone()
+    config_lock()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
+#[must_use]
 pub fn json_ext() -> String {
     snapshot().json_ext
 }
 
+#[must_use]
 pub fn md_ext() -> String {
     snapshot().md_ext
 }
 
+#[must_use]
 pub fn decomposed_prefix() -> String {
     snapshot().decomposed_prefix
 }
 
+#[must_use]
 pub fn decomposed_root() -> PathBuf {
     snapshot().decomposed_root
 }
 
+#[must_use]
 pub fn catalog_prefix() -> String {
     snapshot().catalog_prefix
 }
 
+#[must_use]
 pub fn builder_memory_only() -> bool {
     snapshot().builder_memory_only
 }
 
+#[must_use]
 pub fn default_catalog_dir() -> PathBuf {
     snapshot().default_catalog_dir
 }
 
+#[must_use]
 pub fn write_catalog_prune() -> bool {
     snapshot().write_catalog_prune
 }
 
+#[must_use]
 pub fn to_decomposed_key(file_path: &str) -> Option<String> {
     let parts: Vec<_> = Path::new(file_path).components().collect();
     for i in 0..parts.len().saturating_sub(1) {
@@ -88,13 +103,12 @@ pub fn to_decomposed_key(file_path: &str) -> Option<String> {
     None
 }
 
+#[must_use]
 pub fn tool_id_from_decomposed_rel(rel_path: &str) -> String {
     let cfg = snapshot();
-    let rel = if let Some(stripped) = rel_path.strip_prefix(&cfg.decomposed_prefix) {
-        stripped
-    } else {
-        rel_path
-    };
+    let rel = rel_path
+        .strip_prefix(&cfg.decomposed_prefix)
+        .map_or(rel_path, |stripped| stripped);
     let path = Path::new(rel);
     let parts: Vec<_> = path.components().collect();
     if parts.is_empty() {
@@ -112,6 +126,7 @@ pub fn tool_id_from_decomposed_rel(rel_path: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn get_root_tool_key(file_path: &str) -> Option<String> {
     let cfg = snapshot();
     let key = to_decomposed_key(file_path)?;
@@ -134,6 +149,7 @@ pub fn get_root_tool_key(file_path: &str) -> Option<String> {
     ))
 }
 
+#[must_use]
 pub fn collect_enums(schema: &Value) -> Vec<Value> {
     let mut found = Vec::new();
     collect_enums_inner(schema, &mut found);
@@ -170,7 +186,7 @@ mod tests {
     #[test]
     fn default_prefix_round_trip() {
         let cfg = PathConfig::default();
-        configure(cfg.clone());
+        configure(cfg);
         let rel = format!("{}tool.json", decomposed_prefix());
         assert_eq!(tool_id_from_decomposed_rel(&rel), "tool");
     }
