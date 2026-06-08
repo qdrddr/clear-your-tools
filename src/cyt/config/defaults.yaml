@@ -172,6 +172,18 @@ pruning:
         model_nick: mercury-2
   bm25:
     index_dir: ~/.config/cyt/bm25
+    policy:
+      system_tool: prune_optional_descriptions
+      mcp_tool: prune_all_descriptions
+  # Optional per-pipeline policy overrides (terminal stage wins over pruning.policy):
+  # rerank:
+  #   policy:
+  #     system_tool: prune_optional_descriptions
+  #     mcp_tool: prune_all_descriptions
+  # llm:
+  #   policy:
+  #     system_tool: prune_optional_descriptions
+  #     mcp_tool: prune_all_descriptions
 
   pipeline:
     # - bm25

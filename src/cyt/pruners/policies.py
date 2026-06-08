@@ -13,6 +13,7 @@ from cyt_indexer.policies import (
     ToolPolicy,
     anthropic_tool_is_mcp,
     anthropic_tool_is_system,
+    append_description_reinstate_entries,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
     chunk_tool_id,
@@ -23,6 +24,7 @@ from cyt_indexer.policies import (
     filter_recompose_json_entries,
     is_decomposed_optional_property_chunk,
     is_decomposed_tool_root_chunk,
+    is_description_policy,
     is_direct_root_optional_property_chunk,
     is_mcp_optional_chunk,
     is_mcp_root_chunk,
@@ -37,16 +39,17 @@ from cyt_indexer.policies import (
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
+    needs_description_reinstate,
     needs_partition,
     needs_pruned_recompose,
     optional_leaf_survived_rerank,
     partition_catalog,
-    policy_context_from_values,
     required_enum_values_by_tool,
     restore_mcp_tools,
     restore_system_tools,
     root_chunk_properties_empty,
     root_tool_id_from_chunk,
+    scoring_policy,
     split_anthropic_tools,
     stash_mcp_tools,
     stash_system_tools,
@@ -65,7 +68,11 @@ from cyt_indexer.policies import (
 )
 
 from cyt.common.runtime_constants import EMPTY_OPTIONAL_FALLBACK_K, RERANK_SCORE
-from cyt.config import load_config
+from cyt.config import (
+    load_config,
+    output_policy_context_for_terminal_stage,
+    scoring_policy_context,
+)
 
 __all__ = [
     "EMPTY_OPTIONAL_FALLBACK_K",
@@ -78,6 +85,7 @@ __all__ = [
     "ToolPolicy",
     "anthropic_tool_is_mcp",
     "anthropic_tool_is_system",
+    "append_description_reinstate_entries",
     "catalog_needs_partition",
     "catalog_needs_pruned_recompose",
     "chunk_tool_id",
@@ -90,6 +98,7 @@ __all__ = [
     "full_pass_through",
     "is_decomposed_optional_property_chunk",
     "is_decomposed_tool_root_chunk",
+    "is_description_policy",
     "is_direct_root_optional_property_chunk",
     "is_mcp_optional_chunk",
     "is_mcp_root_chunk",
@@ -104,9 +113,11 @@ __all__ = [
     "merge_catalog",
     "merge_tools_preserving_order",
     "mitigate_empty_optional_properties",
+    "needs_description_reinstate",
     "needs_partition",
     "needs_pruned_recompose",
     "optional_leaf_survived_rerank",
+    "output_policy_context_from_config",
     "partition_catalog",
     "policy_context_from_config",
     "request_pass_through",
@@ -115,6 +126,8 @@ __all__ = [
     "restore_system_tools",
     "root_chunk_properties_empty",
     "root_tool_id_from_chunk",
+    "scoring_policy",
+    "scoring_policy_context_from_config",
     "split_anthropic_tools",
     "stash_mcp_tools",
     "stash_system_tools",
@@ -148,26 +161,62 @@ def request_pass_through(
     return _request_pass_through_ctx(tools, policy_ctx)
 
 
-def policy_context_from_config(
+def output_policy_context_from_config(
     config: dict[str, Any] | None = None,
     *,
+    terminal_stage: str | None = None,
     system: SystemToolPolicy | None = None,
     mcp: MCPToolPolicy | None = None,
     per_tool: dict[str, ToolPolicy] | None = None,
 ) -> PolicyContext:
-    """Build per-request policy context from app config and optional overrides."""
+    """Build output policy context (may include ``*_descriptions`` policies)."""
     if config is None:
         config = load_config()
-    ctx = policy_context_from_values(config)
-    if system is not None:
-        ctx.system_policy = system
-    if mcp is not None:
-        ctx.mcp_policy = mcp
-    if per_tool:
-        merged = dict(ctx.per_tool)
-        merged.update(per_tool)
-        ctx.per_tool = merged
-    return ctx
+    return output_policy_context_for_terminal_stage(
+        config,
+        terminal_stage=terminal_stage,
+        system=system,
+        mcp=mcp,
+        per_tool=per_tool,
+    )
+
+
+def scoring_policy_context_from_config(
+    config: dict[str, Any] | None = None,
+    *,
+    terminal_stage: str | None = None,
+    system: SystemToolPolicy | None = None,
+    mcp: MCPToolPolicy | None = None,
+    per_tool: dict[str, ToolPolicy] | None = None,
+) -> PolicyContext:
+    """Build scoring policy context (description variants mapped to base policies)."""
+    return scoring_policy_context(
+        output_policy_context_from_config(
+            config,
+            terminal_stage=terminal_stage,
+            system=system,
+            mcp=mcp,
+            per_tool=per_tool,
+        ),
+    )
+
+
+def policy_context_from_config(
+    config: dict[str, Any] | None = None,
+    *,
+    terminal_stage: str | None = None,
+    system: SystemToolPolicy | None = None,
+    mcp: MCPToolPolicy | None = None,
+    per_tool: dict[str, ToolPolicy] | None = None,
+) -> PolicyContext:
+    """Build scoring policy context for catalog partition and pipeline pruning."""
+    return scoring_policy_context_from_config(
+        config,
+        terminal_stage=terminal_stage,
+        system=system,
+        mcp=mcp,
+        per_tool=per_tool,
+    )
 
 
 def configure_policies_from_config(config: dict[str, Any] | None = None) -> PolicyContext:

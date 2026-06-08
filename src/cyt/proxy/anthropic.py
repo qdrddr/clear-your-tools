@@ -37,6 +37,7 @@ from cyt.pruners.policies import (
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
+    output_policy_context_from_config,
     partition_catalog,
     policy_context_from_config,
     request_pass_through,
@@ -339,36 +340,6 @@ def merge_api_tool_onto_original(
         schema_value = _schema_value_from_api(api_tool, schema_key)
         if schema_value is not None:
             out[schema_key] = schema_value
-    # #region agent log
-    if str(original.get("name", "")) == "apply_patch":
-        try:
-            import json as _json
-            import time as _time
-
-            _log_path = "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/asadani/tool-attention/.cursor/debug-1a6092.log"
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(
-                    _json.dumps(
-                        {
-                            "sessionId": "1a6092",
-                            "hypothesisId": "F",
-                            "location": "anthropic.py:merge_api_tool_onto_original",
-                            "message": "apply_patch merge result",
-                            "data": {
-                                "final_keys": sorted(out.keys()),
-                                "has_format": "format" in out,
-                                "has_parameters": "parameters" in out,
-                                "type": out.get("type"),
-                            },
-                            "timestamp": int(_time.time() * 1000),
-                            "runId": "post-fix",
-                        },
-                    )
-                    + "\n",
-                )
-        except OSError:
-            pass
-    # #endregion
     return out
 
 
@@ -403,6 +374,7 @@ def _run_catalog_pruning(
     configured_pipeline: list[str] | None,
     capture_decomposed_catalog: bool,
     ctx: PolicyContext,
+    output_ctx: PolicyContext | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, int],
@@ -421,12 +393,18 @@ def _run_catalog_pruning(
     tool_properties_count_out = 0
     config = load_config()
     index = build_catalog_index(entries, enums)
-    data = index.to_catalog_dict()
+    build_catalog = index.to_catalog_dict()
+    data = build_catalog
     tool_properties_count_in = _count_optional_property_chunks(data)
     pipeline = effective_pruning_pipeline(
         config,
         catalog_tool_count(data),
         configured_pipeline=configured_pipeline,
+    )
+    terminal_stage = pipeline[-1] if pipeline else None
+    reinstate_ctx = output_ctx or output_policy_context_from_config(
+        config,
+        terminal_stage=terminal_stage,
     )
     (
         data,
@@ -451,17 +429,19 @@ def _run_catalog_pruning(
         post_rerank,
         pinned,
         catalog_index=index,
+        build_catalog=build_catalog,
         post_rerank_scored=post_rerank_scored,
         pruning_pipeline=pipeline,
         ctx=ctx,
+        output_ctx=reinstate_ctx,
     )
     merged = retrieve_tools(
         recompose_data,
         catalog=index,
         apply_decomposed_score_filter=False,
-        ctx=ctx,
+        ctx=reinstate_ctx,
     )
-    merged = drop_recomposed_tools_with_empty_properties(merged, index, ctx)
+    merged = drop_recomposed_tools_with_empty_properties(merged, index, reinstate_ctx)
     return (
         merged,
         decomposed,
@@ -732,9 +712,11 @@ def _json_entries_for_recompose(
     pinned: dict[str, Any] | None,
     *,
     catalog_index: CatalogIndex,
+    build_catalog: dict[str, Any] | None = None,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
     ctx: PolicyContext | None = None,
+    output_ctx: PolicyContext | None = None,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
     policy_ctx = ctx or policy_context_from_config()
@@ -789,9 +771,11 @@ def _recompose_catalog_data(
     pinned: dict[str, Any] | None,
     *,
     catalog_index: CatalogIndex,
+    build_catalog: dict[str, Any] | None = None,
     post_rerank_scored: dict[str, Any] | None = None,
     pruning_pipeline: list[str] | None = None,
     ctx: PolicyContext | None = None,
+    output_ctx: PolicyContext | None = None,
 ) -> dict[str, Any]:
     """Build catalog dict for retrieve_tools after pruning.
 
@@ -805,9 +789,11 @@ def _recompose_catalog_data(
             post_rerank,
             pinned,
             catalog_index=catalog_index,
+            build_catalog=build_catalog,
             post_rerank_scored=post_rerank_scored,
             pruning_pipeline=pruning_pipeline,
             ctx=ctx,
+            output_ctx=output_ctx,
         ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
@@ -858,8 +844,20 @@ def filter_tools_for_query(
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
-    policy_ctx = ctx or policy_context_from_config()
-    if request_pass_through(original_tools, policy_ctx):
+    config = load_config()
+    configured_pipeline = (
+        pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
+    )
+    terminal_stage = configured_pipeline[-1] if configured_pipeline else None
+    output_policy_ctx = output_policy_context_from_config(
+        config,
+        terminal_stage=terminal_stage,
+    )
+    policy_ctx = ctx or policy_context_from_config(
+        config,
+        terminal_stage=terminal_stage,
+    )
+    if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
             tools=original_tools,
@@ -894,14 +892,14 @@ def filter_tools_for_query(
         for tool in original_tools
         if isinstance(tool, dict)
         and (name := str(tool.get("name", "")))
-        and tool_pass_through(name, policy_ctx)
+        and tool_pass_through(name, output_policy_ctx)
     }
 
-    catalog_source = tools_for_catalog(original_tools, policy_ctx)
+    catalog_source = tools_for_catalog(original_tools, output_policy_ctx)
     to_catalog = tools_to_catalog_entries or anthropic_tools_to_catalog_entries
     to_api = merged_to_api_tools or _merged_tools_to_anthropic
     entries, enums = to_catalog(catalog_source)
-    entries = entries_for_policy(entries, policy_ctx)
+    entries = entries_for_policy(entries, output_policy_ctx)
     if not entries:
         if restored := merge_tools_preserving_order(original_tools, {}, stashed_by_name):
             tokens_out = count_json_tokens(restored)
@@ -930,10 +928,6 @@ def filter_tools_for_query(
         )
     _log_tool_token_counts(tokens_in, None)
 
-    config = load_config()
-    configured_pipeline = (
-        pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
-    )
     decomposed: dict[str, int] = {}
     decomposed_breakdown: dict[str, dict[str, int]] = {}
     decomposed_catalog: dict[str, dict[str, Any]] | None = None
@@ -958,6 +952,7 @@ def filter_tools_for_query(
             configured_pipeline,
             capture_decomposed_catalog,
             policy_ctx,
+            output_policy_ctx,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)

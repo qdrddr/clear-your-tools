@@ -11,9 +11,27 @@ from cyt_indexer.build import CatalogIndex
 __all__ = ["PolicyContext"]
 
 # Typing aliases — canonical strings come from Rust `tool_policies()`.
-SystemToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
-MCPToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
-ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
+SystemToolPolicy = Literal[
+    "always_include",
+    "prune_optional",
+    "prune_all",
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+]
+MCPToolPolicy = Literal[
+    "always_include",
+    "prune_optional",
+    "prune_all",
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+]
+ToolPolicy = Literal[
+    "always_include",
+    "prune_optional",
+    "prune_all",
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+]
 
 
 def tool_policies() -> tuple[str, ...]:
@@ -238,6 +256,35 @@ def mitigate_empty_optional_properties(
             pipeline,
         ),
     )
+
+
+def append_description_reinstate_entries(
+    entries: list[dict[str, Any]],
+    *,
+    build_catalog: dict[str, Any],
+    catalog_index: CatalogIndex,
+    ctx: PolicyContext,
+) -> list[dict[str, Any]]:
+    return list(
+        _native.append_description_reinstate_entries(
+            entries,
+            build_catalog,
+            catalog_index,
+            ctx,
+        ),
+    )
+
+
+def needs_description_reinstate(ctx: PolicyContext) -> bool:
+    return _native.needs_description_reinstate(ctx)
+
+
+def is_description_policy(policy: str) -> bool:
+    return _native.is_description_policy(policy)
+
+
+def scoring_policy(policy: str) -> ToolPolicy:
+    return _native.scoring_policy(policy)  # type: ignore[return-value]
 
 
 def direct_root_optional_chunks_for_tool(

@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from cyt.config import DEFAULT_USER_CONFIG_PATH, default_model_nick, save_user_config
+from cyt.config import (
+    DEFAULT_USER_CONFIG_PATH,
+    default_model_nick,
+    load_user_config_overlay,
+    save_user_config,
+)
 from cyt.proxy.setup import (
     _extract_hostname,
-    _load_user_config,
     derive_second_level_domain_from_hostname,
     merge_setup_overlay,
 )
@@ -218,7 +222,7 @@ def sync_models_from_stats_db(
     if not identities:
         return []
 
-    existing = _load_user_config(config_path)
+    existing = load_user_config_overlay(config_path)
     missing = identities_missing_from_config(identities, existing)
     if not missing:
         return []

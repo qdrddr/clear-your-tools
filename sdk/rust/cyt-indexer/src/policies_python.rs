@@ -172,6 +172,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_decomposed_optional_property_chunk_py, m)?)?;
     m.add_function(wrap_pyfunction!(filter_recompose_json_entries_py, m)?)?;
     m.add_function(wrap_pyfunction!(mitigate_empty_optional_properties_py, m)?)?;
+    m.add_function(wrap_pyfunction!(append_description_reinstate_entries_py, m)?)?;
+    m.add_function(wrap_pyfunction!(needs_description_reinstate_py, m)?)?;
+    m.add_function(wrap_pyfunction!(is_description_policy_py, m)?)?;
+    m.add_function(wrap_pyfunction!(scoring_policy_py, m)?)?;
     m.add_function(wrap_pyfunction!(drop_recomposed_tools_with_empty_properties_py, m)?)?;
     m.add_function(wrap_pyfunction!(extract_json_catalog_document_py, m)?)?;
     m.add_function(wrap_pyfunction!(extract_md_catalog_document_py, m)?)?;
@@ -355,6 +359,44 @@ fn mitigate_empty_optional_properties_py(
         &pipeline,
     );
     super::value_to_py(py, &Value::Array(result))
+}
+
+#[pyfunction(name = "append_description_reinstate_entries")]
+fn append_description_reinstate_entries_py(
+    py: Python<'_>,
+    entries: Bound<'_, PyAny>,
+    build_catalog: Bound<'_, PyAny>,
+    catalog_index: Bound<'_, PyAny>,
+    ctx: Bound<'_, PyAny>,
+) -> PyResult<PyObject> {
+    let ctx = ctx_from_py_any(ctx)?;
+    let entries_val = super::py_to_value(entries)?;
+    let arr = entries_val.as_array().cloned().unwrap_or_default();
+    let build_val = super::py_to_value(build_catalog)?;
+    let index = super::catalog_index_from_py(catalog_index)?;
+    let result = policies::append_description_reinstate_entries(&ctx, &arr, &build_val, &index);
+    super::value_to_py(py, &Value::Array(result))
+}
+
+#[pyfunction(name = "needs_description_reinstate")]
+fn needs_description_reinstate_py(ctx: Bound<'_, PyAny>) -> PyResult<bool> {
+    let ctx = ctx_from_py_any(ctx)?;
+    Ok(policies::needs_description_reinstate(&ctx))
+}
+
+#[pyfunction(name = "is_description_policy")]
+fn is_description_policy_py(policy: &str) -> PyResult<bool> {
+    let Some(p) = ToolPolicy::from_str(policy) else {
+        return Ok(false);
+    };
+    Ok(policies::is_description_policy(p))
+}
+
+#[pyfunction(name = "scoring_policy")]
+fn scoring_policy_py(policy: &str) -> PyResult<String> {
+    let p = ToolPolicy::from_str(policy)
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(format!("invalid policy: {policy}")))?;
+    Ok(policies::scoring_policy(p).as_str().to_string())
 }
 
 #[pyfunction(name = "drop_recomposed_tools_with_empty_properties")]

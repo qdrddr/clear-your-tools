@@ -10,23 +10,24 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-import yaml
-
 from cyt.config import (
     DEFAULT_MCP_TOOL_POLICY,
+    DEFAULT_MIN_TOOLS_PRUNING,
+    DEFAULT_REVERSE_PORT,
     DEFAULT_STATS_DB_PATH,
     DEFAULT_SYSTEM_TOOL_POLICY,
+    POLICY_CHOICES,
+    UPSTREAM_URL_DEFAULTS,
     USER_ENV_PATH,
+    ToolPolicy,
+    deep_merge,
     default_model_nick,
     load_bundled_defaults_yaml,
+    load_user_config_overlay,
     save_user_config,
 )
 
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
-ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
-
-DEFAULT_MINIMUM_TOOLS = 50
-DEFAULT_REVERSE_PORT = 8834
 TOKENS_PER_MILLION = 1_000_000
 # Values at or above this (without scientific notation) are treated as USD per 1M tokens.
 _USD_PER_MILLION_THRESHOLD = 1e-4
@@ -37,21 +38,11 @@ PRIMARY_TOO_CHEAP_MESSAGE = (
     "Do not use this app! As the Primary model is too cheap and this proxy "
     "will not provide any value saving your tokens!"
 )
-POLICY_CHOICES: tuple[ToolPolicy, ...] = (
-    "always_include",
-    "prune_optional",
-    "prune_all",
-)
 PROVIDER_DOMAIN_DEFAULTS: dict[str, str] = {
     "openrouter": "openrouter.ai",
     "anthropic": "anthropic.com",
     "openai": "openai.com",
     "deepinfra": "deepinfra.com",
-}
-UPSTREAM_URL_DEFAULTS: dict[str, str] = {
-    "anthropic": "https://api.anthropic.com",
-    "openai": "https://api.openai.com",
-    "gemini": "https://generativelanguage.googleapis.com",
 }
 
 
@@ -411,7 +402,7 @@ def apply_upstream_cli_to_config(
 ) -> str:
     """Persist CLI upstream settings into *config_path*; return the endpoint name."""
     config_path = config_path.expanduser()
-    existing = _load_user_config(config_path)
+    existing = load_user_config_overlay(config_path)
     overlay = build_upstream_cli_overlay(
         upstream_url,
         upstream_kind,
@@ -487,33 +478,6 @@ def merge_endpoints(
         if endpoint not in result:
             result.append(endpoint)
     return result
-
-
-def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge *overlay* over *base* without mutating either."""
-    result: dict[str, Any] = {}
-    for key in {*base, *overlay}:
-        if (
-            key in base
-            and key in overlay
-            and isinstance(base[key], dict)
-            and isinstance(overlay[key], dict)
-        ):
-            result[key] = _deep_merge(base[key], overlay[key])
-        elif key in overlay:
-            result[key] = overlay[key]
-        else:
-            result[key] = base[key]
-    return result
-
-
-def _load_user_config(path: Path) -> dict[str, Any]:
-    path = path.expanduser()
-    if not path.exists():
-        return {}
-    with path.open(encoding="utf-8") as f:
-        loaded = yaml.safe_load(f)
-    return loaded if isinstance(loaded, dict) else {}
 
 
 def _merge_remote_models(
@@ -603,7 +567,7 @@ def merge_setup_overlay(
     overlay: dict[str, Any],
 ) -> dict[str, Any]:
     """Deep-merge *overlay* onto *existing*, merging list sections instead of replacing them."""
-    merged = _deep_merge(existing, overlay)
+    merged = deep_merge(existing, overlay)
     reverse = merged.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})
     _merge_reverse_overlay(
         reverse,
@@ -1146,7 +1110,7 @@ def _prompt_upstreams() -> tuple[
         url = normalize_upstream_url(
             _prompt_required(
                 "URL (required)",
-                UPSTREAM_URL_DEFAULTS.get(kind, "https://api.anthropic.com"),
+                UPSTREAM_URL_DEFAULTS.get(kind, UPSTREAM_URL_DEFAULTS["anthropic"]),
             ),
         )
         upstream: dict[str, Any] = {
@@ -1337,7 +1301,7 @@ def run_setup(config_path: Path) -> None:
     if "rerank" in pipeline or "llm" in pipeline:
         minimum_tools = _prompt_int(
             "pruning.policy.minimum_tools",
-            DEFAULT_MINIMUM_TOOLS,
+            DEFAULT_MIN_TOOLS_PRUNING,
         )
 
     print("\n--- Tool policies ---")
@@ -1367,7 +1331,7 @@ def run_setup(config_path: Path) -> None:
     )
 
     config_path = config_path.expanduser()
-    existing = _load_user_config(config_path)
+    existing = load_user_config_overlay(config_path)
     merged = merge_setup_overlay(existing, overlay)
     save_user_config(config_path, merged, apply_bundled_sections=True)
     print(f"\nWrote {config_path.expanduser()}")
@@ -1390,5 +1354,5 @@ def run_setup(config_path: Path) -> None:
     print("\nNow run proxy with:\n")
     print("\tuv run cyt proxy")
     print("\n\nAnd point Claude Code at the proxy:\n")
-    print('\texport ANTHROPIC_BASE_URL="http://localhost:8834/anthropic"')
+    print(f'\texport ANTHROPIC_BASE_URL="http://localhost:{DEFAULT_REVERSE_PORT}/anthropic"')
     print("\tclaude 'say hi' -p")

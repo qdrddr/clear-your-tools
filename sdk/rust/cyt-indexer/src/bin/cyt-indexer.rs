@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
     load_catalog_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
-    policy_context_from_values, removed_chunks, retrieve_core, DecomposedCatalog, PolicyContext,
-    RemovedChunksOptions, RetrieveOptions, ToolPolicy,
+    policy_context_from_values, removed_chunks, retrieve_tools_from_catalog, DecomposedCatalog,
+    PolicyContext, RemovedChunksOptions, RetrieveOptions, ToolPolicy,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -173,7 +173,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut store = DecomposedCatalog::from_catalog_dict(&catalog_dict);
             let input_raw = fs::read_to_string(input)?;
             let data: Value = serde_json::from_str(&input_raw)?;
-            let survivor = DecomposedCatalog::from_catalog_dict(&data);
             let preserve_set = (!preserve.is_empty()).then(|| preserve.into_iter().collect::<HashSet<_>>());
             let process_groups =
                 build_process_groups_options(&ctx, &catalog_dict, &store, preserve_set);
@@ -181,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 apply_decomposed_score_filter: apply_score_filter,
                 process_groups,
             };
-            let tools = retrieve_core(&data, &mut store, &survivor, &opts);
+            let tools = retrieve_tools_from_catalog(&ctx, &data, &catalog_dict, &mut store, &opts);
             if tools.is_empty() && apply_score_filter {
                 eprintln!(
                     "Warning: retrieve produced 0 tools; rerank/pruner survivors usually need \

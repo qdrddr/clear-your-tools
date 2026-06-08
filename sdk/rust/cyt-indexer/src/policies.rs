@@ -15,17 +15,27 @@ use std::path::Path;
 const ALWAYS_INCLUDE: &str = "always_include";
 const PRUNE_OPTIONAL: &str = "prune_optional";
 const PRUNE_ALL: &str = "prune_all";
+const PRUNE_OPTIONAL_DESCRIPTIONS: &str = "prune_optional_descriptions";
+const PRUNE_ALL_DESCRIPTIONS: &str = "prune_all_descriptions";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolPolicy {
     AlwaysInclude,
     PruneOptional,
     PruneAll,
+    PruneOptionalDescriptions,
+    PruneAllDescriptions,
 }
 
 /// Canonical policy string literals (for host language typing / validation).
-pub fn tool_policy_strings() -> [&'static str; 3] {
-    [ALWAYS_INCLUDE, PRUNE_OPTIONAL, PRUNE_ALL]
+pub fn tool_policy_strings() -> [&'static str; 5] {
+    [
+        ALWAYS_INCLUDE,
+        PRUNE_OPTIONAL,
+        PRUNE_ALL,
+        PRUNE_OPTIONAL_DESCRIPTIONS,
+        PRUNE_ALL_DESCRIPTIONS,
+    ]
 }
 
 impl ToolPolicy {
@@ -34,6 +44,8 @@ impl ToolPolicy {
             ALWAYS_INCLUDE => Some(Self::AlwaysInclude),
             PRUNE_OPTIONAL => Some(Self::PruneOptional),
             PRUNE_ALL => Some(Self::PruneAll),
+            PRUNE_OPTIONAL_DESCRIPTIONS => Some(Self::PruneOptionalDescriptions),
+            PRUNE_ALL_DESCRIPTIONS => Some(Self::PruneAllDescriptions),
             _ => None,
         }
     }
@@ -43,8 +55,33 @@ impl ToolPolicy {
             Self::AlwaysInclude => ALWAYS_INCLUDE,
             Self::PruneOptional => PRUNE_OPTIONAL,
             Self::PruneAll => PRUNE_ALL,
+            Self::PruneOptionalDescriptions => PRUNE_OPTIONAL_DESCRIPTIONS,
+            Self::PruneAllDescriptions => PRUNE_ALL_DESCRIPTIONS,
         }
     }
+}
+
+pub fn is_description_policy(policy: ToolPolicy) -> bool {
+    matches!(
+        policy,
+        ToolPolicy::PruneOptionalDescriptions | ToolPolicy::PruneAllDescriptions
+    )
+}
+
+/// Map description variants to base scoring policies (`prune_optional` / `prune_all`).
+pub fn scoring_policy(policy: ToolPolicy) -> ToolPolicy {
+    match policy {
+        ToolPolicy::PruneOptionalDescriptions => ToolPolicy::PruneOptional,
+        ToolPolicy::PruneAllDescriptions => ToolPolicy::PruneAll,
+        other => other,
+    }
+}
+
+pub fn needs_description_reinstate(ctx: &PolicyContext) -> bool {
+    if is_description_policy(ctx.system_policy) || is_description_policy(ctx.mcp_policy) {
+        return true;
+    }
+    ctx.per_tool.values().any(|p| is_description_policy(*p))
 }
 
 impl Default for ToolPolicy {
@@ -342,13 +379,17 @@ pub fn is_mcp_optional_chunk(item: &Value) -> bool {
 }
 
 pub fn needs_partition(ctx: &PolicyContext) -> bool {
-    ctx.system_policy == ToolPolicy::PruneOptional || ctx.mcp_policy == ToolPolicy::PruneOptional
+    scoring_policy(ctx.system_policy) == ToolPolicy::PruneOptional
+        || scoring_policy(ctx.mcp_policy) == ToolPolicy::PruneOptional
 }
 
 pub fn uses_pruned_recompose(policy: ToolPolicy) -> bool {
     matches!(
         policy,
-        ToolPolicy::PruneOptional | ToolPolicy::PruneAll
+        ToolPolicy::PruneOptional
+            | ToolPolicy::PruneAll
+            | ToolPolicy::PruneOptionalDescriptions
+            | ToolPolicy::PruneAllDescriptions
     )
 }
 
@@ -404,7 +445,8 @@ fn should_pin_json_chunk(ctx: &PolicyContext, item: &Value) -> bool {
     if !is_decomposed_tool_root_chunk(item) {
         return false;
     }
-    effective_policy(ctx, &root_tool_id_from_chunk(item)) == ToolPolicy::PruneOptional
+    scoring_policy(effective_policy(ctx, &root_tool_id_from_chunk(item)))
+        == ToolPolicy::PruneOptional
 }
 
 pub fn catalog_needs_partition(data: &Value, ctx: &PolicyContext) -> bool {
@@ -423,7 +465,7 @@ pub fn catalog_needs_partition(data: &Value, ctx: &PolicyContext) -> bool {
         if !seen.insert(tool_id.clone()) {
             continue;
         }
-        if effective_policy(ctx, &tool_id) == ToolPolicy::PruneOptional {
+        if scoring_policy(effective_policy(ctx, &tool_id)) == ToolPolicy::PruneOptional {
             return true;
         }
     }
@@ -803,7 +845,7 @@ pub fn optional_leaf_survived_rerank(
             return true;
         }
     }
-    let policy = effective_policy(ctx, &root_tool_id_from_chunk(item));
+    let policy = scoring_policy(effective_policy(ctx, &root_tool_id_from_chunk(item)));
     match policy {
         ToolPolicy::PruneAll => true,
         ToolPolicy::PruneOptional => item_object(item)
@@ -812,6 +854,7 @@ pub fn optional_leaf_survived_rerank(
             .unwrap_or(0.0)
             >= rerank_score,
         ToolPolicy::AlwaysInclude => false,
+        ToolPolicy::PruneOptionalDescriptions | ToolPolicy::PruneAllDescriptions => false,
     }
 }
 
@@ -1079,6 +1122,9 @@ pub fn mitigate_empty_optional_properties(
             continue;
         }
         if last_stage == "llm" {
+            if is_description_policy(effective_policy(ctx, tool_id)) {
+                continue;
+            }
             tools_to_drop.insert(tool_id.clone());
             continue;
         }
@@ -1108,6 +1154,10 @@ pub fn drop_recomposed_tools_with_empty_properties(
             kept.push(tool.clone());
             continue;
         }
+        if !name.is_empty() && is_description_policy(effective_policy(ctx, &name)) {
+            kept.push(tool.clone());
+            continue;
+        }
         if !name.is_empty()
             && uses_pruned_recompose(effective_policy(ctx, &name))
             && needs_empty_optional_mitigation(catalog_index, &name)
@@ -1119,16 +1169,197 @@ pub fn drop_recomposed_tools_with_empty_properties(
     kept
 }
 
+fn chunk_survivor_key_from_entry(entry: &Value) -> Option<String> {
+    let fp = item_object(entry).and_then(|o| o.get("file_path"))?;
+    let fp_str = value_to_string(fp);
+    to_decomposed_key(&fp_str).or(Some(fp_str))
+}
+
+fn survivor_keys_from_entries(entries: &[Value]) -> HashSet<String> {
+    entries
+        .iter()
+        .filter_map(chunk_survivor_key_from_entry)
+        .collect()
+}
+
+fn strip_description_key(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("description");
+            for v in map.values_mut() {
+                strip_description_key(v);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                strip_description_key(v);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn strip_descriptions_in_chunk_content(chunk: &mut Value) {
+    if let Some(content) = item_object(chunk).and_then(|o| o.get("content")).cloned() {
+        let mut content = content;
+        strip_description_key(&mut content);
+        if let Some(obj) = chunk.as_object_mut() {
+            obj.insert("content".into(), content);
+        }
+    }
+}
+
+fn root_chunk_survived_for_tool(entries: &[Value], tool_id: &str) -> bool {
+    entries.iter().any(|item| {
+        is_decomposed_tool_root_chunk(item) && root_tool_id_from_chunk(item) == tool_id
+    })
+}
+
+fn build_root_chunk_from_catalog(build_catalog: &Value, tool_id: &str) -> Option<Value> {
+    let json_arr = build_catalog.get("json")?.as_array()?;
+    json_arr
+        .iter()
+        .find(|item| {
+            is_decomposed_tool_root_chunk(item) && root_tool_id_from_chunk(item) == tool_id
+        })
+        .cloned()
+}
+
+fn build_synthetic_required_root_chunk(
+    build_catalog: &Value,
+    tool_id: &str,
+) -> Option<Value> {
+    let mut synthetic = build_root_chunk_from_catalog(build_catalog, tool_id)?;
+    strip_descriptions_in_chunk_content(&mut synthetic);
+    Some(synthetic)
+}
+
+fn removed_optional_chunks_for_tool(
+    build_catalog: &Value,
+    surviving_entries: &[Value],
+    tool_id: &str,
+) -> Vec<Value> {
+    let survivor_keys = survivor_keys_from_entries(surviving_entries);
+    let Some(json_arr) = build_catalog.get("json").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    json_arr
+        .iter()
+        .filter(|entry| {
+            if !is_decomposed_optional_property_chunk(entry) {
+                return false;
+            }
+            if root_tool_id_from_chunk(entry) != tool_id {
+                return false;
+            }
+            let key = chunk_survivor_key_from_entry(entry);
+            key.is_some_and(|k| !survivor_keys.contains(&k))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Augment recompose json entries with description-policy reinstatement.
+pub fn append_description_reinstate_entries(
+    ctx: &PolicyContext,
+    entries: &[Value],
+    build_catalog: &Value,
+    _catalog_index: &CatalogIndex,
+) -> Vec<Value> {
+    if !needs_description_reinstate(ctx) {
+        return entries.to_vec();
+    }
+
+    let mut result = entries.to_vec();
+    let mut seen_paths: HashSet<String> = result
+        .iter()
+        .filter_map(|item| {
+            item_object(item)
+                .and_then(|o| o.get("file_path"))
+                .map(value_to_string)
+        })
+        .collect();
+
+    let mut tool_ids = HashSet::new();
+    if let Some(json_arr) = build_catalog.get("json").and_then(Value::as_array) {
+        for item in json_arr {
+            if is_decomposed_tool_root_chunk(item) {
+                tool_ids.insert(root_tool_id_from_chunk(item));
+            }
+        }
+    }
+
+    for tool_id in tool_ids {
+        let output_policy = effective_policy(ctx, &tool_id);
+        if !is_description_policy(output_policy) {
+            continue;
+        }
+
+        let root_survived = root_chunk_survived_for_tool(entries, &tool_id);
+
+        if !root_survived {
+            let root_chunk = if output_policy == ToolPolicy::PruneAllDescriptions {
+                build_synthetic_required_root_chunk(build_catalog, &tool_id)
+            } else if output_policy == ToolPolicy::PruneOptionalDescriptions {
+                build_root_chunk_from_catalog(build_catalog, &tool_id)
+            } else {
+                None
+            };
+            if let Some(root) = root_chunk {
+                let file_path = item_object(&root)
+                    .map(|o| str_field(o, "file_path"))
+                    .unwrap_or_default();
+                if !file_path.is_empty() && seen_paths.insert(file_path) {
+                    result.push(root);
+                }
+            }
+            if output_policy == ToolPolicy::PruneAllDescriptions {
+                continue;
+            }
+        }
+
+        for mut chunk in removed_optional_chunks_for_tool(build_catalog, entries, &tool_id) {
+            strip_descriptions_in_chunk_content(&mut chunk);
+            let file_path = item_object(&chunk)
+                .map(|o| str_field(o, "file_path"))
+                .unwrap_or_default();
+            if !file_path.is_empty() && seen_paths.insert(file_path) {
+                result.push(chunk);
+            }
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn tool_policy_roundtrip() {
-        for s in [ALWAYS_INCLUDE, PRUNE_OPTIONAL, PRUNE_ALL] {
+        for s in [
+            ALWAYS_INCLUDE,
+            PRUNE_OPTIONAL,
+            PRUNE_ALL,
+            PRUNE_OPTIONAL_DESCRIPTIONS,
+            PRUNE_ALL_DESCRIPTIONS,
+        ] {
             let p = ToolPolicy::from_str(s).unwrap();
             assert_eq!(p.as_str(), s);
         }
+    }
+
+    #[test]
+    fn scoring_policy_maps_description_variants() {
+        assert_eq!(
+            scoring_policy(ToolPolicy::PruneOptionalDescriptions),
+            ToolPolicy::PruneOptional
+        );
+        assert_eq!(
+            scoring_policy(ToolPolicy::PruneAllDescriptions),
+            ToolPolicy::PruneAll
+        );
     }
 
     #[test]

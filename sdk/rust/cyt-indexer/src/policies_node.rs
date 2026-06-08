@@ -211,6 +211,42 @@ pub fn mitigate_empty_optional_properties(
 }
 
 #[napi]
+pub fn append_description_reinstate_entries(
+    entries: Vec<Value>,
+    build_catalog: Value,
+    catalog_index: Value,
+    ctx: &PolicyContextNapi,
+) -> Vec<Value> {
+    let index = catalog_index_from_value(&catalog_index);
+    policies::append_description_reinstate_entries(
+        ctx_from_napi(ctx),
+        &entries,
+        &build_catalog,
+        &index,
+    )
+}
+
+#[napi]
+pub fn needs_description_reinstate(ctx: &PolicyContextNapi) -> bool {
+    policies::needs_description_reinstate(ctx_from_napi(ctx))
+}
+
+#[napi]
+pub fn is_description_policy(policy: String) -> bool {
+    let Some(p) = ToolPolicy::from_str(&policy) else {
+        return false;
+    };
+    policies::is_description_policy(p)
+}
+
+#[napi]
+pub fn scoring_policy(policy: String) -> Result<String> {
+    let p = ToolPolicy::from_str(&policy)
+        .ok_or_else(|| Error::from_reason(format!("invalid policy: {policy}")))?;
+    Ok(policies::scoring_policy(p).as_str().to_string())
+}
+
+#[napi]
 pub fn drop_recomposed_tools_with_empty_properties(
     tools: Vec<Value>,
     catalog_index: Value,

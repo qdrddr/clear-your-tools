@@ -40,7 +40,8 @@ pub use policies::{
     split_anthropic_tools, stash_mcp_tools, stash_system_tools, system_required_enum_values,
     system_tools_pass_through, tool_id_had_empty_original_root_properties,
     tool_id_has_empty_decomposed_root, tool_pass_through, tools_for_catalog, uses_pruned_recompose,
-    PolicyContext, ToolPolicy,
+    append_description_reinstate_entries, is_description_policy, needs_description_reinstate,
+    scoring_policy, PolicyContext, ToolPolicy,
 };
 pub use paths::{
     collect_enums, configure as configure_paths, get_root_tool_key, snapshot as path_snapshot,
@@ -52,10 +53,11 @@ pub use runtime_config::{
     RuntimeConfig,
 };
 pub use retrieve::{
-    build_process_groups_options, chunk_survivor_key, climb_and_merge, deep_merge,
-    extract_input_files, extract_scores, filter_and_sort_enums, group_files, load_catalog_from_dir,
-    parse_json_input, process_groups, removed_chunks, retrieve_core, DecomposedCatalog,
-    ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
+    apply_description_reinstate_to_data, build_process_groups_options, chunk_survivor_key,
+    climb_and_merge, deep_merge, extract_input_files, extract_scores, filter_and_sort_enums,
+    group_files, load_catalog_from_dir, parse_json_input, process_groups, removed_chunks,
+    resolve_build_catalog, retrieve_core, retrieve_tools_from_catalog, DecomposedCatalog, ProcessGroupsOptions,
+    RemovedChunksOptions, RetrieveOptions,
 };
 pub use tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,

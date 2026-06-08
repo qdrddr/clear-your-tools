@@ -21,8 +21,8 @@ use crate::policies::tool_policy_strings;
 use crate::retrieve::{
     build_process_groups_options, chunk_survivor_key, decomposed_catalog_from_value,
     load_catalog_from_dir, process_groups_options_from_fields, removed_chunks,
-    retrieve_core as core_retrieve_core, DecomposedCatalog, ProcessGroupsOptions,
-    RemovedChunksOptions, RetrieveOptions,
+    resolve_build_catalog, retrieve_core as core_retrieve_core, retrieve_tools_from_catalog,
+    DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
 };
 use crate::runtime_config;
 use napi::bindgen_prelude::*;
@@ -185,25 +185,25 @@ pub fn retrieve_tools(
     policy_ctx: Option<Either<&PolicyContextNapi, PolicyContextJs>>,
 ) -> Result<Vec<Value>> {
     let policy_ctx = ctx_from_any(policy_ctx);
-    let store = decomposed_catalog_from_value(&catalog);
-    let catalog_dict = if data.is_object() {
-        data
+    let survivor_data = if data.is_object() {
+        data.clone()
     } else {
         Value::Object(serde_json::Map::new())
     };
-    let survivor = DecomposedCatalog::from_catalog_dict(&catalog_dict);
+    let build_catalog = resolve_build_catalog(&catalog, &survivor_data);
+    let mut store = decomposed_catalog_from_value(&catalog);
     let preserve_set = preserve_values.map(|items| items.into_iter().collect());
     let process_groups =
-        build_process_groups_options(&policy_ctx, &catalog_dict, &store, preserve_set);
-    let mut store_mut = store;
+        build_process_groups_options(&policy_ctx, &build_catalog, &store, preserve_set);
     let opts = RetrieveOptions {
         apply_decomposed_score_filter: apply_decomposed_score_filter.unwrap_or(false),
         process_groups,
     };
-    Ok(core_retrieve_core(
-        &catalog_dict,
-        &mut store_mut,
-        &survivor,
+    Ok(retrieve_tools_from_catalog(
+        &policy_ctx,
+        &survivor_data,
+        &build_catalog,
+        &mut store,
         &opts,
     ))
 }

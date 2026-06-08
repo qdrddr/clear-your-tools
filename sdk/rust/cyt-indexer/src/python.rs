@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use crate::policies::policy_context_from_values;
 use crate::retrieve::{
     build_process_groups_options, chunk_survivor_key, load_catalog_from_dir, removed_chunks,
-    retrieve_core, DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
+    resolve_build_catalog, retrieve_core, retrieve_tools_from_catalog, DecomposedCatalog,
+    ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
 };
 use crate::runtime_config::{self, RuntimeConfig};
 use policies_python::ctx_from_py_any;
@@ -425,6 +426,14 @@ fn anthropic_tools_to_catalog_entries_py(
     Ok(dict.into())
 }
 
+fn catalog_build_dict(catalog: &Bound<'_, PyAny>, survivor_data: &Value) -> PyResult<Value> {
+    if let Ok(idx) = catalog_index_from_py(catalog.clone()) {
+        return Ok(idx.to_catalog_dict());
+    }
+    let val = py_to_value(catalog.clone())?;
+    Ok(resolve_build_catalog(&val, survivor_data))
+}
+
 #[pyfunction(name = "retrieve_tools")]
 #[pyo3(signature = (data, catalog, apply_decomposed_score_filter=false, preserve_values=None, ctx=None))]
 fn retrieve_tools_py(
@@ -439,22 +448,17 @@ fn retrieve_tools_py(
         Some(c) => ctx_from_py_any(c)?,
         None => policy_context_from_values(&Value::Object(serde_json::Map::new())),
     };
-    let store = catalog_to_decomposed(catalog)?;
     let data_val = py_to_value(data)?;
-    let catalog_dict = if data_val.is_object() {
-        data_val
-    } else {
-        Value::Object(serde_json::Map::new())
-    };
-    let survivor = DecomposedCatalog::from_catalog_dict(&catalog_dict);
+    let build_catalog = catalog_build_dict(&catalog, &data_val)?;
+    let mut store = catalog_to_decomposed(catalog)?;
     let preserve_set = preserve_values.map(|items| items.into_iter().collect());
     let process_groups =
-        build_process_groups_options(&policy_ctx, &catalog_dict, &store, preserve_set);
-    let mut store_mut = store;
-    let result = retrieve_core(
-        &catalog_dict,
-        &mut store_mut,
-        &survivor,
+        build_process_groups_options(&policy_ctx, &build_catalog, &store, preserve_set);
+    let result = retrieve_tools_from_catalog(
+        &policy_ctx,
+        &data_val,
+        &build_catalog,
+        &mut store,
         &RetrieveOptions {
             apply_decomposed_score_filter,
             process_groups,

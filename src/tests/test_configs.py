@@ -236,6 +236,44 @@ def test_pruning_stage_model_nick_legacy_fallback() -> None:
     assert configs.pruning_stage_model_nick(config, "rerank") == "legacy-rerank"
 
 
+def test_effective_output_policy_stage_override() -> None:
+    config = {
+        "pruning": {
+            "policy": {"system_tool": "prune_optional", "mcp_tool": "prune_all"},
+            "bm25": {
+                "policy": {
+                    "system_tool": "prune_optional_descriptions",
+                    "mcp_tool": "prune_all_descriptions",
+                },
+            },
+        },
+    }
+    assert (
+        configs.effective_output_policy(
+            config,
+            "mcp__srv__tool",
+            terminal_stage="bm25",
+        )
+        == "prune_all_descriptions"
+    )
+    assert (
+        configs.effective_output_policy(
+            config,
+            "Agent",
+            terminal_stage="bm25",
+        )
+        == "prune_optional_descriptions"
+    )
+    assert (
+        configs.effective_output_policy(
+            config,
+            "mcp__srv__tool",
+            terminal_stage="rerank",
+        )
+        == "prune_all"
+    )
+
+
 def test_pruning_policy_prefers_new_path() -> None:
     config = {
         "pruning": {"policy": {"system_tool": "always_include", "mcp_tool": "prune_optional"}},

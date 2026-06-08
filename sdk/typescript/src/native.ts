@@ -61,6 +61,11 @@ export const filterRecomposeJsonEntriesNative =
   native.filterRecomposeJsonEntries;
 export const mitigateEmptyOptionalPropertiesNative =
   native.mitigateEmptyOptionalProperties;
+export const appendDescriptionReinstateEntriesNative =
+  native.appendDescriptionReinstateEntries;
+export const needsDescriptionReinstateNative = native.needsDescriptionReinstate;
+export const isDescriptionPolicyNative = native.isDescriptionPolicy;
+export const scoringPolicyNative = native.scoringPolicy;
 export const dropRecomposedToolsWithEmptyPropertiesNative =
   native.dropRecomposedToolsWithEmptyProperties;
 export const rootToolIdFromChunkNative = native.rootToolIdFromChunk;

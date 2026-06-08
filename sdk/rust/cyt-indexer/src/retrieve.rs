@@ -1,8 +1,9 @@
 use crate::build::{catalog_index_from_value, CatalogIndex};
 use crate::paths::{self, decomposed_prefix, get_root_tool_key, json_ext, md_ext, tool_id_from_decomposed_rel};
 use crate::policies::{
-    effective_policy, mcp_required_enum_values, required_enum_values_by_tool,
-    system_required_enum_values, PolicyContext, ToolPolicy,
+    append_description_reinstate_entries, effective_policy, mcp_required_enum_values,
+    needs_description_reinstate, required_enum_values_by_tool, system_required_enum_values,
+    PolicyContext, ToolPolicy,
 };
 use crate::runtime_config;
 use serde_json::{json, Map, Value};
@@ -403,7 +404,11 @@ pub fn build_process_groups_options(
     for key in store.json_files().keys() {
         if let Some(root_tool) = get_root_tool_key(key) {
             let tool_name = tool_id_from_decomposed_rel(&root_tool);
-            if effective_policy(ctx, &tool_name) == ToolPolicy::PruneOptional {
+            let policy = effective_policy(ctx, &tool_name);
+            if matches!(
+                policy,
+                ToolPolicy::PruneOptional | ToolPolicy::PruneOptionalDescriptions
+            ) {
                 prune_optional_tools.insert(tool_name);
             }
         }
@@ -523,6 +528,68 @@ pub fn process_groups(
 pub struct RetrieveOptions {
     pub apply_decomposed_score_filter: bool,
     pub process_groups: ProcessGroupsOptions,
+}
+
+/// Resolve the full build catalog dict used for reinstatement and enum metadata.
+pub fn resolve_build_catalog(catalog: &Value, survivor_data: &Value) -> Value {
+    if catalog.get("tools").is_some() && catalog.get("files").is_some() {
+        return catalog_index_from_value(catalog).to_catalog_dict();
+    }
+    if catalog
+        .get("json")
+        .and_then(Value::as_array)
+        .is_some_and(|arr| !arr.is_empty())
+    {
+        return catalog.clone();
+    }
+    survivor_data.clone()
+}
+///
+/// Returns mitigated `{json, md}` data and a survivor overlay whose chunk contents
+/// match the reinstated entries (stripped descriptions on pruned optionals).
+pub fn apply_description_reinstate_to_data(
+    ctx: &PolicyContext,
+    data: &Value,
+    build_catalog: &Value,
+) -> (Value, DecomposedCatalog) {
+    let mut retrieve_data = data.clone();
+    let mut survivor = DecomposedCatalog::from_catalog_dict(data);
+    if !needs_description_reinstate(ctx) {
+        return (retrieve_data, survivor);
+    }
+
+    let json_entries = data
+        .get("json")
+        .and_then(Value::as_array)
+        .map(|arr| arr.as_slice())
+        .unwrap_or(&[]);
+    let empty_index = CatalogIndex {
+        tools: Vec::new(),
+        files: HashMap::new(),
+    };
+    let mitigated = append_description_reinstate_entries(
+        ctx,
+        json_entries,
+        build_catalog,
+        &empty_index,
+    );
+    if let Some(obj) = retrieve_data.as_object_mut() {
+        obj.insert("json".into(), Value::Array(mitigated));
+    }
+    survivor = DecomposedCatalog::from_catalog_dict(&retrieve_data);
+    (retrieve_data, survivor)
+}
+
+/// High-level retrieve: description reinstatement (when configured) then merge.
+pub fn retrieve_tools_from_catalog(
+    ctx: &PolicyContext,
+    data: &Value,
+    build_catalog: &Value,
+    store: &mut DecomposedCatalog,
+    opts: &RetrieveOptions,
+) -> Vec<Value> {
+    let (retrieve_data, survivor) = apply_description_reinstate_to_data(ctx, data, build_catalog);
+    retrieve_core(&retrieve_data, store, &survivor, opts)
 }
 
 pub fn retrieve_core(

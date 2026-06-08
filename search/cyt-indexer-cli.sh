@@ -28,6 +28,7 @@ jq '{
 	--mcp-policy prune_all \
 	--tool-policy AskUserQuestion=always_include \
 	--tool-policy mcp__fff__find_files=prune_optional \
+	--tool-policy mcp__fff__multi_grep=prune_all_descriptions \
 	--removed-output ./.catalog/removed.json
 
 OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"

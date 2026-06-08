@@ -225,11 +225,23 @@ Legacy `defaults.system_tool_policy` / `defaults.mcp_tool_policy` are still supp
 <details>
 <summary><strong>Policy options</strong></summary>
 
-| Policy           | Behavior                                                                                            |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
-| `always_include` | No pruning — full tool schema every turn.                                                           |
-| `prune_optional` | Tool always included; irrelevant **optional** properties dropped. Required properties always kept.  |
-| `prune_all`      | Entire tool may be removed if irrelevant. If kept, required properties stay; optional ones trimmed. |
+| Policy                        | Behavior                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `always_include`              | Full tool schema every turn; no pruning.                                     |
+| `prune_optional`              | Tool always included; irrelevant optional properties dropped.                |
+| `prune_all`                   | Entire tool may be removed if irrelevant.                                    |
+| `prune_optional_descriptions` | Scoring like `prune_optional`; pruned optionals return without descriptions. |
+| `prune_all_descriptions`      | Scoring like `prune_all`; tool always kept with required props — see below.  |
+
+**Description policies:** `prune_optional_descriptions` always includes the tool and required
+properties (with descriptions). Non-surviving optional properties are reinstated without
+descriptions (names, types, and enum hints remain). `prune_all_descriptions` behaves the same
+when the tool root survives scoring; when the root is pruned, only required properties are
+reinstated (descriptions stripped) and optional properties are omitted.
+
+Per-pipeline overrides (optional): set `pruning.bm25.policy`, `pruning.rerank.policy`, or
+`pruning.llm.policy` with the same `system_tool` / `mcp_tool` / `per_tool` shape. When a stage is
+the terminal pipeline step, its policy overrides the main `pruning.policy` for output/reinstatement.
 
 `prune_all` on MCP tools saves the most tokens. With ~100 tools, expect up to **~95% reduction in
 tool-schema tokens**.

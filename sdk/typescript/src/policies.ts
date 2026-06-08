@@ -3,6 +3,7 @@
 import {
   anthropicToolIsMcpNative,
   anthropicToolIsSystemNative,
+  appendDescriptionReinstateEntriesNative,
   catalogNeedsPartitionNative,
   catalogNeedsPrunedRecomposeNative,
   chunkToolIdNative,
@@ -14,6 +15,7 @@ import {
   fullPassThroughNative,
   isDecomposedOptionalPropertyChunkNative,
   isDecomposedToolRootChunkNative,
+  isDescriptionPolicyNative,
   isDirectRootOptionalPropertyChunkNative,
   isMcpOptionalChunkNative,
   isMcpRootChunkNative,
@@ -28,6 +30,7 @@ import {
   mitigateEmptyOptionalPropertiesNative,
   mcpRequiredEnumValuesNative,
   mcpToolsPassThroughNative,
+  needsDescriptionReinstateNative,
   needsPartitionNative,
   needsPrunedRecomposeNative,
   optionalLeafSurvivedRerankNative,
@@ -39,6 +42,7 @@ import {
   restoreSystemToolsNative,
   rootChunkPropertiesEmptyNative,
   rootToolIdFromChunkNative,
+  scoringPolicyNative,
   splitAnthropicToolsNative,
   stashMcpToolsNative,
   stashSystemToolsNative,
@@ -58,9 +62,21 @@ type PolicyContext = InstanceType<typeof PolicyContextNative>;
 export type SystemToolPolicy =
   | "always_include"
   | "prune_optional"
-  | "prune_all";
-export type MCPToolPolicy = "always_include" | "prune_optional" | "prune_all";
-export type ToolPolicy = "always_include" | "prune_optional" | "prune_all";
+  | "prune_all"
+  | "prune_optional_descriptions"
+  | "prune_all_descriptions";
+export type MCPToolPolicy =
+  | "always_include"
+  | "prune_optional"
+  | "prune_all"
+  | "prune_optional_descriptions"
+  | "prune_all_descriptions";
+export type ToolPolicy =
+  | "always_include"
+  | "prune_optional"
+  | "prune_all"
+  | "prune_optional_descriptions"
+  | "prune_all_descriptions";
 
 export { PolicyContextNative as PolicyContext };
 
@@ -303,6 +319,32 @@ export function mitigateEmptyOptionalProperties(
     postRerankScored ?? undefined,
     pipeline,
   ) as JsonRecord[];
+}
+
+export function appendDescriptionReinstateEntries(
+  entries: JsonRecord[],
+  buildCatalog: JsonRecord,
+  catalogIndex: JsonRecord,
+  ctx: PolicyContext,
+): JsonRecord[] {
+  return appendDescriptionReinstateEntriesNative(
+    entries,
+    buildCatalog,
+    catalogIndex,
+    ctx,
+  ) as JsonRecord[];
+}
+
+export function needsDescriptionReinstate(ctx: PolicyContext): boolean {
+  return needsDescriptionReinstateNative(ctx);
+}
+
+export function isDescriptionPolicy(policy: string): boolean {
+  return isDescriptionPolicyNative(policy);
+}
+
+export function scoringPolicy(policy: string): ToolPolicy {
+  return scoringPolicyNative(policy) as ToolPolicy;
 }
 
 export function directRootOptionalChunksForTool(

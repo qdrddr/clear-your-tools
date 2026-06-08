@@ -60,4 +60,8 @@ Policies (in precedence order, later wins):
 3. `--per-tool` JSON file: `{"Agent": "always_include", "Bash": "prune_optional"}`
 4. `--tool-policy TOOL=POLICY` (repeatable)
 
-Valid policies: `always_include`, `prune_optional`, `prune_all`.
+Valid policies: `always_include`, `prune_optional`, `prune_all`, `prune_optional_descriptions`, `prune_all_descriptions`.
+
+`retrieve` (CLI and `retrieve_tools_from_catalog`) applies description-policy reinstatement
+automatically when per-tool or system/MCP policies use `prune_*_descriptions`. Per-tool overrides
+take precedence over system/MCP defaults.

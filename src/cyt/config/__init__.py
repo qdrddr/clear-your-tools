@@ -9,7 +9,10 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from cyt_indexer.policies import PolicyContext
 
 import yaml
 from dotenv import load_dotenv
@@ -41,12 +44,31 @@ def load_proxy_env() -> None:
 load_proxy_env()
 
 # Default fallbacks - single source of truth for hard-coded values
-DEFAULT_REVERSE_PORT: int = 8000
+DEFAULT_REVERSE_PORT: int = 8834
 DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
 DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
 CWD_CONFIG_NAME: str = "config.yaml"
-ToolPolicy = Literal["always_include", "prune_optional", "prune_all"]
+ToolPolicy = Literal[
+    "always_include",
+    "prune_optional",
+    "prune_all",
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+]
+POLICY_CHOICES: tuple[ToolPolicy, ...] = (
+    "always_include",
+    "prune_optional",
+    "prune_all",
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+)
+VALID_TOOL_POLICIES: frozenset[str] = frozenset(POLICY_CHOICES)
+UPSTREAM_URL_DEFAULTS: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com",
+    "openai": "https://api.openai.com",
+    "gemini": "https://generativelanguage.googleapis.com",
+}
 DEFAULT_SYSTEM_TOOL_POLICY: ToolPolicy = "prune_optional"
 DEFAULT_MCP_TOOL_POLICY: ToolPolicy = "prune_all"
 DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
@@ -60,7 +82,7 @@ DEFAULT_BM25_STOPWORDS: str = "en"
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
-def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge *overlay* over *base* without mutating either."""
     result: dict[str, Any] = {}
     for key in {*base, *overlay}:
@@ -70,7 +92,7 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
             and isinstance(base[key], dict)
             and isinstance(overlay[key], dict)
         ):
-            result[key] = _deep_merge(base[key], overlay[key])
+            result[key] = deep_merge(base[key], overlay[key])
         elif key in overlay:
             result[key] = overlay[key]
         else:
@@ -148,7 +170,7 @@ _DEFAULTS: dict[str, Any] = {
 
 def _merged_config(config: dict[str, Any]) -> dict[str, Any]:
     """Layer *config* over built-in defaults for partial config dicts."""
-    return _deep_merge(_DEFAULTS, config)
+    return deep_merge(_DEFAULTS, config)
 
 
 def resolve_config_path(path: Path | None = None) -> Path:
@@ -212,17 +234,17 @@ def _force_deep_assign(target: dict[str, Any], source: dict[str, Any]) -> None:
 
 def _default_user_config_dict() -> dict[str, Any]:
     """Starter config written when no config file exists anywhere."""
-    return _deep_merge(
-        _deep_merge(_DEFAULTS, bundled_user_config_sections()),
+    return deep_merge(
+        deep_merge(_DEFAULTS, bundled_user_config_sections()),
         {
             "network": {
                 "proxy": {
                     "reverse": {
-                        "port": 8834,
+                        "port": DEFAULT_REVERSE_PORT,
                         "upstreams": [
                             {
                                 "upstream": "anthropic",
-                                "url": "https://api.anthropic.com",
+                                "url": UPSTREAM_URL_DEFAULTS["anthropic"],
                                 "kind": "anthropic",
                             },
                         ],
@@ -270,8 +292,8 @@ def save_user_config(
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, Any] = _load_yaml_dict(path) if path.exists() else {}
     bundled_sections = bundled_user_config_sections() if apply_bundled_sections else {}
-    combined_overlay = _deep_merge(bundled_sections, overlay) if apply_bundled_sections else overlay
-    merged = _deep_merge(existing, combined_overlay)
+    combined_overlay = deep_merge(bundled_sections, overlay) if apply_bundled_sections else overlay
+    merged = deep_merge(existing, combined_overlay)
     if apply_bundled_sections:
         _force_deep_assign(merged, bundled_sections)
     content = yaml.dump(merged, default_flow_style=False, sort_keys=False)
@@ -307,8 +329,8 @@ def _load_bundled_defaults_yaml() -> dict[str, Any]:
 
 def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
     """Layer built-in defaults, bundled ``defaults.yaml``, then *user_config*."""
-    merged = _deep_merge(_DEFAULTS, _load_bundled_defaults_yaml())
-    return _deep_merge(merged, user_config)
+    merged = deep_merge(_DEFAULTS, _load_bundled_defaults_yaml())
+    return deep_merge(merged, user_config)
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
@@ -567,6 +589,153 @@ def pruning_mcp_tool_policy(
     if policy is None:
         return DEFAULT_MCP_TOOL_POLICY
     return cast(ToolPolicy, policy)
+
+
+def _pruning_stage_policy_section(
+    config: dict[str, Any],
+    stage: str,
+) -> dict[str, Any]:
+    pruning = config.get("pruning")
+    if not isinstance(pruning, dict):
+        return {}
+    stage_cfg = pruning.get(stage)
+    if not isinstance(stage_cfg, dict):
+        return {}
+    policy = stage_cfg.get("policy")
+    return policy if isinstance(policy, dict) else {}
+
+
+def _pruning_stage_per_tool(
+    config: dict[str, Any],
+    stage: str,
+) -> dict[str, ToolPolicy]:
+    pruning = config.get("pruning")
+    if not isinstance(pruning, dict):
+        return {}
+    stage_cfg = pruning.get(stage)
+    if not isinstance(stage_cfg, dict):
+        return {}
+    per_tool = stage_cfg.get("per_tool")
+    if not isinstance(per_tool, dict):
+        return {}
+    out: dict[str, ToolPolicy] = {}
+    for tool_id, policy in per_tool.items():
+        if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
+            out[str(tool_id)] = cast(ToolPolicy, policy)
+    return out
+
+
+def _per_tool_policy(pruning: dict[str, Any], tool_id: str) -> ToolPolicy | None:
+    per_tool = pruning.get("per_tool")
+    if not isinstance(per_tool, dict) or tool_id not in per_tool:
+        return None
+    policy = per_tool[tool_id]
+    if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
+        return cast(ToolPolicy, policy)
+    return None
+
+
+def _category_policy_from_section(section: dict[str, Any], tool_id: str) -> ToolPolicy | None:
+    key = "mcp_tool" if is_non_system_tool_id(tool_id) else "system_tool"
+    policy = section.get(key)
+    if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
+        return cast(ToolPolicy, policy)
+    return None
+
+
+def effective_output_policy(
+    config: dict[str, Any],
+    tool_id: str,
+    *,
+    terminal_stage: str | None = None,
+    user_config: dict[str, Any] | None = None,
+) -> ToolPolicy:
+    """Resolve output policy for a tool (main + per-pipeline overrides)."""
+    merged = _merged_config(config)
+    user = _user_overlay_for_config(config, user_config=user_config)
+    pruning = merged.get("pruning")
+    pruning_dict = pruning if isinstance(pruning, dict) else {}
+
+    if terminal_stage:
+        if policy := _pruning_stage_per_tool(merged, terminal_stage).get(tool_id):
+            return policy
+        if policy := _per_tool_policy(pruning_dict, tool_id):
+            return policy
+        if policy := _category_policy_from_section(
+            _pruning_stage_policy_section(merged, terminal_stage),
+            tool_id,
+        ):
+            return policy
+
+    if policy := _per_tool_policy(pruning_dict, tool_id):
+        return policy
+
+    if is_non_system_tool_id(tool_id):
+        return pruning_mcp_tool_policy(merged, user_config=user)
+    return pruning_system_tool_policy(merged, user_config=user)
+
+
+def is_non_system_tool_id(tool_id: str) -> bool:
+    return tool_id.startswith("mcp__")
+
+
+def _apply_stage_policy_to_context(
+    ctx: PolicyContext,
+    config: dict[str, Any],
+    terminal_stage: str,
+) -> None:
+    stage_policy = _pruning_stage_policy_section(config, terminal_stage)
+    if sys := stage_policy.get("system_tool"):
+        if isinstance(sys, str) and sys in VALID_TOOL_POLICIES:
+            ctx.system_policy = cast(ToolPolicy, sys)
+    if mcp_pol := stage_policy.get("mcp_tool"):
+        if isinstance(mcp_pol, str) and mcp_pol in VALID_TOOL_POLICIES:
+            ctx.mcp_policy = cast(ToolPolicy, mcp_pol)
+    stage_per_tool = _pruning_stage_per_tool(config, terminal_stage)
+    if stage_per_tool:
+        merged_per_tool = dict(ctx.per_tool)
+        merged_per_tool.update(stage_per_tool)
+        ctx.per_tool = merged_per_tool
+
+
+def output_policy_context_for_terminal_stage(
+    config: dict[str, Any] | None = None,
+    *,
+    terminal_stage: str | None = None,
+    system: ToolPolicy | None = None,
+    mcp: ToolPolicy | None = None,
+    per_tool: dict[str, ToolPolicy] | None = None,
+) -> PolicyContext:
+    """Build output policy context (may include ``*_descriptions`` policies)."""
+    from cyt_indexer.policies import policy_context_from_values
+
+    if config is None:
+        config = load_config()
+    ctx = policy_context_from_values(config)
+
+    if terminal_stage:
+        _apply_stage_policy_to_context(ctx, config, terminal_stage)
+
+    if system is not None:
+        ctx.system_policy = system
+    if mcp is not None:
+        ctx.mcp_policy = mcp
+    if per_tool:
+        merged_per_tool = dict(ctx.per_tool)
+        merged_per_tool.update(per_tool)
+        ctx.per_tool = merged_per_tool
+    return ctx
+
+
+def scoring_policy_context(ctx: PolicyContext) -> PolicyContext:
+    """Map description policies to base scoring policies for partition/pipeline."""
+    from cyt_indexer.policies import PolicyContext, scoring_policy
+
+    scoring = PolicyContext()
+    scoring.system_policy = scoring_policy(ctx.system_policy)
+    scoring.mcp_policy = scoring_policy(ctx.mcp_policy)
+    scoring.per_tool = {tool_id: scoring_policy(policy) for tool_id, policy in ctx.per_tool.items()}
+    return scoring
 
 
 def pruning_stage_model_nick(
