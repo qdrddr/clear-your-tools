@@ -710,25 +710,38 @@ def build_setup_overlay(
             rerankers_section["minimum_tools"] = reranker_minimum_tools
         models["rerankers"] = rerankers_section
 
-    remote_defaults: dict[str, str] = {}
-    if reranker_model is not None and "rerank" in pipeline:
-        remote_defaults["reranking_model_nick"] = str(reranker_model["nick"])
-    if llm_pruner_model is not None and "llm" in pipeline:
-        remote_defaults["llm_model_nick"] = str(llm_pruner_model["nick"])
-
-    defaults: dict[str, Any] = {
-        "system_tool_policy": system_tool_policy,
-        "mcp_tool_policy": mcp_tool_policy,
+    pruning: dict[str, Any] = {
+        "pipeline": pipeline,
+        "policy": {
+            "system_tool": system_tool_policy,
+            "mcp_tool": mcp_tool_policy,
+        },
     }
+    if reranker_model is not None and "rerank" in pipeline:
+        pruning["rerank"] = {
+            "model": {
+                "remote": {
+                    "model_nick": str(reranker_model["nick"]),
+                },
+            },
+        }
+    if llm_pruner_model is not None and "llm" in pipeline:
+        pruning["llm"] = {
+            "model": {
+                "remote": {
+                    "model_nick": str(llm_pruner_model["nick"]),
+                },
+            },
+        }
+
+    defaults: dict[str, Any] = {}
     if "rerank" in pipeline:
         defaults["reranking_enabled"] = True
-    if remote_defaults:
-        defaults["remote"] = remote_defaults
 
     return {
         "defaults": defaults,
         "models": models,
-        "pruning": {"pipeline": pipeline},
+        "pruning": pruning,
         "network": {
             "proxy": {
                 "reverse": {

@@ -9,7 +9,7 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from dotenv import load_dotenv
@@ -101,6 +101,27 @@ _DEFAULTS: dict[str, Any] = {
     "pruning": {
         "pipeline": list(DEFAULT_PRUNING_PIPELINE),
         "per_tool": {},
+        "policy": {
+            "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
+            "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
+        },
+        "rerank": {
+            "model": {
+                "remote": {
+                    "model_nick": "rerank-qwen3-8b",
+                },
+            },
+        },
+        "llm": {
+            "model": {
+                "remote": {
+                    "model_nick": "mercury-2",
+                },
+            },
+        },
+        "bm25": {
+            "index_dir": DEFAULT_BM25_INDEX_DIR,
+        },
     },
     "stats": {
         "enabled": True,
@@ -459,34 +480,169 @@ def effective_pruning_pipeline(
     return effective
 
 
-def _bm25_settings(config: dict[str, Any]) -> dict[str, Any]:
-    bm25 = _merged_config(config).get("models", {}).get("bm25", {})
-    return bm25 if isinstance(bm25, dict) else {}
-
-
-def bm25_index_dir(config: dict[str, Any] | None = None) -> Path:
-    path = _bm25_settings(config or load_config()).get("index_dir", DEFAULT_BM25_INDEX_DIR)
-    return Path(str(path)).expanduser()
-
-
-def bm25_mmap_enabled(config: dict[str, Any] | None = None) -> bool:
-    return bool(_bm25_settings(config or load_config()).get("mmap", True))
-
-
-def bm25_stem_language(config: dict[str, Any] | None = None) -> str:
-    value = _bm25_settings(config or load_config()).get("stem_language", DEFAULT_BM25_STEM_LANGUAGE)
-    return str(value)
-
-
-def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
-    value = _bm25_settings(config or load_config()).get("stopwords", DEFAULT_BM25_STOPWORDS)
-    return str(value)
+def _nested_dict_value(root: dict[str, Any], *keys: str) -> object | None:
+    current: object = root
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 _PIPELINE_STAGE_MODEL_KEYS: dict[str, tuple[str, str]] = {
     "rerank": ("rerankers", "reranking_model_nick"),
     "llm": ("llm", "llm_model_nick"),
 }
+
+
+def _pruning_section(config: dict[str, Any]) -> dict[str, Any]:
+    pruning = _merged_config(config).get("pruning", {})
+    return pruning if isinstance(pruning, dict) else {}
+
+
+def _resolve_user_then_merged(
+    merged: dict[str, Any],
+    user: dict[str, Any],
+    *,
+    new_keys: tuple[str, ...],
+    legacy_keys: tuple[str, ...],
+) -> object | None:
+    """Prefer explicit user keys; when both exist in merged layers, prefer *new_keys*."""
+    user_new = _nested_dict_value(user, *new_keys)
+    user_legacy = _nested_dict_value(user, *legacy_keys)
+    if user_new is not None:
+        return user_new
+    if user_legacy is not None:
+        return user_legacy
+    merged_new = _nested_dict_value(merged, *new_keys)
+    merged_legacy = _nested_dict_value(merged, *legacy_keys)
+    if merged_new is not None and merged_legacy is not None:
+        return merged_new
+    if merged_new is not None:
+        return merged_new
+    return merged_legacy
+
+
+def _user_overlay_for_config(
+    config: dict[str, Any] | None,
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if user_config is not None:
+        return user_config
+    if config is None:
+        return load_user_config_overlay()
+    return config
+
+
+def pruning_system_tool_policy(
+    config: dict[str, Any],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> ToolPolicy:
+    """Resolve system tool policy: ``pruning.policy.system_tool`` then legacy ``defaults``."""
+    merged = _merged_config(config)
+    user = _user_overlay_for_config(config, user_config=user_config)
+    policy = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", "policy", "system_tool"),
+        legacy_keys=("defaults", "system_tool_policy"),
+    )
+    if policy is None:
+        return DEFAULT_SYSTEM_TOOL_POLICY
+    return cast(ToolPolicy, policy)
+
+
+def pruning_mcp_tool_policy(
+    config: dict[str, Any],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> ToolPolicy:
+    """Resolve MCP tool policy: ``pruning.policy.mcp_tool`` then legacy ``defaults``."""
+    merged = _merged_config(config)
+    user = _user_overlay_for_config(config, user_config=user_config)
+    policy = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", "policy", "mcp_tool"),
+        legacy_keys=("defaults", "mcp_tool_policy"),
+    )
+    if policy is None:
+        return DEFAULT_MCP_TOOL_POLICY
+    return cast(ToolPolicy, policy)
+
+
+def pruning_stage_model_nick(
+    config: dict[str, Any],
+    stage: Literal["rerank", "llm"],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> str | None:
+    """Resolve stage model nick from ``pruning.<stage>`` then legacy ``defaults.remote``."""
+    merged = _merged_config(config)
+    user = _user_overlay_for_config(config, user_config=user_config)
+    _, legacy_key = _PIPELINE_STAGE_MODEL_KEYS[stage]
+    nick = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", stage, "model", "remote", "model_nick"),
+        legacy_keys=("defaults", "remote", legacy_key),
+    )
+    return str(nick) if nick is not None else None
+
+
+def _bm25_index_dir_resolved(
+    merged: dict[str, Any],
+    user: dict[str, Any],
+) -> str:
+    index_dir = _resolve_user_then_merged(
+        merged,
+        user,
+        new_keys=("pruning", "bm25", "index_dir"),
+        legacy_keys=("models", "bm25", "index_dir"),
+    )
+    return str(index_dir) if index_dir is not None else DEFAULT_BM25_INDEX_DIR
+
+
+def _bm25_settings(
+    config: dict[str, Any],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    merged = _merged_config(config)
+    user = _user_overlay_for_config(config, user_config=user_config)
+    models_bm25 = merged.get("models", {}).get("bm25", {})
+    settings: dict[str, Any] = dict(models_bm25) if isinstance(models_bm25, dict) else {}
+    settings["index_dir"] = _bm25_index_dir_resolved(merged, user)
+    return settings
+
+
+def bm25_index_dir(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    user = load_user_config_overlay() if config is None else None
+    path = _bm25_settings(cfg, user_config=user).get("index_dir", DEFAULT_BM25_INDEX_DIR)
+    return Path(str(path)).expanduser()
+
+
+def bm25_mmap_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    user = load_user_config_overlay() if config is None else None
+    return bool(_bm25_settings(cfg, user_config=user).get("mmap", True))
+
+
+def bm25_stem_language(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    user = load_user_config_overlay() if config is None else None
+    value = _bm25_settings(cfg, user_config=user).get("stem_language", DEFAULT_BM25_STEM_LANGUAGE)
+    return str(value)
+
+
+def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    user = load_user_config_overlay() if config is None else None
+    value = _bm25_settings(cfg, user_config=user).get("stopwords", DEFAULT_BM25_STOPWORDS)
+    return str(value)
 
 
 def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:
@@ -505,6 +661,26 @@ def _user_remote_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
         return {}
     remote = defaults.get("remote")
     return remote if isinstance(remote, dict) else {}
+
+
+def _user_stage_model_nick(user_config: dict[str, Any], stage: str) -> str | None:
+    pruning = user_config.get("pruning")
+    if isinstance(pruning, dict):
+        stage_cfg = pruning.get(stage, {})
+        if isinstance(stage_cfg, dict):
+            model = stage_cfg.get("model", {})
+            if isinstance(model, dict):
+                remote = model.get("remote", {})
+                if isinstance(remote, dict):
+                    nick = remote.get("model_nick")
+                    if nick:
+                        return str(nick)
+    stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
+    if stage_keys is None:
+        return None
+    _, nick_key = stage_keys
+    legacy = _user_remote_defaults(user_config).get(nick_key)
+    return str(legacy) if legacy else None
 
 
 def _remote_model_configured(
@@ -527,19 +703,15 @@ def _remote_model_configured(
     )
 
 
-def _remote_pruning_stage_configured(
-    user_config: dict[str, Any],
-    stage: str,
-    remote_defaults: dict[str, Any],
-) -> bool:
+def _remote_pruning_stage_configured(user_config: dict[str, Any], stage: str) -> bool:
     stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
     if stage_keys is None:
         return False
-    model_kind, nick_key = stage_keys
-    model_nick = remote_defaults.get(nick_key)
+    model_kind, _ = stage_keys
+    model_nick = _user_stage_model_nick(user_config, stage)
     if not model_nick:
         return False
-    return _remote_model_configured(user_config, model_kind=model_kind, model_nick=str(model_nick))
+    return _remote_model_configured(user_config, model_kind=model_kind, model_nick=model_nick)
 
 
 def remote_pruning_pipeline_configured(user_config: dict[str, Any]) -> bool:
@@ -547,15 +719,22 @@ def remote_pruning_pipeline_configured(user_config: dict[str, Any]) -> bool:
     pipeline = _user_pruning_pipeline(user_config)
     if not pipeline:
         return False
-    remote_defaults = _user_remote_defaults(user_config)
-    return any(
-        _remote_pruning_stage_configured(user_config, stage, remote_defaults) for stage in pipeline
-    )
+    return any(_remote_pruning_stage_configured(user_config, stage) for stage in pipeline)
 
 
-def _remote_defaults(config: dict[str, Any]) -> dict[str, Any]:
-    remote = _merged_config(config).get("defaults", {}).get("remote", {})
-    return remote if isinstance(remote, dict) else {}
+def _remote_defaults(
+    config: dict[str, Any],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Legacy-shaped remote defaults synthesized from per-pipeline config."""
+    user = _user_overlay_for_config(config, user_config=user_config)
+    remote: dict[str, Any] = {}
+    if rerank_nick := pruning_stage_model_nick(config, "rerank", user_config=user):
+        remote["reranking_model_nick"] = rerank_nick
+    if llm_nick := pruning_stage_model_nick(config, "llm", user_config=user):
+        remote["llm_model_nick"] = llm_nick
+    return remote
 
 
 def _remote_model_entries(config: dict[str, Any], model_kind: str) -> list[dict[str, Any]]:
@@ -590,7 +769,6 @@ def key_var_name_for_model_nick(
 
 def _append_pipeline_stage_env_vars(
     config: dict[str, Any],
-    remote_defaults: dict[str, Any],
     add: Callable[[str], None],
 ) -> None:
     for stage in pruning_pipeline_from_config(config):
@@ -598,17 +776,24 @@ def _append_pipeline_stage_env_vars(
         if stage_keys is None:
             continue
         model_kind, nick_key = stage_keys
-        model_nick = remote_defaults.get(nick_key)
+        if stage not in ("rerank", "llm"):
+            continue
+        user = load_user_config_overlay()
+        if stage == "rerank":
+            model_nick = pruning_stage_model_nick(config, "rerank", user_config=user)
+        else:
+            model_nick = pruning_stage_model_nick(config, "llm", user_config=user)
         if not model_nick:
             raise ValueError(
-                f"defaults.remote.{nick_key} is required when pruning.pipeline includes {stage!r}",
+                f"pruning.{stage}.model.remote.model_nick "
+                f"(or defaults.remote.{nick_key}) is required when "
+                f"pruning.pipeline includes {stage!r}",
             )
-        add(key_var_name_for_model_nick(config, model_kind, str(model_nick)))
+        add(key_var_name_for_model_nick(config, model_kind, model_nick))
 
 
 def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
     """Environment variable names required by configured pruning pipeline stages."""
-    remote_defaults = _remote_defaults(config)
     required: list[str] = []
     seen: set[str] = set()
 
@@ -617,7 +802,7 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
             seen.add(name)
             required.append(name)
 
-    _append_pipeline_stage_env_vars(config, remote_defaults, add)
+    _append_pipeline_stage_env_vars(config, add)
 
     return required
 

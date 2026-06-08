@@ -120,9 +120,11 @@ User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter v
 
 | Section                                                   | Purpose                                                  |
 | --------------------------------------------------------- | -------------------------------------------------------- |
-| `defaults.system_tool_policy` / `mcp_tool_policy`         | Default pruning behavior for system vs MCP tools         |
-| `defaults.remote.reranking_model_nick` / `llm_model_nick` | Model nicknames for pruning stages                       |
-| `pruning.pipeline`                                        | Ordered list of stages: `rerank`, `llm`                  |
+| `pruning.policy.system_tool` / `mcp_tool`                 | Default pruning behavior for system vs MCP tools         |
+| `pruning.rerank.model.remote.model_nick`                  | Reranker model nick for the `rerank` stage               |
+| `pruning.llm.model.remote.model_nick`                     | LLM pruner model nick for the `llm` stage                |
+| `pruning.bm25.index_dir`                                  | BM25 index directory (legacy: `models.bm25.index_dir`)   |
+| `pruning.pipeline`                                        | Ordered list of stages: `rerank`, `llm`, `bm25`          |
 | `pruning.per_tool`                                        | Per-tool policy overrides                                |
 | `models.rerankers` / `models.llm`                         | Remote model definitions, API keys, minimum tool counts  |
 | `network.proxy.reverse`                                   | Listen port, upstream URLs, HTTP/2, TLS                  |

@@ -13,6 +13,7 @@ from cyt.config import (
     _remote_defaults,
     key_var_name_for_model_nick,
     load_config,
+    load_user_config_overlay,
     remote_model_entry,
     require_proxy_env,
     reranker_minimum_tools,
@@ -64,11 +65,19 @@ class RerankPruningSettings:
 
 
 def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruningSettings:
-    """Resolve pruning reranker model and API key from ``defaults.remote.reranking_model_nick``."""
-    cfg = config or load_config()
-    model_nick = _remote_defaults(cfg).get("reranking_model_nick")
+    """Resolve pruning reranker model from per-pipeline or legacy config."""
+    if config is None:
+        cfg = load_config()
+        user = load_user_config_overlay()
+    else:
+        cfg = config
+        user = config
+    model_nick = _remote_defaults(cfg, user_config=user).get("reranking_model_nick")
     if not model_nick:
-        raise ValueError("defaults.remote.reranking_model_nick is required for rerank pruning")
+        raise ValueError(
+            "pruning.rerank.model.remote.model_nick "
+            "(or defaults.remote.reranking_model_nick) is required for rerank pruning",
+        )
     nick = str(model_nick)
     model_name, api_key, base_url = resolve_model(nick, "rerankers", "remote", config=cfg)
     if not api_key:

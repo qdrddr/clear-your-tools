@@ -130,22 +130,25 @@ pruning:
   pipeline:
     - llm          # LLM only (no reranker)
     # - rerank     # or: [rerank, llm] for two-stage filtering
-
-defaults:
-  remote:
-    llm_model_nick: mercury-2   # must match a nick under models.llm.remote
+  llm:
+    model:
+      remote:
+        model_nick: mercury-2   # must match a nick under models.llm.remote
 
 models:
   llm:
     minimum_tools: 50   # LLM stage runs when tool count ≥ this (default 50)
 ```
 
+Legacy `defaults.remote.llm_model_nick` / `reranking_model_nick` still work; per-pipeline
+keys take precedence when both are set.
+
 Rerank & LLM prunners can use any providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
 
 | Pipeline | API keys needed |
 | -------- | ----------------- |
-| `[rerank]` | Key for chosen `reranking_model_nick` (see below). Default `DEEPINFRA_API_KEY` |
-| `[llm]` | Key for chosen `llm_model_nick` (see below) |
+| `[rerank]` | Key for `pruning.rerank.model.remote.model_nick` (see below). Default `DEEPINFRA_API_KEY` |
+| `[llm]` | Key for `pruning.llm.model.remote.model_nick` (see below) |
 | `[rerank, llm]` | Both |
 
 With **`llm` only**, you can skip `DEEPINFRA_API_KEY`. The LLM stage is stronger at dropping whole tools;
@@ -154,9 +157,9 @@ rerank is cheaper and better for the 30–50 tool range.
 <details>
 <summary><strong>Choose LLM pruning model (OpenRouter vs OpenAI)</strong></summary>
 
-Set **`defaults.remote.llm_model_nick`** to a `nick` under `models.llm.remote`. Bundled options:
+Set **`pruning.llm.model.remote.model_nick`** to a `nick` under `models.llm.remote`. Bundled options:
 
-| `llm_model_nick` | Provider | Model | Env var |
+| `model_nick` | Provider | Model | Env var |
 | ---------------- | -------- | ----- | ------- |
 | `mercury-2` | OpenRouter | `inception/mercury-2` | `OPENROUTER_API_KEY` |
 | `gpt-oss-120b` | OpenRouter | `openai/gpt-oss-120b` | `OPENROUTER_API_KEY` |
@@ -166,25 +169,25 @@ Set **`defaults.remote.llm_model_nick`** to a `nick` under `models.llm.remote`. 
 Example — OpenRouter (default-style):
 
 ```yaml
-defaults:
-  remote:
-    llm_model_nick: gpt-oss-120b
-
 pruning:
   pipeline:
     - llm
+  llm:
+    model:
+      remote:
+        model_nick: gpt-oss-120b
 ```
 
 Example — OpenAI direct:
 
 ```yaml
-defaults:
-  remote:
-    llm_model_nick: gpt-5.4-nano
-
 pruning:
   pipeline:
     - llm
+  llm:
+    model:
+      remote:
+        model_nick: gpt-5.4-nano
 ```
 
 ```bash
@@ -192,7 +195,7 @@ export OPENAI_API_KEY="..."
 ```
 
 To add another model, append an entry under `models.llm.remote` with `nick`, `name`, `provider`,
-`key_var_name`, and `pricing`, then point `llm_model_nick` at that `nick`.
+`key_var_name`, and `pricing`, then point `pruning.llm.model.remote.model_nick` at that `nick`.
 
 Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml). See [`DEV.md`](DEV.md) for the
 rest of the config surface.
@@ -212,10 +215,13 @@ Two tool categories with different defaults:
 Set defaults in `config.yaml`:
 
 ```yaml
-defaults:
-  system_tool_policy: prune_optional
-  mcp_tool_policy: prune_all
+pruning:
+  policy:
+    system_tool: prune_optional
+    mcp_tool: prune_all
 ```
+
+Legacy `defaults.system_tool_policy` / `defaults.mcp_tool_policy` are still supported.
 
 </details>
 

@@ -35,7 +35,7 @@ enum Commands {
         input: PathBuf,
         #[arg(long)]
         output: PathBuf,
-        /// JSON config with defaults.system_tool_policy / mcp_tool_policy / pruning.per_tool
+        /// JSON config with pruning.policy / pruning.per_tool (legacy: defaults.*_tool_policy)
         #[arg(long)]
         config: Option<PathBuf>,
         #[arg(long)]

@@ -13,6 +13,7 @@ from cyt.config import (
     key_var_name_for_model_nick,
     llm_minimum_tools,
     load_config,
+    load_user_config_overlay,
     remote_model_entry,
     require_proxy_env,
     resolve_model,
@@ -82,11 +83,19 @@ class LlmPruningSettings:
 
 
 def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
-    """Resolve pruning LLM model and API key from ``defaults.remote.llm_model_nick``."""
-    cfg = config or load_config()
-    model_nick = _remote_defaults(cfg).get("llm_model_nick")
+    """Resolve pruning LLM model from per-pipeline or legacy config."""
+    if config is None:
+        cfg = load_config()
+        user = load_user_config_overlay()
+    else:
+        cfg = config
+        user = config
+    model_nick = _remote_defaults(cfg, user_config=user).get("llm_model_nick")
     if not model_nick:
-        raise ValueError("defaults.remote.llm_model_nick is required for llm pruning")
+        raise ValueError(
+            "pruning.llm.model.remote.model_nick "
+            "(or defaults.remote.llm_model_nick) is required for llm pruning",
+        )
     nick = str(model_nick)
     model_name, api_key, base_url = resolve_model(nick, "llm", "remote", config=cfg)
     if not api_key:

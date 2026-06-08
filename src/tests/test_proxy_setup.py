@@ -789,8 +789,10 @@ class TestBuildSetupOverlay:
             stats_db_path="~/.config/cyt/stats.db",
         )
         assert overlay["pruning"]["pipeline"] == ["rerank"]
-        assert overlay["defaults"]["remote"]["reranking_model_nick"] == "rerank-qwen3-8b"
-        assert "llm_model_nick" not in overlay["defaults"]["remote"]
+        assert overlay["pruning"]["rerank"]["model"]["remote"]["model_nick"] == "rerank-qwen3-8b"
+        assert "llm" not in overlay["pruning"]
+        assert overlay["pruning"]["policy"]["system_tool"] == "prune_optional"
+        assert overlay["pruning"]["policy"]["mcp_tool"] == "prune_all"
         assert overlay["defaults"]["reranking_enabled"] is True
         llm_remote = overlay["models"]["llm"]["remote"]
         assert len(llm_remote) == 1
@@ -824,8 +826,9 @@ class TestBuildSetupOverlay:
             stats_db_path="~/.config/cyt/stats.db",
         )
         assert overlay["pruning"]["pipeline"] == ["bm25"]
-        assert "remote" not in overlay["defaults"]
-        assert "reranking_enabled" not in overlay["defaults"]
+        assert overlay["pruning"]["policy"]["mcp_tool"] == "prune_all"
+        assert "rerank" not in overlay["pruning"]
+        assert overlay["defaults"] == {}
         assert "rerankers" not in overlay["models"]
 
     def test_both_pipeline_includes_pruner(self) -> None:
@@ -851,7 +854,8 @@ class TestBuildSetupOverlay:
         )
         nicks = {e["nick"] for e in overlay["models"]["llm"]["remote"]}
         assert nicks == {"sonnet", "mercury-2"}
-        assert overlay["defaults"]["remote"]["llm_model_nick"] == "mercury-2"
+        assert overlay["pruning"]["rerank"]["model"]["remote"]["model_nick"] == "rerank-qwen3-8b"
+        assert overlay["pruning"]["llm"]["model"]["remote"]["model_nick"] == "mercury-2"
 
     def test_multiple_primary_upstream_models(self) -> None:
         second_primary = {**_SAMPLE_MODEL, "nick": "opus", "name": "claude-opus-4-7"}

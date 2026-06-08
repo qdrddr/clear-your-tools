@@ -95,7 +95,7 @@ def test_load_config_explicit_missing_returns_defaults(
     loaded = configs.load_config(missing)
 
     assert loaded["network"]["proxy"]["reverse"]["port"] == 8834
-    assert loaded["defaults"]["remote"]["reranking_model_nick"] == "rerank-qwen3-8b"
+    assert configs.pruning_stage_model_nick(loaded, "rerank") == "rerank-qwen3-8b"
     assert not missing.exists()
     assert not isolated_config_paths["user_config"].exists()
 
@@ -106,7 +106,7 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
 ) -> None:
     bundled = isolated_config_paths["root"] / "bundled.yaml"
     bundled.write_text(
-        "defaults:\n  remote:\n    reranking_model_nick: bundled-rerank\n",
+        "pruning:\n  rerank:\n    model:\n      remote:\n        model_nick: bundled-rerank\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -122,7 +122,7 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
     loaded = configs.load_config()
 
     assert loaded["defaults"]["is_persistent"] is False
-    assert loaded["defaults"]["remote"]["reranking_model_nick"] == "bundled-rerank"
+    assert configs.pruning_stage_model_nick(loaded, "rerank") == "bundled-rerank"
 
 
 def test_required_proxy_env_var_names_excludes_upstream_keys(
@@ -219,3 +219,54 @@ def test_load_user_config_overlay_reads_on_disk_only(
 
     assert overlay["network"]["proxy"]["reverse"]["port"] == 7777
     assert "defaults" not in overlay
+
+
+def test_pruning_stage_model_nick_prefers_new_path() -> None:
+    config = {
+        "pruning": {
+            "rerank": {"model": {"remote": {"model_nick": "new-rerank"}}},
+        },
+        "defaults": {"remote": {"reranking_model_nick": "legacy-rerank"}},
+    }
+    assert configs.pruning_stage_model_nick(config, "rerank") == "new-rerank"
+
+
+def test_pruning_stage_model_nick_legacy_fallback() -> None:
+    config = {"defaults": {"remote": {"reranking_model_nick": "legacy-rerank"}}}
+    assert configs.pruning_stage_model_nick(config, "rerank") == "legacy-rerank"
+
+
+def test_pruning_policy_prefers_new_path() -> None:
+    config = {
+        "pruning": {"policy": {"system_tool": "always_include", "mcp_tool": "prune_optional"}},
+        "defaults": {
+            "system_tool_policy": "prune_all",
+            "mcp_tool_policy": "prune_all",
+        },
+    }
+    assert configs.pruning_system_tool_policy(config) == "always_include"
+    assert configs.pruning_mcp_tool_policy(config) == "prune_optional"
+
+
+def test_bm25_index_dir_prefers_pruning_path() -> None:
+    config = {
+        "pruning": {"bm25": {"index_dir": "/tmp/pruning-bm25"}},
+        "models": {"bm25": {"index_dir": "/tmp/models-bm25", "mmap": False}},
+    }
+    assert str(configs.bm25_index_dir(config)) == "/tmp/pruning-bm25"
+    assert configs.bm25_mmap_enabled(config) is False
+
+
+def test_remote_pruning_pipeline_configured_accepts_new_paths() -> None:
+    configured = {
+        "pruning": {
+            "pipeline": ["rerank"],
+            "rerank": {"model": {"remote": {"model_nick": "rerank-qwen3-8b"}}},
+        },
+        "models": {
+            "rerankers": {
+                "remote": [{"nick": "rerank-qwen3-8b", "key_var_name": "DEEPINFRA_API_KEY"}],
+            },
+        },
+    }
+    assert configs.remote_pruning_pipeline_configured(configured) is True

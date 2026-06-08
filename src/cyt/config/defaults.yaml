@@ -1,12 +1,6 @@
 defaults:
-  #  system_tool_policy: prune_optional
-  #  mcp_tool_policy: prune_all
-  is_persistent: true
-  remote:
-    reranking_model_nick: rerank-qwen3-8b
-    llm_model_nick: mercury-2
   inprocess: []
-
+  is_persistent: true
   reranking_enabled: true
 models:
   llm:
@@ -156,22 +150,36 @@ models:
           output_cost_per_token: 0
           # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
   bm25:
-    index_dir: ~/.config/cyt/bm25
     mmap: true
     stem_language: english
     stopwords: en
 
 pruning:
-  per_tool: {}
-  #    Agent: prune_optional
-  #    mcp__hedl__hedl_convert_from: prune_optional
-  #    mcp__hedl__batch: prune_all
-  #    mcp__fff__multi_grep: always_include
+  policy:
+    system_tool: prune_optional
+    mcp_tool: prune_all
+
+  rerank:
+    model:
+      remote:
+        model_nick: rerank-qwen3-8b
+  llm:
+    model:
+      remote:
+        model_nick: mercury-2
+  bm25:
+    index_dir: ~/.config/cyt/bm25
 
   pipeline:
     # - bm25
     - rerank
     # - llm
+
+  per_tool: {}
+  #    Agent: prune_optional
+  #    mcp__hedl__hedl_convert_from: prune_optional
+  #    mcp__hedl__batch: prune_all
+  #    mcp__fff__multi_grep: always_include
 
 network:
   proxy:
