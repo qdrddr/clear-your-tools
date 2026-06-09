@@ -11,7 +11,7 @@ jq '.body.tools' debug/temp.json >./.catalog/input.json
 ./search/local-dev.sh all
 
 # Build the catalog from the tools file
-./target/release/cyt-indexer build --tools ./.catalog/input.json --output ./.catalog
+./target/release/cyt-indexer build tools --tools ./.catalog/input.json --output ./.catalog
 
 # Extract the survivors from the full example JSON
 jq '{
@@ -20,7 +20,7 @@ jq '{
 }' debug/full_example.json >.catalog/survivors.json
 
 # Retrieve the tools from the catalog using the survivors file
-./target/release/cyt-indexer retrieve \
+./target/release/cyt-indexer retrieve tools \
 	--catalog ./.catalog \
 	--input ./.catalog/survivors.json \
 	--output ./.catalog/out.json \

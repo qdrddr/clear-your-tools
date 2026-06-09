@@ -48,6 +48,20 @@ export {
   extractLevelInfo,
   extractMdCatalogDocument,
 } from "./documents.js";
+export {
+  SkillsBuilder,
+  buildSkillsIndex,
+  defaultPageIndexConfig,
+  getSkillDocument,
+  getSkillPageContent,
+  getSkillStructure,
+  loadSkillsIndexFromDir,
+  mdToTree,
+  skillsIndexFromDecomposedDir,
+  writeSkillsIndex,
+  type PageIndexConfig,
+  type SkillsIndexDict,
+} from "./pageindex.js";
 
 // Full policy surface (mirrors cyt_indexer.policies).
 export * from "./policies.js";

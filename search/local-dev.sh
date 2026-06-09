@@ -12,7 +12,7 @@
 # Commands:
 #   setup              uv sync workspace (local SDK source override)
 #   rust               cargo test -p cyt-indexer + release CLI catalog build
-#   indexer [subcmd]   cyt-indexer build/retrieve from debug/full_example.json
+#   indexer [subcmd]   cyt-indexer build tools / retrieve tools from debug/full_example.json
 #                      subcmd: build | survivors | retrieve | all (default: all)
 #                      env: CYT_CATALOG_DIR, CYT_INDEXER_SYSTEM_POLICY, CYT_INDEXER_MCP_POLICY,
 #                           CYT_INDEXER_TOOL_POLICIES (default: AskUserQuestion=always_include)
@@ -75,9 +75,9 @@ indexer)
 		cat <<EOF
 Usage: ./search/local-dev.sh indexer [build|survivors|retrieve|all] [retrieve args...]
 
-  build      jq '.body.tools' debug/full_example.json -> cyt-indexer build -> .catalog/
+  build      jq '.body.tools' debug/full_example.json -> cyt-indexer build tools -> .catalog/
   survivors  jq rerank json/md -> .catalog/survivors.json (scores as numbers)
-  retrieve   cyt-indexer retrieve with default policies (score filter off for rerank survivors)
+  retrieve   cyt-indexer retrieve tools with default policies (score filter off for rerank survivors)
   all        build + survivors + retrieve (default)
 
 Retrieve defaults:

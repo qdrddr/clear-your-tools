@@ -1,3 +1,8 @@
+#[path = "pageindex_node.rs"]
+mod pageindex_node;
+
+pub use pageindex_node::*;
+
 use crate::build::{
     build_catalog_index as core_build_catalog_index,
     catalog_index_from_value, catalog_tool_count as core_catalog_tool_count,
@@ -313,11 +318,14 @@ pub fn removed_chunks_napi(
 /// Does not fail; updates in-process path configuration.
 #[napi]
 pub fn configure_path_constants(config: PathConfigNapi) -> Result<()> {
+    let defaults = paths::PathConfig::default();
     paths::configure(paths::PathConfig {
         md_ext: config.md_ext,
         json_ext: config.json_ext,
         decomposed_prefix: config.decomposed_prefix,
         decomposed_root: std::path::PathBuf::from(config.decomposed_root),
+        skills_decomposed_prefix: defaults.skills_decomposed_prefix,
+        skills_decomposed_root: defaults.skills_decomposed_root,
         catalog_prefix: config.catalog_prefix,
         builder_memory_only: config.builder_memory_only,
         default_catalog_dir: std::path::PathBuf::from(config.default_catalog_dir),

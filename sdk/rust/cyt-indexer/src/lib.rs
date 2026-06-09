@@ -7,10 +7,13 @@ pub mod catalog_builder;
 pub mod catalog_io;
 pub mod documents;
 pub mod json_util;
+pub mod pageindex;
 pub mod paths;
 pub mod policies;
 pub mod retrieve;
 pub mod runtime_config;
+pub mod skills_builder;
+pub mod skills_io;
 pub mod tool_entries;
 
 #[cfg(feature = "python")]
@@ -49,8 +52,9 @@ pub use policies::{
     scoring_policy, PolicyContext, ToolPolicy,
 };
 pub use paths::{
-    collect_enums, configure as configure_paths, get_root_tool_key, snapshot as path_snapshot,
-    to_decomposed_key, tool_id_from_decomposed_rel, PathConfig,
+    collect_enums, configure as configure_paths, get_root_tool_key, is_catalog_decomposed_path,
+    skills_decomposed_prefix, snapshot as path_snapshot, to_decomposed_key,
+    to_skills_decomposed_key, tool_id_from_decomposed_rel, PathConfig,
 };
 pub use runtime_config::{
     configure as configure_runtime, decomposed_score, default_mcp_policy, default_system_policy,
@@ -67,4 +71,14 @@ pub use retrieve::{
 pub use tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,
     is_catalog_tool_entry, normalize_tools_for_catalog, prepare_tool_entry, truncate_description,
+};
+pub use pageindex::{
+    build_skills_index, get_document as get_skill_document, get_document_structure as get_skill_structure,
+    get_page_content as get_skill_page_content, md_to_tree, parse_pages as parse_skill_pages,
+    PageIndexConfig, MdIndexResult, SkillDocument, SkillsIndex,
+};
+pub use skills_builder::SkillsBuilder;
+pub use skills_io::{
+    load_decomposed_files_for_index, load_skills_index_from_dir, skills_index_from_decomposed_dir,
+    write_skills_index,
 };

@@ -180,6 +180,7 @@ pruning:
   #     mcp_tool: prune_all_descriptions
 
   bm25:
+    score_skills: 0.5
     index_dir: ~/.config/cyt/bm25
     score_tool: 0.3
     prune_enums: true
@@ -230,6 +231,15 @@ stats:
 
 skills:
   enabled: false
+  pageindex:
+    if_add_node_id: true
+    if_add_node_text: false
+
+    toc_check_page_num: 20
+    max_page_num_each_node: 10
+    max_token_num_each_node: 2000
+    if_add_node_summary: true
+    if_add_doc_description: false
   budget: 0.5 # Percentage of the total savings from tool pruning that can be used for skills execution (e.g. 0.5 = 50% of the total savings)
   max_tokens_per_request: 2000 # Maximum number of tokens allowed per request to the skills (e.g. 2000 = 2000 tokens)
   directories:
@@ -237,11 +247,3 @@ skills:
     - .claude/skills
     - ~/.codex/skills
     - .codex/skills
-  pageindex:
-    toc_check_page_num: 20
-    max_page_num_each_node: 10
-    max_token_num_each_node: 2000
-    if_add_node_id: "yes"
-    if_add_node_summary: "yes"
-    if_add_doc_description: "no"
-    if_add_node_text: "no"

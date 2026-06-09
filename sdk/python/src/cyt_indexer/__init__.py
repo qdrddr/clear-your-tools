@@ -18,6 +18,19 @@ from cyt_indexer.retrieve import (
     removed_chunks,
     retrieve_tools,
 )
+from cyt_indexer.pageindex import (
+    PageIndexConfig,
+    SkillsBuilder,
+    build_skills_index,
+    default_page_index_config,
+    get_skill_document,
+    get_skill_page_content,
+    get_skill_structure,
+    load_skills_index_from_dir,
+    md_to_tree,
+    skills_index_from_decomposed_dir,
+    write_skills_index,
+)
 
 __all__ = [
     "CatalogIndex",
@@ -34,4 +47,15 @@ __all__ = [
     "prepare_tool_entry",
     "retrieve_tools",
     "truncate_description",
+    "PageIndexConfig",
+    "SkillsBuilder",
+    "build_skills_index",
+    "default_page_index_config",
+    "get_skill_document",
+    "get_skill_page_content",
+    "get_skill_structure",
+    "load_skills_index_from_dir",
+    "md_to_tree",
+    "skills_index_from_decomposed_dir",
+    "write_skills_index",
 ]

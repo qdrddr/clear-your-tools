@@ -118,4 +118,16 @@ export const extractMdCatalogDocumentNative = native.extractMdCatalogDocument;
 export const extractDocumentTextNative = native.extractDocumentText;
 export const extractLevelInfoNative = native.extractLevelInfo;
 
+// Skills pageindex
+export const buildSkillsIndexNative = native.buildSkillsIndexNapi;
+export const writeSkillsIndexNative = native.writeSkillsIndexNapi;
+export const loadSkillsIndexFromDirNative = native.loadSkillsIndexFromDirNapi;
+export const skillsIndexFromDecomposedDirNative =
+  native.skillsIndexFromDecomposedDirNapi;
+export const mdToTreeNative = native.mdToTreeNapi;
+export const getSkillDocumentNative = native.getSkillDocumentNapi;
+export const getSkillStructureNative = native.getSkillStructureNapi;
+export const getSkillPageContentNative = native.getSkillPageContentNapi;
+export const SkillsBuilderNative = native.SkillsBuilderNapi;
+
 export type { PolicyOptions, PolicyContextJs } from "../native.d.ts";

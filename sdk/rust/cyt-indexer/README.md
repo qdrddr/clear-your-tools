@@ -24,8 +24,8 @@ Accepts Anthropic API tools (`name`, `description`, `input_schema`) or pre-built
 ```bash
 cargo install cyt-indexer
 jq '.body.tools' debug/full_example.json > /tmp/tools.json
-cyt-indexer build --tools /tmp/tools.json --output ./.catalog
-cyt-indexer retrieve --catalog ./.catalog --input survivors.json --output out.json \
+cyt-indexer build tools --tools /tmp/tools.json --output ./.catalog
+cyt-indexer retrieve tools --catalog ./.catalog --input survivors.json --output out.json \
   --config config.json \
   --system-policy prune_optional \
   --mcp-policy prune_all \
@@ -37,8 +37,19 @@ cyt-indexer retrieve --catalog ./.catalog --input survivors.json --output out.js
 cyt-indexer retrieve ... --removed-output ./.catalog/removed.json
 
 # Or as a dedicated command (use --full for build_index snapshot vs on-disk catalog)
-cyt-indexer removed --catalog ./.catalog --input survivors.json --output ./.catalog/removed.json
+cyt-indexer removed tools --catalog ./.catalog --input survivors.json --output ./.catalog/removed.json
 ```
+
+### Skills (markdown pageindex)
+
+```bash
+cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query metadata --output meta.json
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query structure --output toc.json
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --pages "5-10" --output content.json
+```
+
+Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md`, and a reconstructable `skills_index.json` snapshot.
 
 Score filter is **off by default** (rerank survivor scores are ~0.003, not 0–1).
 Use `--score-filter` only for LLM-stage catalogs where json scores exceed the decomposed threshold (0.5).
@@ -51,6 +62,15 @@ use cyt_indexer::{load_catalog_from_dir, removed_chunks, RemovedChunksOptions};
 let full = load_catalog_from_dir(".catalog")?;
 let surviving: serde_json::Value = /* survivors.json */;
 let removed = removed_chunks(&full, &surviving, &RemovedChunksOptions::default());
+```
+
+Skills (in-memory, like tools):
+
+```rust
+use cyt_indexer::{build_skills_index, get_skill_page_content, PageIndexConfig, SkillsBuilder};
+
+let index = build_skills_index(&[PathBuf::from("~/.claude/skills")], &PageIndexConfig::default())?;
+let content = get_skill_page_content(&index, "my__skill", "5-10");
 ```
 
 Policies (in precedence order, later wins):

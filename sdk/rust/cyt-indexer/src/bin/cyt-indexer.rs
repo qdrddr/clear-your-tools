@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
-    load_catalog_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
+    get_skill_document, get_skill_page_content, get_skill_structure, load_catalog_from_dir,
+    load_skills_index_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
     parse_tool_policy, policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
-    DecomposedCatalog, PolicyContext, RemovedChunksOptions, RetrieveOptions,
+    DecomposedCatalog, PageIndexConfig, PolicyContext, RemovedChunksOptions, RetrieveOptions,
+    SkillsBuilder,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -12,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "cyt-indexer")]
-#[command(about = "Tool schema decomposition and catalog indexing")]
+#[command(about = "Tool schema decomposition and skills pageindex catalog indexing")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -20,68 +22,112 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Build a decomposed catalog index from API tools or catalog entries JSON
+    /// Build catalogs (tools or skills)
     Build {
+        #[command(subcommand)]
+        target: BuildTarget,
+    },
+    /// Retrieve from catalogs (tools or skills)
+    Retrieve {
+        #[command(subcommand)]
+        target: RetrieveTarget,
+    },
+    /// List removed tool chunks
+    Removed {
+        #[command(subcommand)]
+        target: RemovedTarget,
+    },
+}
+
+#[derive(Subcommand)]
+enum BuildTarget {
+    /// Build a decomposed tool catalog from API tools or catalog entries JSON
+    Tools {
         #[arg(long)]
         tools: PathBuf,
         #[arg(long)]
         output: PathBuf,
     },
+    /// Build a skills pageindex catalog from markdown skill directories
+    Skills {
+        #[arg(long = "skills")]
+        skill_dirs: Vec<PathBuf>,
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum RetrieveTarget {
     /// Retrieve merged tool schemas from pruner output
-    Retrieve {
+    Tools {
         #[arg(long)]
         catalog: PathBuf,
         #[arg(long)]
         input: PathBuf,
         #[arg(long)]
         output: PathBuf,
-        /// JSON config with pruning.policy / `pruning.per_tool` (legacy: defaults.*_`tool_policy`)
         #[arg(long)]
         config: Option<PathBuf>,
         #[arg(long)]
         system_policy: Option<String>,
         #[arg(long)]
         mcp_policy: Option<String>,
-        /// Per-tool policy overrides as JSON object: {"`Agent":"always_include`",...}
         #[arg(long)]
         per_tool: Option<PathBuf>,
-        /// Per-tool override (repeatable): TOOL=POLICY e.g. `Agent=always_include`
         #[arg(long = "tool-policy", value_name = "TOOL=POLICY")]
         tool_policies: Vec<String>,
-        /// Comma-separated enum values to preserve during retrieve (system tools)
         #[arg(long, value_delimiter = ',')]
         preserve: Vec<String>,
-        /// Drop json chunks with score <= decomposed threshold (0.5). Off by default; rerank
-        /// survivors use tiny scores (~0.003) and need this disabled (matches proxy behavior).
         #[arg(long)]
         score_filter: bool,
-        /// Deprecated alias for default behavior (score filter already off unless --score-filter).
         #[arg(long, hide = true)]
         no_score_filter: bool,
-        /// Optional path to write non-surviving decomposed chunks (`{json, md}` like survivors.json).
         #[arg(long)]
         removed_output: Option<PathBuf>,
     },
-    /// List decomposed chunks in the full catalog that are not in the survivors input.
-    Removed {
-        /// Full decomposed catalog directory (or use --full for a pre-built catalog JSON).
+    /// Retrieve skill document metadata, structure, or content
+    Skills {
         #[arg(long)]
         catalog: PathBuf,
-        /// Survivors JSON (`{json, md}` arrays), e.g. rerank output or `.catalog/survivors.json`.
+        #[arg(long)]
+        doc_id: String,
+        #[arg(long, value_enum)]
+        query: SkillQuery,
+        #[arg(long)]
+        pages: Option<String>,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        skills_index: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemovedTarget {
+    /// List decomposed tool chunks not in survivors input
+    Tools {
+        #[arg(long)]
+        catalog: PathBuf,
         #[arg(long)]
         input: PathBuf,
         #[arg(long)]
         output: PathBuf,
-        /// Full catalog JSON instead of walking --catalog (e.g. `decomposed_catalog.build_index`).
         #[arg(long)]
         full: Option<PathBuf>,
-        /// Treat json chunks in --input with score <= decomposed threshold as non-surviving.
         #[arg(long)]
         score_filter: bool,
     },
 }
 
-fn load_tools_array(tools: &PathBuf) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum SkillQuery {
+    Metadata,
+    Structure,
+    Content,
+}
+
+fn load_tools_array(tools: &Path) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let raw = fs::read_to_string(tools)?;
     let tools_val: Value = serde_json::from_str(&raw)?;
     tools_val
@@ -137,8 +183,8 @@ fn catalog_path_utf8(catalog: &Path) -> Result<&str, Box<dyn std::error::Error>>
     })
 }
 
-fn run_build(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let tools_arr = load_tools_array(&tools.to_path_buf())?;
+fn run_build_tools(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let tools_arr = load_tools_array(tools)?;
     let index = build_catalog_from_tools(&tools_arr);
     fs::create_dir_all(output)?;
     for (rel, content) in &index.files {
@@ -148,7 +194,27 @@ fn run_build(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error::Erro
         }
         fs::write(path, content)?;
     }
-    eprintln!("Wrote {} files to {}", index.files.len(), output.display());
+    eprintln!("Wrote {} tool files to {}", index.files.len(), output.display());
+    Ok(())
+}
+
+fn run_build_skills(skill_dirs: &[PathBuf], output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if skill_dirs.is_empty() {
+        return Err("at least one --skills directory is required".into());
+    }
+    let mut builder = SkillsBuilder::new(false, Some(output.to_path_buf()));
+    let config = PageIndexConfig::default();
+    builder.build_from_dirs(skill_dirs, &config)?;
+    builder.write_catalog()?;
+    let Some(index) = builder.index() else {
+        return Err("index not built after write_catalog".into());
+    };
+    eprintln!(
+        "Wrote skills catalog ({} documents, {} files) to {}",
+        index.documents.len(),
+        index.files.len(),
+        output.display()
+    );
     Ok(())
 }
 
@@ -167,7 +233,7 @@ struct RetrieveArgs<'a> {
     removed_output: Option<&'a Path>,
 }
 
-fn run_retrieve(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+fn run_retrieve_tools(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let apply_score_filter = args.score_filter && !args.no_score_filter;
     let ctx = policy_context_from_cli(
         args.config,
@@ -208,6 +274,45 @@ fn run_retrieve(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+fn run_retrieve_skills(
+    catalog: &Path,
+    doc_id: &str,
+    query: SkillQuery,
+    pages: Option<&str>,
+    output: &Path,
+    skills_index: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let index = if let Some(path) = skills_index {
+        let raw = fs::read_to_string(path)?;
+        let val: Value = serde_json::from_str(&raw)?;
+        let mut idx = cyt_indexer::SkillsIndex::from_skills_index_json(&val)?;
+        cyt_indexer::load_decomposed_files_for_index(catalog, &mut idx)?;
+        idx
+    } else {
+        load_skills_index_from_dir(catalog)?
+    };
+
+    let result = match query {
+        SkillQuery::Metadata => get_skill_document(&index.documents, doc_id),
+        SkillQuery::Structure => get_skill_structure(&index.documents, doc_id),
+        SkillQuery::Content => {
+            let pages = pages.ok_or("content query requires --pages")?;
+            get_skill_page_content(&index, doc_id, pages)
+        }
+    };
+
+    if result.get("error").is_some() {
+        return Err(result
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("retrieve skills failed")
+            .into());
+    }
+
+    fs::write(output, serde_json::to_string_pretty(&result)?)?;
+    Ok(())
+}
+
 fn load_full_catalog(
     catalog: &Path,
     full: Option<&Path>,
@@ -219,7 +324,7 @@ fn load_full_catalog(
     load_catalog_from_dir(catalog_path_utf8(catalog)?).map_err(Into::into)
 }
 
-fn run_removed(
+fn run_removed_tools(
     catalog: &Path,
     input: &Path,
     output: &Path,
@@ -243,44 +348,69 @@ fn run_removed(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build { tools, output } => run_build(&tools, &output)?,
-        Commands::Retrieve {
-            catalog,
-            input,
-            output,
-            config,
-            system_policy,
-            mcp_policy,
-            per_tool,
-            tool_policies,
-            preserve,
-            score_filter,
-            no_score_filter,
-            removed_output,
-        } => {
-            let retrieve_args = RetrieveArgs {
-                catalog: &catalog,
-                input: &input,
-                output: &output,
-                config: config.as_deref(),
-                system_policy: system_policy.as_deref(),
-                mcp_policy: mcp_policy.as_deref(),
-                per_tool: per_tool.as_deref(),
-                tool_policies: &tool_policies,
-                preserve: &preserve,
+        Commands::Build { target } => match target {
+            BuildTarget::Tools { tools, output } => run_build_tools(&tools, &output)?,
+            BuildTarget::Skills {
+                skill_dirs,
+                output,
+            } => run_build_skills(&skill_dirs, &output)?,
+        },
+        Commands::Retrieve { target } => match target {
+            RetrieveTarget::Tools {
+                catalog,
+                input,
+                output,
+                config,
+                system_policy,
+                mcp_policy,
+                per_tool,
+                tool_policies,
+                preserve,
                 score_filter,
                 no_score_filter,
-                removed_output: removed_output.as_deref(),
-            };
-            run_retrieve(&retrieve_args)?;
-        }
-        Commands::Removed {
-            catalog,
-            input,
-            output,
-            full,
-            score_filter,
-        } => run_removed(&catalog, &input, &output, full.as_deref(), score_filter)?,
+                removed_output,
+            } => {
+                let retrieve_args = RetrieveArgs {
+                    catalog: &catalog,
+                    input: &input,
+                    output: &output,
+                    config: config.as_deref(),
+                    system_policy: system_policy.as_deref(),
+                    mcp_policy: mcp_policy.as_deref(),
+                    per_tool: per_tool.as_deref(),
+                    tool_policies: &tool_policies,
+                    preserve: &preserve,
+                    score_filter,
+                    no_score_filter,
+                    removed_output: removed_output.as_deref(),
+                };
+                run_retrieve_tools(&retrieve_args)?;
+            }
+            RetrieveTarget::Skills {
+                catalog,
+                doc_id,
+                query,
+                pages,
+                output,
+                skills_index,
+            } => run_retrieve_skills(
+                &catalog,
+                &doc_id,
+                query,
+                pages.as_deref(),
+                &output,
+                skills_index.as_deref(),
+            )?,
+        },
+        Commands::Removed { target } => match target {
+            RemovedTarget::Tools {
+                catalog,
+                input,
+                output,
+                full,
+                score_filter,
+            } => run_removed_tools(&catalog, &input, &output, full.as_deref(), score_filter)?,
+        },
     }
     Ok(())
 }

@@ -9,6 +9,8 @@ pub struct PathConfig {
     pub md_ext: String,
     pub decomposed_prefix: String,
     pub decomposed_root: PathBuf,
+    pub skills_decomposed_prefix: String,
+    pub skills_decomposed_root: PathBuf,
     pub catalog_prefix: String,
     pub builder_memory_only: bool,
     pub default_catalog_dir: PathBuf,
@@ -22,6 +24,8 @@ impl Default for PathConfig {
             md_ext: ".md".to_string(),
             decomposed_prefix: "schemas/decomposed/".to_string(),
             decomposed_root: PathBuf::from("schemas/decomposed"),
+            skills_decomposed_prefix: "skills/decomposed/".to_string(),
+            skills_decomposed_root: PathBuf::from("skills/decomposed"),
             catalog_prefix: "catalog".to_string(),
             builder_memory_only: false,
             default_catalog_dir: PathBuf::from("catalog"),
@@ -87,6 +91,30 @@ pub fn default_catalog_dir() -> PathBuf {
 #[must_use]
 pub fn write_catalog_prune() -> bool {
     snapshot().write_catalog_prune
+}
+
+#[must_use]
+pub fn skills_decomposed_prefix() -> String {
+    snapshot().skills_decomposed_prefix
+}
+
+#[must_use]
+pub fn to_skills_decomposed_key(file_path: &str) -> Option<String> {
+    let parts: Vec<_> = Path::new(file_path).components().collect();
+    for i in 0..parts.len().saturating_sub(1) {
+        if parts[i] == Component::Normal("skills".as_ref())
+            && parts[i + 1] == Component::Normal("decomposed".as_ref())
+        {
+            let sub: PathBuf = parts[i..].iter().collect();
+            return Some(sub.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+#[must_use]
+pub fn is_catalog_decomposed_path(file_path: &str) -> bool {
+    to_decomposed_key(file_path).is_some() || to_skills_decomposed_key(file_path).is_some()
 }
 
 #[must_use]

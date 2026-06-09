@@ -753,11 +753,16 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
             continue;
         }
         let path_str = path.to_string_lossy();
-        if paths::to_decomposed_key(&path_str).is_none() {
+        if !paths::is_catalog_decomposed_path(&path_str) {
             continue;
         }
         let suffix = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        if suffix.eq_ignore_ascii_case(trim_dot(&md_ext())) {
+        let is_skills_md = paths::to_skills_decomposed_key(&path_str).is_some()
+            && suffix.eq_ignore_ascii_case(trim_dot(&md_ext()))
+            && path.file_name().and_then(|n| n.to_str()) != Some("document.json");
+        if is_skills_md || (paths::to_decomposed_key(&path_str).is_some()
+            && suffix.eq_ignore_ascii_case(trim_dot(&md_ext())))
+        {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 md_entries.push(json!({
                     "id": path.file_stem().unwrap_or_default().to_string_lossy(),
@@ -769,7 +774,9 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
                     "content": content,
                 }));
             }
-        } else if suffix.eq_ignore_ascii_case(trim_dot(&json_ext())) {
+        } else if suffix.eq_ignore_ascii_case(trim_dot(&json_ext()))
+            && paths::to_decomposed_key(&path_str).is_some()
+        {
             let raw_text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
             let content: Value = serde_json::from_str(&raw_text).map_err(|e| e.to_string())?;
             let line_count = raw_text.lines().count();

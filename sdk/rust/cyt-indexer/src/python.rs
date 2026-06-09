@@ -1,6 +1,9 @@
 #[path = "policies_python.rs"]
 mod policies_python;
 
+#[path = "pageindex_python.rs"]
+mod pageindex_python;
+
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
 use crate::tool_entries::{
     anthropic_tool_to_catalog_entry, build_catalog_from_tools, prepare_tool_entry,
@@ -202,11 +205,14 @@ fn configure_path_constants_py(
     builder_flags: (bool, bool),
 ) {
     let (builder_memory_only, write_catalog_prune) = builder_flags;
+    let defaults = PathConfig::default();
     paths::configure(PathConfig {
         md_ext: md_ext.to_string(),
         json_ext: json_ext.to_string(),
         decomposed_prefix: decomposed_prefix.to_string(),
         decomposed_root: PathBuf::from(decomposed_root),
+        skills_decomposed_prefix: defaults.skills_decomposed_prefix,
+        skills_decomposed_root: defaults.skills_decomposed_root,
         catalog_prefix: catalog_prefix.to_string(),
         builder_memory_only,
         default_catalog_dir: PathBuf::from(default_catalog_dir),
@@ -546,5 +552,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDecomposedCatalog>()?;
     m.add_function(wrap_pyfunction!(retrieve_tools_py, m)?)?;
     policies_python::register(m)?;
+    pageindex_python::register(m)?;
     Ok(())
 }

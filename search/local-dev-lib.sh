@@ -66,14 +66,14 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		[[ -x "${CYT_INDEXER_BIN}" ]] || die "cyt-indexer binary not found at ${CYT_INDEXER_BIN}"
 
 		local tools_json
-		tools_json="$(mktemp "${TMPDIR:-/tmp}/cyt-tools.XXXXXX.json")"
+		tools_json="$(mktemp "${TMPDIR:-/tmp}/cyt-tools.XXXXXX")"
 
 		info "extract tools from ${example}"
 		jq '.body.tools' "${example}" >"${tools_json}"
 
 		mkdir -p "${CYT_CATALOG_DIR}"
-		info "cyt-indexer build --tools ${tools_json} --output ${CYT_CATALOG_DIR}"
-		"${CYT_INDEXER_BIN}" build --tools "${tools_json}" --output "${CYT_CATALOG_DIR}"
+		info "cyt-indexer build tools --tools ${tools_json} --output ${CYT_CATALOG_DIR}"
+		"${CYT_INDEXER_BIN}" build tools --tools "${tools_json}" --output "${CYT_CATALOG_DIR}"
 		rm -f "${tools_json}"
 
 		[[ -f "${CYT_CATALOG_DIR}/tools.json" ]] || die "catalog build did not produce ${CYT_CATALOG_DIR}/tools.json"
@@ -177,8 +177,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 			esac
 		done
 
-		info "cyt-indexer retrieve -> ${CYT_RETRIEVE_OUT}"
-		"${CYT_INDEXER_BIN}" retrieve \
+		info "cyt-indexer retrieve tools -> ${CYT_RETRIEVE_OUT}"
+		"${CYT_INDEXER_BIN}" retrieve tools \
 			--catalog "${CYT_CATALOG_DIR}" \
 			--input "${CYT_SURVIVORS_JSON}" \
 			--output "${CYT_RETRIEVE_OUT}" \

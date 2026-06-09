@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.3.4"
+version = "0.3.5"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -18,7 +18,7 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "cyt-indexer-sdk==0.3.4",
+    "cyt-indexer-sdk==0.3.5",
     "tiktoken==0.12.0",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
