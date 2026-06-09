@@ -79,6 +79,9 @@ DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = DEFAULT_MIN_TOOLS_PRUNING
 DEFAULT_BM25_INDEX_DIR: str = "~/.config/cyt/bm25"
 DEFAULT_BM25_STEM_LANGUAGE: str = "english"
 DEFAULT_BM25_STOPWORDS: str = "en"
+DEFAULT_BM25_SCORE_TOOL: float = 0.3
+DEFAULT_BM25_PRUNE_ENUMS: bool = True
+DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
@@ -139,6 +142,9 @@ _DEFAULTS: dict[str, Any] = {
         },
         "bm25": {
             "index_dir": DEFAULT_BM25_INDEX_DIR,
+            "score_tool": DEFAULT_BM25_SCORE_TOOL,
+            "prune_enums": DEFAULT_BM25_PRUNE_ENUMS,
+            "score_tool_enum": DEFAULT_BM25_SCORE_TOOL_ENUM,
         },
     },
     "stats": {
@@ -808,6 +814,31 @@ def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
     user = load_user_config_overlay() if config is None else None
     value = _bm25_settings(cfg, user_config=user).get("stopwords", DEFAULT_BM25_STOPWORDS)
     return str(value)
+
+
+def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
+    pruning = config.get("pruning")
+    if not isinstance(pruning, dict):
+        return {}
+    stage_cfg = pruning.get("bm25")
+    return stage_cfg if isinstance(stage_cfg, dict) else {}
+
+
+def bm25_score_tool(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    value = _bm25_pruning_settings(cfg).get("score_tool", DEFAULT_BM25_SCORE_TOOL)
+    return float(value)
+
+
+def bm25_prune_enums(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return bool(_bm25_pruning_settings(cfg).get("prune_enums", DEFAULT_BM25_PRUNE_ENUMS))
+
+
+def bm25_score_tool_enum(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    value = _bm25_pruning_settings(cfg).get("score_tool_enum", DEFAULT_BM25_SCORE_TOOL_ENUM)
+    return float(value)
 
 
 def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:

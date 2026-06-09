@@ -19,8 +19,14 @@ from bm25s.tokenization import Tokenizer
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
+    DEFAULT_BM25_PRUNE_ENUMS,
+    DEFAULT_BM25_SCORE_TOOL,
+    DEFAULT_BM25_SCORE_TOOL_ENUM,
     bm25_index_dir,
     bm25_mmap_enabled,
+    bm25_prune_enums,
+    bm25_score_tool,
+    bm25_score_tool_enum,
     bm25_stem_language,
     bm25_stopwords,
     load_config,
@@ -38,13 +44,12 @@ from cyt.pruners.policies import (
     partition_catalog,
     policy_context_from_config,
 )
-from cyt.pruners.rerank import RERANK_ENUM_SCORE, RERANK_ENUMS, RERANK_SCORE
 
 logger = logging.getLogger(__name__)
 
-BM25_SCORE: float = RERANK_SCORE
-BM25_ENUM_SCORE: float = RERANK_ENUM_SCORE
-BM25_ENUMS: bool = RERANK_ENUMS
+BM25_SCORE: float = DEFAULT_BM25_SCORE_TOOL
+BM25_ENUM_SCORE: float = DEFAULT_BM25_SCORE_TOOL_ENUM
+BM25_ENUMS: bool = DEFAULT_BM25_PRUNE_ENUMS
 BM25_STATS_ID: str = "bm25"
 _MANIFEST_NAME = "manifest.json"
 
@@ -290,17 +295,31 @@ def score_items(
     items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
 
 
-def prune_bm25_catalog(data: dict[str, Any]) -> dict[str, Any]:
+def _bm25_thresholds(config: dict[str, Any] | None = None) -> tuple[float, float, bool]:
+    cfg = config or load_config()
+    return (
+        bm25_score_tool(cfg),
+        bm25_score_tool_enum(cfg),
+        bm25_prune_enums(cfg),
+    )
+
+
+def prune_bm25_catalog(
+    data: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Drop catalog items below BM25 score thresholds."""
+    score_tool, score_tool_enum, prune_enums = _bm25_thresholds(config)
     json_items = data.get("json")
     if isinstance(json_items, list):
-        data["json"] = [item for item in json_items if float(item.get("score", 0)) >= BM25_SCORE]
+        data["json"] = [item for item in json_items if float(item.get("score", 0)) >= score_tool]
 
-    if BM25_ENUMS:
+    if prune_enums:
         md_items = data.get("md")
         if isinstance(md_items, list):
             data["md"] = [
-                item for item in md_items if float(item.get("score", 0)) >= BM25_ENUM_SCORE
+                item for item in md_items if float(item.get("score", 0)) >= score_tool_enum
             ]
 
     return data
@@ -341,12 +360,13 @@ def bm25_catalog_dict(
         prepare_bm25_documents(data["json"], extract_json_catalog_document)
         score_items(query, data["json"], index, list_key="json")
 
-    if BM25_ENUMS and isinstance(data.get("md"), list):
+    _, _, prune_enums = _bm25_thresholds(cfg)
+    if prune_enums and isinstance(data.get("md"), list):
         prepare_bm25_documents(data["md"], extract_md_catalog_document)
         score_items(query, data["md"], index, list_key="md")
 
     if prune:
-        data = prune_bm25_catalog(data)
+        data = prune_bm25_catalog(data, config=cfg)
 
     if merge_pinned and pinned:
         data = merge_catalog(data, pinned)

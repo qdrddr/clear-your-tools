@@ -358,7 +358,17 @@ def test_bm25_catalog_dict_returns_stage_usage(
     assert usage.provider_dns_name == BM25_STATS_ID
 
 
-def test_bm25_score_threshold_constant_matches_rerank() -> None:
-    from cyt.pruners.rerank import RERANK_SCORE
+def test_bm25_score_threshold_constant_matches_config_defaults() -> None:
+    from cyt.config import (
+        DEFAULT_BM25_PRUNE_ENUMS,
+        DEFAULT_BM25_SCORE_TOOL,
+        DEFAULT_BM25_SCORE_TOOL_ENUM,
+        bm25_prune_enums,
+        bm25_score_tool,
+        bm25_score_tool_enum,
+    )
 
-    assert BM25_SCORE == RERANK_SCORE
+    assert BM25_SCORE == DEFAULT_BM25_SCORE_TOOL
+    assert bm25_score_tool() == DEFAULT_BM25_SCORE_TOOL
+    assert bm25_score_tool_enum() == DEFAULT_BM25_SCORE_TOOL_ENUM
+    assert bm25_prune_enums() == DEFAULT_BM25_PRUNE_ENUMS

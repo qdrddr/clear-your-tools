@@ -21,4 +21,4 @@ curl -s "http://localhost:${PORT}/health"
 
 # uv tool uninstall clear-your-tools
 # uv tool install 'clear-your-tools[all]'
-# Retrieve up-to-date documentation for latest versions of qdrddr/clear-your-tools framework using Context7 library. Provide a brief explanation of its purpose.
+# Retrieve up-to-date documentation for latest versions of qdrddr/clear-your-tools framework using Context7 library. Provide a brief explanation of its purpose. Keep it short and simple.
