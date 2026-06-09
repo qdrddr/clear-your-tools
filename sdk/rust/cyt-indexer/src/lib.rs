@@ -1,3 +1,7 @@
+//! Flat re-exports and stable cross-language names (`build_catalog_index`, etc.)
+//! intentionally repeat module prefixes where clippy would prefer shorter names.
+#![allow(clippy::pub_use, clippy::module_name_repetitions)]
+
 pub mod build;
 pub mod catalog_builder;
 pub mod catalog_io;
