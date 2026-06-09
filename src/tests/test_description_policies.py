@@ -173,6 +173,32 @@ def test_prune_all_descriptions_root_pruned_reinstates_required_only() -> None:
     assert "description" not in props["required_field"]
 
 
+def test_prune_all_descriptions_root_pruned_drops_leaked_optional_chunks() -> None:
+    """Optional chunks that pass prune_all filter must not appear in case #1 output."""
+    entry = _make_entry("mcp__test__goal", _schema_with_optional(), mcp=True)
+    index = build_catalog_index([entry], collect_enums(entry["full_schema"]["inputSchema"]))
+    catalog = index.to_catalog_dict()
+    _, optionals = _root_and_optionals(catalog, "mcp__test__goal")
+    leaked_optional = copy.deepcopy(optionals[0])
+    leaked_optional["score"] = 1.0
+    from cyt.pruners.policies import scoring_policy_context
+
+    score_ctx = scoring_policy_context(
+        output_policy_context_from_config(mcp="prune_all_descriptions"),
+    )
+    surviving = filter_recompose_json_entries([leaked_optional], ctx=score_ctx)
+    assert surviving == [leaked_optional]
+    tool = _recompose_tool(
+        entry,
+        mcp="prune_all_descriptions",
+        surviving_chunks=surviving,
+    )
+    assert "description" not in tool
+    props = tool["inputSchema"]["properties"]
+    assert list(props.keys()) == ["required_field"]
+    assert "description" not in props["required_field"]
+
+
 def test_nested_partial_survival_per_chunk_descriptions() -> None:
     entry = _make_entry("mcp__lean_ctx__ctx_call", _ctx_call_schema(), mcp=True)
     index = build_catalog_index([entry], collect_enums(entry["full_schema"]["inputSchema"]))

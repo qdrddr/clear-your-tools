@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from cyt.common.token_usage import StageTokenUsage
@@ -47,6 +50,37 @@ from cyt.pruners.policies import (
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 
 logger = logging.getLogger(__name__)
+
+_DEBUG_LOG_PATH = Path(
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-16df8c.log",
+)
+
+
+def _debug_prune_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "16df8c",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    # #endregion
+
 
 SYSTEM_REMINDER_PREFIX = "<system-reminder>"
 
@@ -406,6 +440,21 @@ def _run_catalog_pruning(
         config,
         terminal_stage=terminal_stage,
     )
+    # #region agent log
+    _debug_prune_log(
+        hypothesis_id="A",
+        location="anthropic.py:_run_catalog_pruning:policies",
+        message="resolved pruning policies",
+        data={
+            "terminal_stage": terminal_stage,
+            "pipeline": pipeline,
+            "system_policy": reinstate_ctx.system_policy,
+            "mcp_policy": reinstate_ctx.mcp_policy,
+            "scoring_system": (ctx or reinstate_ctx).system_policy,
+            "scoring_mcp": (ctx or reinstate_ctx).mcp_policy,
+        },
+    )
+    # #endregion
     (
         data,
         decomposed,
@@ -441,6 +490,29 @@ def _run_catalog_pruning(
         apply_decomposed_score_filter=False,
         ctx=reinstate_ctx,
     )
+    # #region agent log
+    _debug_prune_log(
+        hypothesis_id="C",
+        location="anthropic.py:_run_catalog_pruning:retrieve",
+        message="tool descriptions after retrieve",
+        data={
+            tool.get("name", ""): {
+                "tool_description_len": len(str(tool.get("description") or "")),
+                "required_prop_desc": {
+                    prop: "description" in spec
+                    for prop, spec in (
+                        (tool.get("inputSchema") or tool.get("input_schema") or {})
+                        .get("properties", {})
+                        .items()
+                    )
+                    if isinstance(spec, dict)
+                },
+            }
+            for tool in merged
+            if isinstance(tool, dict)
+        },
+    )
+    # #endregion
     merged = drop_recomposed_tools_with_empty_properties(merged, index, reinstate_ctx)
     return (
         merged,
@@ -810,12 +882,12 @@ def _recompose_catalog_data(
 
 
 def _log_operator_message(msg: str) -> None:
-    """Mirror a message to the module logger, stdout, and the active debug log file."""
-    from cyt.proxy.transport import append_debug_log_block, debug_endpoint_log_path
+    """Mirror a message to the module logger, stdout, and the proxy debug log file."""
+    from cyt.proxy.transport import append_debug_log_block, debug_endpoint_proxy_log_path
 
     logger.info(msg)
     print(msg, flush=True)
-    if (log_path := debug_endpoint_log_path.get()) is not None:
+    if (log_path := debug_endpoint_proxy_log_path.get()) is not None:
         append_debug_log_block(log_path, label="operator", content=msg)
 
 

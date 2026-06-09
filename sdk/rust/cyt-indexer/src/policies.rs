@@ -1372,6 +1372,12 @@ pub fn append_description_reinstate_entries(
                 }
             }
             if output_policy == ToolPolicy::PruneAllDescriptions {
+                // Case #1: root pruned — drop optional chunks that leaked through
+                // prune_all scoring in filter_recompose (they must not appear in output).
+                result.retain(|item| {
+                    !(is_decomposed_optional_property_chunk(item)
+                        && root_tool_id_from_chunk(item) == tool_id)
+                });
                 continue;
             }
         }

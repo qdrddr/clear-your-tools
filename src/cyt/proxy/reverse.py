@@ -49,7 +49,7 @@ from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
     append_debug_log_block,
-    debug_endpoint_log_path,
+    debug_endpoint_proxy_log_path,
     filter_headers,
     forward_upstream,
     header_content_encoding,
@@ -57,6 +57,7 @@ from cyt.proxy.transport import (
     new_debug_session_id,
     reverse_debug_log_path,
     reverse_debug_original_log_path,
+    reverse_debug_proxy_log_path,
     run_hypercorn_async,
     run_uvicorn_async,
     save_debug_snapshot,
@@ -386,6 +387,7 @@ def _format_debug_pruning_lines(
     request_seq: int,
     endpoint: str | None = None,
     request_path: str | None = None,
+    include_paths: bool = True,
 ) -> list[str]:
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     header_parts = [f"debug request #{request_seq} @ {stamp}"]
@@ -406,8 +408,9 @@ def _format_debug_pruning_lines(
         lines.append(query if query else "(none extracted)")
         lines.append("")
         lines.extend(_format_decomposed_table_lines(pruning))
-        lines.extend(_format_decomposed_paths_lines(pruning))
-        lines.extend(_format_removed_chunks_lines(pruning))
+        if include_paths:
+            lines.extend(_format_decomposed_paths_lines(pruning))
+            lines.extend(_format_removed_chunks_lines(pruning))
         if status := pruning.get("status"):
             tools_in = pruning.get("tools_in")
             tools_out = pruning.get("tools_out")
@@ -443,19 +446,29 @@ def _print_debug_pruning(
     request_seq: int,
     endpoint: str | None = None,
     request_path: str | None = None,
-    log_path: Path | None = None,
+    proxy_log_path: Path | None = None,
 ) -> None:
-    text = "\n".join(
+    summary_text = "\n".join(
         _format_debug_pruning_lines(
             pruning,
             request_seq=request_seq,
             endpoint=endpoint,
             request_path=request_path,
+            include_paths=False,
         ),
     )
-    print(text, flush=True)
-    if log_path is not None:
-        append_debug_log_block(log_path, label="pruning", content=text)
+    print(summary_text, flush=True)
+    if proxy_log_path is not None:
+        verbose_text = "\n".join(
+            _format_debug_pruning_lines(
+                pruning,
+                request_seq=request_seq,
+                endpoint=endpoint,
+                request_path=request_path,
+                include_paths=True,
+            ),
+        )
+        append_debug_log_block(proxy_log_path, label="pruning", content=verbose_text)
 
 
 def _input_tools_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -627,6 +640,7 @@ async def _save_debug_original_request(
         "path": request_path,
         "query": query or None,
         "target_url": target_url,
+        "timestamp": datetime.now(UTC).isoformat(),
         "headers": dict(request.headers),
         "body": body_for_original_snapshot(
             body,
@@ -673,12 +687,13 @@ async def _handle_debug_snapshot(
             pruning_meta.get("error"),
         )
     log_path = reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir)
+    proxy_log_path = reverse_debug_proxy_log_path(endpoint_name, debug_log_dir=debug_log_dir)
     _print_debug_pruning(
         pruning_meta,
         request_seq=request_seq,
         endpoint=endpoint_name,
         request_path=request_path,
-        log_path=log_path,
+        proxy_log_path=proxy_log_path,
     )
     snapshot = {
         "debug_request_seq": request_seq,
@@ -686,6 +701,7 @@ async def _handle_debug_snapshot(
         "path": request_path,
         "query": query or None,
         "target_url": target_url,
+        "timestamp": datetime.now(UTC).isoformat(),
         "headers": forward_headers,
         "body": body_for_snapshot(
             body,
@@ -768,8 +784,8 @@ async def _process_buffered_proxy_body(
     input_tools: list[dict[str, Any]] | None = None
     debug_log_token = None
     if debug:
-        debug_log_token = debug_endpoint_log_path.set(
-            reverse_debug_log_path(endpoint_name, debug_log_dir=debug_log_dir),
+        debug_log_token = debug_endpoint_proxy_log_path.set(
+            reverse_debug_proxy_log_path(endpoint_name, debug_log_dir=debug_log_dir),
         )
     try:
         body, pruning, input_tools = await transform_request_body(
@@ -781,7 +797,7 @@ async def _process_buffered_proxy_body(
         )
     finally:
         if debug_log_token is not None:
-            debug_endpoint_log_path.reset(debug_log_token)
+            debug_endpoint_proxy_log_path.reset(debug_log_token)
 
     pruning_meta = pruning.to_dict() if pruning is not None else None
     if debug:

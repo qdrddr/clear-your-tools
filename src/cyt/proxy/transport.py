@@ -7,7 +7,8 @@ import json
 import os
 import sys
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,8 +21,8 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
 
-debug_endpoint_log_path: ContextVar[Path | None] = ContextVar(
-    "debug_endpoint_log_path",
+debug_endpoint_proxy_log_path: ContextVar[Path | None] = ContextVar(
+    "debug_endpoint_proxy_log_path",
     default=None,
 )
 
@@ -65,6 +66,41 @@ def append_debug_log_block(path: Path, *, label: str, content: str) -> None:
         f.write(block)
 
 
+@contextmanager
+def _debug_json_file_lock(fd: int) -> Iterator[None]:
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
+    """Append a request object to a JSON array debug file (never rotates/truncates)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as f, _debug_json_file_lock(f.fileno()):
+        f.seek(0)
+        content = f.read()
+        if content.strip():
+            entries = json.loads(content)
+            if not isinstance(entries, list):
+                raise ValueError(f"debug JSON file must contain an array: {path}")
+        else:
+            entries = []
+        entries.append(entry)
+        encoded = json.dumps(entries, indent=2, default=str)
+        f.seek(0)
+        f.truncate()
+        f.write(encoded)
+        if not encoded.endswith("\n"):
+            f.write("\n")
+
+
 def append_debug_snapshot(
     path: Path,
     snapshot: dict[str, Any],
@@ -72,11 +108,7 @@ def append_debug_snapshot(
     max_bytes: int | None = None,
 ) -> None:
     del max_bytes  # body truncation is applied when building the snapshot
-    append_debug_log_block(
-        path,
-        label="snapshot",
-        content=json.dumps(snapshot, indent=2),
-    )
+    append_debug_json_entry(path, snapshot)
 
 
 async def save_debug_snapshot(
@@ -100,7 +132,7 @@ def reverse_debug_log_path(
     *,
     debug_log_dir: Path | None = None,
 ) -> Path:
-    name = f"{endpoint_name}.log"
+    name = f"{endpoint_name}.json"
     if debug_log_dir is not None:
         return debug_log_dir / name
     return Path(name)
@@ -111,8 +143,20 @@ def reverse_debug_original_log_path(
     *,
     debug_log_dir: Path | None = None,
 ) -> Path:
-    """Pre-mutation request log (raw body) for diffing against ``reverse_debug_log_path``."""
-    name = f"{endpoint_name}-original.log"
+    """Pre-mutation request JSON log for diffing against ``reverse_debug_log_path``."""
+    name = f"{endpoint_name}-original.json"
+    if debug_log_dir is not None:
+        return debug_log_dir / name
+    return Path(name)
+
+
+def reverse_debug_proxy_log_path(
+    endpoint_name: str,
+    *,
+    debug_log_dir: Path | None = None,
+) -> Path:
+    """Pruning/operator debug log (separate from JSON request snapshots in ``reverse_debug_log_path``)."""
+    name = f"{endpoint_name}-proxy.log"
     if debug_log_dir is not None:
         return debug_log_dir / name
     return Path(name)
@@ -125,11 +169,7 @@ def append_original_debug_snapshot(
     max_bytes: int | None = None,
 ) -> None:
     del max_bytes
-    append_debug_log_block(
-        path,
-        label="original-request",
-        content=json.dumps(snapshot, indent=2),
-    )
+    append_debug_json_entry(path, snapshot)
 
 
 async def save_original_debug_snapshot(

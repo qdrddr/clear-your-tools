@@ -12,30 +12,39 @@ from cyt.proxy.transport import (
     append_original_debug_snapshot,
     reverse_debug_log_path,
     reverse_debug_original_log_path,
+    reverse_debug_proxy_log_path,
 )
 
 
 def test_debug_log_appends_all_requests_without_rotation(tmp_path: Path) -> None:
-    log_path = tmp_path / "openai.log"
-    append_debug_log_block(log_path, label="pruning", content="request-1\n")
+    log_path = tmp_path / "openai.json"
+    proxy_log_path = tmp_path / "openai-proxy.log"
+    append_debug_log_block(proxy_log_path, label="pruning", content="request-1\n")
     append_debug_snapshot(log_path, {"method": "POST", "path": "/v1/responses"})
-    append_debug_log_block(log_path, label="pruning", content="request-2\n")
+    append_debug_log_block(proxy_log_path, label="pruning", content="request-2\n")
     append_debug_snapshot(log_path, {"method": "POST", "path": "/v1/responses"})
 
-    text = log_path.read_text(encoding="utf-8")
-    assert text.count("pruning") == 2
-    assert text.count("snapshot") == 2
-    assert "request-1" in text
-    assert "request-2" in text
-    assert text.index("request-1") < text.index("request-2")
+    request_entries = json.loads(log_path.read_text(encoding="utf-8"))
+    proxy_text = proxy_log_path.read_text(encoding="utf-8")
+    assert isinstance(request_entries, list)
+    assert len(request_entries) == 2
+    assert request_entries[0]["path"] == "/v1/responses"
+    assert request_entries[1]["path"] == "/v1/responses"
+    assert proxy_text.count("pruning") == 2
+    assert "request-1" in proxy_text
+    assert "request-2" in proxy_text
+    assert proxy_text.index("request-1") < proxy_text.index("request-2")
 
 
 def test_reverse_debug_original_log_path(tmp_path: Path) -> None:
     assert reverse_debug_original_log_path("anthropic", debug_log_dir=tmp_path) == (
-        tmp_path / "anthropic-original.log"
+        tmp_path / "anthropic-original.json"
     )
     assert reverse_debug_log_path("anthropic", debug_log_dir=tmp_path) == (
-        tmp_path / "anthropic.log"
+        tmp_path / "anthropic.json"
+    )
+    assert reverse_debug_proxy_log_path("anthropic", debug_log_dir=tmp_path) == (
+        tmp_path / "anthropic-proxy.log"
     )
 
 
@@ -56,16 +65,20 @@ def test_original_debug_log_uses_separate_file(tmp_path: Path) -> None:
     original_path = reverse_debug_original_log_path("openai", debug_log_dir=tmp_path)
     mutated_path = reverse_debug_log_path("openai", debug_log_dir=tmp_path)
     body = {"tools": [], "model": "gpt-test"}
-    payload = {"debug_request_seq": 1, "body": body, "path": "/openai/v1/messages"}
+    payload = {
+        "debug_request_seq": 1,
+        "body": body,
+        "path": "/openai/v1/messages",
+        "target_url": "https://api.openai.com/v1/responses",
+        "timestamp": "2026-06-08T12:00:00+00:00",
+    }
     append_original_debug_snapshot(original_path, payload)
     append_debug_snapshot(mutated_path, payload)
 
-    original_text = original_path.read_text(encoding="utf-8")
-    mutated_text = mutated_path.read_text(encoding="utf-8")
-    assert "original-request" in original_text
-    assert "snapshot" in mutated_text
-    assert "original-request" not in mutated_text
-    assert '"body": {' in original_text
-    assert '"body": "{' not in original_text
-    logged = json.loads(original_text.rsplit("---", 1)[-1].strip())
-    assert logged["body"] == body
+    original_entries = json.loads(original_path.read_text(encoding="utf-8"))
+    mutated_entries = json.loads(mutated_path.read_text(encoding="utf-8"))
+    assert len(original_entries) == 1
+    assert len(mutated_entries) == 1
+    assert original_entries[0]["body"] == body
+    assert mutated_entries[0]["body"] == body
+    assert original_entries[0]["timestamp"] == "2026-06-08T12:00:00+00:00"

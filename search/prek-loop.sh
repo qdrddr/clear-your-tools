@@ -10,6 +10,10 @@
 #   ./search/prek-loop.sh
 #
 # Requires: git, uv, prek (via uv run)
+#
+# TASK:
+# Run `prek run -a` iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality.
+
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
