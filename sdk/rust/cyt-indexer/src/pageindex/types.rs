@@ -109,18 +109,21 @@ impl SkillsIndex {
         paths.sort();
         for rel_path in paths {
             let content = &self.files[rel_path];
-            let is_node_md = Path::new(rel_path)
+            let path = Path::new(rel_path);
+            let is_node_md = path
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
-            if !is_node_md || rel_path.ends_with("document.json") {
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                && !rel_path.contains("/chunks/");
+            let is_chunk_md = rel_path.contains("/chunks/") && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+            if (!is_node_md && !is_chunk_md) || rel_path.ends_with("document.json") {
                 continue;
             }
-            let id = Path::new(rel_path)
+            let id = path
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            md_entries.push(json!({
+            let mut entry = json!({
                 "id": id,
                 "file_path": rel_path,
                 "score": 1.0,
@@ -128,7 +131,18 @@ impl SkillsIndex {
                 "end_line": 1,
                 "language": "markdown",
                 "content": content,
-            }));
+            });
+            if is_chunk_md
+                && let Some(parent) = path.parent().and_then(|p| p.parent())
+                && let Some(doc_id) = parent.file_name()
+                && let Some(entry_obj) = entry.as_object_mut()
+            {
+                entry_obj.insert(
+                    "doc_id".to_string(),
+                    Value::String(doc_id.to_string_lossy().into_owned()),
+                );
+            }
+            md_entries.push(entry);
         }
         json!({ "md": md_entries })
     }
@@ -182,6 +196,11 @@ pub fn document_json_rel(doc_id: &str) -> String {
 #[must_use]
 pub fn node_md_rel(doc_id: &str, node_id: u32) -> String {
     format!("{}{doc_id}/{node_id}.md", skills_decomposed_prefix())
+}
+
+#[must_use]
+pub fn chunk_md_rel(doc_id: &str, chunk_id: u32) -> String {
+    format!("{}{doc_id}/chunks/{chunk_id}.md", skills_decomposed_prefix())
 }
 
 #[must_use]

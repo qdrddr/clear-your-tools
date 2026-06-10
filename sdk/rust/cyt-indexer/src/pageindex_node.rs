@@ -1,3 +1,4 @@
+use crate::bm25_cohesion::{Bm25CohesionChunker, Bm25CohesionConfig};
 use crate::pageindex::{
     build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
     get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids,
@@ -29,19 +30,23 @@ fn reconstruct_options_from_napi(opts: Option<ReconstructOptionsNapi>) -> Recons
 pub struct PageIndexConfigNapi {
     pub if_add_node_id: Option<bool>,
     pub if_add_node_text: Option<bool>,
+    pub bm25_cohesion: Option<Value>,
 }
 
 fn page_index_config_from_napi(config: Option<PageIndexConfigNapi>) -> PageIndexConfig {
-    let mut cfg = PageIndexConfig::default();
+    let mut val = serde_json::json!({});
     if let Some(c) = config {
         if let Some(v) = c.if_add_node_id {
-            cfg.if_add_node_id = v;
+            val["if_add_node_id"] = serde_json::json!(v);
         }
         if let Some(v) = c.if_add_node_text {
-            cfg.if_add_node_text = v;
+            val["if_add_node_text"] = serde_json::json!(v);
+        }
+        if let Some(b) = c.bm25_cohesion {
+            val["bm25_cohesion"] = b;
         }
     }
-    cfg
+    PageIndexConfig::from_value(&val)
 }
 
 #[must_use]
@@ -223,7 +228,7 @@ pub fn get_skill_content_retrieve_result_napi(
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     Ok(get_content_retrieve_result(
         &skills,
         doc_id.as_ref(),
@@ -247,7 +252,7 @@ pub fn reconstruct_skill_markdown_napi(
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     let result = reconstruct_skill_markdown(
         &skills,
         doc_id.as_ref(),
@@ -280,7 +285,7 @@ pub fn write_reconstructed_skill_napi(
     let doc_id = doc_id.into_boxed_str();
     let catalog_dir = catalog_dir.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     let output = write_reconstructed_skill(
         PathBuf::from(catalog_dir.as_ref()).as_path(),
         &skills,
@@ -302,17 +307,28 @@ pub fn get_skill_line_content_napi(
     doc_id: String,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
 ) -> Result<Value> {
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     Ok(get_line_content(
         &skills,
         doc_id.as_ref(),
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
     ))
+}
+
+/// # Errors
+///
+/// Returns an error when the chunk-id spec format is invalid.
+#[napi]
+pub fn parse_skill_chunk_ids_napi(spec: String) -> Result<Vec<u32>> {
+    let spec = spec.into_boxed_str();
+    crate::pageindex::parse_chunk_ids(spec.as_ref()).map_err(Error::from_reason)
 }
 
 /// # Errors
@@ -390,4 +406,27 @@ impl SkillsBuilderNapi {
             .to_skills_dict()
             .ok_or_else(|| Error::from_reason("index not built"))
     }
+}
+
+/// # Errors
+///
+/// Returns an error when config validation fails.
+#[napi]
+pub fn bm25_cohesion_chunk_napi(text: String, config: Option<Value>) -> Result<Value> {
+    let cfg = config.map_or_else(Bm25CohesionConfig::default, |v| Bm25CohesionConfig::from_partial(&v));
+    let text = text.into_boxed_str();
+    let chunker = Bm25CohesionChunker::new(cfg).map_err(Error::from_reason)?;
+    let chunks: Vec<Value> = chunker
+        .chunk(text.as_ref())
+        .into_iter()
+        .map(|c| {
+            serde_json::json!({
+                "text": c.text,
+                "start_index": c.start_index,
+                "end_index": c.end_index,
+                "token_count": c.token_count,
+            })
+        })
+        .collect();
+    Ok(Value::Array(chunks))
 }

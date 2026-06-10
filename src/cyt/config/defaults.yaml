@@ -234,6 +234,22 @@ skills:
   pageindex:
     if_add_node_id: true
     if_add_node_text: false
+    bm25_cohesion:
+      window_mode: sentence
+      chunk_size: 2048
+      token_counter: approximate
+      similarity_window: 3
+      threshold: 0.8
+      merge_threshold: 0.7
+      skip_window: 0
+      min_units_per_chunk: 1
+      min_characters_per_sentence: 24
+      filter_window: 5
+      filter_polyorder: 3
+      filter_tolerance: 0.2
+      use_stopwords: true
+      include_delim: prev
+      stem_language: english
 
     toc_check_page_num: 20
     max_page_num_each_node: 10

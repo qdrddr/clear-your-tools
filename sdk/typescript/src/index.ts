@@ -49,6 +49,12 @@ export {
   extractMdCatalogDocument,
 } from "./documents.js";
 export {
+  bm25CohesionChunk,
+  cohesionConfigToNative,
+  defaultBm25CohesionConfig,
+  type CohesionChunk,
+} from "./bm25Cohesion.js";
+export {
   SkillsBuilder,
   buildSkillsIndex,
   defaultPageIndexConfig,
@@ -59,12 +65,18 @@ export {
   getSkillStructure,
   loadSkillsIndexFromDir,
   mdToTree,
+  pageIndexConfigFromMapping,
+  pageIndexConfigFromPartial,
+  pageIndexConfigToNative,
+  parseSkillChunkIds,
   parseSkillNodeIds,
   reconstructSkillMarkdown,
   skillsIndexFromDecomposedDir,
   writeReconstructedSkill,
   writeSkillsIndex,
+  type Bm25CohesionConfig,
   type PageIndexConfig,
+  type PageIndexConfigInput,
   type ReconstructOptions,
   type SkillsIndexDict,
 } from "./pageindex.js";

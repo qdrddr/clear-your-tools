@@ -135,6 +135,24 @@ fn load_decomposed_files_into_index(catalog_dir: &Path, index: &mut SkillsIndex)
                 }
             }
         }
+
+        let chunks_dir = doc_dir.join("chunks");
+        if chunks_dir.is_dir() {
+            for file_entry in fs::read_dir(&chunks_dir).map_err(|e| e.to_string())? {
+                let file_entry = file_entry.map_err(|e| e.to_string())?;
+                let path = file_entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let rel = path
+                    .strip_prefix(catalog_dir)
+                    .map_err(|e| e.to_string())?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                index.files.insert(rel, content);
+            }
+        }
     }
     Ok(())
 }

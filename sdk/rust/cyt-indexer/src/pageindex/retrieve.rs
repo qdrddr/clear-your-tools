@@ -2,9 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
+use super::chunk_id::parse_chunk_ids;
 use super::node_id::{node_id_from_value, parse_node_id_token};
 use super::tree::{remove_fields, structure_to_list};
-use super::types::{node_md_rel, SkillDocument, SkillsIndex};
+use super::types::{chunk_md_rel, node_md_rel, SkillDocument, SkillsIndex};
 
 fn u64_to_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(0)
@@ -125,23 +126,31 @@ pub fn get_document_structure<S: std::hash::BuildHasher>(
     remove_fields(&doc.structure, &["text"])
 }
 
-/// Return line content for nodes matched by line numbers and/or node ids.
-///
-/// Each spec in `line_num_specs` or `node_id_specs` may be a single value or a
-/// comma/range expression such as `"5-7"` or `"3,8"`.
+pub(crate) fn merge_chunk_id_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
+    let mut merged = Vec::new();
+    for spec in specs {
+        merged.extend(parse_chunk_ids(spec)?);
+    }
+    merged.sort_unstable();
+    merged.dedup();
+    Ok(merged)
+}
+
+/// Return line content for nodes matched by line numbers, node ids, and/or chunk ids.
 #[must_use]
 pub fn get_line_content(
     index: &SkillsIndex,
     doc_id: &str,
     line_num_specs: &[&str],
     node_id_specs: &[&str],
+    chunk_id_specs: &[&str],
 ) -> Value {
     let Some(doc) = index.documents.get(doc_id) else {
         return json!({ "error": format!("Document {doc_id} not found") });
     };
 
-    if line_num_specs.is_empty() && node_id_specs.is_empty() {
-        return json!({ "error": "content query requires at least one --line_num or --node_id" });
+    if line_num_specs.is_empty() && node_id_specs.is_empty() && chunk_id_specs.is_empty() {
+        return json!({ "error": "content query requires at least one --line_num, --node_id, or --chunk_id" });
     }
 
     let line_nums = match merge_line_num_specs(line_num_specs) {
@@ -156,9 +165,32 @@ pub fn get_line_content(
             return json!({ "error": format!("Invalid node_id format. Use \"5-7\", \"3,8\", or \"12\". Error: {e}") });
         }
     };
+    let chunk_ids = match merge_chunk_id_specs(chunk_id_specs) {
+        Ok(ids) => ids,
+        Err(e) => {
+            return json!({ "error": format!("Invalid chunk_id format. Error: {e}") });
+        }
+    };
 
-    if line_nums.is_empty() && node_ids.is_empty() {
+    if line_nums.is_empty() && node_ids.is_empty() && chunk_ids.is_empty() {
         return json!([]);
+    }
+
+    let mut results = Vec::new();
+
+    if !chunk_ids.is_empty() {
+        let chunk_set: HashSet<u32> = chunk_ids.into_iter().collect();
+        for chunk_id in chunk_set {
+            let rel = chunk_md_rel(doc_id, chunk_id);
+            if let Some(raw) = index.files.get(&rel) {
+                results.push(json!({
+                    "chunk_id": chunk_id,
+                    "content": strip_decomposed_frontmatter(raw),
+                }));
+            }
+        }
+        results.sort_by_key(|v| v.get("chunk_id").and_then(Value::as_u64).unwrap_or(0));
+        return Value::Array(results);
     }
 
     let line_set: HashSet<u32> = line_nums.into_iter().collect();
@@ -166,7 +198,6 @@ pub fn get_line_content(
     let match_by_line = !line_set.is_empty();
     let match_by_node = !node_set.is_empty();
 
-    let mut results = Vec::new();
     let mut seen = HashSet::new();
 
     let flat_nodes = structure_to_list(&doc.structure);
@@ -205,7 +236,7 @@ pub fn get_line_content(
 /// Convenience wrapper for a single `line_num` spec string.
 #[must_use]
 pub fn get_line_content_from_spec(index: &SkillsIndex, doc_id: &str, line_num_spec: &str) -> Value {
-    get_line_content(index, doc_id, &[line_num_spec], &[])
+    get_line_content(index, doc_id, &[line_num_spec], &[], &[])
 }
 
 fn resolve_node_content(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<String, Value>) -> String {

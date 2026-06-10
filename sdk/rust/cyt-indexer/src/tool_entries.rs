@@ -5,10 +5,7 @@ use crate::build::{build_catalog_index, CatalogIndex};
 use crate::paths::collect_enums;
 use serde_json::{json, Value};
 
-/// Rough `cl100k_base` token estimate for summary truncation (conservative vs tiktoken).
-fn approximate_token_count(text: &str) -> usize {
-    text.chars().map(|c| if c.is_ascii() { 1u32 } else { 2 }).sum::<u32>() as usize / 2 + 1
-}
+use crate::bm25_cohesion::approximate_token_count;
 
 /// Truncate text to at most `max_tokens` (approximate), preferring a word boundary.
 #[must_use]

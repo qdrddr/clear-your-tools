@@ -1,12 +1,13 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
-    get_skill_content_retrieve_result, get_skill_document, get_skill_structure,
-    load_catalog_from_dir, load_skills_index_from_dir, parse_tool_policy_pair,
-    per_tool_policies_from_value, parse_tool_policy, policy_context_from_values,
-    removed_chunks, retrieve_tools_from_catalog, write_reconstructed_skill, DecomposedCatalog,
-    PageIndexConfig, PolicyContext, ReconstructOptions, RemovedChunksOptions, RetrieveOptions,
-    SkillsBuilder,
+    get_skill_content_retrieve_result, get_skill_document, get_skill_line_content,
+    get_skill_structure, load_catalog_from_dir, load_skills_index_from_dir,
+    parse_tool_policy_pair, per_tool_policies_from_value, parse_tool_policy,
+    policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
+    write_reconstructed_skill, DecomposedCatalog, PageIndexConfig, PolicyContext,
+    ReconstructOptions, RemovedChunksOptions, RetrieveOptions, SkillsBuilder, TokenCounterKind,
+    WindowMode,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -55,6 +56,18 @@ enum BuildTarget {
         skill_dirs: Vec<PathBuf>,
         #[arg(long)]
         output: PathBuf,
+        #[arg(long, value_enum, default_value_t = WindowModeArg::Sentence)]
+        window_mode: WindowModeArg,
+        #[arg(long)]
+        similarity_window: Option<usize>,
+        #[arg(long, default_value_t = 2048)]
+        chunk_size: usize,
+        #[arg(long, value_enum, default_value_t = TokenCounterArg::Approximate)]
+        token_counter: TokenCounterArg,
+        #[arg(long, default_value_t = 0)]
+        skip_window: usize,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 }
 
@@ -99,6 +112,8 @@ enum RetrieveTarget {
         line_nums: Vec<String>,
         #[arg(long = "node_id")]
         node_ids: Vec<String>,
+        #[arg(long = "chunk_id")]
+        chunk_ids: Vec<String>,
         #[arg(long)]
         output: Option<PathBuf>,
         #[arg(long)]
@@ -123,6 +138,36 @@ enum RemovedTarget {
         #[arg(long)]
         score_filter: bool,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum WindowModeArg {
+    Sentence,
+    Word,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum TokenCounterArg {
+    Approximate,
+    Character,
+}
+
+impl From<WindowModeArg> for WindowMode {
+    fn from(value: WindowModeArg) -> Self {
+        match value {
+            WindowModeArg::Sentence => Self::Sentence,
+            WindowModeArg::Word => Self::Word,
+        }
+    }
+}
+
+impl From<TokenCounterArg> for TokenCounterKind {
+    fn from(value: TokenCounterArg) -> Self {
+        match value {
+            TokenCounterArg::Approximate => Self::Approximate,
+            TokenCounterArg::Character => Self::Character,
+        }
+    }
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -219,13 +264,58 @@ fn run_build_tools(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn run_build_skills(skill_dirs: &[PathBuf], output: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if skill_dirs.is_empty() {
+fn page_index_config_from_cli(
+    window_mode: WindowModeArg,
+    similarity_window: Option<usize>,
+    chunk_size: usize,
+    token_counter: TokenCounterArg,
+    skip_window: usize,
+    config_path: Option<&Path>,
+) -> Result<PageIndexConfig, Box<dyn std::error::Error>> {
+    let mode: WindowMode = window_mode.into();
+    let mut cfg = if let Some(path) = config_path {
+        let raw = fs::read_to_string(path)?;
+        PageIndexConfig::from_value(&serde_json::from_str(&raw)?)
+    } else {
+        PageIndexConfig::default()
+    };
+    cfg.bm25_cohesion.apply_mode_defaults(mode);
+    cfg.bm25_cohesion.window_mode = mode;
+    cfg.bm25_cohesion.chunk_size = chunk_size;
+    cfg.bm25_cohesion.token_counter = token_counter.into();
+    cfg.bm25_cohesion.skip_window = skip_window;
+    if let Some(w) = similarity_window {
+        cfg.bm25_cohesion.similarity_window = w;
+    }
+    cfg.bm25_cohesion.validate()?;
+    Ok(cfg)
+}
+
+struct BuildSkillsArgs<'a> {
+    skill_dirs: &'a [PathBuf],
+    output: &'a Path,
+    window_mode: WindowModeArg,
+    similarity_window: Option<usize>,
+    chunk_size: usize,
+    token_counter: TokenCounterArg,
+    skip_window: usize,
+    config_path: Option<&'a Path>,
+}
+
+fn run_build_skills(args: &BuildSkillsArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    if args.skill_dirs.is_empty() {
         return Err("at least one --skills directory is required".into());
     }
-    let mut builder = SkillsBuilder::new(false, Some(output.to_path_buf()));
-    let config = PageIndexConfig::default();
-    builder.build_from_dirs(skill_dirs, &config)?;
+    let config = page_index_config_from_cli(
+        args.window_mode,
+        args.similarity_window,
+        args.chunk_size,
+        args.token_counter,
+        args.skip_window,
+        args.config_path,
+    )?;
+    let mut builder = SkillsBuilder::new(false, Some(args.output.to_path_buf()));
+    builder.build_from_dirs(args.skill_dirs, &config)?;
     builder.write_catalog()?;
     let Some(index) = builder.index() else {
         return Err("index not built after write_catalog".into());
@@ -234,7 +324,7 @@ fn run_build_skills(skill_dirs: &[PathBuf], output: &Path) -> Result<(), Box<dyn
         "Wrote skills catalog ({} documents, {} files) to {}",
         index.documents.len(),
         index.files.len(),
-        output.display()
+        args.output.display()
     );
     Ok(())
 }
@@ -260,6 +350,7 @@ struct RetrieveSkillsArgs<'a> {
     query: SkillQuery,
     line_nums: &'a [String],
     node_ids: &'a [String],
+    chunk_ids: &'a [String],
     output: Option<&'a Path>,
     skills_index: Option<&'a Path>,
     keep_all_headers: bool,
@@ -324,20 +415,31 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
         SkillQuery::Metadata => get_skill_document(&index.documents, args.doc_id),
         SkillQuery::Structure => get_skill_structure(&index.documents, args.doc_id),
         SkillQuery::Content => {
-            if args.line_nums.is_empty() && args.node_ids.is_empty() {
+            if args.line_nums.is_empty() && args.node_ids.is_empty() && args.chunk_ids.is_empty() {
                 return Err(
-                    "content query requires at least one --line_num or --node_id".into(),
+                    "content query requires at least one --line_num, --node_id, or --chunk_id".into(),
                 );
             }
             let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
             let node_id_specs: Vec<&str> = args.node_ids.iter().map(String::as_str).collect();
-            get_skill_content_retrieve_result(
-                &index,
-                args.doc_id,
-                &line_num_specs,
-                &node_id_specs,
-                &reconstruct_opts,
-            )
+            let chunk_id_specs: Vec<&str> = args.chunk_ids.iter().map(String::as_str).collect();
+            if !chunk_id_specs.is_empty() && line_num_specs.is_empty() && node_id_specs.is_empty() {
+                get_skill_line_content(
+                    &index,
+                    args.doc_id,
+                    &line_num_specs,
+                    &node_id_specs,
+                    &chunk_id_specs,
+                )
+            } else {
+                get_skill_content_retrieve_result(
+                    &index,
+                    args.doc_id,
+                    &line_num_specs,
+                    &node_id_specs,
+                    &reconstruct_opts,
+                )
+            }
         }
     };
 
@@ -355,18 +457,20 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
     if matches!(args.query, SkillQuery::Content) {
         let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
         let node_id_specs: Vec<&str> = args.node_ids.iter().map(String::as_str).collect();
-        let reconstructed = write_reconstructed_skill(
-            args.catalog,
-            &index,
-            args.doc_id,
-            &line_num_specs,
-            &node_id_specs,
-            &reconstruct_opts,
-        )?;
-        eprintln!(
-            "Wrote reconstructed skill to {}",
-            reconstructed.display()
-        );
+        if !line_num_specs.is_empty() || !node_id_specs.is_empty() {
+            let reconstructed = write_reconstructed_skill(
+                args.catalog,
+                &index,
+                args.doc_id,
+                &line_num_specs,
+                &node_id_specs,
+                &reconstruct_opts,
+            )?;
+            eprintln!(
+                "Wrote reconstructed skill to {}",
+                reconstructed.display()
+            );
+        }
     }
 
     Ok(())
@@ -412,7 +516,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             BuildTarget::Skills {
                 skill_dirs,
                 output,
-            } => run_build_skills(&skill_dirs, &output)?,
+                window_mode,
+                similarity_window,
+                chunk_size,
+                token_counter,
+                skip_window,
+                config,
+            } => run_build_skills(&BuildSkillsArgs {
+                skill_dirs: &skill_dirs,
+                output: &output,
+                window_mode,
+                similarity_window,
+                chunk_size,
+                token_counter,
+                skip_window,
+                config_path: config.as_deref(),
+            })?,
         },
         Commands::Retrieve { target } => match target {
             RetrieveTarget::Tools {
@@ -451,6 +570,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query,
                 line_nums,
                 node_ids,
+                chunk_ids,
                 output,
                 skills_index,
                 keep_all_headers,
@@ -461,6 +581,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     query,
                     line_nums: &line_nums,
                     node_ids: &node_ids,
+                    chunk_ids: &chunk_ids,
                     output: output.as_deref(),
                     skills_index: skills_index.as_deref(),
                     keep_all_headers,

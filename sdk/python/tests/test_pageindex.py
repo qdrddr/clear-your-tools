@@ -10,12 +10,18 @@ import pytest
 cyt_indexer = pytest.importorskip("cyt_indexer")
 
 from cyt_indexer import (  # noqa: E402
+    Bm25CohesionConfig,
     PageIndexConfig,
     SkillsBuilder,
+    bm25_cohesion_chunk,
     build_skills_index,
+    default_page_index_config,
     get_skill_document,
+    get_skill_line_content,
     get_skill_line_content_from_spec,
     get_skill_structure,
+    page_index_config_from_mapping,
+    parse_skill_chunk_ids,
     md_to_tree,
     skills_index_from_decomposed_dir,
     write_skills_index,
@@ -30,6 +36,31 @@ def test_md_to_tree_in_memory() -> None:
     assert isinstance(result["structure"], list)
 
 
+def test_default_page_index_config_includes_bm25() -> None:
+    cfg = default_page_index_config()
+    d = cfg.to_dict()
+    assert d["bm25_cohesion"]["chunk_size"] == 2048
+    assert d["bm25_cohesion"]["window_mode"] == "sentence"
+
+
+def test_page_index_config_from_mapping_partial_bm25() -> None:
+    cfg = page_index_config_from_mapping({"bm25_cohesion": {"skip_window": 2}})
+    assert cfg["bm25_cohesion"]["skip_window"] == 2
+    assert cfg["bm25_cohesion"]["chunk_size"] == 2048
+
+
+def test_bm25_cohesion_chunk_standalone() -> None:
+    text = "Alpha one two three. Beta finance market stocks."
+    chunks = bm25_cohesion_chunk(text, Bm25CohesionConfig(chunk_size=2048))
+    assert len(chunks) == 1
+    assert chunks[0]["token_count"] > 0
+
+
+def test_parse_skill_chunk_ids() -> None:
+    assert parse_skill_chunk_ids("8") == [8]
+    assert parse_skill_chunk_ids("8-10") == [8, 9, 10]
+
+
 def test_build_write_reconstruct() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         skills_dir = Path(tmp) / "skills"
@@ -39,6 +70,7 @@ def test_build_write_reconstruct() -> None:
         index = build_skills_index([str(skills_dir)])
         assert "documents" in index
         assert index["documents"]
+        assert any("/chunks/" in k for k in index["files"])
 
         catalog = Path(tmp) / "catalog"
         write_skills_index(index, str(catalog))
@@ -54,6 +86,27 @@ def test_build_write_reconstruct() -> None:
         assert structure
         content = get_skill_line_content_from_spec(rebuilt, doc_id, "1")
         assert content
+
+
+def test_retrieve_by_chunk_id_after_disk_roundtrip() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp) / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "demo.md").write_text(
+            "# Demo\n\nShort.\n\n## Part\n\nLonger section with more words here.",
+            encoding="utf-8",
+        )
+        index = build_skills_index([str(skills_dir)])
+        doc_id = next(iter(index["documents"]))
+        chunk_id = next(k.split("/")[-1].removesuffix(".md") for k in index["files"] if "/chunks/" in k)
+
+        catalog = Path(tmp) / "catalog"
+        write_skills_index(index, str(catalog))
+        rebuilt = skills_index_from_decomposed_dir(str(catalog))
+        rows = get_skill_line_content(rebuilt, doc_id, chunk_id_specs=[chunk_id])
+        assert rows
+        assert rows[0]["chunk_id"] == int(chunk_id)
+        assert rows[0]["content"]
 
 
 def test_skills_builder_memory_only() -> None:

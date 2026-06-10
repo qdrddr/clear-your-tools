@@ -22,6 +22,8 @@ node = ["napi", "napi-derive"]
 
 [dependencies]
 serde_json = "1"
+chunk = { version = "0.10", default-features = false }
+rust-stemmers = "1.2"
 clap = { version = "4", features = ["derive"] }
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py312"], optional = true }
 napi = { version = "3", features = ["napi4", "serde-json"], optional = true }

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::config::PageIndexConfig;
-use super::decompose::decompose_document;
+use super::decompose::{attach_chunks_to_structure, decompose_document};
 use super::index::md_to_tree;
 use super::parse::{extract_node_text_content, extract_nodes_from_markdown, extract_skill_prefix};
 use super::tree::{build_tree_from_nodes, finalize_skill_structure};
@@ -87,7 +87,7 @@ fn walk_skill_md_files(
         let source_path = shorten_home_path(&path)?;
         let result = md_to_tree(&content, &source_path, config);
         let preamble = prefix.preamble.clone();
-        let flat_for_decompose = build_flat_structure(
+        let mut flat_for_decompose = build_flat_structure(
             &content,
             prefix.frontmatter.as_deref(),
             prefix.frontmatter_line_num,
@@ -95,6 +95,7 @@ fn walk_skill_md_files(
             prefix.preamble_line_num,
             config,
         );
+        attach_chunks_to_structure(&mut flat_for_decompose, config, index, &doc_id)?;
         let doc = build_skill_document(
             doc_id.clone(),
             &source_path,
@@ -107,7 +108,7 @@ fn walk_skill_md_files(
             prefix.frontmatter,
             preamble,
         );
-        decompose_document(index, &doc, &flat_for_decompose);
+        decompose_document(index, &doc, &flat_for_decompose, config);
         index.documents.insert(doc_id, doc);
     }
     Ok(())

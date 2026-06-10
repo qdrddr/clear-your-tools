@@ -92,6 +92,82 @@ let index = build_skills_index(&[PathBuf::from("~/.claude/skills")], &PageIndexC
 let content = get_skill_line_content_from_spec(&index, "my__skill", "5-10");
 ```
 
+## BM25 Cohesion Chunker
+
+Lexical (BM25 + Snowball) text chunker for skills pageindex and standalone use. Mirrors the
+[Chonkie SemanticChunker](https://docs.chonkie.ai/oss/chunkers/semantic-chunker) pipeline
+(Savitzky–Golay smoothing, split filtering, optional skip-window merge) but uses BM25
+cohesion instead of embeddings — no model calls, deterministic, fast.
+
+During skills build, each section gets at least one chunk when `chunk_size > 0` (default
+2048 approximate tokens). Sections larger than `chunk_size` are split; chunk files land at
+`skills/decomposed/{doc_id}/chunks/{chunk_id}.md` with `chunks: [{chunk_id}]` in
+`document.json`. Parent `{node_id}.md` keeps the full section text. Set `chunk_size: 0`
+to disable chunking (heading-only decomposition).
+
+### BM25 cohesion CLI
+
+```bash
+cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog \
+  --window-mode sentence --chunk-size 2048 --similarity-window 3 \
+  --token-counter approximate --skip-window 0
+
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill \
+  --query content --chunk_id 8 --chunk_id 10-12
+```
+
+### Rust
+
+```rust
+use cyt_indexer::{
+    Bm25CohesionChunker, Bm25CohesionConfig, PageIndexConfig, build_skills_index,
+};
+
+// Standalone chunker
+let chunks = Bm25CohesionChunker::new(Bm25CohesionConfig::default())?.chunk(long_text);
+
+// Pageindex with partial override
+let config = PageIndexConfig::from_value(&serde_json::json!({
+    "bm25_cohesion": { "window_mode": "word", "skip_window": 1 }
+}));
+let index = build_skills_index(&[PathBuf::from("~/.claude/skills")], &config)?;
+```
+
+### Python
+
+```python
+from cyt_indexer import Bm25CohesionConfig, PageIndexConfig, bm25_cohesion_chunk, build_skills_index
+
+chunks = bm25_cohesion_chunk(text, Bm25CohesionConfig(skip_window=1))
+index = build_skills_index(["~/.claude/skills"], {"bm25_cohesion": {"chunk_size": 1024}})
+```
+
+### TypeScript
+
+```typescript
+import { bm25CohesionChunk, buildSkillsIndex, defaultBm25CohesionConfig } from "@clear-your-tools/cyt-indexer";
+
+const chunks = bm25CohesionChunk(text, { ...defaultBm25CohesionConfig(), skipWindow: 1 });
+const index = buildSkillsIndex(["~/.claude/skills"], { bm25Cohesion: { chunkSize: 1024 } });
+```
+
+### Key parameters
+
+| Field | Default (sentence) | Default (word) | Notes |
+| ----- | ------------------ | -------------- | ----- |
+| `window_mode` | `sentence` | — | `sentence` or `word` |
+| `chunk_size` | 2048 | 2048 | Max tokens per chunk; `0` disables chunking |
+| `similarity_window` | 3 | 500 | Left-window size (sentences vs words) |
+| `threshold` | 0.8 | 0.8 | Percentile for boundary filter |
+| `skip_window` | 0 | 0 | SDPM merge pass (`0` = off) |
+| `token_counter` | `approximate` | `approximate` | `approximate` or `character` |
+
+### Trade-offs vs embedding chunkers
+
+- **Pros:** No API/model cost, deterministic, aligns with cyt-indexer BM25 pruner tokenization
+- **Cons:** Topic boundaries follow lexical overlap, not semantic similarity; code-heavy
+  sections may split mid-block in sentence mode (word mode is often better for code)
+
 Policies (in precedence order, later wins):
 
 1. `--config` → `pruning.policy.system_tool` / `mcp_tool` (legacy: `defaults.system_tool_policy` / `mcp_tool_policy`), `pruning.per_tool`

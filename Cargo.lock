@@ -71,6 +71,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chunk"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45b9676eb73ad3ebff08c750261a0d6a423f225883f30164600db57ba885e834"
+dependencies = [
+ "daggrs",
+ "memchr",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -135,13 +145,21 @@ checksum = "01334b89b69ff726750c5ce5073fc8bd860e99aa9a8fc5ca11b04730e3aee97a"
 name = "cyt-indexer"
 version = "0.3.5"
 dependencies = [
+ "chunk",
  "clap",
  "napi",
  "napi-build",
  "napi-derive",
  "pyo3",
+ "rust-stemmers",
  "serde_json",
 ]
+
+[[package]]
+name = "daggrs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d1092288af9ecfd5378565a17df11a13dbe172d4a71abe9b55a9689f1336b8e"
 
 [[package]]
 name = "futures"
@@ -457,6 +475,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rust-stemmers"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e46a2036019fdb888131db7a4c847a1063a7493f971ed94ea82c67eada63ca54"
+dependencies = [
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]

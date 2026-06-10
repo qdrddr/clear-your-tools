@@ -220,7 +220,7 @@ fn get_skill_content_retrieve_result_py(
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     let opts = reconstruct_options_from_py(options)?;
     value_to_py(
         py,
@@ -245,7 +245,7 @@ fn reconstruct_skill_markdown_py(
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     let opts = reconstruct_options_from_py(options)?;
     let result = reconstruct_skill_markdown(
         &index,
@@ -277,7 +277,7 @@ fn write_reconstructed_skill_py(
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<String> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
     let opts = reconstruct_options_from_py(options)?;
     let output = write_reconstructed_skill(
         PathBuf::from(catalog_dir).as_path(),
@@ -292,16 +292,17 @@ fn write_reconstructed_skill_py(
 }
 
 #[pyfunction(name = "get_skill_line_content")]
-#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None))]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, chunk_id_specs=None))]
 fn get_skill_line_content_py(
     py: Python<'_>,
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     value_to_py(
         py,
         &get_line_content(
@@ -309,8 +310,16 @@ fn get_skill_line_content_py(
             doc_id,
             &specs.line_refs(),
             &specs.node_refs(),
+            &specs.chunk_refs(),
         ),
     )
+}
+
+#[pyfunction(name = "parse_skill_chunk_ids")]
+fn parse_skill_chunk_ids_py(py: Python<'_>, spec: &str) -> PyResult<PyObject> {
+    let ids = crate::pageindex::parse_chunk_ids(spec)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &serde_json::json!(ids))
 }
 
 #[pyfunction(name = "parse_skill_node_ids")]
@@ -389,6 +398,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_skill_content_retrieve_result_py, m)?)?;
     m.add_function(wrap_pyfunction!(reconstruct_skill_markdown_py, m)?)?;
     m.add_function(wrap_pyfunction!(write_reconstructed_skill_py, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_skill_chunk_ids_py, m)?)?;
     m.add_function(wrap_pyfunction!(parse_skill_node_ids_py, m)?)?;
     m.add_class::<PyReconstructOptions>()?;
     m.add_class::<PySkillsBuilder>()?;

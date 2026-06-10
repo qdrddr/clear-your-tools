@@ -2,6 +2,7 @@
 //! intentionally repeat module prefixes where clippy would prefer shorter names.
 #![allow(clippy::pub_use, clippy::module_name_repetitions)]
 
+pub mod bm25_cohesion;
 pub mod build;
 pub mod catalog_builder;
 pub mod catalog_io;
@@ -22,6 +23,10 @@ pub mod python;
 #[cfg(feature = "node")]
 pub mod node;
 
+pub use bm25_cohesion::{
+    approximate_token_count, ApproximateTokenCounter, Bm25CohesionChunker, Bm25CohesionConfig,
+    CharacterTokenCounter, CohesionChunk, TokenCounter, TokenCounterKind, WindowMode,
+};
 pub use build::{
     build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums, CatalogIndex,
 };
@@ -77,6 +82,7 @@ pub use pageindex::{
     get_line_content as get_skill_line_content,
     get_line_content_from_spec as get_skill_line_content_from_spec, md_to_tree,
     parse_line_nums as parse_skill_line_nums, parse_node_ids as parse_skill_node_ids,
+    parse_chunk_ids as parse_skill_chunk_ids,
     get_content_retrieve_result as get_skill_content_retrieve_result,
     reconstruct_skill_markdown, retrieve_output_rel_path, write_reconstructed_skill,
     PageIndexConfig, MdIndexResult, ReconstructOptions, ReconstructResult, SkillDocument,

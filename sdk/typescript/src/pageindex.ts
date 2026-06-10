@@ -10,6 +10,7 @@ import {
   getSkillStructureNative,
   loadSkillsIndexFromDirNative,
   mdToTreeNative,
+  parseSkillChunkIdsNative,
   parseSkillNodeIdsNative,
   reconstructSkillMarkdownNative,
   skillsIndexFromDecomposedDirNative,
@@ -17,11 +18,22 @@ import {
   writeSkillsIndexNative,
   type ReconstructOptionsNapi,
 } from "./native.js";
+import {
+  cohesionConfigToNative,
+  defaultBm25CohesionConfig,
+  type Bm25CohesionConfig,
+} from "./bm25Cohesion.js";
+
+export type { Bm25CohesionConfig } from "./bm25Cohesion.js";
 
 export interface PageIndexConfig {
   ifAddNodeId?: boolean;
   ifAddNodeText?: boolean;
+  bm25Cohesion?: Partial<Bm25CohesionConfig>;
 }
+
+/** CamelCase SDK config or snake_case partial dict (e.g. from app YAML). */
+export type PageIndexConfigInput = PageIndexConfig | Record<string, unknown>;
 
 export interface ReconstructOptions {
   keepAllHeaders?: boolean;
@@ -32,27 +44,103 @@ export interface SkillsIndexDict {
   files: Record<string, string>;
 }
 
+const BM25_FLAT_KEYS = new Set([
+  "window_mode",
+  "threshold",
+  "merge_threshold",
+  "chunk_size",
+  "token_counter",
+  "similarity_window",
+  "next_unit_size",
+  "skip_window",
+  "min_units_per_chunk",
+  "min_characters_per_sentence",
+  "min_characters_per_word",
+  "delimiters",
+  "include_delim",
+  "use_stopwords",
+  "filter_window",
+  "filter_polyorder",
+  "filter_tolerance",
+  "stem_language",
+]);
+
 export function defaultPageIndexConfig(): PageIndexConfig {
-  return { ifAddNodeId: true, ifAddNodeText: false };
+  return {
+    ifAddNodeId: true,
+    ifAddNodeText: false,
+    bm25Cohesion: defaultBm25CohesionConfig(),
+  };
 }
 
-function toNativeConfig(
-  config?: PageIndexConfig,
-): Record<string, boolean> | undefined {
-  if (!config) return undefined;
-  return {
+/** Partial pageindex settings from app config; Rust merges unset keys with SDK defaults. */
+export function pageIndexConfigFromMapping(
+  mapping?: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  if (mapping == null) return undefined;
+  if (isSnakeCasePageIndexDict(mapping)) return mapping;
+  return pageIndexConfigToNative(pageIndexConfigFromPartial(mapping));
+}
+
+export function pageIndexConfigFromPartial(
+  partial: Partial<PageIndexConfig> & Record<string, unknown>,
+): PageIndexConfig {
+  const cfg = defaultPageIndexConfig();
+  if (partial.ifAddNodeId !== undefined) cfg.ifAddNodeId = partial.ifAddNodeId;
+  if (partial.ifAddNodeText !== undefined)
+    cfg.ifAddNodeText = partial.ifAddNodeText;
+  if (partial.bm25Cohesion !== undefined) {
+    cfg.bm25Cohesion = {
+      ...defaultBm25CohesionConfig(),
+      ...partial.bm25Cohesion,
+    };
+  }
+  return cfg;
+}
+
+export function pageIndexConfigToNative(
+  config: PageIndexConfig,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {
     if_add_node_id: config.ifAddNodeId ?? true,
     if_add_node_text: config.ifAddNodeText ?? false,
   };
+  const cohesion = cohesionConfigToNative(
+    config.bm25Cohesion ?? defaultBm25CohesionConfig(),
+  );
+  if (cohesion !== undefined) {
+    out.bm25_cohesion = cohesion;
+  }
+  return out;
+}
+
+function isSnakeCasePageIndexDict(config: Record<string, unknown>): boolean {
+  return (
+    "if_add_node_id" in config ||
+    "if_add_node_text" in config ||
+    "bm25_cohesion" in config ||
+    "chunk_size" in config ||
+    [...BM25_FLAT_KEYS].some((key) => key in config)
+  );
+}
+
+function resolveNativeConfig(
+  config?: PageIndexConfigInput,
+): Record<string, unknown> | undefined {
+  if (config == null) return undefined;
+  if (isSnakeCasePageIndexDict(config as Record<string, unknown>)) {
+    return config as Record<string, unknown>;
+  }
+  return pageIndexConfigToNative(config as PageIndexConfig);
 }
 
 export function buildSkillsIndex(
   skillDirs: string[],
-  config?: PageIndexConfig,
+  config?: PageIndexConfigInput,
 ): SkillsIndexDict {
   return buildSkillsIndexNative(
     skillDirs,
-    toNativeConfig(config),
+    resolveNativeConfig(config),
   ) as SkillsIndexDict;
 }
 
@@ -74,12 +162,12 @@ export function skillsIndexFromDecomposedDir(dir: string): SkillsIndexDict {
 export function mdToTree(
   markdownContent: string,
   sourcePath: string,
-  config?: PageIndexConfig,
+  config?: PageIndexConfigInput,
 ): Record<string, unknown> {
   return mdToTreeNative(
     markdownContent,
     sourcePath,
-    toNativeConfig(config),
+    resolveNativeConfig(config),
   ) as Record<string, unknown>;
 }
 
@@ -119,14 +207,29 @@ function toNativeReconstructOptions(
 export function getSkillLineContent(
   index: SkillsIndexDict,
   docId: string,
-  opts?: { lineNumSpecs?: string[]; nodeIdSpecs?: string[] },
-): Array<{ line_num: number; node_id: number; content: string }> {
+  opts?: {
+    lineNumSpecs?: string[];
+    nodeIdSpecs?: string[];
+    chunkIdSpecs?: string[];
+  },
+): Array<{
+  line_num: number;
+  node_id: number;
+  content: string;
+  chunk_id?: number;
+}> {
   return getSkillLineContentNative(
     index,
     docId,
     opts?.lineNumSpecs,
     opts?.nodeIdSpecs,
-  ) as Array<{ line_num: number; node_id: number; content: string }>;
+    opts?.chunkIdSpecs,
+  ) as Array<{
+    line_num: number;
+    node_id: number;
+    content: string;
+    chunk_id?: number;
+  }>;
 }
 
 export function getSkillContentRetrieveResult(
@@ -199,6 +302,10 @@ export function parseSkillNodeIds(spec: string): number[] {
   return parseSkillNodeIdsNative(spec);
 }
 
+export function parseSkillChunkIds(spec: string): number[] {
+  return parseSkillChunkIdsNative(spec);
+}
+
 export class SkillsBuilder {
   private inner: InstanceType<typeof SkillsBuilderNative>;
 
@@ -211,11 +318,11 @@ export class SkillsBuilder {
 
   buildFromDirs(
     skillDirs: string[],
-    config?: PageIndexConfig,
+    config?: PageIndexConfigInput,
   ): SkillsIndexDict {
     return this.inner.buildFromDirs(
       skillDirs,
-      toNativeConfig(config),
+      resolveNativeConfig(config),
     ) as SkillsIndexDict;
   }
 

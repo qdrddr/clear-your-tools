@@ -136,7 +136,9 @@ export const reconstructSkillMarkdownNative =
   native.reconstructSkillMarkdownNapi;
 export const writeReconstructedSkillNative = native.writeReconstructedSkillNapi;
 export const parseSkillNodeIdsNative = native.parseSkillNodeIdsNapi;
+export const parseSkillChunkIdsNative = native.parseSkillChunkIdsNapi;
 export const SkillsBuilderNative = native.SkillsBuilderNapi;
+export const bm25CohesionChunkNative = native.bm25CohesionChunkNapi;
 
 export type {
   PolicyOptions,

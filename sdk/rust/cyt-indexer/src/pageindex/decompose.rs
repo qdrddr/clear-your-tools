@@ -1,10 +1,100 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 
+use crate::bm25_cohesion::Bm25CohesionChunker;
+
+use super::chunk_id::next_chunk_id;
+use super::config::PageIndexConfig;
 use super::node_id::node_id_from_value;
-use super::tree::{is_frontmatter_node, is_preamble_node, structure_to_list};
-use super::types::{document_json_rel, node_md_rel, SkillDocument, SkillsIndex};
+use super::tree::structure_to_list;
+use super::types::{chunk_md_rel, document_json_rel, node_md_rel, SkillDocument, SkillsIndex};
 
-pub fn decompose_document(index: &mut SkillsIndex, doc: &SkillDocument, flat_structure: &Value) {
+/// Attach BM25 cohesion chunks to structure nodes and write chunk markdown files.
+///
+/// # Errors
+///
+/// Returns an error when the chunker configuration is invalid.
+pub fn attach_chunks_to_structure(
+    structure: &mut Value,
+    config: &PageIndexConfig,
+    index: &mut SkillsIndex,
+    doc_id: &str,
+) -> Result<(), String> {
+    if config.bm25_cohesion.chunk_size == 0 {
+        return Ok(());
+    }
+    let chunker = Bm25CohesionChunker::new(config.bm25_cohesion.clone())?;
+    let mut next_id = next_chunk_id(structure);
+
+    let nodes = structure_to_list(structure);
+    for node in nodes {
+        let Some(obj) = node.as_object() else {
+            continue;
+        };
+        let node_id = node_id_from_value(obj.get("node_id"));
+        let line_num = obj.get("line_num").and_then(Value::as_u64).unwrap_or(0);
+        let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        if text.trim().is_empty() {
+            continue;
+        }
+
+        let chunks = chunker.chunk(text);
+        if chunks.is_empty() {
+            continue;
+        }
+
+        let mut chunk_refs = Vec::new();
+        for chunk in &chunks {
+            let chunk_id = next_id;
+            next_id += 1;
+            chunk_refs.push(json!({ "chunk_id": chunk_id }));
+            let md = format!(
+                "---\ndoc_id: {doc_id}\nnode_id: {node_id}\nchunk_id: {chunk_id}\nline_num: {line_num}\ntoken_count: {}\n---\n{}",
+                chunk.token_count, chunk.text
+            );
+            index.files.insert(chunk_md_rel(doc_id, chunk_id), md);
+        }
+
+        insert_chunks_on_node(structure, node_id, chunk_refs);
+    }
+
+    Ok(())
+}
+
+fn insert_chunks_on_node(structure: &mut Value, target_node_id: u32, chunks: Vec<Value>) -> bool {
+    match structure {
+        Value::Object(map) => {
+            let id = node_id_from_value(map.get("node_id"));
+            if id == target_node_id {
+                map.insert("chunks".to_string(), Value::Array(chunks));
+                return true;
+            }
+            if let Some(Value::Array(children)) = map.get_mut("nodes") {
+                for child in children {
+                    if insert_chunks_on_node(child, target_node_id, chunks.clone()) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        Value::Array(items) => {
+            for item in items {
+                if insert_chunks_on_node(item, target_node_id, chunks.clone()) {
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+pub fn decompose_document(
+    index: &mut SkillsIndex,
+    doc: &SkillDocument,
+    flat_structure: &Value,
+    config: &PageIndexConfig,
+) {
     let doc_json = serde_json::to_string_pretty(&doc.to_json()).unwrap_or_default();
     index
         .files
@@ -17,10 +107,10 @@ pub fn decompose_document(index: &mut SkillsIndex, doc: &SkillDocument, flat_str
         };
         let node_id = node_id_from_value(obj.get("node_id"));
         let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("");
-        let line_num = obj.get("line_num").and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let line_num = obj.get("line_num").and_then(Value::as_u64).unwrap_or(0);
         let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
-        let body = if is_frontmatter_node(obj) || is_preamble_node(obj) {
+        let body = if super::tree::is_frontmatter_node(obj) || super::tree::is_preamble_node(obj) {
             text.to_string()
         } else if text.is_empty() {
             format!("# {title}\n")
@@ -37,4 +127,6 @@ pub fn decompose_document(index: &mut SkillsIndex, doc: &SkillDocument, flat_str
             .files
             .insert(node_md_rel(&doc.id, node_id), md_content);
     }
+
+    let _ = config;
 }

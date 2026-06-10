@@ -224,6 +224,7 @@ pub fn finalize_skill_structure(
     let output_cfg = PageIndexConfig {
         if_add_node_id: config.if_add_node_id,
         if_add_node_text: true,
+        bm25_cohesion: config.bm25_cohesion.clone(),
     };
     format_structure_for_output(&merged, &output_cfg)
 }
@@ -231,9 +232,9 @@ pub fn finalize_skill_structure(
 #[must_use]
 pub fn format_structure_for_output(structure: &Value, config: &PageIndexConfig) -> Value {
     let order: Vec<&str> = if config.if_add_node_text {
-        vec!["title", "node_id", "kind", "line_num", "text", "nodes"]
+        vec!["title", "node_id", "kind", "line_num", "text", "chunks", "nodes"]
     } else {
-        vec!["title", "node_id", "kind", "line_num", "nodes"]
+        vec!["title", "node_id", "kind", "line_num", "chunks", "nodes"]
     };
     format_structure(structure, &order)
 }

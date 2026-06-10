@@ -1,35 +1,19 @@
-"""Python SDK for cyt-indexer (Rust-backed catalog indexing)."""
+"""Skills pageindex — re-exports cyt-indexer-sdk with app config helpers."""
 
-from cyt_indexer.build import (
-    CatalogIndex,
-    anthropic_tool_to_catalog_entry,
-    anthropic_tools_to_catalog_entries,
-    build_catalog_from_tools,
-    build_catalog_index,
-    catalog_tool_count,
-    prepare_tool_entry,
-    truncate_description,
-)
-from cyt_indexer.paths import collect_enums
-from cyt_indexer.retrieve import (
-    DecomposedCatalog,
-    chunk_survivor_key,
-    load_catalog,
-    removed_chunks,
-    retrieve_tools,
-)
-from cyt_indexer.bm25_cohesion import (
+from __future__ import annotations
+
+from typing import Any
+
+from cyt_indexer import (
     Bm25CohesionConfig,
-    chunk as bm25_cohesion_chunk,
-    cohesion_config_dict,
-    default_bm25_cohesion_config,
-)
-from cyt_indexer.pageindex import (
     PageIndexConfig,
     PageIndexConfigInput,
     ReconstructOptions,
     SkillsBuilder,
+    bm25_cohesion_chunk,
     build_skills_index,
+    cohesion_config_dict,
+    default_bm25_cohesion_config,
     default_page_index_config,
     get_skill_content_retrieve_result,
     get_skill_document,
@@ -49,28 +33,14 @@ from cyt_indexer.pageindex import (
 
 __all__ = [
     "Bm25CohesionConfig",
-    "CatalogIndex",
-    "DecomposedCatalog",
-    "PageIndexConfigInput",
-    "chunk_survivor_key",
-    "cohesion_config_dict",
-    "anthropic_tool_to_catalog_entry",
-    "anthropic_tools_to_catalog_entries",
-    "bm25_cohesion_chunk",
-    "default_bm25_cohesion_config",
-    "build_catalog_from_tools",
-    "build_catalog_index",
-    "catalog_tool_count",
-    "collect_enums",
-    "load_catalog",
-    "removed_chunks",
-    "prepare_tool_entry",
-    "retrieve_tools",
-    "truncate_description",
     "PageIndexConfig",
+    "PageIndexConfigInput",
     "ReconstructOptions",
     "SkillsBuilder",
+    "bm25_cohesion_chunk",
     "build_skills_index",
+    "cohesion_config_dict",
+    "default_bm25_cohesion_config",
     "default_page_index_config",
     "get_skill_content_retrieve_result",
     "get_skill_document",
@@ -79,6 +49,7 @@ __all__ = [
     "get_skill_structure",
     "load_skills_index_from_dir",
     "md_to_tree",
+    "page_index_config_from_app",
     "page_index_config_from_mapping",
     "parse_skill_chunk_ids",
     "parse_skill_node_ids",
@@ -87,3 +58,19 @@ __all__ = [
     "write_reconstructed_skill",
     "write_skills_index",
 ]
+
+
+def page_index_config_from_app(skills_config: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build pageindex config dict from app ``skills`` config section.
+
+    Reads ``skills_config["pageindex"]`` when present. Partial keys merge with
+    cyt-indexer SDK defaults in Rust (``PageIndexConfig::from_value``).
+    """
+    if not skills_config:
+        return None
+    pageindex = skills_config.get("pageindex")
+    if pageindex is None:
+        return None
+    if isinstance(pageindex, dict):
+        return page_index_config_from_mapping(pageindex)
+    return None

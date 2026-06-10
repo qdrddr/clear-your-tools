@@ -4,6 +4,9 @@ mod policies_python;
 #[path = "pageindex_python.rs"]
 mod pageindex_python;
 
+#[path = "bm25_cohesion_python.rs"]
+mod bm25_cohesion_python;
+
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
 use crate::tool_entries::{
     anthropic_tool_to_catalog_entry, build_catalog_from_tools, prepare_tool_entry,
@@ -553,5 +556,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(retrieve_tools_py, m)?)?;
     policies_python::register(m)?;
     pageindex_python::register(m)?;
+    bm25_cohesion_python::register(m)?;
     Ok(())
 }
