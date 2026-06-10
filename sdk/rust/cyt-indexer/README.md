@@ -44,10 +44,14 @@ cyt-indexer removed tools --catalog ./.catalog --input survivors.json --output .
 
 ```bash
 cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
-cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query metadata --output meta.json
-cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query structure --output toc.json
-cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --pages "5-10" --output content.json
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query metadata
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query structure
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --line_num 5-10
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --line_num 5 --line_num 12-15 --node_id 0003
 ```
+
+Content queries accept repeatable `--line_num` and `--node_id` flags (each value may be a number or
+range such as `5-10`). Output defaults to `{catalog}/skill_out.json`; pass `--output` to override.
 
 Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md`, and a reconstructable `skills_index.json` snapshot.
 
@@ -67,10 +71,10 @@ let removed = removed_chunks(&full, &surviving, &RemovedChunksOptions::default()
 Skills (in-memory, like tools):
 
 ```rust
-use cyt_indexer::{build_skills_index, get_skill_page_content, PageIndexConfig, SkillsBuilder};
+use cyt_indexer::{build_skills_index, get_skill_line_content_from_spec, PageIndexConfig, SkillsBuilder};
 
 let index = build_skills_index(&[PathBuf::from("~/.claude/skills")], &PageIndexConfig::default())?;
-let content = get_skill_page_content(&index, "my__skill", "5-10");
+let content = get_skill_line_content_from_spec(&index, "my__skill", "5-10");
 ```
 
 Policies (in precedence order, later wins):

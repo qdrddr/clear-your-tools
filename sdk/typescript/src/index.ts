@@ -53,7 +53,7 @@ export {
   buildSkillsIndex,
   defaultPageIndexConfig,
   getSkillDocument,
-  getSkillPageContent,
+  getSkillLineContentFromSpec,
   getSkillStructure,
   loadSkillsIndexFromDir,
   mdToTree,

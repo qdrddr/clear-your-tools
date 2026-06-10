@@ -127,7 +127,8 @@ export const skillsIndexFromDecomposedDirNative =
 export const mdToTreeNative = native.mdToTreeNapi;
 export const getSkillDocumentNative = native.getSkillDocumentNapi;
 export const getSkillStructureNative = native.getSkillStructureNapi;
-export const getSkillPageContentNative = native.getSkillPageContentNapi;
+export const getSkillLineContentFromSpecNative =
+  native.getSkillLineContentFromSpecNapi;
 export const SkillsBuilderNative = native.SkillsBuilderNapi;
 
 export type { PolicyOptions, PolicyContextJs } from "../native.d.ts";

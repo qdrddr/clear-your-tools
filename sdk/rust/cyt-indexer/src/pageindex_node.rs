@@ -1,6 +1,6 @@
 use crate::pageindex::{
-    build_skills_index, get_document, get_document_structure, get_page_content, md_to_tree,
-    PageIndexConfig, SkillDocument, SkillsIndex,
+    build_skills_index, get_document, get_document_structure, get_line_content_from_spec,
+    md_to_tree, PageIndexConfig, SkillDocument, SkillsIndex,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -178,14 +178,22 @@ pub fn get_skill_structure_napi(documents: Value, doc_id: String) -> Result<Valu
 
 /// # Errors
 ///
-/// Does not fail; returns an empty array when pages or document id are unknown.
+/// Does not fail; returns an empty array when line numbers or document id are unknown.
 #[napi]
-pub fn get_skill_page_content_napi(index: Value, doc_id: String, pages: String) -> Result<Value> {
+pub fn get_skill_line_content_from_spec_napi(
+    index: Value,
+    doc_id: String,
+    line_num_spec: String,
+) -> Result<Value> {
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
-    let pages = pages.into_boxed_str();
+    let line_num_spec = line_num_spec.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    Ok(get_page_content(&skills, doc_id.as_ref(), pages.as_ref()))
+    Ok(get_line_content_from_spec(
+        &skills,
+        doc_id.as_ref(),
+        line_num_spec.as_ref(),
+    ))
 }
 
 #[napi]

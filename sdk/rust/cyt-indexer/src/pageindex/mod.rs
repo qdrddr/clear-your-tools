@@ -10,5 +10,8 @@ pub mod types;
 pub use build::build_skills_index;
 pub use config::PageIndexConfig;
 pub use index::md_to_tree;
-pub use retrieve::{get_document, get_document_structure, get_page_content, parse_pages};
+pub use retrieve::{
+    get_document, get_document_structure, get_line_content, get_line_content_from_spec,
+    parse_line_nums, parse_node_ids,
+};
 pub use types::{MdIndexResult, SkillDocument, SkillsIndex};

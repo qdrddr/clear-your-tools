@@ -74,7 +74,9 @@ pub use tool_entries::{
 };
 pub use pageindex::{
     build_skills_index, get_document as get_skill_document, get_document_structure as get_skill_structure,
-    get_page_content as get_skill_page_content, md_to_tree, parse_pages as parse_skill_pages,
+    get_line_content as get_skill_line_content,
+    get_line_content_from_spec as get_skill_line_content_from_spec, md_to_tree,
+    parse_line_nums as parse_skill_line_nums, parse_node_ids as parse_skill_node_ids,
     PageIndexConfig, MdIndexResult, SkillDocument, SkillsIndex,
 };
 pub use skills_builder::SkillsBuilder;

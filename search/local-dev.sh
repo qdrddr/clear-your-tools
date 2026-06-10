@@ -78,7 +78,23 @@ indexer)
 		cyt_indexer_extract_survivors
 		;;
 	retrieve)
-		cyt_indexer_retrieve "$@"
+		target="${1:-tools}"
+		if [[ "${target}" == --* ]]; then
+			target="tools"
+		else
+			shift || true
+		fi
+		case "${target}" in
+		tools)
+			cyt_indexer_retrieve "$@"
+			;;
+		skills)
+			cyt_indexer_retrieve_skills "$@"
+			;;
+		*)
+			die "unknown retrieve target: ${target} (try: tools, skills)"
+			;;
+		esac
 		;;
 	all)
 		cyt_indexer_all "$@"
@@ -90,7 +106,8 @@ Usage: ./search/local-dev.sh indexer [build|survivors|retrieve|all] [args...]
   build tools   jq '.body.tools' debug/full_example.json -> cyt-indexer build tools -> .catalog/
   build skills  cyt-indexer build skills --skills DIR [--output DIR]
   survivors     jq rerank json/md -> .catalog/survivors.json (scores as numbers)
-  retrieve      cyt-indexer retrieve tools with default policies (score filter off for rerank survivors)
+  retrieve tools   cyt-indexer retrieve tools with default policies (score filter off for rerank survivors)
+  retrieve skills  cyt-indexer retrieve skills --catalog DIR --doc-id ID --query TYPE --output FILE
   all           build tools + survivors + retrieve (default)
 
 Retrieve defaults:
@@ -108,6 +125,7 @@ Examples:
   ./search/local-dev.sh indexer build
   ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
   ./search/local-dev.sh indexer retrieve --tool-policy Bash=always_include
+  ./search/local-dev.sh indexer retrieve skills --catalog ./.catalog --doc-id lean-ctx__skill --query content --line_num 15
 EOF
 		;;
 	*)

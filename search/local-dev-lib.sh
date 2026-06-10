@@ -152,6 +152,39 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		info "survivors ok (json=${json_count}, md=${md_count})"
 	}
 
+	cyt_indexer_retrieve_skills() {
+		cyt_indexer_paths
+		[[ -x "${CYT_INDEXER_BIN}" ]] || cyt_indexer_release
+		[[ -x "${CYT_INDEXER_BIN}" ]] || die "cyt-indexer binary not found at ${CYT_INDEXER_BIN}"
+
+		[[ $# -gt 0 ]] ||
+			die "indexer retrieve skills requires --catalog DIR --doc-id ID --query metadata|structure|content --output FILE"
+
+		info "cyt-indexer retrieve skills $*"
+		"${CYT_INDEXER_BIN}" retrieve skills "$@"
+
+		local output_file=""
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+			--output)
+				[[ $# -ge 2 ]] || die "missing value for --output"
+				output_file="$2"
+				shift 2
+				;;
+			--output=*)
+				output_file="${1#*=}"
+				shift
+				;;
+			*)
+				shift
+				;;
+			esac
+		done
+		[[ -n "${output_file}" ]] || die "missing --output for skills retrieve"
+		[[ -s "${output_file}" ]] || die "skills retrieve produced empty ${output_file}"
+		info "skills retrieve ok -> ${output_file}"
+	}
+
 	cyt_indexer_retrieve() {
 		cyt_indexer_paths
 		[[ -d "${CYT_CATALOG_DIR}" ]] || die "missing catalog dir ${CYT_CATALOG_DIR}; run indexer build first"

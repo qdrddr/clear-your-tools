@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
-    get_skill_document, get_skill_page_content, get_skill_structure, load_catalog_from_dir,
-    load_skills_index_from_dir, parse_tool_policy_pair, per_tool_policies_from_value,
-    parse_tool_policy, policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
-    DecomposedCatalog, PageIndexConfig, PolicyContext, RemovedChunksOptions, RetrieveOptions,
-    SkillsBuilder,
+    get_skill_document, get_skill_line_content, get_skill_structure,
+    load_catalog_from_dir, load_skills_index_from_dir, parse_tool_policy_pair,
+    per_tool_policies_from_value, parse_tool_policy, policy_context_from_values,
+    removed_chunks, retrieve_tools_from_catalog, DecomposedCatalog, PageIndexConfig,
+    PolicyContext, RemovedChunksOptions, RetrieveOptions, SkillsBuilder,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -94,10 +94,12 @@ enum RetrieveTarget {
         doc_id: String,
         #[arg(long, value_enum)]
         query: SkillQuery,
+        #[arg(long = "line_num")]
+        line_nums: Vec<String>,
+        #[arg(long = "node_id")]
+        node_ids: Vec<String>,
         #[arg(long)]
-        pages: Option<String>,
-        #[arg(long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
         #[arg(long)]
         skills_index: Option<PathBuf>,
     },
@@ -278,8 +280,9 @@ fn run_retrieve_skills(
     catalog: &Path,
     doc_id: &str,
     query: SkillQuery,
-    pages: Option<&str>,
-    output: &Path,
+    line_nums: &[String],
+    node_ids: &[String],
+    output: Option<&Path>,
     skills_index: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let index = if let Some(path) = skills_index {
@@ -296,8 +299,14 @@ fn run_retrieve_skills(
         SkillQuery::Metadata => get_skill_document(&index.documents, doc_id),
         SkillQuery::Structure => get_skill_structure(&index.documents, doc_id),
         SkillQuery::Content => {
-            let pages = pages.ok_or("content query requires --pages")?;
-            get_skill_page_content(&index, doc_id, pages)
+            if line_nums.is_empty() && node_ids.is_empty() {
+                return Err(
+                    "content query requires at least one --line_num or --node_id".into(),
+                );
+            }
+            let line_num_specs: Vec<&str> = line_nums.iter().map(String::as_str).collect();
+            let node_id_specs: Vec<&str> = node_ids.iter().map(String::as_str).collect();
+            get_skill_line_content(&index, doc_id, &line_num_specs, &node_id_specs)
         }
     };
 
@@ -309,7 +318,14 @@ fn run_retrieve_skills(
             .into());
     }
 
-    fs::write(output, serde_json::to_string_pretty(&result)?)?;
+    let output_path = output.map_or_else(
+        || catalog.join("skill_out.json"),
+        Path::to_path_buf,
+    );
+    fs::write(
+        &output_path,
+        serde_json::to_string_pretty(&result)?,
+    )?;
     Ok(())
 }
 
@@ -390,15 +406,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 catalog,
                 doc_id,
                 query,
-                pages,
+                line_nums,
+                node_ids,
                 output,
                 skills_index,
             } => run_retrieve_skills(
                 &catalog,
                 &doc_id,
                 query,
-                pages.as_deref(),
-                &output,
+                &line_nums,
+                &node_ids,
+                output.as_deref(),
                 skills_index.as_deref(),
             )?,
         },

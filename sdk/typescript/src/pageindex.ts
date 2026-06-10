@@ -4,7 +4,7 @@ import {
   SkillsBuilderNative,
   buildSkillsIndexNative,
   getSkillDocumentNative,
-  getSkillPageContentNative,
+  getSkillLineContentFromSpecNative,
   getSkillStructureNative,
   loadSkillsIndexFromDirNative,
   mdToTreeNative,
@@ -87,13 +87,14 @@ export function getSkillStructure(
   return getSkillStructureNative(documents, docId);
 }
 
-export function getSkillPageContent(
+export function getSkillLineContentFromSpec(
   index: SkillsIndexDict,
   docId: string,
-  pages: string,
-): Array<{ page: number; content: string }> {
-  return getSkillPageContentNative(index, docId, pages) as Array<{
-    page: number;
+  lineNumSpec: string,
+): Array<{ line_num: number; node_id: string; content: string }> {
+  return getSkillLineContentFromSpecNative(index, docId, lineNumSpec) as Array<{
+    line_num: number;
+    node_id: string;
     content: string;
   }>;
 }

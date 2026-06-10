@@ -14,7 +14,7 @@ from cyt_indexer import (  # noqa: E402
     SkillsBuilder,
     build_skills_index,
     get_skill_document,
-    get_skill_page_content,
+    get_skill_line_content_from_spec,
     get_skill_structure,
     md_to_tree,
     skills_index_from_decomposed_dir,
@@ -52,7 +52,7 @@ def test_build_write_reconstruct() -> None:
         assert meta["type"] == "md"
         structure = get_skill_structure(rebuilt["documents"], doc_id)
         assert structure
-        content = get_skill_page_content(rebuilt, doc_id, "1")
+        content = get_skill_line_content_from_spec(rebuilt, doc_id, "1")
         assert content
 
 

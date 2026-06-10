@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
@@ -9,14 +9,14 @@ fn u64_to_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(0)
 }
 
-/// Parse a pages spec such as `"5-7"`, `"3,8"`, or `"12"`.
+/// Parse a line-number spec such as `"5-7"`, `"3,8"`, or `"12"`.
 ///
 /// # Errors
 ///
 /// Returns an error when the format is invalid or a range is reversed.
-pub fn parse_pages(pages: &str) -> Result<Vec<u32>, String> {
+pub fn parse_line_nums(spec: &str) -> Result<Vec<u32>, String> {
     let mut result = Vec::new();
-    for part in pages.split(',') {
+    for part in spec.split(',') {
         let part = part.trim();
         if part.is_empty() {
             continue;
@@ -25,11 +25,11 @@ pub fn parse_pages(pages: &str) -> Result<Vec<u32>, String> {
             let start: u32 = start
                 .trim()
                 .parse()
-                .map_err(|_| format!("invalid page range start in '{part}'"))?;
+                .map_err(|_| format!("invalid line_num range start in '{part}'"))?;
             let end: u32 = end
                 .trim()
                 .parse()
-                .map_err(|_| format!("invalid page range end in '{part}'"))?;
+                .map_err(|_| format!("invalid line_num range end in '{part}'"))?;
             if start > end {
                 return Err(format!("invalid range '{part}': start must be <= end"));
             }
@@ -37,13 +37,73 @@ pub fn parse_pages(pages: &str) -> Result<Vec<u32>, String> {
         } else {
             let n: u32 = part
                 .parse()
-                .map_err(|_| format!("invalid page number '{part}'"))?;
+                .map_err(|_| format!("invalid line_num '{part}'"))?;
             result.push(n);
         }
     }
     result.sort_unstable();
     result.dedup();
     Ok(result)
+}
+
+/// Parse a node-id spec such as `"0005-0007"`, `"3,8"`, `"12"`, or `"0003"`.
+///
+/// Node ids are normalized to four-digit zero-padded strings.
+///
+/// # Errors
+///
+/// Returns an error when the format is invalid or a range is reversed.
+pub fn parse_node_ids(spec: &str) -> Result<Vec<String>, String> {
+    let mut result = Vec::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some((start, end)) = part.split_once('-') {
+            let start = parse_node_id_token(start.trim())?;
+            let end = parse_node_id_token(end.trim())?;
+            if start > end {
+                return Err(format!("invalid node_id range '{part}': start must be <= end"));
+            }
+            result.extend((start..=end).map(format_node_id));
+        } else {
+            result.push(format_node_id(parse_node_id_token(part)?));
+        }
+    }
+    result.sort_unstable();
+    result.dedup();
+    Ok(result)
+}
+
+fn parse_node_id_token(token: &str) -> Result<u32, String> {
+    token
+        .parse()
+        .map_err(|_| format!("invalid node_id '{token}'"))
+}
+
+fn format_node_id(id: u32) -> String {
+    format!("{id:04}")
+}
+
+fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
+    let mut merged = Vec::new();
+    for spec in specs {
+        merged.extend(parse_line_nums(spec)?);
+    }
+    merged.sort_unstable();
+    merged.dedup();
+    Ok(merged)
+}
+
+fn merge_node_id_specs(specs: &[&str]) -> Result<Vec<String>, String> {
+    let mut merged = Vec::new();
+    for spec in specs {
+        merged.extend(parse_node_ids(spec)?);
+    }
+    merged.sort_unstable();
+    merged.dedup();
+    Ok(merged)
 }
 
 /// Return document metadata for a skill document.
@@ -76,28 +136,49 @@ pub fn get_document_structure<S: std::hash::BuildHasher>(
     remove_fields(&doc.structure, &["text"])
 }
 
-/// Return page content for line numbers in `pages`.
+/// Return line content for nodes matched by line numbers and/or node ids.
+///
+/// Each spec in `line_num_specs` or `node_id_specs` may be a single value or a
+/// comma/range expression such as `"5-7"` or `"3,8"`.
 #[must_use]
-pub fn get_page_content(index: &SkillsIndex, doc_id: &str, pages: &str) -> Value {
+pub fn get_line_content(
+    index: &SkillsIndex,
+    doc_id: &str,
+    line_num_specs: &[&str],
+    node_id_specs: &[&str],
+) -> Value {
     let Some(doc) = index.documents.get(doc_id) else {
         return json!({ "error": format!("Document {doc_id} not found") });
     };
 
-    let page_nums = match parse_pages(pages) {
+    if line_num_specs.is_empty() && node_id_specs.is_empty() {
+        return json!({ "error": "content query requires at least one --line_num or --node_id" });
+    }
+
+    let line_nums = match merge_line_num_specs(line_num_specs) {
         Ok(nums) => nums,
         Err(e) => {
-            return json!({ "error": format!("Invalid pages format: {pages:?}. Use \"5-7\", \"3,8\", or \"12\". Error: {e}") });
+            return json!({ "error": format!("Invalid line_num format. Use \"5-7\", \"3,8\", or \"12\". Error: {e}") });
+        }
+    };
+    let node_ids = match merge_node_id_specs(node_id_specs) {
+        Ok(ids) => ids,
+        Err(e) => {
+            return json!({ "error": format!("Invalid node_id format. Use \"0005-0007\", \"3,8\", or \"12\". Error: {e}") });
         }
     };
 
-    if page_nums.is_empty() {
+    if line_nums.is_empty() && node_ids.is_empty() {
         return json!([]);
     }
 
-    let min_line = page_nums[0];
-    let max_line = page_nums[page_nums.len() - 1];
+    let line_set: HashSet<u32> = line_nums.into_iter().collect();
+    let node_set: HashSet<String> = node_ids.into_iter().collect();
+    let match_by_line = !line_set.is_empty();
+    let match_by_node = !node_set.is_empty();
+
     let mut results = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
 
     let flat_nodes = structure_to_list(&doc.structure);
     for node in flat_nodes {
@@ -108,20 +189,38 @@ pub fn get_page_content(index: &SkillsIndex, doc_id: &str, pages: &str) -> Value
             .get("line_num")
             .and_then(serde_json::Value::as_u64)
             .map_or(0, u64_to_u32);
-        if line_num < min_line || line_num > max_line || !seen.insert(line_num) {
+        let node_id = obj
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0000")
+            .to_string();
+
+        let matched = (match_by_line && line_set.contains(&line_num))
+            || (match_by_node && node_set.contains(&node_id));
+        if !matched || !seen.insert(node_id.clone()) {
             continue;
         }
 
         let content = resolve_node_content(index, doc_id, obj);
-        results.push(json!({ "page": line_num, "content": content }));
+        results.push(json!({
+            "line_num": line_num,
+            "node_id": node_id,
+            "content": content,
+        }));
     }
 
     results.sort_by_key(|v| {
-        v.get("page")
+        v.get("line_num")
             .and_then(serde_json::Value::as_u64)
             .map_or(0, u64_to_u32)
     });
     Value::Array(results)
+}
+
+/// Convenience wrapper for a single `line_num` spec string.
+#[must_use]
+pub fn get_line_content_from_spec(index: &SkillsIndex, doc_id: &str, line_num_spec: &str) -> Value {
+    get_line_content(index, doc_id, &[line_num_spec], &[])
 }
 
 fn resolve_node_content(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<String, Value>) -> String {
@@ -155,9 +254,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_pages_variants() {
-        assert_eq!(parse_pages("5-7"), Ok(vec![5, 6, 7]));
-        assert_eq!(parse_pages("3,8"), Ok(vec![3, 8]));
-        assert_eq!(parse_pages("12"), Ok(vec![12]));
+    fn parse_line_num_variants() {
+        assert_eq!(parse_line_nums("5-7"), Ok(vec![5, 6, 7]));
+        assert_eq!(parse_line_nums("3,8"), Ok(vec![3, 8]));
+        assert_eq!(parse_line_nums("12"), Ok(vec![12]));
+    }
+
+    #[test]
+    fn parse_node_id_variants() {
+        assert_eq!(
+            parse_node_ids("5-7"),
+            Ok(vec!["0005".to_string(), "0006".to_string(), "0007".to_string()])
+        );
+        assert_eq!(
+            parse_node_ids("3,8"),
+            Ok(vec!["0003".to_string(), "0008".to_string()])
+        );
+        assert_eq!(parse_node_ids("0012"), Ok(vec!["0012".to_string()]));
     }
 }

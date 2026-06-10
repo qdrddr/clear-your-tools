@@ -1,5 +1,5 @@
 use cyt_indexer::{
-    build_skills_index, get_skill_document, get_skill_page_content, get_skill_structure,
+    build_skills_index, get_skill_document, get_skill_line_content_from_spec, get_skill_structure,
     load_skills_index_from_dir, skills_index_from_decomposed_dir,
     PageIndexConfig, SkillsBuilder,
 };
@@ -28,7 +28,7 @@ fn in_memory_build_and_retrieve() -> Result<(), String> {
     assert_eq!(meta.get("doc_name").and_then(|v| v.as_str()), Some("create-hook"));
     let structure = get_skill_structure(&index.documents, doc_id);
     assert!(structure.is_array());
-    let content = get_skill_page_content(&index, doc_id, "1,5");
+    let content = get_skill_line_content_from_spec(&index, doc_id, "1,5");
     let arr = content
         .as_array()
         .ok_or_else(|| "expected content array".to_string())?;
@@ -57,7 +57,7 @@ fn write_reconstruct_and_retrieve_via_cli_flow() -> Result<(), String> {
 
     let loaded = load_skills_index_from_dir(&catalog)?;
     let doc_id = "create-hook";
-    let content = get_skill_page_content(&loaded, doc_id, "5-10");
+    let content = get_skill_line_content_from_spec(&loaded, doc_id, "5-10");
     let arr = content
         .as_array()
         .ok_or_else(|| "expected content array".to_string())?;

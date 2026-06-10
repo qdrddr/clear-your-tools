@@ -8,7 +8,7 @@ from typing import Any
 from cyt_indexer._native import SkillsBuilder as _SkillsBuilder
 from cyt_indexer._native import build_skills_index as _build_skills_index
 from cyt_indexer._native import get_skill_document as _get_skill_document
-from cyt_indexer._native import get_skill_page_content as _get_skill_page_content
+from cyt_indexer._native import get_skill_line_content_from_spec as _get_skill_line_content_from_spec
 from cyt_indexer._native import get_skill_structure as _get_skill_structure
 from cyt_indexer._native import load_skills_index_from_dir as _load_skills_index_from_dir
 from cyt_indexer._native import md_to_tree as _md_to_tree
@@ -71,12 +71,12 @@ def get_skill_structure(documents: dict[str, Any], doc_id: str) -> list[Any] | d
     return _get_skill_structure(documents, doc_id)
 
 
-def get_skill_page_content(
+def get_skill_line_content_from_spec(
     index: dict[str, Any],
     doc_id: str,
-    pages: str,
+    line_num_spec: str,
 ) -> list[dict[str, Any]]:
-    return _get_skill_page_content(index, doc_id, pages)
+    return _get_skill_line_content_from_spec(index, doc_id, line_num_spec)
 
 
 class SkillsBuilder:

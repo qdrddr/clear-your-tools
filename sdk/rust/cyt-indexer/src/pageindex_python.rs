@@ -1,6 +1,6 @@
 use crate::pageindex::{
-    build_skills_index, get_document, get_document_structure, get_page_content, md_to_tree,
-    PageIndexConfig, SkillsIndex,
+    build_skills_index, get_document, get_document_structure, get_line_content_from_spec,
+    md_to_tree, PageIndexConfig, SkillsIndex,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -162,15 +162,15 @@ fn get_skill_structure_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &
     value_to_py(py, &get_document_structure(&docs, doc_id))
 }
 
-#[pyfunction(name = "get_skill_page_content")]
-fn get_skill_page_content_py(
+#[pyfunction(name = "get_skill_line_content_from_spec")]
+fn get_skill_line_content_from_spec_py(
     py: Python<'_>,
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
-    pages: &str,
+    line_num_spec: &str,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    value_to_py(py, &get_page_content(&index, doc_id, pages))
+    value_to_py(py, &get_line_content_from_spec(&index, doc_id, line_num_spec))
 }
 
 #[pyclass(name = "SkillsBuilder")]
@@ -237,7 +237,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(md_to_tree_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_document_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_structure_py, m)?)?;
-    m.add_function(wrap_pyfunction!(get_skill_page_content_py, m)?)?;
+    m.add_function(wrap_pyfunction!(get_skill_line_content_from_spec_py, m)?)?;
     m.add_class::<PySkillsBuilder>()?;
     Ok(())
 }
