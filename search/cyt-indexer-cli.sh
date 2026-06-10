@@ -37,6 +37,8 @@ DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_
 export DEEPINFRA_API_KEY
 
 ./search/local-dev.sh proxy --port 8834
+# BM25 test
+./search/local-dev.sh proxy --upstream https://openrouter.ai/api --upstream-kind anthropic --debug
 
 # Skills
 rm -rf ./.catalog/skills/

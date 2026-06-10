@@ -27,6 +27,8 @@ dependencies = [
     "numpy>=2.0",
     "pystemmer==3.1.0",
     "bm25s[core]==0.3.9",
+    "libsql-experimental==0.0.55",
+    "uuid7==0.1.0",
 ]
 
 [project.urls]
@@ -41,8 +43,6 @@ proxy = [
     "starlette==1.2.0",
     "hypercorn==0.18.0",
     "h2==4.3.0",
-    "libsql-experimental==0.0.55",
-    "uuid7==0.1.0",
 ]
 pruners = [
     "litellm==1.83.14",

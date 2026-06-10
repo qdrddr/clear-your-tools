@@ -591,6 +591,7 @@ libsql-experimental==0.0.55 \
     --hash=sha256:7a5dd325f87425546e0a7f0d460d4b6e1852bc4d4194a7b5ad127614ef8b3b10 \
     --hash=sha256:b3476a78edb8f59aa6c571d6def1840fff8d263eb4bbc4b26b2afd7400cb9ba2 \
     --hash=sha256:f3bfd7af2ca9d1ff8f8c7f7fce5f1a650bfe53c23b45658253480fe287283bae
+    # via clear-your-tools
 litellm==1.83.14 \
     --hash=sha256:24aef9b47cdc424c833e32f3727f411741c690832cd1fe4405e0077144fe09c9 \
     --hash=sha256:92b11ba2a32cf80707ddf388d18526696c7999a21b418c5e3b6eda1243d2cfdb
@@ -1435,6 +1436,7 @@ urllib3==2.7.0 \
 uuid7==0.1.0 \
     --hash=sha256:5e259bb63c8cb4aded5927ff41b444a80d0c7124e8a0ced7cf44efa1f5cccf61 \
     --hash=sha256:8c57aa32ee7456d3cc68c95c4530bc571646defac01895cfc73545449894a63c
+    # via clear-your-tools
 uvicorn==0.48.0 \
     --hash=sha256:48097851328b87ec36117d3d575234519eb58c2b22d79666e9bbc6c49a761dad \
     --hash=sha256:a5504207195d08c2511bf9125ede5ac4a4b71725d519e758d01dcf0bc2d31c37

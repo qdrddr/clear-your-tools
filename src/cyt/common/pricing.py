@@ -24,6 +24,7 @@ class StatsCosts:
     llm_output_usd: float
     rerank_input_usd: float
     rerank_output_usd: float
+    skills_input_usd: float = 0.0
 
     @property
     def pruning_total_usd(self) -> float:
@@ -36,7 +37,7 @@ class StatsCosts:
 
     @property
     def net_savings_usd(self) -> float:
-        return self.tools_saved_usd - self.pruning_total_usd
+        return self.tools_saved_usd - self.pruning_total_usd - self.skills_input_usd
 
 
 def normalize_model_name(name: str | None) -> str:
@@ -216,6 +217,8 @@ def compute_stats_costs(
     stage_model_tokens: list[tuple[str, str | None, str, int]],
     upstream_saved_tokens: list[tuple[str | None, str | None, int]],
     config: dict[str, Any],
+    *,
+    skills_injection_tokens: list[tuple[str | None, str | None, int]] | None = None,
 ) -> StatsCosts:
     tools_saved_usd = 0.0
     for model_name, provider_dns_name, count in upstream_saved_tokens:
@@ -250,12 +253,22 @@ def compute_stats_costs(
             rerank_output_usd=rerank_output_usd,
         )
 
+    skills_input_usd = 0.0
+    for model_name, provider_dns_name, count in skills_injection_tokens or []:
+        if count <= 0:
+            continue
+        pricing = lookup_llm_pricing(config, model_name, provider_dns_name)
+        if pricing is None:
+            continue
+        skills_input_usd += count * pricing.input_cost_per_token
+
     return StatsCosts(
         tools_saved_usd=tools_saved_usd,
         llm_input_usd=llm_input_usd,
         llm_output_usd=llm_output_usd,
         rerank_input_usd=rerank_input_usd,
         rerank_output_usd=rerank_output_usd,
+        skills_input_usd=skills_input_usd,
     )
 
 
@@ -273,11 +286,13 @@ def compute_net_savings_tokens(
     tools_saved: int,
     tools_accepted: int,
     costs: StatsCosts,
+    *,
+    skills_in: int = 0,
 ) -> tuple[int, float]:
-    """Estimate net tool-token savings after pruning cost, using cost ratio."""
+    """Estimate net tool-token savings after pruning and skills context cost."""
     if costs.tools_saved_usd <= 0 or tools_saved <= 0:
-        return 0, 0.0
+        return max(0, -skills_in), 0.0
     adjusted_percent = costs.net_savings_usd / costs.tools_saved_usd
-    net_tokens = round(tools_saved * adjusted_percent)
+    net_tokens = round(tools_saved * adjusted_percent) - skills_in
     net_pct = (100.0 * net_tokens / tools_accepted) if tools_accepted else 0.0
     return net_tokens, net_pct

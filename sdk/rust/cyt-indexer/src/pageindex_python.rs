@@ -1,7 +1,8 @@
 use crate::pageindex::{
     build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
     get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
-    spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig, ReconstructOptions, SkillsIndex,
+    repair_skill_chunks, spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig,
+    ReconstructOptions, SkillsIndex,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -74,6 +75,17 @@ fn load_skills_index_from_dir_py(py: Python<'_>, catalog_dir: String) -> PyResul
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
     })?;
     skills_index_to_py(py, &index)
+}
+
+#[pyfunction(name = "repair_skill_chunks")]
+fn repair_skill_chunks_py(
+    entry_dir: String,
+    doc_id: &str,
+    config: Option<Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let cfg = page_index_config_from_py(config)?;
+    repair_skill_chunks(PathBuf::from(entry_dir).as_path(), doc_id, &cfg)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
 }
 
 #[pyfunction(name = "skills_index_from_decomposed_dir")]
@@ -396,6 +408,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build_skills_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(write_skills_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(load_skills_index_from_dir_py, m)?)?;
+    m.add_function(wrap_pyfunction!(repair_skill_chunks_py, m)?)?;
     m.add_function(wrap_pyfunction!(skills_index_from_decomposed_dir_py, m)?)?;
     m.add_function(wrap_pyfunction!(md_to_tree_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_document_py, m)?)?;

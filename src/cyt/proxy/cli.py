@@ -52,6 +52,7 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
                     db.query_stage_model_tokens(period),
                     db.query_upstream_saved_tokens(period),
                     config,
+                    skills_injection_tokens=db.query_skills_injection_tokens(period),
                 )
                 if db is not None
                 else empty_costs()
@@ -64,6 +65,7 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
                     db.query_stage_model_tokens(args.period),
                     db.query_upstream_saved_tokens(args.period),
                     config,
+                    skills_injection_tokens=db.query_skills_injection_tokens(args.period),
                 )
                 if db is not None
                 else empty_costs()
@@ -217,6 +219,11 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_events.add_argument("--limit", type=int, default=20)
     stats_events.add_argument("--json", action="store_true")
     stats_events.add_argument("--config", type=Path, default=None)
+
+    subparsers.add_parser(
+        "skills",
+        help="Agent hook: session tracking and skill injection",
+    )
 
     subparsers.add_parser(
         "setup",
@@ -391,6 +398,12 @@ def main() -> None:
         from cyt.proxy.setup import run_setup
 
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
+        return
+
+    if args.command == "skills":
+        from cyt.skills.cli import run as run_skills
+
+        run_skills()
         return
 
     if args.command is None:

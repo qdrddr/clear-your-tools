@@ -1,6 +1,6 @@
 use cyt_indexer::{
     build_skills_index, get_skill_document, get_skill_line_content_from_spec, get_skill_structure,
-    load_skills_index_from_dir, skills_index_from_decomposed_dir,
+    load_skills_index_from_dir, repair_skill_chunks, skills_index_from_decomposed_dir,
     PageIndexConfig, SkillsBuilder, SkillsIndex,
 };
 use std::fs;
@@ -263,6 +263,87 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
     assert!(reconstructed.matched_chunk_ids.len() >= 2);
     assert!(reconstructed.markdown.contains("### Step 2: Select the Best Match"));
     assert!(reconstructed.markdown.contains("- Exact or closest name match"));
+
+    let _ = fs::remove_dir_all(&tmp);
+    Ok(())
+}
+
+fn collect_structure_chunk_ids(structure: &serde_json::Value) -> Vec<u32> {
+    use cyt_indexer::pageindex::tree::structure_to_list;
+
+    let mut ids = Vec::new();
+    for node in structure_to_list(structure) {
+        let Some(obj) = node.as_object() else {
+            continue;
+        };
+        if let Some(chunks) = obj.get("chunks").and_then(|v| v.as_array()) {
+            for chunk in chunks {
+                if let Some(id) = chunk.get("chunk_id").and_then(serde_json::Value::as_u64)
+                    && let Ok(parsed) = u32::try_from(id)
+                {
+                    ids.push(parsed);
+                }
+            }
+        }
+    }
+    ids
+}
+
+#[test]
+fn bm25_pipeline_always_emits_chunk_files() -> Result<(), String> {
+    let tmp = std::env::temp_dir().join(format!("cyt-skills-chunks-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let skills_dir = fixture_skills_dir(&tmp)?;
+    let catalog = tmp.join("catalog");
+
+    let mut builder = SkillsBuilder::new(false, Some(catalog.clone()));
+    builder.build_from_dirs(&[skills_dir], &PageIndexConfig::default())?;
+    builder.write_catalog()?;
+
+    let index = skills_index_from_decomposed_dir(&catalog)?;
+    let doc_id = "create-hook";
+    let doc = index.documents.get(doc_id).ok_or("missing doc")?;
+    for chunk_id in collect_structure_chunk_ids(&doc.structure) {
+        let rel = format!("skills/decomposed/{doc_id}/chunks/{chunk_id}.md");
+        assert!(
+            catalog.join(&rel).is_file(),
+            "missing chunk file for chunk_id {chunk_id}"
+        );
+    }
+
+    let _ = fs::remove_dir_all(&tmp);
+    Ok(())
+}
+
+#[test]
+fn repair_skill_chunks_fills_missing_chunk_files() -> Result<(), String> {
+    let tmp = std::env::temp_dir().join(format!("cyt-skills-repair-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let skills_dir = fixture_skills_dir(&tmp)?;
+    let catalog = tmp.join("catalog");
+
+    let mut builder = SkillsBuilder::new(false, Some(catalog.clone()));
+    builder.build_from_dirs(&[skills_dir], &PageIndexConfig::default())?;
+    builder.write_catalog()?;
+
+    let doc_id = "create-hook";
+    let chunks_dir = catalog.join(format!("skills/decomposed/{doc_id}/chunks"));
+    for entry in fs::read_dir(&chunks_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+    }
+
+    repair_skill_chunks(&catalog, doc_id, &PageIndexConfig::default())?;
+
+    let index = skills_index_from_decomposed_dir(&catalog)?;
+    let doc = index.documents.get(doc_id).ok_or("missing doc")?;
+    for chunk_id in collect_structure_chunk_ids(&doc.structure) {
+        let rel = format!("skills/decomposed/{doc_id}/chunks/{chunk_id}.md");
+        assert!(
+            catalog.join(&rel).is_file(),
+            "repair did not restore chunk file for chunk_id {chunk_id}"
+        );
+    }
 
     let _ = fs::remove_dir_all(&tmp);
     Ok(())

@@ -82,6 +82,10 @@ DEFAULT_BM25_STOPWORDS: str = "en"
 DEFAULT_BM25_SCORE_TOOL: float = 0.3
 DEFAULT_BM25_PRUNE_ENUMS: bool = True
 DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
+DEFAULT_BM25_SCORE_SKILLS: float = 0.5
+DEFAULT_SKILLS_PIPELINE: str = "bm25"
+DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
+DEFAULT_SKILLS_CACHE_DB_PATH: str = "~/.config/cyt/cache.db"
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
@@ -839,6 +843,76 @@ def bm25_score_tool_enum(config: dict[str, Any] | None = None) -> float:
     cfg = config or load_config()
     value = _bm25_pruning_settings(cfg).get("score_tool_enum", DEFAULT_BM25_SCORE_TOOL_ENUM)
     return float(value)
+
+
+def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    value = _bm25_pruning_settings(cfg).get("score_skills", DEFAULT_BM25_SCORE_SKILLS)
+    return float(value)
+
+
+def _skills_settings(config: dict[str, Any]) -> dict[str, Any]:
+    skills = config.get("skills")
+    return skills if isinstance(skills, dict) else {}
+
+
+def skills_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return bool(_skills_settings(_merged_config(cfg)).get("enabled", False))
+
+
+def skills_pipeline(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get("pipeline", DEFAULT_SKILLS_PIPELINE)
+    return str(value)
+
+
+def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    path = _skills_settings(_merged_config(cfg)).get("catalog_dir", DEFAULT_SKILLS_CATALOG_DIR)
+    return str(Path(str(path)).expanduser())
+
+
+def skills_cache_db_path(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    cache = _skills_settings(_merged_config(cfg)).get("cache", {})
+    if isinstance(cache, dict):
+        database = cache.get("database", {})
+        if isinstance(database, dict) and database.get("path"):
+            return str(Path(str(database["path"])).expanduser())
+    return str(Path(DEFAULT_SKILLS_CACHE_DB_PATH).expanduser())
+
+
+def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get("max_tokens_per_request", 2000)
+    return int(value)
+
+
+def skills_directories(config: dict[str, Any] | None = None) -> list[str]:
+    cfg = config or load_config()
+    dirs = _skills_settings(_merged_config(cfg)).get("directories", [])
+    if not isinstance(dirs, list):
+        return []
+    return [str(Path(str(d)).expanduser()) for d in dirs if d]
+
+
+def skills_pageindex_config(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    from cyt.indexer.pageindex import page_index_config_from_app
+
+    cfg = config or load_config()
+    return page_index_config_from_app(_skills_settings(_merged_config(cfg)))
+
+
+def skills_index_params_fingerprint(config: dict[str, Any] | None = None) -> str:
+    import hashlib
+    import json
+
+    pageindex = skills_pageindex_config(config)
+    if pageindex is None:
+        return hashlib.sha256(b"{}").hexdigest()
+    canonical = json.dumps(pageindex, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:

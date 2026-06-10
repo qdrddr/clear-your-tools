@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS proxy_request (
     query TEXT,
     error TEXT,
     tools_accepted_json TEXT,
-    tools_final_json TEXT
+    tools_final_json TEXT,
+    skills_in INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS model_request (
@@ -69,6 +70,16 @@ CREATE INDEX IF NOT EXISTS idx_proxy_request_ts ON proxy_request(ts_ms);
 
 def expand_db_path(path: str) -> str:
     return str(Path(path).expanduser())
+
+
+def _ensure_skills_in_column(conn: libsql.Connection) -> None:
+    rows = conn.execute("PRAGMA table_info(proxy_request)").fetchall()
+    columns = {str(row[1]) for row in rows}
+    if "skills_in" not in columns:
+        conn.execute(
+            "ALTER TABLE proxy_request ADD COLUMN skills_in INTEGER NOT NULL DEFAULT 0",
+        )
+        conn.commit()
 
 
 def new_uuid7() -> str:
@@ -168,6 +179,7 @@ class StatsDB:
         parent.mkdir(parents=True, exist_ok=True)
         conn = libsql.connect(db_path)
         conn.executescript(_SCHEMA)
+        _ensure_skills_in_column(conn)
         conn.commit()
         logger.info("stats database initialized: %s", db_path)
         return cls(conn)
@@ -179,6 +191,7 @@ class StatsDB:
         if not Path(db_path).exists():
             return cls.init(path)
         conn = libsql.connect(db_path)
+        _ensure_skills_in_column(conn)
         return cls(conn)
 
     @classmethod
@@ -188,6 +201,7 @@ class StatsDB:
         if not Path(db_path).exists():
             return None
         conn = libsql.connect(db_path)
+        _ensure_skills_in_column(conn)
         return cls(conn)
 
     def close(self) -> None:
@@ -343,6 +357,86 @@ class StatsDB:
         logger.debug("recorded proxy_request id=%s upstream_id=%s", proxy_id, upstream_id)
         return proxy_id
 
+    def record_skills_injection(
+        self,
+        *,
+        query: str,
+        model_name: str,
+        skills_in: int,
+        config: dict[str, Any] | None = None,
+    ) -> str:
+        provider, provider_dns = lookup_model_provider(model_name, config)
+        proxy_id = new_uuid7()
+        ts_ms = int(time.time() * 1000)
+        self._conn.execute(
+            """
+            INSERT INTO proxy_request (
+                id, endpoint, tools_in, tool_count_in, tool_properties_count_in,
+                tools_out, tool_count_out, tool_properties_count_out,
+                tools_pruned, tool_count_pruned, tool_properties_count_pruned,
+                ts_ms, prune_status, pipeline, query, error,
+                tools_accepted_json, tools_final_json, skills_in
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                proxy_id,
+                "skills",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                ts_ms,
+                "applied",
+                json.dumps(["bm25"]),
+                query,
+                None,
+                None,
+                None,
+                skills_in,
+            ),
+        )
+        self._insert_model_request(
+            proxy_id,
+            ModelRequestRecord(
+                stage="skills",
+                model_name=model_name,
+                provider_dns_name=provider_dns,
+                provider=provider,
+                is_upstream=True,
+                token_rows=[
+                    TokenRecord(type="input", tokens=skills_in, is_saved=False),
+                ],
+            ),
+        )
+        self._conn.commit()
+        return proxy_id
+
+    def query_skills_injection_tokens(
+        self,
+        period: str = "all",
+    ) -> list[tuple[str | None, str | None, int]]:
+        """Return (model_name, provider_dns_name, skills_in) for skills hook events."""
+        cutoff = self._period_cutoff_ms(period)
+        period_clause = "p.ts_ms >= ? AND " if cutoff is not None else ""
+        params: tuple[Any, ...] = (cutoff,) if cutoff is not None else ()
+        rows = self._conn.execute(
+            f"""
+            SELECT m.model_name, m.provider_dns_name, COALESCE(SUM(p.skills_in), 0)
+            FROM proxy_request p
+            JOIN model_request m ON m.proxy_request_id = p.id
+            WHERE {period_clause}p.endpoint = 'skills'
+            AND m.stage = 'skills'
+            GROUP BY m.model_name, m.provider_dns_name
+            """,
+            params,
+        ).fetchall()
+        return [(row[0], row[1], int(row[2] or 0)) for row in rows]
+
     def _period_cutoff_ms(self, period: str) -> int | None:
         now = int(time.time() * 1000)
         windows = {
@@ -364,7 +458,7 @@ class StatsDB:
             SELECT DISTINCT stage, model_name, provider_dns_name, provider
             FROM model_request
             WHERE model_name IS NOT NULL
-            AND stage IN ('llm', 'rerank', 'bm25', 'upstream')
+            AND stage IN ('llm', 'rerank', 'bm25', 'skills', 'upstream')
             ORDER BY stage, model_name, provider_dns_name
             """,
         ).fetchall()
@@ -392,7 +486,7 @@ class StatsDB:
             FROM tokens t
             JOIN model_request m ON t.model_request_id = m.id
             JOIN proxy_request p ON m.proxy_request_id = p.id
-            WHERE {period_clause}m.stage IN ('llm', 'rerank', 'bm25')
+            WHERE {period_clause}m.stage IN ('llm', 'rerank', 'bm25', 'skills')
             AND t.is_saved = 0
             GROUP BY m.stage, m.model_name, t.type
             """,
@@ -505,6 +599,15 @@ class StatsDB:
                 AND m.stage = 'rerank' AND t.type = 'output' AND t.is_saved = 0
                 """,
             ),
+            "skills_in": sum_tokens(
+                """
+                SELECT COALESCE(SUM(p.skills_in), 0)
+                FROM proxy_request p
+                """
+                + (
+                    f"{where} AND p.endpoint = 'skills'" if where else "WHERE p.endpoint = 'skills'"
+                ),
+            ),
         }
 
     def query_summary(self, period: str = "all") -> dict[str, int]:
@@ -576,6 +679,7 @@ def empty_totals() -> dict[str, int]:
         "llm_output": 0,
         "rerank_input": 0,
         "rerank_output": 0,
+        "skills_in": 0,
     }
 
 
@@ -613,10 +717,12 @@ def format_totals(
     if costs is not None:
         from cyt.common.pricing import compute_net_savings_tokens, format_usd
 
+        skills_in = totals.get("skills_in", 0)
         net_savings_tokens, net_savings_pct = compute_net_savings_tokens(
             tools_saved,
             tools_accepted,
             costs,
+            skills_in=skills_in,
         )
         use_color = _terminal_color_enabled(color)
         savings_tokens = _green(
@@ -635,6 +741,9 @@ def format_totals(
                 f"  rerank input:        {totals.get('rerank_input', 0)}  ({format_usd(costs.rerank_input_usd)})",
                 f"  rerank output:       {totals.get('rerank_output', 0)}  ({format_usd(costs.rerank_output_usd)})",
                 f"  total pruning:       {format_usd(costs.pruning_total_usd)}",
+                "",
+                "skills context added:",
+                f"  tokens:              {skills_in}  ({format_usd(costs.skills_input_usd)})",
                 "",
                 "net savings (input tokens):",
                 f"  cost:         {format_usd(costs.net_savings_usd)}",

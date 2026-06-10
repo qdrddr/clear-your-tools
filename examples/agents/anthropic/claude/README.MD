@@ -47,3 +47,20 @@ The merge script is [`claude-code-desktop-or-cowork.sh`](./claude-code-desktop-o
 - Requires [jq](https://jqlang.github.io/jq/) (`brew install jq` on macOS, `apt install jq` on Debian/Ubuntu)
 
 Restart Claude Code Desktop or Claude Cowork after running the script so it picks up the merged settings.
+
+## Skills hook (`cyt skills`)
+
+Enable skill injection in `~/.config/cyt/config.yaml`:
+
+```yaml
+skills:
+  enabled: true
+```
+
+Merge [`hooks.json`](./hooks.json) into `~/.claude/settings.json` (or reference
+[`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) if `cyt` is not on the hook `PATH`). The hook runs on
+`SessionStart` (registers the session model) and `UserPromptSubmit` (BM25-matches skill chunks into
+`additionalContext`).
+
+The first inject may build the per-skill catalog under `~/.config/cyt/skills/entries/`; later runs
+reuse cached decomposed indexes.

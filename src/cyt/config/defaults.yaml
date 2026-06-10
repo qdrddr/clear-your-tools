@@ -231,6 +231,11 @@ stats:
 
 skills:
   enabled: false
+  pipeline: bm25
+  catalog_dir: ~/.config/cyt/skills
+  cache:
+    database:
+      path: ~/.config/cyt/cache.db
   pageindex:
     if_add_node_id: true
     if_add_node_text: false

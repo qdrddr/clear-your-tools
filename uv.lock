@@ -267,6 +267,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bm25s", extra = ["core"] },
     { name = "cyt-indexer-sdk" },
+    { name = "libsql-experimental" },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "pystemmer" },
@@ -274,6 +275,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tiktoken" },
     { name = "typing-extensions" },
+    { name = "uuid7" },
 ]
 
 [package.optional-dependencies]
@@ -281,19 +283,15 @@ all = [
     { name = "h2" },
     { name = "httpx" },
     { name = "hypercorn" },
-    { name = "libsql-experimental" },
     { name = "litellm" },
     { name = "starlette" },
-    { name = "uuid7" },
     { name = "uvicorn" },
 ]
 proxy = [
     { name = "h2" },
     { name = "httpx" },
     { name = "hypercorn" },
-    { name = "libsql-experimental" },
     { name = "starlette" },
-    { name = "uuid7" },
     { name = "uvicorn" },
 ]
 pruners = [
@@ -339,7 +337,7 @@ requires-dist = [
     { name = "h2", marker = "extra == 'proxy'", specifier = "==4.3.0" },
     { name = "httpx", marker = "extra == 'proxy'", specifier = "==0.28.1" },
     { name = "hypercorn", marker = "extra == 'proxy'", specifier = "==0.18.0" },
-    { name = "libsql-experimental", marker = "extra == 'proxy'", specifier = "==0.0.55" },
+    { name = "libsql-experimental", specifier = "==0.0.55" },
     { name = "litellm", marker = "extra == 'pruners'", specifier = "==1.83.14" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pydantic", specifier = "==2.12.5" },
@@ -349,7 +347,7 @@ requires-dist = [
     { name = "starlette", marker = "extra == 'proxy'", specifier = "==1.2.0" },
     { name = "tiktoken", specifier = "==0.12.0" },
     { name = "typing-extensions", specifier = "==4.15.0" },
-    { name = "uuid7", marker = "extra == 'proxy'", specifier = "==0.1.0" },
+    { name = "uuid7", specifier = "==0.1.0" },
     { name = "uvicorn", marker = "extra == 'proxy'", specifier = "==0.48.0" },
 ]
 provides-extras = ["proxy", "pruners", "all"]

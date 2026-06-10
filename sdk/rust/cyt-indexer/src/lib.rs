@@ -86,7 +86,7 @@ pub use pageindex::{
     get_content_retrieve_result as get_skill_content_retrieve_result,
     reconstruct_skill_markdown, retrieve_output_rel_path, write_reconstructed_skill,
     PageIndexConfig, MdIndexResult, ReconstructOptions, ReconstructResult, SkillDocument,
-    SkillsIndex, RETRIEVE_DIR,
+    SkillsIndex, RETRIEVE_DIR, repair_skill_chunks,
 };
 pub use skills_builder::SkillsBuilder;
 pub use skills_io::{

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::bm25_cohesion::Bm25CohesionChunker;
+use crate::bm25_cohesion::{Bm25CohesionChunker, CohesionChunk};
 
 use super::chunk_id::next_chunk_id;
 use super::config::PageIndexConfig;
@@ -37,9 +37,14 @@ pub fn attach_chunks_to_structure(
             continue;
         }
 
-        let chunks = chunker.chunk(text);
+        let mut chunks = chunker.chunk(text);
         if chunks.is_empty() {
-            continue;
+            chunks.push(CohesionChunk {
+                text: text.to_string(),
+                start_index: 0,
+                end_index: text.len(),
+                token_count: 1,
+            });
         }
 
         let mut chunk_refs = Vec::new();
@@ -60,7 +65,7 @@ pub fn attach_chunks_to_structure(
     Ok(())
 }
 
-fn insert_chunks_on_node(structure: &mut Value, target_node_id: u32, chunks: Vec<Value>) -> bool {
+pub(crate) fn insert_chunks_on_node(structure: &mut Value, target_node_id: u32, chunks: Vec<Value>) -> bool {
     match structure {
         Value::Object(map) => {
             let id = node_id_from_value(map.get("node_id"));

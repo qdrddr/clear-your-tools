@@ -7,6 +7,7 @@ pub mod node_id;
 pub mod parse;
 pub mod reconstruct;
 pub mod retrieve;
+pub mod skills_repair;
 #[cfg(any(feature = "python", feature = "node"))]
 pub(crate) mod spec_refs;
 pub mod tree;
@@ -29,4 +30,5 @@ pub use tree::{
     finalize_skill_structure, is_frontmatter_node, is_preamble_node, CONTENT_NODE_ID_START,
     NODE_ID_FRONTMATTER, NODE_ID_PREAMBLE, NODE_KIND_FRONTMATTER, NODE_KIND_PREAMBLE,
 };
+pub use skills_repair::repair_skill_chunks;
 pub use types::{chunk_md_rel, MdIndexResult, SkillDocument, SkillsIndex};

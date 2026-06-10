@@ -20,6 +20,7 @@ from cyt_indexer._native import md_to_tree as _md_to_tree
 from cyt_indexer._native import parse_skill_chunk_ids as _parse_skill_chunk_ids
 from cyt_indexer._native import parse_skill_node_ids as _parse_skill_node_ids
 from cyt_indexer._native import reconstruct_skill_markdown as _reconstruct_skill_markdown
+from cyt_indexer._native import repair_skill_chunks as _repair_skill_chunks
 from cyt_indexer._native import skills_index_from_decomposed_dir as _skills_index_from_decomposed_dir
 from cyt_indexer._native import write_reconstructed_skill as _write_reconstructed_skill
 from cyt_indexer._native import write_skills_index as _write_skills_index
@@ -143,6 +144,16 @@ def load_skills_index_from_dir(catalog_dir: str) -> dict[str, Any]:
 
 def skills_index_from_decomposed_dir(dir_path: str) -> dict[str, Any]:
     return _skills_index_from_decomposed_dir(dir_path)
+
+
+def repair_skill_chunks(
+    entry_dir: str,
+    doc_id: str,
+    *,
+    config: PageIndexConfigInput | None = None,
+) -> None:
+    cfg = _config_dict(config)
+    _repair_skill_chunks(entry_dir, doc_id, cfg)
 
 
 def md_to_tree(
