@@ -1,11 +1,12 @@
 use clap::{Parser, Subcommand};
 use cyt_indexer::{
     apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
-    get_skill_document, get_skill_line_content, get_skill_structure,
+    get_skill_content_retrieve_result, get_skill_document, get_skill_structure,
     load_catalog_from_dir, load_skills_index_from_dir, parse_tool_policy_pair,
     per_tool_policies_from_value, parse_tool_policy, policy_context_from_values,
-    removed_chunks, retrieve_tools_from_catalog, DecomposedCatalog, PageIndexConfig,
-    PolicyContext, RemovedChunksOptions, RetrieveOptions, SkillsBuilder,
+    removed_chunks, retrieve_tools_from_catalog, write_reconstructed_skill, DecomposedCatalog,
+    PageIndexConfig, PolicyContext, ReconstructOptions, RemovedChunksOptions, RetrieveOptions,
+    SkillsBuilder,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -102,6 +103,8 @@ enum RetrieveTarget {
         output: Option<PathBuf>,
         #[arg(long)]
         skills_index: Option<PathBuf>,
+        #[arg(long)]
+        keep_all_headers: bool,
     },
 }
 
@@ -127,6 +130,12 @@ enum SkillQuery {
     Metadata,
     Structure,
     Content,
+}
+
+fn write_json_pretty(path: &Path, mut json: String) -> Result<(), Box<dyn std::error::Error>> {
+    json.push('\n');
+    fs::write(path, json)?;
+    Ok(())
 }
 
 fn load_tools_array(tools: &Path) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
@@ -235,6 +244,17 @@ struct RetrieveArgs<'a> {
     removed_output: Option<&'a Path>,
 }
 
+struct RetrieveSkillsArgs<'a> {
+    catalog: &'a Path,
+    doc_id: &'a str,
+    query: SkillQuery,
+    line_nums: &'a [String],
+    node_ids: &'a [String],
+    output: Option<&'a Path>,
+    skills_index: Option<&'a Path>,
+    keep_all_headers: bool,
+}
+
 fn run_retrieve_tools(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let apply_score_filter = args.score_filter && !args.no_score_filter;
     let ctx = policy_context_from_cli(
@@ -262,7 +282,7 @@ fn run_retrieve_tools(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error:
              score filter disabled (omit --score-filter)"
         );
     }
-    fs::write(args.output, serde_json::to_string_pretty(&tools)?)?;
+    write_json_pretty(args.output, serde_json::to_string_pretty(&tools)?)?;
     if let Some(removed_path) = args.removed_output {
         let removed = removed_chunks(
             &catalog_dict,
@@ -271,42 +291,43 @@ fn run_retrieve_tools(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error:
                 apply_decomposed_score_filter: apply_score_filter,
             },
         );
-        fs::write(removed_path, serde_json::to_string_pretty(&removed)?)?;
+        write_json_pretty(removed_path, serde_json::to_string_pretty(&removed)?)?;
     }
     Ok(())
 }
 
-fn run_retrieve_skills(
-    catalog: &Path,
-    doc_id: &str,
-    query: SkillQuery,
-    line_nums: &[String],
-    node_ids: &[String],
-    output: Option<&Path>,
-    skills_index: Option<&Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let index = if let Some(path) = skills_index {
+fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    let reconstruct_opts = ReconstructOptions {
+        keep_all_headers: args.keep_all_headers,
+    };
+    let index = if let Some(path) = args.skills_index {
         let raw = fs::read_to_string(path)?;
         let val: Value = serde_json::from_str(&raw)?;
         let mut idx = cyt_indexer::SkillsIndex::from_skills_index_json(&val)?;
-        cyt_indexer::load_decomposed_files_for_index(catalog, &mut idx)?;
+        cyt_indexer::load_decomposed_files_for_index(args.catalog, &mut idx)?;
         idx
     } else {
-        load_skills_index_from_dir(catalog)?
+        load_skills_index_from_dir(args.catalog)?
     };
 
-    let result = match query {
-        SkillQuery::Metadata => get_skill_document(&index.documents, doc_id),
-        SkillQuery::Structure => get_skill_structure(&index.documents, doc_id),
+    let result = match args.query {
+        SkillQuery::Metadata => get_skill_document(&index.documents, args.doc_id),
+        SkillQuery::Structure => get_skill_structure(&index.documents, args.doc_id),
         SkillQuery::Content => {
-            if line_nums.is_empty() && node_ids.is_empty() {
+            if args.line_nums.is_empty() && args.node_ids.is_empty() {
                 return Err(
                     "content query requires at least one --line_num or --node_id".into(),
                 );
             }
-            let line_num_specs: Vec<&str> = line_nums.iter().map(String::as_str).collect();
-            let node_id_specs: Vec<&str> = node_ids.iter().map(String::as_str).collect();
-            get_skill_line_content(&index, doc_id, &line_num_specs, &node_id_specs)
+            let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
+            let node_id_specs: Vec<&str> = args.node_ids.iter().map(String::as_str).collect();
+            get_skill_content_retrieve_result(
+                &index,
+                args.doc_id,
+                &line_num_specs,
+                &node_id_specs,
+                &reconstruct_opts,
+            )
         }
     };
 
@@ -318,14 +339,29 @@ fn run_retrieve_skills(
             .into());
     }
 
-    let output_path = output.map_or_else(
-        || catalog.join("skill_out.json"),
+    let output_path = args.output.map_or_else(
+        || args.catalog.join("skill_out.json"),
         Path::to_path_buf,
     );
-    fs::write(
-        &output_path,
-        serde_json::to_string_pretty(&result)?,
-    )?;
+    write_json_pretty(&output_path, serde_json::to_string_pretty(&result)?)?;
+
+    if matches!(args.query, SkillQuery::Content) {
+        let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
+        let node_id_specs: Vec<&str> = args.node_ids.iter().map(String::as_str).collect();
+        let reconstructed = write_reconstructed_skill(
+            args.catalog,
+            &index,
+            args.doc_id,
+            &line_num_specs,
+            &node_id_specs,
+            &reconstruct_opts,
+        )?;
+        eprintln!(
+            "Wrote reconstructed skill to {}",
+            reconstructed.display()
+        );
+    }
+
     Ok(())
 }
 
@@ -357,7 +393,7 @@ fn run_removed_tools(
             apply_decomposed_score_filter: score_filter,
         },
     );
-    fs::write(output, serde_json::to_string_pretty(&removed)?)?;
+    write_json_pretty(output, serde_json::to_string_pretty(&removed)?)?;
     Ok(())
 }
 
@@ -410,15 +446,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 node_ids,
                 output,
                 skills_index,
-            } => run_retrieve_skills(
-                &catalog,
-                &doc_id,
-                query,
-                &line_nums,
-                &node_ids,
-                output.as_deref(),
-                skills_index.as_deref(),
-            )?,
+                keep_all_headers,
+            } => {
+                let retrieve_args = RetrieveSkillsArgs {
+                    catalog: &catalog,
+                    doc_id: &doc_id,
+                    query,
+                    line_nums: &line_nums,
+                    node_ids: &node_ids,
+                    output: output.as_deref(),
+                    skills_index: skills_index.as_deref(),
+                    keep_all_headers,
+                };
+                run_retrieve_skills(&retrieve_args)?;
+            }
         },
         Commands::Removed { target } => match target {
             RemovedTarget::Tools {

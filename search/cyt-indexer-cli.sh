@@ -40,3 +40,11 @@ export DEEPINFRA_API_KEY
 
 # Skills
 ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
+
+./search/local-dev.sh indexer retrieve skills \
+	--catalog ./.catalog \
+	--doc-id lean-ctx__skill \
+	--query content \
+	--node_id 0001 \
+	--keep-all-headers \
+	--output skill_out.json

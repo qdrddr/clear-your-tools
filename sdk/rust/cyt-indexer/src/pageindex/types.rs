@@ -20,19 +20,32 @@ pub struct SkillDocument {
     pub doc_name: String,
     pub line_count: u32,
     pub structure: Value,
+    /// YAML frontmatter captured at catalog build time (`name`, `description`, etc.).
+    pub frontmatter: Option<String>,
+    /// Body text between frontmatter and the first heading, when present.
+    pub preamble: Option<String>,
 }
 
 impl SkillDocument {
     #[must_use]
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut obj = json!({
             "id": self.id,
             "type": self.doc_type,
             "path": self.path,
             "doc_name": self.doc_name,
             "line_count": self.line_count,
             "structure": self.structure,
-        })
+        });
+        if let Some(map) = obj.as_object_mut() {
+            if let Some(frontmatter) = &self.frontmatter {
+                map.insert("frontmatter".to_string(), Value::String(frontmatter.clone()));
+            }
+            if let Some(preamble) = &self.preamble {
+                map.insert("preamble".to_string(), Value::String(preamble.clone()));
+            }
+        }
+        obj
     }
 
     #[must_use]
@@ -57,6 +70,14 @@ impl SkillDocument {
                 .to_string(),
             line_count,
             structure: obj.get("structure").cloned().unwrap_or(Value::Array(vec![])),
+            frontmatter: obj
+                .get("frontmatter")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            preamble: obj
+                .get("preamble")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
         })
     }
 }
@@ -169,6 +190,8 @@ pub fn build_skill_document(
     source_path: &str,
     result: &MdIndexResult,
     config: &PageIndexConfig,
+    frontmatter: Option<String>,
+    preamble: Option<String>,
 ) -> SkillDocument {
     SkillDocument {
         id: doc_id,
@@ -177,5 +200,7 @@ pub fn build_skill_document(
         doc_name: result.doc_name.clone(),
         line_count: result.line_count,
         structure: super::tree::format_structure_for_output(&result.structure, config),
+        frontmatter,
+        preamble,
     }
 }

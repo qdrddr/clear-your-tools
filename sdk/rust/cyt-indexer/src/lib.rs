@@ -77,7 +77,10 @@ pub use pageindex::{
     get_line_content as get_skill_line_content,
     get_line_content_from_spec as get_skill_line_content_from_spec, md_to_tree,
     parse_line_nums as parse_skill_line_nums, parse_node_ids as parse_skill_node_ids,
-    PageIndexConfig, MdIndexResult, SkillDocument, SkillsIndex,
+    get_content_retrieve_result as get_skill_content_retrieve_result,
+    reconstruct_skill_markdown, retrieve_output_rel_path, write_reconstructed_skill,
+    PageIndexConfig, MdIndexResult, ReconstructOptions, ReconstructResult, SkillDocument,
+    SkillsIndex, RETRIEVE_DIR,
 };
 pub use skills_builder::SkillsBuilder;
 pub use skills_io::{

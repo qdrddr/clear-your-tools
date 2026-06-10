@@ -110,6 +110,7 @@ Untitled
 .codex
 .debug/
 sdk/typescript/coverage/
+skill_out.json
 
 # Registry E2E — rendered manifests and install artifacts (from sdk/e2e/scripts/render-manifests.sh)
 sdk/e2e/rust/Cargo.toml

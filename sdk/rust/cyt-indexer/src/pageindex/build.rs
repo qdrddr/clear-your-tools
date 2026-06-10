@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use super::config::PageIndexConfig;
 use super::decompose::decompose_document;
 use super::index::md_to_tree;
-use super::parse::{extract_node_text_content, extract_nodes_from_markdown};
+use super::parse::{extract_node_text_content, extract_nodes_from_markdown, extract_skill_prefix};
 use super::tree::{build_tree_from_nodes, format_structure_for_output, write_node_id};
 use super::types::{build_skill_document, doc_id_from_rel_path, SkillsIndex};
 
@@ -63,9 +63,17 @@ fn walk_skill_md_files(
         }
 
         let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let prefix = extract_skill_prefix(&content);
         let result = md_to_tree(&content, path.to_string_lossy().as_ref(), config);
 
-        let doc = build_skill_document(doc_id.clone(), &path.to_string_lossy(), &result, config);
+        let doc = build_skill_document(
+            doc_id.clone(),
+            &path.to_string_lossy(),
+            &result,
+            config,
+            prefix.frontmatter,
+            prefix.preamble,
+        );
         let flat_for_decompose = build_flat_structure(&content, config);
         decompose_document(index, &doc, &flat_for_decompose);
         index.documents.insert(doc_id, doc);

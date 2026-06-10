@@ -86,7 +86,7 @@ fn format_node_id(id: u32) -> String {
     format!("{id:04}")
 }
 
-fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
+pub(crate) fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
     let mut merged = Vec::new();
     for spec in specs {
         merged.extend(parse_line_nums(spec)?);
@@ -96,7 +96,7 @@ fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
     Ok(merged)
 }
 
-fn merge_node_id_specs(specs: &[&str]) -> Result<Vec<String>, String> {
+pub(crate) fn merge_node_id_specs(specs: &[&str]) -> Result<Vec<String>, String> {
     let mut merged = Vec::new();
     for spec in specs {
         merged.extend(parse_node_ids(spec)?);
@@ -233,12 +233,12 @@ fn resolve_node_content(index: &SkillsIndex, doc_id: &str, node: &serde_json::Ma
     let node_id = node.get("node_id").and_then(|v| v.as_str()).unwrap_or("0000");
     let rel = node_md_rel(doc_id, node_id);
     if let Some(raw) = index.files.get(&rel) {
-        return strip_frontmatter(raw);
+        return strip_decomposed_frontmatter(raw);
     }
     String::new()
 }
 
-fn strip_frontmatter(content: &str) -> String {
+pub(crate) fn strip_decomposed_frontmatter(content: &str) -> String {
     if !content.starts_with("---") {
         return content.to_string();
     }

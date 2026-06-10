@@ -52,6 +52,17 @@ cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query cont
 
 Content queries accept repeatable `--line_num` and `--node_id` flags (each value may be a number or
 range such as `5-10`). Output defaults to `{catalog}/skill_out.json`; pass `--output` to override.
+The JSON includes `matched_node_ids` (query hits), `node_ids` (hits plus ancestor nodes),
+`nodes` (restored per-node content), `restored_markdown`, and `restored_path`.
+
+Content retrieve also writes a pruned, reconstructed skill markdown under
+`{catalog}/skills/retrieve/{skill-dir}/{filename}.md` (for example `skills/retrieve/lean-ctx/SKILL.md`).
+Matched nodes plus all ancestor nodes in the document tree are included; sibling sections are omitted.
+Pass `--keep-all-headers` to include every section heading in that restored file (unmatched
+sections keep the heading line only; body text is still omitted).
+Build stores each skill's YAML `frontmatter` and preamble in `document.json`; content retrieve
+uses that catalog snapshot (not the live file) so `name`/`description` match what was indexed.
+Falls back to the indexed path when older catalogs lack those fields.
 
 Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md`, and a reconstructable `skills_index.json` snapshot.
 

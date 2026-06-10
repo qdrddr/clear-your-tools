@@ -103,9 +103,87 @@ pub fn extract_node_text_content(node_list: &[HeaderNode], markdown_lines: &[Str
     all_nodes
 }
 
+/// YAML frontmatter and optional body text before the first heading.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillPrefix {
+    pub frontmatter: Option<String>,
+    pub preamble: Option<String>,
+}
+
+/// Extract skill YAML frontmatter and preamble (content before the first heading).
+#[must_use]
+pub fn extract_skill_prefix(markdown_content: &str) -> SkillPrefix {
+    let trimmed = markdown_content.trim_start();
+    if !trimmed.starts_with("---") {
+        return SkillPrefix {
+            frontmatter: None,
+            preamble: extract_preamble_after_frontmatter(markdown_content),
+        };
+    }
+
+    let Some(after_open) = trimmed.strip_prefix("---") else {
+        return SkillPrefix::default();
+    };
+    let body = after_open
+        .strip_prefix('\n')
+        .or_else(|| after_open.strip_prefix("\r\n"));
+    let Some(body) = body else {
+        return SkillPrefix::default();
+    };
+    let Some(end_idx) = body.find("\n---") else {
+        return SkillPrefix::default();
+    };
+
+    let yaml = &body[..end_idx];
+    let frontmatter = format!("---\n{yaml}\n---");
+    let after_frontmatter = body.get(end_idx + 4..).unwrap_or("");
+    let preamble = extract_preamble_after_frontmatter(after_frontmatter);
+
+    SkillPrefix {
+        frontmatter: Some(frontmatter),
+        preamble,
+    }
+}
+
+fn extract_preamble_after_frontmatter(content: &str) -> Option<String> {
+    let mut preamble_lines = Vec::new();
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        let stripped = line.trim();
+        if stripped.starts_with("```") {
+            in_code_block = !in_code_block;
+            preamble_lines.push(line);
+            continue;
+        }
+        if !in_code_block && parse_header(stripped).is_some() {
+            break;
+        }
+        preamble_lines.push(line);
+    }
+
+    let text = preamble_lines.join("\n").trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_frontmatter_and_preamble() {
+        let md = "---\nname: ctx\ndescription: docs\n---\n\nIntro line\n\n## Section\n\nBody";
+        let prefix = extract_skill_prefix(md);
+        assert_eq!(
+            prefix.frontmatter.as_deref(),
+            Some("---\nname: ctx\ndescription: docs\n---")
+        );
+        assert_eq!(prefix.preamble.as_deref(), Some("Intro line"));
+    }
 
     #[test]
     fn ignores_headers_in_code_blocks() {
