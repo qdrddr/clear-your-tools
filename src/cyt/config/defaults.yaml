@@ -243,6 +243,8 @@ skills:
       merge_threshold: 0.7
       skip_window: 0
       min_units_per_chunk: 1
+      minimum_words: 10
+      minimum_sentences: 1
       min_characters_per_sentence: 24
       filter_window: 5
       filter_polyorder: 3

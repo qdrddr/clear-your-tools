@@ -21,6 +21,8 @@ fn skip_window_changes_output() -> Result<(), String> {
 fn size_cap_respected() -> Result<(), String> {
     let cfg = Bm25CohesionConfig {
         chunk_size: 30,
+        minimum_words: 0,
+        minimum_sentences: 0,
         ..Default::default()
     };
     let chunker = Bm25CohesionChunker::new(cfg)?;
@@ -86,5 +88,31 @@ fn chunks_created_for_skill_build() -> Result<(), String> {
         .keys()
         .any(|k| k.contains("/chunks/")));
     let _ = fs::remove_dir_all(&tmp);
+    Ok(())
+}
+
+#[test]
+fn core_tools_table_no_trailing_loss_or_invoke_orphan() -> Result<(), String> {
+    let text = "## Core Tools (10 always visible)\n\n| Tool | Purpose |\n|------|---------|\n| `ctx_read(path, mode)` | Read file with compression and caching |\n| `ctx_search(pattern, path)` | Search code with compressed results |\n| `ctx_shell(command)` | Run shell with compressed output |\n| `ctx_tree(path, depth)` | Directory listing |\n| `ctx_edit(path, old, new)` | Search-and-replace editing |\n| `ctx_session(action)` | Session state and persistence |\n| `ctx_knowledge(action)` | Project knowledge across sessions |\n| `ctx_overview(task)` | Task-relevant project map |\n| `ctx_graph(action)` | Code relationships and impact |\n| `ctx_call(name, args)` | Invoke any tool by name |";
+    let cfg = Bm25CohesionConfig {
+        chunk_size: 100,
+        similarity_window: 10,
+        skip_window: 0,
+        ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)
+    };
+    let chunker = Bm25CohesionChunker::new(cfg)?;
+    let chunks = chunker.chunk(text);
+    let recompiled: String = chunks.iter().map(|c| c.text.as_str()).collect();
+    assert_eq!(recompiled, text, "concatenated chunks must equal input");
+    assert!(
+        !chunks.iter().any(|c| c.text.trim() == "Invoke"),
+        "must not emit bare Invoke orphan chunk"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|c| c.text.contains("Invoke any tool by name |")),
+        "full table row tail must appear in some chunk"
+    );
     Ok(())
 }

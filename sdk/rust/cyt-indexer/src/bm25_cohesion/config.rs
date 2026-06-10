@@ -16,6 +16,8 @@ pub struct Bm25CohesionConfig {
     pub next_unit_size: usize,
     pub skip_window: usize,
     pub min_units_per_chunk: usize,
+    pub minimum_words: usize,
+    pub minimum_sentences: usize,
     pub min_characters_per_sentence: usize,
     pub min_characters_per_word: usize,
     pub delimiters: Vec<String>,
@@ -52,6 +54,8 @@ impl Bm25CohesionConfig {
             next_unit_size: 1,
             skip_window: 0,
             min_units_per_chunk: 1,
+            minimum_words: 10,
+            minimum_sentences: 1,
             min_characters_per_sentence: 24,
             min_characters_per_word: 2,
             delimiters: DEFAULT_DELIMITERS.iter().map(|s| (*s).to_string()).collect(),
@@ -171,6 +175,12 @@ fn merge_partial_fields(cfg: &mut Bm25CohesionConfig, obj: Option<&serde_json::M
     }
     if let Some(v) = obj.get("min_units_per_chunk").and_then(parse_usize) {
         cfg.min_units_per_chunk = v;
+    }
+    if let Some(v) = obj.get("minimum_words").and_then(parse_usize) {
+        cfg.minimum_words = v;
+    }
+    if let Some(v) = obj.get("minimum_sentences").and_then(parse_usize) {
+        cfg.minimum_sentences = v;
     }
     if let Some(v) = obj.get("min_characters_per_sentence").and_then(parse_usize) {
         cfg.min_characters_per_sentence = v;

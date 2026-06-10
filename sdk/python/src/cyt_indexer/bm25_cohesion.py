@@ -19,6 +19,8 @@ class Bm25CohesionConfig:
     next_unit_size: int = 1
     skip_window: int = 0
     min_units_per_chunk: int = 1
+    minimum_words: int = 10
+    minimum_sentences: int = 1
     min_characters_per_sentence: int = 24
     min_characters_per_word: int = 2
     delimiters: list[str] = field(default_factory=lambda: [". ", "! ", "? ", "\n"])

@@ -42,17 +42,19 @@ export DEEPINFRA_API_KEY
 rm -rf ./.catalog/skills/
 ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
 
+rm -rf ./.catalog/skills/
 ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
 	--window-mode word \
 	--similarity-window 10 \
 	--chunk-size 100 \
 	--skip-window 0
 
+# Optimal parameters
 ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
-    --window-mode word \
-    --similarity-window 500 \
-    --chunk-size 1000 \
-    --skip-window 1
+	--window-mode word \
+	--similarity-window 100 \
+	--chunk-size 500 \
+	--skip-window 2
 
 ./search/local-dev.sh indexer retrieve skills \
 	--catalog ./.catalog \
@@ -66,6 +68,6 @@ rm -rf ./.catalog/skills/
 	--catalog ./.catalog \
 	--doc-id lean-ctx__skill \
 	--query content \
-	--node_id 4 \
-	--output skill_out.json \
-	--keep-all-headers
+	--chunk_id 3-4 \
+	--chunk_id 7 \
+	--output skill_out.json

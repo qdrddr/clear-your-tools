@@ -56,7 +56,7 @@ impl Bm25CohesionChunker {
         }
 
         let similarities = similarity_curve(&units, &self.config, &self.pipeline);
-        let split_indices = self.split_indices(&similarities);
+        let split_indices = self.split_indices(&similarities, units.len());
         let mut groups = group_units(&units, &split_indices);
         if self.config.skip_window > 0 && groups.len() > 1 {
             groups = skip_and_merge(&groups, &self.config, &self.pipeline);
@@ -65,7 +65,64 @@ impl Bm25CohesionChunker {
         if chunks.len() > 1 {
             self.fill_inter_chunk_gaps(text, &mut chunks);
         }
+        self.extend_last_chunk_coverage(text, &mut chunks);
+        if chunks.len() > 1 {
+            self.merge_undersized_chunks(text, &mut chunks);
+        }
         chunks
+    }
+
+    fn extend_last_chunk_coverage(&self, source: &str, chunks: &mut [CohesionChunk]) {
+        let Some(last) = chunks.last_mut() else {
+            return;
+        };
+        if last.end_index < source.len() {
+            last.end_index = source.len();
+            last.text = source[last.start_index..last.end_index].to_string();
+            last.token_count = self.token_counter.count(&last.text);
+        }
+    }
+
+    fn is_undersized(&self, text: &str) -> bool {
+        if self.config.minimum_words > 0 && word_count(text) < self.config.minimum_words {
+            return true;
+        }
+        if self.config.minimum_sentences > 0
+            && sentence_count(text, &self.config, self.token_counter.as_ref())
+                < self.config.minimum_sentences
+        {
+            return true;
+        }
+        false
+    }
+
+    fn merge_undersized_chunks(&self, source: &str, chunks: &mut Vec<CohesionChunk>) {
+        let mut i = 0usize;
+        while i < chunks.len() {
+            if !self.is_undersized(&chunks[i].text) {
+                i += 1;
+                continue;
+            }
+            if i + 1 < chunks.len() {
+                let start = chunks[i].start_index;
+                let end = chunks[i + 1].end_index;
+                chunks[i + 1].start_index = start;
+                chunks[i + 1].end_index = end;
+                chunks[i + 1].text = source[start..end].to_string();
+                chunks[i + 1].token_count = self.token_counter.count(&chunks[i + 1].text);
+                chunks.remove(i);
+            } else if chunks.len() > 1 {
+                let end = chunks[i].end_index;
+                let prev = i - 1;
+                chunks[prev].end_index = end;
+                chunks[prev].text = source[chunks[prev].start_index..end].to_string();
+                chunks[prev].token_count = self.token_counter.count(&chunks[prev].text);
+                chunks.remove(i);
+                i = prev;
+            } else {
+                break;
+            }
+        }
     }
 
     fn fill_inter_chunk_gaps(&self, source: &str, chunks: &mut [CohesionChunk]) {
@@ -106,7 +163,7 @@ impl Bm25CohesionChunker {
         }
     }
 
-    fn split_indices(&self, similarities: &[f64]) -> Vec<usize> {
+    fn split_indices(&self, similarities: &[f64], unit_count: usize) -> Vec<usize> {
         if similarities.is_empty() || similarities.len() < self.config.filter_window {
             return Vec::new();
         }
@@ -133,7 +190,7 @@ impl Bm25CohesionChunker {
         let w = self.config.similarity_window;
         let mut out = vec![0];
         out.extend(filtered.indices.iter().map(|&i| i + w));
-        out.push(similarities.len() + w);
+        out.push(unit_count);
         out
     }
 
@@ -231,6 +288,19 @@ fn skip_and_merge(
     merged_groups
 }
 
+fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+fn sentence_count(text: &str, config: &Bm25CohesionConfig, counter: &dyn TokenCounter) -> usize {
+    segment_units(text, config, counter).len()
+}
+
+#[cfg(test)]
+fn concat_chunks(chunks: &[CohesionChunk]) -> String {
+    chunks.iter().map(|c| c.text.as_str()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,6 +383,70 @@ mod tests {
         }
         let chunks = chunker.chunk(&words);
         assert!(!chunks.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn word_mode_covers_full_source() -> Result<(), String> {
+        let cfg = Bm25CohesionConfig {
+            chunk_size: 100,
+            similarity_window: 10,
+            skip_window: 0,
+            ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)
+        };
+        let text = "## Core Tools\n\n| Tool | Purpose |\n|------|---------|\n| `ctx_read(path, mode)` | Read file |\n| `ctx_call(name, args)` | Invoke any tool by name |";
+        let chunker = Bm25CohesionChunker::new(cfg)?;
+        let chunks = chunker.chunk(text);
+        assert_eq!(concat_chunks(&chunks), text);
+        assert!(
+            !chunks.iter().any(|c| c.text.trim() == "Invoke"),
+            "should not emit bare Invoke orphan"
+        );
+        assert!(
+            chunks
+                .last()
+                .is_some_and(|c| c.text.contains("Invoke any tool by name |")),
+            "last chunk should include full table row tail"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn merge_undersized_forward() -> Result<(), String> {
+        let cfg = Bm25CohesionConfig {
+            chunk_size: 50,
+            minimum_words: 10,
+            minimum_sentences: 1,
+            ..Default::default()
+        };
+        let chunker = Bm25CohesionChunker::new(cfg)?;
+        let text = "First topic sentence here with enough words. Second topic follows now with enough words too. Third unrelated finance news item here. Fourth finance detail here with words.";
+        let chunks = chunker.chunk(text);
+        for chunk in &chunks {
+            if word_count(&chunk.text) < 10 {
+                assert!(
+                    concat_chunks(&chunks).len() <= text.len(),
+                    "tiny chunk only allowed when unavoidable"
+                );
+            }
+        }
+        assert_eq!(concat_chunks(&chunks), text);
+        Ok(())
+    }
+
+    #[test]
+    fn respects_disable_zero_minimum_words() -> Result<(), String> {
+        let cfg = Bm25CohesionConfig {
+            chunk_size: 100,
+            similarity_window: 10,
+            minimum_words: 0,
+            minimum_sentences: 0,
+            ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega extra words here and more padding text";
+        let chunker = Bm25CohesionChunker::new(cfg)?;
+        let chunks = chunker.chunk(text);
+        assert_eq!(concat_chunks(&chunks), text);
         Ok(())
     }
 }

@@ -95,6 +95,8 @@ _BM25_FLAT_KEYS = frozenset(
         "next_unit_size",
         "skip_window",
         "min_units_per_chunk",
+        "minimum_words",
+        "minimum_sentences",
         "min_characters_per_sentence",
         "min_characters_per_word",
         "delimiters",

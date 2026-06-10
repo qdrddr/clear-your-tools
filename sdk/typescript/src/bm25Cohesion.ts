@@ -12,6 +12,8 @@ export interface Bm25CohesionConfig {
   nextUnitSize?: number;
   skipWindow?: number;
   minUnitsPerChunk?: number;
+  minimumWords?: number;
+  minimumSentences?: number;
   minCharactersPerSentence?: number;
   minCharactersPerWord?: number;
   delimiters?: string[];
@@ -41,6 +43,8 @@ export function defaultBm25CohesionConfig(): Bm25CohesionConfig {
     nextUnitSize: 1,
     skipWindow: 0,
     minUnitsPerChunk: 1,
+    minimumWords: 10,
+    minimumSentences: 1,
     minCharactersPerSentence: 24,
     minCharactersPerWord: 2,
     delimiters: [". ", "! ", "? ", "\n"],
@@ -73,6 +77,10 @@ export function cohesionConfigToNative(
   if (config.skipWindow !== undefined) out.skip_window = config.skipWindow;
   if (config.minUnitsPerChunk !== undefined)
     out.min_units_per_chunk = config.minUnitsPerChunk;
+  if (config.minimumWords !== undefined)
+    out.minimum_words = config.minimumWords;
+  if (config.minimumSentences !== undefined)
+    out.minimum_sentences = config.minimumSentences;
   if (config.minCharactersPerSentence !== undefined) {
     out.min_characters_per_sentence = config.minCharactersPerSentence;
   }
