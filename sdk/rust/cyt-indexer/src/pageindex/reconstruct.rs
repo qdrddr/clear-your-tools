@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use super::node_id::node_id_from_value;
 use super::parse::extract_skill_prefix;
 use super::retrieve::{merge_line_num_specs, merge_node_id_specs, strip_decomposed_frontmatter};
-use super::tree::structure_to_list;
+use super::tree::{is_frontmatter_node, is_preamble_node, structure_to_list};
 use super::types::{node_md_rel, SkillDocument, SkillsIndex};
 
 /// Subdirectory under a catalog where pruned skill markdown is written.
@@ -23,8 +24,8 @@ pub struct ReconstructOptions {
 #[derive(Debug, Clone)]
 pub struct ReconstructResult {
     pub markdown: String,
-    pub matched_node_ids: Vec<String>,
-    pub node_ids: Vec<String>,
+    pub matched_node_ids: Vec<u32>,
+    pub node_ids: Vec<u32>,
     pub output_rel_path: String,
 }
 
@@ -37,7 +38,7 @@ pub fn collect_matched_node_ids(
     doc: &SkillDocument,
     line_num_specs: &[&str],
     node_id_specs: &[&str],
-) -> Result<HashSet<String>, String> {
+) -> Result<HashSet<u32>, String> {
     let criteria = parse_match_criteria(line_num_specs, node_id_specs)?;
     let mut matched = HashSet::new();
 
@@ -46,9 +47,9 @@ pub fn collect_matched_node_ids(
             continue;
         };
         let line_num = node_line_num(obj);
-        let node_id = node_id_str(obj);
+        let node_id = node_id_from_value(obj.get("node_id"));
 
-        if node_matches(&criteria, line_num, &node_id) {
+        if node_matches(&criteria, line_num, node_id) {
             matched.insert(node_id);
         }
     }
@@ -65,7 +66,7 @@ pub fn collect_retrieved_node_ids(
     doc: &SkillDocument,
     line_num_specs: &[&str],
     node_id_specs: &[&str],
-) -> Result<HashSet<String>, String> {
+) -> Result<HashSet<u32>, String> {
     let matched = collect_matched_node_ids(doc, line_num_specs, node_id_specs)?;
     let parent_map = build_parent_map(&doc.structure);
     Ok(expand_with_ancestors(&matched, &parent_map))
@@ -90,7 +91,7 @@ pub fn get_content_retrieve_result(
         Err(error) => return json!({ "error": error }),
     };
 
-    let kept: HashSet<String> = reconstructed.node_ids.iter().cloned().collect();
+    let kept: HashSet<u32> = reconstructed.node_ids.iter().copied().collect();
     let pruned = prune_structure(&doc.structure, &kept);
     let nodes = build_restored_nodes(index, doc_id, &pruned);
     let restored_path = format!("{RETRIEVE_DIR}/{}", reconstructed.output_rel_path);
@@ -132,9 +133,9 @@ pub fn reconstruct_skill_markdown(
     };
     let markdown = assemble_markdown(index, doc, structure_for_assembly, &kept, opts.keep_all_headers);
 
-    let mut matched_node_ids: Vec<String> = matched.into_iter().collect();
+    let mut matched_node_ids: Vec<u32> = matched.into_iter().collect();
     matched_node_ids.sort_unstable();
-    let mut node_ids: Vec<String> = kept.into_iter().collect();
+    let mut node_ids: Vec<u32> = kept.into_iter().collect();
     node_ids.sort_unstable();
 
     Ok(ReconstructResult {
@@ -184,7 +185,7 @@ pub fn retrieve_output_rel_path(doc: &SkillDocument) -> String {
 
 struct MatchCriteria {
     line_set: HashSet<u32>,
-    node_set: HashSet<String>,
+    node_set: HashSet<u32>,
     match_by_line: bool,
     match_by_node: bool,
 }
@@ -201,7 +202,7 @@ fn parse_match_criteria(
     }
 
     let line_set: HashSet<u32> = line_nums.into_iter().collect();
-    let node_set: HashSet<String> = node_ids.into_iter().collect();
+    let node_set: HashSet<u32> = node_ids.into_iter().collect();
     Ok(MatchCriteria {
         match_by_line: !line_set.is_empty(),
         match_by_node: !node_set.is_empty(),
@@ -216,16 +217,9 @@ fn node_line_num(obj: &serde_json::Map<String, Value>) -> u32 {
         .map_or(0, |n| u32::try_from(n).unwrap_or(0))
 }
 
-fn node_id_str(obj: &serde_json::Map<String, Value>) -> String {
-    obj.get("node_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0000")
-        .to_string()
-}
-
-fn node_matches(criteria: &MatchCriteria, line_num: u32, node_id: &str) -> bool {
+fn node_matches(criteria: &MatchCriteria, line_num: u32, node_id: u32) -> bool {
     (criteria.match_by_line && criteria.line_set.contains(&line_num))
-        || (criteria.match_by_node && criteria.node_set.contains(node_id))
+        || (criteria.match_by_node && criteria.node_set.contains(&node_id))
 }
 
 fn build_restored_nodes(index: &SkillsIndex, doc_id: &str, pruned_structure: &Value) -> Vec<Value> {
@@ -237,28 +231,25 @@ fn build_restored_nodes(index: &SkillsIndex, doc_id: &str, pruned_structure: &Va
         let content = resolve_node_body(index, doc_id, obj);
         nodes.push(json!({
             "line_num": node_line_num(obj),
-            "node_id": node_id_str(obj),
+            "node_id": node_id_from_value(obj.get("node_id")),
             "content": content,
         }));
     }
     nodes
 }
 
-fn build_parent_map(structure: &Value) -> HashMap<String, String> {
+fn build_parent_map(structure: &Value) -> HashMap<u32, u32> {
     let mut map = HashMap::new();
     walk_parent_map(structure, None, &mut map);
     map
 }
 
-fn walk_parent_map(node: &Value, parent_id: Option<&str>, map: &mut HashMap<String, String>) {
+fn walk_parent_map(node: &Value, parent_id: Option<u32>, map: &mut HashMap<u32, u32>) {
     match node {
         Value::Object(obj) => {
-            let node_id = obj
-                .get("node_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("0000");
+            let node_id = node_id_from_value(obj.get("node_id"));
             if let Some(parent) = parent_id {
-                map.insert(node_id.to_string(), parent.to_string());
+                map.insert(node_id, parent);
             }
             if let Some(Value::Array(children)) = obj.get("nodes") {
                 for child in children {
@@ -275,29 +266,23 @@ fn walk_parent_map(node: &Value, parent_id: Option<&str>, map: &mut HashMap<Stri
     }
 }
 
-fn expand_with_ancestors(
-    matched: &HashSet<String>,
-    parent_map: &HashMap<String, String>,
-) -> HashSet<String> {
+fn expand_with_ancestors(matched: &HashSet<u32>, parent_map: &HashMap<u32, u32>) -> HashSet<u32> {
     let mut kept = matched.clone();
     for id in matched {
-        let mut current = id.as_str();
-        while let Some(parent) = parent_map.get(current) {
-            kept.insert(parent.clone());
-            current = parent.as_str();
+        let mut current = *id;
+        while let Some(parent) = parent_map.get(&current) {
+            kept.insert(*parent);
+            current = *parent;
         }
     }
     kept
 }
 
-fn prune_structure(structure: &Value, kept: &HashSet<String>) -> Value {
+fn prune_structure(structure: &Value, kept: &HashSet<u32>) -> Value {
     match structure {
         Value::Object(map) => {
-            let node_id = map
-                .get("node_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("0000");
-            if !kept.contains(node_id) {
+            let node_id = node_id_from_value(map.get("node_id"));
+            if !kept.contains(&node_id) {
                 return Value::Null;
             }
 
@@ -339,20 +324,36 @@ fn prune_structure(structure: &Value, kept: &HashSet<String>) -> Value {
     }
 }
 
+fn structure_has_frontmatter_node(structure: &Value) -> bool {
+    structure_to_list(structure)
+        .iter()
+        .any(|node| node.as_object().is_some_and(is_frontmatter_node))
+}
+
+fn structure_has_preamble_node(structure: &Value) -> bool {
+    structure_to_list(structure)
+        .iter()
+        .any(|node| node.as_object().is_some_and(is_preamble_node))
+}
+
 fn assemble_markdown(
     index: &SkillsIndex,
     doc: &SkillDocument,
     structure: &Value,
-    kept: &HashSet<String>,
+    kept: &HashSet<u32>,
     keep_all_headers: bool,
 ) -> String {
     let mut parts = Vec::new();
 
-    if let Some(frontmatter) = resolve_frontmatter(doc) {
+    if !structure_has_frontmatter_node(structure)
+        && let Some(frontmatter) = resolve_frontmatter(doc)
+    {
         parts.push(frontmatter);
     }
 
-    if let Some(preamble) = resolve_preamble(doc) {
+    if !structure_has_preamble_node(structure)
+        && let Some(preamble) = resolve_preamble(doc)
+    {
         parts.push(preamble);
     }
 
@@ -360,7 +361,7 @@ fn assemble_markdown(
         let Some(obj) = node.as_object() else {
             continue;
         };
-        let node_id = node_id_str(obj);
+        let node_id = node_id_from_value(obj.get("node_id"));
         let content = if keep_all_headers && !kept.contains(&node_id) {
             resolve_node_header(index, &doc.id, obj)
         } else {
@@ -396,10 +397,7 @@ fn resolve_node_body(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<S
         return text.clone();
     }
 
-    let node_id = node
-        .get("node_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0000");
+    let node_id = node_id_from_value(node.get("node_id"));
     let rel = node_md_rel(doc_id, node_id);
     index
         .files
@@ -446,17 +444,12 @@ mod tests {
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
         let doc_id = "lean-ctx__skill";
         let result =
-            reconstruct_skill_markdown(&index, doc_id, &[], &["0001"], &ReconstructOptions::default())?;
+            reconstruct_skill_markdown(&index, doc_id, &[], &["3"], &ReconstructOptions::default())?;
 
-        assert!(
-            result.node_ids.contains(&"0000".to_string()),
-            "parent node 0000 should be included"
-        );
-        assert!(
-            result.node_ids.contains(&"0001".to_string()),
-            "matched node 0001 should be included"
-        );
-        assert!(!result.node_ids.iter().any(|id| id == "0002"));
+        assert!(result.node_ids.contains(&2), "parent node 2 should be included");
+        assert!(result.node_ids.contains(&3), "matched node 3 should be included");
+        assert!(!result.node_ids.contains(&4));
+        assert!(!result.node_ids.contains(&0), "frontmatter is not an ancestor of content nodes");
         assert!(result.markdown.contains("name: lean-ctx"));
         assert!(result.markdown.contains("# Root"));
         assert!(result.markdown.contains("## Setup"));
@@ -484,7 +477,7 @@ mod tests {
             &index,
             "lean-ctx__skill",
             &[],
-            &["0001"],
+            &["3"],
             &ReconstructOptions::default(),
         )?;
         assert!(output.ends_with("skills/retrieve/lean-ctx/SKILL.md"));
@@ -517,7 +510,7 @@ mod tests {
         .map_err(|e| e.to_string())?;
 
         let result =
-            reconstruct_skill_markdown(&index, "demo__skill", &[], &["0001"], &ReconstructOptions::default())?;
+            reconstruct_skill_markdown(&index, "demo__skill", &[], &["3"], &ReconstructOptions::default())?;
         assert!(result.markdown.contains("description: catalog snapshot"));
         assert!(!result.markdown.contains("description: live file changed"));
 
@@ -539,7 +532,7 @@ mod tests {
 
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
         let result =
-            get_content_retrieve_result(&index, "lean-ctx__skill", &[], &["0001"], &ReconstructOptions::default());
+            get_content_retrieve_result(&index, "lean-ctx__skill", &[], &["3"], &ReconstructOptions::default());
 
         assert_eq!(
             result.get("matched_node_ids").and_then(|v| v.as_array()).map(Vec::len),
@@ -550,21 +543,21 @@ mod tests {
                 .get("matched_node_ids")
                 .and_then(|v| v.as_array())
                 .and_then(|a| a.first())
-                .and_then(|v| v.as_str()),
-            Some("0001")
+                .and_then(serde_json::Value::as_u64),
+            Some(3)
         );
 
-        let node_ids: Vec<String> = result
+        let node_ids: Vec<u32> = result
             .get("node_ids")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .filter_map(|v| v.as_u64().and_then(|n| u32::try_from(n).ok()))
                     .collect()
             })
             .unwrap_or_default();
-        assert!(node_ids.contains(&"0000".to_string()));
-        assert!(node_ids.contains(&"0001".to_string()));
+        assert!(node_ids.contains(&2));
+        assert!(node_ids.contains(&3));
 
         let nodes = result
             .get("nodes")
@@ -596,14 +589,14 @@ mod tests {
 
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
         let default_result =
-            reconstruct_skill_markdown(&index, "lean-ctx__skill", &[], &["0001"], &ReconstructOptions::default())?;
+            reconstruct_skill_markdown(&index, "lean-ctx__skill", &[], &["3"], &ReconstructOptions::default())?;
         assert!(!default_result.markdown.contains("## Other"));
 
         let kept_headers = reconstruct_skill_markdown(
             &index,
             "lean-ctx__skill",
             &[],
-            &["0001"],
+            &["3"],
             &ReconstructOptions {
                 keep_all_headers: true,
             },
@@ -612,6 +605,74 @@ mod tests {
         assert!(kept_headers.markdown.contains("Body"));
         assert!(kept_headers.markdown.contains("## Other"));
         assert!(!kept_headers.markdown.contains("Skip"));
+
+        let _ = fs::remove_dir_all(&tmp);
+        Ok(())
+    }
+
+    #[test]
+    fn frontmatter_preamble_and_headings_use_reserved_node_ids() -> Result<(), String> {
+        let tmp = std::env::temp_dir().join(format!("cyt-reconstruct-preamble-{}", std::process::id()));
+        let skills_root = tmp.join("skills");
+        let skills_dir = skills_root.join("ctx");
+        fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
+        fs::write(
+            skills_dir.join("SKILL.md"),
+            "---\nname: ctx\n---\n\nIntro line\n\n# Root\n\n## Child\n\nBody",
+        )
+        .map_err(|e| e.to_string())?;
+
+        let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
+        let doc = index.documents.get("ctx__skill").ok_or("missing doc")?;
+        let nodes = structure_to_list(&doc.structure);
+        let frontmatter = nodes
+            .iter()
+            .find(|node| node.as_object().is_some_and(is_frontmatter_node))
+            .and_then(|node| node.as_object())
+            .ok_or("missing frontmatter node")?;
+        assert_eq!(node_id_from_value(frontmatter.get("node_id")), 0);
+        assert_eq!(
+            frontmatter.get("kind").and_then(|v| v.as_str()),
+            Some("frontmatter")
+        );
+        let frontmatter_md = index
+            .files
+            .get("skills/decomposed/ctx__skill/0.md")
+            .ok_or("missing frontmatter decomposed file")?;
+        assert!(frontmatter_md.contains("name: ctx"));
+
+        let preamble = nodes
+            .iter()
+            .find(|node| node.as_object().is_some_and(is_preamble_node))
+            .and_then(|node| node.as_object())
+            .ok_or("missing preamble node")?;
+        assert_eq!(node_id_from_value(preamble.get("node_id")), 1);
+        assert_eq!(preamble.get("kind").and_then(|v| v.as_str()), Some("preamble"));
+        assert_eq!(
+            preamble.get("line_num").and_then(serde_json::Value::as_u64),
+            Some(5)
+        );
+        let preamble_md = index
+            .files
+            .get("skills/decomposed/ctx__skill/1.md")
+            .ok_or("missing preamble decomposed file")?;
+        assert!(preamble_md.contains("Intro line"));
+
+        let first_heading = nodes
+            .iter()
+            .find(|node| {
+                node.as_object().is_some_and(|obj| {
+                    !is_frontmatter_node(obj)
+                        && !is_preamble_node(obj)
+                        && obj.get("title").and_then(|v| v.as_str()) == Some("Root")
+                })
+            })
+            .and_then(|node| node.as_object())
+            .ok_or("missing root heading node")?;
+        assert_eq!(node_id_from_value(first_heading.get("node_id")), 2);
+
+        assert!(index.files.contains_key("skills/decomposed/ctx__skill/0.md"));
+        assert!(index.files.contains_key("skills/decomposed/ctx__skill/1.md"));
 
         let _ = fs::remove_dir_all(&tmp);
         Ok(())

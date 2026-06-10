@@ -1,6 +1,7 @@
 use crate::pageindex::{
-    build_skills_index, get_document, get_document_structure, get_line_content_from_spec,
-    md_to_tree, PageIndexConfig, SkillsIndex,
+    build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
+    get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
+    spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig, ReconstructOptions, SkillsIndex,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -173,6 +174,152 @@ fn get_skill_line_content_from_spec_py(
     value_to_py(py, &get_line_content_from_spec(&index, doc_id, line_num_spec))
 }
 
+#[pyclass(name = "ReconstructOptions")]
+#[derive(Clone, Copy)]
+struct PyReconstructOptions {
+    #[pyo3(get, set)]
+    keep_all_headers: bool,
+}
+
+#[pymethods]
+impl PyReconstructOptions {
+    #[new]
+    #[pyo3(signature = (*, keep_all_headers=false))]
+    const fn new(keep_all_headers: bool) -> Self {
+        Self { keep_all_headers }
+    }
+}
+
+fn reconstruct_options_from_py(opts: Option<Bound<'_, PyAny>>) -> PyResult<ReconstructOptions> {
+    let Some(obj) = opts else {
+        return Ok(ReconstructOptions::default());
+    };
+    if let Ok(extracted) = obj.extract::<PyReconstructOptions>() {
+        return Ok(ReconstructOptions {
+            keep_all_headers: extracted.keep_all_headers,
+        });
+    }
+    let val = py_to_value(obj)?;
+    Ok(ReconstructOptions {
+        keep_all_headers: val
+            .get("keep_all_headers")
+            .or_else(|| val.get("keepAllHeaders"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
+#[pyfunction(name = "get_skill_content_retrieve_result")]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+fn get_skill_content_retrieve_result_py(
+    py: Python<'_>,
+    index_or_docs: Bound<'_, PyAny>,
+    doc_id: &str,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<Bound<'_, PyAny>>,
+) -> PyResult<PyObject> {
+    let index = skills_index_from_py(index_or_docs)?;
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let opts = reconstruct_options_from_py(options)?;
+    value_to_py(
+        py,
+        &get_content_retrieve_result(
+            &index,
+            doc_id,
+            &specs.line_refs(),
+            &specs.node_refs(),
+            &opts,
+        ),
+    )
+}
+
+#[pyfunction(name = "reconstruct_skill_markdown")]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+fn reconstruct_skill_markdown_py(
+    py: Python<'_>,
+    index_or_docs: Bound<'_, PyAny>,
+    doc_id: &str,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<Bound<'_, PyAny>>,
+) -> PyResult<PyObject> {
+    let index = skills_index_from_py(index_or_docs)?;
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let opts = reconstruct_options_from_py(options)?;
+    let result = reconstruct_skill_markdown(
+        &index,
+        doc_id,
+        &specs.line_refs(),
+        &specs.node_refs(),
+        &opts,
+    )
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(
+        py,
+        &serde_json::json!({
+            "markdown": result.markdown,
+            "matched_node_ids": result.matched_node_ids,
+            "node_ids": result.node_ids,
+            "output_rel_path": result.output_rel_path,
+        }),
+    )
+}
+
+#[pyfunction(name = "write_reconstructed_skill")]
+#[pyo3(signature = (catalog_dir, index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+fn write_reconstructed_skill_py(
+    catalog_dir: String,
+    index_or_docs: Bound<'_, PyAny>,
+    doc_id: &str,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<Bound<'_, PyAny>>,
+) -> PyResult<String> {
+    let index = skills_index_from_py(index_or_docs)?;
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let opts = reconstruct_options_from_py(options)?;
+    let output = write_reconstructed_skill(
+        PathBuf::from(catalog_dir).as_path(),
+        &index,
+        doc_id,
+        &specs.line_refs(),
+        &specs.node_refs(),
+        &opts,
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    Ok(output.display().to_string())
+}
+
+#[pyfunction(name = "get_skill_line_content")]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None))]
+fn get_skill_line_content_py(
+    py: Python<'_>,
+    index_or_docs: Bound<'_, PyAny>,
+    doc_id: &str,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+) -> PyResult<PyObject> {
+    let index = skills_index_from_py(index_or_docs)?;
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    value_to_py(
+        py,
+        &get_line_content(
+            &index,
+            doc_id,
+            &specs.line_refs(),
+            &specs.node_refs(),
+        ),
+    )
+}
+
+#[pyfunction(name = "parse_skill_node_ids")]
+fn parse_skill_node_ids_py(py: Python<'_>, spec: &str) -> PyResult<PyObject> {
+    let ids = parse_node_ids(spec)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &serde_json::json!(ids))
+}
+
 #[pyclass(name = "SkillsBuilder")]
 struct PySkillsBuilder {
     inner: SkillsBuilder,
@@ -238,6 +385,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_skill_document_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_structure_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_line_content_from_spec_py, m)?)?;
+    m.add_function(wrap_pyfunction!(get_skill_line_content_py, m)?)?;
+    m.add_function(wrap_pyfunction!(get_skill_content_retrieve_result_py, m)?)?;
+    m.add_function(wrap_pyfunction!(reconstruct_skill_markdown_py, m)?)?;
+    m.add_function(wrap_pyfunction!(write_reconstructed_skill_py, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_skill_node_ids_py, m)?)?;
+    m.add_class::<PyReconstructOptions>()?;
     m.add_class::<PySkillsBuilder>()?;
     Ok(())
 }

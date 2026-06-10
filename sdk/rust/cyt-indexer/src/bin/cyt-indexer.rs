@@ -188,6 +188,16 @@ fn policy_context_from_cli(
     Ok(ctx)
 }
 
+/// Resolve skills retrieve JSON output: default `{catalog}/skill_out.json`;
+/// relative `--output` paths are written under `--catalog`.
+fn resolve_skills_output_path(catalog: &Path, output: Option<&Path>) -> PathBuf {
+    match output {
+        None => catalog.join("skill_out.json"),
+        Some(path) if path.is_absolute() => path.to_path_buf(),
+        Some(path) => catalog.join(path),
+    }
+}
+
 fn catalog_path_utf8(catalog: &Path) -> Result<&str, Box<dyn std::error::Error>> {
     catalog.to_str().ok_or_else(|| {
         format!("catalog path is not valid UTF-8: {}", catalog.display()).into()
@@ -339,10 +349,7 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
             .into());
     }
 
-    let output_path = args.output.map_or_else(
-        || args.catalog.join("skill_out.json"),
-        Path::to_path_buf,
-    );
+    let output_path = resolve_skills_output_path(args.catalog, args.output);
     write_json_pretty(&output_path, serde_json::to_string_pretty(&result)?)?;
 
     if matches!(args.query, SkillQuery::Content) {

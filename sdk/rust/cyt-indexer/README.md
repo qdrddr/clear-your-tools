@@ -47,11 +47,12 @@ cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
 cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query metadata
 cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query structure
 cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --line_num 5-10
-cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --line_num 5 --line_num 12-15 --node_id 0003
+cyt-indexer retrieve skills --catalog ./.catalog --doc-id my__skill --query content --line_num 5 --line_num 12-15 --node_id 3
 ```
 
 Content queries accept repeatable `--line_num` and `--node_id` flags (each value may be a number or
-range such as `5-10`). Output defaults to `{catalog}/skill_out.json`; pass `--output` to override.
+range such as `5-10`). Output defaults to `{catalog}/skill_out.json`. A relative `--output`
+filename (for example `skill_out.json`) is written under `--catalog`; absolute paths are used as given.
 The JSON includes `matched_node_ids` (query hits), `node_ids` (hits plus ancestor nodes),
 `nodes` (restored per-node content), `restored_markdown`, and `restored_path`.
 
@@ -64,7 +65,10 @@ Build stores each skill's YAML `frontmatter` and preamble in `document.json`; co
 uses that catalog snapshot (not the live file) so `name`/`description` match what was indexed.
 Falls back to the indexed path when older catalogs lack those fields.
 
-Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md`, and a reconstructable `skills_index.json` snapshot.
+Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md` (numeric ids `0`, `1`, …), and a
+reconstructable `skills_index.json` snapshot. YAML frontmatter is always node `0` when present; preamble
+text (after frontmatter, before the first heading) is always node `1` when present. Heading sections
+start at node `2`, even when frontmatter and/or preamble are absent.
 
 Score filter is **off by default** (rerank survivor scores are ~0.003, not 0–1).
 Use `--score-filter` only for LLM-stage catalogs where json scores exceed the decomposed threshold (0.5).

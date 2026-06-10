@@ -5,15 +5,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from cyt_indexer._native import ReconstructOptions as _ReconstructOptions
 from cyt_indexer._native import SkillsBuilder as _SkillsBuilder
 from cyt_indexer._native import build_skills_index as _build_skills_index
+from cyt_indexer._native import get_skill_content_retrieve_result as _get_skill_content_retrieve_result
 from cyt_indexer._native import get_skill_document as _get_skill_document
+from cyt_indexer._native import get_skill_line_content as _get_skill_line_content
 from cyt_indexer._native import get_skill_line_content_from_spec as _get_skill_line_content_from_spec
 from cyt_indexer._native import get_skill_structure as _get_skill_structure
 from cyt_indexer._native import load_skills_index_from_dir as _load_skills_index_from_dir
 from cyt_indexer._native import md_to_tree as _md_to_tree
+from cyt_indexer._native import parse_skill_node_ids as _parse_skill_node_ids
+from cyt_indexer._native import reconstruct_skill_markdown as _reconstruct_skill_markdown
 from cyt_indexer._native import skills_index_from_decomposed_dir as _skills_index_from_decomposed_dir
+from cyt_indexer._native import write_reconstructed_skill as _write_reconstructed_skill
 from cyt_indexer._native import write_skills_index as _write_skills_index
+
+
+@dataclass
+class ReconstructOptions:
+    keep_all_headers: bool = False
+
+    def to_native(self) -> _ReconstructOptions:
+        return _ReconstructOptions(keep_all_headers=self.keep_all_headers)
 
 
 @dataclass
@@ -79,6 +93,78 @@ def get_skill_line_content_from_spec(
     return _get_skill_line_content_from_spec(index, doc_id, line_num_spec)
 
 
+def get_skill_line_content(
+    index: dict[str, Any],
+    doc_id: str,
+    *,
+    line_num_specs: list[str] | None = None,
+    node_id_specs: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    return _get_skill_line_content(
+        index,
+        doc_id,
+        line_num_specs=line_num_specs,
+        node_id_specs=node_id_specs,
+    )
+
+
+def get_skill_content_retrieve_result(
+    index: dict[str, Any],
+    doc_id: str,
+    *,
+    line_num_specs: list[str] | None = None,
+    node_id_specs: list[str] | None = None,
+    options: ReconstructOptions | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _get_skill_content_retrieve_result(
+        index,
+        doc_id,
+        line_num_specs=line_num_specs,
+        node_id_specs=node_id_specs,
+        options=_reconstruct_options_native(options),
+    )
+
+
+def reconstruct_skill_markdown(
+    index: dict[str, Any],
+    doc_id: str,
+    *,
+    line_num_specs: list[str] | None = None,
+    node_id_specs: list[str] | None = None,
+    options: ReconstructOptions | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _reconstruct_skill_markdown(
+        index,
+        doc_id,
+        line_num_specs=line_num_specs,
+        node_id_specs=node_id_specs,
+        options=_reconstruct_options_native(options),
+    )
+
+
+def write_reconstructed_skill(
+    catalog_dir: str,
+    index: dict[str, Any],
+    doc_id: str,
+    *,
+    line_num_specs: list[str] | None = None,
+    node_id_specs: list[str] | None = None,
+    options: ReconstructOptions | dict[str, Any] | None = None,
+) -> str:
+    return _write_reconstructed_skill(
+        catalog_dir,
+        index,
+        doc_id,
+        line_num_specs=line_num_specs,
+        node_id_specs=node_id_specs,
+        options=_reconstruct_options_native(options),
+    )
+
+
+def parse_skill_node_ids(spec: str) -> list[int]:
+    return _parse_skill_node_ids(spec)
+
+
 class SkillsBuilder:
     def __init__(self, *, memory_only: bool = True, output_dir: str | None = None) -> None:
         self._inner = _SkillsBuilder(memory_only=memory_only, output_dir=output_dir)
@@ -108,3 +194,15 @@ def _config_dict(config: PageIndexConfig | dict[str, Any] | None) -> dict[str, A
     if isinstance(config, PageIndexConfig):
         return config.to_dict()
     return config
+
+
+def _reconstruct_options_native(
+    options: ReconstructOptions | dict[str, Any] | None,
+) -> _ReconstructOptions | None:
+    if options is None:
+        return None
+    if isinstance(options, ReconstructOptions):
+        return options.to_native()
+    return _ReconstructOptions(
+        keep_all_headers=bool(options.get("keep_all_headers", options.get("keepAllHeaders", False))),
+    )

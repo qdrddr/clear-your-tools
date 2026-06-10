@@ -163,9 +163,19 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		info "cyt-indexer retrieve skills $*"
 		"${CYT_INDEXER_BIN}" retrieve skills "$@"
 
+		local catalog_dir=""
 		local output_file=""
 		while [[ $# -gt 0 ]]; do
 			case "$1" in
+			--catalog)
+				[[ $# -ge 2 ]] || die "missing value for --catalog"
+				catalog_dir="$2"
+				shift 2
+				;;
+			--catalog=*)
+				catalog_dir="${1#*=}"
+				shift
+				;;
 			--output)
 				[[ $# -ge 2 ]] || die "missing value for --output"
 				output_file="$2"
@@ -181,6 +191,9 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 			esac
 		done
 		[[ -n "${output_file}" ]] || die "missing --output for skills retrieve"
+		if [[ -n "${catalog_dir}" && "${output_file}" != /* ]]; then
+			output_file="${catalog_dir%/}/${output_file}"
+		fi
 		[[ -s "${output_file}" ]] || die "skills retrieve produced empty ${output_file}"
 		info "skills retrieve ok -> ${output_file}"
 	}

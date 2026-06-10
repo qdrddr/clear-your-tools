@@ -180,7 +180,7 @@ pub fn document_json_rel(doc_id: &str) -> String {
 }
 
 #[must_use]
-pub fn node_md_rel(doc_id: &str, node_id: &str) -> String {
+pub fn node_md_rel(doc_id: &str, node_id: u32) -> String {
     format!("{}{doc_id}/{node_id}.md", skills_decomposed_prefix())
 }
 

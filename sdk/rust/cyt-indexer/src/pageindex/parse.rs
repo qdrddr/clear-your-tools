@@ -107,66 +107,82 @@ pub fn extract_node_text_content(node_list: &[HeaderNode], markdown_lines: &[Str
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkillPrefix {
     pub frontmatter: Option<String>,
+    pub frontmatter_line_num: Option<u32>,
     pub preamble: Option<String>,
+    pub preamble_line_num: Option<u32>,
 }
 
-/// Extract skill YAML frontmatter and preamble (content before the first heading).
-#[must_use]
-pub fn extract_skill_prefix(markdown_content: &str) -> SkillPrefix {
-    let trimmed = markdown_content.trim_start();
-    if !trimmed.starts_with("---") {
-        return SkillPrefix {
-            frontmatter: None,
-            preamble: extract_preamble_after_frontmatter(markdown_content),
-        };
-    }
-
-    let Some(after_open) = trimmed.strip_prefix("---") else {
-        return SkillPrefix::default();
-    };
-    let body = after_open
-        .strip_prefix('\n')
-        .or_else(|| after_open.strip_prefix("\r\n"));
-    let Some(body) = body else {
-        return SkillPrefix::default();
-    };
-    let Some(end_idx) = body.find("\n---") else {
-        return SkillPrefix::default();
-    };
-
-    let yaml = &body[..end_idx];
-    let frontmatter = format!("---\n{yaml}\n---");
-    let after_frontmatter = body.get(end_idx + 4..).unwrap_or("");
-    let preamble = extract_preamble_after_frontmatter(after_frontmatter);
-
-    SkillPrefix {
-        frontmatter: Some(frontmatter),
-        preamble,
-    }
+fn line_num_from_index(index: usize) -> Option<u32> {
+    u32::try_from(index + 1).ok()
 }
 
-fn extract_preamble_after_frontmatter(content: &str) -> Option<String> {
+fn extract_preamble_from_lines(lines: &[&str], start_idx: usize) -> (Option<String>, Option<u32>) {
     let mut preamble_lines = Vec::new();
+    let mut first_content_line = None;
     let mut in_code_block = false;
 
-    for line in content.lines() {
+    for (offset, line) in lines[start_idx..].iter().enumerate() {
+        let line_num = line_num_from_index(start_idx + offset);
         let stripped = line.trim();
         if stripped.starts_with("```") {
             in_code_block = !in_code_block;
-            preamble_lines.push(line);
+            preamble_lines.push(*line);
             continue;
         }
         if !in_code_block && parse_header(stripped).is_some() {
             break;
         }
-        preamble_lines.push(line);
+        if first_content_line.is_none() && !stripped.is_empty() {
+            first_content_line = line_num;
+        }
+        preamble_lines.push(*line);
     }
 
     let text = preamble_lines.join("\n").trim().to_string();
     if text.is_empty() {
-        None
+        (None, None)
     } else {
-        Some(text)
+        (Some(text), first_content_line)
+    }
+}
+
+/// Extract skill YAML frontmatter and preamble (content before the first heading).
+#[must_use]
+pub fn extract_skill_prefix(markdown_content: &str) -> SkillPrefix {
+    let lines: Vec<&str> = markdown_content.lines().collect();
+    let mut start_idx = 0usize;
+    while start_idx < lines.len() && lines[start_idx].trim().is_empty() {
+        start_idx += 1;
+    }
+
+    if start_idx >= lines.len() || lines[start_idx].trim() != "---" {
+        let (preamble, preamble_line_num) = extract_preamble_from_lines(&lines, 0);
+        return SkillPrefix {
+            frontmatter: None,
+            frontmatter_line_num: None,
+            preamble,
+            preamble_line_num,
+        };
+    }
+
+    let frontmatter_line_num = line_num_from_index(start_idx);
+    let mut end_idx = start_idx + 1;
+    while end_idx < lines.len() && lines[end_idx].trim() != "---" {
+        end_idx += 1;
+    }
+    if end_idx >= lines.len() {
+        return SkillPrefix::default();
+    }
+
+    let yaml = lines[(start_idx + 1)..end_idx].join("\n");
+    let frontmatter = format!("---\n{yaml}\n---");
+    let (preamble, preamble_line_num) = extract_preamble_from_lines(&lines, end_idx + 1);
+
+    SkillPrefix {
+        frontmatter: Some(frontmatter),
+        frontmatter_line_num,
+        preamble,
+        preamble_line_num,
     }
 }
 
@@ -182,7 +198,9 @@ mod tests {
             prefix.frontmatter.as_deref(),
             Some("---\nname: ctx\ndescription: docs\n---")
         );
+        assert_eq!(prefix.frontmatter_line_num, Some(1));
         assert_eq!(prefix.preamble.as_deref(), Some("Intro line"));
+        assert_eq!(prefix.preamble_line_num, Some(6));
     }
 
     #[test]

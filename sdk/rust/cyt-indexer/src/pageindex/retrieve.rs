@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
+use super::node_id::{node_id_from_value, parse_node_id_token};
 use super::tree::{remove_fields, structure_to_list};
 use super::types::{node_md_rel, SkillDocument, SkillsIndex};
 
@@ -46,14 +47,12 @@ pub fn parse_line_nums(spec: &str) -> Result<Vec<u32>, String> {
     Ok(result)
 }
 
-/// Parse a node-id spec such as `"0005-0007"`, `"3,8"`, `"12"`, or `"0003"`.
-///
-/// Node ids are normalized to four-digit zero-padded strings.
+/// Parse a node-id spec such as `"5-7"`, `"3,8"`, or `"12"`.
 ///
 /// # Errors
 ///
 /// Returns an error when the format is invalid or a range is reversed.
-pub fn parse_node_ids(spec: &str) -> Result<Vec<String>, String> {
+pub fn parse_node_ids(spec: &str) -> Result<Vec<u32>, String> {
     let mut result = Vec::new();
     for part in spec.split(',') {
         let part = part.trim();
@@ -66,24 +65,14 @@ pub fn parse_node_ids(spec: &str) -> Result<Vec<String>, String> {
             if start > end {
                 return Err(format!("invalid node_id range '{part}': start must be <= end"));
             }
-            result.extend((start..=end).map(format_node_id));
+            result.extend(start..=end);
         } else {
-            result.push(format_node_id(parse_node_id_token(part)?));
+            result.push(parse_node_id_token(part)?);
         }
     }
     result.sort_unstable();
     result.dedup();
     Ok(result)
-}
-
-fn parse_node_id_token(token: &str) -> Result<u32, String> {
-    token
-        .parse()
-        .map_err(|_| format!("invalid node_id '{token}'"))
-}
-
-fn format_node_id(id: u32) -> String {
-    format!("{id:04}")
 }
 
 pub(crate) fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
@@ -96,7 +85,7 @@ pub(crate) fn merge_line_num_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
     Ok(merged)
 }
 
-pub(crate) fn merge_node_id_specs(specs: &[&str]) -> Result<Vec<String>, String> {
+pub(crate) fn merge_node_id_specs(specs: &[&str]) -> Result<Vec<u32>, String> {
     let mut merged = Vec::new();
     for spec in specs {
         merged.extend(parse_node_ids(spec)?);
@@ -164,7 +153,7 @@ pub fn get_line_content(
     let node_ids = match merge_node_id_specs(node_id_specs) {
         Ok(ids) => ids,
         Err(e) => {
-            return json!({ "error": format!("Invalid node_id format. Use \"0005-0007\", \"3,8\", or \"12\". Error: {e}") });
+            return json!({ "error": format!("Invalid node_id format. Use \"5-7\", \"3,8\", or \"12\". Error: {e}") });
         }
     };
 
@@ -173,7 +162,7 @@ pub fn get_line_content(
     }
 
     let line_set: HashSet<u32> = line_nums.into_iter().collect();
-    let node_set: HashSet<String> = node_ids.into_iter().collect();
+    let node_set: HashSet<u32> = node_ids.into_iter().collect();
     let match_by_line = !line_set.is_empty();
     let match_by_node = !node_set.is_empty();
 
@@ -189,15 +178,11 @@ pub fn get_line_content(
             .get("line_num")
             .and_then(serde_json::Value::as_u64)
             .map_or(0, u64_to_u32);
-        let node_id = obj
-            .get("node_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0000")
-            .to_string();
+        let node_id = node_id_from_value(obj.get("node_id"));
 
         let matched = (match_by_line && line_set.contains(&line_num))
             || (match_by_node && node_set.contains(&node_id));
-        if !matched || !seen.insert(node_id.clone()) {
+        if !matched || !seen.insert(node_id) {
             continue;
         }
 
@@ -230,7 +215,7 @@ fn resolve_node_content(index: &SkillsIndex, doc_id: &str, node: &serde_json::Ma
         return text.clone();
     }
 
-    let node_id = node.get("node_id").and_then(|v| v.as_str()).unwrap_or("0000");
+    let node_id = node_id_from_value(node.get("node_id"));
     let rel = node_md_rel(doc_id, node_id);
     if let Some(raw) = index.files.get(&rel) {
         return strip_decomposed_frontmatter(raw);
@@ -262,14 +247,8 @@ mod tests {
 
     #[test]
     fn parse_node_id_variants() {
-        assert_eq!(
-            parse_node_ids("5-7"),
-            Ok(vec!["0005".to_string(), "0006".to_string(), "0007".to_string()])
-        );
-        assert_eq!(
-            parse_node_ids("3,8"),
-            Ok(vec!["0003".to_string(), "0008".to_string()])
-        );
-        assert_eq!(parse_node_ids("0012"), Ok(vec!["0012".to_string()]));
+        assert_eq!(parse_node_ids("5-7"), Ok(vec![5, 6, 7]));
+        assert_eq!(parse_node_ids("3,8"), Ok(vec![3, 8]));
+        assert_eq!(parse_node_ids("0012"), Ok(vec![12]));
     }
 }

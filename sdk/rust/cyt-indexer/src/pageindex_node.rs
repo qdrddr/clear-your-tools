@@ -1,6 +1,8 @@
 use crate::pageindex::{
-    build_skills_index, get_document, get_document_structure, get_line_content_from_spec,
-    md_to_tree, PageIndexConfig, SkillDocument, SkillsIndex,
+    build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
+    get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids,
+    reconstruct_skill_markdown, spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig,
+    ReconstructOptions, SkillDocument, SkillsIndex,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -11,6 +13,17 @@ use napi_derive::napi;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+#[napi(object)]
+pub struct ReconstructOptionsNapi {
+    pub keep_all_headers: Option<bool>,
+}
+
+fn reconstruct_options_from_napi(opts: Option<ReconstructOptionsNapi>) -> ReconstructOptions {
+    ReconstructOptions {
+        keep_all_headers: opts.and_then(|o| o.keep_all_headers).unwrap_or(false),
+    }
+}
 
 #[napi(object)]
 pub struct PageIndexConfigNapi {
@@ -194,6 +207,121 @@ pub fn get_skill_line_content_from_spec_napi(
         doc_id.as_ref(),
         line_num_spec.as_ref(),
     ))
+}
+
+/// # Errors
+///
+/// Returns an error when specs are invalid or the document is missing.
+#[napi]
+pub fn get_skill_content_retrieve_result_napi(
+    index: Value,
+    doc_id: String,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<ReconstructOptionsNapi>,
+) -> Result<Value> {
+    let index = Box::new(index);
+    let doc_id = doc_id.into_boxed_str();
+    let skills = skills_index_from_value(&index);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    Ok(get_content_retrieve_result(
+        &skills,
+        doc_id.as_ref(),
+        &specs.line_refs(),
+        &specs.node_refs(),
+        &reconstruct_options_from_napi(options),
+    ))
+}
+
+/// # Errors
+///
+/// Returns an error when specs are invalid or the document is missing.
+#[napi]
+pub fn reconstruct_skill_markdown_napi(
+    index: Value,
+    doc_id: String,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<ReconstructOptionsNapi>,
+) -> Result<Value> {
+    let index = Box::new(index);
+    let doc_id = doc_id.into_boxed_str();
+    let skills = skills_index_from_value(&index);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let result = reconstruct_skill_markdown(
+        &skills,
+        doc_id.as_ref(),
+        &specs.line_refs(),
+        &specs.node_refs(),
+        &reconstruct_options_from_napi(options),
+    )
+    .map_err(Error::from_reason)?;
+    Ok(serde_json::json!({
+        "markdown": result.markdown,
+        "matched_node_ids": result.matched_node_ids,
+        "node_ids": result.node_ids,
+        "output_rel_path": result.output_rel_path,
+    }))
+}
+
+/// # Errors
+///
+/// Returns an error when reconstruction fails or the file cannot be written.
+#[napi]
+pub fn write_reconstructed_skill_napi(
+    catalog_dir: String,
+    index: Value,
+    doc_id: String,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+    options: Option<ReconstructOptionsNapi>,
+) -> Result<String> {
+    let index = Box::new(index);
+    let doc_id = doc_id.into_boxed_str();
+    let catalog_dir = catalog_dir.into_boxed_str();
+    let skills = skills_index_from_value(&index);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    let output = write_reconstructed_skill(
+        PathBuf::from(catalog_dir.as_ref()).as_path(),
+        &skills,
+        doc_id.as_ref(),
+        &specs.line_refs(),
+        &specs.node_refs(),
+        &reconstruct_options_from_napi(options),
+    )
+    .map_err(Error::from_reason)?;
+    Ok(output.display().to_string())
+}
+
+/// # Errors
+///
+/// Does not fail; returns an empty array when line numbers or document id are unknown.
+#[napi]
+pub fn get_skill_line_content_napi(
+    index: Value,
+    doc_id: String,
+    line_num_specs: Option<Vec<String>>,
+    node_id_specs: Option<Vec<String>>,
+) -> Result<Value> {
+    let index = Box::new(index);
+    let doc_id = doc_id.into_boxed_str();
+    let skills = skills_index_from_value(&index);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs);
+    Ok(get_line_content(
+        &skills,
+        doc_id.as_ref(),
+        &specs.line_refs(),
+        &specs.node_refs(),
+    ))
+}
+
+/// # Errors
+///
+/// Returns an error when the node-id spec format is invalid.
+#[napi]
+pub fn parse_skill_node_ids_napi(spec: String) -> Result<Vec<u32>> {
+    let spec = spec.into_boxed_str();
+    parse_node_ids(spec.as_ref()).map_err(Error::from_reason)
 }
 
 #[napi]

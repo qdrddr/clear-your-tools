@@ -129,6 +129,17 @@ export const getSkillDocumentNative = native.getSkillDocumentNapi;
 export const getSkillStructureNative = native.getSkillStructureNapi;
 export const getSkillLineContentFromSpecNative =
   native.getSkillLineContentFromSpecNapi;
+export const getSkillLineContentNative = native.getSkillLineContentNapi;
+export const getSkillContentRetrieveResultNative =
+  native.getSkillContentRetrieveResultNapi;
+export const reconstructSkillMarkdownNative =
+  native.reconstructSkillMarkdownNapi;
+export const writeReconstructedSkillNative = native.writeReconstructedSkillNapi;
+export const parseSkillNodeIdsNative = native.parseSkillNodeIdsNapi;
 export const SkillsBuilderNative = native.SkillsBuilderNapi;
 
-export type { PolicyOptions, PolicyContextJs } from "../native.d.ts";
+export type {
+  PolicyOptions,
+  PolicyContextJs,
+  ReconstructOptionsNapi,
+} from "../native.d.ts";

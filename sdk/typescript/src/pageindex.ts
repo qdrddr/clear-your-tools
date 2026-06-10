@@ -3,18 +3,28 @@
 import {
   SkillsBuilderNative,
   buildSkillsIndexNative,
+  getSkillContentRetrieveResultNative,
   getSkillDocumentNative,
   getSkillLineContentFromSpecNative,
+  getSkillLineContentNative,
   getSkillStructureNative,
   loadSkillsIndexFromDirNative,
   mdToTreeNative,
+  parseSkillNodeIdsNative,
+  reconstructSkillMarkdownNative,
   skillsIndexFromDecomposedDirNative,
+  writeReconstructedSkillNative,
   writeSkillsIndexNative,
+  type ReconstructOptionsNapi,
 } from "./native.js";
 
 export interface PageIndexConfig {
   ifAddNodeId?: boolean;
   ifAddNodeText?: boolean;
+}
+
+export interface ReconstructOptions {
+  keepAllHeaders?: boolean;
 }
 
 export interface SkillsIndexDict {
@@ -91,12 +101,102 @@ export function getSkillLineContentFromSpec(
   index: SkillsIndexDict,
   docId: string,
   lineNumSpec: string,
-): Array<{ line_num: number; node_id: string; content: string }> {
+): Array<{ line_num: number; node_id: number; content: string }> {
   return getSkillLineContentFromSpecNative(index, docId, lineNumSpec) as Array<{
     line_num: number;
-    node_id: string;
+    node_id: number;
     content: string;
   }>;
+}
+
+function toNativeReconstructOptions(
+  options?: ReconstructOptions,
+): ReconstructOptionsNapi | undefined {
+  if (!options) return undefined;
+  return { keepAllHeaders: options.keepAllHeaders ?? false };
+}
+
+export function getSkillLineContent(
+  index: SkillsIndexDict,
+  docId: string,
+  opts?: { lineNumSpecs?: string[]; nodeIdSpecs?: string[] },
+): Array<{ line_num: number; node_id: number; content: string }> {
+  return getSkillLineContentNative(
+    index,
+    docId,
+    opts?.lineNumSpecs,
+    opts?.nodeIdSpecs,
+  ) as Array<{ line_num: number; node_id: number; content: string }>;
+}
+
+export function getSkillContentRetrieveResult(
+  index: SkillsIndexDict,
+  docId: string,
+  opts?: {
+    lineNumSpecs?: string[];
+    nodeIdSpecs?: string[];
+    options?: ReconstructOptions;
+  },
+): Record<string, unknown> {
+  return getSkillContentRetrieveResultNative(
+    index,
+    docId,
+    opts?.lineNumSpecs,
+    opts?.nodeIdSpecs,
+    toNativeReconstructOptions(opts?.options),
+  ) as Record<string, unknown>;
+}
+
+export function reconstructSkillMarkdown(
+  index: SkillsIndexDict,
+  docId: string,
+  opts?: {
+    lineNumSpecs?: string[];
+    nodeIdSpecs?: string[];
+    options?: ReconstructOptions;
+  },
+): {
+  markdown: string;
+  matched_node_ids: number[];
+  node_ids: number[];
+  output_rel_path: string;
+} {
+  return reconstructSkillMarkdownNative(
+    index,
+    docId,
+    opts?.lineNumSpecs,
+    opts?.nodeIdSpecs,
+    toNativeReconstructOptions(opts?.options),
+  ) as {
+    markdown: string;
+    matched_node_ids: number[];
+    node_ids: number[];
+    output_rel_path: string;
+  };
+}
+
+export function writeReconstructedSkill(
+  catalogDir: string,
+  index: SkillsIndexDict,
+  docId: string,
+  opts?: {
+    lineNumSpecs?: string[];
+    nodeIdSpecs?: string[];
+    options?: ReconstructOptions;
+  },
+): string {
+  return writeReconstructedSkillNative(
+    catalogDir,
+    index,
+    docId,
+    opts?.lineNumSpecs,
+    opts?.nodeIdSpecs,
+    toNativeReconstructOptions(opts?.options),
+  );
+}
+
+export function parseSkillNodeIds(spec: string): number[] {
+  return parseSkillNodeIdsNative(spec);
 }
 
 export class SkillsBuilder {

@@ -45,6 +45,6 @@ export DEEPINFRA_API_KEY
 	--catalog ./.catalog \
 	--doc-id lean-ctx__skill \
 	--query content \
-	--node_id 0001 \
-	--keep-all-headers \
-	--output skill_out.json
+	--node_id 4 \
+	--output skill_out.json \
+	--keep-all-headers

@@ -81,7 +81,7 @@ fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
     let index = build_skills_index(&[skills_dir], &PageIndexConfig::default())?;
     let content = index
         .files
-        .get("skills/decomposed/skill/0000.md")
+        .get("skills/decomposed/skill/2.md")
         .ok_or_else(|| "missing decomposed node file".to_string())?;
 
     assert!(
