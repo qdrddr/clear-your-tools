@@ -12,8 +12,8 @@
 # Commands:
 #   setup              uv sync workspace (local SDK source override)
 #   rust               cargo test -p cyt-indexer + release CLI catalog build
-#   indexer [subcmd]   cyt-indexer build tools / retrieve tools from debug/full_example.json
-#                      subcmd: build | survivors | retrieve | all (default: all)
+#   indexer [subcmd]   cyt-indexer build tools|skills / retrieve tools from debug/full_example.json
+#                      subcmd: build [tools|skills] | survivors | retrieve | all (default: all)
 #                      env: CYT_CATALOG_DIR, CYT_INDEXER_SYSTEM_POLICY, CYT_INDEXER_MCP_POLICY,
 #                           CYT_INDEXER_TOOL_POLICIES (default: AskUserQuestion=always_include)
 #   sdk-python         maturin develop --release
@@ -60,7 +60,19 @@ indexer)
 	shift || true
 	case "${sub}" in
 	build)
-		cyt_indexer_build_catalog
+		target="${1:-tools}"
+		shift || true
+		case "${target}" in
+		tools)
+			cyt_indexer_build_catalog
+			;;
+		skills)
+			cyt_indexer_build_skills "$@"
+			;;
+		*)
+			die "unknown build target: ${target} (try: tools, skills)"
+			;;
+		esac
 		;;
 	survivors)
 		cyt_indexer_extract_survivors
@@ -73,12 +85,13 @@ indexer)
 		;;
 	-h | --help | help)
 		cat <<EOF
-Usage: ./search/local-dev.sh indexer [build|survivors|retrieve|all] [retrieve args...]
+Usage: ./search/local-dev.sh indexer [build|survivors|retrieve|all] [args...]
 
-  build      jq '.body.tools' debug/full_example.json -> cyt-indexer build tools -> .catalog/
-  survivors  jq rerank json/md -> .catalog/survivors.json (scores as numbers)
-  retrieve   cyt-indexer retrieve tools with default policies (score filter off for rerank survivors)
-  all        build + survivors + retrieve (default)
+  build tools   jq '.body.tools' debug/full_example.json -> cyt-indexer build tools -> .catalog/
+  build skills  cyt-indexer build skills --skills DIR [--output DIR]
+  survivors     jq rerank json/md -> .catalog/survivors.json (scores as numbers)
+  retrieve      cyt-indexer retrieve tools with default policies (score filter off for rerank survivors)
+  all           build tools + survivors + retrieve (default)
 
 Retrieve defaults:
   --system-policy prune_optional
@@ -93,6 +106,7 @@ Override via env:
 Examples:
   ./search/local-dev.sh indexer
   ./search/local-dev.sh indexer build
+  ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
   ./search/local-dev.sh indexer retrieve --tool-policy Bash=always_include
 EOF
 		;;

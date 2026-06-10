@@ -25,11 +25,11 @@ pub fn decompose_document(index: &mut SkillsIndex, doc: &SkillDocument, flat_str
         let body = if text.is_empty() {
             format!("# {title}\n")
         } else {
-            format!("# {title}\n\n{text}")
+            text.to_string()
         };
 
         let md_content = format!(
-            "---\ndoc_id: {}\nnode_id: \"{node_id}\"\nline_num: {line_num}\ntitle: {title}\n---\n{body}",
+            "---\ndoc_id: {}\nnode_id: \"{node_id}\"\nline_num: {line_num}\n---\n{body}",
             doc.id
         );
 

@@ -65,3 +65,38 @@ fn write_reconstruct_and_retrieve_via_cli_flow() -> Result<(), String> {
     let _ = fs::remove_dir_all(&tmp);
     Ok(())
 }
+
+#[test]
+fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
+    let tmp = std::env::temp_dir().join(format!("cyt-skills-header-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let skills_dir = tmp.join("skills-src");
+    fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
+    fs::write(
+        skills_dir.join("skill.md"),
+        "## When to Use\n\nBody text\n\n### Child\n\nMore",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let index = build_skills_index(&[skills_dir], &PageIndexConfig::default())?;
+    let content = index
+        .files
+        .get("skills/decomposed/skill/0000.md")
+        .ok_or_else(|| "missing decomposed node file".to_string())?;
+
+    assert!(
+        !content.contains("title:"),
+        "frontmatter should not repeat the heading title"
+    );
+    assert!(
+        !content.contains("# When to Use\n\n## When to Use"),
+        "decomposed body should not duplicate the heading"
+    );
+    assert!(
+        content.contains("## When to Use\n\nBody text"),
+        "decomposed body should preserve the original heading level"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+    Ok(())
+}

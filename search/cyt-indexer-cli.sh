@@ -37,3 +37,6 @@ DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_
 export DEEPINFRA_API_KEY
 
 ./search/local-dev.sh proxy --port 8834
+
+# Skills
+./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
