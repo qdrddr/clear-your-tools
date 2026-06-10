@@ -21,6 +21,13 @@ def test_page_index_config_from_app_reads_nested_pageindex() -> None:
     assert cfg["bm25_cohesion"]["chunk_size"] == 1024
     assert cfg["bm25_cohesion"]["skip_window"] == 1
     assert cfg["bm25_cohesion"]["window_mode"] == "sentence"
+    assert cfg["enable_bm25_chunking"] is True
+
+
+def test_page_index_config_from_app_disable_bm25_chunking() -> None:
+    cfg = page_index_config_from_app({"pageindex": {"enable_bm25_chunking": False}})
+    assert cfg is not None
+    assert cfg["enable_bm25_chunking"] is False
 
 
 def test_page_index_config_from_app_missing_section() -> None:

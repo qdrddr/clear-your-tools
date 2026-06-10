@@ -68,6 +68,7 @@ export {
   pageIndexConfigFromMapping,
   pageIndexConfigFromPartial,
   pageIndexConfigToNative,
+  pageIndexConfigWithoutChunking,
   parseSkillChunkIds,
   parseSkillNodeIds,
   reconstructSkillMarkdown,

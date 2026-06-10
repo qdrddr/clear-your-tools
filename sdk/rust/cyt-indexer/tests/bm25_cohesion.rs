@@ -45,6 +45,27 @@ fn word_mode_default_window_500() {
 }
 
 #[test]
+fn word_mode_markdown_formatting_preserved() -> Result<(), String> {
+    let text = "### Step 2: Select the Best Match\n\nFrom the resolution results, choose based on:\n\n- Exact or closest name match to what the user asked for\n- Higher benchmark scores indicate better documentation quality\n- If the user mentioned a version (e.g., \"React 19\"), prefer version-specific IDs";
+    let cfg = Bm25CohesionConfig {
+        chunk_size: 100,
+        similarity_window: 10,
+        skip_window: 0,
+        ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)
+    };
+    let chunker = Bm25CohesionChunker::new(cfg)?;
+    let chunks = chunker.chunk(text);
+    assert!(chunks.len() > 1);
+    for chunk in &chunks {
+        assert!(chunk.text.contains(' '));
+        assert_eq!(&text[chunk.start_index..chunk.end_index], chunk.text);
+    }
+    let recompiled: String = chunks.iter().map(|c| c.text.as_str()).collect();
+    assert_eq!(recompiled, text);
+    Ok(())
+}
+
+#[test]
 fn chunks_created_for_skill_build() -> Result<(), String> {
     use cyt_indexer::{build_skills_index, PageIndexConfig};
     use std::fs;

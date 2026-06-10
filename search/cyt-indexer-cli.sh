@@ -39,7 +39,28 @@ export DEEPINFRA_API_KEY
 ./search/local-dev.sh proxy --port 8834
 
 # Skills
+rm -rf ./.catalog/skills/
 ./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
+
+./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
+	--window-mode word \
+	--similarity-window 10 \
+	--chunk-size 100 \
+	--skip-window 0
+
+./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
+    --window-mode word \
+    --similarity-window 500 \
+    --chunk-size 1000 \
+    --skip-window 1
+
+./search/local-dev.sh indexer retrieve skills \
+	--catalog ./.catalog \
+	--doc-id lean-ctx__skill \
+	--query content \
+	--node_id 4 \
+	--output skill_out.json \
+	--keep-all-headers
 
 ./search/local-dev.sh indexer retrieve skills \
 	--catalog ./.catalog \

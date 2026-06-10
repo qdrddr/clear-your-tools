@@ -29,6 +29,8 @@ export type { Bm25CohesionConfig } from "./bm25Cohesion.js";
 export interface PageIndexConfig {
   ifAddNodeId?: boolean;
   ifAddNodeText?: boolean;
+  /** When false, skills build skips BM25 cohesion chunking (node-level only). Default: true. */
+  enableBm25Chunking?: boolean;
   bm25Cohesion?: Partial<Bm25CohesionConfig>;
 }
 
@@ -69,7 +71,16 @@ export function defaultPageIndexConfig(): PageIndexConfig {
   return {
     ifAddNodeId: true,
     ifAddNodeText: false,
+    enableBm25Chunking: true,
     bm25Cohesion: defaultBm25CohesionConfig(),
+  };
+}
+
+/** Pageindex config that returns node-level data only (no BM25 cohesion chunking). */
+export function pageIndexConfigWithoutChunking(): PageIndexConfig {
+  return {
+    ...defaultPageIndexConfig(),
+    enableBm25Chunking: false,
   };
 }
 
@@ -89,6 +100,8 @@ export function pageIndexConfigFromPartial(
   if (partial.ifAddNodeId !== undefined) cfg.ifAddNodeId = partial.ifAddNodeId;
   if (partial.ifAddNodeText !== undefined)
     cfg.ifAddNodeText = partial.ifAddNodeText;
+  if (partial.enableBm25Chunking !== undefined)
+    cfg.enableBm25Chunking = partial.enableBm25Chunking;
   if (partial.bm25Cohesion !== undefined) {
     cfg.bm25Cohesion = {
       ...defaultBm25CohesionConfig(),
@@ -104,6 +117,7 @@ export function pageIndexConfigToNative(
   const out: Record<string, unknown> = {
     if_add_node_id: config.ifAddNodeId ?? true,
     if_add_node_text: config.ifAddNodeText ?? false,
+    enable_bm25_chunking: config.enableBm25Chunking ?? true,
   };
   const cohesion = cohesionConfigToNative(
     config.bm25Cohesion ?? defaultBm25CohesionConfig(),
@@ -118,6 +132,7 @@ function isSnakeCasePageIndexDict(config: Record<string, unknown>): boolean {
   return (
     "if_add_node_id" in config ||
     "if_add_node_text" in config ||
+    "enable_bm25_chunking" in config ||
     "bm25_cohesion" in config ||
     "chunk_size" in config ||
     [...BM25_FLAT_KEYS].some((key) => key in config)
@@ -238,6 +253,7 @@ export function getSkillContentRetrieveResult(
   opts?: {
     lineNumSpecs?: string[];
     nodeIdSpecs?: string[];
+    chunkIdSpecs?: string[];
     options?: ReconstructOptions;
   },
 ): Record<string, unknown> {
@@ -246,6 +262,7 @@ export function getSkillContentRetrieveResult(
     docId,
     opts?.lineNumSpecs,
     opts?.nodeIdSpecs,
+    opts?.chunkIdSpecs,
     toNativeReconstructOptions(opts?.options),
   ) as Record<string, unknown>;
 }
@@ -256,11 +273,13 @@ export function reconstructSkillMarkdown(
   opts?: {
     lineNumSpecs?: string[];
     nodeIdSpecs?: string[];
+    chunkIdSpecs?: string[];
     options?: ReconstructOptions;
   },
 ): {
   markdown: string;
   matched_node_ids: number[];
+  matched_chunk_ids: number[];
   node_ids: number[];
   output_rel_path: string;
 } {
@@ -269,10 +288,12 @@ export function reconstructSkillMarkdown(
     docId,
     opts?.lineNumSpecs,
     opts?.nodeIdSpecs,
+    opts?.chunkIdSpecs,
     toNativeReconstructOptions(opts?.options),
   ) as {
     markdown: string;
     matched_node_ids: number[];
+    matched_chunk_ids: number[];
     node_ids: number[];
     output_rel_path: string;
   };
@@ -285,6 +306,7 @@ export function writeReconstructedSkill(
   opts?: {
     lineNumSpecs?: string[];
     nodeIdSpecs?: string[];
+    chunkIdSpecs?: string[];
     options?: ReconstructOptions;
   },
 ): string {
@@ -294,6 +316,7 @@ export function writeReconstructedSkill(
     docId,
     opts?.lineNumSpecs,
     opts?.nodeIdSpecs,
+    opts?.chunkIdSpecs,
     toNativeReconstructOptions(opts?.options),
   );
 }

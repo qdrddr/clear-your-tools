@@ -224,6 +224,7 @@ pub fn finalize_skill_structure(
     let output_cfg = PageIndexConfig {
         if_add_node_id: config.if_add_node_id,
         if_add_node_text: true,
+        enable_bm25_chunking: config.enable_bm25_chunking,
         bm25_cohesion: config.bm25_cohesion.clone(),
     };
     format_structure_for_output(&merged, &output_cfg)

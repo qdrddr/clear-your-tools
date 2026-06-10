@@ -99,11 +99,18 @@ Lexical (BM25 + Snowball) text chunker for skills pageindex and standalone use. 
 (Savitzky–Golay smoothing, split filtering, optional skip-window merge) but uses BM25
 cohesion instead of embeddings — no model calls, deterministic, fast.
 
-During skills build, each section gets at least one chunk when `chunk_size > 0` (default
-2048 approximate tokens). Sections larger than `chunk_size` are split; chunk files land at
+During skills build, each section gets at least one chunk when BM25 chunking is enabled
+(default). Sections larger than `chunk_size` are split; chunk files land at
 `skills/decomposed/{doc_id}/chunks/{chunk_id}.md` with `chunks: [{chunk_id}]` in
-`document.json`. Parent `{node_id}.md` keeps the full section text. Set `chunk_size: 0`
-to disable chunking (heading-only decomposition).
+`document.json`. Parent `{node_id}.md` keeps the full section text.
+
+**Default (BM25 chunking on):** returns both node-level files and BM25 chunk files.
+
+**Node-level only (no BM25 chunking):** set `enable_bm25_chunking: false` or
+`chunk_size: 0`. The SDK returns the pageindex tree and per-node markdown only — BM25
+cohesion is not run, so a host app can apply its own chunking strategy. Use
+`PageIndexConfig::without_bm25_chunking()` (Rust), `page_index_config_without_chunking()`
+(Python), or `pageIndexConfigWithoutChunking()` (TypeScript).
 
 ### BM25 cohesion CLI
 
@@ -137,26 +144,37 @@ let index = build_skills_index(&[PathBuf::from("~/.claude/skills")], &config)?;
 
 ```python
 from cyt_indexer import Bm25CohesionConfig, PageIndexConfig, bm25_cohesion_chunk, build_skills_index
+from cyt_indexer import page_index_config_without_chunking
 
 chunks = bm25_cohesion_chunk(text, Bm25CohesionConfig(skip_window=1))
 index = build_skills_index(["~/.claude/skills"], {"bm25_cohesion": {"chunk_size": 1024}})
+# Node-level only — skip BM25 chunking during build:
+index = build_skills_index(["~/.claude/skills"], page_index_config_without_chunking().to_dict())
 ```
 
 ### TypeScript
 
 ```typescript
-import { bm25CohesionChunk, buildSkillsIndex, defaultBm25CohesionConfig } from "@clear-your-tools/cyt-indexer";
+import {
+  bm25CohesionChunk,
+  buildSkillsIndex,
+  defaultBm25CohesionConfig,
+  pageIndexConfigWithoutChunking,
+} from "@clear-your-tools/cyt-indexer";
 
 const chunks = bm25CohesionChunk(text, { ...defaultBm25CohesionConfig(), skipWindow: 1 });
 const index = buildSkillsIndex(["~/.claude/skills"], { bm25Cohesion: { chunkSize: 1024 } });
+// Node-level only — skip BM25 chunking during build:
+const nodeOnly = buildSkillsIndex(["~/.claude/skills"], pageIndexConfigWithoutChunking());
 ```
 
 ### Key parameters
 
 | Field | Default (sentence) | Default (word) | Notes |
 | ----- | ------------------ | -------------- | ----- |
+| `enable_bm25_chunking` | `true` | `true` | `false` skips BM25 chunking (node-level only) |
 | `window_mode` | `sentence` | — | `sentence` or `word` |
-| `chunk_size` | 2048 | 2048 | Max tokens per chunk; `0` disables chunking |
+| `chunk_size` | 2048 | 2048 | Max tokens per chunk; `0` also disables chunking |
 | `similarity_window` | 3 | 500 | Left-window size (sentences vs words) |
 | `threshold` | 0.8 | 0.8 | Percentile for boundary filter |
 | `skip_window` | 0 | 0 | SDPM merge pass (`0` = off) |

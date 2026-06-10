@@ -37,12 +37,14 @@ class ReconstructOptions:
 class PageIndexConfig:
     if_add_node_id: bool = True
     if_add_node_text: bool = False
+    enable_bm25_chunking: bool = True
     bm25_cohesion: Bm25CohesionConfig | dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "if_add_node_id": self.if_add_node_id,
             "if_add_node_text": self.if_add_node_text,
+            "enable_bm25_chunking": self.enable_bm25_chunking,
         }
         cohesion = _cohesion_config_dict(self.bm25_cohesion)
         if cohesion is not None:
@@ -61,6 +63,8 @@ class PageIndexConfig:
             cfg.if_add_node_id = bool(mapping["if_add_node_id"])
         if "if_add_node_text" in mapping:
             cfg.if_add_node_text = bool(mapping["if_add_node_text"])
+        if "enable_bm25_chunking" in mapping:
+            cfg.enable_bm25_chunking = bool(mapping["enable_bm25_chunking"])
         if "bm25_cohesion" in mapping:
             bm25 = mapping["bm25_cohesion"]
             if isinstance(bm25, dict):
@@ -106,6 +110,11 @@ _BM25_FLAT_KEYS = frozenset(
 
 def default_page_index_config() -> PageIndexConfig:
     return PageIndexConfig(bm25_cohesion=default_bm25_cohesion_config())
+
+
+def page_index_config_without_chunking() -> PageIndexConfig:
+    """Pageindex config that returns node-level data only (no BM25 cohesion chunking)."""
+    return PageIndexConfig(enable_bm25_chunking=False, bm25_cohesion=default_bm25_cohesion_config())
 
 
 def page_index_config_from_mapping(mapping: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -183,6 +192,7 @@ def get_skill_content_retrieve_result(
     *,
     line_num_specs: list[str] | None = None,
     node_id_specs: list[str] | None = None,
+    chunk_id_specs: list[str] | None = None,
     options: ReconstructOptions | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return _get_skill_content_retrieve_result(
@@ -190,6 +200,7 @@ def get_skill_content_retrieve_result(
         doc_id,
         line_num_specs=line_num_specs,
         node_id_specs=node_id_specs,
+        chunk_id_specs=chunk_id_specs,
         options=_reconstruct_options_native(options),
     )
 
@@ -200,6 +211,7 @@ def reconstruct_skill_markdown(
     *,
     line_num_specs: list[str] | None = None,
     node_id_specs: list[str] | None = None,
+    chunk_id_specs: list[str] | None = None,
     options: ReconstructOptions | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return _reconstruct_skill_markdown(
@@ -207,6 +219,7 @@ def reconstruct_skill_markdown(
         doc_id,
         line_num_specs=line_num_specs,
         node_id_specs=node_id_specs,
+        chunk_id_specs=chunk_id_specs,
         options=_reconstruct_options_native(options),
     )
 
@@ -218,6 +231,7 @@ def write_reconstructed_skill(
     *,
     line_num_specs: list[str] | None = None,
     node_id_specs: list[str] | None = None,
+    chunk_id_specs: list[str] | None = None,
     options: ReconstructOptions | dict[str, Any] | None = None,
 ) -> str:
     return _write_reconstructed_skill(
@@ -226,6 +240,7 @@ def write_reconstructed_skill(
         doc_id,
         line_num_specs=line_num_specs,
         node_id_specs=node_id_specs,
+        chunk_id_specs=chunk_id_specs,
         options=_reconstruct_options_native(options),
     )
 
@@ -276,7 +291,13 @@ def _config_dict(config: PageIndexConfigInput | None) -> dict[str, Any] | None:
 def _is_snake_case_pageindex_dict(config: dict[str, Any]) -> bool:
     return any(
         key in config
-        for key in ("if_add_node_id", "if_add_node_text", "bm25_cohesion", "chunk_size")
+        for key in (
+            "if_add_node_id",
+            "if_add_node_text",
+            "enable_bm25_chunking",
+            "bm25_cohesion",
+            "chunk_size",
+        )
     )
 
 

@@ -6,6 +6,8 @@ use crate::bm25_cohesion::Bm25CohesionConfig;
 pub struct PageIndexConfig {
     pub if_add_node_id: bool,
     pub if_add_node_text: bool,
+    /// When false, skills build skips BM25 cohesion chunking entirely (node-level only).
+    pub enable_bm25_chunking: bool,
     pub bm25_cohesion: Bm25CohesionConfig,
 }
 
@@ -14,6 +16,7 @@ impl Default for PageIndexConfig {
         Self {
             if_add_node_id: true,
             if_add_node_text: false,
+            enable_bm25_chunking: true,
             bm25_cohesion: Bm25CohesionConfig::default(),
         }
     }
@@ -32,15 +35,32 @@ impl PageIndexConfig {
         if let Some(v) = obj.get("if_add_node_text") {
             cfg.if_add_node_text = parse_bool(v, cfg.if_add_node_text);
         }
+        if let Some(v) = obj.get("enable_bm25_chunking") {
+            cfg.enable_bm25_chunking = parse_bool(v, cfg.enable_bm25_chunking);
+        }
         if obj.contains_key("bm25_cohesion") || obj.contains_key("chunk_size") {
             cfg.bm25_cohesion = Bm25CohesionConfig::from_partial(val);
         }
         cfg
     }
 
+    /// Whether BM25 cohesion chunking runs during skills build.
+    #[must_use]
+    pub const fn bm25_chunking_enabled(&self) -> bool {
+        self.enable_bm25_chunking && self.bm25_cohesion.chunk_size > 0
+    }
+
     #[must_use]
     pub const fn cohesion_config(&self) -> &Bm25CohesionConfig {
         &self.bm25_cohesion
+    }
+
+    #[must_use]
+    pub fn without_bm25_chunking() -> Self {
+        Self {
+            enable_bm25_chunking: false,
+            ..Self::default()
+        }
     }
 }
 
@@ -63,6 +83,8 @@ mod tests {
         let cfg = PageIndexConfig::default();
         assert!(cfg.if_add_node_id);
         assert!(!cfg.if_add_node_text);
+        assert!(cfg.enable_bm25_chunking);
+        assert!(cfg.bm25_chunking_enabled());
         assert_eq!(cfg.bm25_cohesion.chunk_size, 2048);
     }
 
@@ -87,5 +109,23 @@ mod tests {
     fn from_value_ignores_unknown_keys() {
         let cfg = PageIndexConfig::from_value(&json!({"if_add_node_summary": "yes"}));
         assert_eq!(cfg.if_add_node_id, PageIndexConfig::default().if_add_node_id);
+    }
+
+    #[test]
+    fn enable_bm25_chunking_false_disables_chunking() {
+        let cfg = PageIndexConfig::from_value(&json!({"enable_bm25_chunking": false}));
+        assert!(!cfg.bm25_chunking_enabled());
+    }
+
+    #[test]
+    fn chunk_size_zero_disables_chunking() {
+        let cfg = PageIndexConfig::from_value(&json!({"chunk_size": 0}));
+        assert!(!cfg.bm25_chunking_enabled());
+    }
+
+    #[test]
+    fn without_bm25_chunking_helper() {
+        let cfg = PageIndexConfig::without_bm25_chunking();
+        assert!(!cfg.bm25_chunking_enabled());
     }
 }

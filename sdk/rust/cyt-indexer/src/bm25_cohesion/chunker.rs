@@ -1,4 +1,4 @@
-use chunk::{filter_split_indices, find_local_minima_interpolated, merge_splits};
+use chunk::{filter_split_indices, find_local_minima_interpolated, find_merge_indices};
 
 use super::config::Bm25CohesionConfig;
 use super::scorer::Bm25Scorer;
@@ -61,7 +61,22 @@ impl Bm25CohesionChunker {
         if self.config.skip_window > 0 && groups.len() > 1 {
             groups = skip_and_merge(&groups, &self.config, &self.pipeline);
         }
-        self.groups_to_chunks(text, &groups)
+        let mut chunks = self.groups_to_chunks(text, &groups);
+        if chunks.len() > 1 {
+            self.fill_inter_chunk_gaps(text, &mut chunks);
+        }
+        chunks
+    }
+
+    fn fill_inter_chunk_gaps(&self, source: &str, chunks: &mut [CohesionChunk]) {
+        for i in 0..chunks.len().saturating_sub(1) {
+            let next_start = chunks[i + 1].start_index;
+            if chunks[i].end_index < next_start {
+                chunks[i].end_index = next_start;
+                chunks[i].text = source[chunks[i].start_index..next_start].to_string();
+                chunks[i].token_count = self.token_counter.count(&chunks[i].text);
+            }
+        }
     }
 
     #[must_use]
@@ -133,19 +148,15 @@ impl Bm25CohesionChunker {
                 chunks.push(Self::units_to_chunk(source, group));
                 continue;
             }
-            let texts: Vec<&str> = group.iter().map(|u| u.text.as_str()).collect();
             let counts: Vec<usize> = group.iter().map(|u| u.token_count).collect();
-            let merged = merge_splits(&texts, &counts, self.config.chunk_size);
-            let mut byte_cursor = group[0].start_index;
-            for (piece, &tok_count) in merged.merged.iter().zip(merged.token_counts.iter()) {
-                let len = piece.len();
-                chunks.push(CohesionChunk {
-                    text: (*piece).clone(),
-                    start_index: byte_cursor,
-                    end_index: byte_cursor + len,
-                    token_count: tok_count,
-                });
-                byte_cursor += len;
+            let merge_indices = find_merge_indices(&counts, self.config.chunk_size);
+            let mut start_unit = 0usize;
+            for &end_unit in &merge_indices {
+                let end_unit = end_unit.min(group.len());
+                if start_unit < end_unit {
+                    chunks.push(Self::units_to_chunk(source, &group[start_unit..end_unit]));
+                }
+                start_unit = end_unit;
             }
         }
         if chunks.is_empty() {
@@ -255,6 +266,35 @@ mod tests {
         for (x, y) in a.iter().zip(b.iter()) {
             assert_eq!(x.text, y.text);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn word_mode_preserves_markdown_formatting() -> Result<(), String> {
+        let text = "### Step 2: Select the Best Match\n\nFrom the resolution results, choose based on:\n\n- Exact or closest name match to what the user asked for\n- Higher benchmark scores indicate better documentation quality\n- If the user mentioned a version (e.g., \"React 19\"), prefer version-specific IDs";
+        let cfg = Bm25CohesionConfig {
+            chunk_size: 100,
+            similarity_window: 10,
+            skip_window: 0,
+            ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)
+        };
+        let chunker = Bm25CohesionChunker::new(cfg)?;
+        let chunks = chunker.chunk(text);
+        assert!(chunks.len() > 1, "expected section to split into multiple chunks");
+        for chunk in &chunks {
+            assert!(chunk.text.contains(' '), "chunk should preserve spaces");
+            assert_eq!(
+                &text[chunk.start_index..chunk.end_index],
+                chunk.text.as_str(),
+                "chunk text must match source slice"
+            );
+        }
+        let recompiled: String = chunks.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(recompiled, text);
+        assert!(
+            recompiled.contains("### Step 2: Select the Best Match"),
+            "recompiled text should preserve heading"
+        );
         Ok(())
     }
 

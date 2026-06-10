@@ -19,7 +19,7 @@ pub fn attach_chunks_to_structure(
     index: &mut SkillsIndex,
     doc_id: &str,
 ) -> Result<(), String> {
-    if config.bm25_cohesion.chunk_size == 0 {
+    if !config.bm25_chunking_enabled() {
         return Ok(());
     }
     let chunker = Bm25CohesionChunker::new(config.bm25_cohesion.clone())?;

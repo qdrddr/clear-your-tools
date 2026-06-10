@@ -437,6 +437,7 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
                     args.doc_id,
                     &line_num_specs,
                     &node_id_specs,
+                    &chunk_id_specs,
                     &reconstruct_opts,
                 )
             }
@@ -457,13 +458,15 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
     if matches!(args.query, SkillQuery::Content) {
         let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
         let node_id_specs: Vec<&str> = args.node_ids.iter().map(String::as_str).collect();
-        if !line_num_specs.is_empty() || !node_id_specs.is_empty() {
+        let chunk_id_specs: Vec<&str> = args.chunk_ids.iter().map(String::as_str).collect();
+        if !line_num_specs.is_empty() || !node_id_specs.is_empty() || !chunk_id_specs.is_empty() {
             let reconstructed = write_reconstructed_skill(
                 args.catalog,
                 &index,
                 args.doc_id,
                 &line_num_specs,
                 &node_id_specs,
+                &chunk_id_specs,
                 &reconstruct_opts,
             )?;
             eprintln!(

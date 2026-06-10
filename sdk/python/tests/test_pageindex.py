@@ -21,6 +21,7 @@ from cyt_indexer import (  # noqa: E402
     get_skill_line_content_from_spec,
     get_skill_structure,
     page_index_config_from_mapping,
+    page_index_config_without_chunking,
     parse_skill_chunk_ids,
     md_to_tree,
     skills_index_from_decomposed_dir,
@@ -107,6 +108,24 @@ def test_retrieve_by_chunk_id_after_disk_roundtrip() -> None:
         assert rows
         assert rows[0]["chunk_id"] == int(chunk_id)
         assert rows[0]["content"]
+
+
+def test_build_without_bm25_chunking_skips_chunk_files() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp) / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "demo.md").write_text("# Demo\n\nHello\n\n## Part\n\nWorld", encoding="utf-8")
+
+        index = build_skills_index([str(skills_dir)], config=page_index_config_without_chunking())
+        assert "documents" in index
+        assert index["documents"]
+        assert not any("/chunks/" in k for k in index["files"])
+        assert any(k.endswith("/document.json") for k in index["files"])
+        assert any(k.endswith(".md") and "/chunks/" not in k for k in index["files"])
+
+        doc_id = next(iter(index["documents"]))
+        structure = get_skill_structure(index["documents"], doc_id)
+        assert "chunks" not in str(structure)
 
 
 def test_skills_builder_memory_only() -> None:

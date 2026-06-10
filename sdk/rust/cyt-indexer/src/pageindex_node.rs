@@ -30,6 +30,7 @@ fn reconstruct_options_from_napi(opts: Option<ReconstructOptionsNapi>) -> Recons
 pub struct PageIndexConfigNapi {
     pub if_add_node_id: Option<bool>,
     pub if_add_node_text: Option<bool>,
+    pub enable_bm25_chunking: Option<bool>,
     pub bm25_cohesion: Option<Value>,
 }
 
@@ -41,6 +42,9 @@ fn page_index_config_from_napi(config: Option<PageIndexConfigNapi>) -> PageIndex
         }
         if let Some(v) = c.if_add_node_text {
             val["if_add_node_text"] = serde_json::json!(v);
+        }
+        if let Some(v) = c.enable_bm25_chunking {
+            val["enable_bm25_chunking"] = serde_json::json!(v);
         }
         if let Some(b) = c.bm25_cohesion {
             val["bm25_cohesion"] = b;
@@ -223,17 +227,19 @@ pub fn get_skill_content_retrieve_result_napi(
     doc_id: String,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<ReconstructOptionsNapi>,
 ) -> Result<Value> {
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     Ok(get_content_retrieve_result(
         &skills,
         doc_id.as_ref(),
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
         &reconstruct_options_from_napi(options),
     ))
 }
@@ -247,23 +253,26 @@ pub fn reconstruct_skill_markdown_napi(
     doc_id: String,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<ReconstructOptionsNapi>,
 ) -> Result<Value> {
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let result = reconstruct_skill_markdown(
         &skills,
         doc_id.as_ref(),
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
         &reconstruct_options_from_napi(options),
     )
     .map_err(Error::from_reason)?;
     Ok(serde_json::json!({
         "markdown": result.markdown,
         "matched_node_ids": result.matched_node_ids,
+        "matched_chunk_ids": result.matched_chunk_ids,
         "node_ids": result.node_ids,
         "output_rel_path": result.output_rel_path,
     }))
@@ -279,19 +288,21 @@ pub fn write_reconstructed_skill_napi(
     doc_id: String,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<ReconstructOptionsNapi>,
 ) -> Result<String> {
     let index = Box::new(index);
     let doc_id = doc_id.into_boxed_str();
     let catalog_dir = catalog_dir.into_boxed_str();
     let skills = skills_index_from_value(&index);
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let output = write_reconstructed_skill(
         PathBuf::from(catalog_dir.as_ref()).as_path(),
         &skills,
         doc_id.as_ref(),
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
         &reconstruct_options_from_napi(options),
     )
     .map_err(Error::from_reason)?;

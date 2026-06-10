@@ -210,17 +210,18 @@ fn reconstruct_options_from_py(opts: Option<Bound<'_, PyAny>>) -> PyResult<Recon
 }
 
 #[pyfunction(name = "get_skill_content_retrieve_result")]
-#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, chunk_id_specs=None, options=None))]
 fn get_skill_content_retrieve_result_py(
     py: Python<'_>,
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let opts = reconstruct_options_from_py(options)?;
     value_to_py(
         py,
@@ -229,29 +230,32 @@ fn get_skill_content_retrieve_result_py(
             doc_id,
             &specs.line_refs(),
             &specs.node_refs(),
+            &specs.chunk_refs(),
             &opts,
         ),
     )
 }
 
 #[pyfunction(name = "reconstruct_skill_markdown")]
-#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+#[pyo3(signature = (index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, chunk_id_specs=None, options=None))]
 fn reconstruct_skill_markdown_py(
     py: Python<'_>,
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<PyObject> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let opts = reconstruct_options_from_py(options)?;
     let result = reconstruct_skill_markdown(
         &index,
         doc_id,
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
         &opts,
     )
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
@@ -260,6 +264,7 @@ fn reconstruct_skill_markdown_py(
         &serde_json::json!({
             "markdown": result.markdown,
             "matched_node_ids": result.matched_node_ids,
+            "matched_chunk_ids": result.matched_chunk_ids,
             "node_ids": result.node_ids,
             "output_rel_path": result.output_rel_path,
         }),
@@ -267,17 +272,18 @@ fn reconstruct_skill_markdown_py(
 }
 
 #[pyfunction(name = "write_reconstructed_skill")]
-#[pyo3(signature = (catalog_dir, index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, options=None))]
+#[pyo3(signature = (catalog_dir, index_or_docs, doc_id, *, line_num_specs=None, node_id_specs=None, chunk_id_specs=None, options=None))]
 fn write_reconstructed_skill_py(
     catalog_dir: String,
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
+    chunk_id_specs: Option<Vec<String>>,
     options: Option<Bound<'_, PyAny>>,
 ) -> PyResult<String> {
     let index = skills_index_from_py(index_or_docs)?;
-    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, None);
+    let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let opts = reconstruct_options_from_py(options)?;
     let output = write_reconstructed_skill(
         PathBuf::from(catalog_dir).as_path(),
@@ -285,6 +291,7 @@ fn write_reconstructed_skill_py(
         doc_id,
         &specs.line_refs(),
         &specs.node_refs(),
+        &specs.chunk_refs(),
         &opts,
     )
     .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
