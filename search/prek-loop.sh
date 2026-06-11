@@ -33,38 +33,47 @@ if ((${#HOOKS[@]} == 0)); then
 	exit 1
 fi
 
-echo "Prek loop: ${#HOOKS[@]} hooks, running until all pass in one iteration."
+echo "Prek loop: ${#HOOKS[@]} hooks, running until all pass in one loop."
 echo "Hooks: ${HOOKS[*]}"
 echo
 
+total_hooks=${#HOOKS[@]}
 iteration=0
 while true; do
 	iteration=$((iteration + 1))
-	echo "========== iteration ${iteration} =========="
+	processed=0
+	passed=0
+	failed=0
 	all_passed=true
 	failed_hooks=()
 
+	echo "========== loop ${iteration} (0/${total_hooks} processed, 0 passed, 0 failed) =========="
+
 	for hook in "${HOOKS[@]}"; do
+		processed=$((processed + 1))
 		echo
-		echo ">>> ${hook}"
+		echo ">>> loop ${iteration} [${processed}/${total_hooks}] ${hook} (${passed} passed, ${failed} failed so far)"
 		if uv run prek run "$hook" --all-files; then
+			passed=$((passed + 1))
 			echo "<<< ${hook}: ok"
 		else
-			echo "<<< ${hook}: failed"
+			failed=$((failed + 1))
 			all_passed=false
 			failed_hooks+=("$hook")
+			echo "<<< ${hook}: failed"
 		fi
 		# shellcheck disable=SC2035
-		git add *
+		git add * >/dev/null 2>&1
 	done
 
 	echo
+	echo "Loop ${iteration} complete: ${processed}/${total_hooks} processed, ${passed} passed, ${failed} failed."
 	if $all_passed; then
-		echo "All ${#HOOKS[@]} hooks passed on iteration ${iteration}."
+		echo "All ${total_hooks} hooks passed on loop ${iteration}."
 		exit 0
 	fi
 
-	echo "Iteration ${iteration} finished with failures: ${failed_hooks[*]}"
+	echo "Failures: ${failed_hooks[*]}"
 	echo "Re-running from the top..."
 	echo
 done

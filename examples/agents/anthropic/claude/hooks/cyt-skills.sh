@@ -7,7 +7,6 @@ OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-$(/usr/bin/security find-generic-passw
 export OPENROUTER_API_KEY
 DEEPINFRA_API_KEY="${DEEPINFRA_API_KEY:-$(/usr/bin/security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w 2>/dev/null || true)}"
 export DEEPINFRA_API_KEY
-export LITELLM_LOG="${LITELLM_LOG:-ERROR}"
 
 CYT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
 CLI="${CYT_REPO}/src/cyt/proxy/cli.py"

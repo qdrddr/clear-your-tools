@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any, cast
 
 _configured = False
@@ -14,8 +13,6 @@ def configure_litellm_quiet() -> None:
     if _configured:
         return
     _configured = True
-
-    os.environ.setdefault("LITELLM_LOG", "ERROR")
 
     try:
         import litellm

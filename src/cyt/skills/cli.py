@@ -51,7 +51,7 @@ def _report_cli_outcome(outcome: str) -> None:
 
 
 @contextlib.contextmanager
-def _redirect_stdout_to_stderr() -> Iterator[None]:
+def _hook_safe_stdout() -> Iterator[None]:
     """Keep hook stdout reserved for the final JSON payload."""
     real_stdout = sys.stdout
     sys.stdout = sys.stderr
@@ -123,7 +123,7 @@ def _handle_user_prompt(
     model = _resolve_model(payload)
 
     configure_litellm_quiet()
-    stdout_guard = contextlib.nullcontext() if plain_output else _redirect_stdout_to_stderr()
+    stdout_guard = contextlib.nullcontext() if plain_output else _hook_safe_stdout()
     with stdout_guard:
         entries = build_registry(config)
         matches = search_skills(query, entries, config=config)
