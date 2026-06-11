@@ -116,7 +116,7 @@ def default_page_index_config() -> PageIndexConfig:
 
 
 def page_index_config_without_chunking() -> PageIndexConfig:
-    """Pageindex config that returns node-level data only (no BM25 cohesion chunking)."""
+    """Pageindex config with one full-text chunk per node (no BM25 splitting)."""
     return PageIndexConfig(enable_bm25_chunking=False, bm25_cohesion=default_bm25_cohesion_config())
 
 

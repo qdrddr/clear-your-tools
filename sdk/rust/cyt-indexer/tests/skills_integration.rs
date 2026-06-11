@@ -177,21 +177,10 @@ fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
     Ok(())
 }
 
-#[test]
-fn build_without_bm25_chunking_returns_node_level_only() -> Result<(), String> {
-    let tmp = std::env::temp_dir().join(format!("cyt-skills-no-chunk-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
-    let skills_dir = fixture_skills_dir(&tmp)?;
-
-    let index = build_skills_index(&[skills_dir], &PageIndexConfig::without_bm25_chunking())?;
-    assert_eq!(index.documents.len(), 1);
+fn assert_one_full_text_chunk_per_node(index: &SkillsIndex, doc_id: &str) -> Result<(), String> {
     assert!(
-        !index.files.keys().any(|k| k.contains("/chunks/")),
-        "expected no chunk files when BM25 chunking is disabled"
-    );
-    assert!(
-        index.files.keys().any(|k| k.ends_with("/document.json")),
-        "expected document.json"
+        index.files.keys().any(|k| k.contains("/chunks/")),
+        "expected chunk files"
     );
     assert!(
         index.files.keys().any(|k| {
@@ -201,6 +190,62 @@ fn build_without_bm25_chunking_returns_node_level_only() -> Result<(), String> {
                 && !k.contains("/chunks/")
         }),
         "expected node-level markdown files"
+    );
+
+    let doc = index.documents.get(doc_id).ok_or("missing doc")?;
+    for node in cyt_indexer::pageindex::tree::structure_to_list(&doc.structure) {
+        let Some(obj) = node.as_object() else {
+            continue;
+        };
+        let text = obj.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        if text.trim().is_empty() {
+            continue;
+        }
+        let chunks = obj
+            .get("chunks")
+            .and_then(|v| v.as_array())
+            .ok_or("expected chunks array on node with text")?;
+        assert_eq!(
+            chunks.len(),
+            1,
+            "expected exactly one chunk per node with text"
+        );
+    }
+    Ok(())
+}
+
+fn chunk_size_zero_config() -> PageIndexConfig {
+    PageIndexConfig::from_value(&serde_json::json!({
+        "bm25_cohesion": {"chunk_size": 0}
+    }))
+}
+
+#[test]
+fn build_with_chunk_size_zero_emits_one_chunk_per_node() -> Result<(), String> {
+    let tmp = std::env::temp_dir().join(format!("cyt-skills-chunk0-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let skills_dir = fixture_skills_dir(&tmp)?;
+
+    let index = build_skills_index(&[skills_dir], &chunk_size_zero_config())?;
+    assert_eq!(index.documents.len(), 1);
+    assert_one_full_text_chunk_per_node(&index, "create-hook")?;
+
+    let _ = fs::remove_dir_all(&tmp);
+    Ok(())
+}
+
+#[test]
+fn build_without_bm25_chunking_emits_one_chunk_per_node() -> Result<(), String> {
+    let tmp = std::env::temp_dir().join(format!("cyt-skills-no-chunk-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let skills_dir = fixture_skills_dir(&tmp)?;
+
+    let index = build_skills_index(&[skills_dir], &PageIndexConfig::without_bm25_chunking())?;
+    assert_eq!(index.documents.len(), 1);
+    assert_one_full_text_chunk_per_node(&index, "create-hook")?;
+    assert!(
+        index.files.keys().any(|k| k.ends_with("/document.json")),
+        "expected document.json"
     );
 
     let _ = fs::remove_dir_all(&tmp);

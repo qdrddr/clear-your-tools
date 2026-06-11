@@ -110,7 +110,7 @@ def test_retrieve_by_chunk_id_after_disk_roundtrip() -> None:
         assert rows[0]["content"]
 
 
-def test_build_without_bm25_chunking_skips_chunk_files() -> None:
+def test_build_without_bm25_chunking_emits_one_chunk_per_node() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         skills_dir = Path(tmp) / "skills"
         skills_dir.mkdir()
@@ -119,13 +119,13 @@ def test_build_without_bm25_chunking_skips_chunk_files() -> None:
         index = build_skills_index([str(skills_dir)], config=page_index_config_without_chunking())
         assert "documents" in index
         assert index["documents"]
-        assert not any("/chunks/" in k for k in index["files"])
+        assert any("/chunks/" in k for k in index["files"])
         assert any(k.endswith("/document.json") for k in index["files"])
         assert any(k.endswith(".md") and "/chunks/" not in k for k in index["files"])
 
         doc_id = next(iter(index["documents"]))
         structure = get_skill_structure(index["documents"], doc_id)
-        assert "chunks" not in str(structure)
+        assert "chunks" in str(structure)
 
 
 def test_skills_builder_memory_only() -> None:

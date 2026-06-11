@@ -104,11 +104,12 @@ During skills build, each section gets at least one chunk when BM25 chunking is 
 `skills/decomposed/{doc_id}/chunks/{chunk_id}.md` with `chunks: [{chunk_id}]` in
 `document.json`. Parent `{node_id}.md` keeps the full section text.
 
-**Default (BM25 chunking on):** returns both node-level files and BM25 chunk files.
+**Default (BM25 splitting on):** returns node-level files and BM25 chunk files. Sections
+larger than `chunk_size` are split.
 
-**Node-level only (no BM25 chunking):** set `enable_bm25_chunking: false` or
-`chunk_size: 0`. The SDK returns the pageindex tree and per-node markdown only — BM25
-cohesion is not run, so a host app can apply its own chunking strategy. Use
+**One full-text chunk per node (no BM25 splitting):** set `enable_bm25_chunking: false`
+or `chunk_size: 0`. Chunk files and `chunks` refs are still written; each node gets a
+single chunk with its full text. Use
 `PageIndexConfig::without_bm25_chunking()` (Rust), `page_index_config_without_chunking()`
 (Python), or `pageIndexConfigWithoutChunking()` (TypeScript).
 
@@ -164,17 +165,17 @@ import {
 
 const chunks = bm25CohesionChunk(text, { ...defaultBm25CohesionConfig(), skipWindow: 1 });
 const index = buildSkillsIndex(["~/.claude/skills"], { bm25Cohesion: { chunkSize: 1024 } });
-// Node-level only — skip BM25 chunking during build:
-const nodeOnly = buildSkillsIndex(["~/.claude/skills"], pageIndexConfigWithoutChunking());
+// One full-text chunk per node — no BM25 splitting during build:
+const oneChunkPerNode = buildSkillsIndex(["~/.claude/skills"], pageIndexConfigWithoutChunking());
 ```
 
 ### Key parameters
 
 | Field | Default (sentence) | Default (word) | Notes |
 | ----- | ------------------ | -------------- | ----- |
-| `enable_bm25_chunking` | `true` | `true` | `false` skips BM25 chunking (node-level only) |
+| `enable_bm25_chunking` | `true` | `true` | `false` = one full-text chunk per node (no BM25 splitting) |
 | `window_mode` | `sentence` | — | `sentence` or `word` |
-| `chunk_size` | 2048 | 2048 | Max tokens per chunk; `0` also disables chunking |
+| `chunk_size` | 2048 | 2048 | Max tokens per chunk; `0` = one full-text chunk per node (no splitting) |
 | `similarity_window` | 3 | 500 | Left-window size (sentences vs words) |
 | `threshold` | 0.8 | 0.8 | Percentile for boundary filter |
 | `skip_window` | 0 | 0 | SDPM merge pass (`0` = off) |

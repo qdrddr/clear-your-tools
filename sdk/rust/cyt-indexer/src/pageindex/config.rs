@@ -6,7 +6,8 @@ use crate::bm25_cohesion::Bm25CohesionConfig;
 pub struct PageIndexConfig {
     pub if_add_node_id: bool,
     pub if_add_node_text: bool,
-    /// When false, skills build skips BM25 cohesion chunking entirely (node-level only).
+    /// When false with `chunk_size > 0`, each node still gets one full-text chunk file
+    /// (no BM25 splitting). Same outcome as `chunk_size: 0`.
     pub enable_bm25_chunking: bool,
     pub bm25_cohesion: Bm25CohesionConfig,
 }
@@ -44,10 +45,20 @@ impl PageIndexConfig {
         cfg
     }
 
-    /// Whether BM25 cohesion chunking runs during skills build.
+    /// Whether BM25 cohesion splitting runs (vs one full-text chunk per node).
     #[must_use]
-    pub const fn bm25_chunking_enabled(&self) -> bool {
+    pub const fn bm25_splitting_enabled(&self) -> bool {
         self.enable_bm25_chunking && self.bm25_cohesion.chunk_size > 0
+    }
+
+    /// Cohesion settings for chunk attachment; forces `chunk_size: 0` when splitting is off.
+    #[must_use]
+    pub fn cohesion_config_for_chunking(&self) -> Bm25CohesionConfig {
+        let mut cfg = self.bm25_cohesion.clone();
+        if !self.bm25_splitting_enabled() {
+            cfg.chunk_size = 0;
+        }
+        cfg
     }
 
     #[must_use]
@@ -61,6 +72,12 @@ impl PageIndexConfig {
             enable_bm25_chunking: false,
             ..Self::default()
         }
+    }
+
+    /// Alias for [`Self::without_bm25_chunking`] — one full-text chunk per node, no splitting.
+    #[must_use]
+    pub fn one_chunk_per_node() -> Self {
+        Self::without_bm25_chunking()
     }
 }
 
@@ -84,7 +101,7 @@ mod tests {
         assert!(cfg.if_add_node_id);
         assert!(!cfg.if_add_node_text);
         assert!(cfg.enable_bm25_chunking);
-        assert!(cfg.bm25_chunking_enabled());
+        assert!(cfg.bm25_splitting_enabled());
         assert_eq!(cfg.bm25_cohesion.chunk_size, 2048);
     }
 
@@ -112,20 +129,24 @@ mod tests {
     }
 
     #[test]
-    fn enable_bm25_chunking_false_disables_chunking() {
+    fn enable_bm25_chunking_false_disables_splitting_only() {
         let cfg = PageIndexConfig::from_value(&json!({"enable_bm25_chunking": false}));
-        assert!(!cfg.bm25_chunking_enabled());
+        assert!(!cfg.bm25_splitting_enabled());
+        assert_eq!(cfg.cohesion_config_for_chunking().chunk_size, 0);
     }
 
     #[test]
-    fn chunk_size_zero_disables_chunking() {
+    fn chunk_size_zero_disables_splitting() {
         let cfg = PageIndexConfig::from_value(&json!({"chunk_size": 0}));
-        assert!(!cfg.bm25_chunking_enabled());
+        assert!(!cfg.bm25_splitting_enabled());
+        assert_eq!(cfg.bm25_cohesion.chunk_size, 0);
+        assert_eq!(cfg.cohesion_config_for_chunking().chunk_size, 0);
     }
 
     #[test]
     fn without_bm25_chunking_helper() {
         let cfg = PageIndexConfig::without_bm25_chunking();
-        assert!(!cfg.bm25_chunking_enabled());
+        assert!(!cfg.bm25_splitting_enabled());
+        assert_eq!(cfg.cohesion_config_for_chunking().chunk_size, 0);
     }
 }

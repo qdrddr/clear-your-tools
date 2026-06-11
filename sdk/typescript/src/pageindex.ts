@@ -29,7 +29,7 @@ export type { Bm25CohesionConfig } from "./bm25Cohesion.js";
 export interface PageIndexConfig {
   ifAddNodeId?: boolean;
   ifAddNodeText?: boolean;
-  /** When false, skills build skips BM25 cohesion chunking (node-level only). Default: true. */
+  /** When false, one full-text chunk per node (no BM25 splitting). Default: true. */
   enableBm25Chunking?: boolean;
   bm25Cohesion?: Partial<Bm25CohesionConfig>;
 }
@@ -78,7 +78,7 @@ export function defaultPageIndexConfig(): PageIndexConfig {
   };
 }
 
-/** Pageindex config that returns node-level data only (no BM25 cohesion chunking). */
+/** Pageindex config with one full-text chunk per node (no BM25 splitting). */
 export function pageIndexConfigWithoutChunking(): PageIndexConfig {
   return {
     ...defaultPageIndexConfig(),

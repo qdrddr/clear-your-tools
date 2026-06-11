@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from cyt.indexer.tokens import count_tokens
+from cyt.skills.frontmatter import injection_markdown_body
 from cyt.skills.search import MatchedSkill
 
 _INTRO = (
@@ -29,15 +30,21 @@ def shorten_home_path(path: str) -> str:
         return text
 
 
+def _skill_open_tag(path: str, name: str | None) -> str:
+    if name:
+        return f'<skill name="{name}" path="{path}">'
+    return f'<skill path="{path}">'
+
+
 def format_agent_skills(matches: list[MatchedSkill]) -> str:
     if not matches:
         return ""
     lines = [_INTRO, "", "<agent-skills>"]
     for match in matches:
         path = shorten_home_path(match.file_path)
-        lines.append(f'<file path="{path}">')
-        lines.append(match.markdown.rstrip())
-        lines.append("</file>")
+        lines.append(_skill_open_tag(path, match.name))
+        lines.append(injection_markdown_body(match.markdown).rstrip())
+        lines.append("</skill>")
     lines.append("</agent-skills>")
     return "\n".join(lines)
 

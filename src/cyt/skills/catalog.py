@@ -63,7 +63,26 @@ def _doc_dir(entry_dir: Path, doc_id: str) -> Path:
     return entry_dir / _DECOMPOSED_PREFIX / doc_id
 
 
-def _iter_chunk_ids(structure: object) -> list[int]:
+def _is_frontmatter_node(mapping: dict[str, Any]) -> bool:
+    kind = mapping.get("kind")
+    if isinstance(kind, str) and kind == "frontmatter":
+        return True
+    node_id = mapping.get("node_id")
+    if node_id == 0 or node_id == "0":
+        return True
+    return False
+
+
+def _append_chunk_ids(mapping: dict[str, Any], chunk_ids: list[int]) -> None:
+    chunks = mapping.get("chunks")
+    if not isinstance(chunks, list):
+        return
+    for chunk in chunks:
+        if isinstance(chunk, dict) and "chunk_id" in chunk:
+            chunk_ids.append(int(chunk["chunk_id"]))
+
+
+def _iter_chunk_ids_from_structure(structure: object, *, skip_frontmatter: bool) -> list[int]:
     chunk_ids: list[int] = []
 
     def walk(node: object) -> None:
@@ -74,11 +93,8 @@ def _iter_chunk_ids(structure: object) -> list[int]:
         if not isinstance(node, dict):
             return
         mapping = cast(dict[str, Any], node)
-        chunks = mapping.get("chunks")
-        if isinstance(chunks, list):
-            for chunk in chunks:
-                if isinstance(chunk, dict) and "chunk_id" in chunk:
-                    chunk_ids.append(int(chunk["chunk_id"]))
+        if not skip_frontmatter or not _is_frontmatter_node(mapping):
+            _append_chunk_ids(mapping, chunk_ids)
         children = mapping.get("nodes")
         if isinstance(children, list):
             for child in children:
@@ -86,6 +102,15 @@ def _iter_chunk_ids(structure: object) -> list[int]:
 
     walk(structure)
     return chunk_ids
+
+
+def _iter_chunk_ids(structure: object) -> list[int]:
+    return _iter_chunk_ids_from_structure(structure, skip_frontmatter=False)
+
+
+def _iter_content_chunk_ids(structure: object) -> list[int]:
+    """Collect chunk ids from all nodes except frontmatter (node 0)."""
+    return _iter_chunk_ids_from_structure(structure, skip_frontmatter=True)
 
 
 def _entry_state(entry_dir: Path, doc_id: str, document: dict[str, Any]) -> str:
@@ -126,8 +151,8 @@ def _augment_document_json(
     document["pipeline"] = pipeline
     document["index_params"] = index_params
     document["built_at"] = datetime.now(UTC).isoformat()
-    if not document.get("path"):
-        document["path"] = _shorten_home_path(source_path)
+    # SkillsBuilder indexes a temp copy; always record the real skill source path.
+    document["path"] = _shorten_home_path(source_path)
     with doc_json_path.open("w", encoding="utf-8") as handle:
         json.dump(document, handle, indent=2)
         handle.write("\n")
@@ -239,6 +264,14 @@ def build_registry(config: dict[str, Any] | None = None) -> list[SkillEntryRef]:
             )
         elif document is None:
             continue
+
+        canonical_path = _shorten_home_path(str(source_path))
+        if document.get("path") != canonical_path:
+            document["path"] = canonical_path
+            doc_json_path = _doc_dir(entry_dir, doc_id) / "document.json"
+            with doc_json_path.open("w", encoding="utf-8") as handle:
+                json.dump(document, handle, indent=2)
+                handle.write("\n")
 
         entries.append(
             SkillEntryRef(

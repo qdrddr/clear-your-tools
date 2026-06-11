@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cyt.skills.catalog import (
     SkillEntryRef,
+    _shorten_home_path,
     build_registry,
     compute_cache_key,
     content_sha256_for_file,
@@ -77,3 +78,6 @@ def test_build_registry_complete_and_dedup() -> None:
         )
         assert doc["content_sha256"] == content_sha256_for_file(skills_dir / "create-hook.md")
         assert doc["pipeline"] == "bm25"
+        skill_path = skills_dir / "create-hook.md"
+        assert doc["path"] == _shorten_home_path(str(skill_path))
+        assert doc["path"].endswith("create-hook.md")

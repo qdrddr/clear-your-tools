@@ -74,10 +74,7 @@ fn attach_missing_chunks_to_structure(
     doc_id: &str,
     entry_dir: &Path,
 ) -> Result<bool, String> {
-    if !config.bm25_chunking_enabled() {
-        return Ok(false);
-    }
-    let chunker = Bm25CohesionChunker::new(config.bm25_cohesion.clone())?;
+    let chunker = Bm25CohesionChunker::new(config.cohesion_config_for_chunking())?;
     let mut next_id = next_chunk_id(structure);
     let mut changed = false;
 

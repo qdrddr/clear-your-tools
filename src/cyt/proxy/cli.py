@@ -220,9 +220,26 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_events.add_argument("--json", action="store_true")
     stats_events.add_argument("--config", type=Path, default=None)
 
-    subparsers.add_parser(
+    skills_parser = subparsers.add_parser(
         "skills",
         help="Agent hook: session tracking and skill injection",
+    )
+    skills_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log hook stdin and handling outcome to .debug/skills/",
+    )
+    skills_parser.add_argument(
+        "--prompt",
+        metavar="TEXT",
+        default=None,
+        help="Run skill search/injection for TEXT (terminal mode; skips stdin)",
+    )
+    skills_parser.add_argument(
+        "--model",
+        metavar="MODEL",
+        default=None,
+        help="Model name for stats when using --prompt (optional)",
     )
 
     subparsers.add_parser(
@@ -403,7 +420,11 @@ def main() -> None:
     if args.command == "skills":
         from cyt.skills.cli import run as run_skills
 
-        run_skills()
+        run_skills(
+            debug=bool(getattr(args, "debug", False)),
+            prompt=getattr(args, "prompt", None),
+            model=getattr(args, "model", None),
+        )
         return
 
     if args.command is None:

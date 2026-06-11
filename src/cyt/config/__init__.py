@@ -86,6 +86,7 @@ DEFAULT_BM25_SCORE_SKILLS: float = 0.5
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
 DEFAULT_SKILLS_CACHE_DB_PATH: str = "~/.config/cyt/cache.db"
+DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.4
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
@@ -887,6 +888,15 @@ def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
     cfg = config or load_config()
     value = _skills_settings(_merged_config(cfg)).get("max_tokens_per_request", 2000)
     return int(value)
+
+
+def skills_frontmatter_upper_limit(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get(
+        "frontmatter_upper_limit",
+        DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT,
+    )
+    return float(value)
 
 
 def skills_directories(config: dict[str, Any] | None = None) -> list[str]:

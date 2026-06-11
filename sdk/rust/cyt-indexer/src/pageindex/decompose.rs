@@ -19,10 +19,7 @@ pub fn attach_chunks_to_structure(
     index: &mut SkillsIndex,
     doc_id: &str,
 ) -> Result<(), String> {
-    if !config.bm25_chunking_enabled() {
-        return Ok(());
-    }
-    let chunker = Bm25CohesionChunker::new(config.bm25_cohesion.clone())?;
+    let chunker = Bm25CohesionChunker::new(config.cohesion_config_for_chunking())?;
     let mut next_id = next_chunk_id(structure);
 
     let nodes = structure_to_list(structure);

@@ -231,6 +231,8 @@ stats:
 
 skills:
   enabled: false
+  frontmatter_upper_limit: 0.4
+  inject_via: hook # or proxy
   pipeline: bm25
   catalog_dir: ~/.config/cyt/skills
   cache:

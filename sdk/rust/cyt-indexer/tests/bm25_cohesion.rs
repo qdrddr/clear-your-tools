@@ -1,6 +1,22 @@
 use cyt_indexer::{Bm25CohesionChunker, Bm25CohesionConfig, WindowMode};
 
 #[test]
+fn chunk_size_zero_returns_single_full_text_chunk() -> Result<(), String> {
+    let text = "Alpha one two three. Beta finance market stocks.";
+    let cfg = Bm25CohesionConfig {
+        chunk_size: 0,
+        ..Default::default()
+    };
+    let chunker = Bm25CohesionChunker::new(cfg)?;
+    let chunks = chunker.chunk(text);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].text, text);
+    assert_eq!(chunks[0].start_index, 0);
+    assert_eq!(chunks[0].end_index, text.len());
+    Ok(())
+}
+
+#[test]
 fn skip_window_changes_output() -> Result<(), String> {
     let text = "Alpha one two three. Beta finance market stocks. Alpha four five six. Beta bonds trade desk.";
     let mut cfg = Bm25CohesionConfig {
