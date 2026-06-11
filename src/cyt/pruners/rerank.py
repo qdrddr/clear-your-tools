@@ -4,24 +4,26 @@ import logging
 import sys
 from collections.abc import Callable
 from typing import Any, cast
-from urllib.parse import urlparse
 
 from litellm import rerank
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import (
-    _remote_defaults,
-    key_var_name_for_model_nick,
     load_config,
-    load_user_config_overlay,
-    remote_model_entry,
     require_proxy_env,
     rerank_score_skills,
     reranker_minimum_tools,
-    resolve_model,
 )
-from cyt.indexer.build import catalog_tool_count
 from cyt.indexer.tokens import count_json_tokens, log_token_usage
+from cyt.pruners.catalog_common import (
+    catalog_below_minimum_tools,
+    finalize_catalog_result,
+    load_pruner_catalog_input,
+    prepare_catalog_for_scoring,
+    prepare_indexed_documents,
+    prune_catalog_lists,
+    resolve_policy_context,
+)
 from cyt.pruners.documents import (
     extract_json_catalog_document,
     extract_md_catalog_document,
@@ -31,13 +33,9 @@ from cyt.pruners.policies import (
     MCPToolPolicy,
     PolicyContext,
     SystemToolPolicy,
-    catalog_needs_partition,
     configure_policies_from_config,
-    full_pass_through,
-    merge_catalog,
-    partition_catalog,
-    policy_context_from_config,
 )
+from cyt.pruners.remote import RerankPruningSettings, resolve_remote_pruning_settings
 from cyt.pruners.split import split_into_bulks
 
 logger = logging.getLogger(__name__)
@@ -45,60 +43,18 @@ RERANK_ENUMS: bool = True
 RERANK_ENUM_SCORE: float = 0.0001
 
 
-class RerankPruningSettings:
-    """Resolved reranker model and credentials from config."""
-
-    __slots__ = ("api_key", "base_url", "model_name", "provider", "provider_dns")
-
-    def __init__(
-        self,
-        model_name: str,
-        api_key: str,
-        base_url: str | None,
-        provider: str | None,
-        provider_dns: str | None,
-    ) -> None:
-        self.model_name = model_name
-        self.api_key = api_key
-        self.base_url = base_url
-        self.provider = provider
-        self.provider_dns = provider_dns
-
-
 def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruningSettings:
     """Resolve pruning reranker model from per-pipeline or legacy config."""
-    if config is None:
-        cfg = load_config()
-        user = load_user_config_overlay()
-    else:
-        cfg = config
-        user = config
-    model_nick = _remote_defaults(cfg, user_config=user).get("reranking_model_nick")
-    if not model_nick:
-        raise ValueError(
+    return resolve_remote_pruning_settings(
+        config=config,
+        nick_config_key="reranking_model_nick",
+        model_kind="rerankers",
+        pipeline_name="rerank",
+        missing_nick_message=(
             "pruning.rerank.model.remote.model_nick "
-            "(or defaults.remote.reranking_model_nick) is required for rerank pruning",
-        )
-    nick = str(model_nick)
-    model_name, api_key, base_url = resolve_model(nick, "rerankers", "remote", config=cfg)
-    if not api_key:
-        key_var = key_var_name_for_model_nick(cfg, "rerankers", nick)
-        print(f"Error: {key_var} not found.", file=sys.stderr)
-        sys.exit(1)
-    entry = remote_model_entry(cfg, "rerankers", nick)
-    provider = entry.get("provider")
-    domain_match = entry.get("domain_match")
-    provider_dns = None
-    if isinstance(domain_match, list) and domain_match:
-        provider_dns = str(domain_match[0])
-    elif base_url:
-        provider_dns = urlparse(str(base_url)).hostname
-    return RerankPruningSettings(
-        model_name=model_name,
-        api_key=api_key,
-        base_url=base_url,
-        provider=str(provider) if provider else None,
-        provider_dns=provider_dns,
+            "(or defaults.remote.reranking_model_nick) is required for rerank pruning"
+        ),
+        derive_dns_from_base_url=True,
     )
 
 
@@ -193,18 +149,6 @@ def _rerank_single_bulk(
         return usage, False, bulk_exc
 
 
-def _prepare_rerank_documents(
-    items: list[dict[str, Any]],
-    extract_fn: Callable[[dict[str, Any]], str | None],
-) -> list[tuple[int, str]]:
-    indexed_docs: list[tuple[int, str]] = []
-    for i, item in enumerate(items):
-        item["score"] = f"{0.0:.20f}"
-        if doc_text := extract_fn(item):
-            indexed_docs.append((i, doc_text))
-    return indexed_docs
-
-
 def _rerank_prepared_bulks(
     indexed_docs: list[tuple[int, str]],
     *,
@@ -245,14 +189,6 @@ def _rerank_prepared_bulks(
     if min_score is not None:
         return [item for item in items if float(item.get("score", 0)) >= min_score], total_usage
     return items, total_usage
-
-
-def extract_skill_node_document(item: dict[str, Any]) -> str | None:
-    """Return searchable text from a decomposed skill node item."""
-    content = item.get("content")
-    if isinstance(content, str) and content.strip():
-        return content.strip()
-    return None
 
 
 def prune_reranked_skill_items(
@@ -314,7 +250,7 @@ def rerank_items(
     min_score: float | None = None,
 ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
     """Generic reranking logic for both json and md items."""
-    indexed_docs = _prepare_rerank_documents(items, extract_fn)
+    indexed_docs = prepare_indexed_documents(items, extract_fn)
     if not indexed_docs:
         return items, empty_usage()
 
@@ -337,36 +273,17 @@ def rerank_items(
     return items, empty_usage()
 
 
-def _below_reranker_minimum_tools(data: dict[str, Any]) -> bool:
-    minimum_tools = reranker_minimum_tools()
-    tool_count = catalog_tool_count(data)
-    if tool_count < minimum_tools:
-        logger.info(
-            "rerank pruning skipped: %d tools below minimum %d",
-            tool_count,
-            minimum_tools,
-        )
-        return True
-    return False
-
-
 def prune_reranked_catalog(data: dict[str, Any]) -> dict[str, Any]:
     """Drop catalog items below RERANK_SCORE / RERANK_ENUM_SCORE after rerank_items scored them."""
-    if _below_reranker_minimum_tools(data):
+    if catalog_below_minimum_tools(data, reranker_minimum_tools(), stage="rerank"):
         return data
 
-    json_items = data.get("json")
-    if isinstance(json_items, list):
-        data["json"] = [item for item in json_items if float(item.get("score", 0)) >= RERANK_SCORE]
-
-    if RERANK_ENUMS:
-        md_items = data.get("md")
-        if isinstance(md_items, list):
-            data["md"] = [
-                item for item in md_items if float(item.get("score", 0)) >= RERANK_ENUM_SCORE
-            ]
-
-    return data
+    return prune_catalog_lists(
+        data,
+        json_threshold=RERANK_SCORE,
+        md_threshold=RERANK_ENUM_SCORE,
+        prune_enums=RERANK_ENUMS,
+    )
 
 
 def rerank_catalog_dict(
@@ -380,21 +297,21 @@ def rerank_catalog_dict(
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
-    policy_ctx = ctx
-    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
-        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy)
-
-    if policy_ctx is not None and full_pass_through(policy_ctx):
+    policy_ctx = resolve_policy_context(
+        ctx=ctx,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+        config=None,
+    )
+    data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
+    if skip_scoring:
         return data, empty_usage()
 
-    if _below_reranker_minimum_tools(data):
+    if catalog_below_minimum_tools(data, reranker_minimum_tools(), stage="rerank"):
         return data, empty_usage()
 
     settings = rerank_pruning_settings()
     total_usage = empty_usage()
-    pinned: dict[str, Any] = {}
-    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
-        data, pinned = partition_catalog(data, policy_ctx)
 
     if "json" in data and isinstance(data["json"], list):
         data["json"], json_usage = rerank_items(
@@ -422,10 +339,7 @@ def rerank_catalog_dict(
     if prune:
         data = prune_reranked_catalog(data)
 
-    if merge_pinned and pinned:
-        data = merge_catalog(data, pinned)
-
-    return data, total_usage
+    return finalize_catalog_result(data, pinned, merge_pinned=merge_pinned), total_usage
 
 
 def main() -> None:
@@ -449,21 +363,7 @@ def main() -> None:
     require_proxy_env(config)
     ctx = configure_policies_from_config(config)
 
-    if args.json:
-        try:
-            with open(args.json) as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"Error reading JSON: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        from cyt.indexer.retrieve import load_catalog
-
-        try:
-            data = load_catalog(args.dir)
-        except Exception as e:
-            print(f"Error loading catalog directory: {e}", file=sys.stderr)
-            sys.exit(1)
+    data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
 
     data, _tokens = rerank_catalog_dict(data, args.query, ctx=ctx)
 

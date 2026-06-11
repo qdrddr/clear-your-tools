@@ -8,19 +8,23 @@ from typing import Any
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import reranker_minimum_tools, skills_max_tokens_per_request
+from cyt.config import reranker_minimum_tools
 from cyt.indexer.build import catalog_tool_count
 from cyt.indexer.tokens import count_tokens
-from cyt.pruners.documents import extract_json_catalog_document, extract_md_catalog_document
+from cyt.pruners.documents import (
+    extract_json_catalog_document,
+    extract_md_catalog_document,
+    extract_skill_node_document,
+)
 from cyt.pruners.rerank import (
     RERANK_ENUMS,
-    extract_skill_node_document,
     prune_reranked_catalog,
     prune_reranked_skill_items,
     rerank_items,
     rerank_pruning_settings,
     rerank_unified_item_lists,
 )
+from cyt.skills.budget import cap_matched_skills_by_tokens
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import build_skill_node_items
@@ -78,14 +82,12 @@ def reconstruct_skills_from_reranked_items(
             ),
         )
 
-    matched.sort(key=lambda row: row.score, reverse=True)
-    max_tokens = skills_max_tokens_per_request(config)
-    total_tokens = sum(item.token_count for item in matched)
-    while matched and total_tokens > max_tokens:
-        dropped = matched.pop()
-        total_tokens -= dropped.token_count
-
-    return matched
+    return cap_matched_skills_by_tokens(
+        matched,
+        config=config,
+        sort_key=lambda row: row.score,
+        reverse=True,
+    )
 
 
 def rerank_skill_nodes(

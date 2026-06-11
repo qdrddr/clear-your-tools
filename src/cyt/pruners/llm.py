@@ -8,30 +8,22 @@ from litellm import completion, responses
 from pydantic import BaseModel
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from cyt.config import (
-    _remote_defaults,
-    key_var_name_for_model_nick,
-    llm_minimum_tools,
-    load_config,
-    load_user_config_overlay,
-    model_responses_api,
-    remote_model_entry,
-    require_proxy_env,
-    resolve_model,
-)
-from cyt.indexer.build import catalog_tool_count
+from cyt.config import llm_minimum_tools, load_config, require_proxy_env
 from cyt.indexer.tokens import compact_json, count_tokens, log_token_usage
+from cyt.pruners.catalog_common import (
+    catalog_below_minimum_tools,
+    finalize_catalog_result,
+    load_pruner_catalog_input,
+    prepare_catalog_for_scoring,
+    resolve_policy_context,
+)
 from cyt.pruners.policies import (
     MCPToolPolicy,
     PolicyContext,
     SystemToolPolicy,
-    catalog_needs_partition,
     configure_policies_from_config,
-    full_pass_through,
-    merge_catalog,
-    partition_catalog,
-    policy_context_from_config,
 )
+from cyt.pruners.remote import LlmPruningSettings, resolve_remote_pruning_settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,83 +55,18 @@ class RelevantChunkIds(BaseModel):
     ids: list[int]
 
 
-class LlmPruningSettings:
-    """Resolved LLM pruning model and credentials from config."""
-
-    __slots__ = (
-        "api_key",
-        "base_url",
-        "model_name",
-        "provider",
-        "provider_dns",
-        "responses_api",
-    )
-
-    def __init__(
-        self,
-        model_name: str,
-        api_key: str,
-        base_url: str | None,
-        provider: str | None,
-        provider_dns: str | None,
-        *,
-        responses_api: bool = False,
-    ) -> None:
-        self.model_name = model_name
-        self.api_key = api_key
-        self.base_url = base_url
-        self.provider = provider
-        self.provider_dns = provider_dns
-        self.responses_api = responses_api
-
-
 def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
     """Resolve pruning LLM model from per-pipeline or legacy config."""
-    if config is None:
-        cfg = load_config()
-        user = load_user_config_overlay()
-    else:
-        cfg = config
-        user = config
-    model_nick = _remote_defaults(cfg, user_config=user).get("llm_model_nick")
-    if not model_nick:
-        raise ValueError(
+    return resolve_remote_pruning_settings(
+        config=config,
+        nick_config_key="llm_model_nick",
+        model_kind="llm",
+        pipeline_name="llm",
+        missing_nick_message=(
             "pruning.llm.model.remote.model_nick "
-            "(or defaults.remote.llm_model_nick) is required for llm pruning",
-        )
-    nick = str(model_nick)
-    model_name, api_key, base_url = resolve_model(nick, "llm", "remote", config=cfg)
-    if not api_key:
-        key_var = key_var_name_for_model_nick(cfg, "llm", nick)
-        print(f"Error: {key_var} not found.", file=sys.stderr)
-        sys.exit(1)
-    entry = remote_model_entry(cfg, "llm", nick)
-    provider = entry.get("provider")
-    domain_match = entry.get("domain_match")
-    provider_dns = None
-    if isinstance(domain_match, list) and domain_match:
-        provider_dns = str(domain_match[0])
-    return LlmPruningSettings(
-        model_name=model_name,
-        api_key=api_key,
-        base_url=base_url,
-        provider=str(provider) if provider else None,
-        provider_dns=provider_dns,
-        responses_api=model_responses_api(entry),
+            "(or defaults.remote.llm_model_nick) is required for llm pruning"
+        ),
     )
-
-
-def read_json_input(path: str) -> dict[str, Any]:
-    try:
-        with open(path) as f:
-            data_loaded: Any = json.load(f)
-            if not isinstance(data_loaded, dict):
-                print(f"Error: JSON root must be a dictionary in {path}", file=sys.stderr)
-                sys.exit(1)
-            return data_loaded
-    except Exception as e:
-        print(f"Error reading JSON: {e}", file=sys.stderr)
-        sys.exit(1)
 
 
 def _json_item_score(item: dict[str, Any]) -> float:
@@ -153,7 +80,7 @@ def _json_item_score(item: dict[str, Any]) -> float:
 
 
 def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
-    """Cap json entries after rerank; strip fields irrelevant to the LLM selector."""
+    """Drop low-scoring json entries before the LLM selector stage."""
     json_items = data.get("json")
     if not isinstance(json_items, list):
         return data
@@ -178,7 +105,10 @@ def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], list[str]]:
+def prepare_catalog_selector_chunks(
+    data: dict[str, Any],
+) -> tuple[list[str], dict[int, Any], list[str]]:
+    """Format json/md catalog items as selector chunks with stable global ids."""
     list_keys = [k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)]
 
     if not list_keys:
@@ -211,11 +141,11 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
                 if target_key == "json" and not str(item.get("file_path", "")).strip():
                     continue
 
-                item_for_llm = item.copy()
+                item_for_selector = item.copy()
                 for k in model_excluded_fields:
-                    item_for_llm.pop(k, None)
+                    item_for_selector.pop(k, None)
 
-                chunk_body = compact_json(item_for_llm)
+                chunk_body = compact_json(item_for_selector)
                 formatted_chunks.append(f"<chunk id={global_chunk_id}>\n{chunk_body}\n</chunk>\n")
                 global_chunk_id += 1
 
@@ -407,12 +337,13 @@ def score_item(item: dict[str, Any], is_selected: bool) -> None:
         pass
 
 
-def process_results(
+def apply_selector_ids_to_catalog(
     data: dict[str, Any],
     item_metadata_storage: dict[int, Any],
     selected_ids: set[int],
     list_keys: list[str],
 ) -> dict[str, Any]:
+    """Rebuild catalog lists from selector metadata and chosen chunk ids."""
     new_data_lists: dict[str, list[dict[str, Any]]] = {k: [] for k in list_keys}
 
     for chunk_id, storage in item_metadata_storage.items():
@@ -448,28 +379,20 @@ def llm_catalog_dict(
     merge_pinned: bool = True,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
-    policy_ctx = ctx
-    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
-        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy)
-
-    if policy_ctx is not None and full_pass_through(policy_ctx):
+    policy_ctx = resolve_policy_context(
+        ctx=ctx,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+        config=None,
+    )
+    data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
+    if skip_scoring:
         return data, empty_usage()
 
-    minimum_tools = llm_minimum_tools()
-    tool_count = catalog_tool_count(data)
-    if tool_count < minimum_tools:
-        logger.info(
-            "llm pruning skipped: %d tools below minimum %d",
-            tool_count,
-            minimum_tools,
-        )
+    if catalog_below_minimum_tools(data, llm_minimum_tools(), stage="llm"):
         return data, empty_usage()
 
-    pinned: dict[str, Any] = {}
-    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
-        data, pinned = partition_catalog(data, policy_ctx)
-
-    formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
+    formatted_chunks, item_metadata_storage, list_keys = prepare_catalog_selector_chunks(data)
 
     selected_ids, total_usage = llm_select_ids(
         query,
@@ -477,10 +400,13 @@ def llm_catalog_dict(
         formatted_chunks,
     )
 
-    result = process_results(data, item_metadata_storage, selected_ids, list_keys)
-    if merge_pinned and pinned:
-        result = merge_catalog(result, pinned)
-    return result, total_usage
+    result = apply_selector_ids_to_catalog(
+        data,
+        item_metadata_storage,
+        selected_ids,
+        list_keys,
+    )
+    return finalize_catalog_result(result, pinned, merge_pinned=merge_pinned), total_usage
 
 
 def main() -> None:
@@ -497,16 +423,7 @@ def main() -> None:
     require_proxy_env(config)
     ctx = configure_policies_from_config(config)
 
-    if args.json:
-        data = read_json_input(args.json)
-    else:
-        from cyt.indexer.retrieve import load_catalog
-
-        try:
-            data = load_catalog(args.dir)
-        except Exception as e:
-            print(f"Error loading catalog directory: {e}", file=sys.stderr)
-            sys.exit(1)
+    data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
 
     try:
         result, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
@@ -521,6 +438,9 @@ def main() -> None:
         print(f"Error during LLM processing: {e}", file=sys.stderr)
         sys.exit(1)
 
+
+prepare_chunks = prepare_catalog_selector_chunks
+process_results = apply_selector_ids_to_catalog
 
 if __name__ == "__main__":
     main()

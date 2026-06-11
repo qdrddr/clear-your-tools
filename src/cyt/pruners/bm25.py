@@ -6,8 +6,6 @@ import argparse
 import hashlib
 import json
 import logging
-import sys
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -32,17 +30,20 @@ from cyt.config import (
     load_config,
 )
 from cyt.indexer.build import catalog_tool_count
+from cyt.pruners.catalog_common import (
+    finalize_catalog_result,
+    load_pruner_catalog_input,
+    prepare_catalog_for_scoring,
+    prepare_indexed_documents,
+    prune_catalog_lists,
+    resolve_policy_context,
+)
 from cyt.pruners.documents import extract_json_catalog_document, extract_md_catalog_document
 from cyt.pruners.policies import (
     MCPToolPolicy,
     PolicyContext,
     SystemToolPolicy,
-    catalog_needs_partition,
     configure_policies_from_config,
-    full_pass_through,
-    merge_catalog,
-    partition_catalog,
-    policy_context_from_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,19 +123,6 @@ def catalog_fingerprint(
         hasher.update(text.encode("utf-8"))
         hasher.update(b"\0")
     return hasher.hexdigest()
-
-
-def prepare_bm25_documents(
-    items: list[dict[str, Any]],
-    extract_fn: Callable[[dict[str, Any]], str | None],
-) -> list[tuple[int, str]]:
-    """Build (item_index, text) pairs for items with extractable document text."""
-    indexed: list[tuple[int, str]] = []
-    for item_index, item in enumerate(items):
-        item["score"] = f"{0.0:.20f}"
-        if text := extract_fn(item):
-            indexed.append((item_index, text))
-    return indexed
 
 
 def _index_dir_for_fingerprint(fingerprint: str, config: dict[str, Any] | None = None) -> Path:
@@ -311,18 +299,12 @@ def prune_bm25_catalog(
 ) -> dict[str, Any]:
     """Drop catalog items below BM25 score thresholds."""
     score_tool, score_tool_enum, prune_enums = _bm25_thresholds(config)
-    json_items = data.get("json")
-    if isinstance(json_items, list):
-        data["json"] = [item for item in json_items if float(item.get("score", 0)) >= score_tool]
-
-    if prune_enums:
-        md_items = data.get("md")
-        if isinstance(md_items, list):
-            data["md"] = [
-                item for item in md_items if float(item.get("score", 0)) >= score_tool_enum
-            ]
-
-    return data
+    return prune_catalog_lists(
+        data,
+        json_threshold=score_tool,
+        md_threshold=score_tool_enum,
+        prune_enums=prune_enums,
+    )
 
 
 def bm25_catalog_dict(
@@ -337,41 +319,35 @@ def bm25_catalog_dict(
     config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
-    policy_ctx = ctx
-    if policy_ctx is None and (system_policy is not None or mcp_policy is not None):
-        policy_ctx = policy_context_from_config(system=system_policy, mcp=mcp_policy, config=config)
-
-    if policy_ctx is not None and full_pass_through(policy_ctx):
+    policy_ctx = resolve_policy_context(
+        ctx=ctx,
+        system_policy=system_policy,
+        mcp_policy=mcp_policy,
+        config=config,
+    )
+    data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
+    if skip_scoring:
         return data, empty_usage()
 
     cfg = config or load_config()
-    pinned: dict[str, Any] = {}
-    if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
-        data, pinned = partition_catalog(data, policy_ctx)
-
     index = build_or_load_index(data, config=cfg)
     if index is None:
         logger.info("bm25 pruning skipped: no indexable documents")
-        if merge_pinned and pinned:
-            data = merge_catalog(data, pinned)
-        return data, empty_usage()
+        return finalize_catalog_result(data, pinned, merge_pinned=merge_pinned), empty_usage()
 
     if isinstance(data.get("json"), list):
-        prepare_bm25_documents(data["json"], extract_json_catalog_document)
+        prepare_indexed_documents(data["json"], extract_json_catalog_document)
         score_items(query, data["json"], index, list_key="json")
 
     _, _, prune_enums = _bm25_thresholds(cfg)
     if prune_enums and isinstance(data.get("md"), list):
-        prepare_bm25_documents(data["md"], extract_md_catalog_document)
+        prepare_indexed_documents(data["md"], extract_md_catalog_document)
         score_items(query, data["md"], index, list_key="md")
 
     if prune:
         data = prune_bm25_catalog(data, config=cfg)
 
-    if merge_pinned and pinned:
-        data = merge_catalog(data, pinned)
-
-    return data, bm25_stage_usage()
+    return finalize_catalog_result(data, pinned, merge_pinned=merge_pinned), bm25_stage_usage()
 
 
 def main() -> None:
@@ -392,21 +368,7 @@ def main() -> None:
     args = parser.parse_args()
     ctx = configure_policies_from_config()
 
-    if args.json:
-        try:
-            with open(args.json) as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"Error reading JSON: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        from cyt.indexer.retrieve import load_catalog
-
-        try:
-            data = load_catalog(args.dir)
-        except Exception as e:
-            print(f"Error loading catalog directory: {e}", file=sys.stderr)
-            sys.exit(1)
+    data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
 
     data, _tokens = bm25_catalog_dict(data, args.query, ctx=ctx)
 

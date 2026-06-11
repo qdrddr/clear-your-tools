@@ -9,13 +9,10 @@ from typing import Any
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import (
-    bm25_score_skills,
-    skills_frontmatter_upper_limit,
-    skills_max_tokens_per_request,
-)
+from cyt.config import bm25_score_skills, skills_frontmatter_upper_limit
 from cyt.indexer.tokens import count_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict
+from cyt.skills.budget import cap_matched_skills_by_tokens
 from cyt.skills.catalog import SkillEntryRef, _iter_content_chunk_ids, _shorten_home_path
 from cyt.skills.frontmatter import frontmatter_search_text, skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
@@ -187,14 +184,12 @@ def reconstruct_skills_from_bm25_items(
             ),
         )
 
-    matched.sort(key=lambda row: row.score, reverse=True)
-    max_tokens = skills_max_tokens_per_request(config)
-    total_tokens = sum(item.token_count for item in matched)
-    while matched and total_tokens > max_tokens:
-        dropped = matched.pop()
-        total_tokens -= dropped.token_count
-
-    return matched
+    return cap_matched_skills_by_tokens(
+        matched,
+        config=config,
+        sort_key=lambda row: row.score,
+        reverse=True,
+    )
 
 
 def bm25_skill_chunks(

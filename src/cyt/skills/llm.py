@@ -9,16 +9,16 @@ from typing import Any
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import skills_max_tokens_per_request
 from cyt.indexer.tokens import count_tokens
 from cyt.pruners.llm import (
     SELECTOR_SYSTEM_PROMPT,
+    apply_selector_ids_to_catalog,
     llm_catalog_dict,
     llm_select_ids,
-    prepare_chunks,
-    process_results,
+    prepare_catalog_selector_chunks,
     trim_catalog_dict,
 )
+from cyt.skills.budget import cap_matched_skills_by_tokens
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import load_node_body, skill_name
@@ -152,14 +152,11 @@ def reconstruct_skills_from_llm_ids(
             ),
         )
 
-    matched.sort(key=lambda row: row.file_path)
-    max_tokens = skills_max_tokens_per_request(config)
-    total_tokens = sum(item.token_count for item in matched)
-    while matched and total_tokens > max_tokens:
-        dropped = matched.pop()
-        total_tokens -= dropped.token_count
-
-    return matched
+    return cap_matched_skills_by_tokens(
+        matched,
+        config=config,
+        sort_key=lambda row: row.file_path,
+    )
 
 
 def llm_skill_nodes(
@@ -198,7 +195,7 @@ def llm_prune_tools_and_skills(
     if trim_before_llm:
         data = trim_catalog_dict(data)
 
-    tool_chunks, tool_metadata, list_keys = prepare_chunks(data)
+    tool_chunks, tool_metadata, list_keys = prepare_catalog_selector_chunks(data)
     last_tool_id = max(tool_metadata.keys(), default=0)
     skill_items, skill_metadata = prepare_skill_nodes(skill_entries, start_id=last_tool_id + 1)
 
@@ -221,7 +218,7 @@ def llm_prune_tools_and_skills(
 
     tool_selected = {sid for sid in selected_ids if sid in tool_metadata}
     skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
-    result = process_results(data, tool_metadata, tool_selected, list_keys)
+    result = apply_selector_ids_to_catalog(data, tool_metadata, tool_selected, list_keys)
     skill_matches = reconstruct_skills_from_llm_ids(
         skill_metadata,
         skill_selected,
