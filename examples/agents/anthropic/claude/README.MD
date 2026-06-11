@@ -55,7 +55,11 @@ Enable skill injection in `~/.config/cyt/config.yaml`:
 ```yaml
 skills:
   enabled: true
+  inject_via: hook   # or proxy (proxy appends skills to system message in request body)
 ```
+
+With `inject_via: proxy`, the proxy appends matched skills to the system message on each request;
+hooks are optional and `UserPromptSubmit` produces no injection when hooks remain configured.
 
 Copy or merge [`hooks.json`](./hooks.json) into `~/.claude/settings.json`. For local development,
 point the hook at the absolute path to [`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) (uses the repo

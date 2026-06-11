@@ -9,7 +9,11 @@ Enable in `~/.config/cyt/config.yaml`:
 ```yaml
 skills:
   enabled: true
+  inject_via: hook   # or proxy (proxy inserts developer message in request body)
 ```
+
+With `inject_via: proxy`, the proxy inserts matched skills into each Codex request; hooks are optional
+and `UserPromptSubmit` produces no injection when hooks remain configured.
 
 Copy or merge [`hooks.json`](./hooks.json) into `~/.codex/hooks.json`. **Do not use bare `uv run` in
 Codex hooks** — Codex runs hooks with a minimal `PATH` (`shell_environment_policy inherit = "core"`),

@@ -494,12 +494,16 @@ async def transform_request_body(
     kind: str | None,
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
-) -> tuple[bytes, Any | None, list[dict[str, Any]] | None]:
+    config: dict[str, Any] | None = None,
+) -> tuple[bytes, Any | None, list[dict[str, Any]] | None, Any | None]:
+    from cyt.skills.proxy_inject import SkillsProxyInjectMeta
+
     if not body or kind not in ("anthropic", "openai"):
-        return body, None, None
+        return body, None, None, None
     if not content_type or "json" not in content_type.lower():
-        return body, None, None
+        return body, None, None, None
     input_tools: list[dict[str, Any]] | None = None
+    skills_meta: SkillsProxyInjectMeta | None = None
     try:
         payload = json.loads(body)
         if debug:
@@ -507,24 +511,26 @@ async def transform_request_body(
         if kind == "anthropic":
             from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
 
-            transformed, pruning = await asyncio.to_thread(
+            transformed, pruning, skills_meta = await asyncio.to_thread(
                 transform_anthropic_request,
                 payload,
                 pruning_pipeline,
                 capture_decomposed_catalog=debug,
+                config=config,
             )
         else:
             from cyt.proxy.openai_responses import transform_openai_request
 
-            transformed, pruning = await asyncio.to_thread(
+            transformed, pruning, skills_meta = await asyncio.to_thread(
                 transform_openai_request,
                 payload,
                 pruning_pipeline,
                 capture_decomposed_catalog=debug,
+                config=config,
             )
-        return json.dumps(transformed).encode(), pruning, input_tools
+        return json.dumps(transformed).encode(), pruning, input_tools, skills_meta
     except json.JSONDecodeError:
-        return body, None, None
+        return body, None, None, None
     except Exception as exc:
         logger.warning("%s transform failed: %s", kind, exc)
         from cyt.proxy.anthropic import PruneResult
@@ -541,6 +547,7 @@ async def transform_request_body(
                 error=str(exc),
             ),
             input_tools,
+            None,
         )
 
 
@@ -616,6 +623,46 @@ def _extract_upstream_model(
 
 def _schedule_stats_record(stats_db: StatsDB, record: ProxyRequestRecord) -> None:
     task = asyncio.create_task(asyncio.to_thread(_record_stats_async, stats_db, record))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+def _record_skills_injection_async(
+    *,
+    query: str,
+    model_name: str,
+    skills_in: int,
+    config: dict[str, Any],
+) -> None:
+    from cyt.skills.stats import record_skills_injection
+
+    try:
+        record_skills_injection(
+            query=query,
+            model_name=model_name,
+            skills_in=skills_in,
+            config=config,
+        )
+    except Exception as exc:
+        logger.warning("skills injection stats record failed: %s", exc)
+
+
+def _schedule_skills_injection_record(
+    *,
+    query: str,
+    model_name: str,
+    skills_in: int,
+    config: dict[str, Any],
+) -> None:
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            _record_skills_injection_async,
+            query=query,
+            model_name=model_name,
+            skills_in=skills_in,
+            config=config,
+        ),
+    )
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
 
@@ -764,7 +811,15 @@ async def _process_buffered_proxy_body(
     debug: bool,
     debug_log_max_body_bytes: int | None,
     debug_log_dir: Path | None,
-) -> tuple[bytes, Any | None, list[dict[str, Any]] | None, dict[str, Any] | None, int | None]:
+    config: dict[str, Any] | None,
+) -> tuple[
+    bytes,
+    Any | None,
+    list[dict[str, Any]] | None,
+    dict[str, Any] | None,
+    int | None,
+    Any | None,
+]:
     debug_request_seq: int | None = None
     if debug:
         debug_request_seq = _next_debug_request_seq()
@@ -788,12 +843,13 @@ async def _process_buffered_proxy_body(
             reverse_debug_proxy_log_path(endpoint_name, debug_log_dir=debug_log_dir),
         )
     try:
-        body, pruning, input_tools = await transform_request_body(
+        body, pruning, input_tools, skills_meta = await transform_request_body(
             body,
             content_type,
             kind,
             pruning_pipeline,
             debug,
+            config=config,
         )
     finally:
         if debug_log_token is not None:
@@ -802,7 +858,7 @@ async def _process_buffered_proxy_body(
     pruning_meta = pruning.to_dict() if pruning is not None else None
     if debug:
         pruning_meta = _pruning_meta_for_debug(pruning_meta, input_tools)
-    return body, pruning, input_tools, pruning_meta, debug_request_seq
+    return body, pruning, input_tools, pruning_meta, debug_request_seq, skills_meta
 
 
 def _log_proxy_forward_upstream(
@@ -909,8 +965,16 @@ async def _proxy_request(
     pruning = None
     pruning_meta: dict[str, Any] | None = None
     debug_request_seq: int | None = None
+    skills_meta: Any | None = None
     if buffer_body:
-        body, pruning, _, pruning_meta, debug_request_seq = await _process_buffered_proxy_body(
+        (
+            body,
+            pruning,
+            _,
+            pruning_meta,
+            debug_request_seq,
+            skills_meta,
+        ) = await _process_buffered_proxy_body(
             request=request,
             body=body,
             content_type=content_type,
@@ -923,6 +987,7 @@ async def _proxy_request(
             debug=debug,
             debug_log_max_body_bytes=debug_log_max_body_bytes,
             debug_log_dir=debug_log_dir,
+            config=config,
         )
 
     if stats_db is not None and pruning is not None:
@@ -936,6 +1001,19 @@ async def _proxy_request(
             store_full_tools=store_full_tools or debug,
         )
         _schedule_stats_record(stats_db, record)
+
+    if (
+        skills_meta is not None
+        and skills_meta.skills_in > 0
+        and skills_meta.query
+        and upstream_model
+    ):
+        _schedule_skills_injection_record(
+            query=skills_meta.query,
+            model_name=upstream_model,
+            skills_in=skills_meta.skills_in,
+            config=config or {},
+        )
     forward_headers = filter_headers(dict(request.headers))
 
     if debug and debug_request_seq is not None:

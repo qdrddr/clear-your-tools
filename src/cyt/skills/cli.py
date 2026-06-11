@@ -21,6 +21,7 @@ from cyt.skills.hook_payload import (
     session_id,
 )
 from cyt.skills.inject import format_agent_skills, injection_token_count
+from cyt.skills.proxy_inject import skills_inject_via_hook
 from cyt.skills.search import search_skills
 from cyt.skills.stats import record_skills_injection
 
@@ -228,7 +229,10 @@ def _dispatch_hook_event(
                 "model": model_from_payload(payload),
             }
     elif event_name in _PROMPT_EVENTS:
-        outcome, details = _handle_user_prompt(payload, config, plain_output=cli_prompt)
+        if not cli_prompt and not skills_inject_via_hook(config):
+            outcome = "skipped_inject_via_proxy"
+        else:
+            outcome, details = _handle_user_prompt(payload, config, plain_output=cli_prompt)
     elif event_name is not None:
         outcome = "unhandled_event"
     elif raw_stdin.strip():

@@ -86,6 +86,7 @@ DEFAULT_BM25_SCORE_SKILLS: float = 0.5
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
 DEFAULT_SKILLS_CACHE_DB_PATH: str = "~/.config/cyt/cache.db"
+DEFAULT_SKILLS_INJECT_VIA: str = "hook"
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.4
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
@@ -860,6 +861,15 @@ def _skills_settings(config: dict[str, Any]) -> dict[str, Any]:
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return bool(_skills_settings(_merged_config(cfg)).get("enabled", False))
+
+
+def skills_inject_via(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get("inject_via", DEFAULT_SKILLS_INJECT_VIA)
+    mode = str(value).strip().lower()
+    if mode == "proxy":
+        return "proxy"
+    return "hook"
 
 
 def skills_pipeline(config: dict[str, Any] | None = None) -> str:

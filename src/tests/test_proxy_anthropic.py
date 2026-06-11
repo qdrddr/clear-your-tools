@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from cyt.proxy.anthropic import (
@@ -201,7 +202,7 @@ def test_transform_anthropic_request_only_changes_tools() -> None:
     )
 
     with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
-        out, meta = transform_anthropic_request(body)
+        out, meta, _ = transform_anthropic_request(body)
 
     assert out["tools"] == pruned_tools
     assert out["messages"] == body["messages"]
@@ -256,10 +257,44 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
         error="api error",
     )
     with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=failed):
-        out, meta = transform_anthropic_request(body)
+        out, meta, _ = transform_anthropic_request(body)
     assert out == body
     assert meta is not None
     assert meta.status == "failed"
+
+
+def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "proxy",
+            "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+        },
+        "pruning": {"bm25": {"score_skills": 0.0}},
+    }
+    body = {
+        "model": "claude-test",
+        "messages": [
+            {"role": "system", "content": "# MCP Server Instructions"},
+            {"role": "user", "content": "configure agent hooks for sessions"},
+        ],
+    }
+    out, _, skills_meta = transform_anthropic_request(body, config=config)
+    assert skills_meta is not None
+    assert skills_meta.skills_in > 0
+    assert "<agent-skills>" in out["messages"][0]["content"]
 
 
 def test_snapshot_catalog_omits_tools() -> None:

@@ -318,27 +318,38 @@ def transform_openai_request(
     body: dict[str, Any],
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
-) -> tuple[dict[str, Any], PruneResult | None]:
-    """Return body (tools replaced when pruning applied) and pruning metadata."""
+    config: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], PruneResult | None, Any]:
+    """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
+    from cyt.skills.proxy_inject import SkillsProxyInjectMeta, inject_skills_into_openai_body
+
     original = copy.deepcopy(body)
+    skills_meta = SkillsProxyInjectMeta()
+    if config is not None:
+        original, skills_meta = inject_skills_into_openai_body(original, config)
+
     input_items = original.get("input") or []
     tools = original.get("tools") or []
     tool_search_outputs = _tool_search_output_items(input_items)
     if not tools and not tool_search_outputs:
-        return original, None
+        return original, None, skills_meta
 
     cleaned = clean_input(input_items)
     user_query = extract_user_query_from_input(cleaned)
     if not user_query:
         logger.warning("no user query extracted; forwarding original tools")
-        return original, PruneResult(
-            tools=None,
-            status="skipped",
-            query=None,
-            tools_in=len(tools),
-            mcp_tools_in=_mcp_tools_in(tools),
-            tools_out=None,
-            error="no user query extracted",
+        return (
+            original,
+            PruneResult(
+                tools=None,
+                status="skipped",
+                query=None,
+                tools_in=len(tools),
+                mcp_tools_in=_mcp_tools_in(tools),
+                tools_out=None,
+                error="no user query extracted",
+            ),
+            skills_meta,
         )
 
     query = format_search_query(user_query, extract_last_assistant_message(cleaned))
@@ -371,4 +382,4 @@ def transform_openai_request(
             item["tools"] = final_tools
         result = _combine_prune_results(result, pass_result)
 
-    return original, result
+    return original, result, skills_meta

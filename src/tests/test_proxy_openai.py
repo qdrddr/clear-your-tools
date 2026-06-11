@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -231,7 +232,7 @@ def test_transform_openai_request_preserves_tool_search_when_pruning() -> None:
         "cyt.proxy.openai_responses.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
-        out, meta = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body)
 
     mock_filter.assert_called_once()
     assert mock_filter.call_args.args[0] == [body["tools"][0]]
@@ -282,7 +283,7 @@ def test_transform_openai_request_only_changes_tools() -> None:
     )
 
     with patch("cyt.proxy.openai_responses.filter_tools_for_query", return_value=prune_result):
-        out, meta = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body)
 
     assert out["tools"][0]["strict"] is False
     assert out["tools"][0]["parameters"] == pruned_tools[0]["parameters"]
@@ -316,7 +317,7 @@ def test_transform_openai_request_passthrough_when_no_prune() -> None:
         error="api error",
     )
     with patch("cyt.proxy.openai_responses.filter_tools_for_query", return_value=failed):
-        out, meta = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body)
     assert out == body
     assert meta is not None
     assert meta.status == "failed"
@@ -423,7 +424,7 @@ def test_transform_openai_request_prunes_tool_search_output_in_input() -> None:
         "cyt.proxy.openai_responses.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
-        out, meta = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body)
 
     mock_filter.assert_called_once()
     flat_tools = mock_filter.call_args.args[0]
@@ -498,7 +499,7 @@ def test_transform_openai_request_prunes_root_and_tool_search_output_separately(
         "cyt.proxy.openai_responses.filter_tools_for_query",
         side_effect=[root_prune, input_prune],
     ) as mock_filter:
-        out, meta = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body)
 
     assert mock_filter.call_count == 2
     assert out["tools"][0]["description"] == "A pruned"
@@ -506,3 +507,67 @@ def test_transform_openai_request_prunes_root_and_tool_search_output_separately(
     assert meta is not None
     assert meta.status == "applied"
     assert meta.tools_in == 2
+
+
+def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "proxy",
+            "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+        },
+        "pruning": {"bm25": {"score_skills": 0.0}},
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("configure agent hooks for sessions")],
+    }
+    out, _, skills_meta = transform_openai_request(body, config=config)
+    assert skills_meta is not None
+    assert skills_meta.skills_in > 0
+    developers = [item for item in out["input"] if item.get("role") == "developer"]
+    assert len(developers) == 1
+    assert "<agent-skills>" in developers[0]["content"][0]["text"]
+
+
+def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "hook",
+            "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+        },
+        "pruning": {"bm25": {"score_skills": 0.0}},
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("configure agent hooks for sessions")],
+    }
+    out, _, skills_meta = transform_openai_request(body, config=config)
+    assert skills_meta is not None
+    assert skills_meta.skills_in == 0
+    assert out["input"] == body["input"]

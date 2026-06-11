@@ -1099,41 +1099,56 @@ def transform_anthropic_request(
     body: dict[str, Any],
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
-) -> tuple[dict[str, Any], PruneResult | None]:
-    """Return body (tools replaced when pruning applied) and pruning metadata."""
+    config: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], PruneResult | None, Any]:
+    """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
+    from cyt.skills.proxy_inject import SkillsProxyInjectMeta, inject_skills_into_anthropic_body
+
     original = copy.deepcopy(body)
+    skills_meta = SkillsProxyInjectMeta()
+    if config is not None:
+        original, skills_meta = inject_skills_into_anthropic_body(original, config)
+
     messages = original.get("messages") or []
     tools = original.get("tools") or []
     if not tools:
-        return original, None
+        return original, None, skills_meta
 
     if request_pass_through(tools, policy_context_from_config()):
         tokens_in = count_json_tokens(tools)
-        return original, PruneResult(
-            tools=None,
-            status="pass_through",
-            query=None,
-            tools_in=len(tools),
-            mcp_tools_in=sum(1 for t in tools if t.get("name")),
-            tools_out=len(tools),
-            error=None,
-            tokens_in=tokens_in,
-            tokens_out=tokens_in,
-            tokens_saved=0,
+        return (
+            original,
+            PruneResult(
+                tools=None,
+                status="pass_through",
+                query=None,
+                tools_in=len(tools),
+                mcp_tools_in=sum(1 for t in tools if t.get("name")),
+                tools_out=len(tools),
+                error=None,
+                tokens_in=tokens_in,
+                tokens_out=tokens_in,
+                tokens_saved=0,
+            ),
+            skills_meta,
         )
 
     cleaned = clean_messages(messages)
     user_query = extract_user_query(cleaned)
     if not user_query:
         logger.warning("no user query extracted; forwarding original tools")
-        return original, PruneResult(
-            tools=None,
-            status="skipped",
-            query=None,
-            tools_in=len(tools),
-            mcp_tools_in=sum(1 for t in tools if t.get("name")),
-            tools_out=None,
-            error="no user query extracted",
+        return (
+            original,
+            PruneResult(
+                tools=None,
+                status="skipped",
+                query=None,
+                tools_in=len(tools),
+                mcp_tools_in=sum(1 for t in tools if t.get("name")),
+                tools_out=None,
+                error="no user query extracted",
+            ),
+            skills_meta,
         )
 
     query = format_search_query(user_query, extract_last_assistant_message(cleaned))
@@ -1147,8 +1162,8 @@ def transform_anthropic_request(
         if result.status == "failed":
             logger.warning("tool pruning failed: %s", result.error)
         if result.status != "pass_through":
-            return original, result
+            return original, result, skills_meta
 
     if result.tools is not None:
         original["tools"] = result.tools
-    return original, result
+    return original, result, skills_meta
