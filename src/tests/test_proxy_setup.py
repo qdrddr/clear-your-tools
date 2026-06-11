@@ -149,6 +149,28 @@ class TestDomainMatchParsing:
             == "api.anthropic.com"
         )
 
+    def test_base_url_infers_domain_match(self) -> None:
+        upstreams = [{"url": "https://api.anthropic.com"}]
+        assert (
+            domain_match_default_string(
+                "openrouter",
+                upstreams=upstreams,
+                base_url="https://openrouter.ai/api",
+            )
+            == "openrouter.ai"
+        )
+
+    def test_entry_base_url_infers_domain_match(self) -> None:
+        upstreams = [{"url": "https://api.anthropic.com"}]
+        assert (
+            domain_match_default_string(
+                "openrouter",
+                {"base_url": "https://openrouter.ai/api"},
+                upstreams=upstreams,
+            )
+            == "openrouter.ai"
+        )
+
 
 class TestPrimaryModelPricing:
     def test_model_input_cost_per_token(self) -> None:

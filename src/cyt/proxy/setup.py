@@ -290,8 +290,17 @@ def domain_match_default_string(
     entry: dict[str, Any] | None = None,
     *,
     upstreams: list[dict[str, Any]] | None = None,
+    base_url: str | None = None,
 ) -> str:
     """Default comma-separated hostnames for domain_match prompts."""
+    resolved_base_url = base_url
+    if not resolved_base_url and entry:
+        entry_base_url = entry.get("base_url")
+        if isinstance(entry_base_url, str) and entry_base_url.strip():
+            resolved_base_url = entry_base_url
+    if resolved_base_url:
+        if hostname := _extract_hostname(resolved_base_url):
+            return hostname
     if upstreams:
         if from_upstreams := upstream_hostnames_default(upstreams):
             return from_upstreams
@@ -775,9 +784,15 @@ def _prompt_domain_match(
     entry: dict[str, Any] | None,
     *,
     upstreams: list[dict[str, Any]] | None = None,
+    base_url: str | None = None,
     required: bool = False,
 ) -> list[str] | None:
-    default = domain_match_default_string(provider, entry, upstreams=upstreams)
+    default = domain_match_default_string(
+        provider,
+        entry,
+        upstreams=upstreams,
+        base_url=base_url,
+    )
     while True:
         raw = _prompt(
             "domain_match (comma-separated hostnames or API base URLs)",
@@ -1014,6 +1029,7 @@ def _prompt_custom_model(
         provider,
         None,
         upstreams=domain_match_upstreams,
+        base_url=result.get("base_url"),
         required=True,
     )
     result["domain_match"] = domain_match
@@ -1262,7 +1278,6 @@ def run_setup(config_path: Path) -> None:
     print()
     print("--- Upstream API endpoints ---")
     upstreams, endpoints, upstream_llm_models = _prompt_upstreams()
-    upstream_url = upstream_url_default(upstreams)
     primary_upstream_llm = upstream_llm_models[0]
 
     for model in upstream_llm_models:
@@ -1285,7 +1300,6 @@ def run_setup(config_path: Path) -> None:
             label="reranker model",
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
-            custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
     if "llm" in pipeline:
@@ -1295,7 +1309,6 @@ def run_setup(config_path: Path) -> None:
             label="LLM pruner model",
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
-            custom_default_base_url=upstream_url,
             prompt_custom_base_url=True,
         )
     if "rerank" in pipeline or "llm" in pipeline:
