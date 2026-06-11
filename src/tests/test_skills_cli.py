@@ -401,6 +401,165 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
         assert "<agent-skills>" in stdout.getvalue()
 
 
+def test_user_prompt_uses_transcript_query_before_search_skills(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hook enriches search query with last assistant turn from transcript_path."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        cache_path = str(root / "cache.db")
+        transcript = root / "session.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "prior assistant reply"}],
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "sess-transcript",
+            "transcript_path": str(transcript),
+            "prompt": "configure agent hooks",
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "bm25",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "cache": {"database": {"path": cache_path}},
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"bm25": {"score_skills": 0.0}},
+            "stats": {"database": {"path": str(root / "stats.db")}},
+        }
+
+        captured: dict[str, str] = {}
+
+        def _capture_search(query: str, entries: list, *, config: dict) -> list:
+            captured["query"] = query
+            from cyt.skills.search import search_skills as real_search
+
+            return real_search(query, entries, config=config)
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                    with patch("cyt.skills.cli.search_skills", side_effect=_capture_search):
+                        from cyt.skills.cache import SessionCacheDB
+
+                        with patch(
+                            "cyt.skills.cache.skills_cache_db_path",
+                            return_value=cache_path,
+                        ):
+                            db = SessionCacheDB.open(config)
+                            try:
+                                db.upsert_session("sess-transcript", "claude-sonnet-4")
+                            finally:
+                                db.close()
+                        skills_cli.run()
+
+        assert captured["query"] == (
+            "User_Asks: configure agent hooks; Assistant_Says: prior assistant reply"
+        )
+
+
+@pytest.mark.parametrize("pipeline", ["bm25", "rerank", "llm"])
+def test_user_prompt_uses_transcript_query_for_all_pipelines(
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline: str,
+) -> None:
+    """Hook passes transcript-enriched query to search_skills for every pipeline."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        cache_path = str(root / "cache.db")
+        transcript = root / "session.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "prior assistant reply"}],
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "sess-transcript",
+            "transcript_path": str(transcript),
+            "prompt": "configure agent hooks",
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": pipeline,
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "cache": {"database": {"path": cache_path}},
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"bm25": {"score_skills": 0.0}},
+            "stats": {"database": {"path": str(root / "stats.db")}},
+        }
+
+        captured: dict[str, str] = {}
+
+        def _capture_search(query: str, entries: list, *, config: dict) -> list:
+            captured["query"] = query
+            return []
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                    with patch("cyt.skills.cli.search_skills", side_effect=_capture_search):
+                        from cyt.skills.cache import SessionCacheDB
+
+                        db = SessionCacheDB.open(config)
+                        try:
+                            db.upsert_session("sess-transcript", "claude-sonnet-4")
+                        finally:
+                            db.close()
+                        skills_cli.run()
+
+        assert captured["query"] == (
+            "User_Asks: configure agent hooks; Assistant_Says: prior assistant reply"
+        )
+
+
 def test_disabled_config_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

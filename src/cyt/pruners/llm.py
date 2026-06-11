@@ -226,10 +226,15 @@ def _llm_user_message(query: str, chunks_text: str) -> str:
     return f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
 
 
-def count_llm_request_tokens(query: str, chunks_text: str) -> int:
+def count_llm_request_tokens(
+    query: str,
+    chunks_text: str,
+    *,
+    system_prompt: str = SELECTOR_SYSTEM_PROMPT,
+) -> int:
     """Estimate input tokens sent to the LLM selector for one request."""
     user_message = _llm_user_message(query, chunks_text)
-    return count_tokens(SELECTOR_SYSTEM_PROMPT) + count_tokens(user_message)
+    return count_tokens(system_prompt) + count_tokens(user_message)
 
 
 def _usage_from_litellm_response(
@@ -269,9 +274,11 @@ def call_llm(
     settings: LlmPruningSettings,
     query: str,
     chunks_text: str,
+    *,
+    system_prompt: str = SELECTOR_SYSTEM_PROMPT,
 ) -> tuple[RelevantChunkIds, StageTokenUsage]:
     user_message = _llm_user_message(query, chunks_text)
-    input_tokens = count_llm_request_tokens(query, chunks_text)
+    input_tokens = count_llm_request_tokens(query, chunks_text, system_prompt=system_prompt)
 
     request_kwargs: dict[str, Any] = {
         "model": settings.model_name,
@@ -281,13 +288,13 @@ def call_llm(
         request_kwargs["api_base"] = settings.base_url
 
     if settings.responses_api:
-        request_kwargs["instructions"] = SELECTOR_SYSTEM_PROMPT
+        request_kwargs["instructions"] = system_prompt
         request_kwargs["input"] = user_message
         request_kwargs["text_format"] = RelevantChunkIds
         response: Any = responses(**request_kwargs)
     else:
         request_kwargs["messages"] = [
-            {"role": "system", "content": SELECTOR_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
         request_kwargs["response_format"] = RelevantChunkIds
@@ -330,6 +337,55 @@ def call_llm(
             provider=usage.provider,
         )
     return parsed, usage
+
+
+def llm_select_ids(
+    query: str,
+    system_prompt: str,
+    formatted_items: list[str],
+    *,
+    config: dict[str, Any] | None = None,
+) -> tuple[set[int], StageTokenUsage]:
+    """Run LLM selector over formatted chunks; return union of Pydantic-parsed ids."""
+    if not formatted_items:
+        return set(), empty_usage()
+
+    from cyt.pruners.split import split_chunks_into_bulks
+
+    settings = llm_pruning_settings(config)
+    bulks = split_chunks_into_bulks(query, system_prompt, formatted_items)
+    selected_ids: set[int] = set()
+    total_usage = empty_usage()
+
+    for bulk_text in bulks:
+        bulk_tokens = count_llm_request_tokens(query, bulk_text, system_prompt=system_prompt)
+        logger.info("llm request tokens: %d", bulk_tokens)
+        parsed_response, bulk_usage = call_llm(
+            settings,
+            query,
+            bulk_text,
+            system_prompt=system_prompt,
+        )
+        if bulk_usage.input_tokens == 0:
+            bulk_usage = StageTokenUsage(
+                input_tokens=bulk_tokens,
+                output_tokens=bulk_usage.output_tokens,
+                usage_source=bulk_usage.usage_source,
+                request_id=bulk_usage.request_id,
+                model_name=bulk_usage.model_name,
+                provider_dns_name=bulk_usage.provider_dns_name,
+                provider=bulk_usage.provider,
+            )
+        total_usage = total_usage.merge(bulk_usage)
+        selected_ids.update(parsed_response.ids)
+
+    if total_usage.input_tokens or total_usage.output_tokens:
+        log_token_usage(
+            "pruning model tokens (llm)",
+            total_usage.input_tokens + total_usage.output_tokens,
+        )
+
+    return selected_ids, total_usage
 
 
 def score_item(item: dict[str, Any], is_selected: bool) -> None:
@@ -409,41 +465,17 @@ def llm_catalog_dict(
         )
         return data, empty_usage()
 
-    settings = llm_pruning_settings()
     pinned: dict[str, Any] = {}
     if policy_ctx is not None and catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_chunks(data)
 
-    from cyt.pruners.split import split_chunks_into_bulks
-
-    bulks = split_chunks_into_bulks(query, SELECTOR_SYSTEM_PROMPT, formatted_chunks)
-    selected_ids: set[int] = set()
-    total_usage = empty_usage()
-
-    for bulk_text in bulks:
-        bulk_tokens = count_llm_request_tokens(query, bulk_text)
-        logger.info("llm request tokens: %d", bulk_tokens)
-        parsed_response, bulk_usage = call_llm(settings, query, bulk_text)
-        if bulk_usage.input_tokens == 0:
-            bulk_usage = StageTokenUsage(
-                input_tokens=bulk_tokens,
-                output_tokens=bulk_usage.output_tokens,
-                usage_source=bulk_usage.usage_source,
-                request_id=bulk_usage.request_id,
-                model_name=bulk_usage.model_name,
-                provider_dns_name=bulk_usage.provider_dns_name,
-                provider=bulk_usage.provider,
-            )
-        total_usage = total_usage.merge(bulk_usage)
-        selected_ids.update(parsed_response.ids)
-
-    if total_usage.input_tokens or total_usage.output_tokens:
-        log_token_usage(
-            "pruning model tokens (llm)",
-            total_usage.input_tokens + total_usage.output_tokens,
-        )
+    selected_ids, total_usage = llm_select_ids(
+        query,
+        SELECTOR_SYSTEM_PROMPT,
+        formatted_chunks,
+    )
 
     result = process_results(data, item_metadata_storage, selected_ids, list_keys)
     if merge_pinned and pinned:

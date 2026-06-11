@@ -6,7 +6,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from cyt.pruners.llm import LlmPruningSettings, call_llm
+from cyt.common.token_usage import empty_usage
+from cyt.pruners.llm import LlmPruningSettings, RelevantChunkIds, call_llm, llm_select_ids
 
 
 def _settings(*, responses_api: bool) -> LlmPruningSettings:
@@ -18,6 +19,46 @@ def _settings(*, responses_api: bool) -> LlmPruningSettings:
         provider_dns="api.openai.com",
         responses_api=responses_api,
     )
+
+
+def test_call_llm_uses_custom_system_prompt() -> None:
+    fake_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[3]}'))],
+        usage=SimpleNamespace(prompt_tokens=8, completion_tokens=2),
+        id="chatcmpl-custom",
+    )
+    custom_prompt = "Select relevant skill-node ids only."
+
+    with patch("cyt.pruners.llm.completion", return_value=fake_response) as completion_mock:
+        parsed, _usage = call_llm(
+            _settings(responses_api=False),
+            "find skills",
+            "<skill-node>",
+            system_prompt=custom_prompt,
+        )
+
+    assert parsed.ids == [3]
+    messages = completion_mock.call_args.kwargs["messages"]
+    assert messages[0]["content"] == custom_prompt
+
+
+def test_llm_select_ids_unions_bulk_ids() -> None:
+    with patch(
+        "cyt.pruners.llm.call_llm",
+        side_effect=[
+            (RelevantChunkIds(ids=[1, 2]), empty_usage()),
+            (RelevantChunkIds(ids=[3]), empty_usage()),
+        ],
+    ):
+        with patch(
+            "cyt.pruners.split.split_chunks_into_bulks",
+            return_value=["bulk-a", "bulk-b"],
+        ):
+            with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
+                settings_mock.return_value = _settings(responses_api=False)
+                selected, _usage = llm_select_ids("query", "prompt", ["a", "b"])
+
+    assert selected == {1, 2, 3}
 
 
 def test_call_llm_uses_completion_for_chat_completions() -> None:

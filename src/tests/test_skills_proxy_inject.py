@@ -94,7 +94,7 @@ def test_inject_skills_into_anthropic_body_appends_to_system() -> None:
         }
         out, meta = inject_skills_into_anthropic_body(body, config)
         assert meta.skills_in > 0
-        assert meta.query == "configure agent hooks for sessions"
+        assert meta.query == "User_Asks: configure agent hooks for sessions"
         system = out["messages"][0]
         assert system["role"] == "system"
         assert "# MCP Server Instructions" in system["content"]
@@ -124,6 +124,38 @@ def test_inject_skills_into_openai_body_inserts_developer_message() -> None:
         ]
         assert len(developer_items) == 1
         assert "<agent-skills>" in developer_items[0]["content"][0]["text"]
+
+
+def test_inject_skills_skipped_when_pipeline_rerank() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        config["skills"]["pipeline"] = "rerank"
+        body = {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        out, meta = inject_skills_into_anthropic_body(body, config)
+        assert meta.skills_in == 0
+        assert out["messages"][0]["content"] == "sys"
+
+
+def test_inject_skills_skipped_when_pipeline_llm() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        config["skills"]["pipeline"] = "llm"
+        body = {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        out, meta = inject_skills_into_anthropic_body(body, config)
+        assert meta.skills_in == 0
+        assert out["messages"][0]["content"] == "sys"
 
 
 def test_inject_skills_skipped_when_inject_via_hook(monkeypatch: pytest.MonkeyPatch) -> None:

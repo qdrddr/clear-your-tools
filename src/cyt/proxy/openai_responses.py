@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.skills.proxy_inject import DeferredSkillsContext
 
 from cyt.indexer.tokens import count_json_tokens
 from cyt.proxy.anthropic import (
@@ -251,6 +254,10 @@ def _prune_openai_tools_array(
     query: str | None,
     pruning_pipeline: list[str] | None,
     capture_decomposed_catalog: bool,
+    *,
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, PruneResult | None]:
     """Prune one OpenAI ``tools`` array (flat or namespace) and return updated tools."""
     if not tools:
@@ -292,6 +299,9 @@ def _prune_openai_tools_array(
         pruning_pipeline,
         capture_decomposed_catalog=capture_decomposed_catalog,
         merged_to_api_tools=_merged_tools_to_openai,
+        skill_entries=skill_entries,
+        skill_llm_out=skill_llm_out,
+        config=config,
     )
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -314,53 +324,40 @@ def _prune_openai_tools_array(
     return final_tools, result
 
 
-def transform_openai_request(
-    body: dict[str, Any],
-    pruning_pipeline: list[str] | None = None,
-    capture_decomposed_catalog: bool = False,
-    config: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], PruneResult | None, Any]:
-    """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
-    from cyt.skills.proxy_inject import SkillsProxyInjectMeta, inject_skills_into_openai_body
+def _openai_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> PruneResult:
+    return PruneResult(
+        tools=None,
+        status="skipped",
+        query=None,
+        tools_in=len(tools),
+        mcp_tools_in=_mcp_tools_in(tools),
+        tools_out=None,
+        error="no user query extracted",
+    )
 
-    original = copy.deepcopy(body)
-    skills_meta = SkillsProxyInjectMeta()
-    if config is not None:
-        original, skills_meta = inject_skills_into_openai_body(original, config)
 
-    input_items = original.get("input") or []
-    tools = original.get("tools") or []
-    tool_search_outputs = _tool_search_output_items(input_items)
-    if not tools and not tool_search_outputs:
-        return original, None, skills_meta
-
-    cleaned = clean_input(input_items)
-    user_query = extract_user_query_from_input(cleaned)
-    if not user_query:
-        logger.warning("no user query extracted; forwarding original tools")
-        return (
-            original,
-            PruneResult(
-                tools=None,
-                status="skipped",
-                query=None,
-                tools_in=len(tools),
-                mcp_tools_in=_mcp_tools_in(tools),
-                tools_out=None,
-                error="no user query extracted",
-            ),
-            skills_meta,
-        )
-
-    query = format_search_query(user_query, extract_last_assistant_message(cleaned))
+def _openai_prune_request_tools(
+    original: dict[str, Any],
+    query: str | None,
+    pruning_pipeline: list[str] | None,
+    capture_decomposed_catalog: bool,
+    deferred: DeferredSkillsContext | None,
+    config: dict[str, Any] | None,
+) -> PruneResult | None:
     result: PruneResult | None = None
+    skill_entries = deferred.skill_entries if deferred is not None else []
+    skill_out = deferred.skill_out if deferred is not None else {}
 
+    tools = original.get("tools") or []
     if tools:
         final_tools, pass_result = _prune_openai_tools_array(
             tools,
             query,
             pruning_pipeline,
             capture_decomposed_catalog,
+            skill_entries=skill_entries or None,
+            skill_llm_out=skill_out if deferred is not None else None,
+            config=config,
         )
         if final_tools is not None and pass_result is not None and pass_result.status == "applied":
             original["tools"] = final_tools
@@ -377,9 +374,82 @@ def transform_openai_request(
             query,
             pruning_pipeline,
             capture_decomposed_catalog,
+            config=config,
         )
         if final_tools is not None and pass_result is not None and pass_result.status == "applied":
             item["tools"] = final_tools
         result = _combine_prune_results(result, pass_result)
 
+    return result
+
+
+def transform_openai_request(
+    body: dict[str, Any],
+    pruning_pipeline: list[str] | None = None,
+    capture_decomposed_catalog: bool = False,
+    config: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], PruneResult | None, Any]:
+    """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
+    from cyt.skills.proxy_inject import (
+        SkillsProxyInjectMeta,
+        finish_deferred_skills_openai,
+        inject_skills_into_openai_body,
+        prepare_deferred_skills_context,
+    )
+
+    original = copy.deepcopy(body)
+    skills_meta = SkillsProxyInjectMeta()
+    if config is not None:
+        original, skills_meta = inject_skills_into_openai_body(original, config)
+
+    input_items = original.get("input") or []
+    tools = original.get("tools") or []
+    tool_search_outputs = _tool_search_output_items(input_items)
+
+    cleaned = clean_input(input_items)
+    user_query = extract_user_query_from_input(cleaned)
+    query = (
+        format_search_query(user_query, extract_last_assistant_message(cleaned))
+        if user_query
+        else None
+    )
+    deferred = prepare_deferred_skills_context(config, query, kind="openai")
+    skill_out = deferred.skill_out if deferred is not None else {}
+
+    if not tools and not tool_search_outputs:
+        original, skills_meta = finish_deferred_skills_openai(
+            original,
+            skills_meta,
+            deferred,
+            config,
+            query=query,
+        )
+        return original, None, skills_meta
+
+    if not user_query:
+        logger.warning("no user query extracted; forwarding original tools")
+        original, skills_meta = finish_deferred_skills_openai(
+            original,
+            skills_meta,
+            deferred,
+            config,
+        )
+        return original, _openai_skipped_no_query_prune_result(tools), skills_meta
+
+    result = _openai_prune_request_tools(
+        original,
+        query,
+        pruning_pipeline,
+        capture_decomposed_catalog,
+        deferred,
+        config,
+    )
+    original, skills_meta = finish_deferred_skills_openai(
+        original,
+        skills_meta,
+        deferred,
+        config,
+        matches=skill_out.get("matches"),
+        query=query,
+    )
     return original, result, skills_meta

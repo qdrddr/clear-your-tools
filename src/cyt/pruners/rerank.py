@@ -16,6 +16,7 @@ from cyt.config import (
     load_user_config_overlay,
     remote_model_entry,
     require_proxy_env,
+    rerank_score_skills,
     reranker_minimum_tools,
     resolve_model,
 )
@@ -244,6 +245,65 @@ def _rerank_prepared_bulks(
     if min_score is not None:
         return [item for item in items if float(item.get("score", 0)) >= min_score], total_usage
     return items, total_usage
+
+
+def extract_skill_node_document(item: dict[str, Any]) -> str | None:
+    """Return searchable text from a decomposed skill node item."""
+    content = item.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    return None
+
+
+def prune_reranked_skill_items(
+    items: list[dict[str, Any]],
+    *,
+    config: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Drop skill node items below the configured rerank skills score threshold."""
+    threshold = rerank_score_skills(config)
+    return [item for item in items if float(item.get("score", 0)) >= threshold]
+
+
+def rerank_unified_item_lists(
+    query: str,
+    targets: list[tuple[list[dict[str, Any]], Callable[[dict[str, Any]], str | None]]],
+    settings: RerankPruningSettings,
+) -> StageTokenUsage:
+    """Score multiple item lists in shared rerank bulks; write scores back in place."""
+    segments: list[tuple[list[dict[str, Any]], int]] = []
+    indexed_docs: list[tuple[int, str]] = []
+    shadow_items: list[dict[str, Any]] = []
+
+    for items, extract_fn in targets:
+        for item_idx, item in enumerate(items):
+            item["score"] = f"{0.0:.20f}"
+            if not (doc_text := extract_fn(item)):
+                continue
+            shadow_idx = len(shadow_items)
+            shadow_items.append({"score": item["score"]})
+            segments.append((items, item_idx))
+            indexed_docs.append((shadow_idx, doc_text))
+
+    if not indexed_docs:
+        return empty_usage()
+
+    base_tokens = rerank_bulk_base_tokens(query)
+    _, usage = _rerank_prepared_bulks(
+        indexed_docs,
+        query=query,
+        settings=settings,
+        items=shadow_items,
+        base_tokens=base_tokens,
+        min_score=None,
+    )
+
+    for shadow_idx, (items, item_idx) in enumerate(segments):
+        items[item_idx]["score"] = shadow_items[shadow_idx]["score"]
+
+    if usage.input_tokens:
+        log_token_usage("pruning model tokens (rerank)", usage.input_tokens)
+    return usage
 
 
 def rerank_items(

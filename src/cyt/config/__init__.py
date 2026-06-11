@@ -853,6 +853,22 @@ def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
     return float(value)
 
 
+def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
+    pruning = config.get("pruning")
+    if not isinstance(pruning, dict):
+        return {}
+    stage_cfg = pruning.get("rerank")
+    return stage_cfg if isinstance(stage_cfg, dict) else {}
+
+
+def rerank_score_skills(config: dict[str, Any] | None = None) -> float:
+    from cyt.common.runtime_constants import RERANK_SCORE
+
+    cfg = config or load_config()
+    value = _rerank_pruning_settings(cfg).get("score_skills", RERANK_SCORE)
+    return float(value)
+
+
 def _skills_settings(config: dict[str, Any]) -> dict[str, Any]:
     skills = config.get("skills")
     return skills if isinstance(skills, dict) else {}
@@ -876,6 +892,19 @@ def skills_pipeline(config: dict[str, Any] | None = None) -> str:
     cfg = config or load_config()
     value = _skills_settings(_merged_config(cfg)).get("pipeline", DEFAULT_SKILLS_PIPELINE)
     return str(value)
+
+
+def skills_pipeline_uses_llm(config: dict[str, Any] | None = None) -> bool:
+    return skills_pipeline(config).strip().lower() == "llm"
+
+
+def skills_pipeline_uses_rerank(config: dict[str, Any] | None = None) -> bool:
+    return skills_pipeline(config).strip().lower() == "rerank"
+
+
+def skills_pipeline_uses_deferred_proxy_inject(config: dict[str, Any] | None = None) -> bool:
+    pipeline = skills_pipeline(config).strip().lower()
+    return pipeline in ("llm", "rerank")
 
 
 def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:

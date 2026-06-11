@@ -24,6 +24,7 @@ from cyt.skills.inject import format_agent_skills, injection_token_count
 from cyt.skills.proxy_inject import skills_inject_via_hook
 from cyt.skills.search import search_skills
 from cyt.skills.stats import record_skills_injection
+from cyt.skills.transcript import skills_search_query_from_hook_payload
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +122,16 @@ def _handle_user_prompt(
     *,
     plain_output: bool = False,
 ) -> tuple[str, dict[str, Any]]:
-    prompt = prompt_from_payload(payload)
-    if not prompt:
+    query = skills_search_query_from_hook_payload(payload)
+    if not query:
         return "user_prompt_missing_prompt", {}
 
+    prompt = prompt_from_payload(payload) or query
     model = _resolve_model(payload, config)
     _register_session_if_possible(payload, config)
 
     entries = build_registry(config)
-    matches = search_skills(prompt, entries, config=config)
+    matches = search_skills(query, entries, config=config)
     if not matches:
         return "user_prompt_no_matches", {"resolved_model": model}
 

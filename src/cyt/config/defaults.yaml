@@ -163,6 +163,7 @@ pruning:
     minimum_tools: 50
 
   rerank:
+    score_skills: 0.003
     model:
       remote:
         model_nick: rerank-qwen3-8b
@@ -233,7 +234,7 @@ skills:
   enabled: false
   frontmatter_upper_limit: 0.4
   inject_via: hook # or proxy
-  pipeline: bm25
+  pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
   cache:
     database:

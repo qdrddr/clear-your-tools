@@ -82,6 +82,42 @@ def _append_chunk_ids(mapping: dict[str, Any], chunk_ids: list[int]) -> None:
             chunk_ids.append(int(chunk["chunk_id"]))
 
 
+def _append_node_ids(mapping: dict[str, Any], node_ids: list[int]) -> None:
+    node_id = mapping.get("node_id")
+    if node_id is not None:
+        try:
+            node_ids.append(int(node_id))
+        except (TypeError, ValueError):
+            pass
+
+
+def _iter_node_ids_from_structure(structure: object, *, skip_frontmatter: bool) -> list[int]:
+    node_ids: list[int] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        mapping = cast(dict[str, Any], node)
+        if not skip_frontmatter or not _is_frontmatter_node(mapping):
+            _append_node_ids(mapping, node_ids)
+        children = mapping.get("nodes")
+        if isinstance(children, list):
+            for child in children:
+                walk(child)
+
+    walk(structure)
+    return node_ids
+
+
+def _iter_content_node_ids(structure: object) -> list[int]:
+    """Collect node ids from all nodes except frontmatter (node 0)."""
+    return _iter_node_ids_from_structure(structure, skip_frontmatter=True)
+
+
 def _iter_chunk_ids_from_structure(structure: object, *, skip_frontmatter: bool) -> list[int]:
     chunk_ids: list[int] = []
 
@@ -113,7 +149,34 @@ def _iter_content_chunk_ids(structure: object) -> list[int]:
     return _iter_chunk_ids_from_structure(structure, skip_frontmatter=True)
 
 
-def _entry_state(entry_dir: Path, doc_id: str, document: dict[str, Any]) -> str:
+def _pipeline_uses_nodes_only(pipeline: str) -> bool:
+    return pipeline.strip().lower() in ("llm", "rerank")
+
+
+def _entry_state_nodes(entry_dir: Path, doc_id: str, document: dict[str, Any]) -> str:
+    doc_json = _doc_dir(entry_dir, doc_id) / "document.json"
+    if not doc_json.is_file():
+        return "missing"
+    structure = document.get("structure")
+    if not structure:
+        return "partial"
+    for node_id in _iter_content_node_ids(structure):
+        node_path = _doc_dir(entry_dir, doc_id) / f"{node_id}.md"
+        if not node_path.is_file():
+            return "partial"
+    return "complete"
+
+
+def _entry_state(
+    entry_dir: Path,
+    doc_id: str,
+    document: dict[str, Any],
+    *,
+    pipeline: str,
+) -> str:
+    if _pipeline_uses_nodes_only(pipeline):
+        return _entry_state_nodes(entry_dir, doc_id, document)
+
     doc_json = _doc_dir(entry_dir, doc_id) / "document.json"
     if not doc_json.is_file():
         return "missing"
@@ -245,7 +308,7 @@ def build_registry(config: dict[str, Any] | None = None) -> list[SkillEntryRef]:
         document: dict[str, Any] | None = None
         if (_doc_dir(entry_dir, doc_id) / "document.json").is_file():
             document = _load_document_json(entry_dir, doc_id)
-        state = _entry_state(entry_dir, doc_id, document or {})
+        state = _entry_state(entry_dir, doc_id, document or {}, pipeline=pipeline)
 
         if state == "missing":
             document = _full_build_entry(

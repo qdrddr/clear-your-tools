@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from cyt.common.token_usage import empty_usage
 from cyt.skills.catalog import _iter_chunk_ids, _iter_content_chunk_ids, build_registry
 from cyt.skills.search import search_skills
 
@@ -79,7 +80,7 @@ def test_search_below_threshold_filters_matches() -> None:
             "pruning": {"bm25": {"score_skills": 0.99}},
         }
         entries = build_registry(config)
-        with patch("cyt.skills.search.bm25_score_skills", return_value=0.99):
+        with patch("cyt.skills.bm25.bm25_score_skills", return_value=0.99):
             matches = search_skills("quantum physics rockets", entries, config=config)
         assert matches == []
 
@@ -188,3 +189,59 @@ def test_match_name_preserved_after_content_only_search() -> None:
         )
         assert len(matches) == 1
         assert matches[0].name == "create-hook"
+
+
+def test_search_rerank_pipeline_dispatches_to_rerank_skill_nodes() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code.\n",
+        )
+        config = {
+            "skills": {
+                "pipeline": "rerank",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": False},
+            },
+            "pruning": {"rerank": {"score_skills": 0.0}},
+        }
+        entries = build_registry(config)
+        with patch(
+            "cyt.skills.rerank.rerank_skill_nodes",
+            return_value=([], empty_usage()),
+        ) as rerank_mock:
+            search_skills("agent hooks", entries, config=config)
+
+        rerank_mock.assert_called_once()
+
+
+def test_search_llm_pipeline_dispatches_to_llm_skill_nodes() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code.\n",
+        )
+        config = {
+            "skills": {
+                "pipeline": "llm",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+        }
+        entries = build_registry(config)
+        with patch("cyt.skills.llm.llm_skill_nodes", return_value=([], empty_usage())) as llm_mock:
+            search_skills("agent hooks", entries, config=config)
+
+        llm_mock.assert_called_once()

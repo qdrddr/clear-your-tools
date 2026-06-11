@@ -10,12 +10,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
+
+if TYPE_CHECKING:
+    from cyt.skills.proxy_inject import DeferredSkillsContext, SkillsProxyInjectMeta
 
 from cyt.common.token_usage import StageTokenUsage
 from cyt.config import (
     DEFAULT_PRUNING_PIPELINE,
     effective_pruning_pipeline,
+    llm_minimum_tools,
     load_config,
     pruning_pipeline_from_config,
 )
@@ -409,6 +413,9 @@ def _run_catalog_pruning(
     capture_decomposed_catalog: bool,
     ctx: PolicyContext,
     output_ctx: PolicyContext | None = None,
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, int],
@@ -425,19 +432,19 @@ def _run_catalog_pruning(
     pruning_token_usage: dict[str, StageTokenUsage] = {}
     tool_properties_count_in = 0
     tool_properties_count_out = 0
-    config = load_config()
+    resolved_config = config or load_config()
     index = build_catalog_index(entries, enums)
     build_catalog = index.to_catalog_dict()
     data = build_catalog
     tool_properties_count_in = _count_optional_property_chunks(data)
     pipeline = effective_pruning_pipeline(
-        config,
+        resolved_config,
         catalog_tool_count(data),
         configured_pipeline=configured_pipeline,
     )
     terminal_stage = pipeline[-1] if pipeline else None
     reinstate_ctx = output_ctx or output_policy_context_from_config(
-        config,
+        resolved_config,
         terminal_stage=terminal_stage,
     )
     # #region agent log
@@ -470,6 +477,9 @@ def _run_catalog_pruning(
         pipeline,
         capture_catalog=capture_decomposed_catalog,
         ctx=ctx,
+        skill_entries=skill_entries,
+        skill_llm_out=skill_llm_out,
+        config=resolved_config,
     )
     tool_properties_count_out = _count_optional_property_chunks(data)
     pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
@@ -579,18 +589,46 @@ def _run_rerank_stage(
     decomposed_breakdown: dict[str, dict[str, int]],
     decomposed: dict[str, int],
     pruning_token_usage: dict[str, StageTokenUsage],
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
-    data, rerank_usage = rerank_catalog_dict(
-        data,
-        query,
-        prune=False,
-        merge_pinned=False,
-    )
+    rerank_usage: StageTokenUsage
+    tools_already_pruned = False
+    if skill_entries:
+        from cyt.config import skills_pipeline_uses_rerank
+        from cyt.skills.rerank import rerank_prune_tools_and_skills
+
+        if skills_pipeline_uses_rerank(config):
+            data, skill_matches, rerank_usage = rerank_prune_tools_and_skills(
+                data,
+                query,
+                skill_entries,
+                config=config,
+            )
+            tools_already_pruned = True
+            if skill_llm_out is not None:
+                skill_llm_out["matches"] = skill_matches
+        else:
+            data, rerank_usage = rerank_catalog_dict(
+                data,
+                query,
+                prune=False,
+                merge_pinned=False,
+            )
+    else:
+        data, rerank_usage = rerank_catalog_dict(
+            data,
+            query,
+            prune=False,
+            merge_pinned=False,
+        )
     pruning_token_usage["rerank"] = rerank_usage
     if capture_catalog and snapshots is not None:
         snapshots["rerank"] = _snapshot_catalog(data)
     post_rerank_scored = copy.deepcopy(data)
-    data = prune_reranked_catalog(data)
+    if not tools_already_pruned:
+        data = prune_reranked_catalog(data)
     if capture_catalog and snapshots is not None:
         snapshots["rerank_pruned"] = _snapshot_catalog(data)
     post_rerank = copy.deepcopy(data)
@@ -611,10 +649,29 @@ def _run_llm_stage(
     decomposed_breakdown: dict[str, dict[str, int]],
     decomposed: dict[str, int],
     pruning_token_usage: dict[str, StageTokenUsage],
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if trim_before_llm:
         data = trim_catalog_dict(data)
-    data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
+
+    llm_usage: StageTokenUsage
+    if skill_entries and catalog_tool_count(data) >= llm_minimum_tools(config):
+        from cyt.skills.llm import llm_prune_tools_and_skills
+
+        data, skill_matches, llm_usage = llm_prune_tools_and_skills(
+            data,
+            query,
+            skill_entries,
+            trim_before_llm=False,
+            config=config,
+        )
+        if skill_llm_out is not None:
+            skill_llm_out["matches"] = skill_matches
+    else:
+        data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
+
     pruning_token_usage["llm"] = llm_usage
     decomposed_breakdown["llm"] = _breakdown_entry(data)
     decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
@@ -655,6 +712,21 @@ class _StageKwargs(TypedDict):
     decomposed_breakdown: dict[str, dict[str, int]]
     decomposed: dict[str, int]
     pruning_token_usage: dict[str, StageTokenUsage]
+    skill_entries: list[Any] | None
+    skill_llm_out: dict[str, Any] | None
+    config: dict[str, Any] | None
+
+
+def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
+    return {
+        "data": stage_kwargs["data"],
+        "query": stage_kwargs["query"],
+        "capture_catalog": stage_kwargs["capture_catalog"],
+        "snapshots": stage_kwargs["snapshots"],
+        "decomposed_breakdown": stage_kwargs["decomposed_breakdown"],
+        "decomposed": stage_kwargs["decomposed"],
+        "pruning_token_usage": stage_kwargs["pruning_token_usage"],
+    }
 
 
 def _run_pipeline_stage(
@@ -669,6 +741,9 @@ def _run_pipeline_stage(
     decomposed_breakdown: dict[str, dict[str, int]],
     decomposed: dict[str, int],
     pruning_token_usage: dict[str, StageTokenUsage],
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     stage_kwargs: _StageKwargs = {
         "data": data,
@@ -678,13 +753,16 @@ def _run_pipeline_stage(
         "decomposed_breakdown": decomposed_breakdown,
         "decomposed": decomposed,
         "pruning_token_usage": pruning_token_usage,
+        "skill_entries": skill_entries,
+        "skill_llm_out": skill_llm_out,
+        "config": config,
     }
     if stage == "rerank":
         try:
             return _run_rerank_stage(**stage_kwargs)
         except Exception as exc:
             logger.warning("rerank failed, falling back to bm25: %s", exc)
-            return _run_bm25_stage(**stage_kwargs)
+            return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     if stage == "llm":
         try:
             updated = _run_llm_stage(
@@ -695,9 +773,9 @@ def _run_pipeline_stage(
             return updated, None, None
         except Exception as exc:
             logger.warning("llm pruning failed, falling back to bm25: %s", exc)
-            return _run_bm25_stage(**stage_kwargs)
+            return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     if stage == "bm25":
-        return _run_bm25_stage(**stage_kwargs)
+        return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     raise ValueError(f"unknown pruning stage: {stage}")
 
 
@@ -707,6 +785,9 @@ def _run_pruning_pipeline(
     pruning_pipeline: list[str],
     capture_catalog: bool = False,
     ctx: PolicyContext | None = None,
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -749,6 +830,9 @@ def _run_pruning_pipeline(
             decomposed_breakdown=decomposed_breakdown,
             decomposed=decomposed,
             pruning_token_usage=pruning_token_usage,
+            skill_entries=skill_entries,
+            skill_llm_out=skill_llm_out,
+            config=config,
         )
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
@@ -912,11 +996,14 @@ def filter_tools_for_query(
     ]
     | None = None,
     merged_to_api_tools: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+    skill_entries: list[Any] | None = None,
+    skill_llm_out: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
-    config = load_config()
+    config = config or load_config()
     configured_pipeline = (
         pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
     )
@@ -1025,6 +1112,9 @@ def filter_tools_for_query(
             capture_decomposed_catalog,
             policy_ctx,
             output_policy_ctx,
+            skill_entries=skill_entries,
+            skill_llm_out=skill_llm_out,
+            config=config,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
@@ -1095,6 +1185,73 @@ def filter_tools_for_query(
     )
 
 
+def _anthropic_pass_through_prune_result(tools: list[dict[str, Any]]) -> PruneResult:
+    tokens_in = count_json_tokens(tools)
+    return PruneResult(
+        tools=None,
+        status="pass_through",
+        query=None,
+        tools_in=len(tools),
+        mcp_tools_in=sum(1 for t in tools if t.get("name")),
+        tools_out=len(tools),
+        error=None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_in,
+        tokens_saved=0,
+    )
+
+
+def _anthropic_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> PruneResult:
+    return PruneResult(
+        tools=None,
+        status="skipped",
+        query=None,
+        tools_in=len(tools),
+        mcp_tools_in=sum(1 for t in tools if t.get("name")),
+        tools_out=None,
+        error="no user query extracted",
+    )
+
+
+def _anthropic_finish_transform(
+    original: dict[str, Any],
+    result: PruneResult,
+    skills_meta: SkillsProxyInjectMeta,
+    deferred: DeferredSkillsContext | None,
+    config: dict[str, Any] | None,
+    skill_out: dict[str, Any],
+    query: str | None,
+) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
+    from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
+
+    if result.status != "applied" or result.tools is None:
+        if result.status == "failed":
+            logger.warning("tool pruning failed: %s", result.error)
+        if result.status != "pass_through":
+            original, skills_meta = finish_deferred_skills_anthropic(
+                original,
+                skills_meta,
+                deferred,
+                config,
+                matches=skill_out.get("matches"),
+                query=query,
+            )
+            return original, result, skills_meta
+
+    if result.tools is not None:
+        original["tools"] = result.tools
+
+    original, skills_meta = finish_deferred_skills_anthropic(
+        original,
+        skills_meta,
+        deferred,
+        config,
+        matches=skill_out.get("matches"),
+        query=query,
+    )
+    return original, result, skills_meta
+
+
 def transform_anthropic_request(
     body: dict[str, Any],
     pruning_pipeline: list[str] | None = None,
@@ -1102,7 +1259,12 @@ def transform_anthropic_request(
     config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], PruneResult | None, Any]:
     """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
-    from cyt.skills.proxy_inject import SkillsProxyInjectMeta, inject_skills_into_anthropic_body
+    from cyt.skills.proxy_inject import (
+        SkillsProxyInjectMeta,
+        finish_deferred_skills_anthropic,
+        inject_skills_into_anthropic_body,
+        prepare_deferred_skills_context,
+    )
 
     original = copy.deepcopy(body)
     skills_meta = SkillsProxyInjectMeta()
@@ -1111,59 +1273,57 @@ def transform_anthropic_request(
 
     messages = original.get("messages") or []
     tools = original.get("tools") or []
-    if not tools:
-        return original, None, skills_meta
-
-    if request_pass_through(tools, policy_context_from_config()):
-        tokens_in = count_json_tokens(tools)
-        return (
-            original,
-            PruneResult(
-                tools=None,
-                status="pass_through",
-                query=None,
-                tools_in=len(tools),
-                mcp_tools_in=sum(1 for t in tools if t.get("name")),
-                tools_out=len(tools),
-                error=None,
-                tokens_in=tokens_in,
-                tokens_out=tokens_in,
-                tokens_saved=0,
-            ),
-            skills_meta,
-        )
 
     cleaned = clean_messages(messages)
     user_query = extract_user_query(cleaned)
+    query = (
+        format_search_query(user_query, extract_last_assistant_message(cleaned))
+        if user_query
+        else None
+    )
+    deferred = prepare_deferred_skills_context(config, query, kind="anthropic")
+    skill_out = deferred.skill_out if deferred is not None else {}
+
+    if not tools:
+        original, skills_meta = finish_deferred_skills_anthropic(
+            original,
+            skills_meta,
+            deferred,
+            config,
+            query=query,
+        )
+        return original, None, skills_meta
+
+    if request_pass_through(tools, policy_context_from_config()):
+        return original, _anthropic_pass_through_prune_result(tools), skills_meta
+
     if not user_query:
         logger.warning("no user query extracted; forwarding original tools")
-        return (
+        original, skills_meta = finish_deferred_skills_anthropic(
             original,
-            PruneResult(
-                tools=None,
-                status="skipped",
-                query=None,
-                tools_in=len(tools),
-                mcp_tools_in=sum(1 for t in tools if t.get("name")),
-                tools_out=None,
-                error="no user query extracted",
-            ),
             skills_meta,
+            deferred,
+            config,
         )
+        return original, _anthropic_skipped_no_query_prune_result(tools), skills_meta
 
-    query = format_search_query(user_query, extract_last_assistant_message(cleaned))
+    assert query is not None
+    skill_entries = deferred.skill_entries if deferred is not None else []
     result = filter_tools_for_query(
         tools,
         query,
         pruning_pipeline,
         capture_decomposed_catalog=capture_decomposed_catalog,
+        skill_entries=skill_entries or None,
+        skill_llm_out=skill_out if deferred is not None else None,
+        config=config,
     )
-    if result.status != "applied" or result.tools is None:
-        if result.status == "failed":
-            logger.warning("tool pruning failed: %s", result.error)
-        if result.status != "pass_through":
-            return original, result, skills_meta
-
-    if result.tools is not None:
-        original["tools"] = result.tools
-    return original, result, skills_meta
+    return _anthropic_finish_transform(
+        original,
+        result,
+        skills_meta,
+        deferred,
+        config,
+        skill_out,
+        query,
+    )
