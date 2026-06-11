@@ -71,7 +71,9 @@ def truncate_description(description: str | None, max_tokens: int = 60) -> str:
 
 
 def log_token_usage(label: str, tokens: int) -> None:
-    """Print and log a token count line (console + logger)."""
+    """Log a token count line to stderr (stdout is reserved for hook JSON)."""
+    import sys
+
     msg = f"{label}: {tokens} tokens"
     logger.info(msg)
-    print(msg, flush=True)  # ast-grep-ignore: no-print-statements
+    print(msg, file=sys.stderr, flush=True)  # ast-grep-ignore: no-print-statements

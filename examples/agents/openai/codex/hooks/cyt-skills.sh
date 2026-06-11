@@ -3,6 +3,13 @@
 # so do not rely on `uv` or `cyt` being on PATH — use the repo venv or absolute paths.
 set -euo pipefail
 
+# Required for pruning pipeline: [rerank, llm] (Keychain service "nono", or already exported)
+OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-$(/usr/bin/security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w 2>/dev/null || true)}"
+export OPENROUTER_API_KEY
+DEEPINFRA_API_KEY="${DEEPINFRA_API_KEY:-$(/usr/bin/security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w 2>/dev/null || true)}"
+export DEEPINFRA_API_KEY
+export LITELLM_LOG="${LITELLM_LOG:-ERROR}"
+
 CYT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
 CLI="${CYT_REPO}/src/cyt/proxy/cli.py"
 DEBUG_ARGS=()

@@ -28,6 +28,7 @@ from cyt.pruners.documents import (
     extract_json_catalog_document,
     extract_md_catalog_document,
 )
+from cyt.pruners.litellm_quiet import configure_litellm_quiet
 from cyt.pruners.policies import (
     RERANK_SCORE,
     MCPToolPolicy,
@@ -207,7 +208,7 @@ def rerank_unified_item_lists(
     settings: RerankPruningSettings,
 ) -> StageTokenUsage:
     """Score multiple item lists in shared rerank bulks; write scores back in place."""
-    segments: list[tuple[list[dict[str, Any]], int]] = []
+    segments: list[tuple[list[dict[str, Any]], int, dict[str, Any]]] = []
     indexed_docs: list[tuple[int, str]] = []
     shadow_items: list[dict[str, Any]] = []
 
@@ -217,8 +218,9 @@ def rerank_unified_item_lists(
             if not (doc_text := extract_fn(item)):
                 continue
             shadow_idx = len(shadow_items)
-            shadow_items.append({"score": item["score"]})
-            segments.append((items, item_idx))
+            shadow = {"score": item["score"]}
+            shadow_items.append(shadow)
+            segments.append((items, item_idx, shadow))
             indexed_docs.append((shadow_idx, doc_text))
 
     if not indexed_docs:
@@ -234,8 +236,8 @@ def rerank_unified_item_lists(
         min_score=None,
     )
 
-    for shadow_idx, (items, item_idx) in enumerate(segments):
-        items[item_idx]["score"] = shadow_items[shadow_idx]["score"]
+    for _items, item_idx, shadow in segments:
+        _items[item_idx]["score"] = shadow["score"]
 
     if usage.input_tokens:
         log_token_usage("pruning model tokens (rerank)", usage.input_tokens)
@@ -250,6 +252,7 @@ def rerank_items(
     min_score: float | None = None,
 ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
     """Generic reranking logic for both json and md items."""
+    configure_litellm_quiet()
     indexed_docs = prepare_indexed_documents(items, extract_fn)
     if not indexed_docs:
         return items, empty_usage()

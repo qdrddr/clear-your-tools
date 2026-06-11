@@ -3,10 +3,11 @@
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 import tiktoken
 
 from cyt.indexer.build import ToolSchemaSource, prepare_tool_entry, truncate_description
-from cyt.indexer.tokens import compact_json, count_json_tokens, count_tokens
+from cyt.indexer.tokens import compact_json, count_json_tokens, count_tokens, log_token_usage
 from cyt.pruners.rerank import count_rerank_request_tokens, rerank_bulk_base_tokens
 
 
@@ -88,3 +89,10 @@ def test_count_rerank_request_tokens_with_docs() -> None:
     assert count_rerank_request_tokens(query, docs) == count_json_tokens(
         {"query": query, "documents": docs},
     )
+
+
+def test_log_token_usage_writes_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    log_token_usage("pruning model tokens (llm)", 42)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "pruning model tokens (llm): 42 tokens" in captured.err

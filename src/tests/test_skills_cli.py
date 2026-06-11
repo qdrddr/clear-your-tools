@@ -437,3 +437,54 @@ def test_disabled_config_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
         skills_cli.run()
 
     assert stdout.getvalue() == ""
+
+
+def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pruning diagnostics must not prefix hook stdout or Codex falls back to plain text."""
+    from cyt.indexer.tokens import log_token_usage
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "sess-pure-json",
+            "model": "gpt-5",
+            "prompt": "configure agent hooks",
+            "cwd": str(root),
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        real_search = skills_cli.search_skills
+
+        def _noisy_search(query: str, entries: list, *, config: dict) -> list:
+            print("pruning model tokens (llm): 999 tokens", flush=True)
+            log_token_usage("pruning model tokens (llm)", 999)
+            return real_search(query, entries, config=config)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                with patch("cyt.skills.cli.search_skills", side_effect=_noisy_search):
+                    skills_cli.run()
+
+        raw = stdout.getvalue()
+        output = json.loads(raw)
+        assert raw.strip().startswith("{")
+        assert raw.strip().endswith("}")
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
+        assert "pruning model tokens" not in raw
+        assert "hookSpecificOutput" not in output["hookSpecificOutput"]["additionalContext"]

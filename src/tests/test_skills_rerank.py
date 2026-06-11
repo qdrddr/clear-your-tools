@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import patch
 
-from cyt.common.token_usage import empty_usage
+from cyt.common.token_usage import StageTokenUsage, empty_usage
+from cyt.pruners.remote import RerankPruningSettings
+from cyt.pruners.rerank import rerank_unified_item_lists
 from cyt.skills.catalog import _iter_content_node_ids, build_registry
 from cyt.skills.nodes import build_skill_node_items
 from cyt.skills.rerank import (
@@ -125,3 +129,41 @@ def test_iter_content_node_ids_skips_frontmatter() -> None:
         {"node_id": 1, "nodes": [{"node_id": 2}]},
     ]
     assert _iter_content_node_ids(structure) == [1, 2]
+
+
+def test_rerank_unified_item_lists_maps_scores_after_shadow_sort() -> None:
+    item_a: dict[str, Any] = {"score": f"{0.0:.20f}"}
+    item_b: dict[str, Any] = {"score": f"{0.0:.20f}"}
+    item_c: dict[str, Any] = {"score": f"{0.0:.20f}"}
+    targets: list[tuple[list[dict[str, Any]], Callable[[dict[str, Any]], str | None]]] = [
+        ([item_a], lambda _item: "doc a"),
+        ([item_b], lambda _item: "doc b"),
+        ([item_c], lambda _item: "doc c"),
+    ]
+
+    def fake_rerank_prepared_bulks(
+        indexed_docs: list[tuple[int, str]],
+        *,
+        query: str,
+        settings: RerankPruningSettings,
+        items: list[dict[str, Any]],
+        base_tokens: int,
+        min_score: float | None,
+    ) -> tuple[list[dict[str, Any]], StageTokenUsage]:
+        del indexed_docs, query, settings, base_tokens, min_score
+        items[0]["score"] = f"{0.1:.20f}"
+        items[1]["score"] = f"{0.9:.20f}"
+        items[2]["score"] = f"{0.5:.20f}"
+        items.sort(key=lambda row: float(str(row.get("score", 0))), reverse=True)
+        return items, empty_usage()
+
+    settings = cast(RerankPruningSettings, object())
+    with patch(
+        "cyt.pruners.rerank._rerank_prepared_bulks",
+        side_effect=fake_rerank_prepared_bulks,
+    ):
+        rerank_unified_item_lists("query", targets, settings=settings)
+
+    assert item_a["score"] == f"{0.1:.20f}"
+    assert item_b["score"] == f"{0.9:.20f}"
+    assert item_c["score"] == f"{0.5:.20f}"

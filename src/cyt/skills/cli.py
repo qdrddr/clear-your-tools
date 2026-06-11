@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from cyt.config import load_config, skills_enabled
+from cyt.pruners.litellm_quiet import configure_litellm_quiet
 from cyt.skills.catalog import build_registry
 from cyt.skills.debug_log import write_skills_hook_debug_log
 from cyt.skills.hook_payload import (
@@ -45,6 +48,17 @@ def _report_cli_outcome(outcome: str) -> None:
     hint = _CLI_OUTCOME_HINTS.get(outcome)
     if hint:
         print(f"cyt skills: {hint}", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def _redirect_stdout_to_stderr() -> Iterator[None]:
+    """Keep hook stdout reserved for the final JSON payload."""
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield
+    finally:
+        sys.stdout = real_stdout
 
 
 def _read_hook_payload() -> tuple[str, dict[str, Any]]:
@@ -84,10 +98,10 @@ def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) 
                 "additionalContext": text,
             },
         }
-        print(json.dumps(output))
+        print(json.dumps(output), flush=True)
         return
     if text:
-        print(text)
+        print(text, flush=True)
 
 
 def _handle_session_start(_payload: dict[str, Any], _config: dict[str, Any]) -> str:
@@ -108,8 +122,11 @@ def _handle_user_prompt(
     prompt = prompt_from_payload(payload) or query
     model = _resolve_model(payload)
 
-    entries = build_registry(config)
-    matches = search_skills(query, entries, config=config)
+    configure_litellm_quiet()
+    stdout_guard = contextlib.nullcontext() if plain_output else _redirect_stdout_to_stderr()
+    with stdout_guard:
+        entries = build_registry(config)
+        matches = search_skills(query, entries, config=config)
     if not matches:
         return "user_prompt_no_matches", {"resolved_model": model}
 
@@ -218,6 +235,7 @@ def run(
     prompt: str | None = None,
     model: str | None = None,
 ) -> None:
+    configure_litellm_quiet()
     config = load_config()
     raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
     cwd = hook_cwd(payload)

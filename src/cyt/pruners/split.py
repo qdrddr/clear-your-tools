@@ -1,3 +1,4 @@
+import sys
 from collections.abc import Callable
 
 from cyt.indexer.tokens import count_tokens
@@ -23,6 +24,7 @@ def split_into_bulks[T](
         if base_tokens + item_tokens > max_tokens:
             print(
                 f"Warning: Item tokens ({item_tokens}) + base tokens ({base_tokens}) exceeds max_tokens ({max_tokens}). Skipping item.",
+                file=sys.stderr,
                 flush=True,
             )
             continue

@@ -177,9 +177,9 @@ def anthropic_append_text_to_system_content(message: dict[str, Any], text: str) 
             message["content"] = text
         return
     if not isinstance(content, list):
-        message["content"] = [{"type": "input_text", "text": text}]
+        message["content"] = [{"type": "text", "text": text}]
         return
-    content.append({"type": "input_text", "text": text})
+    content.append({"type": "text", "text": text})
 
 
 def anthropic_append_skills_to_system_messages(

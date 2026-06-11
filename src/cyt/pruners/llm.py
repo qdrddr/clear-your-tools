@@ -17,6 +17,7 @@ from cyt.pruners.catalog_common import (
     prepare_catalog_for_scoring,
     resolve_policy_context,
 )
+from cyt.pruners.litellm_quiet import configure_litellm_quiet
 from cyt.pruners.policies import (
     MCPToolPolicy,
     PolicyContext,
@@ -207,6 +208,7 @@ def call_llm(
     *,
     system_prompt: str = SELECTOR_SYSTEM_PROMPT,
 ) -> tuple[RelevantChunkIds, StageTokenUsage]:
+    configure_litellm_quiet()
     user_message = _llm_user_message(query, chunks_text)
     input_tokens = count_llm_request_tokens(query, chunks_text, system_prompt=system_prompt)
 

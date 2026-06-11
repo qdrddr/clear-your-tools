@@ -54,6 +54,24 @@ def test_anthropic_append_text_to_system_content() -> None:
     assert message["content"] == "MCP instructions\n\nskills block"
 
 
+def test_anthropic_append_text_to_system_content_list_blocks_use_text_type() -> None:
+    message = {
+        "role": "system",
+        "content": [{"type": "text", "text": "MCP instructions"}],
+    }
+    anthropic_append_text_to_system_content(message, "skills block")
+    assert message["content"] == [
+        {"type": "text", "text": "MCP instructions"},
+        {"type": "text", "text": "skills block"},
+    ]
+
+
+def test_anthropic_append_text_to_system_content_creates_text_blocks() -> None:
+    message: dict[str, object] = {"role": "system", "content": None}
+    anthropic_append_text_to_system_content(message, "skills block")
+    assert message["content"] == [{"type": "text", "text": "skills block"}]
+
+
 def test_anthropic_append_skills_to_system_messages_inserts_when_missing() -> None:
     updated = anthropic_append_skills_to_system_messages([], "skills text")
     assert len(updated) == 1
