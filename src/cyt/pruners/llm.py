@@ -222,9 +222,13 @@ def prepare_chunks(data: dict[str, Any]) -> tuple[list[str], dict[int, Any], lis
     return formatted_chunks, item_metadata_storage, list_keys
 
 
+def _llm_user_message(query: str, chunks_text: str) -> str:
+    return f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+
+
 def count_llm_request_tokens(query: str, chunks_text: str) -> int:
     """Estimate input tokens sent to the LLM selector for one request."""
-    user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+    user_message = _llm_user_message(query, chunks_text)
     return count_tokens(SELECTOR_SYSTEM_PROMPT) + count_tokens(user_message)
 
 
@@ -266,7 +270,7 @@ def call_llm(
     query: str,
     chunks_text: str,
 ) -> tuple[RelevantChunkIds, StageTokenUsage]:
-    user_message = f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+    user_message = _llm_user_message(query, chunks_text)
     input_tokens = count_llm_request_tokens(query, chunks_text)
 
     request_kwargs: dict[str, Any] = {

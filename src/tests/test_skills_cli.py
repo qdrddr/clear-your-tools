@@ -18,6 +18,138 @@ def _write_skill(path: Path, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
+def test_anthropic_session_start_then_user_prompt_resolves_model_from_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Claude Code: SessionStart registers model; UserPromptSubmit has no model field."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        cache_path = str(root / "cache.db")
+        session_id = "11b09b4b-f335-4a08-b618-8f607f6d7a46"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        session_payload = {
+            "session_id": session_id,
+            "transcript_path": "/tmp/transcript.jsonl",
+            "cwd": str(root),
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "google/gemini-3-flash-preview",
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(session_payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "bm25",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "cache": {"database": {"path": cache_path}},
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"bm25": {"score_skills": 0.0}},
+            "stats": {"database": {"path": str(root / "stats.db")}},
+        }
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                skills_cli.run()
+
+        assert stdout.getvalue() == ""
+
+        prompt_payload = {
+            "session_id": session_id,
+            "transcript_path": "/tmp/transcript.jsonl",
+            "cwd": str(root),
+            "permission_mode": "default",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "configure agent hooks for sessions",
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(prompt_payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                    skills_cli.run()
+
+        output = json.loads(stdout.getvalue())
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
+
+        from cyt.skills.cache import SessionCacheDB
+
+        with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+            db = SessionCacheDB.open(config)
+            try:
+                assert db.lookup_model(session_id) == "google/gemini-3-flash-preview"
+            finally:
+                db.close()
+
+
+def test_nested_payload_user_prompt_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        cache_path = str(root / "cache.db")
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "payload": {
+                "session_id": "sess-nested",
+                "prompt": "configure agent hooks for sessions",
+            },
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "bm25",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "cache": {"database": {"path": cache_path}},
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"bm25": {"score_skills": 0.0}},
+        }
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                from cyt.skills.cache import SessionCacheDB
+
+                with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
+                    db = SessionCacheDB.open(config)
+                    try:
+                        db.upsert_session("sess-nested", "claude-sonnet-4")
+                    finally:
+                        db.close()
+                skills_cli.run()
+
+        output = json.loads(stdout.getvalue())
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
+
+
 def test_session_start_registers_without_output(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

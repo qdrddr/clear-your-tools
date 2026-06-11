@@ -57,10 +57,33 @@ skills:
   enabled: true
 ```
 
-Merge [`hooks.json`](./hooks.json) into `~/.claude/settings.json` (or reference
-[`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) if `cyt` is not on the hook `PATH`). The hook runs on
-`SessionStart` (registers the session model) and `UserPromptSubmit` (BM25-matches skill chunks into
-`additionalContext`).
+Copy or merge [`hooks.json`](./hooks.json) into `~/.claude/settings.json`. For local development,
+point the hook at the absolute path to [`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) (uses the repo
+`.venv/bin/python`). Set `CYT_SKILLS_DEBUG=1` in the environment or pass `--debug` via a wrapper to
+log stdin to `.debug/skills/` (project `cwd`) and `~/.config/cyt/debug/skills/`.
+
+Example `~/.claude/settings.json` hook entry:
+
+```json
+"command": "/path/to/clear-your-tools/examples/agents/anthropic/claude/hooks/cyt-skills.sh"
+```
+
+Simulate hooks locally:
+
+```bash
+CYT_REPO=/path/to/clear-your-tools
+echo '{"hook_event_name":"SessionStart","session_id":"test","model":"google/gemini-3-flash-preview","cwd":"'"$CYT_REPO"'","source":"startup"}' \
+  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
+
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","prompt":"configure agent hooks","cwd":"'"$CYT_REPO"'"}' \
+  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
+```
+
+- **SessionStart** (Claude Code) — stdin includes `session_id` and `model`. `cyt skills` registers
+  them in `~/.config/cyt/cache.db` (`session` table). No stdout on this event.
+- **UserPromptSubmit** (Claude Code) — stdin includes `session_id` and `prompt` but not `model`. Model
+  is resolved from the session cache (written by the prior `SessionStart` for the same
+  `session_id`). BM25-matched skill chunks are returned as `additionalContext`.
 
 The first inject may build the per-skill catalog under `~/.config/cyt/skills/entries/`; later runs
 reuse cached decomposed indexes.

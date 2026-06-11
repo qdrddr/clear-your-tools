@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cyt.skills.hook_payload import hook_event_name, session_id
+
 _SKILLS_DEBUG_DIR = Path(".debug") / "skills"
 _FALLBACK_DEBUG_DIR = Path("~/.config/cyt/debug/skills").expanduser()
 _FILENAME_SAFE = re.compile(r"[^\w.-]+", re.ASCII)
@@ -32,20 +34,6 @@ def _safe_filename_part(value: str, *, fallback: str) -> str:
     return cleaned or fallback
 
 
-def _hook_event_name(payload: dict[str, Any]) -> str:
-    name = payload.get("hook_event_name") or payload.get("hookEventName")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    return "unknown"
-
-
-def _session_id(payload: dict[str, Any]) -> str:
-    session_id = payload.get("session_id") or payload.get("sessionId")
-    if isinstance(session_id, str) and session_id.strip():
-        return session_id.strip()
-    return "no-session"
-
-
 def write_skills_hook_debug_log(
     *,
     raw_stdin: str,
@@ -57,8 +45,8 @@ def write_skills_hook_debug_log(
 ) -> Path:
     """Write hook stdin and handling outcome under ``.debug/skills`` and ``~/.config/cyt/debug/skills``."""
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    event = _safe_filename_part(_hook_event_name(payload), fallback="unknown")
-    session = _safe_filename_part(_session_id(payload), fallback="no-session")
+    event = _safe_filename_part(hook_event_name(payload) or "unknown", fallback="unknown")
+    session = _safe_filename_part(session_id(payload) or "no-session", fallback="no-session")
     filename = f"{timestamp}_{event}_{session}.json"
     entry: dict[str, Any] = {
         "timestamp": timestamp,

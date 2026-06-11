@@ -12,6 +12,14 @@ from cyt.config import load_config, skills_enabled
 from cyt.skills.cache import SessionCacheDB
 from cyt.skills.catalog import build_registry
 from cyt.skills.debug_log import write_skills_hook_debug_log
+from cyt.skills.hook_payload import (
+    hook_cwd,
+    hook_event_name,
+    model_from_payload,
+    normalize_hook_payload,
+    prompt_from_payload,
+    session_id,
+)
 from cyt.skills.inject import format_agent_skills, injection_token_count
 from cyt.skills.search import search_skills
 from cyt.skills.stats import record_skills_injection
@@ -44,58 +52,32 @@ def _read_hook_payload() -> tuple[str, dict[str, Any]]:
         logger.debug("skills hook received non-JSON stdin")
         return raw, {}
     if isinstance(payload, dict):
-        return raw, payload
+        return raw, normalize_hook_payload(payload)
     return raw, {}
-
-
-def _hook_event_name(payload: dict[str, Any]) -> str | None:
-    name = payload.get("hook_event_name") or payload.get("hookEventName")
-    if isinstance(name, str) and name.strip():
-        return name.strip()
-    return None
-
-
-def _hook_cwd(payload: dict[str, Any]) -> str | None:
-    cwd = payload.get("cwd")
-    return cwd if isinstance(cwd, str) and cwd.strip() else None
-
-
-def _session_id(payload: dict[str, Any]) -> str | None:
-    session_id = payload.get("session_id") or payload.get("sessionId")
-    if isinstance(session_id, str) and session_id.strip():
-        return session_id.strip()
-    return None
-
-
-def _model_from_payload(payload: dict[str, Any]) -> str | None:
-    model = payload.get("model")
-    if isinstance(model, str) and model.strip():
-        return model.strip()
-    return None
 
 
 def _resolve_model(payload: dict[str, Any], config: dict[str, Any]) -> str | None:
     """Session cache (Claude SessionStart) first; Codex includes model on UserPromptSubmit."""
-    session_id = _session_id(payload)
-    if session_id:
+    sid = session_id(payload)
+    if sid:
         cache = SessionCacheDB.open(config)
         try:
-            cached = cache.lookup_model(session_id)
+            cached = cache.lookup_model(sid)
         finally:
             cache.close()
         if cached:
             return cached
-    return _model_from_payload(payload)
+    return model_from_payload(payload)
 
 
 def _register_session_if_possible(payload: dict[str, Any], config: dict[str, Any]) -> None:
-    session_id = _session_id(payload)
-    model = _model_from_payload(payload)
-    if not session_id or not model:
+    sid = session_id(payload)
+    model = model_from_payload(payload)
+    if not sid or not model:
         return
     cache = SessionCacheDB.open(config)
     try:
-        cache.upsert_session(session_id, model)
+        cache.upsert_session(sid, model)
     finally:
         cache.close()
 
@@ -104,7 +86,7 @@ def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) 
     if plain:
         print(text)
         return
-    event_name = _hook_event_name(payload)
+    event_name = hook_event_name(payload)
     if event_name:
         output = {
             "hookSpecificOutput": {
@@ -119,14 +101,14 @@ def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) 
 
 
 def _handle_session_start(payload: dict[str, Any], config: dict[str, Any]) -> str:
-    session_id = _session_id(payload)
-    model = _model_from_payload(payload)
-    if not session_id or not model:
+    sid = session_id(payload)
+    model = model_from_payload(payload)
+    if not sid or not model:
         return "session_start_missing_fields"
     cache = SessionCacheDB.open(config)
     try:
         cache.purge_stale()
-        cache.upsert_session(session_id, model)
+        cache.upsert_session(sid, model)
     finally:
         cache.close()
     return "session_start_registered"
@@ -137,10 +119,10 @@ def _handle_user_prompt(
     config: dict[str, Any],
     *,
     plain_output: bool = False,
-) -> str:
-    prompt = payload.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip():
-        return "user_prompt_missing_prompt"
+) -> tuple[str, dict[str, Any]]:
+    prompt = prompt_from_payload(payload)
+    if not prompt:
+        return "user_prompt_missing_prompt", {}
 
     model = _resolve_model(payload, config)
     _register_session_if_possible(payload, config)
@@ -148,11 +130,11 @@ def _handle_user_prompt(
     entries = build_registry(config)
     matches = search_skills(prompt, entries, config=config)
     if not matches:
-        return "user_prompt_no_matches"
+        return "user_prompt_no_matches", {"resolved_model": model}
 
     injected = format_agent_skills(matches)
     if not injected:
-        return "user_prompt_empty_injection"
+        return "user_prompt_empty_injection", {"resolved_model": model}
 
     skills_in = injection_token_count(injected)
     if model and skills_in > 0:
@@ -164,7 +146,7 @@ def _handle_user_prompt(
         )
 
     _emit_injection(injected, payload, plain=plain_output)
-    return "user_prompt_injected"
+    return "user_prompt_injected", {"resolved_model": model}
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:
@@ -178,53 +160,114 @@ def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, 
     return json.dumps(payload), payload
 
 
-def run(
-    debug: bool = False,
-    prompt: str | None = None,
-    model: str | None = None,
-) -> None:
-    config = load_config()
-    cli_prompt_text = prompt.strip() if prompt else ""
-    cli_prompt = bool(cli_prompt_text)
-    if cli_prompt:
-        raw_stdin, payload = _cli_prompt_payload(cli_prompt_text, model)
-    else:
-        raw_stdin, payload = _read_hook_payload()
-    cwd = _hook_cwd(payload)
-    enabled = skills_enabled(config)
-    outcome = "empty_stdin" if not raw_stdin.strip() else "noop"
-
+def _purge_stale_sessions(config: dict[str, Any]) -> None:
     cache = SessionCacheDB.open(config)
     try:
         cache.purge_stale()
     finally:
         cache.close()
 
-    if not enabled and not cli_prompt:
-        print(
-            "cyt skills: skills.enabled is false in config; hook produced no injection. "
-            "Set skills.enabled: true in ~/.config/cyt/config.yaml",
-            file=sys.stderr,
-        )
-        if debug:
-            write_skills_hook_debug_log(
-                raw_stdin=raw_stdin,
-                payload=payload,
-                cwd=cwd,
-                skills_enabled=False,
-                outcome="skipped_disabled",
-            )
-        return
 
-    event_name = _hook_event_name(payload)
+def _read_run_input(
+    prompt: str | None,
+    model: str | None,
+) -> tuple[str, dict[str, Any], bool]:
+    cli_prompt_text = prompt.strip() if prompt else ""
+    cli_prompt = bool(cli_prompt_text)
+    if cli_prompt:
+        raw_stdin, payload = _cli_prompt_payload(cli_prompt_text, model)
+    else:
+        raw_stdin, payload = _read_hook_payload()
+    return raw_stdin, payload, cli_prompt
+
+
+def _exit_if_skills_disabled(
+    *,
+    enabled: bool,
+    cli_prompt: bool,
+    debug: bool,
+    raw_stdin: str,
+    payload: dict[str, Any],
+    cwd: str | None,
+) -> bool:
+    if enabled or cli_prompt:
+        return False
+    print(
+        "cyt skills: skills.enabled is false in config; hook produced no injection. "
+        "Set skills.enabled: true in ~/.config/cyt/config.yaml",
+        file=sys.stderr,
+    )
+    if debug:
+        write_skills_hook_debug_log(
+            raw_stdin=raw_stdin,
+            payload=payload,
+            cwd=cwd,
+            skills_enabled=False,
+            outcome="skipped_disabled",
+        )
+    return True
+
+
+def _dispatch_hook_event(
+    event_name: str | None,
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    raw_stdin: str,
+    *,
+    cli_prompt: bool,
+    debug: bool,
+) -> tuple[str, dict[str, Any] | None]:
+    outcome = "empty_stdin" if not raw_stdin.strip() else "noop"
+    details: dict[str, Any] | None = None
+
     if event_name in _SESSION_EVENTS:
         outcome = _handle_session_start(payload, config)
+        if debug:
+            details = {
+                "session_id": session_id(payload),
+                "model": model_from_payload(payload),
+            }
     elif event_name in _PROMPT_EVENTS:
-        outcome = _handle_user_prompt(payload, config, plain_output=cli_prompt)
+        outcome, details = _handle_user_prompt(payload, config, plain_output=cli_prompt)
     elif event_name is not None:
         outcome = "unhandled_event"
     elif raw_stdin.strip():
         outcome = "missing_hook_event_name"
+
+    return outcome, details
+
+
+def run(
+    debug: bool = False,
+    prompt: str | None = None,
+    model: str | None = None,
+) -> None:
+    config = load_config()
+    raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
+    cwd = hook_cwd(payload)
+    enabled = skills_enabled(config)
+
+    _purge_stale_sessions(config)
+
+    if _exit_if_skills_disabled(
+        enabled=enabled,
+        cli_prompt=cli_prompt,
+        debug=debug,
+        raw_stdin=raw_stdin,
+        payload=payload,
+        cwd=cwd,
+    ):
+        return
+
+    event_name = hook_event_name(payload)
+    outcome, details = _dispatch_hook_event(
+        event_name,
+        payload,
+        config,
+        raw_stdin,
+        cli_prompt=cli_prompt,
+        debug=debug,
+    )
 
     if cli_prompt and outcome != "user_prompt_injected":
         _report_cli_outcome(outcome)
@@ -236,4 +279,5 @@ def run(
             cwd=cwd,
             skills_enabled=enabled if not cli_prompt else True,
             outcome=outcome,
+            details=details,
         )
