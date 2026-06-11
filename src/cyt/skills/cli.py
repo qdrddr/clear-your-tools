@@ -6,12 +6,10 @@ import contextlib
 import json
 import logging
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from cyt.config import load_config, skills_enabled
-from cyt.pruners.litellm_quiet import configure_litellm_quiet
 from cyt.skills.catalog import build_registry
 from cyt.skills.debug_log import write_skills_hook_debug_log
 from cyt.skills.hook_payload import (
@@ -22,6 +20,7 @@ from cyt.skills.hook_payload import (
     prompt_from_payload,
     session_id,
 )
+from cyt.skills.hook_quiet import configure_hook_quiet, hook_safe_stdout
 from cyt.skills.inject import format_agent_skills, injection_token_count
 from cyt.skills.proxy_inject import skills_inject_via_hook
 from cyt.skills.search import search_skills
@@ -48,17 +47,6 @@ def _report_cli_outcome(outcome: str) -> None:
     hint = _CLI_OUTCOME_HINTS.get(outcome)
     if hint:
         print(f"cyt skills: {hint}", file=sys.stderr)
-
-
-@contextlib.contextmanager
-def _hook_safe_stdout() -> Iterator[None]:
-    """Keep hook stdout reserved for the final JSON payload."""
-    real_stdout = sys.stdout
-    sys.stdout = sys.stderr
-    try:
-        yield
-    finally:
-        sys.stdout = real_stdout
 
 
 def _read_hook_payload() -> tuple[str, dict[str, Any]]:
@@ -122,8 +110,8 @@ def _handle_user_prompt(
     prompt = prompt_from_payload(payload) or query
     model = _resolve_model(payload)
 
-    configure_litellm_quiet()
-    stdout_guard = contextlib.nullcontext() if plain_output else _hook_safe_stdout()
+    configure_hook_quiet()
+    stdout_guard = contextlib.nullcontext() if plain_output else hook_safe_stdout()
     with stdout_guard:
         entries = build_registry(config)
         matches = search_skills(query, entries, config=config)
@@ -235,7 +223,7 @@ def run(
     prompt: str | None = None,
     model: str | None = None,
 ) -> None:
-    configure_litellm_quiet()
+    configure_hook_quiet()
     config = load_config()
     raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
     cwd = hook_cwd(payload)

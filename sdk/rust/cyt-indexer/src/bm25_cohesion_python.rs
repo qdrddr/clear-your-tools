@@ -8,7 +8,7 @@ fn bm25_cohesion_chunk_py(
     py: Python<'_>,
     text: &str,
     config: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let cfg = match config {
         Some(obj) => Bm25CohesionConfig::from_partial(&py_to_value(obj)?),
         None => Bm25CohesionConfig::default(),

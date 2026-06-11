@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use super::{py_to_value, value_to_py};
 
-fn skills_index_to_py(py: Python<'_>, index: &SkillsIndex) -> PyResult<PyObject> {
+fn skills_index_to_py(py: Python<'_>, index: &SkillsIndex) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("documents", value_to_py(py, &index.documents_as_json())?)?;
     let files_dict = PyDict::new(py);
@@ -37,7 +37,7 @@ fn build_skills_index_py(
     py: Python<'_>,
     skill_dirs: Vec<String>,
     config: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let cfg = page_index_config_from_py(config)?;
     let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
     let index = build_skills_index(&dirs, &cfg).map_err(|e| {
@@ -70,7 +70,7 @@ fn write_skills_index_py(index: Bound<'_, PyAny>, output_dir: String) -> PyResul
 }
 
 #[pyfunction(name = "load_skills_index_from_dir")]
-fn load_skills_index_from_dir_py(py: Python<'_>, catalog_dir: String) -> PyResult<PyObject> {
+fn load_skills_index_from_dir_py(py: Python<'_>, catalog_dir: String) -> PyResult<Py<PyAny>> {
     let index = load_skills_index_from_dir(PathBuf::from(catalog_dir).as_path()).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
     })?;
@@ -89,7 +89,7 @@ fn repair_skill_chunks_py(
 }
 
 #[pyfunction(name = "skills_index_from_decomposed_dir")]
-fn skills_index_from_decomposed_dir_py(py: Python<'_>, dir: String) -> PyResult<PyObject> {
+fn skills_index_from_decomposed_dir_py(py: Python<'_>, dir: String) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_decomposed_dir(PathBuf::from(dir).as_path()).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
     })?;
@@ -102,7 +102,7 @@ fn md_to_tree_py(
     markdown_content: &str,
     source_path: &str,
     config: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let cfg = page_index_config_from_py(config)?;
     let result = md_to_tree(markdown_content, source_path, &cfg);
     value_to_py(
@@ -164,13 +164,13 @@ fn skills_index_from_py(index_or_docs: Bound<'_, PyAny>) -> PyResult<SkillsIndex
 }
 
 #[pyfunction(name = "get_skill_document")]
-fn get_skill_document_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<PyObject> {
+fn get_skill_document_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<Py<PyAny>> {
     let docs = documents_from_py(documents)?;
     value_to_py(py, &get_document(&docs, doc_id))
 }
 
 #[pyfunction(name = "get_skill_structure")]
-fn get_skill_structure_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<PyObject> {
+fn get_skill_structure_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<Py<PyAny>> {
     let docs = documents_from_py(documents)?;
     value_to_py(py, &get_document_structure(&docs, doc_id))
 }
@@ -181,12 +181,12 @@ fn get_skill_line_content_from_spec_py(
     index_or_docs: Bound<'_, PyAny>,
     doc_id: &str,
     line_num_spec: &str,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_py(index_or_docs)?;
     value_to_py(py, &get_line_content_from_spec(&index, doc_id, line_num_spec))
 }
 
-#[pyclass(name = "ReconstructOptions")]
+#[pyclass(name = "ReconstructOptions", from_py_object)]
 #[derive(Clone, Copy)]
 struct PyReconstructOptions {
     #[pyo3(get, set)]
@@ -231,7 +231,7 @@ fn get_skill_content_retrieve_result_py(
     node_id_specs: Option<Vec<String>>,
     chunk_id_specs: Option<Vec<String>>,
     options: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_py(index_or_docs)?;
     let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let opts = reconstruct_options_from_py(options)?;
@@ -258,7 +258,7 @@ fn reconstruct_skill_markdown_py(
     node_id_specs: Option<Vec<String>>,
     chunk_id_specs: Option<Vec<String>>,
     options: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_py(index_or_docs)?;
     let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     let opts = reconstruct_options_from_py(options)?;
@@ -319,7 +319,7 @@ fn get_skill_line_content_py(
     line_num_specs: Option<Vec<String>>,
     node_id_specs: Option<Vec<String>>,
     chunk_id_specs: Option<Vec<String>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_py(index_or_docs)?;
     let specs = OwnedSpecRefs::new(line_num_specs, node_id_specs, chunk_id_specs);
     value_to_py(
@@ -335,14 +335,14 @@ fn get_skill_line_content_py(
 }
 
 #[pyfunction(name = "parse_skill_chunk_ids")]
-fn parse_skill_chunk_ids_py(py: Python<'_>, spec: &str) -> PyResult<PyObject> {
+fn parse_skill_chunk_ids_py(py: Python<'_>, spec: &str) -> PyResult<Py<PyAny>> {
     let ids = crate::pageindex::parse_chunk_ids(spec)
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &serde_json::json!(ids))
 }
 
 #[pyfunction(name = "parse_skill_node_ids")]
-fn parse_skill_node_ids_py(py: Python<'_>, spec: &str) -> PyResult<PyObject> {
+fn parse_skill_node_ids_py(py: Python<'_>, spec: &str) -> PyResult<Py<PyAny>> {
     let ids = parse_node_ids(spec)
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &serde_json::json!(ids))
@@ -371,7 +371,7 @@ impl PySkillsBuilder {
         py: Python<'_>,
         skill_dirs: Vec<String>,
         config: Option<Bound<'_, PyAny>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let cfg = page_index_config_from_py(config)?;
         let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
         let index = self.inner.build_from_dirs(&dirs, &cfg).map_err(|e| {
@@ -380,14 +380,14 @@ impl PySkillsBuilder {
         skills_index_to_py(py, index)
     }
 
-    fn write_catalog(&mut self, py: Python<'_>) -> PyResult<PyObject> {
+    fn write_catalog(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let index = self.inner.write_catalog().map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
         })?;
         skills_index_to_py(py, index)
     }
 
-    fn to_skills_index_json(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_skills_index_json(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let val = self
             .inner
             .to_skills_index_json()
@@ -395,7 +395,7 @@ impl PySkillsBuilder {
         value_to_py(py, &val)
     }
 
-    fn to_skills_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_skills_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let val = self
             .inner
             .to_skills_dict()

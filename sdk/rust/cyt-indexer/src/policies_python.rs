@@ -22,7 +22,7 @@ pub fn refresh_runtime_attrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 /// Python-facing policy context (defaults live in [`PolicyContext::new`]).
-#[pyclass(name = "PolicyContext")]
+#[pyclass(name = "PolicyContext", from_py_object)]
 #[derive(Clone)]
 pub struct PyPolicyContext {
     pub inner: PolicyContext,
@@ -67,7 +67,7 @@ impl PyPolicyContext {
     }
 
     #[getter]
-    fn per_tool(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn per_tool(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         for (k, v) in &self.inner.per_tool {
             dict.set_item(k, v.as_str())?;
@@ -77,7 +77,7 @@ impl PyPolicyContext {
 
     #[setter]
     fn set_per_tool(&mut self, value: Bound<'_, PyAny>) -> PyResult<()> {
-        if let Ok(dict) = value.downcast_into::<PyDict>() {
+        if let Ok(dict) = value.cast_into::<PyDict>() {
             let mut per_tool = HashMap::new();
             for (k, v) in dict.iter() {
                 let key: String = k.extract()?;
@@ -96,7 +96,7 @@ pub fn ctx_from_py_any(obj: &Bound<'_, PyAny>) -> PyResult<PolicyContext> {
     if let Ok(ctx) = obj.extract::<PyRef<PyPolicyContext>>() {
         return Ok(ctx.inner.clone());
     }
-    let dict = obj.downcast::<PyDict>()?;
+    let dict = obj.cast::<PyDict>()?;
     ctx_from_py(dict)
 }
 
@@ -115,7 +115,7 @@ pub fn ctx_from_py(dict: &Bound<'_, PyDict>) -> PyResult<PolicyContext> {
         .or_else(|| parse_tool_policy(&runtime_config::default_mcp_policy()));
     let mut per_tool = HashMap::new();
     if let Some(item) = dict.get_item("per_tool")?
-        && let Ok(sub) = item.downcast_into::<PyDict>() {
+        && let Ok(sub) = item.cast_into::<PyDict>() {
             for (k, v) in sub.iter() {
                 let key: String = k.extract()?;
                 let pol: String = v.extract()?;
@@ -145,7 +145,7 @@ fn llm_selected_paths_from_py(paths: Option<Bound<'_, PyAny>>) -> PyResult<Optio
 }
 
 #[pyfunction(name = "tool_policies")]
-fn tool_policies_py(py: Python<'_>) -> PyResult<PyObject> {
+fn tool_policies_py(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let list: Vec<Value> = policies::tool_policy_strings()
         .into_iter()
         .map(|s| Value::String(s.to_string()))
@@ -223,7 +223,7 @@ fn py_list_values(obj: Bound<'_, PyAny>) -> PyResult<Vec<Value>> {
     Ok(val.as_array().cloned().unwrap_or_default())
 }
 
-fn hashset_to_py_list(py: Python<'_>, set: HashSet<String>) -> PyResult<PyObject> {
+fn hashset_to_py_list(py: Python<'_>, set: HashSet<String>) -> PyResult<Py<PyAny>> {
     let list: Vec<Value> = set.into_iter().map(Value::String).collect();
     super::value_to_py(py, &Value::Array(list))
 }
@@ -253,7 +253,7 @@ fn partition_catalog_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,
     ctx: &Bound<'_, PyAny>,
-) -> PyResult<(PyObject, PyObject)> {
+) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
     let (proc, pinned) = policies::partition_catalog(&data_val, &ctx);
@@ -268,7 +268,7 @@ fn merge_catalog_py(
     py: Python<'_>,
     processed: Bound<'_, PyAny>,
     pinned: Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let proc = super::py_to_value(processed)?;
     let pin = super::py_to_value(pinned)?;
     super::value_to_py(py, &policies::merge_catalog(&proc, &pin))
@@ -320,7 +320,7 @@ fn filter_recompose_json_entries_py(
     ctx: &Bound<'_, PyAny>,
     rerank_score: Option<f64>,
     llm_selected_paths: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let val = super::py_to_value(json_list)?;
     let arr = val.as_array().cloned().unwrap_or_default();
@@ -342,7 +342,7 @@ fn mitigate_empty_optional_properties_py(
     ctx: &Bound<'_, PyAny>,
     post_rerank_scored: Option<Bound<'_, PyAny>>,
     pipeline: &Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let entries_val = super::py_to_value(entries)?;
     let arr = entries_val.as_array().cloned().unwrap_or_default();
@@ -368,7 +368,7 @@ fn append_description_reinstate_entries_py(
     build_catalog: Bound<'_, PyAny>,
     catalog_index: Bound<'_, PyAny>,
     ctx: &Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let entries_val = super::py_to_value(entries)?;
     let arr = entries_val.as_array().cloned().unwrap_or_default();
@@ -405,7 +405,7 @@ fn drop_recomposed_tools_with_empty_properties_py(
     tools: Bound<'_, PyAny>,
     catalog_index: Bound<'_, PyAny>,
     ctx: &Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let val = super::py_to_value(tools)?;
     let arr = val.as_array().cloned().unwrap_or_default();
@@ -491,25 +491,25 @@ fn is_mcp_optional_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
 }
 
 #[pyfunction(name = "stash_system_tools")]
-fn stash_system_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn stash_system_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let arr = py_list_values(tools)?;
     super::value_to_py(py, &Value::Array(policies::stash_system_tools(&arr)))
 }
 
 #[pyfunction(name = "restore_system_tools")]
-fn restore_system_tools_py(py: Python<'_>, stash: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn restore_system_tools_py(py: Python<'_>, stash: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let arr = py_list_values(stash)?;
     super::value_to_py(py, &Value::Array(policies::restore_system_tools(&arr)))
 }
 
 #[pyfunction(name = "stash_mcp_tools")]
-fn stash_mcp_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn stash_mcp_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let arr = py_list_values(tools)?;
     super::value_to_py(py, &Value::Array(policies::stash_mcp_tools(&arr)))
 }
 
 #[pyfunction(name = "restore_mcp_tools")]
-fn restore_mcp_tools_py(py: Python<'_>, stash: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn restore_mcp_tools_py(py: Python<'_>, stash: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let arr = py_list_values(stash)?;
     super::value_to_py(py, &Value::Array(policies::restore_mcp_tools(&arr)))
 }
@@ -520,7 +520,7 @@ fn merge_tools_preserving_order_py(
     original: Bound<'_, PyAny>,
     pruned_by_name: &Bound<'_, PyDict>,
     stashed_by_name: &Bound<'_, PyDict>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let orig = py_list_values(original)?;
     let mut pruned = HashMap::new();
     for (k, v) in pruned_by_name.iter() {
@@ -538,7 +538,7 @@ fn merge_tools_preserving_order_py(
 fn split_anthropic_tools_py(
     py: Python<'_>,
     tools: Bound<'_, PyAny>,
-) -> PyResult<(PyObject, PyObject)> {
+) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
     let arr = py_list_values(tools)?;
     let (non_system, system) = policies::split_anthropic_tools(&arr);
     Ok((
@@ -548,27 +548,27 @@ fn split_anthropic_tools_py(
 }
 
 #[pyfunction(name = "entries_for_policy")]
-fn entries_for_policy_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, all_entries: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn entries_for_policy_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, all_entries: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(all_entries)?;
     super::value_to_py(py, &Value::Array(policies::entries_for_policy(&ctx, &arr)))
 }
 
 #[pyfunction(name = "tools_for_catalog")]
-fn tools_for_catalog_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn tools_for_catalog_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(tools)?;
     super::value_to_py(py, &Value::Array(policies::tools_for_catalog(&ctx, &arr)))
 }
 
 #[pyfunction(name = "system_required_enum_values")]
-fn system_required_enum_values_py(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn system_required_enum_values_py(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let val = super::py_to_value(data)?;
     hashset_to_py_list(py, policies::system_required_enum_values(&val))
 }
 
 #[pyfunction(name = "mcp_required_enum_values")]
-fn mcp_required_enum_values_py(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn mcp_required_enum_values_py(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let val = super::py_to_value(data)?;
     hashset_to_py_list(py, policies::mcp_required_enum_values(&val))
 }
@@ -642,7 +642,7 @@ fn direct_root_optional_chunks_for_tool_py(
     py: Python<'_>,
     items: Bound<'_, PyAny>,
     tool_id: &str,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let arr = py_list_values(items)?;
     let out = policies::direct_root_optional_chunks_for_tool(&arr, tool_id);
     super::value_to_py(py, &Value::Array(out))
@@ -679,7 +679,7 @@ fn extract_document_text_py(item: Bound<'_, PyAny>) -> PyResult<Option<String>> 
 }
 
 #[pyfunction(name = "extract_level_info")]
-fn extract_level_info_py(py: Python<'_>, item: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn extract_level_info_py(py: Python<'_>, item: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let lines = crate::documents::extract_level_info(&super::py_to_value(item)?);
     let list: Vec<Value> = lines.into_iter().map(Value::String).collect();
     super::value_to_py(py, &Value::Array(list))
@@ -706,7 +706,7 @@ impl PyCatalogBuilder {
         Ok(())
     }
 
-    fn get_tool_info(&self, py: Python<'_>, server_name: &str, tool_name: &str) -> PyResult<Option<PyObject>> {
+    fn get_tool_info(&self, py: Python<'_>, server_name: &str, tool_name: &str) -> PyResult<Option<Py<PyAny>>> {
         self
             .inner
             .get_tool_info(server_name, tool_name)
@@ -714,7 +714,7 @@ impl PyCatalogBuilder {
             .transpose()
     }
 
-    fn build_index(&mut self, py: Python<'_>) -> PyResult<PyObject> {
+    fn build_index(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let index = self.inner.build_index();
         super::value_to_py(
             py,
@@ -725,7 +725,7 @@ impl PyCatalogBuilder {
         )
     }
 
-    fn write_catalog(&mut self, py: Python<'_>) -> PyResult<PyObject> {
+    fn write_catalog(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let index = self
             .inner
             .write_catalog()
@@ -744,7 +744,7 @@ impl PyCatalogBuilder {
         &mut self,
         py: Python<'_>,
         catalog_prefix: Option<&str>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let val = match catalog_prefix {
             Some(prefix) => self.inner.to_catalog_dict_with_prefix(prefix),
             None => self.inner.to_catalog_dict(),

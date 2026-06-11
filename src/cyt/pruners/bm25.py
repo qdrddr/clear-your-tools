@@ -209,7 +209,7 @@ def build_or_load_index(
         return Bm25Index(retriever, tokenizer, doc_mapping)
 
     texts = [entry["text"] for entry in corpus_entries]
-    corpus_tokens = tokenizer.tokenize(texts, return_as="tuple")
+    corpus_tokens = tokenizer.tokenize(texts, return_as="tuple", show_progress=False)
     retriever = bm25s.BM25(corpus=corpus_entries)
     retriever.index(corpus_tokens)
 
@@ -244,7 +244,12 @@ def _normalize_scores(scores: np.ndarray) -> np.ndarray:
 
 
 def _query_token_ids(tokenizer: Tokenizer, query: str) -> list[int]:
-    tokenized = tokenizer.tokenize([query], update_vocab=False, return_as="ids")
+    tokenized = tokenizer.tokenize(
+        [query],
+        update_vocab=False,
+        return_as="ids",
+        show_progress=False,
+    )
     if not isinstance(tokenized, list) or not tokenized:
         return []
     query_tokens = tokenized[0]

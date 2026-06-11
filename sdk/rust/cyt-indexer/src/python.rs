@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 use serde_json::Value;
 
-pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
+pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     let json_str = serde_json::to_string(value)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
     let json_mod = py.import("json")?;
@@ -51,7 +51,7 @@ fn catalog_tool_count_py(data: Bound<'_, PyAny>) -> PyResult<usize> {
 fn build_catalog_index_py(
     tools: Bound<'_, PyAny>,
     all_enums: Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let py = tools.py();
     let tools_val = py_to_value(tools)?;
     let enums_val = py_to_value(all_enums)?;
@@ -106,7 +106,7 @@ fn process_groups_from_policy_dict(
     let mut required_enum_values_by_tool = None;
     for key in ["required_by_tool", "required_enum_values_by_tool"] {
         if let Some(item) = policy.get_item(key)?
-            && let Ok(dict) = item.downcast_into::<PyDict>() {
+            && let Ok(dict) = item.cast_into::<PyDict>() {
                 let map = dict_to_required_by_tool(&dict)?;
                 let vec_map: std::collections::HashMap<String, Vec<String>> = map
                     .into_iter()
@@ -138,7 +138,7 @@ fn retrieve_core_py(
     survivor_json_files: Bound<'_, PyAny>,
     apply_decomposed_score_filter: bool,
     policy_options: Option<Bound<'_, PyDict>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let data_val = py_to_value(data)?;
     let mut store = json_files_from_py(store_json_files)?;
     let survivor = json_files_from_py(survivor_json_files)?;
@@ -190,7 +190,7 @@ fn get_root_tool_key_py(file_path: &str) -> Option<String> {
 }
 
 #[pyfunction(name = "collect_enums")]
-fn collect_enums_py(py: Python<'_>, schema: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn collect_enums_py(py: Python<'_>, schema: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let val = py_to_value(schema)?;
     let found = collect_enums(&val);
     value_to_py(py, &Value::Array(found))
@@ -273,6 +273,7 @@ fn path_write_catalog_prune_py() -> bool {
     default_mcp_policy,
 ))]
 fn configure_runtime_defaults_py(
+    py: Python<'_>,
     decomposed_score: f64,
     enum_score: f64,
     rerank_score: f64,
@@ -288,12 +289,10 @@ fn configure_runtime_defaults_py(
         default_system_policy: default_system_policy.to_string(),
         default_mcp_policy: default_mcp_policy.to_string(),
     });
-    Python::with_gil(|py| -> PyResult<()> {
-        if let Ok(m) = py.import("cyt_indexer._native") {
-            policies_python::refresh_runtime_attrs(&m)?;
-        }
-        Ok(())
-    })
+    if let Ok(m) = py.import("cyt_indexer._native") {
+        policies_python::refresh_runtime_attrs(&m)?;
+    }
+    Ok(())
 }
 
 #[pyfunction(name = "runtime_decomposed_score")]
@@ -333,7 +332,7 @@ fn catalog_index_to_catalog_dict_py(
     py: Python<'_>,
     index: Bound<'_, PyAny>,
     catalog_prefix: Option<&str>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let idx = catalog_index_from_py(index)?;
     let val = catalog_prefix.map_or_else(
         || idx.to_catalog_dict(),
@@ -343,12 +342,10 @@ fn catalog_index_to_catalog_dict_py(
 }
 
 #[pyfunction(name = "load_catalog")]
-fn load_catalog_py(dir_path: &str) -> PyResult<PyObject> {
-    Python::with_gil(|py| {
-        let catalog = load_catalog_from_dir(dir_path)
-            .map_err(PyErr::new::<pyo3::exceptions::PyOSError, _>)?;
-        value_to_py(py, &catalog)
-    })
+fn load_catalog_py(py: Python<'_>, dir_path: &str) -> PyResult<Py<PyAny>> {
+    let catalog = load_catalog_from_dir(dir_path)
+        .map_err(PyErr::new::<pyo3::exceptions::PyOSError, _>)?;
+    value_to_py(py, &catalog)
 }
 
 #[pyfunction(name = "chunk_survivor_key")]
@@ -363,7 +360,7 @@ fn removed_chunks_py(
     full_catalog: Bound<'_, PyAny>,
     surviving: Bound<'_, PyAny>,
     apply_decomposed_score_filter: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let removed = removed_chunks(
         &py_to_value(full_catalog)?,
         &py_to_value(surviving)?,
@@ -375,7 +372,7 @@ fn removed_chunks_py(
 }
 
 /// In-memory decomposed catalog JSON (backed by Rust [`DecomposedCatalog`]).
-#[pyclass(name = "DecomposedCatalog")]
+#[pyclass(name = "DecomposedCatalog", from_py_object)]
 #[derive(Clone)]
 struct PyDecomposedCatalog {
     inner: DecomposedCatalog,
@@ -403,7 +400,7 @@ impl PyDecomposedCatalog {
         self.inner.has_json(key)
     }
 
-    fn get_json(&self, py: Python<'_>, key: &str) -> PyResult<Option<PyObject>> {
+    fn get_json(&self, py: Python<'_>, key: &str) -> PyResult<Option<Py<PyAny>>> {
         self
             .inner
             .get_json(key)
@@ -424,7 +421,7 @@ fn catalog_to_decomposed(catalog: Bound<'_, PyAny>) -> PyResult<DecomposedCatalo
 fn anthropic_tools_to_catalog_entries_py(
     py: Python<'_>,
     tools: Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let tools_val = py_to_value(tools)?;
     let tools_arr = tools_val.as_array().cloned().unwrap_or_default();
     let (entries, enums) = crate::tool_entries::anthropic_tools_to_catalog_entries(&tools_arr);
@@ -451,7 +448,7 @@ fn retrieve_tools_py(
     apply_decomposed_score_filter: bool,
     preserve_values: Option<Vec<String>>,
     ctx: Option<Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let policy_ctx = match ctx {
         Some(c) => ctx_from_py_any(&c)?,
         None => policy_context_from_values(&Value::Object(serde_json::Map::new())),
@@ -488,7 +485,7 @@ fn prepare_tool_entry_py(
     name: &str,
     description: &str,
     input_schema: Bound<'_, PyAny>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let input_schema = py_to_value(input_schema)?;
     let entry = prepare_tool_entry(server_name, name, description, &input_schema);
     value_to_py(py, &entry)
@@ -498,14 +495,14 @@ fn prepare_tool_entry_py(
 fn anthropic_tool_to_catalog_entry_py(
     py: Python<'_>,
     tool: Bound<'_, PyAny>,
-) -> PyResult<Option<PyObject>> {
+) -> PyResult<Option<Py<PyAny>>> {
     anthropic_tool_to_catalog_entry(&py_to_value(tool)?)
         .map(|entry| value_to_py(py, &entry))
         .transpose()
 }
 
 #[pyfunction(name = "build_catalog_from_tools")]
-fn build_catalog_from_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<PyObject> {
+fn build_catalog_from_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let tools_val = py_to_value(tools)?;
     let tools_arr = tools_val.as_array().cloned().unwrap_or_default();
     let index = build_catalog_from_tools(&tools_arr);
