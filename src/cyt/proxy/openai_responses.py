@@ -374,6 +374,8 @@ def _openai_prune_request_tools(
             query,
             pruning_pipeline,
             capture_decomposed_catalog,
+            skill_entries=skill_entries or None,
+            skill_llm_out=skill_out if deferred is not None else None,
             config=config,
         )
         if final_tools is not None and pass_result is not None and pass_result.status == "applied":

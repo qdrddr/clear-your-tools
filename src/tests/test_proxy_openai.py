@@ -571,3 +571,43 @@ def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Pat
     assert skills_meta is not None
     assert skills_meta.skills_in == 0
     assert out["input"] == body["input"]
+
+
+def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output() -> None:
+    from cyt.proxy.openai_responses import _openai_prune_request_tools
+    from cyt.skills.proxy_inject import DeferredSkillsContext
+
+    deferred = DeferredSkillsContext(skill_entries=[object()], skill_out={})
+    body = {
+        "input": [
+            _user_message("find grep"),
+            {
+                "type": "tool_search_output",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "mcp__srv__tool_a",
+                        "description": "A",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                ],
+            },
+        ],
+    }
+
+    with patch(
+        "cyt.proxy.openai_responses._prune_openai_tools_array",
+        return_value=(None, None),
+    ) as mock_prune:
+        _openai_prune_request_tools(
+            body,
+            "find grep",
+            ["bm25"],
+            False,
+            deferred,
+            {},
+        )
+
+    mock_prune.assert_called_once()
+    assert mock_prune.call_args.kwargs["skill_entries"] == deferred.skill_entries
+    assert mock_prune.call_args.kwargs["skill_llm_out"] is deferred.skill_out

@@ -361,3 +361,96 @@ def test_format_removed_chunks_lines_lists_rerank_pruned_paths() -> None:
     assert "rerank pruned away" in text
     assert "schemas/decomposed/Drop.json" in text
     assert "removed since build_index" in text
+
+
+def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
+    tmp_path: Path,
+) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "proxy",
+            "pipeline": "llm",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+        },
+        "pruning": {"bm25": {"score_skills": 0.0}},
+    }
+    body = {
+        "model": "claude-test",
+        "messages": [
+            {"role": "system", "content": "# MCP Server Instructions"},
+            {"role": "user", "content": "configure agent hooks for sessions"},
+        ],
+        "tools": [{"name": "mcp__a__b", "input_schema": {}}],
+    }
+    from cyt.skills.search import MatchedSkill
+
+    matched = [
+        MatchedSkill(
+            doc_id="create-hook",
+            file_path=str(skills_dir / "create-hook.md"),
+            markdown="# Create Hook",
+            name="create-hook",
+            score=1.0,
+            token_count=10,
+        ),
+    ]
+    with (
+        patch("cyt.proxy.anthropic.request_pass_through", return_value=True),
+        patch(
+            "cyt.skills.proxy_inject.resolve_skills_for_query",
+            return_value=matched,
+        ),
+    ):
+        out, meta, skills_meta = transform_anthropic_request(body, config=config)
+
+    assert meta is not None
+    assert meta.status == "pass_through"
+    assert skills_meta is not None
+    assert skills_meta.skills_in > 0
+    assert "<agent-skills>" in out["messages"][0]["content"]
+
+
+def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> None:
+    from cyt.proxy.anthropic import _run_llm_stage
+
+    data = {"json": [{"id": "1"}], "md": [], "tools": [{"name": "t1"}]}
+    skill_entries = [object()]
+    skill_out: dict[str, object] = {}
+    config = {"skills": {"pipeline": "rerank"}, "pruning": {"llm_minimum_tools": 1}}
+
+    with (
+        patch("cyt.skills.llm.llm_prune_tools_and_skills") as mock_combined,
+        patch(
+            "cyt.proxy.anthropic.llm_catalog_dict",
+            return_value=(data, {"input": 0, "output": 0}),
+        ) as mock_tools_only,
+    ):
+        _run_llm_stage(
+            data,
+            "query",
+            trim_before_llm=False,
+            capture_catalog=False,
+            snapshots=None,
+            decomposed_breakdown={},
+            decomposed={},
+            pruning_token_usage={},
+            skill_entries=skill_entries,
+            skill_llm_out=skill_out,
+            config=config,
+        )
+
+    mock_combined.assert_not_called()
+    mock_tools_only.assert_called_once()
+    assert "matches" not in skill_out

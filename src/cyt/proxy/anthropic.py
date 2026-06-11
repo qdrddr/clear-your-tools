@@ -599,7 +599,10 @@ def _run_rerank_stage(
         from cyt.config import skills_pipeline_uses_rerank
         from cyt.skills.rerank import rerank_prune_tools_and_skills
 
-        if skills_pipeline_uses_rerank(config):
+        skill_matches_resolved = (
+            skill_llm_out is not None and skill_llm_out.get("matches") is not None
+        )
+        if skills_pipeline_uses_rerank(config) and not skill_matches_resolved:
             data, skill_matches, rerank_usage = rerank_prune_tools_and_skills(
                 data,
                 query,
@@ -657,18 +660,29 @@ def _run_llm_stage(
         data = trim_catalog_dict(data)
 
     llm_usage: StageTokenUsage
-    if skill_entries and catalog_tool_count(data) >= llm_minimum_tools(config):
+    if skill_entries:
+        from cyt.config import skills_pipeline_uses_llm
         from cyt.skills.llm import llm_prune_tools_and_skills
 
-        data, skill_matches, llm_usage = llm_prune_tools_and_skills(
-            data,
-            query,
-            skill_entries,
-            trim_before_llm=False,
-            config=config,
+        skill_matches_resolved = (
+            skill_llm_out is not None and skill_llm_out.get("matches") is not None
         )
-        if skill_llm_out is not None:
-            skill_llm_out["matches"] = skill_matches
+        if (
+            skills_pipeline_uses_llm(config)
+            and catalog_tool_count(data) >= llm_minimum_tools(config)
+            and not skill_matches_resolved
+        ):
+            data, skill_matches, llm_usage = llm_prune_tools_and_skills(
+                data,
+                query,
+                skill_entries,
+                trim_before_llm=False,
+                config=config,
+            )
+            if skill_llm_out is not None:
+                skill_llm_out["matches"] = skill_matches
+        else:
+            data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
     else:
         data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
 
@@ -1295,6 +1309,13 @@ def transform_anthropic_request(
         return original, None, skills_meta
 
     if request_pass_through(tools, policy_context_from_config()):
+        original, skills_meta = finish_deferred_skills_anthropic(
+            original,
+            skills_meta,
+            deferred,
+            config,
+            query=query,
+        )
         return original, _anthropic_pass_through_prune_result(tools), skills_meta
 
     if not user_query:
