@@ -85,7 +85,6 @@ DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
 DEFAULT_BM25_SCORE_SKILLS: float = 0.5
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
-DEFAULT_SKILLS_CACHE_DB_PATH: str = "~/.config/cyt/cache.db"
 DEFAULT_SKILLS_INJECT_VIA: str = "hook"
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.4
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
@@ -911,16 +910,6 @@ def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:
     cfg = config or load_config()
     path = _skills_settings(_merged_config(cfg)).get("catalog_dir", DEFAULT_SKILLS_CATALOG_DIR)
     return str(Path(str(path)).expanduser())
-
-
-def skills_cache_db_path(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    cache = _skills_settings(_merged_config(cfg)).get("cache", {})
-    if isinstance(cache, dict):
-        database = cache.get("database", {})
-        if isinstance(database, dict) and database.get("path"):
-            return str(Path(str(database["path"])).expanduser())
-    return str(Path(DEFAULT_SKILLS_CACHE_DB_PATH).expanduser())
 
 
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:

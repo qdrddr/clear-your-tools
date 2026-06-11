@@ -36,14 +36,12 @@ Simulate a hook locally:
 
 ```bash
 CYT_REPO=/path/to/clear-your-tools
-echo '{"hook_event_name":"SessionStart","session_id":"test","model":"gpt-4","cwd":"'"$CYT_REPO"'"}' \
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","model":"gpt-4","prompt":"configure agent hooks","cwd":"'"$CYT_REPO"'"}' \
   | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
 ```
 
 - **UserPromptSubmit** (Codex) — Codex sends `session_id`, `model`, and `prompt` on every turn; a
-  `UserPromptSubmit` hook alone is enough for injection and stats. `cyt skills` reads `model` from the
-  payload when the session cache has no prior `SessionStart` entry.
-- **SessionStart** (Claude Code) — registers `session_id` and `model` in `~/.config/cyt/cache.db`
-  because Claude does not include `model` on `UserPromptSubmit`.
+  `UserPromptSubmit` hook alone is enough for injection and stats. `cyt skills` reads `model` from
+  the hook payload.
 
 The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.

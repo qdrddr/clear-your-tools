@@ -76,18 +76,17 @@ Simulate hooks locally:
 
 ```bash
 CYT_REPO=/path/to/clear-your-tools
-echo '{"hook_event_name":"SessionStart","session_id":"test","model":"google/gemini-3-flash-preview","cwd":"'"$CYT_REPO"'","source":"startup"}' \
-  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
+TRANSCRIPT=/path/to/session.jsonl   # Claude Code session jsonl with message.model on assistant rows
 
-echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","prompt":"configure agent hooks","cwd":"'"$CYT_REPO"'"}' \
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","prompt":"configure agent hooks","transcript_path":"'"$TRANSCRIPT"'","cwd":"'"$CYT_REPO"'"}' \
   | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
 ```
 
-- **SessionStart** (Claude Code) — stdin includes `session_id` and `model`. `cyt skills` registers
-  them in `~/.config/cyt/cache.db` (`session` table). No stdout on this event.
-- **UserPromptSubmit** (Claude Code) — stdin includes `session_id` and `prompt` but not `model`. Model
-  is resolved from the session cache (written by the prior `SessionStart` for the same
-  `session_id`). BM25-matched skill chunks are returned as `additionalContext`.
+- **UserPromptSubmit** (Claude Code) — stdin includes `session_id`, `prompt`, and `transcript_path`
+  but not `model`. `cyt skills` reads `message.model` from the transcript jsonl (latest assistant
+  row). BM25-matched skill chunks are returned as `additionalContext`. Debug logs record the
+  resolved model as `details.resolved_model`.
+- **SessionStart** — not required; legacy `SessionStart` hooks are ignored if still configured.
 
 The first inject may build the per-skill catalog under `~/.config/cyt/skills/entries/`; later runs
 reuse cached decomposed indexes.

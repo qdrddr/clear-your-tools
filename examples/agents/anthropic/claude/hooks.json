@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cyt skills",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [

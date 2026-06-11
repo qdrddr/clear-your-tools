@@ -177,9 +177,7 @@ def test_inject_skills_skipped_when_inject_via_hook(monkeypatch: pytest.MonkeyPa
 def test_hook_skips_user_prompt_when_inject_via_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        cache_path = str(root / "cache.db")
         config = _skills_config(root)
-        config["skills"]["cache"] = {"database": {"path": cache_path}}
         payload = {
             "hook_event_name": "UserPromptSubmit",
             "session_id": "sess-proxy",
@@ -190,7 +188,6 @@ def test_hook_skips_user_prompt_when_inject_via_proxy(monkeypatch: pytest.Monkey
         monkeypatch.setattr("sys.stdout", stdout)
 
         with patch("cyt.skills.cli.load_config", return_value=config):
-            with patch("cyt.skills.cache.skills_cache_db_path", return_value=cache_path):
-                skills_cli.run()
+            skills_cli.run()
 
         assert stdout.getvalue() == ""

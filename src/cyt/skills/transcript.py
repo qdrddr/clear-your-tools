@@ -68,6 +68,48 @@ def _claude_assistant_from_record(record: dict[str, Any]) -> str | None:
     return _text_from_claude_content(message.get("content"))
 
 
+def _model_from_record(record: dict[str, Any]) -> str | None:
+    message = record.get("message")
+    if isinstance(message, dict):
+        model = message.get("model")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    model = record.get("model")
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    return None
+
+
+def model_from_transcript(path: str) -> str | None:
+    """Scan transcript jsonl backwards; return latest message.model when found."""
+    transcript = Path(path).expanduser()
+    if not transcript.is_file():
+        return None
+
+    try:
+        lines = transcript.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        logger.debug("skills transcript read failed: %s", exc)
+        return None
+
+    for line in reversed(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+
+        model = _model_from_record(record)
+        if model:
+            return model
+
+    return None
+
+
 def _assistant_text_from_record(record: dict[str, Any]) -> tuple[str | None, str | None]:
     """Return (text, phase) for assistant rows; phase only set for Codex."""
     record_type = record.get("type")

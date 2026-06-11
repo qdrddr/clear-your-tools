@@ -236,9 +236,6 @@ skills:
   inject_via: hook # or proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
-  cache:
-    database:
-      path: ~/.config/cyt/cache.db
   pageindex:
     if_add_node_id: true
     if_add_node_text: false
