@@ -155,7 +155,6 @@ jobs:
       - name: Fetch Rust dependencies
         shell: bash
         env:
-          CARGO_HTTP_MULTIPLEXING: ${{ runner.os == 'Windows' && 'false' || '' }}
           CARGO_NET_RETRY: 10
         run: |
           set -euo pipefail
@@ -175,7 +174,6 @@ jobs:
         working-directory: sdk/typescript
         shell: bash
         env:
-          CARGO_HTTP_MULTIPLEXING: ${{ runner.os == 'Windows' && 'false' || '' }}
           CARGO_NET_RETRY: 10
         run: |
           set -euo pipefail
