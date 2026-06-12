@@ -188,6 +188,34 @@ def test_required_proxy_env_var_names_skips_skills_bm25(
     config["skills"] = {"enabled": True, "pipeline": "bm25"}
 
     assert configs.required_proxy_env_var_names(config) == []
+    assert configs.required_skills_env_var_names(config) == []
+
+
+def test_required_skills_env_var_names_llm_pipeline(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["skills"] = {"enabled": True, "pipeline": "llm"}
+
+    assert configs.required_skills_env_var_names(config) == ["OPENROUTER_API_KEY"]
+
+
+def test_required_pruning_env_var_names_llm_pipeline(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["pipeline"] = ["llm"]
+
+    assert configs.required_pruning_env_var_names(config) == ["OPENROUTER_API_KEY"]
+
+
+def test_required_pruning_env_var_names_bm25_only(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["pipeline"] = ["bm25"]
+
+    assert configs.required_pruning_env_var_names(config) == []
 
 
 def test_format_proxy_env_help_lists_alternatives() -> None:

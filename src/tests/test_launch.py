@@ -531,6 +531,7 @@ pruning:
             encoding="utf-8",
         )
         monkeypatch.setenv(_openrouter_api_key_var(), "from-shell")
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         config = configs.load_config(user_config)
         sources: dict[str, str] = {}
         ensure_runtime_credentials(
@@ -544,7 +545,7 @@ pruning:
 
 
 class TestCodexProvider:
-    def test_restore_removes_managed_block(
+    def test_restore_is_noop_and_preserves_managed_block(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -553,10 +554,30 @@ class TestCodexProvider:
         monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
         env_key = _codex_openai_api_key_var()
         configure_provider(port=8834, endpoint="openai", env_key=env_key)
+        before = codex_path.read_text(encoding="utf-8")
+        delete_mock = MagicMock(
+            side_effect=AssertionError("must not delete keyring secrets"),
+        )
+        monkeypatch.setattr("keyring.delete_password", delete_mock)
         restore_provider(env_key=env_key)
-        text = codex_path.read_text(encoding="utf-8")
-        assert MANAGED_START not in text
-        assert MANAGED_END not in text
+        after = codex_path.read_text(encoding="utf-8")
+        assert MANAGED_START in after
+        assert MANAGED_END in after
+        assert after == before
+        delete_mock.assert_not_called()
+
+    def test_configure_is_noop_when_block_unchanged(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        codex_path = tmp_path / "config.toml"
+        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        env_key = _codex_openai_api_key_var()
+        configure_provider(port=8834, endpoint="openai", env_key=env_key)
+        before = codex_path.read_text(encoding="utf-8")
+        ensure_provider_configured(port=8834, endpoint="openai", env_key=env_key)
+        assert codex_path.read_text(encoding="utf-8") == before
 
     def test_rejects_managed_override_args(self) -> None:
         with pytest.raises(SystemExit, match="Cannot override cyt-managed"):
@@ -659,4 +680,4 @@ class TestLaunchRun:
 
         run_launch(args)
         text = codex_path.read_text(encoding="utf-8")
-        assert MANAGED_START not in text
+        assert MANAGED_START in text

@@ -75,8 +75,18 @@ def resolve_remote_pruning_settings(
 
     nick = str(model_nick)
     model_name, api_key, base_url = resolve_model(nick, model_kind, "remote", config=cfg)
+    key_var = key_var_name_for_model_nick(cfg, model_kind, nick)
     if not api_key:
-        key_var = key_var_name_for_model_nick(cfg, model_kind, nick)
+        from cyt.launch.secrets import _snapshot_env, resolve_credential
+
+        resolved, _source = resolve_credential(
+            key_var,
+            before_env=_snapshot_env(),
+            allow_prompt=False,
+        )
+        if resolved:
+            api_key = resolved
+    if not api_key:
         print(f"Error: {key_var} not found.", file=sys.stderr)
         sys.exit(1)
 

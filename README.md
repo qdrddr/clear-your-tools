@@ -245,30 +245,18 @@ From PyPI (proxy + pruners):
 uv tool install 'clear-your-tools[all]'
 ```
 
-### 2. Run the proxy
-
-Installed CLI:
-
-```bash
-cyt proxy --upstream https://api.anthropic.com
-# Or
-cyt proxy --upstream https://api.openai.com
-```
-
-Canonical upstream URLs infer `--upstream-kind` automatically. For other providers (e.g. OpenRouter),
-pass `--upstream-kind` explicitly.
-
-Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
-
-### 3. Launch an agent (optional)
+### 2. Launch an agent
 
 One-command jump-start through the proxy:
 
 ```bash
 cyt launch -- claude
 cyt launch -- codex
-cyt launch --endpoint openrouter -- claude --model haiku
-cyt launch --upstream https://api.anthropic.com -- claude
+
+# 3rd party providers
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="google/gemini-3.1-flash-lite"
+export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"
+cyt launch --upstream https://openrouter.ai/api -- claude --model haiku
 ```
 
 `cyt launch` shares the same upstream and credential bootstrap as `cyt proxy`, starts the proxy
@@ -277,7 +265,25 @@ if needed, prints a manual recipe to stderr (suppress with `--quiet`), then exec
 For Codex, `cyt launch --configure -- codex` writes the managed provider block to
 `~/.codex/config.toml`; `cyt launch --restore -- codex` removes it.
 
-### 4. Run the agent manually
+### 3. Run the proxy (optional)
+
+Installed CLI:
+
+```bash
+cyt proxy --upstream https://api.anthropic.com
+# Or
+cyt proxy --upstream https://api.openai.com
+
+# 3rd party provider
+cyt proxy --upstream https://openrouter.ai/api --upstream-kind anthropic
+```
+
+Canonical upstream URLs infer `--upstream-kind` automatically. For other providers (e.g. OpenRouter),
+pass `--upstream-kind` explicitly.
+
+Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
+
+### 4. Run the agent manually (optional)
 
 Point the agent at the proxy (default port **8834**). More examples are in
 [./examples/agents](./examples/agents).
@@ -319,12 +325,11 @@ remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost t
 ### 5. View pruning stats savings
 
 ```bash
-cyt stats totals
-cyt stats summary --period day
-cyt stats events --limit 20
+cyt stats
 
 # Optional (recommended):
 cyt setup
+cyt stats --add
 ```
 
 Stats are stored in `~/.config/cyt/stats.db` by default.

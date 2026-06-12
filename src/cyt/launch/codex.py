@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from cyt.launch.config import codex_env_key_name
-from cyt.launch.secrets import delete_keyring_secret
 
 CODEX_CONFIG_PATH = Path.home() / ".codex" / "config.toml"
 PROVIDER_NAME = "cyt"
@@ -44,12 +43,23 @@ def _provider_block(*, base_url: str, env_key: str) -> str:
     )
 
 
-def _strip_managed_block(text: str) -> str:
-    pattern = re.compile(
+def _managed_block_re() -> re.Pattern[str]:
+    return re.compile(
         rf"{re.escape(MANAGED_START)}.*?{re.escape(MANAGED_END)}\n?",
         re.DOTALL,
     )
-    return pattern.sub("", text)
+
+
+def _extract_managed_block(text: str) -> str | None:
+    match = _managed_block_re().search(text)
+    if match is None:
+        return None
+    return match.group(0)
+
+
+def _desired_provider_block(*, port: int, endpoint: str, env_key: str) -> str:
+    base_url = f"http://127.0.0.1:{port}/{endpoint}/v1"
+    return _provider_block(base_url=base_url, env_key=env_key)
 
 
 def read_codex_config() -> str:
@@ -63,27 +73,43 @@ def write_codex_config(text: str) -> None:
     CODEX_CONFIG_PATH.write_text(text, encoding="utf-8")
 
 
+def _sync_managed_provider_block(
+    *,
+    port: int,
+    endpoint: str,
+    env_key: str,
+) -> bool:
+    """Ensure the launch-managed block matches desired settings.
+
+    Returns True when ``~/.codex/config.toml`` was updated.
+    """
+    desired = _desired_provider_block(port=port, endpoint=endpoint, env_key=env_key)
+    current = read_codex_config()
+    existing = _extract_managed_block(current)
+    if existing == desired:
+        return False
+    if existing is not None:
+        write_codex_config(_managed_block_re().sub(desired, current, count=1))
+        return True
+    stripped = current.rstrip()
+    text = f"{stripped}\n\n{desired}" if stripped else desired
+    write_codex_config(text)
+    return True
+
+
 def configure_provider(
     *,
     port: int,
     endpoint: str,
     env_key: str,
 ) -> None:
-    """Write launch-managed provider block into ~/.codex/config.toml."""
-    base_url = f"http://127.0.0.1:{port}/{endpoint}/v1"
-    existing = _strip_managed_block(read_codex_config()).rstrip()
-    block = _provider_block(base_url=base_url, env_key=env_key)
-    if existing:
-        text = f"{existing}\n\n{block}"
-    else:
-        text = block
-    write_codex_config(text)
+    """Write or update the launch-managed provider block in ``~/.codex/config.toml``."""
+    _sync_managed_provider_block(port=port, endpoint=endpoint, env_key=env_key)
 
 
 def restore_provider(*, env_key: str) -> None:
-    """Remove launch-managed provider block and keyring secret."""
-    write_codex_config(_strip_managed_block(read_codex_config()).rstrip() + "\n")
-    delete_keyring_secret(env_key)
+    """Legacy no-op: managed Codex config and keyring entries are never removed."""
+    del env_key
 
 
 def validate_agent_args(agent_args: list[str]) -> None:
@@ -118,17 +144,12 @@ def provider_configured() -> bool:
 
 def managed_provider_base_url() -> str | None:
     """Return the base_url from the launch-managed Codex provider block, if present."""
-    text = read_codex_config()
-    pattern = re.compile(
-        rf"{re.escape(MANAGED_START)}.*?{re.escape(MANAGED_END)}",
-        re.DOTALL,
-    )
-    match = pattern.search(text)
-    if match is None:
+    block = _extract_managed_block(read_codex_config())
+    if block is None:
         return None
     url_match = re.search(
         r'base_url\s*=\s*"(?P<url>[^"]+)"',
-        match.group(0),
+        block,
     )
     if url_match is None:
         return None
@@ -141,11 +162,8 @@ def ensure_provider_configured(
     endpoint: str,
     env_key: str,
 ) -> None:
-    """Write or refresh the launch-managed provider block when settings changed."""
-    expected_base_url = f"http://127.0.0.1:{port}/{endpoint}/v1"
-    if managed_provider_base_url() == expected_base_url and provider_configured():
-        return
-    configure_provider(port=port, endpoint=endpoint, env_key=env_key)
+    """Add, update, or leave unchanged the launch-managed provider block."""
+    _sync_managed_provider_block(port=port, endpoint=endpoint, env_key=env_key)
 
 
 def run(

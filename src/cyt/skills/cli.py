@@ -9,7 +9,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cyt.config import load_config, skills_enabled
+from cyt.config import (
+    load_config,
+    pruning_pipeline_from_config,
+    required_pruning_env_var_names,
+    required_skills_env_var_names,
+    skills_enabled,
+    skills_pipeline,
+)
 from cyt.skills.catalog import build_registry
 from cyt.skills.debug_log import write_skills_hook_debug_log
 from cyt.skills.hook_payload import (
@@ -41,6 +48,62 @@ _CLI_OUTCOME_HINTS: dict[str, str] = {
     "user_prompt_empty_injection": "matched chunks produced empty injection text",
     "user_prompt_missing_prompt": "missing or empty prompt",
 }
+
+
+def _ensure_skills_credentials(config: dict[str, Any]) -> None:
+    """Load skills-pruner API keys (keyring, .env, shell) before remote search."""
+    if not skills_enabled(config):
+        return
+    names = required_skills_env_var_names(config)
+    if not names:
+        return
+    from cyt.launch.secrets import ensure_named_credentials
+
+    ensure_named_credentials(names, allow_prompt=False)
+
+
+def _print_required_api_keys(label: str, names: list[str], *, empty_hint: str) -> None:
+    from cyt.launch.secrets import inspect_named_credentials
+
+    if not names:
+        print(f"{label}: (none — {empty_hint})")
+        return
+
+    print(f"{label}:")
+    for name, source in inspect_named_credentials(names):
+        if source:
+            print(f"  {name}: {source}")
+        else:
+            print(f"  {name}: missing")
+
+
+def _print_skills_test_report(config: dict[str, Any]) -> None:
+    """Print skills/pruning pipeline settings and required API key resolution."""
+    enabled = skills_enabled(config)
+    pipeline = skills_pipeline(config)
+    pruning_pipeline = pruning_pipeline_from_config(config)
+    print(f"skills.enabled: {enabled}")
+    print(f"skills.pipeline: {pipeline}")
+    print(f"pruning.pipeline: {pruning_pipeline}")
+
+    if not enabled:
+        _print_required_api_keys(
+            "Skills API keys",
+            [],
+            empty_hint="skills disabled",
+        )
+    else:
+        _print_required_api_keys(
+            "Skills API keys",
+            required_skills_env_var_names(config),
+            empty_hint="BM25 pipeline needs no remote keys",
+        )
+
+    _print_required_api_keys(
+        "Pruning API keys",
+        required_pruning_env_var_names(config),
+        empty_hint="BM25 pipeline needs no remote keys",
+    )
 
 
 def _report_cli_outcome(outcome: str) -> None:
@@ -222,9 +285,14 @@ def run(
     debug: bool = False,
     prompt: str | None = None,
     model: str | None = None,
+    test: bool = False,
 ) -> None:
     configure_hook_quiet()
     config = load_config()
+    if test:
+        _print_skills_test_report(config)
+        return
+
     raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
     cwd = hook_cwd(payload)
     enabled = skills_enabled(config)
@@ -238,6 +306,8 @@ def run(
         cwd=cwd,
     ):
         return
+
+    _ensure_skills_credentials(config)
 
     event_name = hook_event_name(payload)
     outcome, details = _dispatch_hook_event(

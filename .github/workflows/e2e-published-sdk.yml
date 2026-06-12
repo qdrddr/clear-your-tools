@@ -3,6 +3,8 @@
 #
 # Runs after publish-crates.yml succeeds (workflow_run). Polls each registry until
 # CYT_RELEASE_VERSION is installable, then runs isolated harnesses under sdk/e2e/.
+# Wait steps use continue-on-error so a registry timeout still runs the test step
+# (publish may still be in flight; the install/test step is the real gate).
 
 name: 4. E2E published packages
 
@@ -55,6 +57,7 @@ jobs:
         run: sdk/e2e/scripts/render-manifests.sh
 
       - name: Wait for crates.io
+        continue-on-error: true
         run: sdk/e2e/scripts/wait-registry.sh crate
 
       - name: Test published crate
@@ -82,6 +85,7 @@ jobs:
         run: sdk/e2e/scripts/render-manifests.sh
 
       - name: Wait for PyPI (cyt-indexer-sdk)
+        continue-on-error: true
         run: sdk/e2e/scripts/wait-registry.sh pypi-sdk
 
       - name: Test published Python SDK
@@ -110,6 +114,7 @@ jobs:
         run: sdk/e2e/scripts/render-manifests.sh
 
       - name: Wait for npm
+        continue-on-error: true
         run: sdk/e2e/scripts/wait-registry.sh npm
 
       - name: Test published npm package
@@ -139,6 +144,7 @@ jobs:
         run: sdk/e2e/scripts/render-manifests.sh
 
       - name: Wait for PyPI (SDK then app)
+        continue-on-error: true
         run: sdk/e2e/scripts/wait-registry.sh pypi-app
 
       - name: Test published app package

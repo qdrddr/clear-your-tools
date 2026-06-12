@@ -124,6 +124,23 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Configure Cargo for Windows network reliability
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "${HOME}/.cargo"
+          cat >> "${HOME}/.cargo/config.toml" <<'EOF'
+          [http]
+          multiplexing = false
+          EOF
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          cache-on-failure: true
+
       - name: Install dependencies
         working-directory: sdk/typescript
         run: npm ci
@@ -135,19 +152,53 @@ jobs:
           echo "Setting cyt-indexer-sdk version to ${{ needs.resolve-version.outputs.version }}"
           npm version "${{ needs.resolve-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
+      - name: Fetch Rust dependencies
+        shell: bash
+        env:
+          CARGO_HTTP_MULTIPLEXING: ${{ runner.os == 'Windows' && 'false' || '' }}
+          CARGO_NET_RETRY: 10
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if cargo fetch \
+              --manifest-path sdk/rust/cyt-indexer/Cargo.toml \
+              -p cyt-indexer \
+              --features node \
+              --no-default-features \
+              --target "${{ matrix.target }}"; then
+              exit 0
+            fi
+            echo "cargo fetch failed (attempt ${attempt}/5), retrying in $((attempt * 15))s..."
+            sleep $((attempt * 15))
+          done
+          echo "::error::cargo fetch failed after 5 attempts"
+          exit 1
+
       - name: Build native binding
         working-directory: sdk/typescript
         shell: bash
+        env:
+          CARGO_HTTP_MULTIPLEXING: ${{ runner.os == 'Windows' && 'false' || '' }}
+          CARGO_NET_RETRY: 10
         run: |
-          npx napi build --platform --release \
-            --manifest-path ../rust/cyt-indexer/Cargo.toml \
-            -p cyt-indexer \
-            --features node \
-            --no-default-features \
-            --output-dir . \
-            --js native.cjs \
-            --dts native.d.ts \
-            --target "${{ matrix.target }}"
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if npx napi build --platform --release \
+              --manifest-path ../rust/cyt-indexer/Cargo.toml \
+              -p cyt-indexer \
+              --features node \
+              --no-default-features \
+              --output-dir . \
+              --js native.cjs \
+              --dts native.d.ts \
+              --target "${{ matrix.target }}"; then
+              exit 0
+            fi
+            echo "napi build failed (attempt ${attempt}/5), retrying in $((attempt * 15))s..."
+            sleep $((attempt * 15))
+          done
+          echo "::error::napi build failed after 5 attempts"
+          exit 1
 
       - name: Stage native binding
         shell: bash

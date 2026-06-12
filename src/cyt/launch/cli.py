@@ -94,7 +94,7 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
     launch_parser.add_argument(
         "--restore",
         action="store_true",
-        help="Remove launch-managed Codex provider config (codex agent)",
+        help="Legacy no-op for codex (managed ~/.codex/config.toml is preserved)",
     )
     launch_parser.add_argument(
         "remainder",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -406,6 +407,11 @@ def test_user_prompt_uses_transcript_query_for_all_pipelines(
 
         config = _skills_config(root, skills_dir, catalog_dir)
         config["skills"]["pipeline"] = pipeline
+        if pipeline == "rerank":
+            monkeypatch.setenv("DEEPINFRA_API_KEY", "test-key")
+        elif pipeline == "llm":
+            monkeypatch.setenv("OPENROUTER_" + "API_KEY", "test-key")
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         captured: dict[str, str] = {}
 
         def _capture_search(query: str, entries: list, *, config: dict) -> list:
@@ -488,3 +494,144 @@ def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
         assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
         assert "pruning model tokens" not in raw
         assert "hookSpecificOutput" not in output["hookSpecificOutput"]["additionalContext"]
+
+
+def test_skills_test_reports_required_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = {
+        "skills": {"enabled": True, "pipeline": "llm"},
+        "pruning": {
+            "pipeline": ["bm25"],
+            "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+        },
+        "models": {
+            "llm": {
+                "remote": [
+                    {
+                        "nick": "mercury-2",
+                        "name": "inception/mercury-2",
+                        "provider": "openrouter",
+                        "key_var_name": "OPENROUTER_" + "API_KEY",
+                    },
+                ],
+            },
+        },
+    }
+    monkeypatch.setattr("cyt.config.load_user_config_overlay", lambda _path=None: {})
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    monkeypatch.setenv("OPENROUTER_" + "API_KEY", "from-shell")
+
+    with patch("cyt.skills.cli.load_config", return_value=config):
+        skills_cli.run(test=True)
+
+    out = capsys.readouterr().out
+    assert "skills.enabled: True" in out
+    assert "skills.pipeline: llm" in out
+    assert "pruning.pipeline: ['bm25']" in out
+    assert "Skills API keys:" in out
+    assert "Pruning API keys:" in out
+    assert "OPENROUTER_" + "API_KEY" in out
+    assert "env: shell" in out
+
+
+def test_skills_test_reports_pruning_pipeline_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = {
+        "skills": {"enabled": False, "pipeline": "bm25"},
+        "pruning": {
+            "pipeline": ["llm"],
+            "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+        },
+        "models": {
+            "llm": {
+                "remote": [
+                    {
+                        "nick": "mercury-2",
+                        "name": "inception/mercury-2",
+                        "provider": "openrouter",
+                        "key_var_name": "OPENROUTER_" + "API_KEY",
+                    },
+                ],
+            },
+        },
+    }
+    monkeypatch.setattr("cyt.config.load_user_config_overlay", lambda _path=None: {})
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    monkeypatch.setenv("OPENROUTER_" + "API_KEY", "from-shell")
+
+    with patch("cyt.skills.cli.load_config", return_value=config):
+        skills_cli.run(test=True)
+
+    out = capsys.readouterr().out
+    assert "skills.enabled: False" in out
+    assert "pruning.pipeline: ['llm']" in out
+    assert "Skills API keys: (none — skills disabled)" in out
+    assert "Pruning API keys:" in out
+    assert "OPENROUTER_" + "API_KEY" in out
+    assert "env: shell" in out
+
+
+def test_hook_resolves_skills_key_from_keyring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "demo.md",
+            "---\nname: demo\ndescription: demo skill\n---\n# Demo\n\nBody text.\n",
+        )
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "llm",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "max_tokens_per_request": 4000,
+            },
+            "pruning": {
+                "pipeline": ["bm25"],
+                "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+            },
+            "models": {
+                "llm": {
+                    "remote": [
+                        {
+                            "nick": "mercury-2",
+                            "name": "inception/mercury-2",
+                            "provider": "openrouter",
+                            "key_var_name": "OPENROUTER_" + "API_KEY",
+                        },
+                    ],
+                },
+            },
+            "stats": {"database": {"path": str(root / "stats.db")}},
+        }
+        monkeypatch.setattr("cyt.config.load_user_config_overlay", lambda _path=None: {})
+        monkeypatch.delenv("OPENROUTER_" + "API_KEY", raising=False)
+        monkeypatch.setattr(
+            "cyt.launch.secrets._read_keyring",
+            lambda name: "keyring-secret" if name == "OPENROUTER_" + "API_KEY" else None,
+        )
+        monkeypatch.setattr(
+            "cyt.skills.llm.llm_skill_nodes",
+            lambda query, entries, config=None: ([], {}),
+        )
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "sess-keyring",
+            "model": "gpt-4",
+            "prompt": "demo skill",
+            "cwd": str(root),
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            skills_cli.run()
+
+        assert os.environ.get("OPENROUTER_" + "API_KEY") == "keyring-secret"

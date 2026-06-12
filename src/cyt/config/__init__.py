@@ -1082,28 +1082,28 @@ def _append_pruning_stage_env_var(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> None:
+    merged = _config_with_bundled_defaults(config)
     model_kind, nick_key = _PIPELINE_STAGE_MODEL_KEYS[stage]
     user = _user_overlay_for_config(config, user_config=user_config)
-    model_nick = pruning_stage_model_nick(config, stage, user_config=user)
+    model_nick = pruning_stage_model_nick(merged, stage, user_config=user)
     if not model_nick:
         raise ValueError(
             f"pruning.{stage}.model.remote.model_nick "
             f"(or defaults.remote.{nick_key}) is required when "
             f"{stage!r} is configured",
         )
-    add(key_var_name_for_model_nick(config, model_kind, model_nick))
+    add(key_var_name_for_model_nick(merged, model_kind, model_nick))
 
 
 def _append_pipeline_stage_env_vars(
     config: dict[str, Any],
     add: Callable[[str], None],
 ) -> None:
-    user = load_user_config_overlay()
     for stage in pruning_pipeline_from_config(config):
         if stage == "rerank":
-            _append_pruning_stage_env_var(config, "rerank", add, user_config=user)
+            _append_pruning_stage_env_var(config, "rerank", add)
         elif stage == "llm":
-            _append_pruning_stage_env_var(config, "llm", add, user_config=user)
+            _append_pruning_stage_env_var(config, "llm", add)
 
 
 def _append_skills_pipeline_env_vars(
@@ -1113,11 +1113,39 @@ def _append_skills_pipeline_env_vars(
     if not skills_enabled(config):
         return
     pipeline = skills_pipeline(config).strip().lower()
-    user = load_user_config_overlay()
     if pipeline == "rerank":
-        _append_pruning_stage_env_var(config, "rerank", add, user_config=user)
+        _append_pruning_stage_env_var(config, "rerank", add)
     elif pipeline == "llm":
-        _append_pruning_stage_env_var(config, "llm", add, user_config=user)
+        _append_pruning_stage_env_var(config, "llm", add)
+
+
+def required_skills_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Environment variable names required by the configured skills pruner pipeline."""
+    merged = _config_with_bundled_defaults(config)
+    required: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            required.append(name)
+
+    _append_skills_pipeline_env_vars(merged, add)
+    return required
+
+
+def required_pruning_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Environment variable names required by the configured tool pruning pipeline."""
+    required: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            required.append(name)
+
+    _append_pipeline_stage_env_vars(config, add)
+    return required
 
 
 def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
@@ -1130,8 +1158,10 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
             seen.add(name)
             required.append(name)
 
-    _append_pipeline_stage_env_vars(config, add)
-    _append_skills_pipeline_env_vars(config, add)
+    for name in required_pruning_env_var_names(config):
+        add(name)
+    for name in required_skills_env_var_names(config):
+        add(name)
 
     return required
 

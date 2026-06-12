@@ -272,6 +272,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Model name for stats when using --prompt (optional)",
     )
+    skills_parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
+    )
 
     subparsers.add_parser(
         "setup",
@@ -418,6 +423,7 @@ def main() -> None:
             debug=bool(getattr(args, "debug", False)),
             prompt=getattr(args, "prompt", None),
             model=getattr(args, "model", None),
+            test=bool(getattr(args, "test", False)),
         )
         return
 
