@@ -452,6 +452,25 @@ def apply_upstream_cli_to_config(
         upstream_kind,
         upstream_name=upstream_name,
     )
+    new_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
+    new_name = str(new_upstream["upstream"])
+    new_kind = normalize_upstream_kind(str(new_upstream["kind"]))
+    new_url = normalize_upstream_url(str(new_upstream["url"]))
+
+    for entry in _reverse_proxy_section(existing).get("upstreams", []):
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("upstream")) != new_name:
+            continue
+        existing_kind = normalize_upstream_kind(str(entry.get("kind", "")))
+        existing_url = normalize_upstream_url(
+            str(entry.get("url") or entry.get("host_url") or entry.get("base_url") or ""),
+        )
+        if existing_kind == new_kind and existing_url == new_url:
+            endpoints = _reverse_proxy_section(existing).get("endpoints", [])
+            if isinstance(endpoints, list) and new_name in [str(item) for item in endpoints]:
+                return new_name
+
     merged = merge_setup_overlay(existing, overlay)
     save_user_config(config_path, merged, apply_bundled_sections=False)
     endpoints = overlay["network"]["proxy"]["reverse"]["endpoints"]
@@ -782,6 +801,16 @@ def _prompt(text: str, default: str | None = None) -> str:
     if not value and default is not None:
         return default
     return value
+
+
+def prompt_with_default(text: str, default: str | None = None) -> str:
+    """Prompt on stdin with an optional default value."""
+    return _prompt(text, default)
+
+
+def prompt_required(text: str, default: str | None = None) -> str:
+    """Prompt until a non-empty value is entered."""
+    return _prompt_required(text, default)
 
 
 def _prompt_required(text: str, default: str | None = None) -> str:
@@ -1278,7 +1307,7 @@ def run_add_costs_wizard(config_path: Path) -> None:
     config = load_user_config_overlay(config_path)
     missing = iter_models_missing_costs(config)
     if not missing:
-        print("All LLM and reranker models already have input/output costs configured.")
+        print("\nAll LLM and reranker models already have input/output costs configured.")
         return
 
     print("\n--- Model token pricing ---")

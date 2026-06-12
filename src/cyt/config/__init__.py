@@ -1075,33 +1075,53 @@ def key_var_name_for_model_nick(
     return str(key_var_name)
 
 
+def _append_pruning_stage_env_var(
+    config: dict[str, Any],
+    stage: Literal["rerank", "llm"],
+    add: Callable[[str], None],
+    *,
+    user_config: dict[str, Any] | None = None,
+) -> None:
+    model_kind, nick_key = _PIPELINE_STAGE_MODEL_KEYS[stage]
+    user = _user_overlay_for_config(config, user_config=user_config)
+    model_nick = pruning_stage_model_nick(config, stage, user_config=user)
+    if not model_nick:
+        raise ValueError(
+            f"pruning.{stage}.model.remote.model_nick "
+            f"(or defaults.remote.{nick_key}) is required when "
+            f"{stage!r} is configured",
+        )
+    add(key_var_name_for_model_nick(config, model_kind, model_nick))
+
+
 def _append_pipeline_stage_env_vars(
     config: dict[str, Any],
     add: Callable[[str], None],
 ) -> None:
+    user = load_user_config_overlay()
     for stage in pruning_pipeline_from_config(config):
-        stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
-        if stage_keys is None:
-            continue
-        model_kind, nick_key = stage_keys
-        if stage not in ("rerank", "llm"):
-            continue
-        user = load_user_config_overlay()
         if stage == "rerank":
-            model_nick = pruning_stage_model_nick(config, "rerank", user_config=user)
-        else:
-            model_nick = pruning_stage_model_nick(config, "llm", user_config=user)
-        if not model_nick:
-            raise ValueError(
-                f"pruning.{stage}.model.remote.model_nick "
-                f"(or defaults.remote.{nick_key}) is required when "
-                f"pruning.pipeline includes {stage!r}",
-            )
-        add(key_var_name_for_model_nick(config, model_kind, model_nick))
+            _append_pruning_stage_env_var(config, "rerank", add, user_config=user)
+        elif stage == "llm":
+            _append_pruning_stage_env_var(config, "llm", add, user_config=user)
+
+
+def _append_skills_pipeline_env_vars(
+    config: dict[str, Any],
+    add: Callable[[str], None],
+) -> None:
+    if not skills_enabled(config):
+        return
+    pipeline = skills_pipeline(config).strip().lower()
+    user = load_user_config_overlay()
+    if pipeline == "rerank":
+        _append_pruning_stage_env_var(config, "rerank", add, user_config=user)
+    elif pipeline == "llm":
+        _append_pruning_stage_env_var(config, "llm", add, user_config=user)
 
 
 def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
-    """Environment variable names required by configured pruning pipeline stages."""
+    """Environment variable names required by configured tool and skills pruners."""
     required: list[str] = []
     seen: set[str] = set()
 
@@ -1111,6 +1131,7 @@ def required_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
             required.append(name)
 
     _append_pipeline_stage_env_vars(config, add)
+    _append_skills_pipeline_env_vars(config, add)
 
     return required
 

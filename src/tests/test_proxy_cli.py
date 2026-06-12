@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import cyt.config as configs
-from cyt.proxy.cli import _apply_bm25_fallback_if_needed
+from cyt.proxy.bootstrap import _apply_bm25_fallback_if_needed
 
 
 @pytest.fixture

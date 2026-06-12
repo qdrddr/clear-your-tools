@@ -270,3 +270,15 @@ skills:
     - .claude/skills
     - ~/.codex/skills
     - .codex/skills
+
+launch:
+  claude:
+    endpoint: null
+    models:
+      opus: ""
+      sonnet: ""
+      haiku: ""
+      subagent: ""
+  codex:
+    endpoint: null
+    env_key: CODEX_OPENAI_API_KEY

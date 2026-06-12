@@ -13,14 +13,9 @@ from typing import Any
 from cyt import __version__
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
-    format_proxy_env_help,
     load_config,
     load_user_config_overlay,
-    missing_proxy_env_var_names,
     proxy_http2_settings,
-    remote_pruning_pipeline_configured,
-    resolve_config_path,
-    resolve_reverse_port,
     resolve_setup_config_path,
     stats_db_path,
 )
@@ -221,7 +216,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=normalize_upstream_kind,
         default=None,
         help=(
-            "Upstream protocol kind (required with --upstream): "
+            "Upstream protocol kind (optional for canonical URLs): "
             "anthropic, openai, or aliases claude/claude-code, codex"
         ),
     )
@@ -230,6 +225,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Upstream endpoint name (default: derived from URL second-level domain)",
     )
+    proxy_parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress runtime env summary before server start",
+    )
+
+    from cyt.launch.cli import add_launch_parser
+
+    add_launch_parser(subparsers)
 
     stats_common = argparse.ArgumentParser(add_help=False)
     _add_stats_common_args(stats_common)
@@ -312,69 +316,18 @@ def _ensure_proxy_defaults(args: argparse.Namespace) -> None:
         ("http2_serve", None),
         ("ssl_keyfile", None),
         ("ssl_certfile", None),
+        ("quiet", False),
     ):
         if not hasattr(args, attr):
             setattr(args, attr, default)
 
 
-def _apply_upstream_cli_args(
-    parser: argparse.ArgumentParser,
-    args: argparse.Namespace,
-) -> str | None:
-    upstream_url = getattr(args, "upstream", None)
-    upstream_kind = getattr(args, "upstream_kind", None)
-    upstream_name = getattr(args, "upstream_name", None)
-    if (upstream_url is None) != (upstream_kind is None):
-        parser.error("--upstream and --upstream-kind must be supplied together")
-    if upstream_name is not None and (upstream_url is None or upstream_kind is None):
-        parser.error("--upstream-name requires --upstream and --upstream-kind")
-    if upstream_url is None or upstream_kind is None:
-        return None
+def _run_proxy_command(args: argparse.Namespace) -> None:
+    if getattr(args, "upstream_kind", None) is not None and getattr(args, "upstream", None) is None:
+        raise SystemExit("--upstream-kind requires --upstream")
+    if getattr(args, "upstream_name", None) is not None and getattr(args, "upstream", None) is None:
+        raise SystemExit("--upstream-name requires --upstream")
 
-    from cyt.proxy.setup import apply_upstream_cli_to_config
-
-    config_path = resolve_config_path(args.config)
-    return apply_upstream_cli_to_config(
-        config_path,
-        upstream_url=upstream_url,
-        upstream_kind=upstream_kind,
-        upstream_name=upstream_name,
-    )
-
-
-_BM25_FALLBACK_MESSAGE = (
-    "No pruner pipeline configured: fallback to BM25. "
-    "Please run to configure more advanced pruning:\n"
-    "  cyt setup"
-)
-
-
-def _apply_bm25_fallback_pipeline(config: dict[str, Any]) -> None:
-    print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
-    pruning = config.setdefault("pruning", {})
-    if isinstance(pruning, dict):
-        pruning["pipeline"] = ["bm25"]
-
-
-def _apply_bm25_fallback_if_needed(
-    config: dict[str, Any],
-    config_path: Path,
-    *,
-    upstream_cli: bool,
-) -> None:
-    if upstream_cli:
-        if not missing_proxy_env_var_names(config):
-            return
-        _apply_bm25_fallback_pipeline(config)
-        return
-
-    user_config = load_user_config_overlay(config_path)
-    if remote_pruning_pipeline_configured(user_config):
-        return
-    _apply_bm25_fallback_pipeline(config)
-
-
-def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | None = None) -> None:
     if args.debug or args.debug_dry_run:
         logging.basicConfig(
             level=logging.INFO,
@@ -382,18 +335,32 @@ def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | Non
             force=True,
         )
 
-    config_path = resolve_config_path(args.config)
-    config = load_config(args.config)
-    upstream_cli = getattr(args, "upstream", None) is not None
-    _apply_bm25_fallback_if_needed(config, config_path, upstream_cli=upstream_cli)
-    if missing := missing_proxy_env_var_names(config):
-        print(format_proxy_env_help(missing), file=sys.stderr)
-        raise SystemExit(1)
-    reverse_port = resolve_reverse_port(config, args.port)
-    if upstream_endpoint is not None:
+    from cyt.launch.env_report import print_runtime_env_report
+    from cyt.proxy.bootstrap import prepare_runtime
+
+    runtime = prepare_runtime(
+        agent=None,
+        config_path=args.config,
+        port=args.port,
+        upstream_url=getattr(args, "upstream", None),
+        upstream_kind=getattr(args, "upstream_kind", None),
+        upstream_name=getattr(args, "upstream_name", None),
+    )
+    config = runtime.config
+
+    print_runtime_env_report(
+        quiet=bool(getattr(args, "quiet", False)),
+        credential_sources=runtime.credential_sources,
+        port=runtime.port,
+        endpoint=runtime.upstream_endpoint,
+        upstream_url=runtime.upstream_url,
+        include_agent_recipe=False,
+    )
+
+    if runtime.upstream_endpoint is not None:
         from cyt.proxy.setup import print_proxy_urls
 
-        print_proxy_urls(reverse_port, [upstream_endpoint])
+        print_proxy_urls(runtime.port, [runtime.upstream_endpoint])
 
     from cyt.pruners.policies import configure_policies_from_config
 
@@ -416,7 +383,7 @@ def _run_proxy_command(args: argparse.Namespace, *, upstream_endpoint: str | Non
     asyncio.run(
         run_reverse_server(
             config=config,
-            reverse_port=reverse_port,
+            reverse_port=runtime.port,
             debug=args.debug or args.debug_dry_run,
             debug_dry_run=args.debug_dry_run,
             debug_strict=args.debug_strict,
@@ -454,13 +421,18 @@ def main() -> None:
         )
         return
 
+    if args.command == "launch":
+        from cyt.launch.cli import run as run_launch
+
+        run_launch(args)
+        return
+
     if args.command is None:
         if _uses_legacy_proxy_flags(args):
             _ensure_proxy_defaults(args)
         else:
             _require_top_level_command(parser)
-    upstream_endpoint = _apply_upstream_cli_args(parser, args)
-    _run_proxy_command(args, upstream_endpoint=upstream_endpoint)
+    _run_proxy_command(args)
 
 
 if __name__ == "__main__":

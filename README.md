@@ -250,29 +250,34 @@ uv tool install 'clear-your-tools[all]'
 Installed CLI:
 
 ```bash
-cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic
+cyt proxy --upstream https://api.anthropic.com
 # Or
-cyt proxy --upstream https://api.openai.com --upstream-kind openai
+cyt proxy --upstream https://api.openai.com
 ```
+
+Canonical upstream URLs infer `--upstream-kind` automatically. For other providers (e.g. OpenRouter),
+pass `--upstream-kind` explicitly.
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
 
-<details>
-<summary><strong>Configure the proxy (optional)</strong></summary>
-Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
+### 3. Launch an agent (optional)
+
+One-command jump-start through the proxy:
 
 ```bash
-cyt setup
+cyt launch -- claude
+cyt launch -- codex
+cyt launch --endpoint openrouter -- claude --model haiku
+cyt launch --upstream https://api.anthropic.com -- claude
 ```
 
-Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
+`cyt launch` shares the same upstream and credential bootstrap as `cyt proxy`, starts the proxy
+if needed, prints a manual recipe to stderr (suppress with `--quiet`), then execs the agent.
 
-Without `cyt setup`, the proxy uses the **default BM25 pipeline** — local pruning with no
-remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost tracking.
+For Codex, `cyt launch --configure -- codex` writes the managed provider block to
+`~/.codex/config.toml`; `cyt launch --restore -- codex` removes it.
 
-</details>
-
-### 3. Run the agent
+### 4. Run the agent manually
 
 Point the agent at the proxy (default port **8834**). More examples are in
 [./examples/agents](./examples/agents).
@@ -296,7 +301,22 @@ export ANTHROPIC_BASE_URL="http://localhost:${PORT}/anthropic"
 claude
 ```
 
-### 4. View pruning stats savings
+<details>
+<summary><strong>Configure the proxy (optional)</strong></summary>
+Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
+
+```bash
+cyt setup
+```
+
+Or edit `~/.config/cyt/config.yaml` manually — see [CONFIG.md](CONFIG.md).
+
+Without `cyt setup`, the proxy uses the **default BM25 pipeline** — local pruning with no
+remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost tracking.
+
+</details>
+
+### 5. View pruning stats savings
 
 ```bash
 cyt stats totals

@@ -168,6 +168,28 @@ def test_missing_proxy_env_var_names(
     assert "DEEPINFRA_API_KEY" in missing
 
 
+def test_required_proxy_env_var_names_includes_skills_pipeline_keys(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["pipeline"] = ["bm25"]
+    config["skills"] = {"enabled": True, "pipeline": "rerank"}
+
+    required = configs.required_proxy_env_var_names(config)
+
+    assert required == ["DEEPINFRA_API_KEY"]
+
+
+def test_required_proxy_env_var_names_skips_skills_bm25(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["pipeline"] = ["bm25"]
+    config["skills"] = {"enabled": True, "pipeline": "bm25"}
+
+    assert configs.required_proxy_env_var_names(config) == []
+
+
 def test_format_proxy_env_help_lists_alternatives() -> None:
     message = configs.format_proxy_env_help(["DEEPINFRA_API_KEY", "OPENAI_API_KEY"])
 
