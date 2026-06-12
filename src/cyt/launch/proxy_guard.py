@@ -13,9 +13,9 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 LOCAL_HOST = "127.0.0.1"
-HEALTH_TIMEOUT_SECONDS = 0.5
+HEALTH_TIMEOUT_SECONDS = 1.5
 STARTUP_POLL_SECONDS = 0.2
-STARTUP_TIMEOUT_SECONDS = 15.0
+STARTUP_TIMEOUT_SECONDS = 35.0
 
 
 @dataclass
