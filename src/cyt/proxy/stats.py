@@ -1,10 +1,11 @@
-"""Embedded libSQL stats persistence for the LLM proxy."""
+"""Embedded SQLite stats persistence for the LLM proxy."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -12,7 +13,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import libsql_experimental as libsql
 from uuid_extensions import uuid7str
 
 from cyt.common.pricing import StatsCosts
@@ -72,7 +72,11 @@ def expand_db_path(path: str) -> str:
     return str(Path(path).expanduser())
 
 
-def _ensure_skills_in_column(conn: libsql.Connection) -> None:
+def _connect(db_path: str) -> sqlite3.Connection:
+    return sqlite3.connect(db_path, check_same_thread=False)
+
+
+def _ensure_skills_in_column(conn: sqlite3.Connection) -> None:
     rows = conn.execute("PRAGMA table_info(proxy_request)").fetchall()
     columns = {str(row[1]) for row in rows}
     if "skills_in" not in columns:
@@ -169,7 +173,7 @@ class ProxyRequestRecord:
 
 
 class StatsDB:
-    def __init__(self, conn: libsql.Connection) -> None:
+    def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
     @classmethod
@@ -177,7 +181,7 @@ class StatsDB:
         db_path = expand_db_path(path)
         parent = Path(db_path).parent
         parent.mkdir(parents=True, exist_ok=True)
-        conn = libsql.connect(db_path)
+        conn = _connect(db_path)
         conn.executescript(_SCHEMA)
         _ensure_skills_in_column(conn)
         conn.commit()
@@ -190,7 +194,7 @@ class StatsDB:
         db_path = expand_db_path(path)
         if not Path(db_path).exists():
             return cls.init(path)
-        conn = libsql.connect(db_path)
+        conn = _connect(db_path)
         _ensure_skills_in_column(conn)
         return cls(conn)
 
@@ -200,7 +204,7 @@ class StatsDB:
         db_path = expand_db_path(path)
         if not Path(db_path).exists():
             return None
-        conn = libsql.connect(db_path)
+        conn = _connect(db_path)
         _ensure_skills_in_column(conn)
         return cls(conn)
 

@@ -233,7 +233,7 @@ stats:
 skills:
   enabled: false
   frontmatter_upper_limit: 0.4
-  inject_via: hook # or proxy
+  inject_via: proxy # hook | proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
   pageindex:

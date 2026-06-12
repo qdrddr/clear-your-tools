@@ -666,12 +666,6 @@ librt==0.11.0 ; platform_python_implementation != 'PyPy' \
     --hash=sha256:f9743fc99135d5f78d2454435615f6dec0473ca507c26ce9d92b10b562a280d3 \
     --hash=sha256:fa475675db22290c3158e1d42326d0f5a65f04f44a0e68c3630a25b53560fb9c
     # via mypy
-libsql-experimental==0.0.55 \
-    --hash=sha256:34df13ad6da446e4ccede9b3803af40684da399c8f304848b54ea37e7111b249 \
-    --hash=sha256:7a5dd325f87425546e0a7f0d460d4b6e1852bc4d4194a7b5ad127614ef8b3b10 \
-    --hash=sha256:b3476a78edb8f59aa6c571d6def1840fff8d263eb4bbc4b26b2afd7400cb9ba2 \
-    --hash=sha256:f3bfd7af2ca9d1ff8f8c7f7fce5f1a650bfe53c23b45658253480fe287283bae
-    # via clear-your-tools
 litellm==1.83.14 \
     --hash=sha256:24aef9b47cdc424c833e32f3727f411741c690832cd1fe4405e0077144fe09c9 \
     --hash=sha256:92b11ba2a32cf80707ddf388d18526696c7999a21b418c5e3b6eda1243d2cfdb

@@ -162,9 +162,6 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if cargo fetch \
               --manifest-path sdk/rust/cyt-indexer/Cargo.toml \
-              -p cyt-indexer \
-              --features node \
-              --no-default-features \
               --target "${{ matrix.target }}"; then
               exit 0
             fi

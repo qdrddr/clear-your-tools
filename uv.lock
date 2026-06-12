@@ -292,13 +292,12 @@ wheels = [
 
 [[package]]
 name = "clear-your-tools"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s", extra = ["core"] },
     { name = "cyt-indexer-sdk" },
     { name = "keyring" },
-    { name = "libsql-experimental" },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "pystemmer" },
@@ -346,7 +345,6 @@ test = [
     { name = "h2" },
     { name = "httpx" },
     { name = "hypercorn" },
-    { name = "libsql-experimental" },
     { name = "litellm" },
     { name = "mypy" },
     { name = "pytest" },
@@ -369,7 +367,6 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'proxy'", specifier = "==0.28.1" },
     { name = "hypercorn", marker = "extra == 'proxy'", specifier = "==0.18.0" },
     { name = "keyring", specifier = "==25.6.0" },
-    { name = "libsql-experimental", specifier = "==0.0.55" },
     { name = "litellm", marker = "extra == 'pruners'", specifier = "==1.83.14" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pydantic", specifier = "==2.12.5" },
@@ -401,7 +398,6 @@ test = [
     { name = "h2", specifier = "==4.3.0" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "hypercorn", specifier = "==0.18.0" },
-    { name = "libsql-experimental", specifier = "==0.0.55" },
     { name = "litellm", specifier = "==1.83.14" },
     { name = "mypy", specifier = "==2.1.0" },
     { name = "pytest", specifier = "==9.0.3" },
@@ -563,7 +559,7 @@ wheels = [
 
 [[package]]
 name = "cyt-indexer-sdk"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "sdk/python" }
 
 [package.metadata]
@@ -1126,17 +1122,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/15/1f/dc6771a52592a4451be6effa200cbfc9cec61e4393d3033d81a9d307961d/librt-0.11.0-cp314-cp314t-win32.whl", hash = "sha256:2b481d846ac894c4e8403c5fd0e87c5d11d6499e404b474602508a224ff531c8", size = 103562, upload-time = "2026-05-10T18:17:03.99Z" },
     { url = "https://files.pythonhosted.org/packages/62/4a/7d1415567027286a75ba1093ec4aca11f073e0f559c530cf3e0a757ad55c/librt-0.11.0-cp314-cp314t-win_amd64.whl", hash = "sha256:28edb433edde181112a908c78907af28f964eabc15f4dd16c9d66c834302677c", size = 124327, upload-time = "2026-05-10T18:17:05.465Z" },
     { url = "https://files.pythonhosted.org/packages/ce/62/b40b382fa0c66fee1478073eb8db352a4a6beda4a1adccf1df911d8c289c/librt-0.11.0-cp314-cp314t-win_arm64.whl", hash = "sha256:dee008f20b542e3cd162ba338a7f9ec0f6d23d395f66fe8aeeec3c9d067ea253", size = 102572, upload-time = "2026-05-10T18:17:06.809Z" },
-]
-
-[[package]]
-name = "libsql-experimental"
-version = "0.0.55"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/14/d3eb81673e2096f38eb48f08e38b447f6f2fdc37a50bdb1810d4a225a7aa/libsql_experimental-0.0.55.tar.gz", hash = "sha256:34df13ad6da446e4ccede9b3803af40684da399c8f304848b54ea37e7111b249", size = 31954, upload-time = "2025-06-09T07:26:48.682Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/9f/3589b9590ba948922bd200a02d754fa29e739da81a2953367e9283667a16/libsql_experimental-0.0.55-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:f3bfd7af2ca9d1ff8f8c7f7fce5f1a650bfe53c23b45658253480fe287283bae", size = 4881245, upload-time = "2025-06-09T07:26:37.382Z" },
-    { url = "https://files.pythonhosted.org/packages/37/cf/4aead944cb90f82ab1b61edc78dbe893420e8c4ceee19e1fdae775b1273d/libsql_experimental-0.0.55-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:b3476a78edb8f59aa6c571d6def1840fff8d263eb4bbc4b26b2afd7400cb9ba2", size = 4656348, upload-time = "2025-06-09T07:26:39.04Z" },
-    { url = "https://files.pythonhosted.org/packages/70/73/134dc2db0c3805f62953c85778bf93ac2f4a5ad81d49e592be990b012711/libsql_experimental-0.0.55-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7a5dd325f87425546e0a7f0d460d4b6e1852bc4d4194a7b5ad127614ef8b3b10", size = 5273740, upload-time = "2025-06-09T07:26:40.597Z" },
 ]
 
 [[package]]
