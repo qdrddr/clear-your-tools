@@ -78,15 +78,12 @@ def model_output_cost_per_token(entry: dict[str, Any]) -> float | None:
     return float(cost)
 
 
-def model_missing_metadata_fields(entry: dict[str, Any]) -> list[str]:
-    """Return missing ``provider``, ``domain_match``, or pricing field names for a remote model."""
+STATS_ADD_COSTS_HINT = "\nWant to see $$$ savings in costs? Run\n\tcyt stats --add-costs"
+
+
+def model_missing_cost_fields(entry: dict[str, Any]) -> list[str]:
+    """Return missing ``input_cost_per_token`` / ``output_cost_per_token`` field names."""
     missing: list[str] = []
-    provider = entry.get("provider")
-    if not provider or not str(provider).strip():
-        missing.append("provider")
-    domain_match = entry.get("domain_match")
-    if not isinstance(domain_match, list) or not domain_match:
-        missing.append("domain_match")
     if model_input_cost_per_token(entry) is None:
         missing.append("input_cost_per_token")
     if model_output_cost_per_token(entry) is None:
@@ -94,10 +91,48 @@ def model_missing_metadata_fields(entry: dict[str, Any]) -> list[str]:
     return missing
 
 
+def model_missing_metadata_fields(entry: dict[str, Any]) -> list[str]:
+    """Return missing ``provider`` or ``domain_match`` field names for a remote model."""
+    missing: list[str] = []
+    provider = entry.get("provider")
+    if not provider or not str(provider).strip():
+        missing.append("provider")
+    domain_match = entry.get("domain_match")
+    if not isinstance(domain_match, list) or not domain_match:
+        missing.append("domain_match")
+    return missing
+
+
+def iter_models_missing_costs(
+    config: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return ``(kind, entry)`` pairs for remote LLM/reranker models missing token pricing."""
+    result: list[tuple[str, dict[str, Any]]] = []
+    models = config.get("models", {})
+    if not isinstance(models, dict):
+        return result
+    for kind in ("llm", "rerankers"):
+        section = models.get(kind, {})
+        if not isinstance(section, dict):
+            continue
+        remote = section.get("remote", [])
+        if not isinstance(remote, list):
+            continue
+        for entry in remote:
+            if isinstance(entry, dict) and model_missing_cost_fields(entry):
+                result.append((kind, entry))
+    return result
+
+
+def has_models_missing_costs(config: dict[str, Any]) -> bool:
+    """True when any remote LLM or reranker model lacks input/output token pricing."""
+    return bool(iter_models_missing_costs(config))
+
+
 def iter_incomplete_remote_models(
     config: dict[str, Any],
 ) -> list[tuple[str, dict[str, Any]]]:
-    """Return ``(kind, entry)`` pairs for remote models missing provider, domain_match, or pricing."""
+    """Return ``(kind, entry)`` pairs for remote models missing provider or domain_match."""
     result: list[tuple[str, dict[str, Any]]] = []
     models = config.get("models", {})
     if not isinstance(models, dict):
@@ -435,6 +470,16 @@ def parse_domain_match(raw: str) -> list[str] | None:
         return None
     domains = [_extract_hostname(part) for part in text.split(",") if part.strip()]
     return domains or None
+
+
+def _pricing_overlay_from_entry(entry: dict[str, Any]) -> dict[str, float] | None:
+    """Return pricing dict from catalog/entry defaults without prompting."""
+    result: dict[str, float] = {}
+    if (cost := model_input_cost_per_token(entry)) is not None:
+        result["input_cost_per_token"] = cost
+    if (cost := model_output_cost_per_token(entry)) is not None:
+        result["output_cost_per_token"] = cost
+    return result or None
 
 
 def format_cost_prompt_default(per_token: float | None) -> str | None:
@@ -944,21 +989,6 @@ def _confirm_model_fields(
         "max_tokens",
         int(entry.get("max_tokens", 128000)),
     )
-    pricing = entry.get("pricing", {})
-    if not isinstance(pricing, dict):
-        pricing = {}
-    in_default = pricing.get("input_cost_per_token")
-    out_default = pricing.get("output_cost_per_token")
-    in_per_token = float(in_default) if in_default is not None else None
-    out_per_token = float(out_default) if out_default is not None else None
-    in_cost = _prompt_pruner_input_cost(
-        in_per_token,
-        max_input_cost_per_token=max_input_cost_per_token,
-    )
-    out_cost = _prompt_cost_per_token(
-        "output_cost_per_token",
-        out_per_token if out_per_token is not None else in_cost,
-    )
     domain_match = _prompt_domain_match(
         provider,
         entry,
@@ -972,11 +1002,9 @@ def _confirm_model_fields(
         "nick": nick,
         "max_tokens": max_tokens,
         "domain_match": domain_match,
-        "pricing": {
-            "input_cost_per_token": in_cost,
-            "output_cost_per_token": out_cost,
-        },
     }
+    if pricing := _pricing_overlay_from_entry(entry):
+        result["pricing"] = pricing
     if key_var is not None:
         result["key_var_name"] = key_var
     if allow_catalog_defaults and entry.get("base_url") is not None:
@@ -1001,19 +1029,11 @@ def _prompt_custom_model(
     if prompt_key_var:
         key_var = _prompt_key_var_name()
     max_tokens = _prompt_int("max_tokens", 128000)
-    in_cost = _prompt_pruner_input_cost(
-        max_input_cost_per_token=max_input_cost_per_token,
-    )
-    out_cost = _prompt_cost_per_token("output_cost_per_token")
     result: dict[str, Any] = {
         "name": name,
         "provider": provider,
         "nick": nick,
         "max_tokens": max_tokens,
-        "pricing": {
-            "input_cost_per_token": in_cost,
-            "output_cost_per_token": out_cost,
-        },
     }
     if key_var is not None:
         result["key_var_name"] = key_var
@@ -1163,7 +1183,7 @@ def _prompt_missing_model_metadata(
     *,
     domain_match_upstreams: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Prompt only for provider, domain_match, and pricing fields missing from *entry*."""
+    """Prompt only for provider and domain_match fields missing from *entry*."""
     missing = model_missing_metadata_fields(entry)
     if not missing:
         return {}
@@ -1188,6 +1208,19 @@ def _prompt_missing_model_metadata(
         )
         if domain_match is not None:
             updates["domain_match"] = domain_match
+    return updates
+
+
+def _prompt_missing_model_costs(entry: dict[str, Any]) -> dict[str, float]:
+    """Prompt only for input/output pricing fields missing from *entry*."""
+    missing = model_missing_cost_fields(entry)
+    if not missing:
+        return {}
+
+    nick = entry.get("nick", "?")
+    name = entry.get("name", "?")
+    provider = entry.get("provider") or "(unknown provider)"
+    print(f"\n--- {nick} ({name}) @ {provider} ---")
 
     pricing_updates: dict[str, float] = {}
     in_cost = model_input_cost_per_token(entry)
@@ -1199,13 +1232,11 @@ def _prompt_missing_model_metadata(
         default_out = out_cost if out_cost is not None else in_cost
         out_cost = _prompt_cost_per_token("output_cost_per_token", default_out)
         pricing_updates["output_cost_per_token"] = out_cost
-    if pricing_updates:
-        updates["pricing"] = pricing_updates
-    return updates
+    return pricing_updates
 
 
 def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
-    """Fill missing provider, domain_match, and pricing on remote models.
+    """Fill missing provider and domain_match on remote models.
 
     Returns True if anything changed.
     """
@@ -1221,10 +1252,9 @@ def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
         else None
     )
 
-    print("\n--- Model pricing, provider & domain_match ---")
+    print("\n--- Model provider & domain_match ---")
     print(
-        "Some models in your config are missing provider, domain_match, or token pricing "
-        "(used by cyt stats).",
+        "Some models in your config are missing provider or domain_match (used by cyt stats).",
     )
 
     changed = False
@@ -1240,6 +1270,38 @@ def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
         _apply_model_metadata_updates(entry, updates)
         changed = True
     return changed
+
+
+def run_add_costs_wizard(config_path: Path) -> None:
+    """Walk through LLM/reranker models missing token pricing and prompt for costs."""
+    config_path = config_path.expanduser()
+    config = load_user_config_overlay(config_path)
+    missing = iter_models_missing_costs(config)
+    if not missing:
+        print("All LLM and reranker models already have input/output costs configured.")
+        return
+
+    print("\n--- Model token pricing ---")
+    print(
+        "Enter input/output costs (USD per 1M tokens) for models missing pricing "
+        "(used by cyt stats).",
+    )
+
+    changed = False
+    for _kind, entry in missing:
+        if not model_missing_cost_fields(entry):
+            continue
+        pricing_updates = _prompt_missing_model_costs(entry)
+        if not pricing_updates:
+            continue
+        _apply_model_metadata_updates(entry, {"pricing": pricing_updates})
+        changed = True
+
+    if changed:
+        save_user_config(config_path, config, apply_bundled_sections=False)
+        print(f"\nUpdated {config_path}")
+    else:
+        print("\nNo costs were added.")
 
 
 def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:

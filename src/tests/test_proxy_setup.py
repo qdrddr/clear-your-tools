@@ -29,14 +29,17 @@ from cyt.proxy.setup import (
     filter_catalog_by_upstreams,
     format_cost_prompt_default,
     format_env_lines,
+    has_models_missing_costs,
     input_usd_per_million,
     iter_incomplete_remote_models,
+    iter_models_missing_costs,
     max_pruner_input_cost_per_token,
     merge_endpoints,
     merge_model_entry,
     merge_setup_overlay,
     merge_upstream_entry,
     model_input_cost_per_token,
+    model_missing_cost_fields,
     model_missing_metadata_fields,
     model_output_cost_per_token,
     normalize_base_url,
@@ -52,6 +55,7 @@ from cyt.proxy.setup import (
     prompt_incomplete_models_in_config,
     pruner_input_cost_error,
     recommended_pipeline_default_index,
+    run_add_costs_wizard,
     upstream_hostnames_default,
     upstream_url_default,
     upstreams_for_config,
@@ -184,19 +188,20 @@ class TestPrimaryModelPricing:
 
     def test_model_missing_metadata_fields(self) -> None:
         assert model_missing_metadata_fields(_SAMPLE_MODEL) == ["domain_match"]
-        assert model_missing_metadata_fields(_RERANK_MODEL) == [
-            "domain_match",
-            "output_cost_per_token",
-        ]
+        assert model_missing_metadata_fields(_RERANK_MODEL) == ["domain_match"]
         assert model_missing_metadata_fields({"name": "x"}) == [
             "provider",
             "domain_match",
-            "input_cost_per_token",
-            "output_cost_per_token",
         ]
         assert model_missing_metadata_fields({"provider": "  "}) == [
             "provider",
             "domain_match",
+        ]
+
+    def test_model_missing_cost_fields(self) -> None:
+        assert model_missing_cost_fields(_SAMPLE_MODEL) == []
+        assert model_missing_cost_fields(_RERANK_MODEL) == ["output_cost_per_token"]
+        assert model_missing_cost_fields({"name": "x"}) == [
             "input_cost_per_token",
             "output_cost_per_token",
         ]
@@ -222,6 +227,28 @@ class TestPrimaryModelPricing:
             "rerank-qwen3-8b",
         ]
 
+    def test_iter_models_missing_costs(self) -> None:
+        config = {
+            "models": {
+                "llm": {
+                    "remote": [
+                        _SAMPLE_MODEL,
+                        {"nick": "synced", "name": "provider/model"},
+                    ],
+                },
+                "rerankers": {
+                    "remote": [_RERANK_MODEL],
+                },
+            },
+        }
+        missing = iter_models_missing_costs(config)
+        assert [entry.get("nick") for _kind, entry in missing] == [
+            "synced",
+            "rerank-qwen3-8b",
+        ]
+        assert has_models_missing_costs(config) is True
+        assert has_models_missing_costs({"models": {"llm": {"remote": [_SAMPLE_MODEL]}}}) is False
+
     def test_prompt_incomplete_models_in_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         config: dict[str, Any] = {
             "models": {
@@ -232,17 +259,47 @@ class TestPrimaryModelPricing:
                 },
             },
         }
-        responses = iter(["openrouter", "api.openrouter.ai", "3", "15"])
+        responses = iter(["openrouter", "api.openrouter.ai"])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         changed = prompt_incomplete_models_in_config(config)
         assert changed is True
         entry = config["models"]["llm"]["remote"][0]
         assert entry["provider"] == "openrouter"
         assert entry["domain_match"] == ["api.openrouter.ai"]
-        pricing = entry["pricing"]
-        assert isinstance(pricing, dict)
-        assert pricing["input_cost_per_token"] == pytest.approx(3e-06)
-        assert pricing["output_cost_per_token"] == pytest.approx(15e-06)
+        assert "pricing" not in entry
+
+    def test_run_add_costs_wizard(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "models": {
+                        "llm": {
+                            "remote": [
+                                {
+                                    "nick": "synced",
+                                    "name": "provider/model",
+                                    "provider": "openrouter",
+                                },
+                            ],
+                        },
+                        "rerankers": {
+                            "remote": [_RERANK_MODEL],
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        responses = iter(["3", "15", "0.05"])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        run_add_costs_wizard(config_path)
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        llm_pricing = saved["models"]["llm"]["remote"][0]["pricing"]
+        rerank_pricing = saved["models"]["rerankers"]["remote"][0]["pricing"]
+        assert llm_pricing["input_cost_per_token"] == pytest.approx(3e-06)
+        assert llm_pricing["output_cost_per_token"] == pytest.approx(15e-06)
+        assert rerank_pricing["output_cost_per_token"] == pytest.approx(5e-08)
 
     def test_input_usd_per_million(self) -> None:
         assert input_usd_per_million(_SAMPLE_MODEL) == pytest.approx(3)
@@ -717,8 +774,6 @@ class TestPromptCustomModel:
                 "",
                 "DEEPINFRA_API_KEY",
                 "32000",
-                "0.05",
-                "0",
                 "",
                 "",
             ],
@@ -728,6 +783,7 @@ class TestPromptCustomModel:
             prompt_base_url=True,
         )
         assert "base_url" not in result
+        assert "pricing" not in result
 
     def test_prompts_base_url_when_requested(self, monkeypatch: pytest.MonkeyPatch) -> None:
         responses = iter(
@@ -737,8 +793,6 @@ class TestPromptCustomModel:
                 "",
                 "DEEPINFRA_API_KEY",
                 "32000",
-                "0.05",
-                "0",
                 "https://api.deepinfra.com/v1",
                 "",
             ],
@@ -749,26 +803,7 @@ class TestPromptCustomModel:
             prompt_base_url=True,
         )
         assert result["base_url"] == "https://api.deepinfra.com/v1"
-
-    def test_reprompts_when_input_cost_too_high(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(
-            [
-                "deepinfra",
-                "custom/reranker",
-                "",
-                "DEEPINFRA_API_KEY",
-                "32000",
-                "3",
-                "0.05",
-                "0",
-                "",
-            ],
-        )
-        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        result = _prompt_custom_model(
-            max_input_cost_per_token=3e-07,
-        )
-        assert result["pricing"]["input_cost_per_token"] == pytest.approx(5e-08)
+        assert "pricing" not in result
 
 
 class TestPromptKeyVarName:

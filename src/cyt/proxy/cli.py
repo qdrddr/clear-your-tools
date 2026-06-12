@@ -13,7 +13,6 @@ from typing import Any
 from cyt import __version__
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
-    DEFAULT_USER_CONFIG_PATH,
     format_proxy_env_help,
     load_config,
     load_user_config_overlay,
@@ -33,13 +32,33 @@ LOCAL_SERVE_HOST = "127.0.0.1"
 _STATS_SUBCOMMANDS = ("totals", "summary", "events")
 
 
+def _add_stats_common_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--add-costs",
+        action="store_true",
+        help="After showing stats, run a wizard to add missing LLM/reranker model costs",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+
+
 def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     from cyt.common.pricing import compute_stats_costs, empty_costs
+    from cyt.proxy.setup import (
+        STATS_ADD_COSTS_HINT,
+        has_models_missing_costs,
+        run_add_costs_wizard,
+    )
     from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
     from cyt.proxy.stats_config_sync import sync_models_from_stats_db
 
+    user_config_path = resolve_setup_config_path(getattr(args, "config", None))
     db_path = stats_db_path(config)
-    for line in sync_models_from_stats_db(db_path, DEFAULT_USER_CONFIG_PATH):
+    for line in sync_models_from_stats_db(db_path, user_config_path):
         print(line, file=sys.stderr)
     config = load_config(getattr(args, "config", None))
     db = StatsDB.open_for_query(db_path)
@@ -80,6 +99,11 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     finally:
         if db is not None:
             db.close()
+
+    if getattr(args, "add_costs", False):
+        run_add_costs_wizard(user_config_path)
+    elif has_models_missing_costs(load_user_config_overlay(user_config_path)):
+        print(STATS_ADD_COSTS_HINT, file=sys.stderr)
 
 
 def _print_stats_options() -> None:
@@ -207,18 +231,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Upstream endpoint name (default: derived from URL second-level domain)",
     )
 
-    stats_parser = subparsers.add_parser("stats", help="Query persisted proxy stats")
+    stats_common = argparse.ArgumentParser(add_help=False)
+    _add_stats_common_args(stats_common)
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help="Query persisted proxy stats",
+        parents=[stats_common],
+    )
     stats_sub = stats_parser.add_subparsers(dest="stats_command", required=False)
-    stats_totals = stats_sub.add_parser("totals")
+    stats_totals = stats_sub.add_parser("totals", parents=[stats_common])
     stats_totals.add_argument("--period", choices=["day", "week", "month", "all"], default="all")
-    stats_totals.add_argument("--config", type=Path, default=None)
-    stats_summary = stats_sub.add_parser("summary")
+    stats_summary = stats_sub.add_parser("summary", parents=[stats_common])
     stats_summary.add_argument("--period", choices=["day", "week", "month", "all"], default="day")
-    stats_summary.add_argument("--config", type=Path, default=None)
-    stats_events = stats_sub.add_parser("events")
+    stats_events = stats_sub.add_parser("events", parents=[stats_common])
     stats_events.add_argument("--limit", type=int, default=20)
     stats_events.add_argument("--json", action="store_true")
-    stats_events.add_argument("--config", type=Path, default=None)
 
     skills_parser = subparsers.add_parser(
         "skills",
