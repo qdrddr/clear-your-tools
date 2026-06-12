@@ -262,7 +262,7 @@ wheels = [
 
 [[package]]
 name = "clear-your-tools"
-version = "0.3.5"
+version = "0.3.6"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s", extra = ["core"] },
@@ -487,7 +487,7 @@ wheels = [
 
 [[package]]
 name = "cyt-indexer-sdk"
-version = "0.3.5"
+version = "0.3.6"
 source = { editable = "sdk/python" }
 
 [package.metadata]
