@@ -1332,7 +1332,7 @@ def _prompt_custom_model(
 
 
 def _default_minimum_tools(config: dict[str, Any]) -> int:
-    """Return configured ``pruning.policy.minimum_tools`` or bundled default."""
+    """Return configured ``pruning.tools.policy.minimum_tools`` or bundled default."""
     pruning = config.get("pruning")
     if isinstance(pruning, dict):
         tools = pruning.get("tools")
@@ -1851,7 +1851,7 @@ def run_setup(config_path: Path) -> None:
     upstreams, endpoints = _prompt_upstreams(existing)
 
     minimum_tools = _prompt_int(
-        "\npruning.policy.minimum_tools",
+        "\npruning.tools.policy.minimum_tools",
         _default_minimum_tools(existing),
     )
 

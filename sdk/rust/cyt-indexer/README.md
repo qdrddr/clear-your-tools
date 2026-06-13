@@ -189,7 +189,7 @@ const oneChunkPerNode = buildSkillsIndex(["~/.claude/skills"], pageIndexConfigWi
 
 Policies (in precedence order, later wins):
 
-1. `--config` → `pruning.policy.system_tool` / `mcp_tool` (legacy: `defaults.system_tool_policy` / `mcp_tool_policy`), `pruning.per_tool`
+1. `--config` → `pruning.tools.policy.system_tool` / `mcp_tool` / `per_tool`
 2. `--system-policy` / `--mcp-policy` CLI overrides
 3. `--per-tool` JSON file: `{"Agent": "always_include", "Bash": "prune_optional"}`
 4. `--tool-policy TOOL=POLICY` (repeatable)

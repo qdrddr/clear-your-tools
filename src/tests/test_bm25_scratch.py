@@ -134,7 +134,7 @@ def main() -> None:
                     "stopwords": "en",
                 },
             },
-            "pruning": {"pipeline": ["bm25"], "per_tool": {}},
+            "pruning": {"tools": {"sequence": ["bm25"], "policy": {"per_tool": {}}}},
         }
         scored, _usage = bm25_catalog_dict(
             copy.deepcopy(catalog),

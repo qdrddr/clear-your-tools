@@ -282,7 +282,7 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
     body = {
         "model": "claude-test",
@@ -384,7 +384,7 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
     body = {
         "model": "claude-test",
@@ -428,7 +428,10 @@ def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> 
     data = {"json": [{"id": "1"}], "md": [], "tools": [{"name": "t1"}]}
     skill_entries = [object()]
     skill_out: dict[str, object] = {}
-    config = {"skills": {"pipeline": "rerank"}, "pruning": {"llm_minimum_tools": 1}}
+    config = {
+        "skills": {"pipeline": "rerank"},
+        "pruning": {"tools": {"policy": {"minimum_tools": 1}}},
+    }
 
     with (
         patch("cyt.skills.llm.llm_prune_tools_and_skills") as mock_combined,

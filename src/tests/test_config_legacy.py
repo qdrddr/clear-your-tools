@@ -1,77 +1,16 @@
 #!/usr/bin/env python3
-"""Legacy config path resolution tests."""
+"""Config resolution and provider registry tests."""
 
 from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 import cyt.config as configs
-from cyt.config import legacy
-
-
-@pytest.mark.parametrize(
-    ("legacy_name", "user_config", "expected"),
-    [
-        (
-            "tools.sequence",
-            {"pruning": {"pipeline": ["rerank", "llm"]}},
-            ["rerank", "llm"],
-        ),
-        (
-            "tools.policy.system_tool",
-            {"defaults": {"system_tool_policy": "always_include"}},
-            "always_include",
-        ),
-        (
-            "tools.policy.mcp_tool",
-            {"pruning": {"policy": {"mcp_tool": "prune_optional"}}},
-            "prune_optional",
-        ),
-        (
-            "tools.policy.minimum_tools",
-            {"models": {"llm": {"minimum_tools": 40}}},
-            40,
-        ),
-        (
-            "pipelines.rerank.model_nick",
-            {
-                "pruning": {
-                    "rerank": {"model": {"remote": {"model_nick": "legacy-rerank"}}},
-                },
-            },
-            "legacy-rerank",
-        ),
-        (
-            "pipelines.llm.model_nick",
-            {"defaults": {"remote": {"llm_model_nick": "legacy-llm"}}},
-            "legacy-llm",
-        ),
-        (
-            "pipelines.bm25.index_dir",
-            {"models": {"bm25": {"index_dir": "/tmp/models-bm25"}}},
-            "/tmp/models-bm25",
-        ),
-    ],
-)
-def test_legacy_resolve_user_overlay(
-    legacy_name: str,
-    user_config: dict,
-    expected: object,
-) -> None:
-    value = legacy.resolve_legacy({}, user_config, legacy_name)
-    assert value == expected
 
 
 def test_pruning_pipeline_reads_tools_sequence() -> None:
     config = {"pruning": {"tools": {"sequence": ["bm25", "rerank"]}}}
     assert configs.pruning_pipeline_from_config(config) == ["bm25", "rerank"]
-
-
-def test_pruning_pipeline_legacy_pipeline_fallback() -> None:
-    config = {"pruning": {"pipeline": ["llm"]}}
-    assert configs.pruning_pipeline_from_config(config) == ["llm"]
 
 
 def test_merge_model_entry_inherits_provider_fields() -> None:
@@ -121,23 +60,13 @@ def test_merge_model_entry_resolves_bundled_provider_registry() -> None:
     assert entry["key_var_name"] == "ANTHROPIC_API_KEY"
 
 
-def test_canonical_tools_policy_when_legacy_absent() -> None:
+def test_pruning_system_tool_policy_from_canonical_path() -> None:
     config = {
         "pruning": {
             "tools": {"policy": {"system_tool": "always_include"}},
         },
     }
     assert configs.pruning_system_tool_policy(config) == "always_include"
-
-
-def test_legacy_tools_policy_wins_when_both_present() -> None:
-    config = {
-        "pruning": {
-            "tools": {"policy": {"system_tool": "always_include"}},
-            "policy": {"system_tool": "prune_all"},
-        },
-    }
-    assert configs.pruning_system_tool_policy(config) == "prune_all"
 
 
 def test_stats_provider_for_entry_uses_registry_provider() -> None:

@@ -39,7 +39,7 @@ def _skills_config(root: Path, *, pipeline: str = "llm") -> dict:
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
 
 

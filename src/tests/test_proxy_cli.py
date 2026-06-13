@@ -30,10 +30,11 @@ def _write_remote_rerank_user_config(path: Path) -> None:
     path.write_text(
         """
 pruning:
-  pipeline: [rerank]
-defaults:
-  remote:
-    reranking_model_nick: rerank-qwen3-8b
+  tools:
+    sequence: [rerank]
+    pipelines:
+      rerank:
+        model_nick: rerank-qwen3-8b
 models:
   rerankers:
     remote:

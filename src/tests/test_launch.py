@@ -309,8 +309,10 @@ class TestRequiredLaunchEnvVars:
     ) -> None:
         config = {
             "pruning": {
-                "pipeline": ["rerank"],
-                "rerank": {"model": {"remote": {"model_nick": "rerank-qwen3-8b"}}},
+                "tools": {
+                    "sequence": ["rerank"],
+                    "pipelines": {"rerank": {"model_nick": "rerank-qwen3-8b"}},
+                },
             },
             "models": {
                 "rerankers": {
@@ -350,7 +352,7 @@ class TestRequiredLaunchEnvVars:
                     },
                 },
             },
-            "pruning": {"pipeline": ["bm25"]},
+            "pruning": {"tools": {"sequence": ["bm25"]}},
         }
         names = required_launch_env_var_names(
             config,
@@ -522,10 +524,10 @@ class TestCredentials:
             user_config.read_text(encoding="utf-8")
             + """
 pruning:
-  pipeline: [llm]
-  llm:
-    model:
-      remote:
+  tools:
+    sequence: [llm]
+    pipelines:
+      llm:
         model_nick: mercury-2
 """,
             encoding="utf-8",

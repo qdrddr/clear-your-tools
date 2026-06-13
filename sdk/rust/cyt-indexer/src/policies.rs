@@ -162,19 +162,9 @@ impl PolicyContext {
 
 /// Apply pruning policies from config JSON.
 ///
-/// Precedence: `pruning.tools.policy.*`, then `pruning.policy.*`, then legacy
-/// `defaults.system_tool_policy` / `mcp_tool_policy`, plus per-tool overrides.
+/// Reads `pruning.tools.policy.system_tool`, `mcp_tool`, and `per_tool`.
 pub fn policy_context_from_values(config: &Value) -> PolicyContext {
     let mut ctx = PolicyContext::new();
-    let mut system_from_pruning = false;
-    let mut mcp_from_pruning = false;
-
-    // LEGACY — remove with config/legacy.py
-    let legacy_policy = config
-        .get("pruning")
-        .and_then(Value::as_object)
-        .and_then(|p| p.get("policy"))
-        .and_then(Value::as_object);
 
     if let Some(policy) = config
         .get("pruning")
@@ -183,7 +173,6 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
         .and_then(Value::as_object)
         .and_then(|t| t.get("policy"))
         .and_then(Value::as_object)
-        .or(legacy_policy)
     {
         if let Some(s) = policy
             .get("system_tool")
@@ -191,7 +180,6 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
             .and_then(parse_tool_policy)
         {
             ctx.system_policy = s;
-            system_from_pruning = true;
         }
         if let Some(m) = policy
             .get("mcp_tool")
@@ -199,46 +187,12 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
             .and_then(parse_tool_policy)
         {
             ctx.mcp_policy = m;
-            mcp_from_pruning = true;
         }
-    }
-    if let Some(defaults) = config.get("defaults").and_then(Value::as_object) {
-        if !system_from_pruning
-            && let Some(s) = defaults
-                .get("system_tool_policy")
-                .and_then(Value::as_str)
-                .and_then(parse_tool_policy)
-            {
-                ctx.system_policy = s;
-            }
-        if !mcp_from_pruning
-            && let Some(m) = defaults
-                .get("mcp_tool_policy")
-                .and_then(Value::as_str)
-                .and_then(parse_tool_policy)
-            {
-                ctx.mcp_policy = m;
-            }
-    }
-    let legacy_per_tool = config
-        .get("pruning")
-        .and_then(Value::as_object)
-        .and_then(|p| p.get("per_tool"))
-        .and_then(Value::as_object);
-    if let Some(per_tool) = config
-        .get("pruning")
-        .and_then(Value::as_object)
-        .and_then(|p| p.get("tools"))
-        .and_then(Value::as_object)
-        .and_then(|t| t.get("policy"))
-        .and_then(Value::as_object)
-        .and_then(|p| p.get("per_tool"))
-        .and_then(Value::as_object)
-        .or(legacy_per_tool)
-    {
-        for (tool_id, policy) in per_tool {
-            if let Some(p) = policy.as_str().and_then(parse_tool_policy) {
-                ctx.per_tool.insert(tool_id.clone(), p);
+        if let Some(per_tool) = policy.get("per_tool").and_then(Value::as_object) {
+            for (tool_id, policy) in per_tool {
+                if let Some(p) = policy.as_str().and_then(parse_tool_policy) {
+                    ctx.per_tool.insert(tool_id.clone(), p);
+                }
             }
         }
     }
@@ -1475,17 +1429,15 @@ mod tests {
     }
 
     #[test]
-    fn policy_context_prefers_pruning_policy_over_defaults() {
+    fn policy_context_reads_tools_policy() {
         let config = json!({
             "pruning": {
-                "policy": {
-                    "system_tool": "always_include",
-                    "mcp_tool": "prune_optional"
+                "tools": {
+                    "policy": {
+                        "system_tool": "always_include",
+                        "mcp_tool": "prune_optional"
+                    }
                 }
-            },
-            "defaults": {
-                "system_tool_policy": "prune_all",
-                "mcp_tool_policy": "prune_all"
             }
         });
         let ctx = policy_context_from_values(&config);
@@ -1494,15 +1446,33 @@ mod tests {
     }
 
     #[test]
-    fn policy_context_falls_back_to_defaults_policy() {
+    fn policy_context_ignores_legacy_config_paths() {
         let config = json!({
+            "pruning": {
+                "policy": {
+                    "system_tool": "always_include",
+                    "mcp_tool": "prune_optional"
+                },
+                "per_tool": {
+                    "Agent": "prune_all"
+                }
+            },
             "defaults": {
                 "system_tool_policy": "prune_all",
                 "mcp_tool_policy": "always_include"
             }
         });
         let ctx = policy_context_from_values(&config);
-        assert_eq!(ctx.system_policy, ToolPolicy::PruneAll);
-        assert_eq!(ctx.mcp_policy, ToolPolicy::AlwaysInclude);
+        assert_eq!(ctx.system_policy, ToolPolicy::PruneOptional);
+        assert_eq!(ctx.mcp_policy, ToolPolicy::PruneAll);
+        assert!(ctx.per_tool.is_empty());
+    }
+
+    #[test]
+    fn policy_context_uses_defaults_without_config() {
+        let config = json!({});
+        let ctx = policy_context_from_values(&config);
+        assert_eq!(ctx.system_policy, ToolPolicy::PruneOptional);
+        assert_eq!(ctx.mcp_policy, ToolPolicy::PruneAll);
     }
 }

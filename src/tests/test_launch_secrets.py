@@ -137,7 +137,7 @@ class TestCodexLaunchCredentials:
         name = _codex_openai_api_key_var()
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "codex-key")
         config = {
-            "pruning": {"pipeline": ["bm25"]},
+            "pruning": {"tools": {"sequence": ["bm25"]}},
             "launch": {"codex": {"env_key": name}},
         }
         sources: dict[str, str] = {}
@@ -154,7 +154,7 @@ class TestCodexLaunchCredentials:
         custom_name = "CUSTOM_CODEX_" + "API_KEY"
         monkeypatch.setenv(custom_name, "from-shell")
         config = {
-            "pruning": {"pipeline": ["bm25"]},
+            "pruning": {"tools": {"sequence": ["bm25"]}},
             "launch": {"codex": {"env_key": custom_name}},
         }
         sources: dict[str, str] = {}

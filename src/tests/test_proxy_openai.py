@@ -528,7 +528,7 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
     body = {
         "model": "gpt-test",
@@ -561,7 +561,7 @@ def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Pat
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
     body = {
         "model": "gpt-test",

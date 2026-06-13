@@ -29,7 +29,7 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"bm25": {"score_skills": 0.0}},
+        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         "stats": {"database": {"path": str(root / "stats.db")}},
     }
 
@@ -300,7 +300,7 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         }
 
         with patch("cyt.skills.cli.load_config", return_value=config):
@@ -503,8 +503,10 @@ def test_skills_test_reports_required_keys(
     config = {
         "skills": {"enabled": True, "pipeline": "llm"},
         "pruning": {
-            "pipeline": ["bm25"],
-            "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+            "tools": {
+                "sequence": ["bm25"],
+                "pipelines": {"llm": {"model_nick": "mercury-2"}},
+            },
         },
         "models": {
             "llm": {
@@ -543,8 +545,10 @@ def test_skills_test_reports_pruning_pipeline_keys(
     config = {
         "skills": {"enabled": False, "pipeline": "bm25"},
         "pruning": {
-            "pipeline": ["llm"],
-            "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+            "tools": {
+                "sequence": ["llm"],
+                "pipelines": {"llm": {"model_nick": "mercury-2"}},
+            },
         },
         "models": {
             "llm": {
@@ -595,8 +599,10 @@ def test_hook_resolves_skills_key_from_keyring(
                 "max_tokens_per_request": 4000,
             },
             "pruning": {
-                "pipeline": ["bm25"],
-                "llm": {"model": {"remote": {"model_nick": "mercury-2"}}},
+                "tools": {
+                    "sequence": ["bm25"],
+                    "pipelines": {"llm": {"model_nick": "mercury-2"}},
+                },
             },
             "models": {
                 "llm": {

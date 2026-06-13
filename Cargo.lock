@@ -137,7 +137,7 @@ checksum = "01334b89b69ff726750c5ce5073fc8bd860e99aa9a8fc5ca11b04730e3aee97a"
 
 [[package]]
 name = "cyt-indexer"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "chunk",
  "clap",

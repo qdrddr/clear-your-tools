@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from cyt.config import (
-    _remote_defaults,
     key_var_name_for_model_nick,
     load_config,
     load_user_config_overlay,
     model_responses_api,
+    pruning_stage_model_nick,
     remote_model_entry,
     resolve_model,
     stats_provider_for_entry,
@@ -55,9 +55,8 @@ RerankPruningSettings = RemotePruningSettings
 def resolve_remote_pruning_settings(
     *,
     config: dict[str, Any] | None = None,
-    nick_config_key: str,
     model_kind: str,
-    pipeline_name: str,
+    pipeline_name: Literal["rerank", "llm"],
     missing_nick_message: str,
     responses_api: bool = False,
     derive_dns_from_base_url: bool = False,
@@ -70,7 +69,7 @@ def resolve_remote_pruning_settings(
         cfg = config
         user = config
 
-    model_nick = _remote_defaults(cfg, user_config=user).get(nick_config_key)
+    model_nick = pruning_stage_model_nick(cfg, pipeline_name, user_config=user)
     if not model_nick:
         raise ValueError(missing_nick_message)
 

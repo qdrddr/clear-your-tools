@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 import yaml
 from dotenv import load_dotenv
 
-from cyt.config import legacy
-
 logger = logging.getLogger(__name__)
 
 
@@ -114,8 +112,6 @@ def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
 _DEFAULTS: dict[str, Any] = {
     "defaults": {
         "is_persistent": True,
-        "system_tool_policy": DEFAULT_SYSTEM_TOOL_POLICY,
-        "mcp_tool_policy": DEFAULT_MCP_TOOL_POLICY,
         "reranking_enabled": False,
     },
     "models": {
@@ -213,8 +209,6 @@ def _bundled_pruning_per_tool_overlay(bundled: dict[str, Any]) -> dict[str, Any]
         policy = tools.get("policy")
         if isinstance(policy, dict) and "per_tool" in policy:
             return {"tools": {"policy": {"per_tool": copy.deepcopy(policy["per_tool"])}}}
-    if "per_tool" in pruning:
-        return {"per_tool": copy.deepcopy(pruning["per_tool"])}
     return None
 
 
@@ -476,11 +470,10 @@ def stats_db_path(config: dict[str, Any]) -> str:
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     merged = _merged_config(config)
-    sequence = legacy.resolve_user_then_merged(
+    sequence = _resolve_user_then_merged(
         merged,
         config,
-        canonical_keys=("pruning", "tools", "sequence"),
-        legacy_name="tools.sequence",
+        keys=("pruning", "tools", "sequence"),
     )
     if sequence is not None:
         if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
@@ -523,7 +516,7 @@ def _warn_pruning_pipeline_adjustments(
         return
     for skip in skipped_stages:
         logger.warning(
-            "Pruning stage %r skipped: %d tools below pruning.policy.minimum_tools %d",
+            "Pruning stage %r skipped: %d tools below pruning.tools.policy.minimum_tools %d",
             skip["stage"],
             skip["tool_count"],
             skip["minimum_tools"],
@@ -591,9 +584,6 @@ def _tools(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pipeline_def(config: dict[str, Any], stage: str) -> dict[str, Any]:
-    user_legacy = _nested_dict_value(config, "pruning", stage)
-    if isinstance(user_legacy, dict):
-        return cast(dict[str, Any], user_legacy)
     user_canonical = _nested_dict_value(config, "pruning", "tools", "pipelines", stage)
     if isinstance(user_canonical, dict):
         return cast(dict[str, Any], user_canonical)
@@ -601,9 +591,6 @@ def _pipeline_def(config: dict[str, Any], stage: str) -> dict[str, Any]:
     merged_canonical = _nested_dict_value(merged, "pruning", "tools", "pipelines", stage)
     if isinstance(merged_canonical, dict):
         return cast(dict[str, Any], merged_canonical)
-    merged_legacy = _nested_dict_value(merged, "pruning", stage)
-    if isinstance(merged_legacy, dict):
-        return cast(dict[str, Any], merged_legacy)
     return {}
 
 
@@ -611,23 +598,13 @@ def _resolve_user_then_merged(
     merged: dict[str, Any],
     user: dict[str, Any],
     *,
-    new_keys: tuple[str, ...],
-    legacy_keys: tuple[str, ...],
+    keys: tuple[str, ...],
 ) -> object | None:
-    """Prefer explicit user keys; when both exist in merged layers, prefer *new_keys*."""
-    user_new = _nested_dict_value(user, *new_keys)
-    user_legacy = _nested_dict_value(user, *legacy_keys)
-    if user_new is not None:
-        return user_new
-    if user_legacy is not None:
-        return user_legacy
-    merged_new = _nested_dict_value(merged, *new_keys)
-    merged_legacy = _nested_dict_value(merged, *legacy_keys)
-    if merged_new is not None and merged_legacy is not None:
-        return merged_new
-    if merged_new is not None:
-        return merged_new
-    return merged_legacy
+    """Prefer explicit user keys, then merged keys."""
+    user_value = _nested_dict_value(user, *keys)
+    if user_value is not None:
+        return user_value
+    return _nested_dict_value(merged, *keys)
 
 
 def _user_overlay_for_config(
@@ -647,14 +624,13 @@ def pruning_system_tool_policy(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve system tool policy: ``pruning.tools.policy.system_tool`` then legacy paths."""
+    """Resolve system tool policy from ``pruning.tools.policy.system_tool``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = legacy.resolve_user_then_merged(
+    policy = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "policy", "system_tool"),
-        legacy_name="tools.policy.system_tool",
+        keys=("pruning", "tools", "policy", "system_tool"),
     )
     if policy is None:
         return DEFAULT_SYSTEM_TOOL_POLICY
@@ -666,14 +642,13 @@ def pruning_mcp_tool_policy(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve MCP tool policy: ``pruning.tools.policy.mcp_tool`` then legacy paths."""
+    """Resolve MCP tool policy from ``pruning.tools.policy.mcp_tool``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = legacy.resolve_user_then_merged(
+    policy = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "policy", "mcp_tool"),
-        legacy_name="tools.policy.mcp_tool",
+        keys=("pruning", "tools", "policy", "mcp_tool"),
     )
     if policy is None:
         return DEFAULT_MCP_TOOL_POLICY
@@ -714,12 +689,6 @@ def _per_tool_policy(pruning: dict[str, Any], tool_id: str) -> ToolPolicy | None
                 policy = per_tool[tool_id]
                 if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
                     return cast(ToolPolicy, policy)
-    per_tool = pruning.get("per_tool")
-    if not isinstance(per_tool, dict) or tool_id not in per_tool:
-        return None
-    policy = per_tool[tool_id]
-    if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
-        return cast(ToolPolicy, policy)
     return None
 
 
@@ -832,14 +801,13 @@ def pruning_stage_model_nick(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> str | None:
-    """Resolve stage model nick from pipeline config then legacy paths."""
+    """Resolve stage model nick from ``pruning.tools.pipelines.<stage>.model_nick``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    nick = legacy.resolve_user_then_merged(
+    nick = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "pipelines", stage, "model_nick"),
-        legacy_name=f"pipelines.{stage}.model_nick",
+        keys=("pruning", "tools", "pipelines", stage, "model_nick"),
     )
     return str(nick) if nick is not None else None
 
@@ -848,11 +816,10 @@ def _bm25_index_dir_resolved(
     merged: dict[str, Any],
     user: dict[str, Any],
 ) -> str:
-    index_dir = legacy.resolve_user_then_merged(
+    index_dir = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "pipelines", "bm25", "index_dir"),
-        legacy_name="pipelines.bm25.index_dir",
+        keys=("pruning", "tools", "pipelines", "bm25", "index_dir"),
     )
     return str(index_dir) if index_dir is not None else DEFAULT_BM25_INDEX_DIR
 
@@ -1029,9 +996,6 @@ def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:
             sequence = tools.get("sequence")
             if isinstance(sequence, list):
                 return sequence
-        pipeline = pruning.get("pipeline")
-        if isinstance(pipeline, list):
-            return pipeline
     return []
 
 
@@ -1042,12 +1006,6 @@ def _model_nick_from_stage_cfg(stage_cfg: dict[str, Any]) -> str | None:
     model = stage_cfg.get("model")
     if isinstance(model, str) and model:
         return model
-    if isinstance(model, dict):
-        remote = model.get("remote", {})
-        if isinstance(remote, dict):
-            legacy_nick = remote.get("model_nick")
-            if legacy_nick:
-                return str(legacy_nick)
     return None
 
 
@@ -1062,12 +1020,7 @@ def _user_stage_model_nick(user_config: dict[str, Any], stage: str) -> str | Non
                 if isinstance(stage_cfg, dict):
                     if nick := _model_nick_from_stage_cfg(stage_cfg):
                         return nick
-        stage_cfg = pruning.get(stage, {})
-        if isinstance(stage_cfg, dict):
-            if nick := _model_nick_from_stage_cfg(stage_cfg):
-                return nick
-    resolved = legacy.resolve_legacy({}, user_config, f"pipelines.{stage}.model_nick")
-    return str(resolved) if resolved is not None else None
+    return None
 
 
 def _remote_model_configured(
@@ -1109,21 +1062,6 @@ def remote_pruning_pipeline_configured(user_config: dict[str, Any]) -> bool:
     return any(_remote_pruning_stage_configured(user_config, stage) for stage in pipeline)
 
 
-def _remote_defaults(
-    config: dict[str, Any],
-    *,
-    user_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Legacy-shaped remote defaults synthesized from per-pipeline config."""
-    user = _user_overlay_for_config(config, user_config=user_config)
-    remote: dict[str, Any] = {}
-    if rerank_nick := pruning_stage_model_nick(config, "rerank", user_config=user):
-        remote["reranking_model_nick"] = rerank_nick
-    if llm_nick := pruning_stage_model_nick(config, "llm", user_config=user):
-        remote["llm_model_nick"] = llm_nick
-    return remote
-
-
 def _remote_model_entries(config: dict[str, Any], model_kind: str) -> list[dict[str, Any]]:
     entries = _merged_config(config).get("models", {}).get(model_kind, {}).get("remote", [])
     if not isinstance(entries, list):
@@ -1162,14 +1100,12 @@ def _append_pruning_stage_env_var(
     user_config: dict[str, Any] | None = None,
 ) -> None:
     merged = _config_with_bundled_defaults(config)
-    model_kind, nick_key = _PIPELINE_STAGE_MODEL_KEYS[stage]
+    model_kind, _ = _PIPELINE_STAGE_MODEL_KEYS[stage]
     user = _user_overlay_for_config(config, user_config=user_config)
     model_nick = pruning_stage_model_nick(merged, stage, user_config=user)
     if not model_nick:
         raise ValueError(
-            f"pruning.{stage}.model.remote.model_nick "
-            f"(or defaults.remote.{nick_key}) is required when "
-            f"{stage!r} is configured",
+            f"pruning.tools.pipelines.{stage}.model_nick is required when {stage!r} is configured",
         )
     add(key_var_name_for_model_nick(merged, model_kind, model_nick))
 
@@ -1280,25 +1216,23 @@ def _stage_minimum_tools(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> int:
-    """Resolve stage threshold from shared and legacy config paths."""
+    """Resolve stage threshold from ``pruning.tools.policy.minimum_tools``."""
     cfg = config or load_config()
     merged = _merged_config(cfg)
     user = _user_overlay_for_config(cfg, user_config=user_config)
 
-    shared = legacy.resolve_user_then_merged(
+    shared = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "policy", "minimum_tools"),
-        legacy_name="tools.policy.minimum_tools",
+        keys=("pruning", "tools", "policy", "minimum_tools"),
     )
     if shared is not None:
         return int(cast(int | str, shared))
 
-    stage_specific = legacy.resolve_user_then_merged(
+    stage_specific = _resolve_user_then_merged(
         merged,
         user,
-        canonical_keys=("pruning", "tools", "pipelines", stage, "minimum_tools"),
-        legacy_name=f"pipelines.{stage}.minimum_tools",
+        keys=("pruning", "tools", "pipelines", stage, "minimum_tools"),
     )
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
@@ -1311,7 +1245,7 @@ def llm_minimum_tools(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> int:
-    """Resolve LLM stage threshold from ``pruning.policy.minimum_tools`` and legacy paths."""
+    """Resolve LLM stage threshold from ``pruning.tools.policy.minimum_tools``."""
     return _stage_minimum_tools(config, "llm", user_config=user_config)
 
 
@@ -1320,7 +1254,7 @@ def reranker_minimum_tools(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> int:
-    """Resolve rerank threshold from ``pruning.policy.minimum_tools`` and legacy paths."""
+    """Resolve rerank threshold from ``pruning.tools.policy.minimum_tools``."""
     return _stage_minimum_tools(config, "rerank", user_config=user_config)
 
 

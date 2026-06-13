@@ -97,12 +97,7 @@ def test_load_config_creates_user_config_when_missing(
     written = configs._load_yaml_dict(user_config)
     ssl = written["network"]["proxy"]["reverse"]["http2"]["ssl"]
     assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
-    per_tool = (
-        written.get("pruning", {})
-        .get("tools", {})
-        .get("policy", {})
-        .get("per_tool", written.get("pruning", {}).get("per_tool"))
-    )
+    per_tool = written.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
     assert per_tool == {}
 
 
@@ -137,7 +132,7 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
 ) -> None:
     bundled = isolated_config_paths["root"] / "bundled.yaml"
     bundled.write_text(
-        "pruning:\n  rerank:\n    model:\n      remote:\n        model_nick: bundled-rerank\n",
+        "pruning:\n  tools:\n    pipelines:\n      rerank:\n        model_nick: bundled-rerank\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -180,7 +175,7 @@ def test_require_proxy_env_not_needed_for_serve_without_pipeline_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["pipeline"] = ["bm25"]
+    config["pruning"]["tools"]["sequence"] = ["bm25"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -203,7 +198,7 @@ def test_required_proxy_env_var_names_includes_skills_pipeline_keys(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["pipeline"] = ["bm25"]
+    config["pruning"]["tools"]["sequence"] = ["bm25"]
     config["skills"] = {"enabled": True, "pipeline": "rerank"}
 
     required = configs.required_proxy_env_var_names(config)
@@ -215,7 +210,7 @@ def test_required_proxy_env_var_names_skips_skills_bm25(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["pipeline"] = ["bm25"]
+    config["pruning"]["tools"]["sequence"] = ["bm25"]
     config["skills"] = {"enabled": True, "pipeline": "bm25"}
 
     assert configs.required_proxy_env_var_names(config) == []
@@ -235,7 +230,7 @@ def test_required_pruning_env_var_names_llm_pipeline(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["pipeline"] = ["llm"]
+    config["pruning"]["tools"]["sequence"] = ["llm"]
 
     assert configs.required_pruning_env_var_names(config) == ["OPENROUTER_API_KEY"]
 
@@ -244,7 +239,7 @@ def test_required_pruning_env_var_names_bm25_only(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["pipeline"] = ["bm25"]
+    config["pruning"]["tools"]["sequence"] = ["bm25"]
 
     assert configs.required_pruning_env_var_names(config) == []
 
@@ -273,14 +268,22 @@ def test_require_proxy_env_raises_with_help_text(
 
 def test_remote_pruning_pipeline_configured_requires_user_models() -> None:
     assert configs.remote_pruning_pipeline_configured({}) is False
-    assert configs.remote_pruning_pipeline_configured({"pruning": {"pipeline": ["bm25"]}}) is False
     assert (
-        configs.remote_pruning_pipeline_configured({"pruning": {"pipeline": ["rerank"]}}) is False
+        configs.remote_pruning_pipeline_configured({"pruning": {"tools": {"sequence": ["bm25"]}}})
+        is False
+    )
+    assert (
+        configs.remote_pruning_pipeline_configured({"pruning": {"tools": {"sequence": ["rerank"]}}})
+        is False
     )
 
     configured = {
-        "pruning": {"pipeline": ["rerank"]},
-        "defaults": {"remote": {"reranking_model_nick": "rerank-qwen3-8b"}},
+        "pruning": {
+            "tools": {
+                "sequence": ["rerank"],
+                "pipelines": {"rerank": {"model_nick": "rerank-qwen3-8b"}},
+            },
+        },
         "models": {
             "rerankers": {
                 "remote": [{"nick": "rerank-qwen3-8b", "key_var_name": "DEEPINFRA_API_KEY"}],
@@ -302,29 +305,31 @@ def test_load_user_config_overlay_reads_on_disk_only(
     assert "defaults" not in overlay
 
 
-def test_pruning_stage_model_nick_prefers_new_path() -> None:
+def test_pruning_stage_model_nick_reads_canonical_path() -> None:
     config = {
         "pruning": {
-            "rerank": {"model": {"remote": {"model_nick": "new-rerank"}}},
+            "tools": {
+                "pipelines": {
+                    "rerank": {"model_nick": "new-rerank"},
+                },
+            },
         },
-        "defaults": {"remote": {"reranking_model_nick": "legacy-rerank"}},
     }
     assert configs.pruning_stage_model_nick(config, "rerank") == "new-rerank"
-
-
-def test_pruning_stage_model_nick_legacy_fallback() -> None:
-    config = {"defaults": {"remote": {"reranking_model_nick": "legacy-rerank"}}}
-    assert configs.pruning_stage_model_nick(config, "rerank") == "legacy-rerank"
 
 
 def test_effective_output_policy_stage_override() -> None:
     config = {
         "pruning": {
-            "policy": {"system_tool": "prune_optional", "mcp_tool": "prune_all"},
-            "bm25": {
-                "policy": {
-                    "system_tool": "prune_optional_descriptions",
-                    "mcp_tool": "prune_all_descriptions",
+            "tools": {
+                "policy": {"system_tool": "prune_optional", "mcp_tool": "prune_all"},
+                "pipelines": {
+                    "bm25": {
+                        "policy": {
+                            "system_tool": "prune_optional_descriptions",
+                            "mcp_tool": "prune_all_descriptions",
+                        },
+                    },
                 },
             },
         },
@@ -355,12 +360,15 @@ def test_effective_output_policy_stage_override() -> None:
     )
 
 
-def test_pruning_policy_prefers_new_path() -> None:
+def test_pruning_policy_reads_canonical_path() -> None:
     config = {
-        "pruning": {"policy": {"system_tool": "always_include", "mcp_tool": "prune_optional"}},
-        "defaults": {
-            "system_tool_policy": "prune_all",
-            "mcp_tool_policy": "prune_all",
+        "pruning": {
+            "tools": {
+                "policy": {
+                    "system_tool": "always_include",
+                    "mcp_tool": "prune_optional",
+                },
+            },
         },
     }
     assert configs.pruning_system_tool_policy(config) == "always_include"
@@ -368,20 +376,20 @@ def test_pruning_policy_prefers_new_path() -> None:
 
 
 def test_minimum_tools_shared_across_stages() -> None:
-    config = {"pruning": {"policy": {"minimum_tools": 30}}}
+    config = {"pruning": {"tools": {"policy": {"minimum_tools": 30}}}}
     assert configs.llm_minimum_tools(config) == 30
     assert configs.reranker_minimum_tools(config) == 30
 
 
-def test_minimum_tools_legacy_models_fallback() -> None:
-    config = {"models": {"rerankers": {"minimum_tools": 40}, "llm": {"minimum_tools": 40}}}
-    assert configs.llm_minimum_tools(config) == 40
-    assert configs.reranker_minimum_tools(config) == 40
-
-
-def test_bm25_index_dir_prefers_pruning_path() -> None:
+def test_bm25_index_dir_reads_canonical_path() -> None:
     config = {
-        "pruning": {"bm25": {"index_dir": "/tmp/pruning-bm25"}},
+        "pruning": {
+            "tools": {
+                "pipelines": {
+                    "bm25": {"index_dir": "/tmp/pruning-bm25"},
+                },
+            },
+        },
         "models": {"bm25": {"index_dir": "/tmp/models-bm25", "mmap": False}},
     }
     assert str(configs.bm25_index_dir(config)) == "/tmp/pruning-bm25"
@@ -416,11 +424,13 @@ def test_model_responses_api_reads_entry_flag() -> None:
     assert configs.model_responses_api(entry) is True
 
 
-def test_remote_pruning_pipeline_configured_accepts_new_paths() -> None:
+def test_remote_pruning_pipeline_configured_accepts_canonical_paths() -> None:
     configured = {
         "pruning": {
-            "pipeline": ["rerank"],
-            "rerank": {"model": {"remote": {"model_nick": "rerank-qwen3-8b"}}},
+            "tools": {
+                "sequence": ["rerank"],
+                "pipelines": {"rerank": {"model_nick": "rerank-qwen3-8b"}},
+            },
         },
         "models": {
             "rerankers": {

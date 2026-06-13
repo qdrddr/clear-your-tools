@@ -57,16 +57,12 @@ class RelevantChunkIds(BaseModel):
 
 
 def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
-    """Resolve pruning LLM model from per-pipeline or legacy config."""
+    """Resolve pruning LLM model from pipeline config."""
     return resolve_remote_pruning_settings(
         config=config,
-        nick_config_key="llm_model_nick",
         model_kind="llm",
         pipeline_name="llm",
-        missing_nick_message=(
-            "pruning.llm.model.remote.model_nick "
-            "(or defaults.remote.llm_model_nick) is required for llm pruning"
-        ),
+        missing_nick_message=("pruning.tools.pipelines.llm.model_nick is required for llm pruning"),
     )
 
 

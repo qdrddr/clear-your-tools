@@ -35,7 +35,7 @@ def test_search_returns_matches_for_relevant_query() -> None:
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         matches = search_skills("agent hooks prompt submit", entries, config=config)
@@ -77,7 +77,7 @@ def test_search_below_threshold_filters_matches() -> None:
                 "directories": [str(skills_dir)],
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.99}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.99}}}},
         }
         entries = build_registry(config)
         with patch("cyt.skills.bm25.bm25_score_skills", return_value=0.99):
@@ -103,7 +103,7 @@ def test_frontmatter_gate_excludes_similar_skill() -> None:
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         matches = search_skills(
@@ -132,7 +132,7 @@ def test_frontmatter_gate_allows_dissimilar_skill() -> None:
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         matches = search_skills(
@@ -179,7 +179,7 @@ def test_match_name_preserved_after_content_only_search() -> None:
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
             },
-            "pruning": {"bm25": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         matches = search_skills(
@@ -209,7 +209,7 @@ def test_search_rerank_pipeline_dispatches_to_rerank_skill_nodes() -> None:
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": False},
             },
-            "pruning": {"rerank": {"score_skills": 0.0}},
+            "pruning": {"tools": {"pipelines": {"rerank": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         with patch(

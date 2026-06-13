@@ -1160,10 +1160,12 @@ class TestSaveUserConfig:
             "\n".join(
                 [
                     "pruning:",
-                    "  per_tool:",
-                    "    Agent: prune_optional",
-                    "  pipeline:",
-                    "  - rerank",
+                    "  tools:",
+                    "    policy:",
+                    "      per_tool:",
+                    "        Agent: prune_optional",
+                    "    sequence:",
+                    "    - rerank",
                     "network:",
                     "  proxy:",
                     "    reverse:",
@@ -1178,22 +1180,16 @@ class TestSaveUserConfig:
         )
         save_user_config(
             path,
-            {"pruning": {"pipeline": ["rerank"]}},
+            {"pruning": {"tools": {"sequence": ["rerank"]}}},
             apply_bundled_sections=True,
         )
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundled = bundled_user_config_sections()
         loaded_per_tool = (
-            loaded.get("pruning", {})
-            .get("tools", {})
-            .get("policy", {})
-            .get("per_tool", loaded.get("pruning", {}).get("per_tool"))
+            loaded.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
         )
         bundled_per_tool = (
-            bundled.get("pruning", {})
-            .get("tools", {})
-            .get("policy", {})
-            .get("per_tool", bundled.get("pruning", {}).get("per_tool"))
+            bundled.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
         )
         assert loaded_per_tool == bundled_per_tool
         assert "Agent" not in loaded_per_tool

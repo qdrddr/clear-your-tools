@@ -33,7 +33,6 @@ def _apply_bm25_fallback_pipeline(config: dict[str, Any]) -> None:
         tools = pruning.setdefault("tools", {})
         if isinstance(tools, dict):
             tools["sequence"] = ["bm25"]
-        pruning["pipeline"] = ["bm25"]
 
 
 def _apply_bm25_fallback_if_needed(

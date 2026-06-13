@@ -43,8 +43,12 @@ def _skills_config(root: Path, *, pipeline: str = "rerank") -> dict:
             "pageindex": {"enable_bm25_chunking": False},
         },
         "pruning": {
-            "bm25": {"score_skills": 0.0},
-            "rerank": {"score_skills": 0.0},
+            "tools": {
+                "pipelines": {
+                    "bm25": {"score_skills": 0.0},
+                    "rerank": {"score_skills": 0.0},
+                },
+            },
         },
     }
 

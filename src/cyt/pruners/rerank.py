@@ -45,15 +45,13 @@ RERANK_ENUM_SCORE: float = 0.0001
 
 
 def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruningSettings:
-    """Resolve pruning reranker model from per-pipeline or legacy config."""
+    """Resolve pruning reranker model from pipeline config."""
     return resolve_remote_pruning_settings(
         config=config,
-        nick_config_key="reranking_model_nick",
         model_kind="rerankers",
         pipeline_name="rerank",
         missing_nick_message=(
-            "pruning.rerank.model.remote.model_nick "
-            "(or defaults.remote.reranking_model_nick) is required for rerank pruning"
+            "pruning.tools.pipelines.rerank.model_nick is required for rerank pruning"
         ),
         derive_dns_from_base_url=True,
     )
