@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import getpass
+import re
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -24,19 +25,39 @@ from cyt.config import (
     default_model_nick,
     load_bundled_defaults_yaml,
     load_user_config_overlay,
+    merge_model_entry,
+    provider_nick_for_dns,
+    provider_registry,
     save_user_config,
 )
 
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
+SKILLS_PIPELINE_CHOICES: tuple[str, ...] = ("bm25", "rerank", "llm")
+SKILLS_PIPELINE_LABELS: tuple[str, ...] = (
+    "bm25 (no API key, local)",
+    "rerank (smarter)",
+    "llm (more $$, smartest)",
+)
+SKILLS_PIPELINE_DEFAULT = "rerank"
+SKILLS_INJECT_VIA_CHOICES: tuple[str, ...] = ("proxy", "hook")
+SKILLS_INJECT_VIA_DEFAULT = "proxy"
+DEFAULT_SKILLS_DIRECTORIES: tuple[str, ...] = (
+    "~/.claude/skills",
+    ".claude/skills",
+    "~/.codex/skills",
+    ".codex/skills",
+)
 TOKENS_PER_MILLION = 1_000_000
 # Values at or above this (without scientific notation) are treated as USD per 1M tokens.
 _USD_PER_MILLION_THRESHOLD = 1e-4
 PRIMARY_TOO_CHEAP_USD_PER_MILLION = 0.4
 RERANK_PIPELINE_MAX_USD_PER_MILLION = 2.5
 PRUNER_MIN_COST_RATIO = 10
-PRIMARY_TOO_CHEAP_MESSAGE = (
-    "Do not use this app! As the Primary model is too cheap and this proxy "
-    "will not provide any value saving your tokens!"
+PIPELINE_CHOICE_LABELS: tuple[str, ...] = (
+    "rerank only",
+    "llm only",
+    "rerank and llm (both)",
+    "bm25 only",
 )
 PROVIDER_DOMAIN_DEFAULTS: dict[str, str] = {
     "openrouter": "openrouter.ai",
@@ -44,6 +65,16 @@ PROVIDER_DOMAIN_DEFAULTS: dict[str, str] = {
     "openai": "openai.com",
     "deepinfra": "deepinfra.com",
 }
+
+
+def upstream_entry_endpoint(entry: dict[str, Any]) -> str:
+    """Return reverse-proxy route name from an upstream list entry."""
+    value = entry.get("endpoint")
+    if value is None or not str(value).strip():
+        value = entry.get("upstream")
+    if value is None or not str(value).strip():
+        return "?"
+    return str(value).strip()
 
 
 def usd_per_million_to_per_token(usd_per_million: float | str) -> float:
@@ -91,8 +122,14 @@ def model_missing_cost_fields(entry: dict[str, Any]) -> list[str]:
     return missing
 
 
-def model_missing_metadata_fields(entry: dict[str, Any]) -> list[str]:
+def model_missing_metadata_fields(
+    entry: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> list[str]:
     """Return missing ``provider`` or ``domain_match`` field names for a remote model."""
+    if config is not None:
+        entry = merge_model_entry(config, entry)
     missing: list[str] = []
     provider = entry.get("provider")
     if not provider or not str(provider).strip():
@@ -145,7 +182,7 @@ def iter_incomplete_remote_models(
         if not isinstance(remote, list):
             continue
         for entry in remote:
-            if isinstance(entry, dict) and model_missing_metadata_fields(entry):
+            if isinstance(entry, dict) and model_missing_metadata_fields(entry, config=config):
                 result.append((kind, entry))
     return result
 
@@ -158,19 +195,24 @@ def input_usd_per_million(entry: dict[str, Any]) -> float | None:
     return per_token_to_usd_per_million(cost)
 
 
-def print_primary_too_cheap_warning(upstream_llm_model: dict[str, Any]) -> None:
-    """Warn when the primary model is too cheap for this proxy to add value."""
-    usd = input_usd_per_million(upstream_llm_model)
-    if usd is not None and usd < PRIMARY_TOO_CHEAP_USD_PER_MILLION:
-        print(PRIMARY_TOO_CHEAP_MESSAGE)
+def key_var_name_from_provider(provider: str) -> str:
+    """Infer env var name from a LiteLLM provider slug (``deepinfra`` → ``DEEPINFRA_API_KEY``)."""
+    normalized = provider.strip().upper().replace("-", "_").replace(".", "_")
+    if not normalized:
+        return ""
+    return f"{normalized}_API_KEY"
 
 
 def recommended_pipeline_default_index(upstream_llm_model: dict[str, Any]) -> int:
-    """Default pruning pipeline index: rerank for cheaper primaries, llm for expensive."""
+    """Default pruning pipeline index from primary model pricing."""
     usd = input_usd_per_million(upstream_llm_model)
-    if usd is not None and usd > RERANK_PIPELINE_MAX_USD_PER_MILLION:
-        return 1
-    return 0
+    if usd is None:
+        return PIPELINE_CHOICE_LABELS.index("rerank only")
+    if usd < PRIMARY_TOO_CHEAP_USD_PER_MILLION:
+        return PIPELINE_CHOICE_LABELS.index("bm25 only")
+    if usd > RERANK_PIPELINE_MAX_USD_PER_MILLION:
+        return PIPELINE_CHOICE_LABELS.index("llm only")
+    return PIPELINE_CHOICE_LABELS.index("rerank only")
 
 
 def max_pruner_input_cost_per_token(primary_model: dict[str, Any]) -> float | None:
@@ -308,12 +350,11 @@ def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]
     result: list[dict[str, Any]] = []
     for upstream in upstreams:
         entry: dict[str, Any] = {}
-        for key in ("upstream", "kind"):
-            if key in upstream:
-                value = upstream[key]
-                if key == "kind":
-                    value = normalize_upstream_kind(str(value))
-                entry[key] = copy.deepcopy(value)
+        endpoint = upstream_entry_endpoint(upstream)
+        if endpoint != "?":
+            entry["endpoint"] = endpoint
+        if "kind" in upstream:
+            entry["kind"] = normalize_upstream_kind(str(upstream["kind"]))
         if url := upstream.get("url") or upstream.get("host_url"):
             entry["url"] = normalize_upstream_url(str(url))
         result.append(entry)
@@ -421,7 +462,7 @@ def build_upstream_cli_overlay(
     else:
         resolved_name = derive_upstream_name_from_url(upstream_url)
     upstream: dict[str, Any] = {
-        "upstream": resolved_name,
+        "endpoint": resolved_name,
         "kind": kind,
         "url": normalize_upstream_url(upstream_url),
     }
@@ -453,14 +494,14 @@ def apply_upstream_cli_to_config(
         upstream_name=upstream_name,
     )
     new_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
-    new_name = str(new_upstream["upstream"])
+    new_name = str(new_upstream["endpoint"])
     new_kind = normalize_upstream_kind(str(new_upstream["kind"]))
     new_url = normalize_upstream_url(str(new_upstream["url"]))
 
     for entry in _reverse_proxy_section(existing).get("upstreams", []):
         if not isinstance(entry, dict):
             continue
-        if str(entry.get("upstream")) != new_name:
+        if upstream_entry_endpoint(entry) != new_name:
             continue
         existing_kind = normalize_upstream_kind(str(entry.get("kind", "")))
         existing_url = normalize_upstream_url(
@@ -480,6 +521,15 @@ def apply_upstream_cli_to_config(
 def normalize_base_url(raw: str) -> str:
     """Return full API base URL, preserving path (e.g. ``/v1``); strip trailing slash only."""
     return normalize_upstream_url(raw)
+
+
+def parse_path_list(raw: str) -> list[str] | None:
+    """Parse comma-separated filesystem paths; empty input omits the list."""
+    text = raw.strip()
+    if not text:
+        return None
+    paths = [part.strip() for part in text.split(",") if part.strip()]
+    return paths or None
 
 
 def parse_domain_match(raw: str) -> list[str] | None:
@@ -519,7 +569,7 @@ def pipeline_from_choice(choice: PipelineChoice) -> list[str]:
     return ["rerank", "llm"]
 
 
-def merge_model_entry(
+def upsert_remote_model(
     remote_list: list[dict[str, Any]],
     entry: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -530,13 +580,183 @@ def merge_model_entry(
     return result
 
 
+PROVIDER_REGISTRY_FIELDS = frozenset({"provider", "key_var_name", "domain_match"})
+
+
+def _provider_nick_from_model(
+    entry: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> str:
+    nick = entry.get("provider_nick") or entry.get("provider")
+    if nick:
+        return str(nick).strip()
+    domain_match = entry.get("domain_match")
+    if isinstance(domain_match, list) and domain_match:
+        dns = str(domain_match[0])
+        if config is not None:
+            inferred = provider_nick_for_dns(config, dns)
+            if inferred:
+                return inferred
+        hostname = _extract_hostname(dns)
+        return re.sub(r"[^a-zA-Z0-9]+", "-", hostname).strip("-").lower()
+    model_nick = entry.get("nick")
+    if isinstance(model_nick, str) and model_nick:
+        prefix = model_nick.split("-", 1)[0]
+        if config is not None and prefix in provider_registry(config):
+            return prefix
+    return ""
+
+
+def provider_entry_from_model(
+    entry: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Build a ``models.providers`` row from inline model fields."""
+    provider_nick = _provider_nick_from_model(entry, config=config)
+    if not provider_nick:
+        return None
+    provider = str(entry.get("provider") or provider_nick)
+    result: dict[str, Any] = {
+        "provider_nick": provider_nick,
+        "provider": provider,
+    }
+    if key_var := entry.get("key_var_name"):
+        result["key_var_name"] = str(key_var)
+    domain_match = entry.get("domain_match")
+    if isinstance(domain_match, list) and domain_match:
+        result["domain_match"] = copy.deepcopy(domain_match)
+    return result
+
+
+def canonicalize_model_remote_entry(
+    entry: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Strip provider-registry fields; keep ``provider_nick`` on model rows."""
+    result = copy.deepcopy(entry)
+    provider_nick = _provider_nick_from_model(result, config=config)
+    if provider_nick:
+        result["provider_nick"] = provider_nick
+    for field in PROVIDER_REGISTRY_FIELDS:
+        result.pop(field, None)
+    return result
+
+
+def merge_provider_entry(
+    providers: list[dict[str, Any]],
+    entry: dict[str, Any],
+) -> list[dict[str, Any]]:
+    nick = str(entry.get("provider_nick", ""))
+    existing = next(
+        (
+            provider
+            for provider in providers
+            if isinstance(provider, dict) and str(provider.get("provider_nick", "")) == nick
+        ),
+        None,
+    )
+    result = [
+        copy.deepcopy(provider)
+        for provider in providers
+        if isinstance(provider, dict) and str(provider.get("provider_nick", "")) != nick
+    ]
+    if existing is not None:
+        result.append(deep_merge(existing, entry))
+    else:
+        result.append(copy.deepcopy(entry))
+    return result
+
+
+def providers_from_model_entries(
+    entries: list[dict[str, Any]],
+    *,
+    config: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    providers: list[dict[str, Any]] = []
+    for entry in entries:
+        provider = provider_entry_from_model(entry, config=config)
+        if provider is not None:
+            providers = merge_provider_entry(providers, provider)
+    if config is not None:
+        registry = provider_registry(config)
+        providers = [
+            deep_merge(dict(registry.get(str(provider.get("provider_nick", "")), {})), provider)
+            for provider in providers
+        ]
+    return providers
+
+
+def build_models_config_section(
+    llm_remote: list[dict[str, Any]],
+    reranker_remote: list[dict[str, Any]] | None = None,
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build canonical ``models`` overlay with providers split from remote entries."""
+    reranker_remote = reranker_remote or []
+    all_entries = llm_remote + reranker_remote
+    providers = providers_from_model_entries(all_entries, config=config)
+    models: dict[str, Any] = {
+        "providers": providers,
+        "llm": {
+            "remote": [
+                canonicalize_model_remote_entry(entry, config=config) for entry in llm_remote
+            ],
+        },
+    }
+    if reranker_remote:
+        models["rerankers"] = {
+            "remote": [
+                canonicalize_model_remote_entry(entry, config=config) for entry in reranker_remote
+            ],
+        }
+    return models
+
+
+def _ensure_models_providers(
+    models: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> None:
+    """Move inline provider fields from remote entries into ``models.providers``."""
+    if config is None:
+        config = {"models": models}
+    providers_raw = models.get("providers", [])
+    providers = (
+        [copy.deepcopy(entry) for entry in providers_raw if isinstance(entry, dict)]
+        if isinstance(providers_raw, list)
+        else []
+    )
+    for kind in ("llm", "rerankers"):
+        section = models.get(kind, {})
+        if not isinstance(section, dict):
+            continue
+        remote = section.get("remote", [])
+        if not isinstance(remote, list):
+            continue
+        canonical_remote: list[dict[str, Any]] = []
+        for entry in remote:
+            if not isinstance(entry, dict):
+                continue
+            provider = provider_entry_from_model(entry, config=config)
+            if provider is not None:
+                providers = merge_provider_entry(providers, provider)
+            canonical_remote.append(canonicalize_model_remote_entry(entry, config=config))
+        section["remote"] = canonical_remote
+    if providers:
+        models["providers"] = providers
+
+
 def merge_upstream_entry(
     upstream_list: list[dict[str, Any]],
     entry: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Replace an existing upstream with the same name, or append."""
-    name = entry.get("upstream")
-    result = [e for e in upstream_list if not (name and e.get("upstream") == name)]
+    """Replace an existing upstream with the same endpoint name, or append."""
+    name = upstream_entry_endpoint(entry)
+    result = [e for e in upstream_list if not (name != "?" and upstream_entry_endpoint(e) == name)]
     result.append(entry)
     return result
 
@@ -560,7 +780,7 @@ def _merge_remote_models(
     result = [copy.deepcopy(entry) for entry in existing if isinstance(entry, dict)]
     for entry in overlay:
         if isinstance(entry, dict):
-            result = merge_model_entry(result, copy.deepcopy(entry))
+            result = upsert_remote_model(result, copy.deepcopy(entry))
     return result
 
 
@@ -618,6 +838,19 @@ def _merge_models_overlay(
         return
 
     models = merged.setdefault("models", {})
+    overlay_providers = overlay_models.get("providers")
+    if isinstance(overlay_providers, list):
+        existing_providers = existing_models.get("providers", [])
+        if not isinstance(existing_providers, list):
+            existing_providers = []
+        providers = [
+            copy.deepcopy(entry) for entry in existing_providers if isinstance(entry, dict)
+        ]
+        for entry in overlay_providers:
+            if isinstance(entry, dict):
+                providers = merge_provider_entry(providers, copy.deepcopy(entry))
+        models["providers"] = providers
+
     for kind in ("llm", "rerankers"):
         overlay_section = overlay_models.get(kind)
         if not isinstance(overlay_section, dict):
@@ -633,6 +866,8 @@ def _merge_models_overlay(
             existing_remote = []
         section = models.setdefault(kind, {})
         section["remote"] = _merge_remote_models(existing_remote, overlay_remote)
+
+    _ensure_models_providers(models, config=merged)
 
 
 def merge_setup_overlay(
@@ -651,7 +886,11 @@ def merge_setup_overlay(
     return merged
 
 
-def collect_key_var_names(models: dict[str, Any]) -> list[str]:
+def collect_key_var_names(
+    models: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> list[str]:
     """Return unique key_var_name values from llm and reranker remote model lists."""
     seen: set[str] = set()
     names: list[str] = []
@@ -665,7 +904,8 @@ def collect_key_var_names(models: dict[str, Any]) -> list[str]:
         for entry in remote:
             if not isinstance(entry, dict):
                 continue
-            key_var = entry.get("key_var_name")
+            enriched = merge_model_entry(config, entry) if config is not None else entry
+            key_var = enriched.get("key_var_name")
             if key_var and key_var not in seen:
                 seen.add(str(key_var))
                 names.append(str(key_var))
@@ -719,7 +959,6 @@ def build_setup_overlay(
     pipeline: list[str],
     reranker_model: dict[str, Any] | None,
     llm_pruner_model: dict[str, Any] | None,
-    upstream_llm_models: list[dict[str, Any]],
     minimum_tools: int | None,
     system_tool_policy: ToolPolicy,
     mcp_tool_policy: ToolPolicy,
@@ -727,16 +966,18 @@ def build_setup_overlay(
     upstreams: list[dict[str, Any]],
     endpoints: list[str],
     stats_db_path: str,
+    skills: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the user config overlay dict from wizard selections."""
-    llm_remote: list[dict[str, Any]] = [copy.deepcopy(model) for model in upstream_llm_models]
+    llm_remote: list[dict[str, Any]] = []
     if llm_pruner_model is not None:
-        llm_remote = merge_model_entry(llm_remote, copy.deepcopy(llm_pruner_model))
+        llm_remote = upsert_remote_model(llm_remote, copy.deepcopy(llm_pruner_model))
 
-    models: dict[str, Any] = {"llm": {"remote": llm_remote}}
-
+    reranker_remote: list[dict[str, Any]] = []
     if reranker_model is not None:
-        models["rerankers"] = {"remote": [copy.deepcopy(reranker_model)]}
+        reranker_remote = [copy.deepcopy(reranker_model)]
+
+    models = build_models_config_section(llm_remote, reranker_remote)
 
     policy: dict[str, Any] = {
         "system_tool": system_tool_policy,
@@ -745,26 +986,19 @@ def build_setup_overlay(
     if minimum_tools is not None:
         policy["minimum_tools"] = minimum_tools
 
+    pipelines: dict[str, Any] = {}
+    if reranker_model is not None:
+        pipelines["rerank"] = {"model_nick": str(reranker_model["nick"])}
+    if llm_pruner_model is not None:
+        pipelines["llm"] = {"model_nick": str(llm_pruner_model["nick"])}
+
     pruning: dict[str, Any] = {
-        "pipeline": pipeline,
-        "policy": policy,
+        "tools": {
+            "sequence": pipeline,
+            "policy": policy,
+            "pipelines": pipelines,
+        },
     }
-    if reranker_model is not None and "rerank" in pipeline:
-        pruning["rerank"] = {
-            "model": {
-                "remote": {
-                    "model_nick": str(reranker_model["nick"]),
-                },
-            },
-        }
-    if llm_pruner_model is not None and "llm" in pipeline:
-        pruning["llm"] = {
-            "model": {
-                "remote": {
-                    "model_nick": str(llm_pruner_model["nick"]),
-                },
-            },
-        }
 
     defaults: dict[str, Any] = {}
     if "rerank" in pipeline:
@@ -784,6 +1018,7 @@ def build_setup_overlay(
             },
         },
         "stats": {"database": {"path": stats_db_path}},
+        **({"skills": skills} if skills is not None else {}),
     }
 
 
@@ -827,8 +1062,10 @@ _KEY_VAR_PROMPT = (
 )
 
 
-def _prompt_key_var_name(*, default: str | None = None) -> str:
+def _prompt_key_var_name(*, default: str | None = None, provider: str | None = None) -> str:
     default_key_var = default.strip() if default else None
+    if not default_key_var and provider:
+        default_key_var = key_var_name_from_provider(provider)
     if default_key_var == "":
         default_key_var = None
     return _prompt_required(_KEY_VAR_PROMPT, default_key_var)
@@ -937,6 +1174,14 @@ def _prompt_choice[ChoiceT: str](
         print(f"Choose 1-{len(choices)}.", file=sys.stderr)
 
 
+def _catalog_merge_config(user_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Bundled defaults merged with user config for provider registry lookups."""
+    bundled = load_bundled_defaults_yaml()
+    if not user_config:
+        return bundled
+    return deep_merge(bundled, user_config)
+
+
 def _catalog_entries(kind: str) -> list[dict[str, Any]]:
     bundled = load_bundled_defaults_yaml()
     models = bundled.get("models", {})
@@ -961,8 +1206,11 @@ def _select_model_from_catalog(
     max_input_cost_per_token: float | None = None,
     custom_default_base_url: str | None = None,
     prompt_custom_base_url: bool = False,
+    confirm_fields: bool = True,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    full_catalog = _catalog_entries(kind)
+    merge_config = _catalog_merge_config(config)
+    full_catalog = [merge_model_entry(merge_config, entry) for entry in _catalog_entries(kind)]
     catalog = full_catalog
     default_index = 0
     if filter_by_upstream_domains and domain_match_upstreams:
@@ -980,6 +1228,8 @@ def _select_model_from_catalog(
     if choice != "Custom…":
         idx = options.index(choice)
         entry = copy.deepcopy(catalog[idx])
+        if not confirm_fields:
+            return entry
         return _confirm_model_fields(
             entry,
             allow_catalog_defaults=True,
@@ -1005,33 +1255,36 @@ def _confirm_model_fields(
     domain_match_upstreams: list[dict[str, Any]] | None = None,
     max_input_cost_per_token: float | None = None,
 ) -> dict[str, Any]:
-    provider = str(entry.get("provider", ""))
     name = str(entry.get("name", ""))
-    default_nick = str(entry.get("nick") or default_model_nick(provider, name))
+    provider_default = str(entry.get("provider") or "").strip()
+    default_nick = str(entry.get("nick") or default_model_nick(provider_default, name))
     nick = _prompt("Model nick", default_nick)
     name = _prompt("Model name (as seen on the provider's website)", name)
-    provider = _prompt("Provider (https://docs.litellm.ai/docs/providers)", provider)
+    provider = _prompt_required(
+        "Provider (https://docs.litellm.ai/docs/providers)",
+        provider_default or None,
+    )
     key_var: str | None = None
     if prompt_key_var:
-        key_var = _prompt_key_var_name(default=str(entry.get("key_var_name", "")))
+        key_var = _prompt_key_var_name(
+            default=str(entry.get("key_var_name", "")),
+            provider=provider,
+        )
     max_tokens = _prompt_int(
         "max_tokens",
         int(entry.get("max_tokens", 128000)),
     )
-    domain_match = _prompt_domain_match(
-        provider,
-        entry,
-        upstreams=domain_match_upstreams,
-        required=True,
-    )
 
     result: dict[str, Any] = {
         "name": name,
+        "provider_nick": provider,
         "provider": provider,
         "nick": nick,
         "max_tokens": max_tokens,
-        "domain_match": domain_match,
     }
+    domain_match = entry.get("domain_match")
+    if isinstance(domain_match, list) and domain_match:
+        result["domain_match"] = copy.deepcopy(domain_match)
     if pricing := _pricing_overlay_from_entry(entry):
         result["pricing"] = pricing
     if key_var is not None:
@@ -1049,17 +1302,18 @@ def _prompt_custom_model(
     prompt_base_url: bool = False,
     max_input_cost_per_token: float | None = None,
 ) -> dict[str, Any]:
-    provider = _prompt("Provider (https://docs.litellm.ai/docs/providers)")
+    provider = _prompt_required("Provider (https://docs.litellm.ai/docs/providers)")
     name = _prompt("Model name (as seen on the provider's website)")
     nick = _prompt("Model nick", default_model_nick(provider, name))
     while not nick:
         nick = _prompt("Model nick (required)")
     key_var: str | None = None
     if prompt_key_var:
-        key_var = _prompt_key_var_name()
+        key_var = _prompt_key_var_name(provider=provider)
     max_tokens = _prompt_int("max_tokens", 128000)
     result: dict[str, Any] = {
         "name": name,
+        "provider_nick": provider,
         "provider": provider,
         "nick": nick,
         "max_tokens": max_tokens,
@@ -1074,41 +1328,63 @@ def _prompt_custom_model(
             ),
         ):
             result["base_url"] = base_url
-    domain_match = _prompt_domain_match(
-        provider,
-        None,
-        upstreams=domain_match_upstreams,
-        base_url=result.get("base_url"),
-        required=True,
-    )
-    result["domain_match"] = domain_match
     return result
 
 
-def _pipeline_choice_labels(recommended_index: int) -> list[str]:
-    base = ("rerank only", "llm only", "rerank and llm (both)", "bm25 only")
+def _default_minimum_tools(config: dict[str, Any]) -> int:
+    """Return configured ``pruning.policy.minimum_tools`` or bundled default."""
+    pruning = config.get("pruning")
+    if isinstance(pruning, dict):
+        tools = pruning.get("tools")
+        if isinstance(tools, dict):
+            policy = tools.get("policy")
+            if isinstance(policy, dict) and policy.get("minimum_tools") is not None:
+                return int(policy["minimum_tools"])
+    return DEFAULT_MIN_TOOLS_PRUNING
+
+
+def _pipeline_choice_labels(
+    recommended_index: int,
+    *,
+    minimum_tools: int,
+) -> list[str]:
+    labels = list(PIPELINE_CHOICE_LABELS)
+    bm25_index = labels.index("bm25 only")
+    labels[bm25_index] = f"bm25 (no API key, local; Defaults to when below {minimum_tools} tools)"
     return [
         f"{label} (recommended)" if index == recommended_index else label
-        for index, label in enumerate(base)
+        for index, label in enumerate(labels)
     ]
 
 
-def _prompt_pipeline(*, recommended_index: int = 0) -> list[str]:
-    print("\n--- Pruning pipelines ---")
-    pipeline_labels = _pipeline_choice_labels(recommended_index)
+def _pipeline_from_display_label(label: str) -> list[str]:
+    normalized = label.replace(" (recommended)", "")
+    if normalized.startswith("bm25"):
+        return pipeline_from_choice("bm25")
+    mapping: dict[str, PipelineChoice] = {
+        "rerank only": "rerank",
+        "llm only": "llm",
+        "rerank and llm (both)": "both",
+    }
+    return pipeline_from_choice(mapping[normalized])
+
+
+def _prompt_pipeline(
+    *,
+    recommended_index: int = 0,
+    minimum_tools: int = DEFAULT_MIN_TOOLS_PRUNING,
+) -> list[str]:
+    print("\n--- Tool pruning pipelines ---")
+    pipeline_labels = _pipeline_choice_labels(
+        recommended_index,
+        minimum_tools=minimum_tools,
+    )
     choice = _prompt_choice(
         "Select pruning method",
         pipeline_labels,
         default_index=recommended_index,
     )
-    mapping: dict[str, PipelineChoice] = {
-        "rerank only": "rerank",
-        "llm only": "llm",
-        "rerank and llm (both)": "both",
-        "bm25 only": "bm25",
-    }
-    normalized = choice.replace(" (recommended)", "")
-    return pipeline_from_choice(mapping[normalized])
+    return _pipeline_from_display_label(choice)
 
 
 def _prompt_policy(label: str, default: ToolPolicy) -> ToolPolicy:
@@ -1119,52 +1395,73 @@ def _prompt_policy(label: str, default: ToolPolicy) -> ToolPolicy:
     )
 
 
-def _prompt_primary_upstream_llms_for_upstream(
-    upstream: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Prompt for at least one primary/strong LLM tied to a single upstream."""
-    upstream_only = [upstream]
-    upstream_url = upstream_url_default(upstream_only)
-    print("\n--- Primary/Strong upstream LLM (for stats / cost tracking) ---")
-    models: list[dict[str, Any]] = [
-        _select_model_from_catalog(
-            "llm",
-            label="upstream LLM model",
-            prompt_key_var=False,
-            domain_match_upstreams=upstream_only,
-            filter_by_upstream_domains=True,
-            custom_default_base_url=upstream_url,
-        ),
-    ]
-    while _prompt_yes_no(
-        "\nAdd another Primary/Strong upstream LLM for this upstream?",
-        default_yes=False,
-    ):
-        models.append(
-            _select_model_from_catalog(
-                "llm",
-                label="upstream LLM model",
-                prompt_key_var=False,
-                domain_match_upstreams=upstream_only,
-                filter_by_upstream_domains=True,
-                custom_default_base_url=upstream_url,
-            ),
-        )
-    return models
+def _existing_upstream_setup(
+    config: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    reverse = _reverse_proxy_section(config)
+    upstreams_raw = reverse.get("upstreams", [])
+    upstreams = [copy.deepcopy(entry) for entry in upstreams_raw if isinstance(entry, dict)]
+    endpoints_raw = reverse.get("endpoints", [])
+    endpoints = [str(item) for item in endpoints_raw] if isinstance(endpoints_raw, list) else []
+    return upstreams, endpoints
 
 
-def _prompt_upstreams() -> tuple[
-    list[dict[str, Any]],
-    list[str],
-    list[dict[str, Any]],
-]:
-    upstreams: list[dict[str, Any]] = []
-    endpoints: list[str] = []
-    primary_models: list[dict[str, Any]] = []
-    print(
-        "Configure upstream API endpoints (kind + URL) and at least one "
-        "primary model per upstream.",
-    )
+def _upstream_display_fields(upstream: dict[str, Any]) -> tuple[str, str, str]:
+    endpoint = upstream_entry_endpoint(upstream)
+    kind_raw = upstream.get("kind")
+    if kind_raw:
+        kind = normalize_upstream_kind(str(kind_raw))
+    elif endpoint != "?":
+        kind = normalize_upstream_kind(endpoint)
+    else:
+        kind = "?"
+    url = str(upstream.get("url") or upstream.get("host_url") or "?").strip() or "?"
+    return endpoint, kind, url
+
+
+def _format_text_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """Return aligned table lines with a header row and underline."""
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+
+    def format_row(cells: list[str]) -> str:
+        return "  " + "  ".join(cell.ljust(widths[index]) for index, cell in enumerate(cells))
+
+    lines = [format_row(headers)]
+    lines.append("  " + "  ".join("-" * width for width in widths))
+    lines.extend(format_row(row) for row in rows)
+    return lines
+
+
+def _print_configured_upstreams(upstreams: list[dict[str, Any]]) -> None:
+    """Print configured upstream endpoint, kind, and URL."""
+    rows = [_upstream_display_fields(upstream) for upstream in upstreams]
+    print("Configured upstreams:")
+    for line in _format_text_table(["endpoint", "kind", "url"], [list(row) for row in rows]):
+        print(line)
+    print()
+
+
+def _prompt_upstreams(
+    existing: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    existing_upstreams: list[dict[str, Any]] = []
+    existing_endpoints: list[str] = []
+    if existing:
+        existing_upstreams, existing_endpoints = _existing_upstream_setup(existing)
+
+    upstreams = list(existing_upstreams)
+    endpoints = list(existing_endpoints)
+
+    print("\n--- Upstream API endpoints ---")
+    if upstreams:
+        _print_configured_upstreams(upstreams)
+        if not _prompt_yes_no("Add another upstream?", default_yes=False):
+            return upstreams, endpoints
+    else:
+        print("Configure upstream API endpoints (kind + URL).")
     while True:
         kind = normalize_upstream_kind(
             _prompt(
@@ -1179,24 +1476,190 @@ def _prompt_upstreams() -> tuple[
             ),
         )
         upstream: dict[str, Any] = {
-            "upstream": kind,
+            "endpoint": kind,
             "kind": kind,
             "url": url,
         }
-        primary_models.extend(_prompt_primary_upstream_llms_for_upstream(upstream))
         upstreams.append(upstream)
         if kind not in endpoints:
             endpoints.append(kind)
         if not _prompt_yes_no("\nAdd another upstream?", default_yes=False):
             break
-    return upstreams, endpoints, primary_models
+    return upstreams, endpoints
 
 
-def _apply_model_metadata_updates(entry: dict[str, Any], updates: dict[str, Any]) -> None:
+def _default_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
+    raw = skills_cfg.get("directories")
+    if isinstance(raw, list) and raw:
+        return [str(path) for path in raw if str(path).strip()]
+    return list(DEFAULT_SKILLS_DIRECTORIES)
+
+
+def _default_skills_inject_via(skills_cfg: dict[str, Any]) -> str:
+    raw = str(skills_cfg.get("inject_via", SKILLS_INJECT_VIA_DEFAULT)).strip().lower()
+    if raw in SKILLS_INJECT_VIA_CHOICES:
+        return raw
+    return SKILLS_INJECT_VIA_DEFAULT
+
+
+def _prompt_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
+    default_dirs = _default_skills_directories(skills_cfg)
+    default_str = ", ".join(default_dirs)
+    while True:
+        raw = _prompt("Skills directories (comma-separated paths)", default_str)
+        parsed = parse_path_list(raw)
+        if parsed is not None:
+            return parsed
+        if default_str:
+            return default_dirs
+        print("Enter at least one directory path.", file=sys.stderr)
+
+
+def _prompt_skills(existing: dict[str, Any]) -> dict[str, Any]:
+    existing_skills = existing.get("skills")
+    skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
+    default_enabled = bool(skills_cfg.get("enabled", False))
+    print("\n--- Skills injection ---")
+    enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
+    if not enabled:
+        return {"enabled": False}
+    pipeline = str(skills_cfg.get("pipeline", SKILLS_PIPELINE_DEFAULT))
+    try:
+        default_index = SKILLS_PIPELINE_CHOICES.index(pipeline)
+    except ValueError:
+        default_index = SKILLS_PIPELINE_CHOICES.index(SKILLS_PIPELINE_DEFAULT)
+    selected_label = _prompt_choice(
+        "Skills pruner pipeline",
+        list(SKILLS_PIPELINE_LABELS),
+        default_index=default_index,
+    )
+    selected_index = SKILLS_PIPELINE_LABELS.index(selected_label)
+    inject_via_default = _default_skills_inject_via(skills_cfg)
+    inject_via = _prompt_choice(
+        "Skills inject via (hook | proxy)",
+        list(SKILLS_INJECT_VIA_CHOICES),
+        default_index=SKILLS_INJECT_VIA_CHOICES.index(inject_via_default),
+    )
+    directories = _prompt_skills_directories(skills_cfg)
+    return {
+        "enabled": True,
+        "pipeline": SKILLS_PIPELINE_CHOICES[selected_index],
+        "inject_via": inject_via,
+        "directories": directories,
+    }
+
+
+def _pruning_stage_model_configured(
+    config: dict[str, Any],
+    stage: Literal["rerank", "llm"],
+) -> bool:
+    """True when *stage* has a pipeline model nick and matching remote catalog row."""
+    from cyt.config import pruning_stage_model_nick
+
+    nick = pruning_stage_model_nick(config, stage, user_config=config)
+    if not nick:
+        return False
+    model_kind = "rerankers" if stage == "rerank" else "llm"
+    models = config.get("models")
+    if not isinstance(models, dict):
+        return False
+    section = models.get(model_kind, {})
+    if not isinstance(section, dict):
+        return False
+    remote = section.get("remote", [])
+    if not isinstance(remote, list):
+        return False
+    return any(isinstance(entry, dict) and entry.get("nick") == nick for entry in remote)
+
+
+def _prompt_skills_pruner_models(
+    skills_overlay: dict[str, Any],
+    existing: dict[str, Any],
+    *,
+    reranker_model: dict[str, Any] | None,
+    llm_pruner_model: dict[str, Any] | None,
+    max_pruner_input_cost: float | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Prompt for skills rerank/llm models when needed and not already configured."""
+    if not skills_overlay.get("enabled"):
+        return reranker_model, llm_pruner_model
+
+    skills_pipeline = str(skills_overlay.get("pipeline", ""))
+    if skills_pipeline == "rerank" and reranker_model is None:
+        if not _pruning_stage_model_configured(existing, "rerank"):
+            print("\n--- Reranker (skills injection) model ---")
+            reranker_model = _select_model_from_catalog(
+                "rerankers",
+                label="reranker model",
+                prompt_key_var=True,
+                max_input_cost_per_token=max_pruner_input_cost,
+                prompt_custom_base_url=True,
+                config=existing,
+            )
+    if skills_pipeline == "llm" and llm_pruner_model is None:
+        if not _pruning_stage_model_configured(existing, "llm"):
+            print("\n--- LLM pruner (skills injection) model ---")
+            llm_pruner_model = _select_model_from_catalog(
+                "llm",
+                label="LLM pruner model",
+                prompt_key_var=True,
+                max_input_cost_per_token=max_pruner_input_cost,
+                prompt_custom_base_url=True,
+                config=existing,
+            )
+    return reranker_model, llm_pruner_model
+
+
+def _upsert_provider_metadata(
+    config: dict[str, Any],
+    entry: dict[str, Any],
+    updates: dict[str, Any],
+) -> None:
+    provider_nick = (
+        _provider_nick_from_model(entry)
+        or str(
+            updates.get("provider") or "",
+        ).strip()
+    )
+    if not provider_nick:
+        return
+
+    models = config.setdefault("models", {})
+    providers_raw = models.get("providers", [])
+    providers = (
+        [copy.deepcopy(item) for item in providers_raw if isinstance(item, dict)]
+        if isinstance(providers_raw, list)
+        else []
+    )
+    provider_entry = next(
+        (item for item in providers if str(item.get("provider_nick", "")) == provider_nick),
+        None,
+    )
+    if provider_entry is None:
+        provider_entry = {
+            "provider_nick": provider_nick,
+            "provider": str(updates.get("provider") or provider_nick),
+        }
     if "provider" in updates:
-        entry["provider"] = updates["provider"]
+        provider_entry["provider"] = updates["provider"]
     if "domain_match" in updates:
-        entry["domain_match"] = updates["domain_match"]
+        provider_entry["domain_match"] = copy.deepcopy(updates["domain_match"])
+    providers = merge_provider_entry(providers, provider_entry)
+    models["providers"] = providers
+
+    entry["provider_nick"] = provider_nick
+    entry.pop("provider", None)
+    entry.pop("domain_match", None)
+
+
+def _apply_model_metadata_updates(
+    config: dict[str, Any],
+    entry: dict[str, Any],
+    updates: dict[str, Any],
+) -> None:
+    provider_updates = {key: updates[key] for key in ("provider", "domain_match") if key in updates}
+    if provider_updates:
+        _upsert_provider_metadata(config, entry, provider_updates)
     pricing_updates = updates.get("pricing")
     if not isinstance(pricing_updates, dict):
         return
@@ -1211,9 +1674,10 @@ def _prompt_missing_model_metadata(
     entry: dict[str, Any],
     *,
     domain_match_upstreams: list[dict[str, Any]] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Prompt only for provider and domain_match fields missing from *entry*."""
-    missing = model_missing_metadata_fields(entry)
+    missing = model_missing_metadata_fields(entry, config=config)
     if not missing:
         return {}
 
@@ -1288,53 +1752,66 @@ def prompt_incomplete_models_in_config(config: dict[str, Any]) -> bool:
 
     changed = False
     for _kind, entry in incomplete:
-        if not model_missing_metadata_fields(entry):
+        if not model_missing_metadata_fields(entry, config=config):
             continue
         updates = _prompt_missing_model_metadata(
             entry,
             domain_match_upstreams=upstreams,
+            config=config,
         )
         if not updates:
             continue
-        _apply_model_metadata_updates(entry, updates)
+        _apply_model_metadata_updates(config, entry, updates)
         changed = True
+    if changed:
+        models = config.get("models")
+        if isinstance(models, dict):
+            _ensure_models_providers(models, config=config)
     return changed
 
 
 def run_add_costs_wizard(config_path: Path) -> None:
-    """Walk through LLM/reranker models missing token pricing and prompt for costs."""
+    """Fill missing model metadata/pricing used by ``cyt stats``."""
     config_path = config_path.expanduser()
     config = load_user_config_overlay(config_path)
+    metadata_changed = prompt_incomplete_models_in_config(config)
+
     missing = iter_models_missing_costs(config)
-    if not missing:
-        print("\nAll LLM and reranker models already have input/output costs configured.")
-        return
+    costs_changed = False
+    if missing:
+        print("\n--- Model token pricing ---")
+        print(
+            "Enter input/output costs (USD per 1M tokens) for models missing pricing "
+            "(used by cyt stats).",
+        )
+        for _kind, entry in missing:
+            if not model_missing_cost_fields(entry):
+                continue
+            pricing_updates = _prompt_missing_model_costs(entry)
+            if not pricing_updates:
+                continue
+            _apply_model_metadata_updates(config, entry, {"pricing": pricing_updates})
+            costs_changed = True
+    elif not metadata_changed:
+        print("\nAll LLM and reranker models already have provider, domain_match, and pricing.")
 
-    print("\n--- Model token pricing ---")
-    print(
-        "Enter input/output costs (USD per 1M tokens) for models missing pricing "
-        "(used by cyt stats).",
-    )
-
-    changed = False
-    for _kind, entry in missing:
-        if not model_missing_cost_fields(entry):
-            continue
-        pricing_updates = _prompt_missing_model_costs(entry)
-        if not pricing_updates:
-            continue
-        _apply_model_metadata_updates(entry, {"pricing": pricing_updates})
-        changed = True
-
-    if changed:
+    if metadata_changed or costs_changed:
+        models = config.get("models")
+        if isinstance(models, dict):
+            _ensure_models_providers(models, config=config)
         save_user_config(config_path, config, apply_bundled_sections=False)
         print(f"\nUpdated {config_path}")
-    else:
+    elif missing:
         print("\nNo costs were added.")
 
 
-def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:
-    key_vars = collect_key_var_names(models)
+def _prompt_env_secrets(
+    models: dict[str, Any],
+    env_path: Path,
+    *,
+    config: dict[str, Any] | None = None,
+) -> None:
+    key_vars = collect_key_var_names(models, config=config)
     if not key_vars:
         return
     env_path = env_path.expanduser()
@@ -1362,27 +1839,31 @@ def _prompt_env_secrets(models: dict[str, Any], env_path: Path) -> None:
 
 def run_setup(config_path: Path) -> None:
     """Run the interactive setup wizard and write config (and optional .env)."""
-    print(f"CYT proxy setup → {config_path.expanduser()}\n")
+    config_path = config_path.expanduser()
+    existing = load_user_config_overlay(config_path)
+    print(f"CYT proxy setup → {config_path}\n")
 
     print("--- Proxy Port ---")
-    reverse_port = _prompt_int("Reverse proxy port", DEFAULT_REVERSE_PORT)
-    print()
-    print("--- Upstream API endpoints ---")
-    upstreams, endpoints, upstream_llm_models = _prompt_upstreams()
-    primary_upstream_llm = upstream_llm_models[0]
+    reverse_cfg = _reverse_proxy_section(existing)
+    default_port = reverse_cfg.get("port", DEFAULT_REVERSE_PORT)
+    reverse_port = _prompt_int("Reverse proxy port", int(default_port))
 
-    for model in upstream_llm_models:
-        print_primary_too_cheap_warning(model)
+    upstreams, endpoints = _prompt_upstreams(existing)
 
-    pipeline = _prompt_pipeline(
-        recommended_index=recommended_pipeline_default_index(primary_upstream_llm),
+    minimum_tools = _prompt_int(
+        "\npruning.policy.minimum_tools",
+        _default_minimum_tools(existing),
     )
 
-    max_pruner_input_cost = max_pruner_input_cost_per_token(primary_upstream_llm)
+    pipeline = _prompt_pipeline(
+        recommended_index=0,
+        minimum_tools=minimum_tools,
+    )
+
+    max_pruner_input_cost: float | None = None
 
     reranker_model: dict[str, Any] | None = None
     llm_pruner_model: dict[str, Any] | None = None
-    minimum_tools: int | None = None
 
     if "rerank" in pipeline:
         print("\n--- Reranker (weak pruning) model ---")
@@ -1392,6 +1873,7 @@ def run_setup(config_path: Path) -> None:
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
             prompt_custom_base_url=True,
+            config=existing,
         )
     if "llm" in pipeline:
         print("\n--- LLM pruner (weak pruning) model ---")
@@ -1401,11 +1883,7 @@ def run_setup(config_path: Path) -> None:
             prompt_key_var=True,
             max_input_cost_per_token=max_pruner_input_cost,
             prompt_custom_base_url=True,
-        )
-    if "rerank" in pipeline or "llm" in pipeline:
-        minimum_tools = _prompt_int(
-            "pruning.policy.minimum_tools",
-            DEFAULT_MIN_TOOLS_PRUNING,
+            config=existing,
         )
 
     print("\n--- Tool policies ---")
@@ -1418,13 +1896,21 @@ def run_setup(config_path: Path) -> None:
         DEFAULT_MCP_TOOL_POLICY,
     )
 
+    skills_overlay = _prompt_skills(existing)
+    reranker_model, llm_pruner_model = _prompt_skills_pruner_models(
+        skills_overlay,
+        existing,
+        reranker_model=reranker_model,
+        llm_pruner_model=llm_pruner_model,
+        max_pruner_input_cost=max_pruner_input_cost,
+    )
+
     stats_db = _prompt("Stats database path", DEFAULT_STATS_DB_PATH)
 
     overlay = build_setup_overlay(
         pipeline=pipeline,
         reranker_model=reranker_model,
         llm_pruner_model=llm_pruner_model,
-        upstream_llm_models=upstream_llm_models,
         minimum_tools=minimum_tools,
         system_tool_policy=system_policy,
         mcp_tool_policy=mcp_policy,
@@ -1432,31 +1918,30 @@ def run_setup(config_path: Path) -> None:
         upstreams=upstreams,
         endpoints=endpoints,
         stats_db_path=stats_db,
+        skills=skills_overlay,
     )
 
-    config_path = config_path.expanduser()
-    existing = load_user_config_overlay(config_path)
     merged = merge_setup_overlay(existing, overlay)
-    save_user_config(config_path, merged, apply_bundled_sections=True)
-    print(f"\nWrote {config_path.expanduser()}")
+    if save_user_config(config_path, merged, apply_bundled_sections=True):
+        print(f"\nWrote {config_path}")
 
-    if prompt_incomplete_models_in_config(merged):
-        save_user_config(config_path, merged, apply_bundled_sections=False)
-        print(f"Updated {config_path.expanduser()}")
+    from cyt.launch.secrets import keyring_backend_available
 
-    if _prompt_yes_no("\nCreate a .env file for API keys?", default_yes=True):
+    if keyring_backend_available():
+        print(
+            "\nOS keyring is available; skipping .env file setup. "
+            "Keys are resolved from the keyring at runtime.",
+        )
+    elif _prompt_yes_no("\nCreate a .env file for API keys?", default_yes=True):
         env_path = _prompt("Path for .env file", str(USER_ENV_PATH))
-        _prompt_env_secrets(overlay.get("models", {}), Path(env_path))
+        _prompt_env_secrets(merged.get("models", {}), Path(env_path), config=merged)
     else:
         print(
             "Skipping .env. Export keys in your shell instead; "
             "the proxy loads ./.env then ~/.config/cyt/.env at runtime.",
         )
 
-    print("\nProxy base URL(s):")
+    print("\nProxy endpoint(s):")
     print_proxy_urls(reverse_port, endpoints)
-    print("\nNow run proxy with:\n")
-    print("\tuv run cyt proxy")
-    print("\n\nAnd point Claude Code at the proxy:\n")
-    print(f'\texport ANTHROPIC_BASE_URL="http://localhost:{DEFAULT_REVERSE_PORT}/anthropic"')
-    print("\tclaude 'say hi' -p")
+    print("\nNow run:\n")
+    print("\tcyt launch\n")

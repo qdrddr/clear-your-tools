@@ -1,205 +1,171 @@
 defaults:
-  inprocess: []
-  is_persistent: true
-  reranking_enabled: true
+  # inprocess: []
+  # is_persistent: true
+  # reranking_enabled: true
 models:
+  providers:
+    - provider_nick: openai
+      provider: openai
+      domain_match: ["api.openai.com"]
+      key_var_name: OPENAI_API_KEY
+      # base_url: https://api.openai.com/v1
+    - provider_nick: anthropic
+      provider: anthropic
+      key_var_name: ANTHROPIC_API_KEY
+      domain_match: ["api.anthropic.com"]
+      # base_url: https://api.anthropic.com
+    - provider_nick: gemini
+      provider: gemini
+      domain_match: ["generativelanguage.googleapis.com"]
+      key_var_name: GOOGLE_API_KEY
+      # base_url: https://generativelanguage.googleapis.com
+    - provider_nick: deepinfra
+      provider: deepinfra
+      domain_match: ["api.deepinfra.com"]
+      key_var_name: DEEPINFRA_API_KEY
+      # base_url: https://api.deepinfra.com/v1
+    - provider_nick: openrouter
+      provider: openrouter
+      key_var_name: OPENROUTER_API_KEY
+      domain_match: ["openrouter.ai"]
+      # base_url: https://openrouter.ai/api
   llm:
     remote:
+      # Reference-only / duplicate catalog entries (enable in user config as needed):
       - name: openai/gpt-oss-120b
-        provider: openrouter
+        provider_nick: openrouter
         nick: gpt-oss-120b
-        key_var_name: OPENROUTER_API_KEY
         max_tokens: 128000
         pricing:
-          # match_litellm: "openrouter/openai/gpt-oss-120b"
           input_cost_per_token: 1.5e-07
           output_cost_per_token: 6e-07
-        # base_url: https://openrouter.ai/api
       - name: inception/mercury-2
-        provider: openrouter
+        provider_nick: openrouter
         nick: mercury-2
-        key_var_name: OPENROUTER_API_KEY
         max_tokens: 1280000
         pricing:
-          # match_litellm:
           input_cost_per_token: 2.5e-07
           output_cost_per_token: 7.5e-07
-        # base_url: https://openrouter.ai/api
       - name: google/gemini-3-flash-preview
-        provider: openrouter
+        provider_nick: openrouter
         nick: gemini-3-flash
-        key_var_name: OPENROUTER_API_KEY
         max_tokens: 10000000
-        domain_match: ["openrouter.ai"]
         pricing:
-          # match_litellm:
           input_cost_per_token: 0.5e-06
           output_cost_per_token: 3e-06
-        # base_url: https://openrouter.ai/api
-      - name: claude-haiku-4-5
-        provider: anthropic
-        nick: haiku45
-        key_var_name: ANTHROPIC_API_KEY
-        max_tokens: 200000
-        domain_match: ["api.anthropic.com"]
+      - name: google/gemini-3.1-flash-lite
+        provider_nick: openrouter
+        nick: gemini-3.1-flash-lite
+        max_tokens: 10000000
         pricing:
-          # match_litellm:
+          input_cost_per_token: 0.25e-06
+          output_cost_per_token: 1.5e-06
+      - name: claude-haiku-4-5
+        provider_nick: anthropic
+        nick: haiku45
+        max_tokens: 200000
+        pricing:
           input_cost_per_token: 1e-06
           output_cost_per_token: 5e-06
-        # base_url: https://api.anthropic.com
       - name: claude-opus-4-7
-        provider: anthropic
+        provider_nick: anthropic
         nick: opus47
-        key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["api.anthropic.com"]
         pricing:
-          # match_litellm:
           input_cost_per_token: 5e-06
           output_cost_per_token: 25e-06
-        # base_url: https://api.anthropic.com
       - name: claude-opus-4-8
-        provider: anthropic
+        provider_nick: anthropic
         nick: opus48
-        key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["api.anthropic.com"]
         pricing:
-          # match_litellm:
           input_cost_per_token: 5e-06
           output_cost_per_token: 25e-06
-        # base_url: https://api.anthropic.com
-      #      - name: claude-opus-4-7
-      #        provider: anthropic
-      #        nick: opus47-fast
-      #        key_var_name: ANTHROPIC_API_KEY
-      #        max_tokens: 1000000
-      #        domain_match: ["api.anthropic.com"]
-      #        pricing:
-      #          # match_litellm:
-      #          input_cost_per_token: 30e-06
-      #          output_cost_per_token: 150e-06
-      #        # base_url: https://api.anthropic.com
       - name: claude-sonnet-4-6
-        provider: anthropic
+        provider_nick: anthropic
         nick: sonnet46
-        key_var_name: ANTHROPIC_API_KEY
         max_tokens: 1000000
-        domain_match: ["api.anthropic.com"]
         pricing:
-          # match_litellm:
           input_cost_per_token: 3e-06
           output_cost_per_token: 15e-06
-        # base_url: https://api.anthropic.com
       - name: gpt-5.4-nano
-        provider: openai
+        provider_nick: openai
         nick: gpt-5.4-nano
-        key_var_name: OPENAI_API_KEY
         max_tokens: 400000
-        domain_match: ["api.openai.com"]
         responses_api: false
         pricing:
-          # match_litellm:
           input_cost_per_token: 0.2e-06
           output_cost_per_token: 1.25e-06
-        # base_url: https://api.openai.com/v1
       - name: gpt-5.4-mini
-        provider: openai
+        provider_nick: openai
         nick: gpt-5.4-mini
-        key_var_name: OPENAI_API_KEY
         max_tokens: 400000
-        domain_match: ["api.openai.com"]
         responses_api: false
         pricing:
-          # match_litellm:
           input_cost_per_token: 0.75e-06
           output_cost_per_token: 4.5e-06
-        # base_url: https://api.openai.com/v1
       - name: gpt-5.5
-        provider: openai
+        provider_nick: openai
         nick: gpt-5.5
-        key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
-        domain_match: ["api.openai.com"]
         responses_api: false
         pricing:
-          # match_litellm:
           input_cost_per_token: 5e-06
           output_cost_per_token: 30e-06
-        # base_url: https://api.openai.com/v1
       - name: gpt-5.5-pro
-        provider: openai
+        provider_nick: openai
         nick: gpt-5.5-pro
-        key_var_name: OPENAI_API_KEY
         max_tokens: 1000000
-        domain_match: ["api.openai.com"]
         responses_api: false
         pricing:
-          # match_litellm:
           input_cost_per_token: 30e-06
           output_cost_per_token: 180e-06
-        # base_url: https://api.openai.com/v1
   rerankers:
     remote:
       - name: Qwen/Qwen3-Reranker-8B
-        provider: deepinfra
+        provider_nick: deepinfra
         nick: rerank-qwen3-8b
-        key_var_name: DEEPINFRA_API_KEY
         max_tokens: 32000
-        # base_url: https://api.deepinfra.com/v1
         pricing:
           input_cost_per_token: 5e-08
           output_cost_per_token: 0
-          # match_litellm: "deepinfra/Qwen/Qwen3-Reranker-8B"
   bm25:
     mmap: true
     stem_language: english
     stopwords: en
 
 pruning:
-  policy:
-    system_tool: prune_optional
-    mcp_tool: prune_all
-    minimum_tools: 50
-
-  rerank:
-    score_skills: 0.003
-    model:
-      remote:
-        model_nick: rerank-qwen3-8b
-  # Optional per-pipeline policy overrides (terminal stage wins over pruning.policy):
-  #   policy:
-  #     system_tool: prune_optional_descriptions
-  #     mcp_tool: prune_all_descriptions
-
-  llm:
-    model:
-      remote:
-        model_nick: mercury-2
-  #   policy:
-  #     system_tool: prune_optional_descriptions
-  #     mcp_tool: prune_all_descriptions
-
-  bm25:
-    score_skills: 0.5
-    index_dir: ~/.config/cyt/bm25
-    score_tool: 0.3
-    prune_enums: true
-    score_tool_enum: 0.1
+  tools:
     policy:
-      system_tool: prune_optional_descriptions
-      mcp_tool: prune_all_descriptions
-
-  pipeline:
-    - bm25
-    # - rerank
-    # - llm
-
-  per_tool: {}
-  #    Agent: prune_optional
-  #    mcp__hedl__hedl_convert_from: prune_optional
-  #    mcp__hedl__batch: prune_all
-  #    mcp__fff__multi_grep: always_include
+      system_tool: prune_optional
+      mcp_tool: prune_all
+      minimum_tools: 50
+      per_tool: {}
+    sequence:
+      - bm25
+      # - rerank
+      # - llm
+    pipelines:
+      bm25:
+        score_skills: 0.5
+        index_dir: ~/.config/cyt/bm25
+        score_tool: 0.3
+        prune_enums: true
+        score_tool_enum: 0.1
+        policy:
+          system_tool: prune_optional_descriptions
+          mcp_tool: prune_all_descriptions
+      rerank:
+        model_nick: rerank-qwen3-8b
+        score_skills: 0.003
+        # policy:
+        #   system_tool: prune_optional_descriptions
+        #   mcp_tool: prune_all_descriptions
+      llm:
+        model_nick: mercury-2
+        # policy:
+        #   system_tool: prune_optional_descriptions
+        #   mcp_tool: prune_all_descriptions
 
 network:
   proxy:
@@ -214,10 +180,10 @@ network:
           certfile: ~/.config/cyt/crt/cert.pem
       port: 8834
       upstreams:
-        - upstream: anthropic
+        - endpoint: anthropic
           url: https://api.anthropic.com
           kind: anthropic
-        - upstream: openai
+        - endpoint: openai
           url: https://api.openai.com
           kind: openai
       endpoints:
@@ -236,40 +202,39 @@ skills:
   inject_via: proxy # hook | proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
-  pageindex:
-    if_add_node_id: true
-    if_add_node_text: false
-    bm25_cohesion:
-      window_mode: sentence
-      chunk_size: 2048
-      token_counter: approximate
-      similarity_window: 3
-      threshold: 0.8
-      merge_threshold: 0.7
-      skip_window: 0
-      min_units_per_chunk: 1
-      minimum_words: 10
-      minimum_sentences: 1
-      min_characters_per_sentence: 24
-      filter_window: 5
-      filter_polyorder: 3
-      filter_tolerance: 0.2
-      use_stopwords: true
-      include_delim: prev
-      stem_language: english
-
-    toc_check_page_num: 20
-    max_page_num_each_node: 10
-    max_token_num_each_node: 2000
-    if_add_node_summary: true
-    if_add_doc_description: false
-  budget: 0.5 # Percentage of the total savings from tool pruning that can be used for skills execution (e.g. 0.5 = 50% of the total savings)
-  max_tokens_per_request: 2000 # Maximum number of tokens allowed per request to the skills (e.g. 2000 = 2000 tokens)
-  directories:
-    - ~/.claude/skills
-    - .claude/skills
-    - ~/.codex/skills
-    - .codex/skills
+  # pageindex: (disabled while skills.enabled is false)
+  #   if_add_node_id: true
+  #   if_add_node_text: false
+  #   bm25_cohesion:
+  #     window_mode: sentence
+  #     chunk_size: 2048
+  #     token_counter: approximate
+  #     similarity_window: 3
+  #     threshold: 0.8
+  #     merge_threshold: 0.7
+  #     skip_window: 0
+  #     min_units_per_chunk: 1
+  #     minimum_words: 10
+  #     minimum_sentences: 1
+  #     min_characters_per_sentence: 24
+  #     filter_window: 5
+  #     filter_polyorder: 3
+  #     filter_tolerance: 0.2
+  #     use_stopwords: true
+  #     include_delim: prev
+  #     stem_language: english
+  #   toc_check_page_num: 20
+  #   max_page_num_each_node: 10
+  #   max_token_num_each_node: 2000
+  #   if_add_node_summary: true
+  #   if_add_doc_description: false
+  # budget: 0.5
+  max_tokens_per_request: 2000
+  # directories: (disabled while skills.enabled is false)
+  #   - ~/.claude/skills
+  #   - .claude/skills
+  #   - ~/.codex/skills
+  #   - .codex/skills
 
 launch:
   claude:

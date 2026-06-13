@@ -118,18 +118,22 @@ Bundled defaults ship in the package as `cyt.config.defaults.yaml`.
 User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter vs OpenAI pruning models):
 [README.md — Configuration](README.md#configuration).
 
-| Section                                                   | Purpose                                                  |
-| --------------------------------------------------------- | -------------------------------------------------------- |
-| `pruning.policy.system_tool` / `mcp_tool`                 | Default pruning behavior for system vs MCP tools         |
-| `pruning.policy.minimum_tools`                            | Tool-count threshold for rerank/llm stages               |
-| `pruning.rerank.model.remote.model_nick`                  | Reranker model nick for the `rerank` stage               |
-| `pruning.llm.model.remote.model_nick`                     | LLM pruner model nick for the `llm` stage                |
-| `pruning.bm25.index_dir`                                  | BM25 index directory (legacy: `models.bm25.index_dir`)   |
-| `pruning.pipeline`                                        | Ordered list of stages: `rerank`, `llm`, `bm25`          |
-| `pruning.per_tool`                                        | Per-tool policy overrides                                |
-| `models.rerankers` / `models.llm`                         | Remote model definitions and API keys                    |
-| `network.proxy.reverse`                                   | Listen port, upstream URLs, HTTP/2, TLS                  |
-| `stats`                                                   | Stats DB path, optional full tool JSON storage           |
+| Section                                                     | Purpose                                                    |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `pruning.tools.policy.system_tool` / `mcp_tool`             | Default pruning behavior for system vs MCP tools           |
+| `pruning.tools.policy.minimum_tools`                        | Tool-count threshold for rerank/llm stages                 |
+| `pruning.tools.pipelines.rerank.model_nick`                 | Reranker catalog nick for the `rerank` stage               |
+| `pruning.tools.pipelines.llm.model_nick`                    | LLM pruner catalog nick for the `llm` stage                |
+| `pruning.tools.pipelines.bm25.index_dir`                    | BM25 index directory                                       |
+| `pruning.tools.sequence`                                    | Ordered list of stages: `rerank`, `llm`, `bm25`            |
+| `pruning.tools.policy.per_tool`                             | Per-tool policy overrides                                  |
+| `models.providers[]` + model `provider_nick`                | Provider credentials (legacy inline fields still work)     |
+| `models.rerankers` / `models.llm`                           | Remote model definitions and API keys                      |
+| `network.proxy.reverse`                                     | Listen port, upstream URLs, HTTP/2, TLS                    |
+| `stats`                                                     | Stats DB path, optional full tool JSON storage             |
+
+Legacy paths (`pruning.pipeline`, `pruning.policy`, `pruning.<stage>`, …) resolve via
+[`src/cyt/config/legacy.py`](src/cyt/config/legacy.py).
 
 Environment variables (see [`.env.example`](.env.example)):
 

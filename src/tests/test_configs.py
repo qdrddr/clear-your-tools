@@ -58,6 +58,31 @@ def test_resolve_setup_config_path_explicit(
     assert configs.resolve_setup_config_path(explicit) == explicit
 
 
+def test_save_user_config_skips_unchanged_write(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    user_config = isolated_config_paths["user_config"]
+    user_config.parent.mkdir(parents=True, exist_ok=True)
+    user_config.write_text("defaults:\n  is_persistent: true\n", encoding="utf-8")
+    original_bytes = user_config.read_bytes()
+
+    written = configs.save_user_config(
+        user_config,
+        {"defaults": {"is_persistent": True}},
+        apply_bundled_sections=False,
+    )
+    assert written is False
+    assert user_config.read_bytes() == original_bytes
+
+    written = configs.save_user_config(
+        user_config,
+        {"defaults": {"is_persistent": False}},
+        apply_bundled_sections=False,
+    )
+    assert written is True
+    assert configs._load_yaml_dict(user_config)["defaults"]["is_persistent"] is False
+
+
 def test_load_config_creates_user_config_when_missing(
     isolated_config_paths: dict[str, Path],
 ) -> None:
@@ -72,7 +97,13 @@ def test_load_config_creates_user_config_when_missing(
     written = configs._load_yaml_dict(user_config)
     ssl = written["network"]["proxy"]["reverse"]["http2"]["ssl"]
     assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
-    assert written["pruning"]["per_tool"] == {}
+    per_tool = (
+        written.get("pruning", {})
+        .get("tools", {})
+        .get("policy", {})
+        .get("per_tool", written.get("pruning", {}).get("per_tool"))
+    )
+    assert per_tool == {}
 
 
 def test_load_config_uses_cwd_config(isolated_config_paths: dict[str, Path]) -> None:
@@ -131,7 +162,7 @@ def test_required_proxy_env_var_names_excludes_upstream_keys(
     config = configs.load_config()
     config["network"]["proxy"]["reverse"]["upstreams"] = [
         {
-            "upstream": "openai",
+            "endpoint": "openai",
             "url": "https://api.openai.com",
             "kind": "openai",
         },

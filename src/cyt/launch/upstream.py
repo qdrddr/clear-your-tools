@@ -22,6 +22,7 @@ from cyt.proxy.setup import (
     normalize_upstream_url,
     prompt_required,
     prompt_with_default,
+    upstream_entry_endpoint,
 )
 
 AgentName = Literal["claude", "codex"]
@@ -126,10 +127,10 @@ def compatible_upstreams(
 
 
 def upstream_endpoint_name(entry: dict[str, Any]) -> str:
-    name = entry.get("upstream")
-    if not name:
-        raise ValueError("Upstream entry missing upstream name")
-    return str(name)
+    name = upstream_entry_endpoint(entry)
+    if name == "?":
+        raise ValueError("Upstream entry missing endpoint name")
+    return name
 
 
 def format_upstream_option(entry: dict[str, Any]) -> str:
@@ -247,7 +248,7 @@ def build_upstream_overlay(
     """Build a minimal reverse-proxy overlay for a single upstream."""
     normalized_kind = normalize_upstream_kind(kind)
     upstream_entry = {
-        "upstream": endpoint,
+        "endpoint": endpoint,
         "kind": normalized_kind,
         "url": normalize_upstream_url(url),
     }

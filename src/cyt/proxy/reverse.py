@@ -44,7 +44,7 @@ from cyt.proxy.pruning_debug import (
 from cyt.proxy.pruning_debug import (
     format_removed_chunks_lines as _format_removed_chunks_lines,
 )
-from cyt.proxy.setup import normalize_upstream_kind
+from cyt.proxy.setup import normalize_upstream_kind, upstream_entry_endpoint
 from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
@@ -331,7 +331,11 @@ def body_for_snapshot(
 
 def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]:
     reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    upstreams = {item["upstream"]: item for item in reverse_cfg.get("upstreams", [])}
+    upstreams = {
+        upstream_entry_endpoint(item): item
+        for item in reverse_cfg.get("upstreams", [])
+        if isinstance(item, dict)
+    }
     routes: dict[str, tuple[str, str | None]] = {}
     for endpoint in reverse_cfg.get("endpoints", []):
         if endpoint not in upstreams:
@@ -561,11 +565,18 @@ def build_stats_record(
     config: dict[str, Any],
     store_full_tools: bool,
 ) -> ProxyRequestRecord:
-    from cyt.proxy.stats import ProxyRequestRecord, lookup_model_provider, provider_dns_from_url
+    from cyt.proxy.stats import (
+        ProxyRequestRecord,
+        lookup_model_provider,
+        lookup_provider_from_dns,
+        provider_dns_from_url,
+    )
 
     provider, provider_dns = lookup_model_provider(upstream_model, config)
     if not provider_dns:
         provider_dns = provider_dns_from_url(target_url)
+    if not provider:
+        provider = lookup_provider_from_dns(provider_dns, config)
 
     tools_accepted_json: str | None = None
     tools_final_json: str | None = None

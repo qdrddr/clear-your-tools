@@ -162,17 +162,28 @@ impl PolicyContext {
 
 /// Apply pruning policies from config JSON.
 ///
-/// Precedence: `pruning.policy.system_tool` / `mcp_tool`, then legacy
-/// `defaults.system_tool_policy` / `mcp_tool_policy`, plus `pruning.per_tool`.
+/// Precedence: `pruning.tools.policy.*`, then `pruning.policy.*`, then legacy
+/// `defaults.system_tool_policy` / `mcp_tool_policy`, plus per-tool overrides.
 pub fn policy_context_from_values(config: &Value) -> PolicyContext {
     let mut ctx = PolicyContext::new();
     let mut system_from_pruning = false;
     let mut mcp_from_pruning = false;
-    if let Some(policy) = config
+
+    // LEGACY — remove with config/legacy.py
+    let legacy_policy = config
         .get("pruning")
         .and_then(Value::as_object)
         .and_then(|p| p.get("policy"))
+        .and_then(Value::as_object);
+
+    if let Some(policy) = config
+        .get("pruning")
         .and_then(Value::as_object)
+        .and_then(|p| p.get("tools"))
+        .and_then(Value::as_object)
+        .and_then(|t| t.get("policy"))
+        .and_then(Value::as_object)
+        .or(legacy_policy)
     {
         if let Some(s) = policy
             .get("system_tool")
@@ -209,11 +220,21 @@ pub fn policy_context_from_values(config: &Value) -> PolicyContext {
                 ctx.mcp_policy = m;
             }
     }
-    if let Some(per_tool) = config
+    let legacy_per_tool = config
         .get("pruning")
         .and_then(Value::as_object)
         .and_then(|p| p.get("per_tool"))
+        .and_then(Value::as_object);
+    if let Some(per_tool) = config
+        .get("pruning")
         .and_then(Value::as_object)
+        .and_then(|p| p.get("tools"))
+        .and_then(Value::as_object)
+        .and_then(|t| t.get("policy"))
+        .and_then(Value::as_object)
+        .and_then(|p| p.get("per_tool"))
+        .and_then(Value::as_object)
+        .or(legacy_per_tool)
     {
         for (tool_id, policy) in per_tool {
             if let Some(p) = policy.as_str().and_then(parse_tool_policy) {

@@ -17,6 +17,12 @@ from uuid_extensions import uuid7str
 
 from cyt.common.pricing import StatsCosts
 from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
+from cyt.config import (
+    merge_model_entry,
+    provider_name_from_nick,
+    provider_nick_for_dns,
+    stats_provider_for_entry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,14 +117,26 @@ def lookup_model_provider(
         if not isinstance(entry, dict):
             continue
         if entry.get("name") == model_name:
-            provider = entry.get("provider")
-            domain_match = entry.get("domain_match")
+            enriched = merge_model_entry(config, entry)
+            provider = stats_provider_for_entry(config, enriched)
+            domain_match = enriched.get("domain_match")
             dns = domain_match[0] if isinstance(domain_match, list) and domain_match else None
             return (
-                str(provider) if provider else None,
+                provider,
                 str(dns) if dns else None,
             )
     return None, None
+
+
+def lookup_provider_from_dns(
+    provider_dns_name: str | None,
+    config: dict[str, Any] | None,
+) -> str | None:
+    """Resolve provider name for stats from DNS via the provider registry."""
+    if not provider_dns_name or not config:
+        return None
+    provider_nick = provider_nick_for_dns(config, provider_dns_name)
+    return provider_name_from_nick(config, provider_nick)
 
 
 @dataclass

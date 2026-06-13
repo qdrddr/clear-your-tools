@@ -199,6 +199,31 @@ def test_record_bm25_pruning_stage_identity(temp_db: StatsDB) -> None:
     assert ("bm25", "bm25", "bm25", "bm25") in identities
 
 
+def test_record_proxy_request_allows_null_provider(temp_db: StatsDB) -> None:
+    record = ProxyRequestRecord(
+        endpoint="anthropic",
+        tools_in=100,
+        tool_count_in=1,
+        tool_properties_count_in=1,
+        tools_out=50,
+        tool_count_out=1,
+        tool_properties_count_out=1,
+        prune_status="applied",
+        pipeline=["bm25"],
+        upstream_model_name="unknown-model",
+        upstream_provider_dns="api.unknown.example",
+        upstream_provider=None,
+    )
+    proxy_id = temp_db.record_proxy_request(record)
+    assert proxy_id
+
+    rows = temp_db._conn.execute(
+        "SELECT provider FROM model_request WHERE proxy_request_id = ? AND stage = 'upstream'",
+        (proxy_id,),
+    ).fetchall()
+    assert rows == [(None,)]
+
+
 def test_stats_db_init_creates_parent_dir() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         db_path = str(Path(tmp) / "nested" / "stats.db")

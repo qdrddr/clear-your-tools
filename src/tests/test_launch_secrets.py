@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 import cyt.config as configs
-from cyt.launch.secrets import ensure_runtime_credentials, resolve_credential
+from cyt.launch.secrets import (
+    ensure_runtime_credentials,
+    keyring_backend_available,
+    resolve_credential,
+)
 
 
 def _codex_openai_api_key_var() -> str:
@@ -158,3 +162,28 @@ class TestCodexLaunchCredentials:
         ensure_runtime_credentials(config, agent="codex", credential_sources=sources)
 
         assert sources[custom_name] == "env: shell"
+
+
+class TestKeyringBackend:
+    def test_unavailable_when_import_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setitem(sys.modules, "keyring", None)
+        assert keyring_backend_available() is False
+
+    def test_available_when_probe_succeeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        store: dict[tuple[str, str], str] = {}
+
+        class FakeKeyring:
+            @classmethod
+            def set_password(cls, service: str, user: str, password: str) -> None:
+                store[(service, user)] = password
+
+            @classmethod
+            def get_password(cls, service: str, user: str) -> str | None:
+                return store.get((service, user))
+
+            @classmethod
+            def delete_password(cls, service: str, user: str) -> None:
+                store.pop((service, user), None)
+
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
+        assert keyring_backend_available() is True

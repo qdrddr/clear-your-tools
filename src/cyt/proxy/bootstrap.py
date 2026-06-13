@@ -15,6 +15,7 @@ from cyt.config import (
 )
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, ensure_upstream_for_runtime, list_upstreams
+from cyt.proxy.setup import upstream_entry_endpoint
 
 _BM25_FALLBACK_MESSAGE = (
     "No pruner pipeline configured: fallback to BM25. "
@@ -29,6 +30,9 @@ def _apply_bm25_fallback_pipeline(config: dict[str, Any]) -> None:
     print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
     pruning = config.setdefault("pruning", {})
     if isinstance(pruning, dict):
+        tools = pruning.setdefault("tools", {})
+        if isinstance(tools, dict):
+            tools["sequence"] = ["bm25"]
         pruning["pipeline"] = ["bm25"]
 
 
@@ -97,7 +101,7 @@ def prepare_runtime(
     resolved_upstream_url = upstream_url
     if resolved_upstream_url is None and upstream_endpoint is not None:
         for entry in list_upstreams(load_user_config_overlay(path)):
-            if str(entry.get("upstream")) == upstream_endpoint:
+            if upstream_entry_endpoint(entry) == upstream_endpoint:
                 resolved_upstream_url = (
                     str(
                         entry.get("url") or entry.get("host_url") or entry.get("base_url") or "",

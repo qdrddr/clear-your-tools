@@ -60,7 +60,7 @@ def test_upstream_cli_bm25_fallback_when_pruner_keys_missing(
 
     captured = capsys.readouterr()
     assert "fallback to BM25" in captured.err
-    assert config["pruning"]["pipeline"] == ["bm25"]
+    assert configs.pruning_pipeline_from_config(config) == ["bm25"]
     assert configs.missing_proxy_env_var_names(config) == []
 
 
@@ -77,7 +77,7 @@ def test_upstream_cli_keeps_pipeline_when_pruner_keys_set(
     _apply_bm25_fallback_if_needed(config, user_config, upstream_cli=True)
 
     assert capsys.readouterr().err == ""
-    assert config["pruning"]["pipeline"] == ["rerank"]
+    assert configs.pruning_pipeline_from_config(config) == ["rerank"]
 
 
 def test_no_upstream_cli_skips_bm25_when_remote_pruning_configured(
@@ -93,5 +93,5 @@ def test_no_upstream_cli_skips_bm25_when_remote_pruning_configured(
     _apply_bm25_fallback_if_needed(config, user_config, upstream_cli=False)
 
     assert capsys.readouterr().err == ""
-    assert config["pruning"]["pipeline"] == ["rerank"]
+    assert configs.pruning_pipeline_from_config(config) == ["rerank"]
     assert configs.missing_proxy_env_var_names(config) == ["DEEPINFRA_API_KEY"]

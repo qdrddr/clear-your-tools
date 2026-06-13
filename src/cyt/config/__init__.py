@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import copy
 import importlib.resources
+import json
 import logging
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 
 import yaml
 from dotenv import load_dotenv
+
+from cyt.config import legacy
 
 logger = logging.getLogger(__name__)
 
@@ -124,32 +127,33 @@ _DEFAULTS: dict[str, Any] = {
         },
     },
     "pruning": {
-        "pipeline": list(DEFAULT_PRUNING_PIPELINE),
-        "per_tool": {},
-        "policy": {
-            "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
-            "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
-            "minimum_tools": DEFAULT_MIN_TOOLS_PRUNING,
-        },
-        "rerank": {
-            "model": {
-                "remote": {
+        "tools": {
+            "policy": {
+                "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
+                "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
+                "minimum_tools": DEFAULT_MIN_TOOLS_PRUNING,
+                "per_tool": {},
+            },
+            "sequence": list(DEFAULT_PRUNING_PIPELINE),
+            "pipelines": {
+                "bm25": {
+                    "index_dir": DEFAULT_BM25_INDEX_DIR,
+                    "score_tool": DEFAULT_BM25_SCORE_TOOL,
+                    "prune_enums": DEFAULT_BM25_PRUNE_ENUMS,
+                    "score_tool_enum": DEFAULT_BM25_SCORE_TOOL_ENUM,
+                    "score_skills": DEFAULT_BM25_SCORE_SKILLS,
+                    "policy": {
+                        "system_tool": "prune_optional_descriptions",
+                        "mcp_tool": "prune_all_descriptions",
+                    },
+                },
+                "rerank": {
                     "model_nick": "rerank-qwen3-8b",
                 },
-            },
-        },
-        "llm": {
-            "model": {
-                "remote": {
+                "llm": {
                     "model_nick": "mercury-2",
                 },
             },
-        },
-        "bm25": {
-            "index_dir": DEFAULT_BM25_INDEX_DIR,
-            "score_tool": DEFAULT_BM25_SCORE_TOOL,
-            "prune_enums": DEFAULT_BM25_PRUNE_ENUMS,
-            "score_tool_enum": DEFAULT_BM25_SCORE_TOOL_ENUM,
         },
     },
     "stats": {
@@ -200,29 +204,47 @@ def resolve_config_path(path: Path | None = None) -> Path:
     return DEFAULT_USER_CONFIG_PATH.expanduser()
 
 
+def _bundled_pruning_per_tool_overlay(bundled: dict[str, Any]) -> dict[str, Any] | None:
+    pruning = bundled.get("pruning")
+    if not isinstance(pruning, dict):
+        return None
+    tools = pruning.get("tools")
+    if isinstance(tools, dict):
+        policy = tools.get("policy")
+        if isinstance(policy, dict) and "per_tool" in policy:
+            return {"tools": {"policy": {"per_tool": copy.deepcopy(policy["per_tool"])}}}
+    if "per_tool" in pruning:
+        return {"per_tool": copy.deepcopy(pruning["per_tool"])}
+    return None
+
+
+def _bundled_network_reverse_overlay(bundled: dict[str, Any]) -> dict[str, Any] | None:
+    network = bundled.get("network")
+    if not isinstance(network, dict):
+        return None
+    proxy = network.get("proxy")
+    if not isinstance(proxy, dict):
+        return None
+    reverse = proxy.get("reverse")
+    if not isinstance(reverse, dict):
+        return None
+    reverse_overlay: dict[str, Any] = {}
+    for key in ("debug_log_dir", "debug_log_max_body_bytes", "http2"):
+        if key in reverse:
+            reverse_overlay[key] = copy.deepcopy(reverse[key])
+    return reverse_overlay or None
+
+
 def bundled_user_config_sections() -> dict[str, Any]:
     """Packaged-default sections that belong in the on-disk user config file."""
     bundled = _load_bundled_defaults_yaml()
     result: dict[str, Any] = {}
 
-    pruning = bundled.get("pruning")
-    if isinstance(pruning, dict) and "per_tool" in pruning:
-        result["pruning"] = {"per_tool": copy.deepcopy(pruning["per_tool"])}
+    if pruning_overlay := _bundled_pruning_per_tool_overlay(bundled):
+        result["pruning"] = pruning_overlay
 
-    network = bundled.get("network")
-    if isinstance(network, dict):
-        proxy = network.get("proxy")
-        if isinstance(proxy, dict):
-            reverse = proxy.get("reverse")
-            if isinstance(reverse, dict):
-                reverse_overlay: dict[str, Any] = {}
-                for key in ("debug_log_dir", "debug_log_max_body_bytes", "http2"):
-                    if key in reverse:
-                        reverse_overlay[key] = copy.deepcopy(reverse[key])
-                if reverse_overlay:
-                    result.setdefault("network", {}).setdefault("proxy", {})["reverse"] = (
-                        reverse_overlay
-                    )
+    if reverse_overlay := _bundled_network_reverse_overlay(bundled):
+        result.setdefault("network", {}).setdefault("proxy", {})["reverse"] = reverse_overlay
 
     return result
 
@@ -254,7 +276,7 @@ def _default_user_config_dict() -> dict[str, Any]:
                         "port": DEFAULT_REVERSE_PORT,
                         "upstreams": [
                             {
-                                "upstream": "anthropic",
+                                "endpoint": "anthropic",
                                 "url": UPSTREAM_URL_DEFAULTS["anthropic"],
                                 "kind": "anthropic",
                             },
@@ -286,6 +308,26 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _config_fingerprint(data: dict[str, Any]) -> str:
+    """Stable semantic fingerprint for comparing config dicts."""
+    return json.dumps(data, sort_keys=True, default=str)
+
+
+def _build_merged_user_config(
+    path: Path,
+    overlay: dict[str, Any],
+    *,
+    apply_bundled_sections: bool,
+) -> dict[str, Any]:
+    existing: dict[str, Any] = _load_yaml_dict(path) if path.exists() else {}
+    bundled_sections = bundled_user_config_sections() if apply_bundled_sections else {}
+    combined_overlay = deep_merge(bundled_sections, overlay) if apply_bundled_sections else overlay
+    merged = deep_merge(existing, combined_overlay)
+    if apply_bundled_sections:
+        _force_deep_assign(merged, bundled_sections)
+    return merged
+
+
 def default_model_nick(provider: str, name: str) -> str:
     """Build a default model nick from provider and LiteLLM model name."""
     raw = f"{provider}-{name}"
@@ -297,18 +339,24 @@ def save_user_config(
     overlay: dict[str, Any],
     *,
     apply_bundled_sections: bool = False,
-) -> None:
-    """Deep-merge *overlay* onto an existing user config file and write YAML."""
+) -> bool:
+    """Deep-merge *overlay* onto an existing user config file and write YAML.
+
+    Returns ``True`` when the file was written, ``False`` when unchanged.
+    """
     path = path.expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: dict[str, Any] = _load_yaml_dict(path) if path.exists() else {}
-    bundled_sections = bundled_user_config_sections() if apply_bundled_sections else {}
-    combined_overlay = deep_merge(bundled_sections, overlay) if apply_bundled_sections else overlay
-    merged = deep_merge(existing, combined_overlay)
-    if apply_bundled_sections:
-        _force_deep_assign(merged, bundled_sections)
+    merged = _build_merged_user_config(
+        path,
+        overlay,
+        apply_bundled_sections=apply_bundled_sections,
+    )
+    if _config_fingerprint(merged) == _config_fingerprint(existing):
+        return False
     content = yaml.dump(merged, default_flow_style=False, sort_keys=False)
     path.write_text(content, encoding="utf-8")
+    return True
 
 
 def resolve_setup_config_path(path: Path | None = None) -> Path:
@@ -427,10 +475,18 @@ def stats_db_path(config: dict[str, Any]) -> str:
 
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
-    pipeline = _merged_config(config)["pruning"]["pipeline"]
-    if not isinstance(pipeline, list) or not all(isinstance(s, str) for s in pipeline):
-        raise ValueError("pruning.pipeline must be a list of stage names")
-    return pipeline
+    merged = _merged_config(config)
+    sequence = legacy.resolve_user_then_merged(
+        merged,
+        config,
+        canonical_keys=("pruning", "tools", "sequence"),
+        legacy_name="tools.sequence",
+    )
+    if sequence is not None:
+        if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
+            raise ValueError("pruning.tools.sequence must be a list of stage names")
+        return cast(list[str], sequence)
+    return list(DEFAULT_PRUNING_PIPELINE)
 
 
 def _resolve_pruning_stages(
@@ -529,6 +585,28 @@ def _pruning_section(config: dict[str, Any]) -> dict[str, Any]:
     return pruning if isinstance(pruning, dict) else {}
 
 
+def _tools(config: dict[str, Any]) -> dict[str, Any]:
+    tools = _pruning_section(config).get("tools")
+    return tools if isinstance(tools, dict) else {}
+
+
+def _pipeline_def(config: dict[str, Any], stage: str) -> dict[str, Any]:
+    user_legacy = _nested_dict_value(config, "pruning", stage)
+    if isinstance(user_legacy, dict):
+        return cast(dict[str, Any], user_legacy)
+    user_canonical = _nested_dict_value(config, "pruning", "tools", "pipelines", stage)
+    if isinstance(user_canonical, dict):
+        return cast(dict[str, Any], user_canonical)
+    merged = _merged_config(config)
+    merged_canonical = _nested_dict_value(merged, "pruning", "tools", "pipelines", stage)
+    if isinstance(merged_canonical, dict):
+        return cast(dict[str, Any], merged_canonical)
+    merged_legacy = _nested_dict_value(merged, "pruning", stage)
+    if isinstance(merged_legacy, dict):
+        return cast(dict[str, Any], merged_legacy)
+    return {}
+
+
 def _resolve_user_then_merged(
     merged: dict[str, Any],
     user: dict[str, Any],
@@ -569,14 +647,14 @@ def pruning_system_tool_policy(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve system tool policy: ``pruning.policy.system_tool`` then legacy ``defaults``."""
+    """Resolve system tool policy: ``pruning.tools.policy.system_tool`` then legacy paths."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = _resolve_user_then_merged(
+    policy = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", "policy", "system_tool"),
-        legacy_keys=("defaults", "system_tool_policy"),
+        canonical_keys=("pruning", "tools", "policy", "system_tool"),
+        legacy_name="tools.policy.system_tool",
     )
     if policy is None:
         return DEFAULT_SYSTEM_TOOL_POLICY
@@ -588,14 +666,14 @@ def pruning_mcp_tool_policy(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve MCP tool policy: ``pruning.policy.mcp_tool`` then legacy ``defaults``."""
+    """Resolve MCP tool policy: ``pruning.tools.policy.mcp_tool`` then legacy paths."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = _resolve_user_then_merged(
+    policy = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", "policy", "mcp_tool"),
-        legacy_keys=("defaults", "mcp_tool_policy"),
+        canonical_keys=("pruning", "tools", "policy", "mcp_tool"),
+        legacy_name="tools.policy.mcp_tool",
     )
     if policy is None:
         return DEFAULT_MCP_TOOL_POLICY
@@ -606,12 +684,7 @@ def _pruning_stage_policy_section(
     config: dict[str, Any],
     stage: str,
 ) -> dict[str, Any]:
-    pruning = config.get("pruning")
-    if not isinstance(pruning, dict):
-        return {}
-    stage_cfg = pruning.get(stage)
-    if not isinstance(stage_cfg, dict):
-        return {}
+    stage_cfg = _pipeline_def(config, stage)
     policy = stage_cfg.get("policy")
     return policy if isinstance(policy, dict) else {}
 
@@ -620,12 +693,7 @@ def _pruning_stage_per_tool(
     config: dict[str, Any],
     stage: str,
 ) -> dict[str, ToolPolicy]:
-    pruning = config.get("pruning")
-    if not isinstance(pruning, dict):
-        return {}
-    stage_cfg = pruning.get(stage)
-    if not isinstance(stage_cfg, dict):
-        return {}
+    stage_cfg = _pipeline_def(config, stage)
     per_tool = stage_cfg.get("per_tool")
     if not isinstance(per_tool, dict):
         return {}
@@ -637,6 +705,15 @@ def _pruning_stage_per_tool(
 
 
 def _per_tool_policy(pruning: dict[str, Any], tool_id: str) -> ToolPolicy | None:
+    tools = pruning.get("tools")
+    if isinstance(tools, dict):
+        policy_section = tools.get("policy")
+        if isinstance(policy_section, dict):
+            per_tool = policy_section.get("per_tool")
+            if isinstance(per_tool, dict) and tool_id in per_tool:
+                policy = per_tool[tool_id]
+                if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
+                    return cast(ToolPolicy, policy)
     per_tool = pruning.get("per_tool")
     if not isinstance(per_tool, dict) or tool_id not in per_tool:
         return None
@@ -755,15 +832,14 @@ def pruning_stage_model_nick(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> str | None:
-    """Resolve stage model nick from ``pruning.<stage>`` then legacy ``defaults.remote``."""
+    """Resolve stage model nick from pipeline config then legacy paths."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    _, legacy_key = _PIPELINE_STAGE_MODEL_KEYS[stage]
-    nick = _resolve_user_then_merged(
+    nick = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", stage, "model", "remote", "model_nick"),
-        legacy_keys=("defaults", "remote", legacy_key),
+        canonical_keys=("pruning", "tools", "pipelines", stage, "model_nick"),
+        legacy_name=f"pipelines.{stage}.model_nick",
     )
     return str(nick) if nick is not None else None
 
@@ -772,11 +848,11 @@ def _bm25_index_dir_resolved(
     merged: dict[str, Any],
     user: dict[str, Any],
 ) -> str:
-    index_dir = _resolve_user_then_merged(
+    index_dir = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", "bm25", "index_dir"),
-        legacy_keys=("models", "bm25", "index_dir"),
+        canonical_keys=("pruning", "tools", "pipelines", "bm25", "index_dir"),
+        legacy_name="pipelines.bm25.index_dir",
     )
     return str(index_dir) if index_dir is not None else DEFAULT_BM25_INDEX_DIR
 
@@ -822,11 +898,7 @@ def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
 
 
 def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
-    pruning = config.get("pruning")
-    if not isinstance(pruning, dict):
-        return {}
-    stage_cfg = pruning.get("bm25")
-    return stage_cfg if isinstance(stage_cfg, dict) else {}
+    return _pipeline_def(config, "bm25")
 
 
 def bm25_score_tool(config: dict[str, Any] | None = None) -> float:
@@ -853,11 +925,7 @@ def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
 
 
 def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
-    pruning = config.get("pruning")
-    if not isinstance(pruning, dict):
-        return {}
-    stage_cfg = pruning.get("rerank")
-    return stage_cfg if isinstance(stage_cfg, dict) else {}
+    return _pipeline_def(config, "rerank")
 
 
 def rerank_score_skills(config: dict[str, Any] | None = None) -> float:
@@ -955,40 +1023,51 @@ def skills_index_params_fingerprint(config: dict[str, Any] | None = None) -> str
 
 def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:
     pruning = user_config.get("pruning")
-    if not isinstance(pruning, dict):
-        return []
-    pipeline = pruning.get("pipeline")
-    if not isinstance(pipeline, list):
-        return []
-    return pipeline
+    if isinstance(pruning, dict):
+        tools = pruning.get("tools")
+        if isinstance(tools, dict):
+            sequence = tools.get("sequence")
+            if isinstance(sequence, list):
+                return sequence
+        pipeline = pruning.get("pipeline")
+        if isinstance(pipeline, list):
+            return pipeline
+    return []
 
 
-def _user_remote_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
-    defaults = user_config.get("defaults")
-    if not isinstance(defaults, dict):
-        return {}
-    remote = defaults.get("remote")
-    return remote if isinstance(remote, dict) else {}
+def _model_nick_from_stage_cfg(stage_cfg: dict[str, Any]) -> str | None:
+    nick = stage_cfg.get("model_nick")
+    if nick:
+        return str(nick)
+    model = stage_cfg.get("model")
+    if isinstance(model, str) and model:
+        return model
+    if isinstance(model, dict):
+        remote = model.get("remote", {})
+        if isinstance(remote, dict):
+            legacy_nick = remote.get("model_nick")
+            if legacy_nick:
+                return str(legacy_nick)
+    return None
 
 
 def _user_stage_model_nick(user_config: dict[str, Any], stage: str) -> str | None:
     pruning = user_config.get("pruning")
     if isinstance(pruning, dict):
+        tools = pruning.get("tools")
+        if isinstance(tools, dict):
+            pipelines = tools.get("pipelines")
+            if isinstance(pipelines, dict):
+                stage_cfg = pipelines.get(stage, {})
+                if isinstance(stage_cfg, dict):
+                    if nick := _model_nick_from_stage_cfg(stage_cfg):
+                        return nick
         stage_cfg = pruning.get(stage, {})
         if isinstance(stage_cfg, dict):
-            model = stage_cfg.get("model", {})
-            if isinstance(model, dict):
-                remote = model.get("remote", {})
-                if isinstance(remote, dict):
-                    nick = remote.get("model_nick")
-                    if nick:
-                        return str(nick)
-    stage_keys = _PIPELINE_STAGE_MODEL_KEYS.get(stage)
-    if stage_keys is None:
-        return None
-    _, nick_key = stage_keys
-    legacy = _user_remote_defaults(user_config).get(nick_key)
-    return str(legacy) if legacy else None
+            if nick := _model_nick_from_stage_cfg(stage_cfg):
+                return nick
+    resolved = legacy.resolve_legacy({}, user_config, f"pipelines.{stage}.model_nick")
+    return str(resolved) if resolved is not None else None
 
 
 def _remote_model_configured(
@@ -1053,10 +1132,10 @@ def _remote_model_entries(config: dict[str, Any], model_kind: str) -> list[dict[
 
 
 def remote_model_entry(config: dict[str, Any], model_kind: str, model_nick: str) -> dict[str, Any]:
-    """Return the ``models.<kind>.remote`` entry for *model_nick*."""
+    """Return the merged ``models.<kind>.remote`` entry for *model_nick*."""
     for entry in _remote_model_entries(config, model_kind):
         if entry.get("nick") == model_nick:
-            return entry
+            return merge_model_entry(config, entry)
     raise ValueError(f"Unknown models.{model_kind}.remote nick: {model_nick!r}")
 
 
@@ -1205,22 +1284,21 @@ def _stage_minimum_tools(
     cfg = config or load_config()
     merged = _merged_config(cfg)
     user = _user_overlay_for_config(cfg, user_config=user_config)
-    model_kind = "rerankers" if stage == "rerank" else "llm"
 
-    shared = _resolve_user_then_merged(
+    shared = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", "policy", "minimum_tools"),
-        legacy_keys=("models", model_kind, "minimum_tools"),
+        canonical_keys=("pruning", "tools", "policy", "minimum_tools"),
+        legacy_name="tools.policy.minimum_tools",
     )
     if shared is not None:
         return int(cast(int | str, shared))
 
-    stage_specific = _resolve_user_then_merged(
+    stage_specific = legacy.resolve_user_then_merged(
         merged,
         user,
-        new_keys=("pruning", "policy", stage, "minimum_tools"),
-        legacy_keys=(),
+        canonical_keys=("pruning", "tools", "pipelines", stage, "minimum_tools"),
+        legacy_name=f"pipelines.{stage}.minimum_tools",
     )
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
@@ -1258,6 +1336,120 @@ def litellm_model_name(entry: dict[str, Any]) -> str:
     return f"{provider}/{full_model_name}"
 
 
+def _normalize_provider_entry(item: dict[str, Any]) -> dict[str, Any] | None:
+    if "provider_nick" in item:
+        nick = str(item["provider_nick"])
+        provider = item.get("provider") or item.get("name") or nick
+        return {**item, "provider": provider}
+    if len(item) == 1:
+        key, nested = next(iter(item.items()))
+        if isinstance(nested, dict):
+            nick = str(nested.get("provider_nick", key))
+            provider = nested.get("provider") or nested.get("name") or key
+            return {**nested, "provider_nick": nick, "provider": provider}
+    return None
+
+
+def provider_dns_matches_domain(provider_dns_name: str, domain: str) -> bool:
+    """True when *provider_dns_name* equals *domain* or is a subdomain of it."""
+    dns = provider_dns_name.strip().lower()
+    dom = domain.strip().lower()
+    if not dns or not dom:
+        return False
+    if dns == dom:
+        return True
+    return dns.endswith("." + dom) or dom.endswith("." + dns)
+
+
+def provider_dns_matches_any(
+    provider_dns_name: str,
+    domains: list[Any],
+) -> bool:
+    """True when *provider_dns_name* matches any hostname in *domains*."""
+    return any(provider_dns_matches_domain(provider_dns_name, str(domain)) for domain in domains)
+
+
+def provider_nick_for_dns(config: dict[str, Any], provider_dns_name: str | None) -> str | None:
+    """Return a ``provider_nick`` whose ``domain_match`` covers *provider_dns_name*."""
+    if not provider_dns_name:
+        return None
+    for nick, entry in provider_registry(config).items():
+        domain_match = entry.get("domain_match")
+        if isinstance(domain_match, list) and provider_dns_matches_any(
+            provider_dns_name,
+            domain_match,
+        ):
+            return nick
+    return None
+
+
+def _iter_normalized_providers(
+    providers: object,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    if not isinstance(providers, list):
+        return
+    for item in providers:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_provider_entry(cast(dict[str, Any], item))
+        if normalized is None:
+            continue
+        nick = normalized.get("provider_nick")
+        if nick:
+            yield str(nick), normalized
+
+
+def provider_registry(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Normalize ``models.providers`` list entries to a ``provider_nick`` → fields map."""
+    registry: dict[str, dict[str, Any]] = {}
+    bundled_providers = _load_bundled_defaults_yaml().get("models", {}).get("providers", [])
+    for nick, normalized in _iter_normalized_providers(bundled_providers):
+        registry[nick] = normalized
+
+    user_providers = config.get("models", {}).get("providers", [])
+    for nick, normalized in _iter_normalized_providers(user_providers):
+        registry[nick] = deep_merge(registry.get(nick, {}), normalized)
+    return registry
+
+
+def merge_model_entry(config: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
+    """Merge provider registry fields into a model catalog row (inline fields win)."""
+    nick = entry.get("provider_nick") or entry.get("provider")
+    base: dict[str, Any] = {}
+    if nick:
+        base = dict(provider_registry(config).get(str(nick), {}))
+    merged = {**base, **entry}
+    provider = entry.get("provider") or base.get("provider") or nick
+    if provider:
+        merged["provider"] = provider
+    return merged
+
+
+def provider_name_from_nick(config: dict[str, Any], provider_nick: str | None) -> str | None:
+    """Return the LiteLLM ``provider`` for *provider_nick* from the provider registry."""
+    if not provider_nick:
+        return None
+    nick = str(provider_nick).strip()
+    if not nick:
+        return None
+    registry_entry = provider_registry(config).get(nick)
+    if not registry_entry:
+        return None
+    provider = registry_entry.get("provider")
+    return str(provider) if provider else None
+
+
+def stats_provider_for_entry(config: dict[str, Any], entry: dict[str, Any]) -> str | None:
+    """Resolve the provider name persisted in stats via registry ``provider_nick``."""
+    provider_nick = entry.get("provider_nick")
+    if provider_nick:
+        return provider_name_from_nick(config, str(provider_nick))
+    legacy = entry.get("provider")
+    if legacy:
+        return provider_name_from_nick(config, str(legacy))
+    return None
+
+
 def model_responses_api(entry: dict[str, Any]) -> bool:
     """True when the model entry should call LiteLLM's Responses API (``/v1/responses``)."""
     return bool(entry.get("responses_api", False))
@@ -1275,12 +1467,13 @@ def resolve_model(
     for entry in merged.get("models", {}).get(model_kind, {}).get(model_type, []):
         if entry.get("nick") == model_nick:
             if model_type == "remote":
+                enriched = merge_model_entry(merged, entry)
                 load_proxy_env()
-                key_var_name = entry.get("key_var_name")
+                key_var_name = enriched.get("key_var_name")
                 api_key_value = os.environ.get(key_var_name) if key_var_name else None
-                base_url = entry.get("base_url")
-                if entry.get("provider"):
-                    return litellm_model_name(entry), api_key_value, base_url
+                base_url = enriched.get("base_url")
+                if enriched.get("provider"):
+                    return litellm_model_name(enriched), api_key_value, base_url
                 raise ValueError(
                     f"Unknown remote provider for nick: {model_nick}, kind: {model_kind}, type: {model_type} in LiteLLM format",
                 )

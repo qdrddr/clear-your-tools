@@ -53,6 +53,32 @@ def _read_env_file_value(name: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def keyring_backend_available() -> bool:
+    """Return True when the OS keyring backend is installed and can store secrets."""
+    try:
+        import keyring
+    except ImportError:
+        return False
+    try:
+        probe_key = "__cyt_keyring_probe__"
+        keyring.set_password(KEYRING_SERVICE, probe_key, "ok")
+        value = keyring.get_password(KEYRING_SERVICE, probe_key)
+        try:
+            keyring.delete_password(KEYRING_SERVICE, probe_key)
+        except Exception:
+            pass
+        return value == "ok"
+    except Exception:
+        return False
+
+
+def credentials_available_in_keyring(names: list[str]) -> bool:
+    """Return True when every *names* entry resolves from the OS keyring."""
+    if not names:
+        return True
+    return all(_read_keyring(name) for name in names)
+
+
 def _read_keyring(name: str) -> str | None:
     try:
         import keyring

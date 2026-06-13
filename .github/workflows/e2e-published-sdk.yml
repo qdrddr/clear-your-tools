@@ -91,7 +91,7 @@ jobs:
       - name: Test published Python SDK
         working-directory: sdk/e2e/python
         run: |
-          ../../scripts/uv-sync-with-retry.sh --group test
+          ../scripts/uv-sync-with-retry.sh --group test
           uv run pytest
 
   e2e-typescript:
@@ -152,5 +152,5 @@ jobs:
         env:
           CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          ../../scripts/uv-sync-with-retry.sh --group test
+          ../scripts/uv-sync-with-retry.sh --group test
           uv run pytest

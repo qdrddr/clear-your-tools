@@ -80,7 +80,7 @@ def _write_upstream_config(
                     "proxy": {
                         "reverse": {
                             "upstreams": [
-                                {"upstream": name, "kind": kind, "url": url},
+                                {"endpoint": name, "kind": kind, "url": url},
                             ],
                             "endpoints": [name],
                         },
@@ -97,23 +97,23 @@ def _write_upstream_config(
 class TestFilterUpstreamsByAgent:
     def test_claude_keeps_anthropic_only(self) -> None:
         upstreams = [
-            {"upstream": "openai", "kind": "openai", "url": "https://api.openai.com"},
-            {"upstream": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
+            {"endpoint": "openai", "kind": "openai", "url": "https://api.openai.com"},
+            {"endpoint": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
             {
-                "upstream": "openrouter",
+                "endpoint": "openrouter",
                 "kind": "anthropic",
                 "url": "https://openrouter.ai/api",
             },
         ]
-        names = [entry["upstream"] for entry in filter_upstreams_by_agent(upstreams, "claude")]
+        names = [entry["endpoint"] for entry in filter_upstreams_by_agent(upstreams, "claude")]
         assert names == ["anthropic", "openrouter"]
 
     def test_codex_keeps_openai_only(self) -> None:
         upstreams = [
-            {"upstream": "openai", "kind": "openai", "url": "https://api.openai.com"},
-            {"upstream": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
+            {"endpoint": "openai", "kind": "openai", "url": "https://api.openai.com"},
+            {"endpoint": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
         ]
-        names = [entry["upstream"] for entry in filter_upstreams_by_agent(upstreams, "codex")]
+        names = [entry["endpoint"] for entry in filter_upstreams_by_agent(upstreams, "codex")]
         assert names == ["openai"]
 
 
@@ -123,8 +123,8 @@ class TestSelectUpstreamEndpoint:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         upstreams = [
-            {"upstream": "openai", "kind": "openai", "url": "https://api.openai.com"},
-            {"upstream": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
+            {"endpoint": "openai", "kind": "openai", "url": "https://api.openai.com"},
+            {"endpoint": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
         ]
         endpoint = select_upstream_endpoint(
             upstreams,
@@ -141,9 +141,9 @@ class TestSelectUpstreamEndpoint:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         upstreams = [
-            {"upstream": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
+            {"endpoint": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
             {
-                "upstream": "openrouter",
+                "endpoint": "openrouter",
                 "kind": "anthropic",
                 "url": "https://openrouter.ai/api",
             },
@@ -172,12 +172,12 @@ class TestResolveAgentEndpoint:
                     "reverse": {
                         "upstreams": [
                             {
-                                "upstream": "openai",
+                                "endpoint": "openai",
                                 "kind": "openai",
                                 "url": "https://api.openai.com",
                             },
                             {
-                                "upstream": "anthropic",
+                                "endpoint": "anthropic",
                                 "kind": "anthropic",
                                 "url": "https://api.anthropic.com",
                             },
@@ -289,7 +289,7 @@ class TestRequiredLaunchEnvVars:
                     "reverse": {
                         "upstreams": [
                             {
-                                "upstream": "anthropic",
+                                "endpoint": "anthropic",
                                 "kind": "anthropic",
                                 "url": "https://api.anthropic.com",
                             },
@@ -337,12 +337,12 @@ class TestRequiredLaunchEnvVars:
                     "reverse": {
                         "upstreams": [
                             {
-                                "upstream": "anthropic",
+                                "endpoint": "anthropic",
                                 "kind": "anthropic",
                                 "url": "https://api.anthropic.com",
                             },
                             {
-                                "upstream": "openrouter",
+                                "endpoint": "openrouter",
                                 "kind": "anthropic",
                                 "url": "https://openrouter.ai/api",
                             },

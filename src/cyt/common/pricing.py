@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
+from cyt.config import merge_model_entry, provider_dns_matches_domain
+
 _PROVIDER_PREFIXES = frozenset({"openrouter", "deepinfra", "ollama", "openai", "anthropic"})
 
 
@@ -78,7 +80,13 @@ def _pricing_from_entry(entry: dict[str, Any], kind: str) -> ModelPricing | None
     )
 
 
-def _entry_provider_dns(entry: dict[str, Any]) -> str | None:
+def _entry_provider_dns(
+    entry: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> str | None:
+    if config is not None:
+        entry = merge_model_entry(config, entry)
     domain_match = entry.get("domain_match")
     if isinstance(domain_match, list) and domain_match:
         return str(domain_match[0])
@@ -118,7 +126,10 @@ def lookup_llm_pricing(
     ]
     if provider_dns_name:
         if by_dns := [
-            entry for entry in candidates if _entry_provider_dns(entry) == provider_dns_name
+            entry
+            for entry in candidates
+            if (dns := _entry_provider_dns(entry, config=config)) is not None
+            and provider_dns_matches_domain(provider_dns_name, dns)
         ]:
             candidates = by_dns
 

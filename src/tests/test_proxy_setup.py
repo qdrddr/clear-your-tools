@@ -11,12 +11,17 @@ import yaml
 from cyt.config import (
     bundled_user_config_sections,
     default_model_nick,
+    merge_model_entry,
     save_user_config,
 )
 from cyt.proxy.setup import (
-    PRIMARY_TOO_CHEAP_MESSAGE,
+    _catalog_entries,
+    _catalog_merge_config,
     _prompt_custom_model,
     _prompt_key_var_name,
+    _prompt_skills,
+    _prompt_skills_pruner_models,
+    _prompt_upstreams,
     apply_upstream_cli_to_config,
     build_setup_overlay,
     build_upstream_cli_overlay,
@@ -33,9 +38,9 @@ from cyt.proxy.setup import (
     input_usd_per_million,
     iter_incomplete_remote_models,
     iter_models_missing_costs,
+    key_var_name_from_provider,
     max_pruner_input_cost_per_token,
     merge_endpoints,
-    merge_model_entry,
     merge_setup_overlay,
     merge_upstream_entry,
     model_input_cost_per_token,
@@ -48,14 +53,17 @@ from cyt.proxy.setup import (
     parse_cost_per_token,
     parse_domain_match,
     parse_env_file,
+    parse_path_list,
     per_token_to_usd_per_million,
     pipeline_from_choice,
-    print_primary_too_cheap_warning,
     print_proxy_urls,
     prompt_incomplete_models_in_config,
     pruner_input_cost_error,
     recommended_pipeline_default_index,
     run_add_costs_wizard,
+    run_setup,
+    upsert_remote_model,
+    upstream_entry_endpoint,
     upstream_hostnames_default,
     upstream_url_default,
     upstreams_for_config,
@@ -107,6 +115,13 @@ class TestDomainMatchParsing:
     def test_empty_omits(self) -> None:
         assert parse_domain_match("") is None
         assert parse_domain_match("  ") is None
+
+    def test_parse_path_list(self) -> None:
+        assert parse_path_list("~/.claude/skills, .codex/skills") == [
+            "~/.claude/skills",
+            ".codex/skills",
+        ]
+        assert parse_path_list("") is None
 
     def test_extracts_hostname_from_url(self) -> None:
         assert parse_domain_match("https://api.synthetic.new/openai/v1") == [
@@ -198,6 +213,31 @@ class TestPrimaryModelPricing:
             "domain_match",
         ]
 
+    def test_model_missing_metadata_resolves_provider_nick(self) -> None:
+        config: dict[str, Any] = {
+            "models": {
+                "providers": [
+                    {
+                        "provider_nick": "anthropic",
+                        "provider": "anthropic",
+                        "domain_match": ["api.anthropic.com"],
+                    },
+                ],
+                "llm": {
+                    "remote": [
+                        {
+                            "nick": "sonnet46",
+                            "name": "claude-sonnet-4-6",
+                            "provider_nick": "anthropic",
+                        },
+                    ],
+                },
+            },
+        }
+        entry = config["models"]["llm"]["remote"][0]
+        assert model_missing_metadata_fields(entry, config=config) == []
+        assert iter_incomplete_remote_models(config) == []
+
     def test_model_missing_cost_fields(self) -> None:
         assert model_missing_cost_fields(_SAMPLE_MODEL) == []
         assert model_missing_cost_fields(_RERANK_MODEL) == ["output_cost_per_token"]
@@ -211,21 +251,27 @@ class TestPrimaryModelPricing:
             "models": {
                 "llm": {
                     "remote": [
-                        _SAMPLE_MODEL,
+                        {
+                            "name": "claude-sonnet-4-6",
+                            "provider_nick": "anthropic",
+                            "nick": "sonnet",
+                        },
                         {"nick": "synced", "name": "provider/model"},
                     ],
                 },
                 "rerankers": {
-                    "remote": [_RERANK_MODEL],
+                    "remote": [
+                        {
+                            "name": "Qwen/Qwen3-Reranker-8B",
+                            "provider_nick": "deepinfra",
+                            "nick": "rerank-qwen3-8b",
+                        },
+                    ],
                 },
             },
         }
         incomplete = iter_incomplete_remote_models(config)
-        assert [entry.get("nick") for _kind, entry in incomplete] == [
-            "sonnet",
-            "synced",
-            "rerank-qwen3-8b",
-        ]
+        assert [entry.get("nick") for _kind, entry in incomplete] == ["synced"]
 
     def test_iter_models_missing_costs(self) -> None:
         config = {
@@ -264,8 +310,18 @@ class TestPrimaryModelPricing:
         changed = prompt_incomplete_models_in_config(config)
         assert changed is True
         entry = config["models"]["llm"]["remote"][0]
-        assert entry["provider"] == "openrouter"
-        assert entry["domain_match"] == ["api.openrouter.ai"]
+        assert entry["provider_nick"] == "openrouter"
+        assert "provider" not in entry
+        assert "domain_match" not in entry
+        providers = config["models"]["providers"]
+        assert isinstance(providers, list)
+        provider = next(
+            item
+            for item in providers
+            if isinstance(item, dict) and item.get("provider_nick") == "openrouter"
+        )
+        assert provider["provider"] == "openrouter"
+        assert provider["domain_match"] == ["api.openrouter.ai"]
         assert "pricing" not in entry
 
     def test_run_add_costs_wizard(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -280,11 +336,17 @@ class TestPrimaryModelPricing:
                                     "nick": "synced",
                                     "name": "provider/model",
                                     "provider": "openrouter",
+                                    "domain_match": ["api.openrouter.ai"],
                                 },
                             ],
                         },
                         "rerankers": {
-                            "remote": [_RERANK_MODEL],
+                            "remote": [
+                                {
+                                    **_RERANK_MODEL,
+                                    "domain_match": ["deepinfra.com"],
+                                },
+                            ],
                         },
                     },
                 },
@@ -304,20 +366,17 @@ class TestPrimaryModelPricing:
     def test_input_usd_per_million(self) -> None:
         assert input_usd_per_million(_SAMPLE_MODEL) == pytest.approx(3)
 
-    def test_too_cheap_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
-        cheap = {
-            "pricing": {"input_cost_per_token": 0.2e-06},
-        }
-        print_primary_too_cheap_warning(cheap)
-        assert PRIMARY_TOO_CHEAP_MESSAGE in capsys.readouterr().out
-
-        print_primary_too_cheap_warning(_SAMPLE_MODEL)
-        assert capsys.readouterr().out == ""
+    def test_key_var_name_from_provider(self) -> None:
+        assert key_var_name_from_provider("deepinfra") == "DEEPINFRA_API_KEY"
+        assert key_var_name_from_provider("openrouter") == "OPENROUTER_API_KEY"
 
     def test_recommended_pipeline_default_index(self) -> None:
-        cheap = {"pricing": {"input_cost_per_token": 2e-06}}
+        too_cheap = {"pricing": {"input_cost_per_token": 0.2e-06}}
+        moderate = {"pricing": {"input_cost_per_token": 2e-06}}
         expensive = {"pricing": {"input_cost_per_token": 3e-06}}
-        assert recommended_pipeline_default_index(cheap) == 0
+        assert recommended_pipeline_default_index(too_cheap) == 3
+        assert recommended_pipeline_default_index({}) == 0
+        assert recommended_pipeline_default_index(moderate) == 0
         assert recommended_pipeline_default_index(expensive) == 1
         assert (
             recommended_pipeline_default_index(
@@ -450,7 +509,7 @@ class TestBuildUpstreamCliOverlay:
         assert overlay["network"]["proxy"]["reverse"] == {
             "upstreams": [
                 {
-                    "upstream": "anthropic",
+                    "endpoint": "anthropic",
                     "kind": "anthropic",
                     "url": "https://api.anthropic.com",
                 },
@@ -464,7 +523,7 @@ class TestBuildUpstreamCliOverlay:
             "openai",
         )
         reverse = overlay["network"]["proxy"]["reverse"]
-        assert reverse["upstreams"][0]["upstream"] == "openrouter"
+        assert reverse["upstreams"][0]["endpoint"] == "openrouter"
         assert reverse["upstreams"][0]["kind"] == "openai"
         assert reverse["endpoints"] == ["openrouter"]
 
@@ -475,7 +534,7 @@ class TestBuildUpstreamCliOverlay:
             upstream_name="anthropic",
         )
         reverse = overlay["network"]["proxy"]["reverse"]
-        assert reverse["upstreams"][0]["upstream"] == "anthropic"
+        assert reverse["upstreams"][0]["endpoint"] == "anthropic"
         assert reverse["endpoints"] == ["anthropic"]
 
     def test_rejects_empty_upstream_name(self) -> None:
@@ -508,7 +567,7 @@ class TestBuildUpstreamCliOverlay:
 
     def test_upstreams_for_config_normalizes_kind_aliases(self) -> None:
         serialized = upstreams_for_config(
-            [{"upstream": "anthropic", "kind": "claude-code", "url": "https://api.anthropic.com"}],
+            [{"endpoint": "anthropic", "kind": "claude-code", "url": "https://api.anthropic.com"}],
         )
         assert serialized[0]["kind"] == "anthropic"
 
@@ -527,7 +586,7 @@ class TestApplyUpstreamCliToConfig:
         reverse = saved["network"]["proxy"]["reverse"]
         assert reverse["upstreams"] == [
             {
-                "upstream": "anthropic",
+                "endpoint": "anthropic",
                 "kind": "anthropic",
                 "url": "https://api.anthropic.com",
             },
@@ -544,7 +603,7 @@ class TestApplyUpstreamCliToConfig:
         )
         saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         reverse = saved["network"]["proxy"]["reverse"]
-        assert reverse["upstreams"][0]["upstream"] == "anthropic"
+        assert reverse["upstreams"][0]["endpoint"] == "anthropic"
         assert reverse["endpoints"] == ["anthropic"]
 
     def test_preserves_existing_upstreams(self, tmp_path: Path) -> None:
@@ -556,7 +615,7 @@ class TestApplyUpstreamCliToConfig:
                     "  proxy:",
                     "    reverse:",
                     "      upstreams:",
-                    "        - upstream: openai",
+                    "        - endpoint: openai",
                     "          kind: openai",
                     "          url: https://api.openai.com",
                     "      endpoints:",
@@ -572,7 +631,7 @@ class TestApplyUpstreamCliToConfig:
         )
         saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         reverse = saved["network"]["proxy"]["reverse"]
-        assert [entry["upstream"] for entry in reverse["upstreams"]] == [
+        assert [entry["endpoint"] for entry in reverse["upstreams"]] == [
             "openai",
             "anthropic",
         ]
@@ -641,10 +700,10 @@ class TestPipelineFromChoice:
         assert pipeline_from_choice("both") == ["rerank", "llm"]
 
 
-class TestMergeModelEntry:
+class TestUpsertRemoteModel:
     def test_replaces_same_nick(self) -> None:
         existing = [{"nick": "a", "name": "old"}, {"nick": "b", "name": "keep"}]
-        updated = merge_model_entry(existing, {"nick": "a", "name": "new"})
+        updated = upsert_remote_model(existing, {"nick": "a", "name": "new"})
         assert len(updated) == 2
         by_nick = {e["nick"]: e for e in updated}
         assert by_nick["a"]["name"] == "new"
@@ -652,32 +711,40 @@ class TestMergeModelEntry:
 
     def test_appends_new_nick(self) -> None:
         existing = [{"nick": "a"}]
-        updated = merge_model_entry(existing, {"nick": "c"})
+        updated = upsert_remote_model(existing, {"nick": "c"})
         assert len(updated) == 2
 
 
 class TestMergeUpstreamEntry:
     def test_replaces_same_name(self) -> None:
         existing = [
-            {"upstream": "anthropic", "url": "https://old.example"},
-            {"upstream": "openai", "url": "https://api.openai.com"},
+            {"endpoint": "anthropic", "url": "https://old.example"},
+            {"endpoint": "openai", "url": "https://api.openai.com"},
         ]
         updated = merge_upstream_entry(
             existing,
-            {"upstream": "anthropic", "url": "https://api.anthropic.com", "kind": "anthropic"},
+            {"endpoint": "anthropic", "url": "https://api.anthropic.com", "kind": "anthropic"},
         )
         assert len(updated) == 2
-        by_name = {e["upstream"]: e for e in updated}
+        by_name = {e["endpoint"]: e for e in updated}
         assert by_name["anthropic"]["url"] == "https://api.anthropic.com"
         assert by_name["openai"]["url"] == "https://api.openai.com"
 
     def test_appends_new_name(self) -> None:
-        existing = [{"upstream": "anthropic", "url": "https://api.anthropic.com"}]
+        existing = [{"endpoint": "anthropic", "url": "https://api.anthropic.com"}]
         updated = merge_upstream_entry(
             existing,
-            {"upstream": "openai", "url": "https://api.openai.com", "kind": "openai"},
+            {"endpoint": "openai", "url": "https://api.openai.com", "kind": "openai"},
         )
         assert len(updated) == 2
+
+
+class TestUpstreamEntryEndpoint:
+    def test_reads_endpoint_key(self) -> None:
+        assert upstream_entry_endpoint({"endpoint": "openrouter"}) == "openrouter"
+
+    def test_falls_back_to_legacy_upstream_key(self) -> None:
+        assert upstream_entry_endpoint({"upstream": "anthropic"}) == "anthropic"
 
 
 class TestMergeEndpoints:
@@ -696,7 +763,7 @@ class TestMergeSetupOverlay:
                     "reverse": {
                         "upstreams": [
                             {
-                                "upstream": "openai",
+                                "endpoint": "openai",
                                 "kind": "openai",
                                 "url": "https://api.openai.com",
                             },
@@ -715,12 +782,12 @@ class TestMergeSetupOverlay:
         reverse = merged["network"]["proxy"]["reverse"]
         assert reverse["upstreams"] == [
             {
-                "upstream": "openai",
+                "endpoint": "openai",
                 "kind": "openai",
                 "url": "https://api.openai.com",
             },
             {
-                "upstream": "anthropic",
+                "endpoint": "anthropic",
                 "kind": "anthropic",
                 "url": "https://api.anthropic.com",
             },
@@ -747,6 +814,57 @@ class TestMergeSetupOverlay:
         nicks = {entry["nick"] for entry in merged["models"]["llm"]["remote"]}
         assert nicks == {"keep", "new"}
 
+    def test_merges_inline_provider_fields_into_providers(self) -> None:
+        existing = {
+            "models": {
+                "llm": {
+                    "remote": [
+                        {
+                            "nick": "sonnet",
+                            "name": "claude-sonnet-4-6",
+                            "provider": "anthropic",
+                            "key_var_name": "ANTHROPIC_API_KEY",
+                            "domain_match": ["api.anthropic.com"],
+                        },
+                    ],
+                },
+            },
+        }
+        overlay = {
+            "models": {
+                "llm": {
+                    "remote": [
+                        {
+                            "nick": "sonnet",
+                            "name": "claude-sonnet-4-6",
+                            "provider_nick": "anthropic",
+                        },
+                    ],
+                },
+                "providers": [
+                    {
+                        "provider_nick": "anthropic",
+                        "provider": "anthropic",
+                        "key_var_name": "ANTHROPIC_API_KEY",
+                        "domain_match": ["api.anthropic.com"],
+                    },
+                ],
+            },
+        }
+        merged = merge_setup_overlay(existing, overlay)
+        remote = merged["models"]["llm"]["remote"][0]
+        assert remote["provider_nick"] == "anthropic"
+        assert "provider" not in remote
+        assert "key_var_name" not in remote
+        assert merged["models"]["providers"] == [
+            {
+                "provider_nick": "anthropic",
+                "provider": "anthropic",
+                "key_var_name": "ANTHROPIC_API_KEY",
+                "domain_match": ["api.anthropic.com"],
+            },
+        ]
+
 
 class TestCollectKeyVarNames:
     def test_dedupes(self) -> None:
@@ -764,6 +882,26 @@ class TestCollectKeyVarNames:
             "DEEPINFRA_API_KEY",
         ]
 
+    def test_reads_from_provider_registry(self) -> None:
+        models = {
+            "providers": [
+                {"provider_nick": "openrouter", "key_var_name": "OPENROUTER_API_KEY"},
+                {"provider_nick": "deepinfra", "key_var_name": "DEEPINFRA_API_KEY"},
+            ],
+            "llm": {
+                "remote": [
+                    {"provider_nick": "openrouter"},
+                    {"provider_nick": "openrouter"},
+                ],
+            },
+            "rerankers": {"remote": [{"provider_nick": "deepinfra"}]},
+        }
+        config = {"models": models}
+        assert collect_key_var_names(models, config=config) == [
+            "OPENROUTER_API_KEY",
+            "DEEPINFRA_API_KEY",
+        ]
+
 
 class TestPromptCustomModel:
     def test_omits_base_url_when_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -775,7 +913,6 @@ class TestPromptCustomModel:
                 "DEEPINFRA_API_KEY",
                 "32000",
                 "",
-                "",
             ],
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
@@ -783,6 +920,7 @@ class TestPromptCustomModel:
             prompt_base_url=True,
         )
         assert "base_url" not in result
+        assert "domain_match" not in result
         assert "pricing" not in result
 
     def test_prompts_base_url_when_requested(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -794,7 +932,6 @@ class TestPromptCustomModel:
                 "DEEPINFRA_API_KEY",
                 "32000",
                 "https://api.deepinfra.com/v1",
-                "",
             ],
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
@@ -803,7 +940,21 @@ class TestPromptCustomModel:
             prompt_base_url=True,
         )
         assert result["base_url"] == "https://api.deepinfra.com/v1"
+        assert "domain_match" not in result
         assert "pricing" not in result
+
+
+class TestCatalogProviderMerge:
+    def test_rerank_catalog_entry_inherits_provider(self) -> None:
+        merge_config = _catalog_merge_config()
+        rerank = next(
+            entry
+            for entry in _catalog_entries("rerankers")
+            if entry.get("nick") == "rerank-qwen3-8b"
+        )
+        merged = merge_model_entry(merge_config, rerank)
+        assert merged["provider"] == "deepinfra"
+        assert merged["key_var_name"] == "DEEPINFRA_API_KEY"
 
 
 class TestPromptKeyVarName:
@@ -812,9 +963,13 @@ class TestPromptKeyVarName:
         assert _prompt_key_var_name(default="OPENROUTER_API_KEY") == "OPENROUTER_API_KEY"
 
     def test_reprompts_until_non_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["", "  ", "ANTHROPIC_API_KEY"])
+        responses = iter(["", "  ", "CUSTOM_API_KEY"])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        assert _prompt_key_var_name() == "ANTHROPIC_API_KEY"
+        assert _prompt_key_var_name(provider="") == "CUSTOM_API_KEY"
+
+    def test_infers_default_from_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "")
+        assert _prompt_key_var_name(provider="deepinfra") == "DEEPINFRA_API_KEY"
 
 
 class TestFormatEnvLines:
@@ -829,14 +984,13 @@ class TestBuildSetupOverlay:
             pipeline=["rerank"],
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=None,
-            upstream_llm_models=[_SAMPLE_MODEL],
             minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
                 {
-                    "upstream": "anthropic",
+                    "endpoint": "anthropic",
                     "url": "https://openrouter.ai/api",
                     "kind": "anthropic",
                 },
@@ -844,19 +998,26 @@ class TestBuildSetupOverlay:
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
-        assert overlay["pruning"]["pipeline"] == ["rerank"]
-        assert overlay["pruning"]["rerank"]["model"]["remote"]["model_nick"] == "rerank-qwen3-8b"
-        assert "llm" not in overlay["pruning"]
-        assert overlay["pruning"]["policy"]["system_tool"] == "prune_optional"
-        assert overlay["pruning"]["policy"]["mcp_tool"] == "prune_all"
-        assert overlay["pruning"]["policy"]["minimum_tools"] == 50
+        assert overlay["pruning"]["tools"]["sequence"] == ["rerank"]
+        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert "llm" not in overlay["pruning"]["tools"]["pipelines"]
+        assert overlay["pruning"]["tools"]["policy"]["system_tool"] == "prune_optional"
+        assert overlay["pruning"]["tools"]["policy"]["mcp_tool"] == "prune_all"
+        assert overlay["pruning"]["tools"]["policy"]["minimum_tools"] == 50
         assert overlay["defaults"]["reranking_enabled"] is True
-        llm_remote = overlay["models"]["llm"]["remote"]
-        assert len(llm_remote) == 1
-        assert llm_remote[0]["nick"] == "sonnet"
+        assert overlay["models"]["llm"]["remote"] == []
+        rerank_remote = overlay["models"]["rerankers"]["remote"][0]
+        assert rerank_remote["provider_nick"] == "deepinfra"
+        assert "key_var_name" not in rerank_remote
+        deepinfra_provider = next(
+            provider
+            for provider in overlay["models"]["providers"]
+            if provider["provider_nick"] == "deepinfra"
+        )
+        assert deepinfra_provider["key_var_name"] == "DEEPINFRA_API_KEY"
         saved_upstream = overlay["network"]["proxy"]["reverse"]["upstreams"][0]
         assert saved_upstream == {
-            "upstream": "anthropic",
+            "endpoint": "anthropic",
             "url": "https://openrouter.ai/api",
             "kind": "anthropic",
         }
@@ -866,14 +1027,13 @@ class TestBuildSetupOverlay:
             pipeline=["bm25"],
             reranker_model=None,
             llm_pruner_model=None,
-            upstream_llm_models=[_SAMPLE_MODEL],
             minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
                 {
-                    "upstream": "anthropic",
+                    "endpoint": "anthropic",
                     "url": "https://api.anthropic.com",
                     "kind": "anthropic",
                 },
@@ -881,9 +1041,9 @@ class TestBuildSetupOverlay:
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
-        assert overlay["pruning"]["pipeline"] == ["bm25"]
-        assert overlay["pruning"]["policy"]["mcp_tool"] == "prune_all"
-        assert "rerank" not in overlay["pruning"]
+        assert overlay["pruning"]["tools"]["sequence"] == ["bm25"]
+        assert overlay["pruning"]["tools"]["policy"]["mcp_tool"] == "prune_all"
+        assert "rerank" not in overlay["pruning"]["tools"]["pipelines"]
         assert overlay["defaults"] == {}
         assert "rerankers" not in overlay["models"]
 
@@ -892,14 +1052,13 @@ class TestBuildSetupOverlay:
             pipeline=["rerank", "llm"],
             reranker_model=_RERANK_MODEL,
             llm_pruner_model=_LLM_PRUNER,
-            upstream_llm_models=[_SAMPLE_MODEL],
             minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
                 {
-                    "upstream": "anthropic",
+                    "endpoint": "anthropic",
                     "url": "https://openrouter.ai/api",
                     "kind": "anthropic",
                 },
@@ -908,24 +1067,24 @@ class TestBuildSetupOverlay:
             stats_db_path="~/.config/cyt/stats.db",
         )
         nicks = {e["nick"] for e in overlay["models"]["llm"]["remote"]}
-        assert nicks == {"sonnet", "mercury-2"}
-        assert overlay["pruning"]["rerank"]["model"]["remote"]["model_nick"] == "rerank-qwen3-8b"
-        assert overlay["pruning"]["llm"]["model"]["remote"]["model_nick"] == "mercury-2"
+        assert nicks == {"mercury-2"}
+        provider_nicks = {provider["provider_nick"] for provider in overlay["models"]["providers"]}
+        assert provider_nicks == {"openrouter", "deepinfra"}
+        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert overlay["pruning"]["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
 
-    def test_multiple_primary_upstream_models(self) -> None:
-        second_primary = {**_SAMPLE_MODEL, "nick": "opus", "name": "claude-opus-4-7"}
+    def test_setup_overlay_writes_only_pruner_llm_models(self) -> None:
         overlay = build_setup_overlay(
-            pipeline=["rerank"],
+            pipeline=["rerank", "llm"],
             reranker_model=_RERANK_MODEL,
-            llm_pruner_model=None,
-            upstream_llm_models=[_SAMPLE_MODEL, second_primary],
+            llm_pruner_model=_LLM_PRUNER,
             minimum_tools=50,
             system_tool_policy="prune_optional",
             mcp_tool_policy="prune_all",
             reverse_port=8834,
             upstreams=[
                 {
-                    "upstream": "anthropic",
+                    "endpoint": "anthropic",
                     "url": "https://api.anthropic.com",
                     "kind": "anthropic",
                 },
@@ -933,8 +1092,54 @@ class TestBuildSetupOverlay:
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
-        nicks = [e["nick"] for e in overlay["models"]["llm"]["remote"]]
-        assert nicks == ["sonnet", "opus"]
+        llm_nicks = [entry["nick"] for entry in overlay["models"]["llm"]["remote"]]
+        assert llm_nicks == ["mercury-2"]
+
+    def test_skills_overlay(self) -> None:
+        overlay = build_setup_overlay(
+            pipeline=["bm25"],
+            reranker_model=None,
+            llm_pruner_model=None,
+            minimum_tools=None,
+            system_tool_policy="prune_optional",
+            mcp_tool_policy="prune_all",
+            reverse_port=8834,
+            upstreams=[
+                {
+                    "endpoint": "anthropic",
+                    "url": "https://api.anthropic.com",
+                    "kind": "anthropic",
+                },
+            ],
+            endpoints=["anthropic"],
+            stats_db_path="~/.config/cyt/stats.db",
+            skills={"enabled": True, "pipeline": "llm"},
+        )
+        assert overlay["skills"] == {"enabled": True, "pipeline": "llm"}
+
+    def test_skills_rerank_model_writes_pipeline_without_tool_rerank(self) -> None:
+        overlay = build_setup_overlay(
+            pipeline=["bm25"],
+            reranker_model=_RERANK_MODEL,
+            llm_pruner_model=None,
+            minimum_tools=50,
+            system_tool_policy="prune_optional",
+            mcp_tool_policy="prune_all",
+            reverse_port=8834,
+            upstreams=[
+                {
+                    "endpoint": "anthropic",
+                    "url": "https://api.anthropic.com",
+                    "kind": "anthropic",
+                },
+            ],
+            endpoints=["anthropic"],
+            stats_db_path="~/.config/cyt/stats.db",
+            skills={"enabled": True, "pipeline": "rerank"},
+        )
+        assert overlay["pruning"]["tools"]["sequence"] == ["bm25"]
+        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert overlay["models"]["rerankers"]["remote"][0]["nick"] == "rerank-qwen3-8b"
 
 
 class TestSaveUserConfig:
@@ -978,8 +1183,20 @@ class TestSaveUserConfig:
         )
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundled = bundled_user_config_sections()
-        assert loaded["pruning"]["per_tool"] == bundled["pruning"]["per_tool"]
-        assert "Agent" not in loaded["pruning"]["per_tool"]
+        loaded_per_tool = (
+            loaded.get("pruning", {})
+            .get("tools", {})
+            .get("policy", {})
+            .get("per_tool", loaded.get("pruning", {}).get("per_tool"))
+        )
+        bundled_per_tool = (
+            bundled.get("pruning", {})
+            .get("tools", {})
+            .get("policy", {})
+            .get("per_tool", bundled.get("pruning", {}).get("per_tool"))
+        )
+        assert loaded_per_tool == bundled_per_tool
+        assert "Agent" not in loaded_per_tool
         ssl = loaded["network"]["proxy"]["reverse"]["http2"]["ssl"]
         assert ssl == bundled["network"]["proxy"]["reverse"]["http2"]["ssl"]
         assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
@@ -1008,3 +1225,192 @@ class TestPrintProxyUrls:
         print_proxy_urls(8834, ["openrouter"])
         out = capsys.readouterr().out
         assert out.strip() == "http://localhost:8834/openrouter"
+
+
+class TestPromptUpstreams:
+    def test_skips_full_upstream_flow_when_existing_and_declined(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        existing = {
+            "network": {
+                "proxy": {
+                    "reverse": {
+                        "upstreams": [
+                            {
+                                "endpoint": "anthropic",
+                                "url": "https://api.anthropic.com",
+                            },
+                        ],
+                        "endpoints": ["anthropic"],
+                    },
+                },
+            },
+            "models": {
+                "llm": {
+                    "remote": [_SAMPLE_MODEL],
+                },
+            },
+        }
+        prompts: list[str] = []
+
+        def capture_input(prompt: str) -> str:
+            prompts.append(prompt)
+            return "n"
+
+        monkeypatch.setattr("builtins.input", capture_input)
+        upstreams, endpoints = _prompt_upstreams(existing)
+        out = capsys.readouterr().out
+        assert len(upstreams) == 1
+        assert endpoints == ["anthropic"]
+        assert "Configured upstreams:" in out
+        assert "endpoint" in out and "kind" in out and "url" in out
+        assert "anthropic  anthropic  https://api.anthropic.com" in out
+        assert any("Add another upstream?" in p for p in prompts)
+        assert not any("Upstream kind" in p for p in prompts)
+
+
+class TestPromptSkills:
+    def test_enable_and_select_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["y", "2", "1", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        skills = _prompt_skills({})
+        assert skills == {
+            "enabled": True,
+            "pipeline": "rerank",
+            "inject_via": "proxy",
+            "directories": [
+                "~/.claude/skills",
+                ".claude/skills",
+                "~/.codex/skills",
+                ".codex/skills",
+            ],
+        }
+
+    def test_defaults_to_rerank_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["y", "", "1", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        skills = _prompt_skills({})
+        assert skills["pipeline"] == "rerank"
+        assert skills["inject_via"] == "proxy"
+
+
+class TestPromptSkillsPrunerModels:
+    def test_prompts_rerank_when_skills_need_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        selected = {
+            "nick": "rerank-qwen3-8b",
+            "provider": "deepinfra",
+            "name": "Qwen/Qwen3-Reranker-8B",
+        }
+
+        def fake_select(*_args: object, **_kwargs: object) -> dict[str, Any]:
+            return selected
+
+        monkeypatch.setattr("cyt.proxy.setup._select_model_from_catalog", fake_select)
+        rerank, llm = _prompt_skills_pruner_models(
+            {"enabled": True, "pipeline": "rerank"},
+            {},
+            reranker_model=None,
+            llm_pruner_model=None,
+            max_pruner_input_cost=None,
+        )
+        assert rerank == selected
+        assert llm is None
+
+    def test_skips_when_tool_pruning_already_configured_model(self) -> None:
+        existing = {
+            "pruning": {
+                "tools": {
+                    "pipelines": {"rerank": {"model_nick": "rerank-qwen3-8b"}},
+                },
+            },
+            "models": {
+                "rerankers": {
+                    "remote": [_RERANK_MODEL],
+                },
+            },
+        }
+        rerank, llm = _prompt_skills_pruner_models(
+            {"enabled": True, "pipeline": "rerank"},
+            existing,
+            reranker_model=None,
+            llm_pruner_model=None,
+            max_pruner_input_cost=None,
+        )
+        assert rerank is None
+        assert llm is None
+
+
+class TestPipelineLabels:
+    def test_bm25_label_uses_minimum_tools(self) -> None:
+        from cyt.proxy.setup import _pipeline_choice_labels, _pipeline_from_display_label
+
+        labels = _pipeline_choice_labels(0, minimum_tools=42)
+        assert labels[3] == "bm25 (no API key, local; Defaults to when below 42 tools)"
+        assert _pipeline_from_display_label(labels[3]) == ["bm25"]
+        assert _pipeline_from_display_label(
+            "bm25 (no API key, local; Defaults to when below 42 tools) (recommended)",
+        ) == [
+            "bm25",
+        ]
+
+    def test_disable_skips_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+        skills = _prompt_skills({"skills": {"enabled": True, "pipeline": "llm"}})
+        assert skills == {"enabled": False}
+
+
+class TestRunSetupKeyring:
+    def test_skips_env_prompt_when_keyring_available(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "network": {
+                        "proxy": {
+                            "reverse": {
+                                "port": 8834,
+                                "upstreams": [
+                                    {
+                                        "endpoint": "anthropic",
+                                        "url": "https://api.anthropic.com",
+                                    },
+                                ],
+                                "endpoints": ["anthropic"],
+                            },
+                        },
+                    },
+                    "models": {
+                        "llm": {
+                            "remote": [_SAMPLE_MODEL],
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        responses = iter(
+            [
+                "",  # port default
+                "n",  # add another upstream
+                "",  # minimum_tools default
+                "",  # system policy default
+                "",  # mcp policy default
+                "n",  # skills disabled
+                "",  # stats db default
+            ],
+        )
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        monkeypatch.setattr("cyt.launch.secrets.keyring_backend_available", lambda: True)
+        monkeypatch.setattr("cyt.proxy.setup.save_user_config", lambda *_a, **_k: False)
+        monkeypatch.setattr("cyt.proxy.setup._prompt_pipeline", lambda **_k: ["bm25"])
+        run_setup(config_path)
+        out = capsys.readouterr().out
+        assert "OS keyring is available" in out
+        assert "Create a .env file for API keys?" not in out

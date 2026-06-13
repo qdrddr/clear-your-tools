@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt.launch.config import launch_claude_models
-from cyt.proxy.setup import normalize_upstream_url
+from cyt.proxy.setup import normalize_upstream_url, upstream_entry_endpoint
 
 _CLAUDE_CANDIDATES = (
     Path.home() / ".local" / "bin" / "claude",
@@ -35,7 +35,7 @@ def _upstream_for_endpoint(config: dict[str, Any], endpoint: str) -> dict[str, A
     if not isinstance(upstreams, list):
         return None
     for entry in upstreams:
-        if isinstance(entry, dict) and str(entry.get("upstream")) == endpoint:
+        if isinstance(entry, dict) and upstream_entry_endpoint(entry) == endpoint:
             return entry
     return None
 

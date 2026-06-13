@@ -67,15 +67,16 @@ Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml)
 
 ```yaml
 pruning:
-  policy:
-    minimum_tools: 50
-  pipeline:
-    - rerank
-    # - llm
+  tools:
+    policy:
+      minimum_tools: 50
+    sequence:
+      - rerank
+      # - llm
 ```
 
-Legacy `models.rerankers.minimum_tools` / `models.llm.minimum_tools` still work; per-pipeline
-keys take precedence when both are set.
+Legacy `pruning.pipeline`, `pruning.policy.*`, and `models.rerankers.minimum_tools` /
+`models.llm.minimum_tools` still work; see [Schema migration](#schema-migration) below.
 
 </details>
 
@@ -126,19 +127,19 @@ Default pipeline is **`rerank` only**. To use the LLM pruner instead (or after r
 ```yaml
 # ~/.config/cyt/config.yaml
 pruning:
-  pipeline:
-    - llm          # LLM only (no reranker)
-    # - rerank     # or: [rerank, llm] for two-stage filtering
-  policy:
-    minimum_tools: 50   # remote stages run when tool count ≥ this (default 50)
-  llm:
-    model:
-      remote:
-        model_nick: mercury-2   # must match a nick under models.llm.remote
+  tools:
+    sequence:
+      - llm          # LLM only (no reranker)
+      # - rerank     # or: [rerank, llm] for two-stage filtering
+    policy:
+      minimum_tools: 50   # remote stages run when tool count ≥ this (default 50)
+    pipelines:
+      llm:
+        model_nick: mercury-2   # catalog nick under models.llm.remote
 ```
 
-Legacy `defaults.remote.llm_model_nick` / `reranking_model_nick` still work; per-pipeline
-keys take precedence when both are set.
+Legacy `pruning.pipeline`, `pruning.llm.model.remote.model_nick`, and
+`defaults.remote.llm_model_nick` still work.
 
 Rerank & LLM prunners can use any providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
 
@@ -446,6 +447,23 @@ Use `http://` in `ANTHROPIC_BASE_URL`, or configure Hypercorn TLS via
 ## Development
 
 See [`DEV.md`](DEV.md) for checkout setup, repository layout, library usage, and configuration reference.
+
+---
+
+## Schema migration
+
+Canonical config shape (since vNext):
+
+| Old path | New path |
+| -------- | -------- |
+| `pruning.pipeline` | `pruning.tools.sequence` |
+| `pruning.policy.*`, `pruning.per_tool` | `pruning.tools.policy.*` |
+| `pruning.bm25` / `rerank` / `llm` | `pruning.tools.pipelines.<id>` |
+| `pruning.<id>.model.remote.model_nick` | `pruning.tools.pipelines.<id>.model_nick` |
+| Inline model `provider`, `key_var_name`, … | `models.providers[]` + model `provider_nick` |
+
+Old keys continue to work; resolution lives in `src/cyt/config/legacy.py` for easy removal later.
+`save_user_config` skips disk writes when the merged config is unchanged (no rearrange-on-save).
 
 ---
 

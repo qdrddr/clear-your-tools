@@ -14,6 +14,7 @@ from cyt.config import (
     model_responses_api,
     remote_model_entry,
     resolve_model,
+    stats_provider_for_entry,
 )
 
 
@@ -91,7 +92,7 @@ def resolve_remote_pruning_settings(
         sys.exit(1)
 
     entry = remote_model_entry(cfg, model_kind, nick)
-    provider = entry.get("provider")
+    provider = stats_provider_for_entry(cfg, entry)
     domain_match = entry.get("domain_match")
     provider_dns = None
     if isinstance(domain_match, list) and domain_match:
