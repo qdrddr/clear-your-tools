@@ -127,6 +127,24 @@ class TestResolveCredentialOrder:
         assert source == "prompt"
         assert os.environ[name] == "session-only"
 
+    def test_ensure_wizard_credentials_writes_env_when_keyring_write_fails(
+        self,
+        isolated_env_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cyt.launch.secrets import ensure_wizard_credentials
+
+        name = "OPENROUTER_" + "API_KEY"
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr("cyt.launch.secrets.getpass.getpass", lambda _prompt: "from-prompt")
+        monkeypatch.setattr("cyt.launch.secrets._write_keyring", lambda _key, _value: False)
+
+        sources = ensure_wizard_credentials([name])
+
+        assert sources[name] == "env: ~/.config/cyt/.env"
+        assert isolated_env_paths["user_env"].read_text(encoding="utf-8") == f"{name}=from-prompt\n"
+
 
 class TestCodexLaunchCredentials:
     def test_codex_resolves_from_keyring(

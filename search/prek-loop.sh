@@ -27,7 +27,6 @@ cleanup() {
 trap cleanup INT TERM
 
 mapfile -t HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
-
 if ((${#HOOKS[@]} == 0)); then
 	echo "No prek hooks found." >&2
 	exit 1

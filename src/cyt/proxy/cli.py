@@ -373,12 +373,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     hook_parser = subparsers.add_parser(
         "hook",
-        help="Agent hook entry points",
+        help="Install agent hooks (wizard) or handle hook events with --stdin",
     )
     hook_parser.add_argument(
         "--stdin",
         action="store_true",
         help="Read hook JSON from stdin (session tracking and skill injection)",
+    )
+    hook_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
     _add_skills_hook_args(hook_parser)
 
@@ -522,7 +528,10 @@ def main() -> None:
 
     if args.command in ("skills", "hook"):
         if args.command == "hook" and not getattr(args, "stdin", False):
-            raise SystemExit("cyt hook: --stdin is required")
+            from cyt.skills.hook_setup import run_hook_setup
+
+            run_hook_setup(config_path=getattr(args, "config", None))
+            return
         from cyt.skills.cli import run as run_skills
 
         run_skills(

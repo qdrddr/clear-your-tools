@@ -191,6 +191,67 @@ def inspect_named_credentials(
     return results
 
 
+def ensure_wizard_credentials(
+    names: list[str],
+    *,
+    env_fallback_path: Path | None = None,
+) -> dict[str, str]:
+    """Ensure *names* exist, preferring keyring; persist to *env_fallback_path* when keyring fails."""
+    from cyt.proxy.setup import write_env_file
+
+    if env_fallback_path is None:
+        env_fallback_path = _user_env_path()
+
+    load_proxy_env()
+    sources: dict[str, str] = {}
+    env_updates: dict[str, str] = {}
+    missing: list[str] = []
+
+    for name in names:
+        if value := _read_keyring(name):
+            os.environ[name] = value
+            sources[name] = "keyring"
+            continue
+
+        file_value, file_source = _read_env_file_value(name)
+        if file_value and file_source:
+            os.environ[name] = file_value
+            sources[name] = file_source
+            continue
+
+        if not sys.stdin.isatty():
+            missing.append(name)
+            continue
+
+        value = getpass.getpass(f"{name}: ")
+        if not value:
+            missing.append(name)
+            continue
+
+        os.environ[name] = value
+        if _write_keyring(name, value):
+            sources[name] = "keyring"
+            continue
+
+        env_updates[name] = value
+        sources[name] = _env_file_source(env_fallback_path)
+
+    if env_updates:
+        write_env_file(env_fallback_path, env_updates)
+        print(f"Wrote {env_fallback_path.expanduser()}")
+
+    if missing:
+        vars_block = "\n".join(f"\t{name}" for name in missing)
+        env_locations = "\n".join(f"\t{p}" for p in (_cwd_env_path(), _user_env_path()))
+        raise SystemExit(
+            f"Required environment variable(s) not set:\n{vars_block}\n"
+            f"Export them in the shell or define them in\n{env_locations}\n"
+            "Or run interactively to store them in the keyring.",
+        )
+
+    return sources
+
+
 def ensure_named_credentials(
     names: list[str],
     *,
