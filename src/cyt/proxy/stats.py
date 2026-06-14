@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import sqlite3
 import sys
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -46,7 +49,8 @@ CREATE TABLE IF NOT EXISTS proxy_request (
     error TEXT,
     tools_accepted_json TEXT,
     tools_final_json TEXT,
-    skills_in INTEGER NOT NULL DEFAULT 0
+    skills_in INTEGER NOT NULL DEFAULT 0,
+    has_error INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS model_request (
@@ -73,23 +77,65 @@ CREATE INDEX IF NOT EXISTS idx_tokens_model_request ON tokens(model_request_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_request_ts ON proxy_request(ts_ms);
 """
 
+EXECUTED_STAGE_FINGERPRINT_STAGES = frozenset({"llm", "rerank", "bm25", "skills"})
+MAX_STATS_BACKUPS = 10
+
 
 def expand_db_path(path: str) -> str:
     return str(Path(path).expanduser())
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
-    return sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    _configure_connection(conn)
+    return conn
 
 
-def _ensure_skills_in_column(conn: sqlite3.Connection) -> None:
+def _configure_connection(conn: sqlite3.Connection) -> None:
+    """Use TRUNCATE journaling so rollback journals do not linger on disk."""
+    conn.execute("PRAGMA journal_mode=TRUNCATE")
+
+
+def _ensure_proxy_request_columns(conn: sqlite3.Connection) -> None:
     rows = conn.execute("PRAGMA table_info(proxy_request)").fetchall()
     columns = {str(row[1]) for row in rows}
+    changed = False
     if "skills_in" not in columns:
         conn.execute(
             "ALTER TABLE proxy_request ADD COLUMN skills_in INTEGER NOT NULL DEFAULT 0",
         )
+        changed = True
+    if "has_error" not in columns:
+        conn.execute(
+            "ALTER TABLE proxy_request ADD COLUMN has_error INTEGER NOT NULL DEFAULT 0",
+        )
+        conn.execute("UPDATE proxy_request SET has_error = 1 WHERE error IS NOT NULL")
+        changed = True
+    if changed:
         conn.commit()
+
+
+def executed_stages_fingerprint(conn: sqlite3.Connection, proxy_id: str) -> str:
+    """Sorted comma-joined pruning stages present on a proxy (llm/rerank/bm25/skills)."""
+    placeholders = ",".join("?" for _ in EXECUTED_STAGE_FINGERPRINT_STAGES)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT stage FROM model_request
+        WHERE proxy_request_id = ?
+        AND stage IN ({placeholders})
+        ORDER BY stage
+        """,
+        (proxy_id, *sorted(EXECUTED_STAGE_FINGERPRINT_STAGES)),
+    ).fetchall()
+    return ",".join(str(row[0]) for row in rows)
+
+
+def _local_day_start_ms(day: date) -> int:
+    return int(datetime.combine(day, datetime.min.time()).timestamp() * 1000)
+
+
+def _local_day_from_ts_ms(ts_ms: int) -> date:
+    return datetime.fromtimestamp(ts_ms / 1000).date()
 
 
 def new_uuid7() -> str:
@@ -201,7 +247,7 @@ class StatsDB:
         parent.mkdir(parents=True, exist_ok=True)
         conn = _connect(db_path)
         conn.executescript(_SCHEMA)
-        _ensure_skills_in_column(conn)
+        _ensure_proxy_request_columns(conn)
         conn.commit()
         logger.info("stats database initialized: %s", db_path)
         return cls(conn)
@@ -213,7 +259,7 @@ class StatsDB:
         if not Path(db_path).exists():
             return cls.init(path)
         conn = _connect(db_path)
-        _ensure_skills_in_column(conn)
+        _ensure_proxy_request_columns(conn)
         return cls(conn)
 
     @classmethod
@@ -223,7 +269,7 @@ class StatsDB:
         if not Path(db_path).exists():
             return None
         conn = _connect(db_path)
-        _ensure_skills_in_column(conn)
+        _ensure_proxy_request_columns(conn)
         return cls(conn)
 
     def close(self) -> None:
@@ -273,6 +319,7 @@ class StatsDB:
     def record_proxy_request(self, record: ProxyRequestRecord) -> str:
         proxy_id = new_uuid7()
         ts_ms = int(time.time() * 1000)
+        has_error = 1 if record.error else 0
         self._conn.execute(
             """
             INSERT INTO proxy_request (
@@ -280,8 +327,8 @@ class StatsDB:
                 tools_out, tool_count_out, tool_properties_count_out,
                 tools_pruned, tool_count_pruned, tool_properties_count_pruned,
                 ts_ms, prune_status, pipeline, query, error,
-                tools_accepted_json, tools_final_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tools_accepted_json, tools_final_json, has_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proxy_id,
@@ -302,6 +349,7 @@ class StatsDB:
                 record.error,
                 record.tools_accepted_json,
                 record.tools_final_json,
+                has_error,
             ),
         )
 
@@ -397,8 +445,8 @@ class StatsDB:
                 tools_out, tool_count_out, tool_properties_count_out,
                 tools_pruned, tool_count_pruned, tool_properties_count_pruned,
                 ts_ms, prune_status, pipeline, query, error,
-                tools_accepted_json, tools_final_json, skills_in
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tools_accepted_json, tools_final_json, skills_in, has_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proxy_id,
@@ -420,6 +468,7 @@ class StatsDB:
                 None,
                 None,
                 skills_in,
+                0,
             ),
         )
         self._insert_model_request(
@@ -641,7 +690,8 @@ class StatsDB:
             SELECT id, endpoint, tools_in, tools_out, tools_pruned,
                    tool_count_in, tool_count_out, tool_count_pruned,
                    tool_properties_count_in, tool_properties_count_out,
-                   tool_properties_count_pruned, ts_ms, prune_status, pipeline, error
+                   tool_properties_count_pruned, ts_ms, prune_status, pipeline, error,
+                   has_error
             FROM proxy_request
             ORDER BY ts_ms DESC
             LIMIT ?
@@ -677,6 +727,7 @@ class StatsDB:
                     "prune_status": row[12],
                     "pipeline": json.loads(row[13]) if row[13] else [],
                     "error": row[14],
+                    "has_error": bool(row[15]),
                     "tokens": [
                         {
                             "stage": st[0],
@@ -689,6 +740,292 @@ class StatsDB:
                 },
             )
         return events
+
+    @staticmethod
+    def _is_backup_file(db_path: str, candidate: Path) -> bool:
+        source = Path(expand_db_path(db_path))
+        prefix = f"{source.stem}_"
+        suffix = source.suffix
+        if not candidate.is_file() or candidate.parent != source.parent:
+            return False
+        name = candidate.name
+        if not name.startswith(prefix):
+            return False
+        if suffix and not name.endswith(suffix):
+            return False
+        stamp = name[len(prefix) : -len(suffix) if suffix else len(name)]
+        return len(stamp) == 15 and stamp[8] == "_" and stamp[:8].isdigit() and stamp[9:].isdigit()
+
+    @staticmethod
+    def list_backups(db_path: str) -> list[Path]:
+        """Return timestamped backup files for a stats DB, oldest first."""
+        source = Path(expand_db_path(db_path))
+        prefix = f"{source.stem}_"
+        suffix = source.suffix
+        backups = [
+            candidate
+            for candidate in source.parent.glob(f"{prefix}*{suffix}")
+            if StatsDB._is_backup_file(db_path, candidate)
+        ]
+        return sorted(backups, key=lambda path: path.name)
+
+    @staticmethod
+    def find_today_backup(db_path: str, *, today: date | None = None) -> str | None:
+        """Return path to a stats backup created today, if any."""
+        if today is None:
+            today = datetime.now().date()
+        day_prefix = today.strftime("%Y%m%d")
+        for candidate in reversed(StatsDB.list_backups(db_path)):
+            stamp = candidate.name.split("_", 2)
+            if len(stamp) >= 2 and stamp[1] == day_prefix:
+                return str(candidate)
+        return None
+
+    @staticmethod
+    def backup_database(db_path: str) -> str:
+        """Copy the stats DB to a timestamped sibling file; return backup path."""
+        source = Path(expand_db_path(db_path))
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = source.with_name(f"{source.stem}_{stamp}{source.suffix}")
+        shutil.copy2(source, dest)
+        return str(dest)
+
+    @staticmethod
+    def prune_old_backups(
+        db_path: str,
+        *,
+        max_backups: int = MAX_STATS_BACKUPS,
+    ) -> list[str]:
+        """Delete oldest stats backups when more than max_backups exist."""
+        if max_backups < 0:
+            raise ValueError("max_backups must be non-negative")
+        backups = StatsDB.list_backups(db_path)
+        removed: list[str] = []
+        while len(backups) > max_backups:
+            oldest = backups.pop(0)
+            oldest.unlink()
+            removed_path = str(oldest)
+            removed.append(removed_path)
+            logger.info("removed old stats backup: %s", removed_path)
+        return removed
+
+    def _delete_proxy_tree(self, proxy_ids: list[str]) -> None:
+        if not proxy_ids:
+            return
+        placeholders = ",".join("?" for _ in proxy_ids)
+        model_rows = self._conn.execute(
+            f"SELECT id FROM model_request WHERE proxy_request_id IN ({placeholders})",
+            proxy_ids,
+        ).fetchall()
+        model_ids = [str(row[0]) for row in model_rows]
+        if model_ids:
+            model_placeholders = ",".join("?" for _ in model_ids)
+            self._conn.execute(
+                f"DELETE FROM tokens WHERE model_request_id IN ({model_placeholders})",
+                model_ids,
+            )
+            self._conn.execute(
+                f"DELETE FROM model_request WHERE id IN ({model_placeholders})",
+                model_ids,
+            )
+        self._conn.execute(
+            f"DELETE FROM proxy_request WHERE id IN ({placeholders})",
+            proxy_ids,
+        )
+
+    def _merge_proxy_group(
+        self,
+        members: list[tuple[Any, ...]],
+        day_start_ms: int,
+    ) -> None:
+        proxy_ids = [str(row[0]) for row in members]
+        endpoint = str(members[0][1])
+        prune_status = str(members[0][12])
+        pipeline = str(members[0][13])
+        has_error = int(members[0][14] or 0)
+        skills_in = sum(int(row[15] or 0) for row in members)
+
+        model_map: dict[
+            tuple[Any, ...],
+            defaultdict[tuple[str, int, str], int],
+        ] = {}
+
+        for proxy_id in proxy_ids:
+            model_rows = self._conn.execute(
+                """
+                SELECT id, model_name, provider_dns_name, provider, is_upstream, stage
+                FROM model_request
+                WHERE proxy_request_id = ?
+                """,
+                (proxy_id,),
+            ).fetchall()
+            for model_row in model_rows:
+                model_id = str(model_row[0])
+                model_key = (
+                    model_row[1],
+                    model_row[2],
+                    model_row[3],
+                    int(model_row[4]),
+                    str(model_row[5]),
+                )
+                token_totals = model_map.setdefault(model_key, defaultdict(int))
+                token_rows = self._conn.execute(
+                    """
+                    SELECT type, tokens, is_saved, tokenizer_used
+                    FROM tokens
+                    WHERE model_request_id = ?
+                    """,
+                    (model_id,),
+                ).fetchall()
+                for token_row in token_rows:
+                    token_key = (
+                        str(token_row[0]),
+                        int(token_row[2]),
+                        str(token_row[3]),
+                    )
+                    token_totals[token_key] += int(token_row[1] or 0)
+
+        new_proxy_id = new_uuid7()
+        self._conn.execute(
+            """
+            INSERT INTO proxy_request (
+                id, endpoint, tools_in, tool_count_in, tool_properties_count_in,
+                tools_out, tool_count_out, tool_properties_count_out,
+                tools_pruned, tool_count_pruned, tool_properties_count_pruned,
+                ts_ms, prune_status, pipeline, query, error,
+                tools_accepted_json, tools_final_json, skills_in, has_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_proxy_id,
+                endpoint,
+                sum(int(row[2] or 0) for row in members),
+                sum(int(row[3] or 0) for row in members),
+                sum(int(row[4] or 0) for row in members),
+                sum(int(row[5] or 0) for row in members),
+                sum(int(row[6] or 0) for row in members),
+                sum(int(row[7] or 0) for row in members),
+                sum(int(row[8] or 0) for row in members),
+                sum(int(row[9] or 0) for row in members),
+                sum(int(row[10] or 0) for row in members),
+                day_start_ms,
+                prune_status,
+                pipeline,
+                None,
+                None,
+                None,
+                None,
+                skills_in,
+                has_error,
+            ),
+        )
+
+        for model_key, token_totals in model_map.items():
+            model_name, provider_dns_name, provider, is_upstream, stage = model_key
+            model_id = new_uuid7()
+            self._conn.execute(
+                """
+                INSERT INTO model_request
+                    (id, proxy_request_id, model_name, provider_dns_name, provider, is_upstream, stage)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    model_id,
+                    new_proxy_id,
+                    model_name,
+                    provider_dns_name,
+                    provider,
+                    is_upstream,
+                    stage,
+                ),
+            )
+            for (token_type, is_saved, tokenizer_used), token_count in token_totals.items():
+                if token_count <= 0:
+                    continue
+                self._conn.execute(
+                    """
+                    INSERT INTO tokens (id, model_request_id, type, tokens, is_saved, tokenizer_used)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_uuid7(),
+                        model_id,
+                        token_type,
+                        token_count,
+                        is_saved,
+                        tokenizer_used,
+                    ),
+                )
+
+        self._delete_proxy_tree(proxy_ids)
+
+    def rollup_historical(self, *, today: date | None = None) -> RollupResult:
+        """Merge pre-today proxy_request rows that share rollup keys into daily aggregates."""
+        if today is None:
+            today = datetime.now().date()
+        today_start_ms = _local_day_start_ms(today)
+
+        rows = self._conn.execute(
+            """
+            SELECT id, endpoint, tools_in, tool_count_in, tool_properties_count_in,
+                   tools_out, tool_count_out, tool_properties_count_out,
+                   tools_pruned, tool_count_pruned, tool_properties_count_pruned,
+                   ts_ms, prune_status, pipeline, has_error, skills_in
+            FROM proxy_request
+            WHERE ts_ms < ?
+            """,
+            (today_start_ms,),
+        ).fetchall()
+
+        groups: dict[tuple[Any, ...], list[tuple[Any, ...]]] = defaultdict(list)
+        days_seen: set[date] = set()
+        for row in rows:
+            proxy_id = str(row[0])
+            day = _local_day_from_ts_ms(int(row[11]))
+            days_seen.add(day)
+            fingerprint = executed_stages_fingerprint(self._conn, proxy_id)
+            group_key = (
+                day,
+                str(row[1]),
+                str(row[12]),
+                str(row[13]),
+                int(row[14] or 0),
+                fingerprint,
+            )
+            groups[group_key].append(row)
+
+        groups_merged = 0
+        rows_removed = 0
+        try:
+            for group_key, members in groups.items():
+                if len(members) <= 1:
+                    continue
+                day_start_ms = _local_day_start_ms(group_key[0])
+                self._merge_proxy_group(members, day_start_ms)
+                groups_merged += 1
+                rows_removed += len(members) - 1
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+        return RollupResult(
+            days_processed=len(days_seen),
+            groups_merged=groups_merged,
+            rows_removed=rows_removed,
+        )
+
+    def vacuum(self) -> None:
+        """Rebuild the database file and reclaim space freed by deletes."""
+        self._conn.execute("VACUUM")
+
+
+@dataclass
+class RollupResult:
+    days_processed: int
+    groups_merged: int
+    rows_removed: int
+    backup_path: str | None = None
 
 
 def empty_totals() -> dict[str, int]:

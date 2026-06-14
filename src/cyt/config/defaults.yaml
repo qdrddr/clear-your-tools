@@ -193,6 +193,8 @@ network:
 stats:
   enabled: true
   store_full_tools: false
+  rollup_on_query: true
+  backup_before_rollup: true
   database:
     path: ~/.config/cyt/stats.db
 
@@ -228,8 +230,9 @@ skills:
   #   max_token_num_each_node: 2000
   #   if_add_node_summary: true
   #   if_add_doc_description: false
-  # budget: 0.5
-  max_tokens_per_request: 2000
+  budget: 0.5
+  pre_request_budget: 0.6
+  max_tokens_per_request: 20000
   # directories: (disabled while skills.enabled is false)
   #   - ~/.claude/skills
   #   - .claude/skills

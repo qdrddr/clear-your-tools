@@ -6,9 +6,10 @@ import argparse
 import asyncio
 import json
 import logging
+import sqlite3
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cyt import __version__
 from cyt.config import (
@@ -17,11 +18,17 @@ from cyt.config import (
     load_user_config_overlay,
     proxy_http2_settings,
     resolve_setup_config_path,
+    stats_backup_before_rollup,
     stats_db_path,
+    stats_rollup_on_query,
 )
 from cyt.proxy.setup import normalize_upstream_kind
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from cyt.common.pricing import StatsCosts
+    from cyt.proxy.stats import StatsDB
 
 LOCAL_SERVE_HOST = "127.0.0.1"
 _STATS_SUBCOMMANDS = ("totals", "summary", "events")
@@ -34,6 +41,11 @@ def _add_stats_common_args(parser: argparse.ArgumentParser) -> None:
         help="After showing stats, run a wizard to add missing LLM/reranker model costs",
     )
     parser.add_argument(
+        "--no-rollup",
+        action="store_true",
+        help="Skip historical stats compaction for this invocation",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -41,14 +53,113 @@ def _add_stats_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
+def _maybe_rollup_stats_db(
+    db: StatsDB,
+    db_path: str,
+    config: dict[str, Any],
+    *,
+    no_rollup: bool,
+) -> None:
+    rollup_enabled = stats_rollup_on_query(config) and not no_rollup
+    if not rollup_enabled:
+        return
+
+    today_backup = db.find_today_backup(db_path)
+    if today_backup is not None:
+        print(
+            f"stats: rollup skipped (backup already exists for today: {today_backup})",
+            file=sys.stderr,
+        )
+        return
+
+    if stats_backup_before_rollup(config):
+        backup_path = db.backup_database(db_path)
+        print(f"stats: backed up to {backup_path}", file=sys.stderr)
+
+    rollup_done = False
+    try:
+        result = db.rollup_historical()
+        rollup_done = True
+        if result.groups_merged:
+            print(
+                f"stats: compacted {result.rows_removed} historical rows "
+                f"into {result.groups_merged} daily rollups",
+                file=sys.stderr,
+            )
+    except sqlite3.OperationalError as exc:
+        print(f"stats: rollup skipped ({exc})", file=sys.stderr)
+
+    if not rollup_done:
+        return
+
+    try:
+        db.vacuum()
+    except sqlite3.OperationalError as exc:
+        print(f"stats: vacuum skipped ({exc})", file=sys.stderr)
+
+
+def _compute_stats_costs_for_period(
+    db: StatsDB | None,
+    config: dict[str, Any],
+    period: str,
+) -> StatsCosts:
     from cyt.common.pricing import compute_stats_costs, empty_costs
+
+    if db is None:
+        return empty_costs()
+    return compute_stats_costs(
+        db.query_stage_model_tokens(period),
+        db.query_upstream_saved_tokens(period),
+        config,
+        skills_injection_tokens=db.query_skills_injection_tokens(period),
+    )
+
+
+def _print_stats_results(
+    db: StatsDB | None,
+    args: argparse.Namespace,
+    config: dict[str, Any],
+) -> None:
+    from cyt.proxy.stats import empty_totals, format_events, format_totals
+
+    if args.stats_command == "totals":
+        period = getattr(args, "period", "all")
+        totals = db.query_totals(period) if db is not None else empty_totals()
+        costs = _compute_stats_costs_for_period(db, config, period)
+        print(format_totals(totals, costs))
+        return
+
+    if args.stats_command == "summary":
+        totals = db.query_summary(args.period) if db is not None else empty_totals()
+        costs = _compute_stats_costs_for_period(db, config, args.period)
+        print(format_totals(totals, costs))
+        return
+
+    if args.stats_command == "events":
+        events = db.query_events(args.limit) if db is not None else []
+        if args.json:
+            print(json.dumps(events, indent=2))
+        else:
+            print(format_events(events))
+
+
+def _maybe_run_add_costs_wizard(args: argparse.Namespace, user_config_path: Path) -> None:
     from cyt.proxy.setup import (
         STATS_ADD_COSTS_HINT,
         has_models_missing_costs,
         run_add_costs_wizard,
     )
-    from cyt.proxy.stats import StatsDB, empty_totals, format_events, format_totals
+
+    if getattr(args, "add_costs", False):
+        run_add_costs_wizard(user_config_path)
+        return
+
+    if has_models_missing_costs(load_user_config_overlay(user_config_path)):
+        print(STATS_ADD_COSTS_HINT, file=sys.stderr)
+
+
+def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    from cyt.proxy.stats import StatsDB, expand_db_path
     from cyt.proxy.stats_config_sync import sync_models_from_stats_db
 
     user_config_path = resolve_setup_config_path(getattr(args, "config", None))
@@ -56,49 +167,28 @@ def _run_stats_cli(args: argparse.Namespace, config: dict[str, Any]) -> None:
     for line in sync_models_from_stats_db(db_path, user_config_path):
         print(line, file=sys.stderr)
     config = load_config(getattr(args, "config", None))
-    db = StatsDB.open_for_query(db_path)
+
+    db: StatsDB | None = None
+    expanded_db_path = expand_db_path(db_path)
+    if Path(expanded_db_path).exists():
+        db = StatsDB.open(db_path)
+        _maybe_rollup_stats_db(
+            db,
+            db_path,
+            config,
+            no_rollup=getattr(args, "no_rollup", False),
+        )
+
+    for removed_backup in StatsDB.prune_old_backups(db_path):
+        print(f"stats: removed old backup {removed_backup}", file=sys.stderr)
+
     try:
-        if args.stats_command == "totals":
-            period = getattr(args, "period", "all")
-            totals = db.query_totals(period) if db is not None else empty_totals()
-            costs = (
-                compute_stats_costs(
-                    db.query_stage_model_tokens(period),
-                    db.query_upstream_saved_tokens(period),
-                    config,
-                    skills_injection_tokens=db.query_skills_injection_tokens(period),
-                )
-                if db is not None
-                else empty_costs()
-            )
-            print(format_totals(totals, costs))
-        elif args.stats_command == "summary":
-            totals = db.query_summary(args.period) if db is not None else empty_totals()
-            costs = (
-                compute_stats_costs(
-                    db.query_stage_model_tokens(args.period),
-                    db.query_upstream_saved_tokens(args.period),
-                    config,
-                    skills_injection_tokens=db.query_skills_injection_tokens(args.period),
-                )
-                if db is not None
-                else empty_costs()
-            )
-            print(format_totals(totals, costs))
-        elif args.stats_command == "events":
-            events = db.query_events(args.limit) if db is not None else []
-            if args.json:
-                print(json.dumps(events, indent=2))
-            else:
-                print(format_events(events))
+        _print_stats_results(db, args, config)
     finally:
         if db is not None:
             db.close()
 
-    if getattr(args, "add_costs", False):
-        run_add_costs_wizard(user_config_path)
-    elif has_models_missing_costs(load_user_config_overlay(user_config_path)):
-        print(STATS_ADD_COSTS_HINT, file=sys.stderr)
+    _maybe_run_add_costs_wizard(args, user_config_path)
 
 
 def _print_stats_options() -> None:

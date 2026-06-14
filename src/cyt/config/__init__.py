@@ -155,6 +155,8 @@ _DEFAULTS: dict[str, Any] = {
     "stats": {
         "enabled": True,
         "store_full_tools": False,
+        "rollup_on_query": True,
+        "backup_before_rollup": True,
         "database": {
             "path": DEFAULT_STATS_DB_PATH,
         },
@@ -466,6 +468,14 @@ def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
 def stats_db_path(config: dict[str, Any]) -> str:
     path = _merged_config(config)["stats"]["database"]["path"]
     return str(Path(path).expanduser())
+
+
+def stats_rollup_on_query(config: dict[str, Any]) -> bool:
+    return bool(_merged_config(config)["stats"].get("rollup_on_query", True))
+
+
+def stats_backup_before_rollup(config: dict[str, Any]) -> bool:
+    return bool(_merged_config(config)["stats"].get("backup_before_rollup", True))
 
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
