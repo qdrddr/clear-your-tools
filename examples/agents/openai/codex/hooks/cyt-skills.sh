@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Codex hook wrapper for `cyt skills`. Codex hooks use a minimal PATH (inherit = "core"),
+# Codex hook wrapper for `cyt hook --stdin`. Codex hooks use a minimal PATH (inherit = "core"),
 # so do not rely on `uv` or `cyt` being on PATH — use the repo venv or absolute paths.
 set -euo pipefail
 
@@ -19,18 +19,18 @@ fi
 if [[ -f "${CYT_REPO}/pyproject.toml" && -f "${CLI}" ]]; then
 	VENV_PY="${CYT_REPO}/.venv/bin/python"
 	if [[ -x "${VENV_PY}" ]]; then
-		exec "${VENV_PY}" "${CLI}" skills "${DEBUG_ARGS[@]}"
+		exec "${VENV_PY}" "${CLI}" hook --stdin "${DEBUG_ARGS[@]}"
 	fi
 	for uv in "${UV:-}" /opt/homebrew/bin/uv "${HOME}/.local/bin/uv"; do
 		if [[ -n "${uv}" && -x "${uv}" ]]; then
-			exec "${uv}" run --directory "${CYT_REPO}" src/cyt/proxy/cli.py skills "${DEBUG_ARGS[@]}"
+			exec "${uv}" run --directory "${CYT_REPO}" src/cyt/proxy/cli.py hook --stdin "${DEBUG_ARGS[@]}"
 		fi
 	done
 fi
 
 for cyt in /opt/homebrew/bin/cyt "${HOME}/.local/bin/cyt"; do
 	if [[ -x "${cyt}" ]]; then
-		exec "${cyt}" skills "${DEBUG_ARGS[@]}"
+		exec "${cyt}" hook --stdin "${DEBUG_ARGS[@]}"
 	fi
 done
 

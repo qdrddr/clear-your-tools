@@ -2,7 +2,7 @@
 
 Point Codex at the proxy (same pattern as Claude Code) and enable skills injection.
 
-## Skills hook (`cyt skills`)
+## Skills hook (`cyt hook`)
 
 Enable in `~/.config/cyt/config.yaml`:
 
@@ -37,11 +37,11 @@ Simulate a hook locally:
 ```bash
 CYT_REPO=/path/to/clear-your-tools
 echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","model":"gpt-4","prompt":"configure agent hooks","cwd":"'"$CYT_REPO"'"}' \
-  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
+  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py hook --stdin --debug
 ```
 
 - **UserPromptSubmit** (Codex) — Codex sends `session_id`, `model`, and `prompt` on every turn; a
-  `UserPromptSubmit` hook alone is enough for injection and stats. `cyt skills` reads `model` from
+  `UserPromptSubmit` hook alone is enough for injection and stats. `cyt hook --stdin` reads `model` from
   the hook payload.
 
 The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.

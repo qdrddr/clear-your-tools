@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code hook wrapper for `cyt skills`.
+# Claude Code hook wrapper for `cyt hook --stdin`.
 set -euo pipefail
 
 # Required for pruning pipeline: [rerank, llm] (Keychain service "nono", or already exported)
@@ -18,18 +18,18 @@ fi
 if [[ -f "${CYT_REPO}/pyproject.toml" && -f "${CLI}" ]]; then
 	VENV_PY="${CYT_REPO}/.venv/bin/python"
 	if [[ -x "${VENV_PY}" ]]; then
-		exec "${VENV_PY}" "${CLI}" skills "${DEBUG_ARGS[@]}"
+		exec "${VENV_PY}" "${CLI}" hook --stdin "${DEBUG_ARGS[@]}"
 	fi
 	for uv in "${UV:-}" /opt/homebrew/bin/uv "${HOME}/.local/bin/uv"; do
 		if [[ -n "${uv}" && -x "${uv}" ]]; then
-			exec "${uv}" run --directory "${CYT_REPO}" src/cyt/proxy/cli.py skills "${DEBUG_ARGS[@]}"
+			exec "${uv}" run --directory "${CYT_REPO}" src/cyt/proxy/cli.py hook --stdin "${DEBUG_ARGS[@]}"
 		fi
 	done
 fi
 
 for cyt in /opt/homebrew/bin/cyt "${HOME}/.local/bin/cyt"; do
 	if [[ -x "${cyt}" ]]; then
-		exec "${cyt}" skills "${DEBUG_ARGS[@]}"
+		exec "${cyt}" hook --stdin "${DEBUG_ARGS[@]}"
 	fi
 done
 

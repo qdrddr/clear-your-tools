@@ -1,9 +1,10 @@
-"""Tests for `cyt skills` hook CLI."""
+"""Tests for `cyt hook --stdin` handler."""
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -534,8 +535,47 @@ def test_skills_test_reports_required_keys(
     assert "pruning.pipeline: ['bm25']" in out
     assert "Skills API keys:" in out
     assert "Pruning API keys:" in out
+    assert "All required API keys:" in out
     assert "OPENROUTER_" + "API_KEY" in out
     assert "env: shell" in out
+
+
+def test_skills_cli_main_accepts_hook_test_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = {
+        "skills": {"enabled": True, "pipeline": "llm"},
+        "pruning": {
+            "tools": {
+                "sequence": ["bm25"],
+                "pipelines": {"llm": {"model_nick": "mercury-2"}},
+            },
+        },
+        "models": {
+            "llm": {
+                "remote": [
+                    {
+                        "nick": "mercury-2",
+                        "name": "inception/mercury-2",
+                        "provider": "openrouter",
+                        "key_var_name": "OPENROUTER_" + "API_KEY",
+                    },
+                ],
+            },
+        },
+    }
+    monkeypatch.setattr(sys, "argv", ["cli.py", "hook", "--test"])
+    monkeypatch.setattr("cyt.config.load_user_config_overlay", lambda _path=None: {})
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    monkeypatch.setenv("OPENROUTER_" + "API_KEY", "from-shell")
+
+    with patch("cyt.skills.cli.load_config", return_value=config):
+        skills_cli.main()
+
+    out = capsys.readouterr().out
+    assert "All required API keys:" in out
+    assert "OPENROUTER_" + "API_KEY" in out
 
 
 def test_skills_test_reports_pruning_pipeline_keys(
@@ -643,8 +683,8 @@ def test_hook_resolves_skills_key_from_keyring(
         assert os.environ.get("OPENROUTER_" + "API_KEY") == "keyring-secret"
 
 
-def test_hook_stdin_alias_matches_skills(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`cyt hook --stdin` dispatches to the same skills hook handler as `cyt skills`."""
+def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cyt hook --stdin` runs the hook handler."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"

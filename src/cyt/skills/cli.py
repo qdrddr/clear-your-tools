@@ -1,4 +1,4 @@
-"""`cyt skills` agent hook entry point."""
+"""`cyt hook --stdin` agent hook entry point."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 from cyt.config import (
     load_config,
     pruning_pipeline_from_config,
+    required_proxy_env_var_names,
     required_pruning_env_var_names,
     required_skills_env_var_names,
     skills_enabled,
@@ -104,12 +105,17 @@ def _print_skills_test_report(config: dict[str, Any]) -> None:
         required_pruning_env_var_names(config),
         empty_hint="BM25 pipeline needs no remote keys",
     )
+    _print_required_api_keys(
+        "All required API keys",
+        required_proxy_env_var_names(config),
+        empty_hint="none required for current pipelines",
+    )
 
 
 def _report_cli_outcome(outcome: str) -> None:
     hint = _CLI_OUTCOME_HINTS.get(outcome)
     if hint:
-        print(f"cyt skills: {hint}", file=sys.stderr)
+        print(f"cyt hook: {hint}", file=sys.stderr)
 
 
 def _read_hook_payload() -> tuple[str, dict[str, Any]]:
@@ -234,7 +240,7 @@ def _exit_if_skills_disabled(
     if enabled or cli_prompt:
         return False
     print(
-        "cyt skills: skills.enabled is false in config; hook produced no injection. "
+        "cyt hook: skills.enabled is false in config; hook produced no injection. "
         "Set skills.enabled: true in ~/.config/cyt/config.yaml",
         file=sys.stderr,
     )
@@ -331,3 +337,60 @@ def run(
             outcome=outcome,
             details=details,
         )
+
+
+def _strip_dev_cli_hook_command(argv: list[str]) -> list[str]:
+    if argv and argv[0] == "hook":
+        return argv[1:]
+    return argv
+
+
+def main() -> None:
+    """Development entry point for ``python src/cyt/skills/cli.py [--stdin] [--test]``."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="CYT hook handler (development entry point; prefer `cyt hook`)",
+    )
+    parser.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read hook JSON from stdin (session tracking and skill injection)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log hook stdin and handling outcome to .debug/skills/",
+    )
+    parser.add_argument(
+        "--prompt",
+        metavar="TEXT",
+        default=None,
+        help="Run skill search/injection for TEXT (terminal mode; skips stdin)",
+    )
+    parser.add_argument(
+        "--model",
+        metavar="MODEL",
+        default=None,
+        help="Model name for stats when using --prompt (optional)",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
+    )
+    args = parser.parse_args(_strip_dev_cli_hook_command(sys.argv[1:]))
+
+    if not (args.stdin or args.prompt or args.test):
+        parser.error("one of --stdin, --prompt, or --test is required")
+
+    run(
+        debug=bool(args.debug),
+        prompt=args.prompt,
+        model=args.model,
+        test=bool(args.test),
+    )
+
+
+if __name__ == "__main__":
+    main()

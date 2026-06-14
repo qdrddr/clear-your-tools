@@ -48,7 +48,7 @@ The merge script is [`claude-code-desktop-or-cowork.sh`](./claude-code-desktop-o
 
 Restart Claude Code Desktop or Claude Cowork after running the script so it picks up the merged settings.
 
-## Skills hook (`cyt skills`)
+## Skills hook (`cyt hook`)
 
 Enable skill injection in `~/.config/cyt/config.yaml`:
 
@@ -79,11 +79,11 @@ CYT_REPO=/path/to/clear-your-tools
 TRANSCRIPT=/path/to/session.jsonl   # Claude Code session jsonl with message.model on assistant rows
 
 echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","prompt":"configure agent hooks","transcript_path":"'"$TRANSCRIPT"'","cwd":"'"$CYT_REPO"'"}' \
-  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py skills --debug
+  | uv run --directory "$CYT_REPO" src/cyt/proxy/cli.py hook --stdin --debug
 ```
 
 - **UserPromptSubmit** (Claude Code) — stdin includes `session_id`, `prompt`, and `transcript_path`
-  but not `model`. `cyt skills` reads `message.model` from the transcript jsonl (latest assistant
+  but not `model`. `cyt hook --stdin` reads `message.model` from the transcript jsonl (latest assistant
   row). BM25-matched skill chunks are returned as `additionalContext`. Debug logs record the
   resolved model as `details.resolved_model`.
 - **SessionStart** — not required; legacy `SessionStart` hooks are ignored if still configured.

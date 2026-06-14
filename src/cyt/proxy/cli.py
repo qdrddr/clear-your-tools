@@ -341,7 +341,7 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_events.add_argument("--limit", type=int, default=20)
     stats_events.add_argument("--json", action="store_true")
 
-    def _add_skills_hook_args(parser: argparse.ArgumentParser) -> None:
+    def _add_hook_handler_args(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--debug",
             action="store_true",
@@ -365,15 +365,9 @@ def _build_parser() -> argparse.ArgumentParser:
             help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
         )
 
-    skills_parser = subparsers.add_parser(
-        "skills",
-        help="Agent hook: session tracking and skill injection",
-    )
-    _add_skills_hook_args(skills_parser)
-
     hook_parser = subparsers.add_parser(
         "hook",
-        help="Install agent hooks (wizard) or handle hook events with --stdin",
+        help="Install agent hooks (wizard), uninstall, or handle hook events with --stdin",
     )
     hook_parser.add_argument(
         "--stdin",
@@ -381,12 +375,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Read hook JSON from stdin (session tracking and skill injection)",
     )
     hook_parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Remove CYT hooks from ~/.claude/settings.json and ~/.codex/hooks.json",
+    )
+    hook_parser.add_argument(
         "--config",
         type=Path,
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
-    _add_skills_hook_args(hook_parser)
+    _add_hook_handler_args(hook_parser)
 
     subparsers.add_parser(
         "setup",
@@ -510,6 +509,14 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
     )
 
 
+def _hook_invokes_handler(args: argparse.Namespace) -> bool:
+    return bool(
+        getattr(args, "stdin", False)
+        or getattr(args, "prompt", None) is not None
+        or getattr(args, "test", False),
+    )
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -526,20 +533,25 @@ def main() -> None:
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
         return
 
-    if args.command in ("skills", "hook"):
-        if args.command == "hook" and not getattr(args, "stdin", False):
-            from cyt.skills.hook_setup import run_hook_setup
+    if args.command == "hook":
+        if getattr(args, "uninstall", False):
+            from cyt.skills.hook_setup import run_hook_uninstall
 
-            run_hook_setup(config_path=getattr(args, "config", None))
+            run_hook_uninstall()
             return
-        from cyt.skills.cli import run as run_skills
+        if _hook_invokes_handler(args):
+            from cyt.skills.cli import run as run_skills
 
-        run_skills(
-            debug=bool(getattr(args, "debug", False)),
-            prompt=getattr(args, "prompt", None),
-            model=getattr(args, "model", None),
-            test=bool(getattr(args, "test", False)),
-        )
+            run_skills(
+                debug=bool(getattr(args, "debug", False)),
+                prompt=getattr(args, "prompt", None),
+                model=getattr(args, "model", None),
+                test=bool(getattr(args, "test", False)),
+            )
+            return
+        from cyt.skills.hook_setup import run_hook_setup
+
+        run_hook_setup(config_path=getattr(args, "config", None))
         return
 
     if args.command == "launch":

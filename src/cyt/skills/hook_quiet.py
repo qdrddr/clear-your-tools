@@ -1,4 +1,4 @@
-"""Keep `cyt skills` hook stdout reserved for the final JSON payload."""
+"""Keep `cyt hook --stdin` stdout reserved for the final JSON payload."""
 
 from __future__ import annotations
 

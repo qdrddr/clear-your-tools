@@ -1,4 +1,4 @@
-"""Debug logging for `cyt skills` agent hooks."""
+"""Debug logging for `cyt hook --stdin` agent hooks."""
 
 from __future__ import annotations
 

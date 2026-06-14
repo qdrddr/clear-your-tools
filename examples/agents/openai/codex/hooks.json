@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cyt skills",
+            "command": "cyt hook --stdin",
             "timeout": 30
           }
         ]

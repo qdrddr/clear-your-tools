@@ -11,6 +11,23 @@ import pytest
 from cyt.skills import hook_setup
 
 
+def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
+    command = hook_setup.format_hook_stdin_test_command()
+
+    assert "cat <<'EOF' | cyt hook --stdin" in command
+    assert "019ebcaf" not in command
+    assert "dberezenko" not in command
+    assert "sess-00000000-0000-4000-8000-000000000001" in command
+    assert "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl" in command
+    assert "/path/to/your/project" in command
+
+
+def test_format_hook_stdin_test_command_includes_debug_flag() -> None:
+    command = hook_setup.format_hook_stdin_test_command(debug=True)
+
+    assert "cyt hook --stdin --debug" in command
+
+
 def test_merge_cyt_hook_adds_user_prompt_submit_entry() -> None:
     entry = hook_setup.cyt_hook_entry()
     merged, changed = hook_setup.merge_cyt_hook({}, entry)
@@ -284,6 +301,91 @@ def test_run_hook_setup_skips_missing_agent_configs(
     assert "Skipping Claude" in captured.out
     assert "config file not found" in captured.out
     assert "Skipping Codex" in captured.out
+
+
+def test_remove_cyt_hooks_removes_only_cyt_commands() -> None:
+    existing = {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {"type": "command", "command": "cyt hook --stdin", "timeout": 30},
+                    {"type": "command", "command": "/usr/local/bin/other-hook", "timeout": 10},
+                ],
+            },
+        ],
+    }
+
+    merged, changed = hook_setup.remove_cyt_hooks(existing)
+
+    assert changed is True
+    assert merged["UserPromptSubmit"][0]["hooks"] == [
+        {"type": "command", "command": "/usr/local/bin/other-hook", "timeout": 10},
+    ]
+
+
+def test_uninstall_hooks_from_file_preserves_other_settings(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "env": {"FOO": "bar"},
+                "hooks": {
+                    "UserPromptSubmit": [
+                        {
+                            "hooks": [
+                                {"type": "command", "command": "cyt skills", "timeout": 30},
+                            ],
+                        },
+                    ],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    changed = hook_setup.uninstall_hooks_from_file(path)
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["env"]["FOO"] == "bar"
+    assert "hooks" not in data
+
+
+def test_run_hook_uninstall_removes_hooks_from_agent_configs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_path = tmp_path / "claude" / "settings.json"
+    codex_path = tmp_path / "codex" / "hooks.json"
+    claude_path.parent.mkdir(parents=True)
+    codex_path.parent.mkdir(parents=True)
+    entry = hook_setup.cyt_hook_entry()
+    hook_setup.merge_hooks_into_file(claude_path, entry)
+    hook_setup.merge_hooks_into_file(codex_path, entry)
+
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", codex_path)
+
+    hook_setup.run_hook_uninstall()
+
+    assert "hooks" not in json.loads(claude_path.read_text(encoding="utf-8"))
+    assert "hooks" not in json.loads(codex_path.read_text(encoding="utf-8"))
+
+
+def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["cyt", "hook", "--uninstall"])
+    called = {"run": False}
+
+    def fake_run_hook_uninstall() -> None:
+        called["run"] = True
+
+    monkeypatch.setattr("cyt.skills.hook_setup.run_hook_uninstall", fake_run_hook_uninstall)
+
+    from cyt.proxy.cli import main
+
+    main()
+    assert called["run"] is True
 
 
 def test_hook_wizard_without_stdin(

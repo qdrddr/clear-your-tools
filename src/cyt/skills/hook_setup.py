@@ -26,6 +26,41 @@ CLAUDE_SKILLS_DIR = Path("~/.claude/skills")
 CODEX_SKILLS_DIR = Path("~/.codex/skills")
 HOOK_EVENT_NAME = "UserPromptSubmit"
 CYT_HOOK_COMMAND_PREFIX = "cyt hook"
+HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
+    "session_id": "sess-00000000-0000-4000-8000-000000000001",
+    "turn_id": "turn-00000000-0000-4000-8000-000000000001",
+    "transcript_path": "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl",
+    "cwd": "/path/to/your/project",
+    "hook_event_name": "UserPromptSubmit",
+    "model": "example-model",
+    "permission_mode": "default",
+    "prompt": "say hi",
+}
+
+
+def format_hook_stdin_test_command(*, debug: bool = False) -> str:
+    """Return a copy-paste shell snippet that pipes anonymized hook JSON to ``cyt hook --stdin``."""
+    command = "cyt hook --stdin"
+    if debug:
+        command += " --debug"
+    payload_json = json.dumps(HOOK_STDIN_TEST_PAYLOAD, indent=2)
+    return "\n".join(
+        (
+            f"cat <<'EOF' | {command}",
+            payload_json,
+            "EOF",
+        ),
+    )
+
+
+def _print_hook_stdin_test_example(*, debug: bool) -> None:
+    print("\nTest the hook locally (UserPromptSubmit payload on stdin) like so:")
+    print()
+    print(format_hook_stdin_test_command(debug=debug))
+    print()
+    print("Hook JSON output is written to stdout; with --debug, logs go to .debug/skills/.")
+    print("\nTo remove installed agent hooks later, run:")
+    print("  cyt hook --uninstall")
 
 
 def merge_skills_directory_lists(
@@ -228,6 +263,79 @@ def merge_cyt_hook(
     return merged, True
 
 
+def remove_cyt_hooks(hooks_section: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Remove CYT hook commands from a hooks section."""
+    merged = copy.deepcopy(hooks_section)
+    changed = False
+
+    for event_name in list(merged):
+        event_entries = merged[event_name]
+        if not isinstance(event_entries, list):
+            continue
+
+        kept_wrappers: list[Any] = []
+        for wrapper in event_entries:
+            if not isinstance(wrapper, dict):
+                kept_wrappers.append(wrapper)
+                continue
+
+            inner = wrapper.get("hooks")
+            if not isinstance(inner, list):
+                kept_wrappers.append(wrapper)
+                continue
+
+            filtered = [
+                hook
+                for hook in inner
+                if not (isinstance(hook, dict) and _is_cyt_hook_command(hook.get("command")))
+            ]
+            if len(filtered) != len(inner):
+                changed = True
+            if not filtered:
+                continue
+
+            kept_wrapper = copy.deepcopy(wrapper)
+            kept_wrapper["hooks"] = filtered
+            kept_wrappers.append(kept_wrapper)
+
+        if kept_wrappers != event_entries:
+            changed = True
+        if kept_wrappers:
+            merged[event_name] = kept_wrappers
+        else:
+            del merged[event_name]
+            changed = True
+
+    return merged, changed
+
+
+def uninstall_hooks_from_file(
+    path: Path,
+    *,
+    hooks_key: str = "hooks",
+) -> bool:
+    """Remove CYT hooks from *path*; return True when the file changed."""
+    if not path.is_file():
+        return False
+
+    existing = _load_json_object(path)
+    hooks_section = existing.get(hooks_key)
+    if not isinstance(hooks_section, dict) or not cyt_hook_command_exists(hooks_section):
+        return False
+
+    merged_hooks, changed = remove_cyt_hooks(hooks_section)
+    if not changed:
+        return False
+
+    if merged_hooks:
+        existing[hooks_key] = merged_hooks
+    else:
+        existing.pop(hooks_key, None)
+
+    _write_json_object(path, existing)
+    return True
+
+
 def _load_json_object(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -368,6 +476,34 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
             any_changed = True
         else:
             print(f"{label}: CYT hook already configured in {path}")
+
+    if any_changed:
+        print("\nRestart your agent so hook changes take effect.")
+    else:
+        print("\nNo hook files were modified.")
+
+    _print_hook_stdin_test_example(debug=debug)
+
+
+def run_hook_uninstall() -> None:
+    """Remove CYT agent hooks from Claude and Codex config files."""
+    print("CYT hook uninstall\n")
+
+    targets = [
+        ("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH)),
+        ("Codex", _agent_config_path(CODEX_HOOKS_PATH)),
+    ]
+
+    any_changed = False
+    for label, path in targets:
+        if not _agent_config_ready(path):
+            print(f"{label}: skipped ({path} not found)")
+            continue
+        if uninstall_hooks_from_file(path):
+            print(f"{label}: removed CYT hook from {path}")
+            any_changed = True
+        else:
+            print(f"{label}: no CYT hook in {path}")
 
     if any_changed:
         print("\nRestart your agent so hook changes take effect.")
