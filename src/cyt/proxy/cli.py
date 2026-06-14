@@ -341,32 +341,46 @@ def _build_parser() -> argparse.ArgumentParser:
     stats_events.add_argument("--limit", type=int, default=20)
     stats_events.add_argument("--json", action="store_true")
 
+    def _add_skills_hook_args(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--debug",
+            action="store_true",
+            help="Log hook stdin and handling outcome to .debug/skills/",
+        )
+        parser.add_argument(
+            "--prompt",
+            metavar="TEXT",
+            default=None,
+            help="Run skill search/injection for TEXT (terminal mode; skips stdin)",
+        )
+        parser.add_argument(
+            "--model",
+            metavar="MODEL",
+            default=None,
+            help="Model name for stats when using --prompt (optional)",
+        )
+        parser.add_argument(
+            "--test",
+            action="store_true",
+            help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
+        )
+
     skills_parser = subparsers.add_parser(
         "skills",
         help="Agent hook: session tracking and skill injection",
     )
-    skills_parser.add_argument(
-        "--debug",
+    _add_skills_hook_args(skills_parser)
+
+    hook_parser = subparsers.add_parser(
+        "hook",
+        help="Agent hook entry points",
+    )
+    hook_parser.add_argument(
+        "--stdin",
         action="store_true",
-        help="Log hook stdin and handling outcome to .debug/skills/",
+        help="Read hook JSON from stdin (session tracking and skill injection)",
     )
-    skills_parser.add_argument(
-        "--prompt",
-        metavar="TEXT",
-        default=None,
-        help="Run skill search/injection for TEXT (terminal mode; skips stdin)",
-    )
-    skills_parser.add_argument(
-        "--model",
-        metavar="MODEL",
-        default=None,
-        help="Model name for stats when using --prompt (optional)",
-    )
-    skills_parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
-    )
+    _add_skills_hook_args(hook_parser)
 
     subparsers.add_parser(
         "setup",
@@ -506,7 +520,9 @@ def main() -> None:
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
         return
 
-    if args.command == "skills":
+    if args.command in ("skills", "hook"):
+        if args.command == "hook" and not getattr(args, "stdin", False):
+            raise SystemExit("cyt hook: --stdin is required")
         from cyt.skills.cli import run as run_skills
 
         run_skills(

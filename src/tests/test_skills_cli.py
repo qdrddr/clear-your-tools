@@ -641,3 +641,39 @@ def test_hook_resolves_skills_key_from_keyring(
             skills_cli.run()
 
         assert os.environ.get("OPENROUTER_" + "API_KEY") == "keyring-secret"
+
+
+def test_hook_stdin_alias_matches_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cyt hook --stdin` dispatches to the same skills hook handler as `cyt skills`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "hook-stdin-sess",
+            "model": "gpt-5.4-mini",
+            "prompt": "configure agent hooks for sessions",
+            "cwd": str(root),
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.setattr("sys.argv", ["cyt", "hook", "--stdin"])
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                from cyt.proxy.cli import main
+
+                main()
+
+        output = json.loads(stdout.getvalue())
+        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
