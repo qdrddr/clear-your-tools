@@ -199,12 +199,12 @@ stats:
     path: ~/.config/cyt/stats.db
 
 skills:
-  enabled: false
+  enabled: true
   frontmatter_upper_limit: 0.4
   inject_via: proxy # hook | proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
-  # pageindex: (disabled while skills.enabled is false)
+  # pageindex:
   #   if_add_node_id: true
   #   if_add_node_text: false
   #   bm25_cohesion:
@@ -242,11 +242,11 @@ skills:
     inject_cap_fraction_of_savings: 0.5
     savings_budget_fraction: 0.1
     savings_rate_threshold: 0.20
-  # directories: (disabled while skills.enabled is false)
-  #   - ~/.claude/skills
-  #   - .claude/skills
-  #   - ~/.codex/skills
-  #   - .codex/skills
+  directories:
+    - ~/.claude/skills
+    - .claude/skills
+    - ~/.codex/skills
+    - .codex/skills
 
 launch:
   claude:

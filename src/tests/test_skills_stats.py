@@ -100,6 +100,26 @@ def test_record_skills_injection_stores_skills_final_md_when_debug(
     assert row[0] == injected
 
 
+def test_record_skills_injection_proxy_stores_skills_final_md_when_debug(
+    temp_stats_db: StatsDB,
+) -> None:
+    injected = '<agent-skills><skill name="demo">Demo skill</skill></agent-skills>'
+    temp_stats_db.record_skills_injection(
+        query="configure proxy skills",
+        model_name="claude-sonnet-4",
+        skills_in=120,
+        inject_path="proxy",
+        skills_final_md=injected,
+        config={},
+    )
+    row = temp_stats_db._conn.execute(
+        "SELECT skills_final_md, endpoint FROM proxy_request WHERE endpoint = 'skills-proxy'",
+    ).fetchone()
+    assert row is not None
+    assert row[0] == injected
+    assert row[1] == "skills-proxy"
+
+
 def test_record_skills_injection_omits_skills_final_md_by_default(
     temp_stats_db: StatsDB,
 ) -> None:

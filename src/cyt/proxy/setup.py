@@ -38,7 +38,7 @@ SKILLS_PIPELINE_LABELS: tuple[str, ...] = (
     "rerank (smarter)",
     "llm (more $$, smartest)",
 )
-SKILLS_PIPELINE_DEFAULT = "rerank"
+SKILLS_PIPELINE_DEFAULT = "bm25"
 SKILLS_INJECT_VIA_CHOICES: tuple[str, ...] = ("proxy", "hook")
 SKILLS_INJECT_VIA_DEFAULT = "proxy"
 DEFAULT_SKILLS_DIRECTORIES: tuple[str, ...] = (
@@ -1543,7 +1543,7 @@ def _prompt_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
 def _prompt_skills(existing: dict[str, Any]) -> dict[str, Any]:
     existing_skills = existing.get("skills")
     skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
-    default_enabled = bool(skills_cfg.get("enabled", False))
+    default_enabled = bool(skills_cfg.get("enabled", True))
     print("\n--- Skills injection ---")
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:

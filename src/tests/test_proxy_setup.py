@@ -1299,11 +1299,11 @@ class TestPromptSkills:
             ],
         }
 
-    def test_defaults_to_rerank_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_defaults_to_bm25_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
         responses = iter(["y", "", "1", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({})
-        assert skills["pipeline"] == "rerank"
+        assert skills["pipeline"] == "bm25"
         assert skills["inject_via"] == "proxy"
 
 

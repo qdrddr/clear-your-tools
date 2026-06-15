@@ -86,7 +86,7 @@ DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
 DEFAULT_BM25_SCORE_SKILLS: float = 0.5
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
-DEFAULT_SKILLS_INJECT_VIA: str = "hook"
+DEFAULT_SKILLS_INJECT_VIA: str = "proxy"
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.4
 DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
 DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
@@ -185,6 +185,17 @@ _DEFAULTS: dict[str, Any] = {
                 },
             },
         },
+    },
+    "skills": {
+        "enabled": True,
+        "inject_via": DEFAULT_SKILLS_INJECT_VIA,
+        "pipeline": DEFAULT_SKILLS_PIPELINE,
+        "directories": [
+            "~/.claude/skills",
+            ".claude/skills",
+            "~/.codex/skills",
+            ".codex/skills",
+        ],
     },
 }
 
@@ -940,7 +951,7 @@ def _skills_proxy_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
-    return bool(_skills_settings(_merged_config(cfg)).get("enabled", False))
+    return bool(_skills_settings(_merged_config(cfg)).get("enabled", True))
 
 
 def skills_inject_via(config: dict[str, Any] | None = None) -> str:
