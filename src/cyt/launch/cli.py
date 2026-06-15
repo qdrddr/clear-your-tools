@@ -15,7 +15,7 @@ from cyt.launch.codex import run as run_codex
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import ensure_proxy, require_healthy_proxy
+from cyt.launch.proxy_guard import ensure_proxy, require_healthy_proxy, resolve_launch_port
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import prepare_runtime
@@ -169,6 +169,7 @@ def run(args: argparse.Namespace) -> None:
         upstream_name=args.upstream_name,
         resolve_credentials=False,
     )
+    runtime.port = resolve_launch_port(runtime.port)
 
     endpoint = resolve_agent_endpoint(
         runtime.config,

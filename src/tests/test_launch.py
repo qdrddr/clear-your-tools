@@ -24,7 +24,13 @@ from cyt.launch.codex import (
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import _spawn_proxy, ensure_proxy, require_healthy_proxy
+from cyt.launch.proxy_guard import (
+    _spawn_proxy,
+    ensure_proxy,
+    find_available_port,
+    require_healthy_proxy,
+    resolve_launch_port,
+)
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, ensure_runtime_credentials
 from cyt.launch.upstream import (
     filter_upstreams_by_agent,
@@ -618,6 +624,57 @@ class TestCodexProvider:
         assert "custom_openai" in cfg["model_providers"]
 
 
+class TestFindAvailablePort:
+    def test_returns_start_when_free(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.is_port_in_use",
+            lambda port: False,
+        )
+        assert find_available_port(8834) == 8834
+
+    def test_bumps_until_free(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        in_use = {8834, 8835}
+
+        def fake_in_use(port: int) -> bool:
+            return port in in_use
+
+        monkeypatch.setattr("cyt.launch.proxy_guard.is_port_in_use", fake_in_use)
+        assert find_available_port(8834) == 8836
+
+    def test_raises_when_exhausted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.is_port_in_use",
+            lambda port: True,
+        )
+        with pytest.raises(SystemExit, match="No free port found"):
+            find_available_port(8834, max_attempts=3)
+
+    def test_resolve_launch_port_announces_bump(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.find_available_port",
+            lambda start, **kwargs: start + 2,
+        )
+        assert resolve_launch_port(8834) == 8836
+        err = capsys.readouterr().err
+        assert "Port 8834 is in use; launching on 8836." in err
+
+    def test_resolve_launch_port_silent_when_unchanged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.find_available_port",
+            lambda start, **kwargs: start,
+        )
+        assert resolve_launch_port(8834) == 8834
+        assert capsys.readouterr().err == ""
+
+
 class TestEnsureProxy:
     def test_spawns_when_health_fails(
         self,
@@ -734,7 +791,9 @@ class TestLaunchRun:
             url="https://api.anthropic.com",
         )
         monkeypatch.setenv(_anthropic_api_key_var(), "test-key")
-        monkeypatch.setattr("cyt.launch.proxy_guard.ensure_proxy", lambda **kwargs: MagicMock())
+        monkeypatch.setattr("cyt.launch.cli.ensure_proxy", lambda **kwargs: MagicMock())
+        monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.cli.resolve_launch_port", lambda port: port)
         monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
 
         args = MagicMock(
@@ -753,6 +812,50 @@ class TestLaunchRun:
         with pytest.raises(SystemExit) as exc:
             run_launch(args)
         assert exc.value.code == 0
+
+    def test_launch_uses_next_free_port(
+        self,
+        isolated_config_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        user_config = isolated_config_paths["user_config"]
+        _write_upstream_config(
+            user_config,
+            name="anthropic",
+            kind="anthropic",
+            url="https://api.anthropic.com",
+        )
+        monkeypatch.setenv(_anthropic_api_key_var(), "test-key")
+        captured_ports: list[int] = []
+
+        def fake_ensure_proxy(**kwargs: object) -> MagicMock:
+            port = kwargs.get("port")
+            if isinstance(port, int):
+                captured_ports.append(port)
+            return MagicMock()
+
+        monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
+        monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.cli.resolve_launch_port", lambda port: port + 1)
+        monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
+
+        args = MagicMock(
+            config=user_config,
+            port=None,
+            upstream=None,
+            upstream_kind=None,
+            upstream_name=None,
+            endpoint=None,
+            configure=False,
+            restore=False,
+            quiet=True,
+            remainder=["--", "claude", "-p", "hi"],
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            run_launch(args)
+        assert exc.value.code == 0
+        assert captured_ports == [8835]
 
     def test_restore_without_credentials(
         self,

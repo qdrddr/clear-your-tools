@@ -83,6 +83,34 @@ def _listener_pids_on_port(port: int) -> list[int]:
     return [int(pid) for pid in result.stdout.split() if pid.strip().isdigit()]
 
 
+def is_port_in_use(port: int) -> bool:
+    """Return whether a process is already listening on *port*."""
+    return bool(_listener_pids_on_port(port))
+
+
+def find_available_port(start: int, *, max_attempts: int = 100) -> int:
+    """Return the first free TCP listen port at or above *start*."""
+    port = start
+    for _ in range(max_attempts):
+        if not is_port_in_use(port):
+            return port
+        port += 1
+    raise SystemExit(
+        f"No free port found starting from {start} (tried {max_attempts} ports).",
+    )
+
+
+def resolve_launch_port(start: int) -> int:
+    """Pick a listen port for ``cyt launch``, bumping when *start* is taken."""
+    port = find_available_port(start)
+    if port != start:
+        print(
+            f"Port {start} is in use; launching on {port}.",
+            file=sys.stderr,
+        )
+    return port
+
+
 def _terminate_listeners_on_port(port: int) -> None:
     pids = _listener_pids_on_port(port)
     for pid in pids:
