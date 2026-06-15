@@ -24,7 +24,7 @@ from cyt.launch.codex import (
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import ensure_proxy
+from cyt.launch.proxy_guard import _spawn_proxy, ensure_proxy
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import (
     filter_upstreams_by_agent,
@@ -617,6 +617,36 @@ class TestEnsureProxy:
         guard = ensure_proxy(port=8834)
         assert guard.started_by_launch is True
         assert guard.process is process
+
+    def test_spawn_proxy_passes_debug_flags(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_popen(cmd: list[str], **kwargs: object) -> MagicMock:
+            captured["cmd"] = cmd
+            captured["stderr"] = kwargs.get("stderr")
+            return MagicMock()
+
+        monkeypatch.setattr("cyt.launch.proxy_guard.subprocess.Popen", fake_popen)
+
+        _spawn_proxy(
+            port=8834,
+            config_path=None,
+            quiet=True,
+            debug=True,
+            debug_dry_run=True,
+            debug_strict=True,
+        )
+
+        cmd = captured["cmd"]
+        assert isinstance(cmd, list)
+        assert "--debug" in cmd
+        assert "--debug-dry-run" in cmd
+        assert "--debug-strict" in cmd
+        assert "--quiet" not in cmd
+        assert captured["stderr"] is None
 
 
 class TestLaunchRun:

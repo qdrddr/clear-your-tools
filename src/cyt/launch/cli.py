@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 
@@ -99,6 +100,21 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Legacy no-op for codex (managed ~/.codex/config.toml is preserved)",
     )
     launch_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log transformed requests to {endpoint}.log and forward to upstream",
+    )
+    launch_parser.add_argument(
+        "--debug-dry-run",
+        action="store_true",
+        help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
+    )
+    launch_parser.add_argument(
+        "--debug-strict",
+        action="store_true",
+        help="With --debug-dry-run, return 502 when pruning did not apply",
+    )
+    launch_parser.add_argument(
         "remainder",
         nargs=argparse.REMAINDER,
         help="Use `-- claude|codex [agent args...]`",
@@ -179,10 +195,23 @@ def run(args: argparse.Namespace) -> None:
 
     os.environ.update(launch_agent_env(agent))
 
+    debug = bool(getattr(args, "debug", False))
+    debug_dry_run = bool(getattr(args, "debug_dry_run", False))
+    debug_strict = bool(getattr(args, "debug_strict", False))
+    if debug or debug_dry_run:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s:%(name)s: %(message)s",
+            force=True,
+        )
+
     ensure_proxy(
         port=runtime.port,
         config_path=runtime.config_path,
         quiet=args.quiet,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
     )
 
     launch_env: dict[str, str] | None = None

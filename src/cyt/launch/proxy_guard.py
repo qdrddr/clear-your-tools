@@ -55,6 +55,9 @@ def _spawn_proxy(
     port: int,
     config_path: Path | None,
     quiet: bool,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+    debug_strict: bool = False,
 ) -> subprocess.Popen[bytes]:
     cmd = [
         sys.executable,
@@ -63,14 +66,22 @@ def _spawn_proxy(
         "proxy",
         "--port",
         str(port),
-        "--quiet",
     ]
+    if quiet and not debug and not debug_dry_run:
+        cmd.append("--quiet")
     if config_path is not None:
         cmd.extend(["--config", str(config_path)])
+    if debug:
+        cmd.append("--debug")
+    if debug_dry_run:
+        cmd.append("--debug-dry-run")
+        if debug_strict:
+            cmd.append("--debug-strict")
+    stderr = None if debug or debug_dry_run else subprocess.DEVNULL
     return subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=stderr,
     )
 
 
@@ -79,12 +90,22 @@ def ensure_proxy(
     port: int,
     config_path: Path | None = None,
     quiet: bool = False,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+    debug_strict: bool = False,
 ) -> ProxyGuard:
     """Return immediately when proxy is healthy; otherwise spawn one in the background."""
     if _health_ok(port):
         return ProxyGuard(process=None, started_by_launch=False)
 
-    process = _spawn_proxy(port=port, config_path=config_path, quiet=quiet)
+    process = _spawn_proxy(
+        port=port,
+        config_path=config_path,
+        quiet=quiet,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
+    )
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if process.poll() is not None:
