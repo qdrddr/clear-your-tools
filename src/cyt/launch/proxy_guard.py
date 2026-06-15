@@ -15,6 +15,8 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV
+
 LOCAL_HOST = "127.0.0.1"
 HEALTH_TIMEOUT_SECONDS = 1.5
 STARTUP_POLL_SECONDS = 0.2
@@ -121,6 +123,7 @@ def _spawn_proxy(
     ]
     # Launch prints the env report; keep the background child quiet on stderr.
     cmd.append("--quiet")
+    cmd.append("--no-resolve-credentials")
     if config_path is not None:
         cmd.extend(["--config", str(config_path)])
     if debug:
@@ -130,10 +133,13 @@ def _spawn_proxy(
         if debug_strict:
             cmd.append("--debug-strict")
     stderr = None if debug or debug_dry_run else subprocess.DEVNULL
+    child_env = os.environ.copy()
+    child_env[CYT_SKIP_KEYRING_ENV] = "1"
     return subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
         stderr=stderr,
+        env=child_env,
     )
 
 

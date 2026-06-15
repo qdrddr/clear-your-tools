@@ -265,7 +265,37 @@ if needed, prints a manual recipe to stderr (suppress with `--quiet`), then exec
 For Codex, `cyt launch --configure -- codex` writes the managed provider block to
 `~/.codex/config.toml`; `cyt launch --restore -- codex` removes it.
 
-### 3. Run the proxy (optional)
+### 3. Inject relevant skills into the agnet
+
+<details>
+<summary><strong>Why inject skills?</strong></summary>
+
+Agents always see a skill's header, but only read the body when they decide it's relevant. If your question fits the body but not the header, the agent may miss the skill — and you end up telling it to read the file yourself.
+
+The `CYT` injects the matching parts of skills automatically — we call these **skinny skills**. See [SKINNY_SKILLS.md](SKINNY_SKILLS.md) for how it work. 
+
+If you prefer, you can use agent hooks instead; that path is separate from the proxy.
+
+</details>
+
+```bash
+cyt hook
+```
+
+### View pruning stats savings
+
+```bash
+cyt stats
+
+# Optional (recommended):
+cyt setup
+cyt stats --add
+```
+
+Stats are stored in `~/.config/cyt/stats.db` by default.
+
+<details>
+<summary><strong>Run the proxy (optional)</strong></summary>
 
 Installed CLI:
 
@@ -283,7 +313,10 @@ pass `--upstream-kind` explicitly.
 
 Default listen port: **8834** (from bundled `defaults.yaml` or `~/.config/cyt/config.yaml`).
 
-### 4. Run the agent manually (optional)
+</details>
+
+<details>
+<summary><strong>Run the agent manually (optional)</strong></summary>
 
 Point the agent at the proxy (default port **8834**). More examples are in
 [./examples/agents](./examples/agents).
@@ -307,8 +340,11 @@ export ANTHROPIC_BASE_URL="http://localhost:${PORT}/anthropic"
 claude
 ```
 
+</details>
+
 <details>
 <summary><strong>Configure the proxy (optional)</strong></summary>
+
 Interactive wizard (writes `~/.config/cyt/config.yaml` and optionally `~/.config/cyt/.env`):
 
 ```bash
@@ -321,18 +357,6 @@ Without `cyt setup`, the proxy uses the **default BM25 pipeline** — local prun
 remote API keys. Run `cyt setup` to configure rerank/llm pruners and full cost tracking.
 
 </details>
-
-### 5. View pruning stats savings
-
-```bash
-cyt stats
-
-# Optional (recommended):
-cyt setup
-cyt stats --add
-```
-
-Stats are stored in `~/.config/cyt/stats.db` by default.
 
 ---
 
@@ -372,9 +396,11 @@ for tool-related cost, or roughly **30–85% savings** depending on policy.
 <details>
 <summary><strong>Why don't I see 30–85% savings on my total request?</strong></summary>
 
-Those numbers apply to **tool schemas only** of the **input tokens only**, not the full prompt (system message, conversation
-history, user message, etc.). Clear Your Tools prunes tools based on the user request; the rest of
+1. Those numbers apply to **tool schemas only** of the **input tokens only**, not the full prompt (system message, conversation
+history, user message, etc.).
+2. Clear Your Tools prunes tools based on the user request; the rest of
 the request is unchanged. Codex agent has an efficient tool use and CYT saves less tokens.
+3. CYT by default injects relevant skills consuming some of the savings produced by the tool pruners. To disable run `cyt steup` or set `skills.enabled: false` in `~/.config/cyt/config.yaml`
 
 How much you save overall depends on:
 

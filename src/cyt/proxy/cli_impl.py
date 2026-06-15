@@ -321,6 +321,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Suppress runtime env summary before server start",
     )
+    proxy_parser.add_argument(
+        "--no-resolve-credentials",
+        action="store_true",
+        help="Skip keyring/.env credential resolution (use inherited process environment)",
+    )
 
     from cyt.launch.cli import add_launch_parser
 
@@ -479,6 +484,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
         upstream_url=getattr(args, "upstream", None),
         upstream_kind=getattr(args, "upstream_kind", None),
         upstream_name=getattr(args, "upstream_name", None),
+        resolve_credentials=not bool(getattr(args, "no_resolve_credentials", False)),
     )
     config = runtime.config
 

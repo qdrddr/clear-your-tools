@@ -9,8 +9,12 @@ import pytest
 
 import cyt.config as configs
 from cyt.launch.secrets import (
+    KEYRING_BLOB_ACCOUNT,
+    KEYRING_SERVICE,
+    clear_keyring_cache,
     ensure_runtime_credentials,
     keyring_backend_available,
+    preload_keyring_credentials,
     resolve_credential,
 )
 
@@ -187,21 +191,135 @@ class TestKeyringBackend:
         monkeypatch.setitem(sys.modules, "keyring", None)
         assert keyring_backend_available() is False
 
-    def test_available_when_probe_succeeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        store: dict[tuple[str, str], str] = {}
+    def test_available_when_backend_is_usable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class UsableBackend:
+            __module__ = "keyring.backends.macOS"
 
         class FakeKeyring:
-            @classmethod
-            def set_password(cls, service: str, user: str, password: str) -> None:
-                store[(service, user)] = password
-
-            @classmethod
-            def get_password(cls, service: str, user: str) -> str | None:
-                return store.get((service, user))
-
-            @classmethod
-            def delete_password(cls, service: str, user: str) -> None:
-                store.pop((service, user), None)
+            @staticmethod
+            def get_keyring() -> UsableBackend:
+                return UsableBackend()
 
         monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
         assert keyring_backend_available() is True
+
+    def test_unavailable_when_fail_backend(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class FailBackend:
+            __module__ = "keyring.backends.fail"
+
+        class FakeKeyring:
+            @staticmethod
+            def get_keyring() -> FailBackend:
+                return FailBackend()
+
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
+        assert keyring_backend_available() is False
+
+
+class TestKeyringBlob:
+    @pytest.fixture
+    def fake_keyring_store(self, monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], str]:
+        store: dict[tuple[str, str], str] = {}
+
+        class UsableBackend:
+            __module__ = "keyring.backends.macOS"
+
+        class FakeKeyring:
+            @staticmethod
+            def get_keyring() -> UsableBackend:
+                return UsableBackend()
+
+            @staticmethod
+            def get_password(service: str, account: str) -> str | None:
+                return store.get((service, account))
+
+            @staticmethod
+            def set_password(service: str, account: str, password: str) -> None:
+                store[(service, account)] = password
+
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
+        clear_keyring_cache()
+        return store
+
+    def test_blob_stores_and_reads_multiple_credentials(
+        self,
+        fake_keyring_store: dict[tuple[str, str], str],
+    ) -> None:
+        from cyt.launch.secrets import _read_keyring, _write_keyring
+
+        assert _write_keyring("KEY_A", "secret-a")
+        assert _write_keyring("KEY_B", "secret-b")
+        clear_keyring_cache()
+
+        assert _read_keyring("KEY_A") == "secret-a"
+        assert _read_keyring("KEY_B") == "secret-b"
+        assert (KEYRING_SERVICE, KEYRING_BLOB_ACCOUNT) in fake_keyring_store
+
+    def test_preload_reads_blob_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cyt.launch.secrets import _write_keyring
+
+        store: dict[tuple[str, str], str] = {}
+        calls = {"count": 0}
+
+        class UsableBackend:
+            __module__ = "keyring.backends.macOS"
+
+        class FakeKeyring:
+            @staticmethod
+            def get_keyring() -> UsableBackend:
+                return UsableBackend()
+
+            @staticmethod
+            def get_password(service: str, account: str) -> str | None:
+                calls["count"] += 1
+                return store.get((service, account))
+
+            @staticmethod
+            def set_password(service: str, account: str, password: str) -> None:
+                store[(service, account)] = password
+
+        monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
+        clear_keyring_cache()
+
+        _write_keyring("KEY_A", "secret-a")
+        _write_keyring("KEY_B", "secret-b")
+        clear_keyring_cache()
+        calls["count"] = 0
+
+        preload_keyring_credentials(["KEY_A", "KEY_B", "KEY_A"])
+
+        assert calls["count"] == 1
+
+    def test_migrates_legacy_per_key_entries_to_blob(
+        self,
+        fake_keyring_store: dict[tuple[str, str], str],
+    ) -> None:
+        from cyt.launch.secrets import _read_keyring
+
+        name = "OPENROUTER_" + "API_KEY"
+        fake_keyring_store[(KEYRING_SERVICE, name)] = "legacy-secret"
+        clear_keyring_cache()
+
+        assert _read_keyring(name) == "legacy-secret"
+        assert (KEYRING_SERVICE, KEYRING_BLOB_ACCOUNT) in fake_keyring_store
+
+    def test_skip_keyring_uses_process_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = _codex_openai_api_key_var()
+        monkeypatch.setenv("CYT_SKIP_KEYRING", "1")
+        monkeypatch.setenv(name, "from-parent")
+
+        def fail_read(_name: str) -> str:
+            raise AssertionError("keyring must not be read when CYT_SKIP_KEYRING is set")
+
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", fail_read)
+
+        value, source = resolve_credential(name, before_env={})
+
+        assert value == "from-parent"
+        assert source == "env: process"

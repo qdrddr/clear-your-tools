@@ -392,12 +392,18 @@ def _agent_config_path(path: Path) -> Path:
 
 
 def _ensure_hook_credentials(config: dict[str, Any]) -> None:
-    from cyt.launch.secrets import ensure_wizard_credentials, inspect_named_credentials
+    from cyt.launch.secrets import (
+        ensure_wizard_credentials,
+        inspect_named_credentials,
+        preload_keyring_credentials,
+    )
 
     names = required_proxy_env_var_names(config)
     if not names:
         print("Hook credentials: none required for the current pipeline.")
         return
+
+    preload_keyring_credentials(names)
 
     print("Checking required API keys:")
     before_sources = dict(inspect_named_credentials(names, allow_prompt=False))

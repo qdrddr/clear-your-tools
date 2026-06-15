@@ -25,7 +25,7 @@ from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import _spawn_proxy, ensure_proxy, require_healthy_proxy
-from cyt.launch.secrets import ensure_runtime_credentials
+from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, ensure_runtime_credentials
 from cyt.launch.upstream import (
     filter_upstreams_by_agent,
     infer_upstream_kind_from_url,
@@ -654,10 +654,15 @@ class TestEnsureProxy:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         captured: dict[str, object] = {}
+        spawn_env: dict[str, str] | None = None
 
         def fake_popen(cmd: list[str], **kwargs: object) -> MagicMock:
+            nonlocal spawn_env
             captured["cmd"] = cmd
             captured["stderr"] = kwargs.get("stderr")
+            env = kwargs.get("env")
+            if isinstance(env, dict):
+                spawn_env = {str(key): str(value) for key, value in env.items()}
             return MagicMock()
 
         monkeypatch.setattr("cyt.launch.proxy_guard.subprocess.Popen", fake_popen)
@@ -677,7 +682,10 @@ class TestEnsureProxy:
         assert "--debug-dry-run" in cmd
         assert "--debug-strict" in cmd
         assert "--quiet" in cmd
+        assert "--no-resolve-credentials" in cmd
         assert captured["stderr"] is None
+        assert spawn_env is not None
+        assert spawn_env[CYT_SKIP_KEYRING_ENV] == "1"
 
     def test_restarts_proxy_when_debug_flags_mismatch(
         self,
