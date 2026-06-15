@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Debug: reverse dry-run to anthropic.log
 # install cyt
-uv tool install 'clear-your-tools[all]' -p 3.13
-uv tool upgrade 'clear-your-tools[all]==v0.0.6' -p 3.13
+uv tool install 'clear-your-tools[all]' -p 3.14
+uv tool install 'clear-your-tools[all]==v0.5.3' -p 3.14 --force
+uv tool upgrade 'clear-your-tools[all]==v0.5.3' -p 3.14
 
 # Required for pruning.pipeline: [rerank, llm] (keys in src/.env or exported)
 
