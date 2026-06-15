@@ -72,7 +72,7 @@ def test_resolve_skills_agent_prefers_explicit_then_env_then_upstream(
 def test_apply_proxy_skills_agent_filter_sets_launch_agent_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from cyt.proxy.cli import _apply_proxy_skills_agent_filter
+    from cyt.proxy.cli_impl import _apply_proxy_skills_agent_filter
 
     monkeypatch.delenv(CYT_LAUNCH_AGENT_ENV, raising=False)
     _apply_proxy_skills_agent_filter("codex")

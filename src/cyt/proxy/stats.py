@@ -844,7 +844,9 @@ class StatsDB:
             return False
         if suffix and not name.endswith(suffix):
             return False
-        stamp = name[len(prefix) : -len(suffix) if suffix else len(name)]
+        prefix_len = len(prefix)
+        stamp_end = -len(suffix) if suffix else len(name)
+        stamp = name[prefix_len:stamp_end]
         return len(stamp) == 15 and stamp[8] == "_" and stamp[:8].isdigit() and stamp[9:].isdigit()
 
     @staticmethod

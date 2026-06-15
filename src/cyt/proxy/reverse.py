@@ -114,8 +114,9 @@ def _parse_connect_frames(buffer: bytearray) -> list[ConnectFrame]:
         length = struct.unpack(">I", buffer[1:5])[0]
         if len(buffer) < 5 + length:
             break
-        payload = bytes(buffer[5 : 5 + length])
-        del buffer[: 5 + length]
+        frame_end = 5 + length
+        payload = bytes(buffer[5:frame_end])
+        del buffer[:frame_end]
         frames.append(
             ConnectFrame(compressed=bool(flags & CONNECT_FLAG_COMPRESSED), payload=payload),
         )
@@ -359,7 +360,8 @@ def resolve_upstream(
     prefixes: list[str] = sorted(routes, key=lambda route: len(route), reverse=True)
     for prefix in prefixes:
         if path == prefix or path.startswith(prefix + "/"):
-            suffix = path[len(prefix) :] if path != prefix else ""
+            prefix_len = len(prefix)
+            suffix = path[prefix_len:] if path != prefix else ""
             upstream_base, kind = routes[prefix]
             endpoint_name = prefix.lstrip("/")
             return upstream_base, suffix, kind, endpoint_name

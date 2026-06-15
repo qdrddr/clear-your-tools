@@ -23,7 +23,8 @@ def strip_leading_frontmatter(content: str) -> str:
     end = content.find("\n---", 3)
     if end == -1:
         return content
-    return content[end + 4 :].lstrip("\n")
+    body_start = end + 4
+    return content[body_start:].lstrip("\n")
 
 
 def injection_markdown_body(markdown: str) -> str:

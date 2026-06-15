@@ -103,7 +103,7 @@ def _print_budget_item_rows(
     verbose: bool,
 ) -> None:
     if not rows:
-        print(f"skills.inject budget: {max_tokens} tokens\n", file=sys.stderr)
+        print(f"\nskills.inject budget: {max_tokens} tokens\n", file=sys.stderr)
         return
 
     visible_rows = [
@@ -114,7 +114,7 @@ def _print_budget_item_rows(
         )
         if verbose or row.passed
     ]
-    print(f"skills.inject budget: {max_tokens} tokens", file=sys.stderr)
+    print(f"\nskills.inject budget: {max_tokens} tokens", file=sys.stderr)
     if not visible_rows:
         print(file=sys.stderr)
         return
@@ -148,7 +148,7 @@ def _print_search_item_rows(
     verbose: bool,
 ) -> None:
     if not rows:
-        print(f"skills.search ({item_kind}): (no scored items)", file=sys.stderr)
+        print(f"\nskills.search ({item_kind}): (no scored items)", file=sys.stderr)
         return
 
     if threshold is None:
@@ -167,7 +167,7 @@ def _print_search_item_rows(
     if not visible_rows:
         return
 
-    print(f"skills.search ({item_kind}, {threshold_label}):", file=sys.stderr)
+    print(f"\nskills.search ({item_kind}, {threshold_label}):", file=sys.stderr)
     by_path: dict[str, list[SearchItemRow]] = {}
     for row in visible_rows:
         by_path.setdefault(row.file_path, []).append(row)
@@ -231,9 +231,9 @@ def print_skills_search_trace(trace: SkillsSearchTrace, *, debug: bool) -> None:
                 verbose=debug,
             )
         else:
-            print(f"skills.inject budget: {trace.inject_budget_max} tokens\n", file=sys.stderr)
+            print(f"\nskills.inject budget: {trace.inject_budget_max} tokens\n", file=sys.stderr)
             if trace.pre_budget_matches:
-                print("skills.inject budget blocked:\n", file=sys.stderr)
+                print("\nskills.inject budget blocked:\n", file=sys.stderr)
                 for match in trace.pre_budget_matches:
                     print(
                         f"  {match.file_path}  reconstructed={match.token_count} tokens  "

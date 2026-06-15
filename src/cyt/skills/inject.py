@@ -26,7 +26,9 @@ def shorten_home_path(path: str) -> str:
         text = str(expanded)
         home_env = os.environ.get("HOME")
         if home_env and text.startswith(home_env.rstrip("/") + "/"):
-            return "~/" + text[len(home_env.rstrip("/")) + 1 :]
+            home_prefix = home_env.rstrip("/")
+            path_start = len(home_prefix) + 1
+            return "~/" + text[path_start:]
         return text
 
 

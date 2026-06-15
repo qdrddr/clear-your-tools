@@ -34,7 +34,7 @@ def test_print_budget_trace_in_debug_shows_dropped_nodes(
 ) -> None:
     print_skills_search_trace(_trace_with_budget_rows(), debug=True)
     err = capsys.readouterr().err
-    assert "skills.inject budget: 480 tokens" in err
+    assert "\nskills.inject budget: 480 tokens" in err
     assert "pass when wrapped tokens fit within 480" in err
     assert "file" in err
     assert "/tmp/a.md" in err
@@ -52,7 +52,7 @@ def test_print_budget_trace_non_debug_hides_dropped_nodes(
 ) -> None:
     print_skills_search_trace(_trace_with_budget_rows(), debug=False)
     err = capsys.readouterr().err
-    assert "skills.inject budget: 480 tokens" in err
+    assert "\nskills.inject budget: 480 tokens" in err
     assert "/tmp/a.md" in err
     assert "/tmp/b.md" not in err
     assert "below" not in err

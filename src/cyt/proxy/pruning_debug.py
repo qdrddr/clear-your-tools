@@ -89,7 +89,8 @@ def _pass_suffix_from_build_key(build_key: str) -> str:
     if build_key == "build_index":
         return ""
     if build_key.startswith("build_index#"):
-        return build_key[len("build_index") :]
+        prefix_len = len("build_index")
+        return build_key[prefix_len:]
     return ""
 
 

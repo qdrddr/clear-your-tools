@@ -331,7 +331,7 @@ def test_cli_prompt_reports_frontmatter_and_chunk_scores(
         err = capsys.readouterr().err
         assert "skills.frontmatter gate (BM25 similarity [0-1]" in err
         assert "score=" in err
-        assert "skills.search (chunk" in err
+        assert "\nskills.search (chunk" in err
         assert "chunk  score" in err or "chunk    score" in err
 
 
@@ -935,7 +935,7 @@ def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> No
         config = _skills_config(root, skills_dir, catalog_dir)
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
-                from cyt.proxy.cli import main
+                from cyt.proxy.cli_impl import main
 
                 main()
 

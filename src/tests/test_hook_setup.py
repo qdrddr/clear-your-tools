@@ -443,7 +443,7 @@ def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("cyt.skills.hook_setup.run_hook_uninstall", fake_run_hook_uninstall)
 
-    from cyt.proxy.cli import main
+    from cyt.proxy.cli_impl import main
 
     main()
     assert called["run"] is True
@@ -461,7 +461,7 @@ def test_hook_wizard_without_stdin(
 
     monkeypatch.setattr("cyt.skills.hook_setup.run_hook_setup", fake_run_hook_setup)
 
-    from cyt.proxy.cli import main
+    from cyt.proxy.cli_impl import main
 
     main()
     assert called["run"] is True
