@@ -94,11 +94,11 @@ def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
             entries = []
         entries.append(entry)
         encoded = json.dumps(entries, indent=2, default=str)
-        f.seek(0)
-        f.truncate()
-        f.write(encoded)
         if not encoded.endswith("\n"):
-            f.write("\n")
+            encoded += "\n"
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        tmp_path.write_text(encoded, encoding="utf-8")
+        os.replace(tmp_path, path)
 
 
 def append_debug_snapshot(

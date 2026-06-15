@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any, Literal
 
+from cyt.config import reverse_debug_log_dir
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.upstream import AgentName
 
@@ -67,6 +69,15 @@ def _codex_recipe_lines(*, port: int, endpoint: str, env_key: str) -> list[str]:
     ]
 
 
+def _debug_log_lines(*, endpoint: str, debug_log_dir: Path) -> list[str]:
+    return [
+        "# Debug request snapshots (append-only JSON arrays):",
+        f"  {debug_log_dir}/{endpoint}-original.json  # before pruning",
+        f"  {debug_log_dir}/{endpoint}.json           # after pruning",
+        f"  {debug_log_dir}/{endpoint}-proxy.log      # pruning text log",
+    ]
+
+
 def print_runtime_env_report(
     *,
     quiet: bool,
@@ -78,6 +89,8 @@ def print_runtime_env_report(
     agent: AgentName | None = None,
     launch_env: dict[str, str] | None = None,
     config: dict[str, Any] | None = None,
+    debug: bool = False,
+    debug_dry_run: bool = False,
 ) -> None:
     """Print env summary and manual recipes to stderr."""
     if quiet:
@@ -97,6 +110,15 @@ def print_runtime_env_report(
             upstream_url=upstream_url,
         ),
     )
+
+    if (debug or debug_dry_run) and endpoint is not None and config is not None:
+        _print_section(
+            "Debug logs:",
+            _debug_log_lines(
+                endpoint=endpoint,
+                debug_log_dir=reverse_debug_log_dir(config),
+            ),
+        )
 
     if not include_agent_recipe or agent is None or endpoint is None:
         return

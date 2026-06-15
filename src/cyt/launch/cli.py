@@ -15,7 +15,7 @@ from cyt.launch.codex import run as run_codex
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import ensure_proxy
+from cyt.launch.proxy_guard import ensure_proxy, require_healthy_proxy
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import prepare_runtime
@@ -213,6 +213,11 @@ def run(args: argparse.Namespace) -> None:
         debug_dry_run=debug_dry_run,
         debug_strict=debug_strict,
     )
+    require_healthy_proxy(
+        port=runtime.port,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+    )
 
     launch_env: dict[str, str] | None = None
     if agent == "claude":
@@ -232,6 +237,8 @@ def run(args: argparse.Namespace) -> None:
         agent=agent,
         launch_env=launch_env,
         config=runtime.config,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
     )
 
     if agent == "claude":

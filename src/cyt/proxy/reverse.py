@@ -1110,7 +1110,13 @@ def create_app(
             await client.aclose()
 
     async def health(_: Request) -> JSONResponse:
-        return JSONResponse({"status": "ok"})
+        return JSONResponse(
+            {
+                "status": "ok",
+                "debug": debug,
+                "debug_dry_run": debug_terminate,
+            },
+        )
 
     async def proxy(request: Request) -> Response:
         return await _proxy_request(

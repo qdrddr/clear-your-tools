@@ -33,7 +33,6 @@ def find_codex() -> str:
 def _provider_block(*, base_url: str, env_key: str) -> str:
     return (
         f"{MANAGED_START}\n"
-        f'model_provider = "{PROVIDER_NAME}"\n'
         f"[model_providers.{PROVIDER_NAME}]\n"
         f'name = "Clear-Your-Tools"\n'
         f'env_key = "{env_key}"\n'
@@ -48,6 +47,34 @@ def _managed_block_re() -> re.Pattern[str]:
         rf"{re.escape(MANAGED_START)}.*?{re.escape(MANAGED_END)}\n?",
         re.DOTALL,
     )
+
+
+_MODEL_PROVIDER_LINE = re.compile(r"^model_provider\s*=")
+
+
+def _remove_external_model_provider_lines(text: str) -> str:
+    """Drop root ``model_provider`` assignments outside the launch-managed block."""
+    in_managed = False
+    kept: list[str] = []
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped == MANAGED_START:
+            in_managed = True
+        elif stripped == MANAGED_END:
+            in_managed = False
+        if not in_managed and _MODEL_PROVIDER_LINE.match(stripped):
+            continue
+        kept.append(line)
+    return "".join(kept)
+
+
+def _ensure_root_model_provider(text: str, *, provider: str = PROVIDER_NAME) -> str:
+    """Ensure a root-level ``model_provider`` assignment selects the managed provider."""
+    stripped = _remove_external_model_provider_lines(text).lstrip("\n")
+    assignment = f'model_provider = "{provider}"\n'
+    if stripped.startswith(assignment):
+        return stripped
+    return f"{assignment}\n{stripped}" if stripped else assignment
 
 
 def _extract_managed_block(text: str) -> str | None:
@@ -87,13 +114,18 @@ def _sync_managed_provider_block(
     current = read_codex_config()
     existing = _extract_managed_block(current)
     if existing == desired:
+        normalized = _ensure_root_model_provider(current)
+        if normalized != current:
+            write_codex_config(normalized)
+            return True
         return False
     if existing is not None:
-        write_codex_config(_managed_block_re().sub(desired, current, count=1))
+        updated = _managed_block_re().sub(desired, current, count=1)
+        write_codex_config(_ensure_root_model_provider(updated))
         return True
-    stripped = current.rstrip()
+    stripped = _remove_external_model_provider_lines(current).rstrip()
     text = f"{stripped}\n\n{desired}" if stripped else desired
-    write_codex_config(text)
+    write_codex_config(_ensure_root_model_provider(text))
     return True
 
 

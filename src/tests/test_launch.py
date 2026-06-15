@@ -24,7 +24,7 @@ from cyt.launch.codex import (
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import _spawn_proxy, ensure_proxy
+from cyt.launch.proxy_guard import _spawn_proxy, ensure_proxy, require_healthy_proxy
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import (
     filter_upstreams_by_agent,
@@ -597,6 +597,26 @@ class TestCodexProvider:
         ensure_provider_configured(port=9999, endpoint="openai", env_key=env_key)
         assert managed_provider_base_url() == "http://127.0.0.1:9999/openai/v1"
 
+    def test_removes_external_model_provider_when_configuring(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import tomllib
+
+        codex_path = tmp_path / "config.toml"
+        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        codex_path.write_text(
+            'model_provider = "custom_openai"\n\n[model_providers.custom_openai]\n'
+            'base_url = "http://127.0.0.1:8834/openai/v1"\n',
+            encoding="utf-8",
+        )
+        env_key = _codex_openai_api_key_var()
+        configure_provider(port=8834, endpoint="openai", env_key=env_key)
+        cfg = tomllib.loads(codex_path.read_text(encoding="utf-8"))
+        assert cfg["model_provider"] == "cyt"
+        assert "custom_openai" in cfg["model_providers"]
+
 
 class TestEnsureProxy:
     def test_spawns_when_health_fails(
@@ -617,6 +637,17 @@ class TestEnsureProxy:
         guard = ensure_proxy(port=8834)
         assert guard.started_by_launch is True
         assert guard.process is process
+
+    def test_require_healthy_proxy_rejects_missing_debug(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard._proxy_health",
+            lambda port: {"status": "ok"},
+        )
+        with pytest.raises(SystemExit, match="without --debug"):
+            require_healthy_proxy(port=8834, debug=True)
 
     def test_spawn_proxy_passes_debug_flags(
         self,
@@ -645,8 +676,40 @@ class TestEnsureProxy:
         assert "--debug" in cmd
         assert "--debug-dry-run" in cmd
         assert "--debug-strict" in cmd
-        assert "--quiet" not in cmd
+        assert "--quiet" in cmd
         assert captured["stderr"] is None
+
+    def test_restarts_proxy_when_debug_flags_mismatch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        health_payloads = iter(
+            [
+                {"status": "ok", "debug": False, "debug_dry_run": False},
+                {"status": "ok", "debug": True, "debug_dry_run": False},
+            ],
+        )
+        terminated = {"called": False}
+        process = MagicMock()
+        process.poll.return_value = None
+
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard._proxy_health",
+            lambda port: next(health_payloads, None),
+        )
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard._terminate_listeners_on_port",
+            lambda port: terminated.__setitem__("called", True),
+        )
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard._spawn_proxy",
+            lambda **kwargs: process,
+        )
+
+        guard = ensure_proxy(port=8834, debug=True)
+        assert terminated["called"] is True
+        assert guard.started_by_launch is True
+        assert guard.process is process
 
 
 class TestLaunchRun:
