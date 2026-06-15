@@ -230,9 +230,18 @@ skills:
   #   max_token_num_each_node: 2000
   #   if_add_node_summary: true
   #   if_add_doc_description: false
-  budget: 0.5
-  pre_request_budget: 0.6
   max_tokens_per_request: 20000
+  bm25_node_fallback_threshold: 50
+
+  hook:
+    request_budget_fraction: 10.0
+    inject_cap_multiplier_of_request_tokens: 5.0
+
+  proxy:
+    request_budget_fraction: 0.02
+    inject_cap_fraction_of_savings: 0.5
+    savings_budget_fraction: 0.1
+    savings_rate_threshold: 0.20
   # directories: (disabled while skills.enabled is false)
   #   - ~/.claude/skills
   #   - .claude/skills

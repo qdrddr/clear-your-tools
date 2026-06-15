@@ -345,7 +345,7 @@ def _build_parser() -> argparse.ArgumentParser:
         parser.add_argument(
             "--debug",
             action="store_true",
-            help="Log hook stdin and handling outcome to .debug/skills/",
+            help="Log hook diagnostics to .debug/skills/ when used with --prompt",
         )
         parser.add_argument(
             "--prompt",
@@ -386,6 +386,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
     _add_hook_handler_args(hook_parser)
+
+    skills_parser = subparsers.add_parser("skills", help="Skills utilities")
+    skills_sub = skills_parser.add_subparsers(dest="skills_command", required=False)
+    from cyt.skills.budget_cli import add_skills_budget_parser
+
+    add_skills_budget_parser(skills_sub)
 
     subparsers.add_parser(
         "setup",
@@ -517,6 +523,27 @@ def _hook_invokes_handler(args: argparse.Namespace) -> bool:
     )
 
 
+def _run_hook_command(args: argparse.Namespace) -> None:
+    if getattr(args, "uninstall", False):
+        from cyt.skills.hook_setup import run_hook_uninstall
+
+        run_hook_uninstall()
+        return
+    if _hook_invokes_handler(args):
+        from cyt.skills.cli import run as run_skills
+
+        run_skills(
+            debug=bool(getattr(args, "debug", False)),
+            prompt=getattr(args, "prompt", None),
+            model=getattr(args, "model", None),
+            test=bool(getattr(args, "test", False)),
+        )
+        return
+    from cyt.skills.hook_setup import run_hook_setup
+
+    run_hook_setup(config_path=getattr(args, "config", None))
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -534,24 +561,14 @@ def main() -> None:
         return
 
     if args.command == "hook":
-        if getattr(args, "uninstall", False):
-            from cyt.skills.hook_setup import run_hook_uninstall
+        _run_hook_command(args)
+        return
 
-            run_hook_uninstall()
-            return
-        if _hook_invokes_handler(args):
-            from cyt.skills.cli import run as run_skills
-
-            run_skills(
-                debug=bool(getattr(args, "debug", False)),
-                prompt=getattr(args, "prompt", None),
-                model=getattr(args, "model", None),
-                test=bool(getattr(args, "test", False)),
-            )
-            return
-        from cyt.skills.hook_setup import run_hook_setup
-
-        run_hook_setup(config_path=getattr(args, "config", None))
+    if args.command == "skills":
+        handler = getattr(args, "skills_handler", None)
+        if handler is None:
+            raise SystemExit("usage: cyt skills budget [--config PATH]")
+        handler(args)
         return
 
     if args.command == "launch":

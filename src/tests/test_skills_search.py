@@ -6,9 +6,11 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import Stemmer
+
 from cyt.common.token_usage import empty_usage
 from cyt.skills.catalog import _iter_chunk_ids, _iter_content_chunk_ids, build_registry
-from cyt.skills.search import search_skills
+from cyt.skills.search import search_skills, search_skills_with_pipeline
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -144,6 +146,55 @@ def test_frontmatter_gate_allows_dissimilar_skill() -> None:
         assert matches[0].name == "create-hook"
 
 
+def test_frontmatter_gate_trace_reports_token_contributions() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "context7.md",
+            "---\nname: context7\ndescription: Use Context7 MCP for specific library documentation.\n---\n"
+            "# Context7\n\nUse Context7 MCP for specific library documentation.\n",
+        )
+        _write_skill(
+            skills_dir / "other.md",
+            "---\nname: other\ndescription: Unrelated database topic.\n---\n"
+            "# Other\n\nDatabase shard rebalancing only.\n",
+        )
+        config = {
+            "skills": {
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "frontmatter_upper_limit": 0.4,
+                "max_tokens_per_request": 4000,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        }
+        entries = build_registry(config)
+        from cyt.skills.bm25 import frontmatter_gate_trace
+
+        rows, _limit = frontmatter_gate_trace(
+            "use context7 specific library docs",
+            entries,
+            config=config,
+        )
+        context7 = next(row for row in rows if "context7" in row.doc_id)
+        assert context7.contributions
+        assert context7.raw_score is not None
+        assert context7.score is not None
+        assert 0.0 <= context7.score <= 1.0
+        for contrib in context7.contributions:
+            assert 0.0 <= contrib.score <= 1.0
+        stems = {contrib.stem for contrib in context7.contributions}
+        stemmer = Stemmer.Stemmer("english")
+        expected_stems = {stemmer.stemWord(word) for word in ("use", "specific", "library")}
+        assert stems & expected_stems
+        for contrib in context7.contributions:
+            assert contrib.score > 0.0
+            assert contrib.query_terms or contrib.frontmatter_terms
+
+
 def test_content_corpus_excludes_frontmatter_chunks() -> None:
     structure = [
         {
@@ -207,14 +258,15 @@ def test_search_rerank_pipeline_dispatches_to_rerank_skill_nodes() -> None:
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "max_tokens_per_request": 4000,
+                "bm25_node_fallback_threshold": 0,
                 "pageindex": {"enable_bm25_chunking": False},
             },
             "pruning": {"tools": {"pipelines": {"rerank": {"score_skills": 0.0}}}},
         }
         entries = build_registry(config)
         with patch(
-            "cyt.skills.rerank.rerank_skill_nodes",
-            return_value=([], empty_usage()),
+            "cyt.skills.rerank.rerank_skill_nodes_with_trace",
+            return_value=([], [], 0.0, empty_usage()),
         ) as rerank_mock:
             search_skills("agent hooks", entries, config=config)
 
@@ -237,11 +289,48 @@ def test_search_llm_pipeline_dispatches_to_llm_skill_nodes() -> None:
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "max_tokens_per_request": 4000,
+                "bm25_node_fallback_threshold": 0,
                 "pageindex": {"enable_bm25_chunking": True},
             },
         }
         entries = build_registry(config)
-        with patch("cyt.skills.llm.llm_skill_nodes", return_value=([], empty_usage())) as llm_mock:
+        with patch(
+            "cyt.skills.llm.llm_skill_nodes_with_trace",
+            return_value=([], [], empty_usage()),
+        ) as llm_mock:
             search_skills("agent hooks", entries, config=config)
 
         llm_mock.assert_called_once()
+
+
+def test_search_with_pipeline_reports_bm25_node_fallback() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code.\n",
+        )
+        config = {
+            "skills": {
+                "pipeline": "rerank",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "max_tokens_per_request": 4000,
+                "bm25_node_fallback_threshold": 50,
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        }
+        entries = build_registry(config)
+        _matches, pipeline_run = search_skills_with_pipeline(
+            "agent hooks prompt submit",
+            entries,
+            config=config,
+        )
+        assert pipeline_run.configured == "rerank"
+        assert pipeline_run.executed == "bm25"
+        assert pipeline_run.fallback_reason is not None
+        assert "bm25_node_fallback_threshold" in pipeline_run.fallback_reason

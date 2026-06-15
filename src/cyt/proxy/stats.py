@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from uuid_extensions import uuid7str
@@ -27,7 +27,13 @@ from cyt.config import (
     stats_provider_for_entry,
 )
 
+if TYPE_CHECKING:
+    from cyt.skills.budget import SkillsGlobalState
+
 logger = logging.getLogger(__name__)
+
+_SKILLS_ENDPOINTS = ("skills", "skills-hook", "skills-proxy")
+_SKILLS_ENDPOINTS_SQL = ", ".join(f"'{name}'" for name in _SKILLS_ENDPOINTS)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS proxy_request (
@@ -110,6 +116,16 @@ def _ensure_proxy_request_columns(conn: sqlite3.Connection) -> None:
             "ALTER TABLE proxy_request ADD COLUMN has_error INTEGER NOT NULL DEFAULT 0",
         )
         conn.execute("UPDATE proxy_request SET has_error = 1 WHERE error IS NOT NULL")
+        changed = True
+    if "request_tokens" not in columns:
+        conn.execute(
+            "ALTER TABLE proxy_request ADD COLUMN request_tokens INTEGER NOT NULL DEFAULT 0",
+        )
+        changed = True
+    if "skills_final_md" not in columns:
+        conn.execute(
+            "ALTER TABLE proxy_request ADD COLUMN skills_final_md TEXT",
+        )
         changed = True
     if changed:
         conn.commit()
@@ -433,11 +449,15 @@ class StatsDB:
         query: str,
         model_name: str,
         skills_in: int,
+        request_tokens: int = 0,
+        inject_path: str = "hook",
+        skills_final_md: str | None = None,
         config: dict[str, Any] | None = None,
     ) -> str:
         provider, provider_dns = lookup_model_provider(model_name, config)
         proxy_id = new_uuid7()
         ts_ms = int(time.time() * 1000)
+        endpoint = f"skills-{inject_path}" if inject_path in ("hook", "proxy") else "skills"
         self._conn.execute(
             """
             INSERT INTO proxy_request (
@@ -445,12 +465,13 @@ class StatsDB:
                 tools_out, tool_count_out, tool_properties_count_out,
                 tools_pruned, tool_count_pruned, tool_properties_count_pruned,
                 ts_ms, prune_status, pipeline, query, error,
-                tools_accepted_json, tools_final_json, skills_in, has_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tools_accepted_json, tools_final_json, skills_in, has_error,
+                request_tokens, skills_final_md
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proxy_id,
-                "skills",
+                endpoint,
                 0,
                 0,
                 0,
@@ -469,6 +490,8 @@ class StatsDB:
                 None,
                 skills_in,
                 0,
+                request_tokens,
+                skills_final_md,
             ),
         )
         self._insert_model_request(
@@ -500,7 +523,7 @@ class StatsDB:
             SELECT m.model_name, m.provider_dns_name, COALESCE(SUM(p.skills_in), 0)
             FROM proxy_request p
             JOIN model_request m ON m.proxy_request_id = p.id
-            WHERE {period_clause}p.endpoint = 'skills'
+            WHERE {period_clause}p.endpoint IN ({_SKILLS_ENDPOINTS_SQL})
             AND m.stage = 'skills'
             GROUP BY m.model_name, m.provider_dns_name
             """,
@@ -586,6 +609,72 @@ class StatsDB:
             params,
         ).fetchall()
         return [(row[0], row[1], int(row[2] or 0)) for row in rows]
+
+    def query_cumulative_request_tokens(self, period: str = "all") -> int:
+        """Tokens spent on skills context plus primary upstream tool payload.
+
+        Includes skills_in and tools_sent_upstream. Excludes pruning savings
+        (is_saved) and llm/rerank pipeline token costs.
+        """
+        totals = self.query_totals(period)
+        return int(totals["skills_in"]) + int(totals["tools_sent_upstream"])
+
+    def query_skills_budget_state(
+        self,
+        config: dict[str, Any],
+        inject_path: str,
+    ) -> SkillsGlobalState:
+        from cyt.common.pricing import compute_net_savings_tokens, compute_stats_costs
+        from cyt.config import (
+            skills_hook_inject_cap_multiplier,
+            skills_proxy_inject_cap_fraction,
+        )
+        from cyt.skills.budget import SkillsGlobalState
+
+        skills_row = self._conn.execute(
+            f"""
+            SELECT COALESCE(SUM(skills_in), 0)
+            FROM proxy_request
+            WHERE endpoint IN ({_SKILLS_ENDPOINTS_SQL})
+            """,
+        ).fetchone()
+        skills_injected_total = int(skills_row[0] or 0) if skills_row else 0
+        cumulative_request_tokens = self.query_cumulative_request_tokens("all")
+
+        totals = self.query_totals("all")
+        costs = compute_stats_costs(
+            self.query_stage_model_tokens("all"),
+            self.query_upstream_saved_tokens("all"),
+            config,
+            skills_injection_tokens=self.query_skills_injection_tokens("all"),
+        )
+        prior_net_savings_tokens, _pct = compute_net_savings_tokens(
+            totals["tools_saved"],
+            totals["tools_accepted"],
+            costs,
+            skills_in=skills_injected_total,
+        )
+        prior_net_savings_tokens = max(0, prior_net_savings_tokens)
+
+        if inject_path == "hook":
+            multiplier = skills_hook_inject_cap_multiplier(config)
+            limit_global = int(cumulative_request_tokens * multiplier)
+            bootstrap = cumulative_request_tokens == 0
+        else:
+            fraction = skills_proxy_inject_cap_fraction(config)
+            limit_global = int(prior_net_savings_tokens * fraction)
+            bootstrap = prior_net_savings_tokens == 0
+
+        limit_global_remaining = max(0, limit_global - skills_injected_total)
+
+        return SkillsGlobalState(
+            skills_injected_total=skills_injected_total,
+            cumulative_request_tokens=cumulative_request_tokens,
+            prior_net_savings_tokens=prior_net_savings_tokens,
+            limit_global=limit_global,
+            limit_global_remaining=limit_global_remaining,
+            bootstrap=bootstrap,
+        )
 
     def query_totals(self, period: str = "all") -> dict[str, int]:
         cutoff = self._period_cutoff_ms(period)
@@ -676,7 +765,9 @@ class StatsDB:
                 FROM proxy_request p
                 """
                 + (
-                    f"{where} AND p.endpoint = 'skills'" if where else "WHERE p.endpoint = 'skills'"
+                    f"{where} AND p.endpoint IN ({_SKILLS_ENDPOINTS_SQL})"
+                    if where
+                    else f"WHERE p.endpoint IN ({_SKILLS_ENDPOINTS_SQL})"
                 ),
             ),
         }
@@ -844,6 +935,7 @@ class StatsDB:
         pipeline = str(members[0][13])
         has_error = int(members[0][14] or 0)
         skills_in = sum(int(row[15] or 0) for row in members)
+        request_tokens = sum(int(row[16] or 0) for row in members)
 
         model_map: dict[
             tuple[Any, ...],
@@ -893,8 +985,9 @@ class StatsDB:
                 tools_out, tool_count_out, tool_properties_count_out,
                 tools_pruned, tool_count_pruned, tool_properties_count_pruned,
                 ts_ms, prune_status, pipeline, query, error,
-                tools_accepted_json, tools_final_json, skills_in, has_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tools_accepted_json, tools_final_json, skills_in, has_error,
+                request_tokens, skills_final_md
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_proxy_id,
@@ -917,6 +1010,8 @@ class StatsDB:
                 None,
                 skills_in,
                 has_error,
+                request_tokens,
+                None,
             ),
         )
 
@@ -970,7 +1065,7 @@ class StatsDB:
             SELECT id, endpoint, tools_in, tool_count_in, tool_properties_count_in,
                    tools_out, tool_count_out, tool_properties_count_out,
                    tools_pruned, tool_count_pruned, tool_properties_count_pruned,
-                   ts_ms, prune_status, pipeline, has_error, skills_in
+                   ts_ms, prune_status, pipeline, has_error, skills_in, request_tokens
             FROM proxy_request
             WHERE ts_ms < ?
             """,

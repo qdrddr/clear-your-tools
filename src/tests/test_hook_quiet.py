@@ -31,11 +31,16 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
     return {
         "skills": {
             "enabled": True,
+            "inject_via": "hook",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "hook": {
+                "request_budget_fraction": 50.0,
+                "inject_cap_multiplier_of_request_tokens": 5.0,
+            },
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         "stats": {"database": {"path": str(root / "stats.db")}},

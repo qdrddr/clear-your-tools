@@ -20,6 +20,7 @@ from cyt.pruners.bm25 import (
     build_bm25_tokenizer,
     build_or_load_index,
     catalog_fingerprint,
+    normalize_bm25_similarity,
     prune_bm25_catalog,
 )
 from cyt.pruners.documents import extract_document_text, extract_json_catalog_document
@@ -390,3 +391,12 @@ def test_bm25_score_threshold_constant_matches_config_defaults() -> None:
     assert bm25_score_tool() == DEFAULT_BM25_SCORE_TOOL
     assert bm25_score_tool_enum() == DEFAULT_BM25_SCORE_TOOL_ENUM
     assert bm25_prune_enums() == DEFAULT_BM25_PRUNE_ENUMS
+
+
+def test_normalize_bm25_similarity_maps_to_unit_interval() -> None:
+    assert normalize_bm25_similarity(0.0) == 0.0
+    assert normalize_bm25_similarity(-1.0) == 0.0
+    assert 0.0 < normalize_bm25_similarity(1.2196) < 1.0
+    assert 0.0 < normalize_bm25_similarity(1.4156) < 1.0
+    assert normalize_bm25_similarity(1.4156) > normalize_bm25_similarity(1.2196)
+    assert normalize_bm25_similarity(100.0) <= 1.0

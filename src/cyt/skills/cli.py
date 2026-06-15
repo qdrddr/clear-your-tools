@@ -18,8 +18,15 @@ from cyt.config import (
     skills_enabled,
     skills_pipeline,
 )
+from cyt.skills.budget import (
+    count_hook_request_tokens,
+    resolve_inject_budget,
+    skills_budget_precheck,
+    skills_inject_allowed,
+)
 from cyt.skills.catalog import build_registry
 from cyt.skills.debug_log import write_skills_hook_debug_log
+from cyt.skills.diagnostics import SkillsSearchTrace
 from cyt.skills.hook_payload import (
     hook_cwd,
     hook_event_name,
@@ -28,11 +35,16 @@ from cyt.skills.hook_payload import (
     prompt_from_payload,
     session_id,
 )
-from cyt.skills.hook_quiet import configure_hook_quiet, hook_safe_stdout
+from cyt.skills.hook_quiet import configure_hook_quiet, hook_quiet_stderr, hook_safe_stdout
 from cyt.skills.inject import format_agent_skills, injection_token_count
-from cyt.skills.proxy_inject import skills_inject_via_hook
-from cyt.skills.search import search_skills
+from cyt.skills.search import (
+    MatchedSkill,
+    SkillsPipelineRun,
+    search_skills,
+    search_skills_with_trace,
+)
 from cyt.skills.stats import record_skills_injection
+from cyt.skills.trace import print_skills_search_trace, trace_to_debug_details
 from cyt.skills.transcript import (
     model_from_transcript,
     skills_search_query_from_hook_payload,
@@ -46,8 +58,15 @@ _PROMPT_EVENTS = frozenset({"UserPromptSubmit"})
 
 _CLI_OUTCOME_HINTS: dict[str, str] = {
     "user_prompt_no_matches": "no skill chunks matched this prompt (check skills.directories in config)",
+    "user_prompt_budget_exceeded": (
+        "matched skills exceed the injection token budget "
+        "(see skills.inject budget above; raise skills.max_tokens_per_request or hook.request_budget_fraction)"
+    ),
     "user_prompt_empty_injection": "matched chunks produced empty injection text",
     "user_prompt_missing_prompt": "missing or empty prompt",
+    "skipped_inject_via_proxy": "skills.inject_via is proxy; hook injection skipped",
+    "skipped_budget_zero": "skills injection budget is zero for this request",
+    "skipped_disabled": "skills.enabled is false",
 }
 
 
@@ -78,14 +97,23 @@ def _print_required_api_keys(label: str, names: list[str], *, empty_hint: str) -
             print(f"  {name}: missing")
 
 
+def _print_skills_pipeline_run(pipeline_run: SkillsPipelineRun) -> None:
+    if pipeline_run.executed:
+        print(f"skills.pipeline (executed): {pipeline_run.executed}", file=sys.stderr)
+    else:
+        print("skills.pipeline (executed): (not run)", file=sys.stderr)
+    if pipeline_run.fallback_reason:
+        print(f"skills.pipeline fallback: {pipeline_run.fallback_reason}", file=sys.stderr)
+
+
 def _print_skills_test_report(config: dict[str, Any]) -> None:
     """Print skills/pruning pipeline settings and required API key resolution."""
     enabled = skills_enabled(config)
     pipeline = skills_pipeline(config)
     pruning_pipeline = pruning_pipeline_from_config(config)
     print(f"skills.enabled: {enabled}")
-    print(f"skills.pipeline: {pipeline}")
-    print(f"pruning.pipeline: {pruning_pipeline}")
+    print(f"skills.pipeline (configured): {pipeline}")
+    print(f"pruning.pipeline (configured): {pruning_pipeline}")
 
     if not enabled:
         _print_required_api_keys(
@@ -166,42 +194,125 @@ def _handle_session_start(_payload: dict[str, Any], _config: dict[str, Any]) -> 
     return "session_start_ignored"
 
 
+def _search_skills_for_user_prompt(
+    query: str,
+    config: dict[str, Any],
+    *,
+    max_tokens: int,
+    plain_output: bool,
+    debug: bool,
+) -> tuple[list[MatchedSkill], SkillsPipelineRun | None, SkillsSearchTrace | None]:
+    configure_hook_quiet()
+    stdout_guard = contextlib.nullcontext() if plain_output else hook_safe_stdout()
+    stderr_guard = contextlib.nullcontext() if plain_output else hook_quiet_stderr()
+    with stdout_guard, stderr_guard:
+        entries = build_registry(config)
+        if plain_output:
+            matches, search_trace = search_skills_with_trace(
+                query,
+                entries,
+                config=config,
+                max_tokens=max_tokens,
+            )
+            pipeline_run = search_trace.pipeline_run
+        else:
+            matches = search_skills(
+                query,
+                entries,
+                config=config,
+                max_tokens=max_tokens,
+            )
+            pipeline_run = None
+            search_trace = None
+    if plain_output and pipeline_run is not None:
+        _print_skills_pipeline_run(pipeline_run)
+    if plain_output and search_trace is not None:
+        print_skills_search_trace(search_trace, debug=debug)
+    return matches, pipeline_run, search_trace
+
+
+def _user_prompt_no_matches_outcome(
+    model: str,
+    pipeline_run: SkillsPipelineRun | None,
+    search_trace: SkillsSearchTrace | None,
+) -> tuple[str, dict[str, Any]]:
+    passed_search = any(row.passed for row in (search_trace.search_rows if search_trace else []))
+    if search_trace and (search_trace.pre_budget_matches or passed_search):
+        outcome = "user_prompt_budget_exceeded"
+    else:
+        outcome = "user_prompt_no_matches"
+    return outcome, {
+        "resolved_model": model,
+        "pipeline_run": pipeline_run,
+        "search_trace": search_trace,
+    }
+
+
 def _handle_user_prompt(
     payload: dict[str, Any],
     config: dict[str, Any],
     *,
     plain_output: bool = False,
+    debug: bool = False,
 ) -> tuple[str, dict[str, Any]]:
+    if not skills_inject_allowed(config, "hook", cli_prompt=plain_output):
+        return "skipped_inject_via_proxy", {}
+
     query = skills_search_query_from_hook_payload(payload)
     if not query:
         return "user_prompt_missing_prompt", {}
 
-    prompt = prompt_from_payload(payload) or query
-    model = _resolve_model(payload)
+    if not skills_budget_precheck(config):
+        return "skipped_budget_zero", {}
 
-    configure_hook_quiet()
-    stdout_guard = contextlib.nullcontext() if plain_output else hook_safe_stdout()
-    with stdout_guard:
-        entries = build_registry(config)
-        matches = search_skills(query, entries, config=config)
+    request_tokens = count_hook_request_tokens(payload)
+    budget = resolve_inject_budget(
+        config,
+        "hook",
+        total_request_tokens=request_tokens,
+    )
+    if budget.effective_max <= 0:
+        return "skipped_budget_zero", {"request_tokens": request_tokens}
+
+    prompt = prompt_from_payload(payload) or query
+    model = _resolve_model(payload) or "hook"
+
+    matches, pipeline_run, search_trace = _search_skills_for_user_prompt(
+        query,
+        config,
+        max_tokens=budget.effective_max,
+        plain_output=plain_output,
+        debug=debug,
+    )
     if not matches:
-        return "user_prompt_no_matches", {"resolved_model": model}
+        return _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
 
     injected = format_agent_skills(matches)
     if not injected:
-        return "user_prompt_empty_injection", {"resolved_model": model}
+        return "user_prompt_empty_injection", {
+            "resolved_model": model,
+            "search_trace": search_trace,
+        }
 
     skills_in = injection_token_count(injected)
-    if model and skills_in > 0:
+    if skills_in > 0:
         record_skills_injection(
             query=prompt,
             model_name=model,
             skills_in=skills_in,
+            request_tokens=request_tokens,
+            inject_path="hook",
+            skills_final_md=injected if debug else None,
             config=config,
         )
 
     _emit_injection(injected, payload, plain=plain_output)
-    return "user_prompt_injected", {"resolved_model": model}
+    return "user_prompt_injected", {
+        "resolved_model": model,
+        "pipeline_run": pipeline_run,
+        "search_trace": search_trace,
+        "injected": injected if debug else None,
+    }
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:
@@ -244,14 +355,6 @@ def _exit_if_skills_disabled(
         "Set skills.enabled: true in ~/.config/cyt/config.yaml",
         file=sys.stderr,
     )
-    if debug:
-        write_skills_hook_debug_log(
-            raw_stdin=raw_stdin,
-            payload=payload,
-            cwd=cwd,
-            skills_enabled=False,
-            outcome="skipped_disabled",
-        )
     return True
 
 
@@ -275,10 +378,15 @@ def _dispatch_hook_event(
                 "model": model_from_payload(payload),
             }
     elif event_name in _PROMPT_EVENTS:
-        if not cli_prompt and not skills_inject_via_hook(config):
+        if not skills_inject_allowed(config, "hook", cli_prompt=cli_prompt):
             outcome = "skipped_inject_via_proxy"
         else:
-            outcome, details = _handle_user_prompt(payload, config, plain_output=cli_prompt)
+            outcome, details = _handle_user_prompt(
+                payload,
+                config,
+                plain_output=cli_prompt,
+                debug=debug,
+            )
     elif event_name is not None:
         outcome = "unhandled_event"
     elif raw_stdin.strip():
@@ -303,6 +411,12 @@ def run(
     cwd = hook_cwd(payload)
     enabled = skills_enabled(config)
 
+    if cli_prompt:
+        print(
+            f"skills.pipeline (configured): {skills_pipeline(config)}",
+            file=sys.stderr,
+        )
+
     if _exit_if_skills_disabled(
         enabled=enabled,
         cli_prompt=cli_prompt,
@@ -326,16 +440,25 @@ def run(
     )
 
     if cli_prompt and outcome != "user_prompt_injected":
+        if not (details and details.get("pipeline_run")):
+            print("skills.pipeline (executed): (not run)", file=sys.stderr)
         _report_cli_outcome(outcome)
 
-    if debug:
+    if debug and cli_prompt:
+        debug_details = dict(details) if details else {}
+        search_trace = debug_details.pop("search_trace", None)
+        if search_trace is not None:
+            trace_payload = trace_to_debug_details(search_trace)
+            if debug_details.get("injected"):
+                trace_payload["injected"] = debug_details["injected"]
+            debug_details["skills_search"] = trace_payload
         write_skills_hook_debug_log(
             raw_stdin=raw_stdin,
             payload=payload,
             cwd=cwd,
             skills_enabled=enabled if not cli_prompt else True,
             outcome=outcome,
-            details=details,
+            details=debug_details or None,
         )
 
 
@@ -360,7 +483,7 @@ def main() -> None:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Log hook stdin and handling outcome to .debug/skills/",
+        help="Log hook diagnostics to .debug/skills/ when used with --prompt",
     )
     parser.add_argument(
         "--prompt",

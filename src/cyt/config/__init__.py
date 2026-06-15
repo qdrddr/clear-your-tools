@@ -88,6 +88,14 @@ DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
 DEFAULT_SKILLS_INJECT_VIA: str = "hook"
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.4
+DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
+DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
+DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION: float = 10.0
+DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER: float = 5.0
+DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
+DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
+DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
+DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 
 
@@ -918,6 +926,18 @@ def _skills_settings(config: dict[str, Any]) -> dict[str, Any]:
     return skills if isinstance(skills, dict) else {}
 
 
+def _skills_hook_settings(config: dict[str, Any]) -> dict[str, Any]:
+    skills = _skills_settings(config)
+    hook = skills.get("hook")
+    return hook if isinstance(hook, dict) else {}
+
+
+def _skills_proxy_settings(config: dict[str, Any]) -> dict[str, Any]:
+    skills = _skills_settings(config)
+    proxy = skills.get("proxy")
+    return proxy if isinstance(proxy, dict) else {}
+
+
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return bool(_skills_settings(_merged_config(cfg)).get("enabled", False))
@@ -959,8 +979,80 @@ def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:
 
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
     cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get("max_tokens_per_request", 2000)
+    value = _skills_settings(_merged_config(cfg)).get(
+        "max_tokens_per_request",
+        DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST,
+    )
     return int(value)
+
+
+def skills_bm25_node_fallback_threshold(config: dict[str, Any] | None = None) -> int:
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get(
+        "bm25_node_fallback_threshold",
+        DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD,
+    )
+    return int(value)
+
+
+def skills_hook_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_hook_settings(merged).get(
+        "request_budget_fraction",
+        DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION,
+    )
+    return float(value)
+
+
+def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_hook_settings(merged).get(
+        "inject_cap_multiplier_of_request_tokens",
+        DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER,
+    )
+    return float(value)
+
+
+def skills_proxy_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_proxy_settings(merged).get(
+        "request_budget_fraction",
+        DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION,
+    )
+    return float(value)
+
+
+def skills_proxy_inject_cap_fraction(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_proxy_settings(merged).get(
+        "inject_cap_fraction_of_savings",
+        DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION,
+    )
+    return float(value)
+
+
+def skills_proxy_savings_budget_fraction(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_proxy_settings(merged).get(
+        "savings_budget_fraction",
+        DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION,
+    )
+    return float(value)
+
+
+def skills_proxy_savings_rate_threshold(config: dict[str, Any] | None = None) -> float:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    value = _skills_proxy_settings(merged).get(
+        "savings_rate_threshold",
+        DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD,
+    )
+    return float(value)
 
 
 def skills_frontmatter_upper_limit(config: dict[str, Any] | None = None) -> float:

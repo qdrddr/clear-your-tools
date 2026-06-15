@@ -345,7 +345,9 @@ def _openai_prune_request_tools(
     config: dict[str, Any] | None,
 ) -> PruneResult | None:
     result: PruneResult | None = None
-    skill_entries = deferred.skill_entries if deferred is not None else []
+    skill_entries = (
+        deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
+    )
     skill_out = deferred.skill_out if deferred is not None else {}
 
     tools = original.get("tools") or []
@@ -395,14 +397,11 @@ def transform_openai_request(
     from cyt.skills.proxy_inject import (
         SkillsProxyInjectMeta,
         finish_deferred_skills_openai,
-        inject_skills_into_openai_body,
         prepare_deferred_skills_context,
     )
 
     original = copy.deepcopy(body)
     skills_meta = SkillsProxyInjectMeta()
-    if config is not None:
-        original, skills_meta = inject_skills_into_openai_body(original, config)
 
     input_items = original.get("input") or []
     tools = original.get("tools") or []
@@ -415,7 +414,12 @@ def transform_openai_request(
         if user_query
         else None
     )
-    deferred = prepare_deferred_skills_context(config, query, kind="openai")
+    deferred = prepare_deferred_skills_context(
+        config,
+        query,
+        kind="openai",
+        body=original,
+    )
     skill_out = deferred.skill_out if deferred is not None else {}
 
     if not tools and not tool_search_outputs:
@@ -453,5 +457,6 @@ def transform_openai_request(
         config,
         matches=skill_out.get("matches"),
         query=query,
+        prune_result=result,
     )
     return original, result, skills_meta

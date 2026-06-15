@@ -24,11 +24,16 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
     return {
         "skills": {
             "enabled": True,
+            "inject_via": "hook",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "hook": {
+                "request_budget_fraction": 50.0,
+                "inject_cap_multiplier_of_request_tokens": 5.0,
+            },
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
         "stats": {"database": {"path": str(root / "stats.db")}},
@@ -88,9 +93,20 @@ def test_anthropic_user_prompt_resolves_model_from_transcript(
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
         assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
 
-        debug_dir = root / ".debug" / "skills"
-        logged = json.loads(next(debug_dir.glob("*.json")).read_text(encoding="utf-8"))
-        assert logged["details"]["resolved_model"] == "google/gemini-3-flash-preview-20251217"
+        from cyt.proxy.stats import StatsDB
+
+        db = StatsDB.open(str(root / "stats.db"))
+        try:
+            row = db._conn.execute(
+                "SELECT skills_final_md FROM proxy_request WHERE endpoint = 'skills-hook'",
+            ).fetchone()
+            assert row is not None
+            assert row[0] is not None
+            assert "<agent-skills>" in row[0]
+        finally:
+            db.close()
+
+        assert not (root / ".debug" / "skills").exists()
 
 
 def test_nested_payload_user_prompt_submit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,10 +162,7 @@ def test_session_start_is_ignored_without_output(monkeypatch: pytest.MonkeyPatch
             skills_cli.run(debug=True)
 
         assert stdout.getvalue() == ""
-
-        debug_dir = root / ".debug" / "skills"
-        logged = json.loads(next(debug_dir.glob("*.json")).read_text(encoding="utf-8"))
-        assert logged["outcome"] == "session_start_ignored"
+        assert not (root / ".debug" / "skills").exists()
 
 
 def test_user_prompt_emits_json_hook_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,9 +228,23 @@ def test_codex_user_prompt_uses_payload_model_without_session_start(
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
                 skills_cli.run(debug=True)
 
-        debug_dir = root / ".debug" / "skills"
-        logged = json.loads(next(debug_dir.glob("*.json")).read_text(encoding="utf-8"))
-        assert logged["details"]["resolved_model"] == "gpt-5.4-mini"
+        from cyt.proxy.stats import StatsDB
+
+        db = StatsDB.open(str(root / "stats.db"))
+        try:
+            row = db._conn.execute(
+                "SELECT skills_final_md, mr.model_name "
+                "FROM proxy_request pr "
+                "JOIN model_request mr ON mr.proxy_request_id = pr.id "
+                "WHERE pr.endpoint = 'skills-hook'",
+            ).fetchone()
+            assert row is not None
+            assert row[0] is not None
+            assert row[1] == "gpt-5.4-mini"
+        finally:
+            db.close()
+
+        assert not (root / ".debug" / "skills").exists()
 
         output = json.loads(stdout.getvalue())
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
@@ -249,6 +276,133 @@ def test_cli_prompt_prints_injection_text(monkeypatch: pytest.MonkeyPatch) -> No
         assert "hookSpecificOutput" not in output
 
 
+def test_cli_prompt_reports_configured_and_executed_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "context7.md",
+            "---\nname: context7\ndescription: Use Context7 MCP for up-to-date library documentation.\n---\n"
+            "# Context7\n\nUse Context7 MCP for up-to-date library documentation.\n",
+        )
+
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        config["skills"]["pipeline"] = "rerank"
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            skills_cli.run(prompt="use context7 library docs")
+
+        err = capsys.readouterr().err
+        assert "skills.pipeline (configured): rerank" in err
+        assert "skills.pipeline (executed): bm25" in err
+        assert "skills.pipeline fallback:" in err
+        assert "bm25_node_fallback_threshold" in err
+
+
+def test_cli_prompt_reports_frontmatter_and_chunk_scores(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "context7.md",
+            "---\nname: context7\ndescription: Use Context7 MCP for up-to-date library documentation.\n---\n"
+            "# Context7\n\nUse Context7 MCP for up-to-date library documentation.\n",
+        )
+
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            skills_cli.run(prompt="use context7 library docs")
+
+        err = capsys.readouterr().err
+        assert "skills.frontmatter gate (BM25 similarity [0-1]" in err
+        assert "score=" in err
+        assert "skills.search (chunk" in err
+        assert "chunk  score" in err or "chunk    score" in err
+
+
+def test_cli_prompt_debug_prints_blocked_gate_and_final_injection(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "context7.md",
+            "---\nname: context7\ndescription: Use Context7 MCP for up-to-date library documentation.\n---\n"
+            "# Context7\n\nUse Context7 MCP for up-to-date library documentation.\n",
+        )
+        _write_skill(
+            skills_dir / "other.md",
+            "---\nname: other\ndescription: Unrelated database topic.\n---\n"
+            "# Other\n\nDatabase shard rebalancing only.\n",
+        )
+
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            skills_cli.run(prompt="use context7 library docs", debug=True)
+
+        captured = capsys.readouterr()
+        assert "<agent-skills>" not in captured.err
+        output = stdout.getvalue()
+        assert output.count("<agent-skills>") == 1
+        assert "<agent-skills>" in output
+
+
+def test_cli_prompt_debug_prints_frontmatter_token_contributions(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "context7.md",
+            "---\nname: context7\ndescription: Use Context7 MCP for up-to-date library documentation.\n---\n"
+            "# Context7\n\nUse Context7 MCP for up-to-date library documentation.\n",
+        )
+        _write_skill(
+            skills_dir / "other.md",
+            "---\nname: other\ndescription: Unrelated database topic.\n---\n"
+            "# Other\n\nDatabase shard rebalancing only.\n",
+        )
+
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            skills_cli.run(prompt="use context7 library docs", debug=True)
+
+        err = capsys.readouterr().err
+        assert "stem" in err
+        assert "similarity" in err
+        assert "query" in err
+        assert "frontmatter" in err
+
+
 def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -266,13 +420,59 @@ def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) 
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(debug=True)
 
-        debug_dir = root / ".debug" / "skills"
-        logs = list(debug_dir.glob("*.json"))
-        assert len(logs) == 1
-        logged = json.loads(logs[0].read_text(encoding="utf-8"))
-        assert logged["outcome"] == "skipped_disabled"
-        assert logged["stdin_raw"] == json.dumps(payload)
-        assert logged["payload"] == payload
+        assert not (root / ".debug" / "skills").exists()
+
+
+def test_hook_stdin_debug_writes_db_without_terminal_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "sess-debug-db",
+            "model": "gpt-5",
+            "prompt": "configure agent hooks",
+            "cwd": str(root),
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+        monkeypatch.chdir(root)
+
+        config = _skills_config(root, skills_dir, catalog_dir)
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                skills_cli.run(debug=True)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert (
+            json.loads(stdout.getvalue())["hookSpecificOutput"]["hookEventName"]
+            == "UserPromptSubmit"
+        )
+        assert not (root / ".debug" / "skills").exists()
+
+        from cyt.proxy.stats import StatsDB
+
+        db = StatsDB.open(str(root / "stats.db"))
+        try:
+            row = db._conn.execute(
+                "SELECT skills_final_md FROM proxy_request WHERE endpoint = 'skills-hook'",
+            ).fetchone()
+            assert row is not None
+            assert row[0] is not None
+        finally:
+            db.close()
 
 
 def test_cli_prompt_runs_when_skills_disabled_in_config(
@@ -295,13 +495,19 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
         config = {
             "skills": {
                 "enabled": False,
+                "inject_via": "hook",
                 "pipeline": "bm25",
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "max_tokens_per_request": 4000,
                 "pageindex": {"enable_bm25_chunking": True},
+                "hook": {
+                    "request_budget_fraction": 50.0,
+                    "inject_cap_multiplier_of_request_tokens": 5.0,
+                },
             },
             "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+            "stats": {"database": {"path": str(root / "stats.db")}},
         }
 
         with patch("cyt.skills.cli.load_config", return_value=config):
@@ -351,11 +557,17 @@ def test_user_prompt_uses_transcript_query_before_search_skills(
         config = _skills_config(root, skills_dir, catalog_dir)
         captured: dict[str, str] = {}
 
-        def _capture_search(query: str, entries: list, *, config: dict) -> list:
+        def _capture_search(
+            query: str,
+            entries: list,
+            *,
+            config: dict,
+            max_tokens: int | None = None,
+        ) -> list:
             captured["query"] = query
             from cyt.skills.search import search_skills as real_search
 
-            return real_search(query, entries, config=config)
+            return real_search(query, entries, config=config, max_tokens=max_tokens)
 
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
@@ -415,8 +627,15 @@ def test_user_prompt_uses_transcript_query_for_all_pipelines(
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         captured: dict[str, str] = {}
 
-        def _capture_search(query: str, entries: list, *, config: dict) -> list:
+        def _capture_search(
+            query: str,
+            entries: list,
+            *,
+            config: dict,
+            max_tokens: int | None = None,
+        ) -> list:
             captured["query"] = query
+            _ = max_tokens
             return []
 
         with patch("cyt.skills.cli.load_config", return_value=config):
@@ -476,10 +695,16 @@ def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
 
         real_search = skills_cli.search_skills
 
-        def _noisy_search(query: str, entries: list, *, config: dict) -> list:
+        def _noisy_search(
+            query: str,
+            entries: list,
+            *,
+            config: dict,
+            max_tokens: int | None = None,
+        ) -> list:
             print("pruning model tokens (llm): 999 tokens", flush=True)
             log_token_usage("pruning model tokens (llm)", 999)
-            return real_search(query, entries, config=config)
+            return real_search(query, entries, config=config, max_tokens=max_tokens)
 
         config = _skills_config(root, skills_dir, catalog_dir)
         with patch("cyt.skills.cli.load_config", return_value=config):
@@ -531,8 +756,8 @@ def test_skills_test_reports_required_keys(
 
     out = capsys.readouterr().out
     assert "skills.enabled: True" in out
-    assert "skills.pipeline: llm" in out
-    assert "pruning.pipeline: ['bm25']" in out
+    assert "skills.pipeline (configured): llm" in out
+    assert "pruning.pipeline (configured): ['bm25']" in out
     assert "Skills API keys:" in out
     assert "Pruning API keys:" in out
     assert "All required API keys:" in out
@@ -612,7 +837,7 @@ def test_skills_test_reports_pruning_pipeline_keys(
 
     out = capsys.readouterr().out
     assert "skills.enabled: False" in out
-    assert "pruning.pipeline: ['llm']" in out
+    assert "pruning.pipeline (configured): ['llm']" in out
     assert "Skills API keys: (none — skills disabled)" in out
     assert "Pruning API keys:" in out
     assert "OPENROUTER_" + "API_KEY" in out
@@ -717,3 +942,48 @@ def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> No
         output = json.loads(stdout.getvalue())
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
         assert "<agent-skills>" in output["hookSpecificOutput"]["additionalContext"]
+
+
+def test_hook_records_stats_when_model_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "---\nname: create-hook\ndescription: Agent hooks for Claude Code sessions.\n---\n"
+            "# Create Hook\n\nAgent hooks for Claude Code sessions.\n",
+        )
+        config = _skills_config(root, skills_dir, catalog_dir)
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "hook-no-model",
+            "prompt": "configure agent hooks for sessions",
+            "cwd": str(root),
+        }
+        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        stdout = StringIO()
+        monkeypatch.setattr("sys.stdout", stdout)
+
+        with patch("cyt.skills.cli.load_config", return_value=config):
+            with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
+                skills_cli.run()
+
+        from cyt.proxy.stats import StatsDB
+
+        db = StatsDB.open(str(root / "stats.db"))
+        try:
+            row = db._conn.execute(
+                """
+                SELECT model_request.model_name, proxy_request.skills_in, proxy_request.request_tokens
+                FROM model_request
+                JOIN proxy_request ON model_request.proxy_request_id = proxy_request.id
+                WHERE proxy_request.endpoint IN ('skills', 'skills-hook')
+                """,
+            ).fetchone()
+            assert row is not None
+            assert row[0] == "hook"
+            assert int(row[1]) > 0
+            assert int(row[2]) > 0
+        finally:
+            db.close()

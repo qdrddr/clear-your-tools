@@ -1249,6 +1249,7 @@ def _anthropic_finish_transform(
                 config,
                 matches=skill_out.get("matches"),
                 query=query,
+                prune_result=result,
             )
             return original, result, skills_meta
 
@@ -1262,6 +1263,7 @@ def _anthropic_finish_transform(
         config,
         matches=skill_out.get("matches"),
         query=query,
+        prune_result=result,
     )
     return original, result, skills_meta
 
@@ -1276,14 +1278,11 @@ def transform_anthropic_request(
     from cyt.skills.proxy_inject import (
         SkillsProxyInjectMeta,
         finish_deferred_skills_anthropic,
-        inject_skills_into_anthropic_body,
         prepare_deferred_skills_context,
     )
 
     original = copy.deepcopy(body)
     skills_meta = SkillsProxyInjectMeta()
-    if config is not None:
-        original, skills_meta = inject_skills_into_anthropic_body(original, config)
 
     messages = original.get("messages") or []
     tools = original.get("tools") or []
@@ -1295,8 +1294,16 @@ def transform_anthropic_request(
         if user_query
         else None
     )
-    deferred = prepare_deferred_skills_context(config, query, kind="anthropic")
+    deferred = prepare_deferred_skills_context(
+        config,
+        query,
+        kind="anthropic",
+        body=original,
+    )
     skill_out = deferred.skill_out if deferred is not None else {}
+    skill_entries_for_prune = (
+        deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
+    )
 
     if not tools:
         original, skills_meta = finish_deferred_skills_anthropic(
@@ -1329,13 +1336,12 @@ def transform_anthropic_request(
         return original, _anthropic_skipped_no_query_prune_result(tools), skills_meta
 
     assert query is not None
-    skill_entries = deferred.skill_entries if deferred is not None else []
     result = filter_tools_for_query(
         tools,
         query,
         pruning_pipeline,
         capture_decomposed_catalog=capture_decomposed_catalog,
-        skill_entries=skill_entries or None,
+        skill_entries=skill_entries_for_prune or None,
         skill_llm_out=skill_out if deferred is not None else None,
         config=config,
     )

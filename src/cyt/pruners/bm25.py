@@ -243,6 +243,21 @@ def _normalize_scores(scores: np.ndarray) -> np.ndarray:
     return np.zeros_like(scores, dtype=float)
 
 
+def normalize_bm25_similarity(raw: float) -> float:
+    """Map a raw BM25 score to absolute similarity in [0, 1]."""
+    if raw <= 0.0:
+        return 0.0
+    return float(1.0 - np.exp(-raw))
+
+
+def normalize_bm25_similarity_array(scores: np.ndarray) -> np.ndarray:
+    """Map raw BM25 scores to absolute similarity in [0, 1]."""
+    if scores.size == 0:
+        return scores
+    clipped = np.maximum(scores, 0.0)
+    return cast(np.ndarray, 1.0 - np.exp(-clipped))
+
+
 def _query_token_ids(tokenizer: Tokenizer, query: str) -> list[int]:
     tokenized = tokenizer.tokenize(
         [query],

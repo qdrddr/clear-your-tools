@@ -7,11 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from cyt.config import (
-    skills_enabled,
-    skills_inject_via,
     skills_pipeline_uses_deferred_proxy_inject,
 )
 from cyt.proxy.anthropic import (
+    PruneResult,
     clean_messages,
     extract_last_assistant_message,
     extract_user_query,
@@ -29,6 +28,8 @@ _PROXY_KINDS = frozenset({"anthropic", "openai"})
 class SkillsProxyInjectMeta:
     skills_in: int = 0
     query: str | None = None
+    request_tokens: int = 0
+    skills_final_md: str | None = None
     deferred_matches: list[MatchedSkill] = field(default_factory=list)
 
 
@@ -36,6 +37,22 @@ class SkillsProxyInjectMeta:
 class DeferredSkillsContext:
     skill_entries: list[Any] = field(default_factory=list)
     skill_out: dict[str, Any] = field(default_factory=dict)
+    skills_allowed: bool = False
+    pre_pruner_effective_max: int = 0
+
+
+def skills_inject_via_hook(config: dict[str, Any]) -> bool:
+    from cyt.skills.budget import skills_inject_allowed
+
+    return skills_inject_allowed(config, "hook")
+
+
+def skills_inject_via_proxy(config: dict[str, Any], kind: str | None) -> bool:
+    from cyt.skills.budget import skills_inject_allowed
+
+    if not skills_inject_allowed(config, "proxy"):
+        return False
+    return kind in _PROXY_KINDS
 
 
 def prepare_deferred_skills_context(
@@ -43,18 +60,42 @@ def prepare_deferred_skills_context(
     query: str | None,
     *,
     kind: str,
+    body: dict[str, Any] | None = None,
 ) -> DeferredSkillsContext | None:
     if config is None or not should_defer_skills_inject(config):
         return None
-    ctx = DeferredSkillsContext()
-    if query and skills_inject_via_proxy(config, kind):
-        from cyt.skills.search import eligible_skills_after_gate
+    if not skills_inject_via_proxy(config, kind):
+        return None
 
-        ctx.skill_entries = eligible_skills_after_gate(
-            query,
-            build_registry(config),
-            config=config,
+    ctx = DeferredSkillsContext()
+    if not query:
+        return ctx
+
+    from cyt.skills.budget import proxy_pre_pruner_budget_allows, resolve_inject_budget
+
+    if body is not None and not proxy_pre_pruner_budget_allows(config, body, kind=kind):
+        return ctx
+
+    ctx.skills_allowed = True
+    if body is not None:
+        from cyt.skills.budget import count_upstream_body_tokens
+
+        total = count_upstream_body_tokens(body, kind=kind)
+        pre_budget = resolve_inject_budget(
+            config,
+            "proxy",
+            total_request_tokens=total,
+            savings_tokens=0,
         )
+        ctx.pre_pruner_effective_max = pre_budget.effective_max
+
+    from cyt.skills.search import eligible_skills_after_gate
+
+    ctx.skill_entries = eligible_skills_after_gate(
+        query,
+        build_registry(config),
+        config=config,
+    )
     return ctx
 
 
@@ -66,14 +107,19 @@ def finish_deferred_skills_anthropic(
     *,
     query: str | None = None,
     matches: list[MatchedSkill] | None = None,
+    prune_result: PruneResult | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    if deferred is None or config is None:
+    if config is None:
         return body, meta
-    return inject_skills_deferred_anthropic(
+    if deferred is not None and should_defer_skills_inject(config) and not deferred.skills_allowed:
+        return body, meta
+    return inject_skills_for_proxy_request(
         body,
         config,
-        matches=matches,
+        kind="anthropic",
         query=query,
+        matches=matches,
+        prune_result=prune_result,
     )
 
 
@@ -85,34 +131,101 @@ def finish_deferred_skills_openai(
     *,
     query: str | None = None,
     matches: list[MatchedSkill] | None = None,
+    prune_result: PruneResult | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    if deferred is None or config is None:
+    if config is None:
         return body, meta
-    return inject_skills_deferred_openai(
+    if deferred is not None and should_defer_skills_inject(config) and not deferred.skills_allowed:
+        return body, meta
+    return inject_skills_for_proxy_request(
         body,
         config,
-        matches=matches,
+        kind="openai",
         query=query,
+        matches=matches,
+        prune_result=prune_result,
     )
 
 
-def skills_inject_via_hook(config: dict[str, Any]) -> bool:
-    return skills_enabled(config) and skills_inject_via(config) == "hook"
-
-
-def skills_inject_via_proxy(config: dict[str, Any], kind: str | None) -> bool:
-    if not skills_enabled(config) or skills_inject_via(config) != "proxy":
-        return False
-    return kind in _PROXY_KINDS
-
-
 def should_defer_skills_inject(config: dict[str, Any]) -> bool:
+    from cyt.config import skills_enabled
+
     return skills_enabled(config) and skills_pipeline_uses_deferred_proxy_inject(config)
 
 
-def resolve_skills_for_query(query: str, config: dict[str, Any]) -> list[MatchedSkill]:
+def resolve_skills_for_query(
+    query: str,
+    config: dict[str, Any],
+    *,
+    max_tokens: int | None = None,
+) -> list[MatchedSkill]:
     entries = build_registry(config)
-    return search_skills(query, entries, config=config)
+    return search_skills(query, entries, config=config, max_tokens=max_tokens)
+
+
+def inject_skills_for_proxy_request(
+    body: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    kind: str,
+    query: str | None = None,
+    matches: list[MatchedSkill] | None = None,
+    prune_result: PruneResult | None = None,
+) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
+    if not skills_inject_via_proxy(config, kind):
+        return body, SkillsProxyInjectMeta()
+
+    original = copy.deepcopy(body)
+    resolved_query = query or proxy_skills_search_query(original, kind=kind)
+    if kind == "anthropic":
+        inject_fn = inject_skills_matches_into_anthropic_body
+    else:
+        inject_fn = inject_skills_matches_into_openai_body
+
+    if not resolved_query:
+        return original, SkillsProxyInjectMeta()
+
+    from cyt.skills.budget import (
+        count_proxy_skills_request_tokens,
+        count_upstream_body_tokens,
+        resolve_inject_budget,
+    )
+
+    stats_request_tokens = count_proxy_skills_request_tokens(original, kind=kind)
+    total = count_upstream_body_tokens(original, kind=kind)
+    savings_tokens = 0
+    if prune_result is not None:
+        savings_tokens = int(getattr(prune_result, "tokens_saved", 0) or 0)
+    savings_rate = (savings_tokens / total) if total > 0 else 0.0
+
+    budget = resolve_inject_budget(
+        config,
+        "proxy",
+        total_request_tokens=total,
+        savings_tokens=savings_tokens,
+        savings_rate=savings_rate,
+    )
+    if budget.effective_max <= 0:
+        return original, SkillsProxyInjectMeta(
+            query=resolved_query,
+            request_tokens=stats_request_tokens,
+        )
+
+    skill_matches = matches
+    if skill_matches is None:
+        skill_matches = resolve_skills_for_query(
+            resolved_query,
+            config,
+            max_tokens=budget.effective_max,
+        )
+    else:
+        from cyt.skills.select import select_skills_within_budget
+
+        skill_matches = select_skills_within_budget(skill_matches, budget.effective_max)
+
+    body_out, meta = inject_fn(original, skill_matches, query=resolved_query)
+    meta.request_tokens = stats_request_tokens
+    return body_out, meta
 
 
 def resolve_skills_text(query: str, config: dict[str, Any]) -> tuple[str, int]:
@@ -229,6 +342,15 @@ def openai_insert_skills_developer_message(
     return updated
 
 
+def proxy_skills_search_query(body: dict[str, Any], *, kind: str) -> str | None:
+    """Build format_search_query(user, assistant) from an upstream proxy body."""
+    if kind == "anthropic":
+        return _anthropic_skills_query(body.get("messages") or [])
+    if kind == "openai":
+        return _openai_skills_query(body.get("input") or [])
+    return None
+
+
 def _anthropic_skills_query(messages: list[Any]) -> str | None:
     cleaned = clean_messages(messages)
     user_query = extract_user_query(cleaned)
@@ -268,6 +390,7 @@ def inject_skills_matches_into_anthropic_body(
 
     original["messages"] = anthropic_append_skills_to_system_messages(messages, text)
     meta.skills_in = skills_in
+    meta.skills_final_md = text
     meta.deferred_matches = matches
     return original, meta
 
@@ -295,6 +418,7 @@ def inject_skills_matches_into_openai_body(
 
     original["input"] = openai_insert_skills_developer_message(input_items, text)
     meta.skills_in = skills_in
+    meta.skills_final_md = text
     meta.deferred_matches = matches
     return original, meta
 
@@ -305,27 +429,15 @@ def inject_skills_deferred_anthropic(
     *,
     matches: list[MatchedSkill] | None = None,
     query: str | None = None,
+    prune_result: PruneResult | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    if not skills_inject_via_proxy(config, "anthropic"):
-        return body, SkillsProxyInjectMeta()
-
-    original = copy.deepcopy(body)
-    messages = original.get("messages") or []
-    if not isinstance(messages, list):
-        return original, SkillsProxyInjectMeta()
-
-    resolved_query = query or _anthropic_skills_query(messages)
-    if not resolved_query:
-        return original, SkillsProxyInjectMeta()
-
-    skill_matches = matches
-    if skill_matches is None:
-        skill_matches = resolve_skills_for_query(resolved_query, config)
-
-    return inject_skills_matches_into_anthropic_body(
-        original,
-        skill_matches,
-        query=resolved_query,
+    return inject_skills_for_proxy_request(
+        body,
+        config,
+        kind="anthropic",
+        query=query,
+        matches=matches,
+        prune_result=prune_result,
     )
 
 
@@ -335,27 +447,15 @@ def inject_skills_deferred_openai(
     *,
     matches: list[MatchedSkill] | None = None,
     query: str | None = None,
+    prune_result: PruneResult | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    if not skills_inject_via_proxy(config, "openai"):
-        return body, SkillsProxyInjectMeta()
-
-    original = copy.deepcopy(body)
-    input_items = original.get("input") or []
-    if not isinstance(input_items, list):
-        return original, SkillsProxyInjectMeta()
-
-    resolved_query = query or _openai_skills_query(input_items)
-    if not resolved_query:
-        return original, SkillsProxyInjectMeta()
-
-    skill_matches = matches
-    if skill_matches is None:
-        skill_matches = resolve_skills_for_query(resolved_query, config)
-
-    return inject_skills_matches_into_openai_body(
-        original,
-        skill_matches,
-        query=resolved_query,
+    return inject_skills_for_proxy_request(
+        body,
+        config,
+        kind="openai",
+        query=query,
+        matches=matches,
+        prune_result=prune_result,
     )
 
 
@@ -363,59 +463,15 @@ def inject_skills_into_anthropic_body(
     body: dict[str, Any],
     config: dict[str, Any],
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    meta = SkillsProxyInjectMeta()
-    if not skills_inject_via_proxy(config, "anthropic"):
-        return body, meta
-    if should_defer_skills_inject(config):
-        return body, meta
-
-    original = copy.deepcopy(body)
-    messages = original.get("messages") or []
-    if not isinstance(messages, list):
-        return original, meta
-    if already_has_agent_skills(messages):
-        return original, meta
-
-    query = _anthropic_skills_query(messages)
-    if not query:
-        return original, meta
-
-    text, skills_in = resolve_skills_text(query, config)
-    if skills_in <= 0:
-        return original, meta
-
-    original["messages"] = anthropic_append_skills_to_system_messages(messages, text)
-    meta.skills_in = skills_in
-    meta.query = query
-    return original, meta
+    """Legacy entry — injection is deferred until after tool pruning."""
+    _ = body, config
+    return body, SkillsProxyInjectMeta()
 
 
 def inject_skills_into_openai_body(
     body: dict[str, Any],
     config: dict[str, Any],
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
-    meta = SkillsProxyInjectMeta()
-    if not skills_inject_via_proxy(config, "openai"):
-        return body, meta
-    if should_defer_skills_inject(config):
-        return body, meta
-
-    original = copy.deepcopy(body)
-    input_items = original.get("input") or []
-    if not isinstance(input_items, list):
-        return original, meta
-    if already_has_agent_skills(input_items):
-        return original, meta
-
-    query = _openai_skills_query(input_items)
-    if not query:
-        return original, meta
-
-    text, skills_in = resolve_skills_text(query, config)
-    if skills_in <= 0:
-        return original, meta
-
-    original["input"] = openai_insert_skills_developer_message(input_items, text)
-    meta.skills_in = skills_in
-    meta.query = query
-    return original, meta
+    """Legacy entry — injection is deferred until after tool pruning."""
+    _ = body, config
+    return body, SkillsProxyInjectMeta()

@@ -58,7 +58,10 @@ def _print_hook_stdin_test_example(*, debug: bool) -> None:
     print()
     print(format_hook_stdin_test_command(debug=debug))
     print()
-    print("Hook JSON output is written to stdout; with --debug, logs go to .debug/skills/.")
+    print("Hook JSON output is written to stdout.")
+    if debug:
+        print("With --prompt --debug, diagnostics go to stderr and .debug/skills/.")
+        print("With --stdin --debug, diagnostics go to stats.db only (no terminal logs).")
     print("\nTo remove installed agent hooks later, run:")
     print("  cyt hook --uninstall")
 
@@ -470,6 +473,9 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
     for label, path in targets:
         if cyt_hook_command_exists(_load_json_object(path).get("hooks")):
             print(f"{label}: CYT hook already configured in {path}")
+            continue
+        if not _prompt_yes_no(f"Install CYT hook for {label}?", default_yes=True):
+            print(f"{label}: skipped")
             continue
         if merge_hooks_into_file(path, entry):
             print(f"{label}: added CYT hook to {path}")

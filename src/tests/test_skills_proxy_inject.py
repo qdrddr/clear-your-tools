@@ -10,14 +10,15 @@ from unittest.mock import patch
 
 import pytest
 
+from cyt.proxy.anthropic import PruneResult
 from cyt.skills import cli as skills_cli
 from cyt.skills.proxy_inject import (
     anthropic_append_skills_to_system_messages,
     anthropic_append_text_to_system_content,
-    inject_skills_into_anthropic_body,
-    inject_skills_into_openai_body,
+    inject_skills_for_proxy_request,
     openai_insert_skills_developer_message,
     openai_make_developer_message,
+    prepare_deferred_skills_context,
 )
 
 
@@ -42,10 +43,36 @@ def _skills_config(root: Path) -> dict:
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
+            "hook": {
+                "request_budget_fraction": 10.0,
+                "inject_cap_multiplier_of_request_tokens": 5.0,
+            },
+            "proxy": {
+                "request_budget_fraction": 10.0,
+                "inject_cap_fraction_of_savings": 0.5,
+                "savings_budget_fraction": 0.1,
+                "savings_rate_threshold": 0.20,
+            },
             "pageindex": {"enable_bm25_chunking": True},
         },
+        "stats": {"database": {"path": str(root / "stats.db")}},
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
     }
+
+
+def _sample_prune_result() -> PruneResult:
+    return PruneResult(
+        tools=None,
+        status="applied",
+        query="User_Asks: configure agent hooks for sessions",
+        tools_in=1,
+        mcp_tools_in=0,
+        tools_out=1,
+        error=None,
+        tokens_in=5000,
+        tokens_out=3000,
+        tokens_saved=2000,
+    )
 
 
 def test_anthropic_append_text_to_system_content() -> None:
@@ -110,7 +137,12 @@ def test_inject_skills_into_anthropic_body_appends_to_system() -> None:
                 {"role": "user", "content": "configure agent hooks for sessions"},
             ],
         }
-        out, meta = inject_skills_into_anthropic_body(body, config)
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
         assert meta.skills_in > 0
         assert meta.query == "User_Asks: configure agent hooks for sessions"
         system = out["messages"][0]
@@ -133,7 +165,12 @@ def test_inject_skills_into_openai_body_inserts_developer_message() -> None:
                 },
             ],
         }
-        out, meta = inject_skills_into_openai_body(body, config)
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="openai",
+            prune_result=_sample_prune_result(),
+        )
         assert meta.skills_in > 0
         developer_items = [
             item
@@ -144,7 +181,11 @@ def test_inject_skills_into_openai_body_inserts_developer_message() -> None:
         assert "<agent-skills>" in developer_items[0]["content"][0]["text"]
 
 
-def test_inject_skills_skipped_when_pipeline_rerank() -> None:
+def test_inject_skills_skipped_when_pipeline_rerank(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.skills.proxy_inject.search_skills",
+        lambda *args, **kwargs: [],
+    )
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
@@ -155,12 +196,21 @@ def test_inject_skills_skipped_when_pipeline_rerank() -> None:
                 {"role": "user", "content": "configure agent hooks for sessions"},
             ],
         }
-        out, meta = inject_skills_into_anthropic_body(body, config)
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
         assert meta.skills_in == 0
         assert out["messages"][0]["content"] == "sys"
 
 
-def test_inject_skills_skipped_when_pipeline_llm() -> None:
+def test_inject_skills_skipped_when_pipeline_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.skills.proxy_inject.search_skills",
+        lambda *args, **kwargs: [],
+    )
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
@@ -171,7 +221,12 @@ def test_inject_skills_skipped_when_pipeline_llm() -> None:
                 {"role": "user", "content": "configure agent hooks for sessions"},
             ],
         }
-        out, meta = inject_skills_into_anthropic_body(body, config)
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
         assert meta.skills_in == 0
         assert out["messages"][0]["content"] == "sys"
 
@@ -187,7 +242,12 @@ def test_inject_skills_skipped_when_inject_via_hook(monkeypatch: pytest.MonkeyPa
                 {"role": "user", "content": "configure agent hooks for sessions"},
             ],
         }
-        out, meta = inject_skills_into_anthropic_body(body, config)
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
         assert meta.skills_in == 0
         assert out["messages"][0]["content"] == "sys"
 
@@ -209,3 +269,112 @@ def test_hook_skips_user_prompt_when_inject_via_proxy(monkeypatch: pytest.Monkey
             skills_cli.run()
 
         assert stdout.getvalue() == ""
+
+
+def test_prepare_deferred_skills_blocked_when_budget_zero() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        config["skills"]["pipeline"] = "llm"
+        config["skills"]["max_tokens_per_request"] = 0
+        body = {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        ctx = prepare_deferred_skills_context(
+            config,
+            "User_Asks: configure agent hooks for sessions",
+            kind="anthropic",
+            body=body,
+        )
+        assert ctx is not None
+        assert ctx.skills_allowed is False
+        assert ctx.skill_entries == []
+
+
+def test_inject_skills_caps_pruner_matches_to_budget() -> None:
+    from cyt.skills.budget import SkillsInjectBudget
+    from cyt.skills.search import MatchedSkill
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        body = {
+            "messages": [
+                {"role": "system", "content": "sys"},
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        matches = [
+            MatchedSkill(
+                doc_id="create-hook",
+                file_path=str(root / "skills" / "create-hook.md"),
+                markdown="# Create Hook\n\nAgent hooks for Claude Code sessions.",
+                name="create-hook",
+                score=1.0,
+                token_count=500,
+            ),
+        ]
+        budget = SkillsInjectBudget(
+            inject_path="proxy",
+            total_request_tokens=1000,
+            per_request_budget=50,
+            effective_max=50,
+            limit_global_remaining=1000,
+            bootstrap=True,
+        )
+        with patch(
+            "cyt.skills.budget.resolve_inject_budget",
+            return_value=budget,
+        ):
+            _out, meta = inject_skills_for_proxy_request(
+                body,
+                config,
+                kind="anthropic",
+                matches=matches,
+                prune_result=_sample_prune_result(),
+            )
+        assert meta.skills_in <= 50
+
+
+def test_inject_skills_request_tokens_use_search_query_not_full_body() -> None:
+    from cyt.skills.budget import (
+        count_proxy_skills_request_tokens,
+        count_upstream_body_tokens,
+    )
+    from cyt.skills.search import MatchedSkill
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        body = {
+            "messages": [
+                {"role": "system", "content": "x" * 5000},
+                {"role": "user", "content": "configure agent hooks for sessions"},
+                {"role": "assistant", "content": "prior answer about hooks"},
+            ],
+        }
+        matches = [
+            MatchedSkill(
+                doc_id="create-hook",
+                file_path=str(root / "skills" / "create-hook.md"),
+                markdown="# Create Hook\n\nAgent hooks for Claude Code sessions.",
+                name="create-hook",
+                score=1.0,
+                token_count=500,
+            ),
+        ]
+        _out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            matches=matches,
+            prune_result=_sample_prune_result(),
+        )
+        expected = count_proxy_skills_request_tokens(body, kind="anthropic")
+        full_body = count_upstream_body_tokens(body, kind="anthropic")
+        assert expected > 0
+        assert full_body > expected
+        assert meta.request_tokens == expected

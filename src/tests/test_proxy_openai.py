@@ -527,8 +527,10 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "proxy": {"request_budget_fraction": 10.0},
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {
         "model": "gpt-test",
@@ -577,7 +579,11 @@ def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output()
     from cyt.proxy.openai_responses import _openai_prune_request_tools
     from cyt.skills.proxy_inject import DeferredSkillsContext
 
-    deferred = DeferredSkillsContext(skill_entries=[object()], skill_out={})
+    deferred = DeferredSkillsContext(
+        skill_entries=[object()],
+        skill_out={},
+        skills_allowed=True,
+    )
     body = {
         "input": [
             _user_message("find grep"),

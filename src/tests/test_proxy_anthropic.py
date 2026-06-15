@@ -281,8 +281,10 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "proxy": {"request_budget_fraction": 10.0},
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {
         "model": "claude-test",
@@ -383,8 +385,10 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "proxy": {"request_budget_fraction": 10.0},
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {
         "model": "claude-test",

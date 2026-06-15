@@ -38,6 +38,33 @@ def configure_hook_quiet() -> None:
 
 
 @contextlib.contextmanager
+def hook_quiet_stderr() -> Iterator[None]:
+    """Discard stderr during hook search so libraries cannot leak progress text."""
+    real_stderr = sys.stderr
+    devnull = open(os.devnull, "w")
+    sys.stderr = devnull
+    try:
+        stderr_fd = real_stderr.fileno()
+    except (AttributeError, io.UnsupportedOperation, ValueError):
+        try:
+            yield
+        finally:
+            sys.stderr = real_stderr
+            devnull.close()
+        return
+
+    saved_fd = os.dup(stderr_fd)
+    try:
+        os.dup2(devnull.fileno(), stderr_fd)
+        yield
+    finally:
+        os.dup2(saved_fd, stderr_fd)
+        os.close(saved_fd)
+        sys.stderr = real_stderr
+        devnull.close()
+
+
+@contextlib.contextmanager
 def hook_safe_stdout() -> Iterator[None]:
     """Redirect process stdout (fd 1) so only the hook JSON payload uses the real pipe."""
     try:

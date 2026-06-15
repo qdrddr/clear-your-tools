@@ -18,8 +18,8 @@ from cyt.pruners.llm import (
     prepare_catalog_selector_chunks,
     trim_catalog_dict,
 )
-from cyt.skills.budget import cap_matched_skills_by_tokens
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
+from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import load_node_body, skill_name
 from cyt.skills.search import (
@@ -152,11 +152,7 @@ def reconstruct_skills_from_llm_ids(
             ),
         )
 
-    return cap_matched_skills_by_tokens(
-        matched,
-        config=config,
-        sort_key=lambda row: row.file_path,
-    )
+    return matched
 
 
 def llm_skill_nodes(
@@ -165,13 +161,23 @@ def llm_skill_nodes(
     *,
     config: dict[str, Any] | None = None,
 ) -> tuple[list[MatchedSkill], StageTokenUsage]:
-    """Select relevant skill nodes via LLM and reconstruct matched skills."""
+    matches, _rows, usage = llm_skill_nodes_with_trace(query, entries, config=config)
+    return matches, usage
+
+
+def llm_skill_nodes_with_trace(
+    query: str,
+    entries: list[SkillEntryRef],
+    *,
+    config: dict[str, Any] | None = None,
+) -> tuple[list[MatchedSkill], list[SearchItemRow], StageTokenUsage]:
+    """Select skill nodes via LLM and return selected node ids."""
     if not query.strip() or not entries:
-        return [], empty_usage()
+        return [], [], empty_usage()
 
     formatted_items, metadata = prepare_skill_nodes(entries)
     if not formatted_items:
-        return [], empty_usage()
+        return [], [], empty_usage()
 
     selected_ids, usage = llm_select_ids(
         query,
@@ -179,8 +185,21 @@ def llm_skill_nodes(
         formatted_items,
         config=config,
     )
+    search_rows: list[SearchItemRow] = []
+    for selector_id, meta in metadata.items():
+        selected = selector_id in selected_ids
+        search_rows.append(
+            SearchItemRow(
+                file_path=meta.file_path,
+                doc_id=meta.doc_id,
+                item_id=str(meta.node_id),
+                item_kind="node",
+                score=1.0 if selected else 0.0,
+                passed=selected,
+            ),
+        )
     matches = reconstruct_skills_from_llm_ids(metadata, selected_ids, entries, config=config)
-    return matches, usage
+    return matches, search_rows, usage
 
 
 def llm_prune_tools_and_skills(

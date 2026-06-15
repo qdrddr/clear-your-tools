@@ -8,7 +8,7 @@ from typing import Any
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import reranker_minimum_tools
+from cyt.config import rerank_score_skills, reranker_minimum_tools
 from cyt.indexer.build import catalog_tool_count
 from cyt.indexer.tokens import count_tokens
 from cyt.pruners.documents import (
@@ -24,8 +24,8 @@ from cyt.pruners.rerank import (
     rerank_pruning_settings,
     rerank_unified_item_lists,
 )
-from cyt.skills.budget import cap_matched_skills_by_tokens
 from cyt.skills.catalog import SkillEntryRef
+from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import build_skill_node_items
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
@@ -82,12 +82,7 @@ def reconstruct_skills_from_reranked_items(
             ),
         )
 
-    return cap_matched_skills_by_tokens(
-        matched,
-        config=config,
-        sort_key=lambda row: row.score,
-        reverse=True,
-    )
+    return matched
 
 
 def rerank_skill_nodes(
@@ -96,13 +91,27 @@ def rerank_skill_nodes(
     *,
     config: dict[str, Any] | None = None,
 ) -> tuple[list[MatchedSkill], StageTokenUsage]:
-    """Select relevant skill nodes via rerank and reconstruct matched skills."""
+    matches, _rows, _threshold, usage = rerank_skill_nodes_with_trace(
+        query,
+        entries,
+        config=config,
+    )
+    return matches, usage
+
+
+def rerank_skill_nodes_with_trace(
+    query: str,
+    entries: list[SkillEntryRef],
+    *,
+    config: dict[str, Any] | None = None,
+) -> tuple[list[MatchedSkill], list[SearchItemRow], float, StageTokenUsage]:
+    """Select skill nodes via rerank and return per-node scores."""
     if not query.strip() or not entries:
-        return [], empty_usage()
+        return [], [], rerank_score_skills(config), empty_usage()
 
     items = build_skill_node_items(entries)
     if not items:
-        return [], empty_usage()
+        return [], [], rerank_score_skills(config), empty_usage()
 
     settings = rerank_pruning_settings(config)
     scored, usage = rerank_items(
@@ -112,9 +121,26 @@ def rerank_skill_nodes(
         extract_skill_node_document,
         None,
     )
+    threshold = rerank_score_skills(config)
+    search_rows: list[SearchItemRow] = []
+    for item in scored:
+        score = float(item.get("score", 0))
+        node_id = item.get("node_id")
+        if node_id is None:
+            continue
+        search_rows.append(
+            SearchItemRow(
+                file_path=str(item.get("file_path", "")),
+                doc_id=str(item.get("doc_id", "")),
+                item_id=str(node_id),
+                item_kind="node",
+                score=score,
+                passed=score >= threshold,
+            ),
+        )
     survivors = prune_reranked_skill_items(scored, config=config)
     matches = reconstruct_skills_from_reranked_items(survivors, entries, config=config)
-    return matches, usage
+    return matches, search_rows, threshold, usage
 
 
 def rerank_prune_tools_and_skills(

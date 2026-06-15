@@ -271,7 +271,13 @@ def test_run_hook_setup_merges_existing_agent_configs(
         "_configure_hook_skills_directories",
         lambda **_kwargs: None,
     )
-    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda _text, *, default_yes=False: False)
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        if "debug" in text.lower():
+            return False
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup()
@@ -280,6 +286,47 @@ def test_run_hook_setup_merges_existing_agent_configs(
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
     assert claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt hook --stdin"
     assert codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt hook --stdin"
+
+
+def test_run_hook_setup_skips_declined_agent_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    claude_dir = tmp_path / "claude"
+    codex_dir = tmp_path / "codex"
+    claude_dir.mkdir()
+    codex_dir.mkdir()
+    claude_path = claude_dir / "settings.json"
+    codex_path = codex_dir / "hooks.json"
+    claude_path.write_text("{}\n", encoding="utf-8")
+    codex_path.write_text("{}\n", encoding="utf-8")
+
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", codex_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(
+        hook_setup,
+        "_configure_hook_skills_directories",
+        lambda **_kwargs: None,
+    )
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        if "debug" in text.lower():
+            return False
+        return "Claude" in text
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+
+    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+        hook_setup.run_hook_setup()
+
+    claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
+    codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
+    assert "hooks" in claude_data
+    assert "hooks" not in codex_data
+    captured = capsys.readouterr()
+    assert "Codex: skipped" in captured.out
 
 
 def test_run_hook_setup_skips_missing_agent_configs(

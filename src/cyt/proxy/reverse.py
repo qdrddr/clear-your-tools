@@ -644,6 +644,8 @@ def _record_skills_injection_async(
     model_name: str,
     skills_in: int,
     config: dict[str, Any],
+    request_tokens: int = 0,
+    skills_final_md: str | None = None,
 ) -> None:
     from cyt.skills.stats import record_skills_injection
 
@@ -652,6 +654,9 @@ def _record_skills_injection_async(
             query=query,
             model_name=model_name,
             skills_in=skills_in,
+            request_tokens=request_tokens,
+            inject_path="proxy",
+            skills_final_md=skills_final_md,
             config=config,
         )
     except Exception as exc:
@@ -664,6 +669,8 @@ def _schedule_skills_injection_record(
     model_name: str,
     skills_in: int,
     config: dict[str, Any],
+    request_tokens: int = 0,
+    skills_final_md: str | None = None,
 ) -> None:
     task = asyncio.create_task(
         asyncio.to_thread(
@@ -672,6 +679,8 @@ def _schedule_skills_injection_record(
             model_name=model_name,
             skills_in=skills_in,
             config=config,
+            request_tokens=request_tokens,
+            skills_final_md=skills_final_md,
         ),
     )
     _BACKGROUND_TASKS.add(task)
@@ -1023,6 +1032,8 @@ async def _proxy_request(
             query=skills_meta.query,
             model_name=upstream_model,
             skills_in=skills_meta.skills_in,
+            request_tokens=int(getattr(skills_meta, "request_tokens", 0) or 0),
+            skills_final_md=skills_meta.skills_final_md if debug else None,
             config=config or {},
         )
     forward_headers = filter_headers(dict(request.headers))
