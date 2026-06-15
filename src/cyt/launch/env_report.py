@@ -26,6 +26,14 @@ def _format_sources(credential_sources: dict[str, str]) -> list[str]:
     return lines
 
 
+def _proxy_summary_lines(*, port: int, endpoint: str | None) -> list[str]:
+    lines = [f"  port: {port}"]
+    lines.append(f"  health: http://localhost:{port}/health")
+    if endpoint is not None:
+        lines.append(f"  endpoint: http://localhost:{port}/{endpoint}")
+    return lines
+
+
 def _proxy_recipe_lines(
     *,
     port: int,
@@ -37,10 +45,10 @@ def _proxy_recipe_lines(
         "export OPENROUTER_API_KEY=...   # if required",
         "export DEEPINFRA_API_KEY=...    # if pruning/skills needs it",
     ]
+    proxy_cmd = f"cyt proxy --port {port}"
     if upstream_url:
-        lines.append(f"cyt proxy --upstream {upstream_url}")
-    else:
-        lines.append("cyt proxy")
+        proxy_cmd += f" --upstream {upstream_url}"
+    lines.append(proxy_cmd)
     lines.append(f"curl -s http://localhost:{port}/health")
     if endpoint is not None:
         lines.append(f"# Proxy endpoint: http://localhost:{port}/{endpoint}")
@@ -101,6 +109,10 @@ def print_runtime_env_report(
         for key, value in sorted(launch_env.items()):
             source_lines.append(f"  {key}={value}")
 
+    _print_section(
+        "Proxy:",
+        _proxy_summary_lines(port=port, endpoint=endpoint),
+    )
     _print_section("Vars used this run:", source_lines or ["  (none)"])
     _print_section(
         "Manual proxy recipe:",

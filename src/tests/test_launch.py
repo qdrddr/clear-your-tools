@@ -385,6 +385,10 @@ class TestEnvReport:
         )
         err = capsys.readouterr().err
         assert f"{key_var}: env: shell" in err
+        assert "Proxy:" in err
+        assert "  port: 8834" in err
+        assert "  endpoint: http://localhost:8834/anthropic" in err
+        assert "cyt proxy --port 8834 --upstream https://api.anthropic.com" in err
         assert "Manual proxy recipe" in err
         assert "Manual agent recipe" not in err
 
@@ -404,6 +408,27 @@ class TestEnvReport:
         err = capsys.readouterr().err
         assert "Manual agent recipe" in err
         assert "ANTHROPIC_BASE_URL" in err
+        assert "cyt proxy --port 8834" in err
+
+    def test_shows_detected_free_port(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        print_runtime_env_report(
+            quiet=False,
+            credential_sources={},
+            port=8836,
+            endpoint="openai",
+            upstream_url=None,
+            include_agent_recipe=True,
+            agent="codex",
+            config={},
+        )
+        err = capsys.readouterr().err
+        assert "  port: 8836" in err
+        assert "http://localhost:8836/openai" in err
+        assert "cyt proxy --port 8836" in err
+        assert 'model_providers.cyt.base_url="http://127.0.0.1:8836/openai/v1"' in err
 
     def test_quiet_suppresses_output(
         self,
