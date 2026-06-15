@@ -53,6 +53,11 @@ _USD_PER_MILLION_THRESHOLD = 1e-4
 PRIMARY_TOO_CHEAP_USD_PER_MILLION = 0.4
 RERANK_PIPELINE_MAX_USD_PER_MILLION = 2.5
 PRUNER_MIN_COST_RATIO = 10
+PRIMARY_TOO_CHEAP_MESSAGE = (
+    "Your primary model is very cheap (< "
+    f"${PRIMARY_TOO_CHEAP_USD_PER_MILLION:g}/1M input tokens). "
+    "BM25-only pruning is recommended; remote pruners may not save enough to justify their cost."
+)
 PIPELINE_CHOICE_LABELS: tuple[str, ...] = (
     "rerank only",
     "llm only",
@@ -201,6 +206,13 @@ def key_var_name_from_provider(provider: str) -> str:
     if not normalized:
         return ""
     return f"{normalized}_API_KEY"
+
+
+def print_primary_too_cheap_warning(primary_model: dict[str, Any]) -> None:
+    """Warn when the primary model is too cheap for remote pruners to add value."""
+    usd = input_usd_per_million(primary_model)
+    if usd is not None and usd < PRIMARY_TOO_CHEAP_USD_PER_MILLION:
+        print(PRIMARY_TOO_CHEAP_MESSAGE)
 
 
 def recommended_pipeline_default_index(upstream_llm_model: dict[str, Any]) -> int:
@@ -1117,6 +1129,19 @@ def _prompt_domain_match(
         print("domain_match is required (at least one hostname).", file=sys.stderr)
 
 
+def _prompt_primary_model_input_cost() -> dict[str, Any]:
+    """Prompt for the agent's primary/strong model input price (USD per 1M tokens)."""
+    print(
+        "\n--- Primary/strong model (agent coding model) ---\n"
+        "Used to recommend a pruning pipeline and filter weak pruner models "
+        f"(must be at least {PRUNER_MIN_COST_RATIO}x cheaper when pricing is known).",
+    )
+    in_cost = _prompt_cost_per_token(
+        "Expected input price for your primary/strong model (the model your agent uses to code)",
+    )
+    return {"pricing": {"input_cost_per_token": in_cost}}
+
+
 def _prompt_cost_per_token(label: str, default_per_token: float | None = None) -> float:
     hint = "USD per 1M tokens (e.g. $5) or per-token (e.g. 5e-06)"
     default_str = format_cost_prompt_default(default_per_token)
@@ -1855,12 +1880,23 @@ def run_setup(config_path: Path) -> None:
         _default_minimum_tools(existing),
     )
 
+    primary_model = _prompt_primary_model_input_cost()
+    print_primary_too_cheap_warning(primary_model)
+    recommended_index = recommended_pipeline_default_index(primary_model)
+
     pipeline = _prompt_pipeline(
-        recommended_index=0,
+        recommended_index=recommended_index,
         minimum_tools=minimum_tools,
     )
 
-    max_pruner_input_cost: float | None = None
+    max_pruner_input_cost = max_pruner_input_cost_per_token(primary_model)
+    if max_pruner_input_cost is not None:
+        max_usd = format_cost_prompt_default(max_pruner_input_cost) or "$0"
+        print(
+            f"\nPruner models with known input pricing must be at least "
+            f"{PRUNER_MIN_COST_RATIO}x cheaper than your primary model "
+            f"(max {max_usd} / 1M input tokens).",
+        )
 
     reranker_model: dict[str, Any] | None = None
     llm_pruner_model: dict[str, Any] | None = None

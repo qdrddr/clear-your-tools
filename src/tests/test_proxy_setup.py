@@ -56,6 +56,7 @@ from cyt.proxy.setup import (
     parse_path_list,
     per_token_to_usd_per_million,
     pipeline_from_choice,
+    print_primary_too_cheap_warning,
     print_proxy_urls,
     prompt_incomplete_models_in_config,
     pruner_input_cost_error,
@@ -384,6 +385,20 @@ class TestPrimaryModelPricing:
             )
             == 0
         )
+
+    def test_print_primary_too_cheap_warning(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        print_primary_too_cheap_warning(
+            {"pricing": {"input_cost_per_token": 0.2e-06}},
+        )
+        assert "BM25-only pruning is recommended" in capsys.readouterr().out
+        capsys.readouterr()
+        print_primary_too_cheap_warning(
+            {"pricing": {"input_cost_per_token": 2e-06}},
+        )
+        assert capsys.readouterr().out == ""
 
     def test_max_pruner_input_cost_per_token(self) -> None:
         assert max_pruner_input_cost_per_token(_SAMPLE_MODEL) == pytest.approx(3e-07)
@@ -1405,6 +1420,10 @@ class TestRunSetupKeyring:
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         monkeypatch.setattr("cyt.launch.secrets.keyring_backend_available", lambda: True)
         monkeypatch.setattr("cyt.proxy.setup.save_user_config", lambda *_a, **_k: False)
+        monkeypatch.setattr(
+            "cyt.proxy.setup._prompt_primary_model_input_cost",
+            lambda: {"pricing": {"input_cost_per_token": 3e-06}},
+        )
         monkeypatch.setattr("cyt.proxy.setup._prompt_pipeline", lambda **_k: ["bm25"])
         run_setup(config_path)
         out = capsys.readouterr().out
