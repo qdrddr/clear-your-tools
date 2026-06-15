@@ -211,5 +211,8 @@ def run(
     ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
     codex = find_codex()
     env = dict(os.environ)
-    result = subprocess.run([codex, *agent_args], env=env, check=False)
+    try:
+        result = subprocess.run([codex, *agent_args], env=env, check=False)
+    except KeyboardInterrupt:
+        return 130
     return int(result.returncode)

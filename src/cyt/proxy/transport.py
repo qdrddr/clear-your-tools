@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Coroutine, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -20,6 +20,8 @@ import uvicorn
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
+
+INTERRUPTED_EXIT_CODE = 130
 
 debug_endpoint_proxy_log_path: ContextVar[Path | None] = ContextVar(
     "debug_endpoint_proxy_log_path",
@@ -304,6 +306,14 @@ async def run_hypercorn_async(
     await serve(cast(ASGIFramework, app), cfg)
 
 
+def run_async_cli(coro: Coroutine[Any, Any, None]) -> None:
+    """Run an async CLI coroutine; exit 130 on Ctrl+C without a traceback."""
+    try:
+        asyncio.run(coro)
+    except KeyboardInterrupt:
+        raise SystemExit(INTERRUPTED_EXIT_CODE) from None
+
+
 async def run_uvicorn_async(
     app: ASGIApp,
     *,
@@ -321,4 +331,8 @@ async def run_uvicorn_async(
         log_level="info",
     )
     server = uvicorn.Server(config)
-    await server.serve()
+    try:
+        await server.serve()
+    except asyncio.CancelledError:
+        server.should_exit = True
+        raise

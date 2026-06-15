@@ -18,6 +18,7 @@ from urllib.request import urlopen
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV
 
 LOCAL_HOST = "127.0.0.1"
+LAUNCH_PORT_OFFSET = 1
 HEALTH_TIMEOUT_SECONDS = 1.5
 STARTUP_POLL_SECONDS = 0.2
 STARTUP_TIMEOUT_SECONDS = 35.0
@@ -100,8 +101,9 @@ def find_available_port(start: int, *, max_attempts: int = 100) -> int:
     )
 
 
-def resolve_launch_port(start: int) -> int:
-    """Pick a listen port for ``cyt launch``, bumping when *start* is taken."""
+def resolve_launch_port(base_port: int) -> int:
+    """Pick a listen port for ``cyt launch``, starting one above the proxy default."""
+    start = base_port + LAUNCH_PORT_OFFSET
     port = find_available_port(start)
     if port != start:
         print(

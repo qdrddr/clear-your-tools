@@ -683,9 +683,9 @@ class TestFindAvailablePort:
             "cyt.launch.proxy_guard.find_available_port",
             lambda start, **kwargs: start + 2,
         )
-        assert resolve_launch_port(8834) == 8836
+        assert resolve_launch_port(8834) == 8837
         err = capsys.readouterr().err
-        assert "Port 8834 is in use; launching on 8836." in err
+        assert "Port 8835 is in use; launching on 8837." in err
 
     def test_resolve_launch_port_silent_when_unchanged(
         self,
@@ -696,8 +696,18 @@ class TestFindAvailablePort:
             "cyt.launch.proxy_guard.find_available_port",
             lambda start, **kwargs: start,
         )
-        assert resolve_launch_port(8834) == 8834
+        assert resolve_launch_port(8834) == 8835
         assert capsys.readouterr().err == ""
+
+    def test_resolve_launch_port_defaults_above_proxy_port(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.is_port_in_use",
+            lambda port: False,
+        )
+        assert resolve_launch_port(8834) == 8835
 
 
 class TestEnsureProxy:
@@ -713,8 +723,10 @@ class TestEnsureProxy:
 
         process = MagicMock()
         process.poll.return_value = None
+        monkeypatch.setattr("cyt.launch.proxy_guard._proxy_health", lambda port: None)
         monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", fake_health)
         monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", lambda **kwargs: process)
+        monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)
 
         guard = ensure_proxy(port=8834)
         assert guard.started_by_launch is True
@@ -861,7 +873,6 @@ class TestLaunchRun:
 
         monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
-        monkeypatch.setattr("cyt.launch.cli.resolve_launch_port", lambda port: port + 1)
         monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
 
         args = MagicMock(

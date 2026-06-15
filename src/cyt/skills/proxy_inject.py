@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import copy
+import json
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, cast
 
 from cyt.config import (
@@ -20,6 +23,37 @@ from cyt.proxy.openai_responses import clean_input, extract_user_query_from_inpu
 from cyt.skills.catalog import build_registry
 from cyt.skills.inject import format_agent_skills, injection_token_count
 from cyt.skills.search import MatchedSkill, search_skills
+
+_DEBUG_LOG_PATH = Path(
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-445722.log",
+)
+
+
+def _agent_debug_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "445722",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    # #endregion
+
 
 _PROXY_KINDS = frozenset({"anthropic", "openai"})
 
@@ -297,6 +331,47 @@ def anthropic_append_text_to_system_content(message: dict[str, Any], text: str) 
     content.append({"type": "text", "text": text})
 
 
+def _anthropic_system_value_text(system: object) -> str:
+    if isinstance(system, str):
+        return system
+    if isinstance(system, list):
+        return _message_content_text(system)
+    return ""
+
+
+def already_has_agent_skills_in_anthropic(body: dict[str, Any]) -> bool:
+    messages = body.get("messages") or []
+    if isinstance(messages, list) and already_has_agent_skills(messages):
+        return True
+    system = body.get("system")
+    if system is not None:
+        return "<agent-skills>" in _anthropic_system_value_text(system)
+    return False
+
+
+def anthropic_append_text_to_system_value(system: object, text: str) -> str | list[Any]:
+    if isinstance(system, str):
+        return system + "\n\n" + text if system else text
+    if isinstance(system, list):
+        updated: list[Any] = copy.deepcopy(system)
+        updated.append({"type": "text", "text": text})
+        return updated
+    return text
+
+
+def anthropic_append_skills_to_body(body: dict[str, Any], text: str) -> dict[str, Any]:
+    """Append skills to top-level ``system`` when present, else legacy messages role."""
+    original = copy.deepcopy(body)
+    if original.get("system") is not None:
+        original["system"] = anthropic_append_text_to_system_value(original["system"], text)
+        return original
+    messages = original.get("messages") or []
+    if not isinstance(messages, list):
+        messages = []
+    original["messages"] = anthropic_append_skills_to_system_messages(messages, text)
+    return original
+
+
 def anthropic_append_skills_to_system_messages(
     messages: list[dict[str, Any]],
     text: str,
@@ -304,6 +379,14 @@ def anthropic_append_skills_to_system_messages(
     updated = copy.deepcopy(messages)
     system = anthropic_find_system_message(updated)
     if system is None:
+        # #region agent log
+        _agent_debug_log(
+            hypothesis_id="A",
+            location="proxy_inject.py:anthropic_append_skills_to_system_messages",
+            message="inserting role=system into messages[0]",
+            data={"messages_len": len(updated), "text_len": len(text)},
+        )
+        # #endregion
         updated.insert(0, {"role": "system", "content": text})
         return updated
     anthropic_append_text_to_system_content(system, text)
@@ -383,14 +466,53 @@ def inject_skills_matches_into_anthropic_body(
     messages = original.get("messages") or []
     if not isinstance(messages, list):
         return original, meta
-    if already_has_agent_skills(messages):
+    if already_has_agent_skills_in_anthropic(original):
         return original, meta
 
     text, skills_in = skills_text_from_matches(matches)
     if skills_in <= 0:
         return original, meta
 
-    original["messages"] = anthropic_append_skills_to_system_messages(messages, text)
+    # #region agent log
+    _agent_debug_log(
+        hypothesis_id="A,B,C",
+        location="proxy_inject.py:inject_skills_matches_into_anthropic_body:before",
+        message="anthropic skills inject before",
+        data={
+            "has_top_level_system": original.get("system") is not None,
+            "top_level_system_type": type(original.get("system")).__name__
+            if original.get("system") is not None
+            else None,
+            "messages_len": len(messages),
+            "messages0_role": messages[0].get("role") if messages else None,
+            "match_count": len(matches),
+            "skills_in": skills_in,
+            "tools_len": len(original.get("tools") or []),
+        },
+    )
+    # #endregion
+
+    original = anthropic_append_skills_to_body(original, text)
+
+    out_messages = original.get("messages") or []
+    # #region agent log
+    _agent_debug_log(
+        hypothesis_id="A,D",
+        location="proxy_inject.py:inject_skills_matches_into_anthropic_body:after",
+        message="anthropic skills inject after",
+        data={
+            "has_top_level_system": original.get("system") is not None,
+            "messages0_role": out_messages[0].get("role") if out_messages else None,
+            "top_level_has_agent_skills": "<agent-skills>"
+            in _anthropic_system_value_text(original.get("system")),
+            "messages0_has_agent_skills": "<agent-skills>"
+            in str(out_messages[0].get("content", ""))
+            if out_messages
+            else False,
+        },
+    )
+    # #endregion
+
     meta.skills_in = skills_in
     meta.skills_final_md = text
     meta.deferred_matches = matches

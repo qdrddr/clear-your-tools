@@ -126,6 +126,30 @@ def test_openai_insert_skills_developer_message_before_last_user() -> None:
     assert updated[3]["content"][0]["text"] == "last"
 
 
+def test_inject_skills_into_anthropic_body_appends_to_top_level_system() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        body = {
+            "model": "claude-test",
+            "system": [{"type": "text", "text": "# MCP Server Instructions"}],
+            "messages": [
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
+        assert meta.skills_in > 0
+        assert out["messages"][0]["role"] == "user"
+        system_text = out["system"][0]["text"] + out["system"][1]["text"]
+        assert "# MCP Server Instructions" in system_text
+        assert "<agent-skills>" in system_text
+
+
 def test_inject_skills_into_anthropic_body_appends_to_system() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

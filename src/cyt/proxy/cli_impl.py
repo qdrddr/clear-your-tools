@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import os
@@ -24,6 +23,7 @@ from cyt.config import (
     stats_rollup_on_query,
 )
 from cyt.proxy.setup import normalize_upstream_kind
+from cyt.proxy.transport import INTERRUPTED_EXIT_CODE, run_async_cli
 
 if TYPE_CHECKING:
     from cyt.common.pricing import StatsCosts
@@ -520,7 +520,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
         str(args.ssl_certfile) if args.ssl_certfile is not None else http2_settings["ssl_certfile"]
     )
 
-    asyncio.run(
+    run_async_cli(
         run_reverse_server(
             config=config,
             reverse_port=runtime.port,
@@ -565,6 +565,13 @@ def _run_hook_command(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    try:
+        _main_impl()
+    except KeyboardInterrupt:
+        raise SystemExit(INTERRUPTED_EXIT_CODE) from None
+
+
+def _main_impl() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 

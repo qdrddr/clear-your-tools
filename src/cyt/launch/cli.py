@@ -15,7 +15,12 @@ from cyt.launch.codex import run as run_codex
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
-from cyt.launch.proxy_guard import ensure_proxy, require_healthy_proxy, resolve_launch_port
+from cyt.launch.proxy_guard import (
+    LAUNCH_PORT_OFFSET,
+    ensure_proxy,
+    require_healthy_proxy,
+    resolve_launch_port,
+)
 from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import prepare_runtime
@@ -84,6 +89,13 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Launch Claude Code or Codex through the CYT proxy",
     )
     add_shared_upstream_args(launch_parser)
+    for action in launch_parser._actions:
+        if action.dest == "port":
+            action.help = (
+                f"Reverse listen port for launch (default: configured proxy port + "
+                f"{LAUNCH_PORT_OFFSET}, else {DEFAULT_REVERSE_PORT + LAUNCH_PORT_OFFSET})"
+            )
+            break
     launch_parser.add_argument(
         "--endpoint",
         default=None,

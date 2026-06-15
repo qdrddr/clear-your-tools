@@ -92,5 +92,8 @@ def run(
     """Exec Claude Code with proxy env wiring."""
     claude = find_claude()
     env, _reportable = build_claude_env(config=config, port=port, endpoint=endpoint)
-    result = subprocess.run([claude, *agent_args], env=env, check=False)
+    try:
+        result = subprocess.run([claude, *agent_args], env=env, check=False)
+    except KeyboardInterrupt:
+        return 130
     return int(result.returncode)

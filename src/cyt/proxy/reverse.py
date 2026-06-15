@@ -516,6 +516,23 @@ async def transform_request_body(
             input_tools = _input_tools_from_payload(payload)
         if kind == "anthropic":
             from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
+            from cyt.skills.proxy_inject import _agent_debug_log
+
+            # #region agent log
+            _in_msgs = payload.get("messages") or []
+            await asyncio.to_thread(
+                _agent_debug_log,
+                hypothesis_id="E",
+                location="reverse.py:transform_request_body:before",
+                message="anthropic request before transform",
+                data={
+                    "has_top_level_system": payload.get("system") is not None,
+                    "messages0_role": _in_msgs[0].get("role") if _in_msgs else None,
+                    "tools_len": len(payload.get("tools") or []),
+                    "model": payload.get("model"),
+                },
+            )
+            # #endregion
 
             transformed, pruning, skills_meta = await asyncio.to_thread(
                 transform_anthropic_request,
@@ -524,6 +541,22 @@ async def transform_request_body(
                 capture_decomposed_catalog=debug,
                 config=config,
             )
+
+            # #region agent log
+            _out_msgs = transformed.get("messages") or []
+            await asyncio.to_thread(
+                _agent_debug_log,
+                hypothesis_id="A,E",
+                location="reverse.py:transform_request_body:after",
+                message="anthropic request after transform",
+                data={
+                    "has_top_level_system": transformed.get("system") is not None,
+                    "messages0_role": _out_msgs[0].get("role") if _out_msgs else None,
+                    "skills_in": getattr(skills_meta, "skills_in", 0) if skills_meta else 0,
+                    "prune_status": getattr(pruning, "status", None) if pruning else None,
+                },
+            )
+            # #endregion
         else:
             from cyt.proxy.openai_responses import transform_openai_request
 
