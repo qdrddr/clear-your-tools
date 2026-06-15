@@ -133,6 +133,65 @@ limit **0.4**) are skipped.
 
 Indexes are built on first use under `~/.config/cyt/skills/entries/` and reused afterward.
 
+### Build and retrieve manually (`cyt-indexer`)
+
+CYT uses the same **`cyt-indexer`** engine under the hood. You can build the decomposed catalog
+yourself and pull out a skinny skill by **node ID** — useful for debugging or custom tooling.
+
+**Install:**
+
+```bash
+cargo install cyt-indexer
+# or from this repo:
+cargo build -p cyt-indexer --release
+```
+
+**Build the catalog:**
+
+```bash
+cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
+```
+
+| Path | What it is |
+| ---- | ---------- |
+| `.catalog/skills_index.json` | Index of all skills (`doc_id` → tree structure) |
+| `.catalog/skills/decomposed/{doc_id}/document.json` | Page tree for one skill |
+| `.catalog/skills/decomposed/{doc_id}/{node_id}.md` | One file per section (node) |
+
+| `node_id` | Section |
+| --------- | ------- |
+| `0` | YAML frontmatter |
+| `1` | Preamble (text before the first heading) |
+| `2+` | Headings and nested sections |
+
+Find `doc_id` values under `documents` in `skills_index.json` (for example `context7-mcp__skill`).
+
+**Inspect the tree** (section titles and node IDs):
+
+```bash
+cyt-indexer retrieve skills \
+  --catalog ./.catalog \
+  --doc-id context7-mcp__skill \
+  --query structure
+```
+
+**Retrieve a skinny skill by node ID** — parent headings are added automatically (nodes `4` and
+`6` also pull in parent node `3`):
+
+```bash
+cyt-indexer retrieve skills \
+  --catalog ./.catalog \
+  --doc-id context7-mcp__skill \
+  --query content \
+  --node_id 4 \
+  --node_id 6
+```
+
+Output: `.catalog/skill_out.json` and `.catalog/skills/retrieve/{skill-dir}/SKILL.md`.
+
+You can also use `--line_num`, `--chunk_id`, or ranges like `--node_id 4-6`. More options:
+[sdk/rust/cyt-indexer/README.md](sdk/rust/cyt-indexer/README.md).
+
 </details>
 
 ---

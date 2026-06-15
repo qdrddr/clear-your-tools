@@ -272,7 +272,7 @@ For Codex, `cyt launch --configure -- codex` writes the managed provider block t
 
 Agents always see a skill's header, but only read the body when they decide it's relevant. If your question fits the body but not the header, the agent may miss the skill — and you end up telling it to read the file yourself.
 
-The `CYT` injects the matching parts of skills automatically — we call these **skinny skills**. See [SKINNY_SKILLS.md](SKINNY_SKILLS.md) for how it work. 
+The `CYT` injects the matching parts of skills automatically — we call these **skinny skills**. See [SKINNY_SKILLS.md](SKINNY_SKILLS.md) for how it work.
 
 If you prefer, you can use agent hooks instead; that path is separate from the proxy.
 
