@@ -93,7 +93,7 @@ def prepare_deferred_skills_context(
 
     ctx.skill_entries = eligible_skills_after_gate(
         query,
-        build_registry(config),
+        build_registry(config, upstream_kind=kind),
         config=config,
     )
     return ctx
@@ -158,8 +158,9 @@ def resolve_skills_for_query(
     config: dict[str, Any],
     *,
     max_tokens: int | None = None,
+    upstream_kind: str | None = None,
 ) -> list[MatchedSkill]:
-    entries = build_registry(config)
+    entries = build_registry(config, upstream_kind=upstream_kind)
     return search_skills(query, entries, config=config, max_tokens=max_tokens)
 
 
@@ -217,6 +218,7 @@ def inject_skills_for_proxy_request(
             resolved_query,
             config,
             max_tokens=budget.effective_max,
+            upstream_kind=kind,
         )
     else:
         from cyt.skills.select import select_skills_within_budget

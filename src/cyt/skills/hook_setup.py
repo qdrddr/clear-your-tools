@@ -18,6 +18,7 @@ from cyt.config import (
     save_user_config,
     skills_enabled,
 )
+from cyt.launch.upstream import AgentName
 from cyt.proxy.setup import _prompt, _prompt_yes_no, parse_path_list
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
@@ -196,10 +197,14 @@ def _configure_hook_skills_directories(
         print(f"Skills config already set for hook mode in {config_path}")
 
 
-def cyt_hook_entry(*, debug: bool = False) -> dict[str, Any]:
+def cyt_hook_entry(*, debug: bool = False, agent: AgentName | None = None) -> dict[str, Any]:
     command = "cyt hook --stdin"
     if debug:
         command += " --debug"
+    if agent is not None:
+        from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
+
+        command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": 30}
 
 
@@ -444,14 +449,14 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
     include_claude = _agent_config_ready(CLAUDE_SETTINGS_PATH)
     include_codex = _agent_config_ready(CODEX_HOOKS_PATH)
 
-    targets: list[tuple[str, Path]] = []
+    targets: list[tuple[str, Path, AgentName]] = []
     if include_claude:
-        targets.append(("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH)))
+        targets.append(("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH), "claude"))
     else:
         print(f"Skipping Claude ({CLAUDE_SETTINGS_PATH}): config file not found.")
 
     if include_codex:
-        targets.append(("Codex", _agent_config_path(CODEX_HOOKS_PATH)))
+        targets.append(("Codex", _agent_config_path(CODEX_HOOKS_PATH), "codex"))
     else:
         print(f"Skipping Codex ({CODEX_HOOKS_PATH}): config file not found.")
 
@@ -467,10 +472,10 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
     )
 
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
-    entry = cyt_hook_entry(debug=debug)
 
     any_changed = False
-    for label, path in targets:
+    for label, path, agent in targets:
+        entry = cyt_hook_entry(debug=debug, agent=agent)
         if cyt_hook_command_exists(_load_json_object(path).get("hooks")):
             print(f"{label}: CYT hook already configured in {path}")
             continue

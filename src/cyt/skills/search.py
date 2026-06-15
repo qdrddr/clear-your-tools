@@ -13,7 +13,7 @@ from cyt.config import (
     skills_pipeline_uses_rerank,
 )
 from cyt.skills.catalog import SkillEntryRef
-from cyt.skills.diagnostics import SearchItemRow, SkillsSearchTrace
+from cyt.skills.diagnostics import BudgetItemRow, SearchItemRow, SkillsSearchTrace
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,6 @@ def _run_bm25_pipeline(
     eligible: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
-    max_tokens: int | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], float]:
     from cyt.skills.bm25 import bm25_skill_chunks_with_trace
 
@@ -89,7 +88,6 @@ def _run_bm25_pipeline(
         query,
         eligible,
         config=config,
-        max_tokens=max_tokens,
     )
     return matches, search_rows, threshold
 
@@ -99,7 +97,6 @@ def _run_search_pipeline_with_trace(
     eligible: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
-    max_tokens: int | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun, str, float | None, list[SearchItemRow]]:
     configured = skills_pipeline(config).strip().lower()
 
@@ -110,7 +107,6 @@ def _run_search_pipeline_with_trace(
             query,
             eligible,
             config=config,
-            max_tokens=max_tokens,
         )
         return (
             matches,
@@ -143,7 +139,6 @@ def _run_search_pipeline_with_trace(
                 query,
                 eligible,
                 config=config,
-                max_tokens=max_tokens,
             )
             return (
                 matches,
@@ -176,7 +171,6 @@ def _run_search_pipeline_with_trace(
                 query,
                 eligible,
                 config=config,
-                max_tokens=max_tokens,
             )
             return (
                 matches,
@@ -190,7 +184,6 @@ def _run_search_pipeline_with_trace(
         query,
         eligible,
         config=config,
-        max_tokens=max_tokens,
     )
     return matches, SkillsPipelineRun(configured, "bm25"), "chunk", threshold, search_rows
 
@@ -246,13 +239,19 @@ def search_skills_with_trace(
         query,
         eligible,
         config=config,
-        max_tokens=max_tokens,
     )
     pre_budget_matches = tuple(candidates)
+    budget_rows: list[BudgetItemRow] = []
     if max_tokens is not None and max_tokens > 0:
-        from cyt.skills.select import select_skills_within_budget
+        from cyt.skills.select import select_skills_with_budget_trace
 
-        candidates = select_skills_within_budget(candidates, max_tokens)
+        candidates, budget_rows = select_skills_with_budget_trace(
+            candidates,
+            max_tokens,
+            search_rows=search_rows,
+            entries=eligible,
+            item_kind=item_kind,
+        )
 
     return candidates, SkillsSearchTrace(
         frontmatter_limit=frontmatter_limit,
@@ -264,6 +263,7 @@ def search_skills_with_trace(
         matches=candidates,
         inject_budget_max=max_tokens,
         pre_budget_matches=pre_budget_matches if not candidates and pre_budget_matches else (),
+        budget_rows=budget_rows,
     )
 
 

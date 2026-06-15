@@ -21,6 +21,8 @@ from cyt.config import (
     skills_pageindex_config,
     skills_pipeline,
 )
+from cyt.launch.upstream import AgentName
+from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_agent
 
 logger = logging.getLogger(__name__)
 
@@ -282,10 +284,16 @@ def _walk_skill_md_files(directories: list[str]) -> list[Path]:
     return files
 
 
-def build_registry(config: dict[str, Any] | None = None) -> list[SkillEntryRef]:
+def build_registry(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: AgentName | None = None,
+    upstream_kind: str | None = None,
+) -> list[SkillEntryRef]:
     """Scan configured skill directories and return in-memory entry metadata."""
     cfg = config or load_config()
     expanded_dirs = skills_directories(cfg)
+    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
 
     catalog_root = Path(skills_catalog_dir(cfg))
     pipeline = skills_pipeline(cfg)
@@ -296,6 +304,8 @@ def build_registry(config: dict[str, Any] | None = None) -> list[SkillEntryRef]:
     entries: list[SkillEntryRef] = []
 
     for source_path in _walk_skill_md_files(expanded_dirs):
+        if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
+            continue
         content_hash = content_sha256_for_file(source_path)
         if content_hash in seen_content:
             continue

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from cyt.skills.diagnostics import (
+    BudgetItemRow,
     FrontmatterGateRow,
     FrontmatterTokenContribution,
     SearchItemRow,
@@ -94,6 +95,51 @@ def _print_frontmatter_gate_rows(
             _print_frontmatter_contributions(row.contributions)
 
 
+def _print_budget_item_rows(
+    rows: list[BudgetItemRow],
+    *,
+    item_kind: str,
+    max_tokens: int,
+    verbose: bool,
+) -> None:
+    if not rows:
+        print(f"skills.inject budget: {max_tokens} tokens\n", file=sys.stderr)
+        return
+
+    visible_rows = [
+        row
+        for row in sorted(
+            rows,
+            key=lambda item: (not item.passed, -item.score, item.file_path, item.item_id),
+        )
+        if verbose or row.passed
+    ]
+    print(f"skills.inject budget: {max_tokens} tokens", file=sys.stderr)
+    if not visible_rows:
+        print(file=sys.stderr)
+        return
+
+    print(
+        f"  ({item_kind}, pass when wrapped tokens fit within {max_tokens}):",
+        file=sys.stderr,
+    )
+    table_rows: list[Sequence[str]] = [
+        (
+            row.file_path,
+            row.item_id,
+            f"{row.score:.4f}",
+            str(row.tokens),
+            "pass" if row.passed else "below",
+        )
+        for row in visible_rows
+    ]
+    print(
+        _format_text_table(("file", item_kind, "score", "tokens", "status"), table_rows),
+        file=sys.stderr,
+    )
+    print(file=sys.stderr)
+
+
 def _print_search_item_rows(
     rows: list[SearchItemRow],
     *,
@@ -176,14 +222,24 @@ def print_skills_search_trace(trace: SkillsSearchTrace, *, debug: bool) -> None:
         )
 
     if trace.inject_budget_max is not None:
-        print(f"skills.inject budget: {trace.inject_budget_max} tokens\n", file=sys.stderr)
-    if trace.pre_budget_matches:
-        print("skills.inject budget blocked:\n", file=sys.stderr)
-        for match in trace.pre_budget_matches:
-            print(
-                f"  {match.file_path}  reconstructed={match.token_count} tokens  exceeds budget",
-                file=sys.stderr,
+        item_kind = trace.search_item_kind or "skill"
+        if trace.budget_rows:
+            _print_budget_item_rows(
+                trace.budget_rows,
+                item_kind=item_kind,
+                max_tokens=trace.inject_budget_max,
+                verbose=debug,
             )
+        else:
+            print(f"skills.inject budget: {trace.inject_budget_max} tokens\n", file=sys.stderr)
+            if trace.pre_budget_matches:
+                print("skills.inject budget blocked:\n", file=sys.stderr)
+                for match in trace.pre_budget_matches:
+                    print(
+                        f"  {match.file_path}  reconstructed={match.token_count} tokens  "
+                        "exceeds budget",
+                        file=sys.stderr,
+                    )
 
 
 def trace_to_debug_details(trace: SkillsSearchTrace) -> dict[str, Any]:
@@ -232,6 +288,17 @@ def trace_to_debug_details(trace: SkillsSearchTrace) -> dict[str, Any]:
                 "score": match.score,
             }
             for match in trace.pre_budget_matches
+        ],
+        "budget_items": [
+            {
+                "file_path": row.file_path,
+                "item_kind": row.item_kind,
+                "item_id": row.item_id,
+                "score": row.score,
+                "tokens": row.tokens,
+                "passed": row.passed,
+            }
+            for row in trace.budget_rows
         ],
         "injected": trace.injected,
     }

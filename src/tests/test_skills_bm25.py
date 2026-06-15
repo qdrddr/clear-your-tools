@@ -81,6 +81,32 @@ def test_reconstruct_skills_from_bm25_items_uses_chunk_specs() -> None:
         assert matches[0].name == "create-hook"
 
 
+def test_reconstruct_skills_omits_preamble_when_chunk_one_not_selected() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        skills_dir = root / "skills"
+        _write_skill(
+            skills_dir / "ctx.md",
+            "---\nname: ctx\n---\n\nIntro line\n\n# Root\n\n## Child\n\nBody text\n",
+        )
+        entries = build_registry(config)
+        entry = next(entry for entry in entries if entry.doc_id.endswith("ctx"))
+        survivors = [
+            {
+                "id": "3",
+                "doc_id": entry.doc_id,
+                "entry_dir": entry.entry_dir,
+                "file_path": "ctx.md",
+                "score": 0.9,
+            },
+        ]
+        matches = reconstruct_skills_from_bm25_items(survivors, entries, config=config)
+        assert matches
+        assert "Intro line" not in matches[0].markdown
+        assert "Body text" in matches[0].markdown
+
+
 def test_bm25_skill_chunks_wires_bm25_catalog_dict() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -39,6 +39,16 @@ class SearchItemRow:
 
 
 @dataclass(frozen=True)
+class BudgetItemRow:
+    file_path: str
+    item_id: str
+    item_kind: str
+    score: float
+    tokens: int
+    passed: bool
+
+
+@dataclass(frozen=True)
 class SkillsSearchTrace:
     frontmatter_limit: float
     frontmatter_rows: list[FrontmatterGateRow]
@@ -50,3 +60,4 @@ class SkillsSearchTrace:
     injected: str | None = None
     inject_budget_max: int | None = None
     pre_budget_matches: tuple[MatchedSkill, ...] = ()
+    budget_rows: list[BudgetItemRow] = field(default_factory=list)

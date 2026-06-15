@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -442,11 +443,24 @@ def _ensure_proxy_defaults(args: argparse.Namespace) -> None:
             setattr(args, attr, default)
 
 
+def _apply_proxy_skills_agent_filter(upstream_kind: str | None) -> None:
+    """Pin skills ``.system`` filtering to the proxy's explicit upstream kind."""
+    if upstream_kind is None:
+        return
+    from cyt.skills.agents import agent_from_upstream_kind, launch_agent_env
+
+    agent = agent_from_upstream_kind(upstream_kind)
+    if agent is not None:
+        os.environ.update(launch_agent_env(agent))
+
+
 def _run_proxy_command(args: argparse.Namespace) -> None:
     if getattr(args, "upstream_kind", None) is not None and getattr(args, "upstream", None) is None:
         raise SystemExit("--upstream-kind requires --upstream")
     if getattr(args, "upstream_name", None) is not None and getattr(args, "upstream", None) is None:
         raise SystemExit("--upstream-name requires --upstream")
+
+    _apply_proxy_skills_agent_filter(getattr(args, "upstream_kind", None))
 
     if args.debug or args.debug_dry_run:
         logging.basicConfig(

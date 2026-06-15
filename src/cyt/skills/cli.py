@@ -18,6 +18,7 @@ from cyt.config import (
     skills_enabled,
     skills_pipeline,
 )
+from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
     count_hook_request_tokens,
     resolve_inject_budget,
@@ -206,7 +207,7 @@ def _search_skills_for_user_prompt(
     stdout_guard = contextlib.nullcontext() if plain_output else hook_safe_stdout()
     stderr_guard = contextlib.nullcontext() if plain_output else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
-        entries = build_registry(config)
+        entries = build_registry(config, agent=resolve_skills_agent())
         if plain_output:
             matches, search_trace = search_skills_with_trace(
                 query,

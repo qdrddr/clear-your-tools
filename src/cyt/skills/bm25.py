@@ -333,11 +333,8 @@ def _matched_skill_for_survivor_items(
     entry_dir: str,
     doc_id: str,
     frontmatter: str | None,
-    max_tokens: int | None = None,
 ) -> MatchedSkill | None:
-    """Rebuild one skill from BM25 chunk survivors, optionally trimming to fit budget."""
-    from cyt.skills.inject import format_agent_skills, injection_token_count
-
+    """Rebuild one skill from all BM25 chunk survivors for that doc."""
     ordered = sorted(items, key=lambda row: float(row.get("score", 0)), reverse=True)
     if not ordered:
         return None
@@ -345,44 +342,18 @@ def _matched_skill_for_survivor_items(
     file_path = str(ordered[0].get("file_path", ""))
     top_score = float(ordered[0].get("score", 0))
     name = skill_name_from_frontmatter(frontmatter)
-
-    if max_tokens is None:
-        chunk_ids = [int(item["id"]) for item in ordered if item.get("id") is not None]
-        markdown = _reconstruct_for_doc(entry_dir, doc_id, chunk_ids)
-        if not markdown.strip():
-            return None
-        return MatchedSkill(
-            doc_id=doc_id,
-            file_path=file_path,
-            markdown=markdown,
-            name=name,
-            score=top_score,
-            token_count=count_tokens(markdown),
-        )
-
-    selected: list[dict[str, Any]] = []
-    best: MatchedSkill | None = None
-    for item in ordered:
-        trial_items = [*selected, item]
-        chunk_ids = [int(row["id"]) for row in trial_items if row.get("id") is not None]
-        markdown = _reconstruct_for_doc(entry_dir, doc_id, chunk_ids)
-        if not markdown.strip():
-            continue
-        match = MatchedSkill(
-            doc_id=doc_id,
-            file_path=file_path,
-            markdown=markdown,
-            name=name,
-            score=top_score,
-            token_count=count_tokens(markdown),
-        )
-        injected = format_agent_skills([match])
-        if not injected:
-            continue
-        if injection_token_count(injected) <= max_tokens:
-            best = match
-            selected = trial_items
-    return best
+    chunk_ids = [int(item["id"]) for item in ordered if item.get("id") is not None]
+    markdown = _reconstruct_for_doc(entry_dir, doc_id, chunk_ids)
+    if not markdown.strip():
+        return None
+    return MatchedSkill(
+        doc_id=doc_id,
+        file_path=file_path,
+        markdown=markdown,
+        name=name,
+        score=top_score,
+        token_count=count_tokens(markdown),
+    )
 
 
 def reconstruct_skills_from_bm25_items(
@@ -390,7 +361,6 @@ def reconstruct_skills_from_bm25_items(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
-    max_tokens: int | None = None,
 ) -> list[MatchedSkill]:
     """Group surviving chunk items by doc and rebuild MatchedSkill list."""
     del config  # reserved for future reconstruction policy hooks
@@ -408,7 +378,6 @@ def reconstruct_skills_from_bm25_items(
             entry_dir=entry_dir,
             doc_id=doc_id,
             frontmatter=frontmatter,
-            max_tokens=max_tokens,
         )
         if match is not None:
             matched.append(match)
@@ -436,7 +405,6 @@ def bm25_skill_chunks_with_trace(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
-    max_tokens: int | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], float, StageTokenUsage]:
     """Select skill chunks via BM25 and return per-chunk scores."""
     if not query.strip() or not entries:
@@ -476,6 +444,5 @@ def bm25_skill_chunks_with_trace(
         survivors,
         entries,
         config=config,
-        max_tokens=max_tokens,
     )
     return matches, search_rows, threshold, usage

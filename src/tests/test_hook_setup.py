@@ -28,6 +28,14 @@ def test_format_hook_stdin_test_command_includes_debug_flag() -> None:
     assert "cyt hook --stdin --debug" in command
 
 
+def test_cyt_hook_entry_sets_launch_agent_env_for_agent_specific_hooks() -> None:
+    claude_entry = hook_setup.cyt_hook_entry(agent="claude")
+    codex_entry = hook_setup.cyt_hook_entry(agent="codex", debug=True)
+
+    assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook --stdin"
+    assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt hook --stdin --debug"
+
+
 def test_merge_cyt_hook_adds_user_prompt_submit_entry() -> None:
     entry = hook_setup.cyt_hook_entry()
     merged, changed = hook_setup.merge_cyt_hook({}, entry)
@@ -284,8 +292,14 @@ def test_run_hook_setup_merges_existing_agent_configs(
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
-    assert claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt hook --stdin"
-    assert codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt hook --stdin"
+    assert (
+        claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        == "CYT_LAUNCH_AGENT=claude cyt hook --stdin"
+    )
+    assert (
+        codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        == "CYT_LAUNCH_AGENT=codex cyt hook --stdin"
+    )
 
 
 def test_run_hook_setup_skips_declined_agent_install(

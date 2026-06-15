@@ -8,7 +8,7 @@ use super::chunk_id::chunk_id_from_value;
 use super::node_id::node_id_from_value;
 use super::parse::extract_skill_prefix;
 use super::retrieve::{merge_chunk_id_specs, merge_line_num_specs, merge_node_id_specs, strip_decomposed_frontmatter};
-use super::tree::{is_frontmatter_node, is_preamble_node, structure_to_list};
+use super::tree::{is_frontmatter_node, is_preamble_node, structure_to_list, NODE_ID_PREAMBLE};
 use super::types::{chunk_md_rel, node_md_rel, SkillDocument, SkillsIndex};
 
 /// Subdirectory under a catalog where pruned skill markdown is written.
@@ -363,6 +363,9 @@ fn resolve_node_body_chunk_aware(
                 .map(|id| resolve_chunk_body(index, doc_id, *id))
                 .collect();
         }
+        if is_preamble_node(node) {
+            return String::new();
+        }
     }
     resolve_node_body(index, doc_id, node)
 }
@@ -400,6 +403,9 @@ fn expand_with_ancestors(matched: &HashSet<u32>, parent_map: &HashMap<u32, u32>)
     for id in matched {
         let mut current = *id;
         while let Some(parent) = parent_map.get(&current) {
+            if *parent == NODE_ID_PREAMBLE {
+                break;
+            }
             kept.insert(*parent);
             current = *parent;
         }
@@ -481,7 +487,7 @@ fn assemble_markdown(
         parts.push(frontmatter);
     }
 
-    if !structure_has_preamble_node(structure)
+    if !structure_has_preamble_node(&doc.structure)
         && let Some(preamble) = resolve_preamble(doc)
     {
         parts.push(preamble);
@@ -805,6 +811,107 @@ mod tests {
 
         assert!(index.files.contains_key("skills/decomposed/ctx__skill/0.md"));
         assert!(index.files.contains_key("skills/decomposed/ctx__skill/1.md"));
+
+        let _ = fs::remove_dir_all(&tmp);
+        Ok(())
+    }
+
+    #[test]
+    fn chunk_retrieve_omits_preamble_when_chunk_one_not_selected() -> Result<(), String> {
+        let tmp =
+            std::env::temp_dir().join(format!("cyt-reconstruct-chunk-preamble-{}", std::process::id()));
+        let skills_root = tmp.join("skills");
+        let skills_dir = skills_root.join("ctx");
+        fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
+        fs::write(
+            skills_dir.join("SKILL.md"),
+            "---\nname: ctx\n---\n\nIntro line\n\n# Root\n\n## Child\n\nBody",
+        )
+        .map_err(|e| e.to_string())?;
+
+        let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
+        let doc = index.documents.get("ctx__skill").ok_or("missing doc")?;
+        let preamble_chunks: Vec<u32> = structure_to_list(&doc.structure)
+            .iter()
+            .filter(|node| node.as_object().is_some_and(is_preamble_node))
+            .flat_map(|node| {
+                node.as_object()
+                    .and_then(|obj| obj.get("chunks"))
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|chunk| {
+                        chunk
+                            .as_object()
+                            .and_then(|o| o.get("chunk_id"))
+                            .and_then(serde_json::Value::as_u64)
+                            .and_then(|n| u32::try_from(n).ok())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            preamble_chunks.contains(&1),
+            "expected preamble chunk id 1, got {preamble_chunks:?}"
+        );
+
+        let content_chunks: Vec<u32> = structure_to_list(&doc.structure)
+            .iter()
+            .filter(|node| {
+                node.as_object().is_some_and(|obj| {
+                    !is_frontmatter_node(obj)
+                        && !is_preamble_node(obj)
+                        && obj.get("chunks").and_then(|v| v.as_array()).is_some()
+                })
+            })
+            .flat_map(|node| {
+                node.as_object()
+                    .and_then(|obj| obj.get("chunks"))
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|chunk| {
+                        chunk
+                            .as_object()
+                            .and_then(|o| o.get("chunk_id"))
+                            .and_then(serde_json::Value::as_u64)
+                            .and_then(|n| u32::try_from(n).ok())
+                    })
+                    .filter(|id| *id != 1)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            !content_chunks.is_empty(),
+            "expected at least one non-preamble chunk"
+        );
+
+        let chunk_specs: Vec<String> = content_chunks.iter().map(ToString::to_string).collect();
+        let chunk_refs: Vec<&str> = chunk_specs.iter().map(String::as_str).collect();
+        let result = reconstruct_skill_markdown(
+            &index,
+            "ctx__skill",
+            &[],
+            &[],
+            &chunk_refs,
+            &ReconstructOptions::default(),
+        )?;
+
+        assert!(!result.node_ids.contains(&1), "preamble node should not be kept");
+        assert!(!result.matched_chunk_ids.contains(&1));
+        assert!(!result.markdown.contains("Intro line"));
+        assert!(result.markdown.contains("Body"));
+
+        let with_preamble = reconstruct_skill_markdown(
+            &index,
+            "ctx__skill",
+            &[],
+            &[],
+            &["1"],
+            &ReconstructOptions::default(),
+        )?;
+        assert!(with_preamble.node_ids.contains(&1));
+        assert!(with_preamble.markdown.contains("Intro line"));
 
         let _ = fs::remove_dir_all(&tmp);
         Ok(())

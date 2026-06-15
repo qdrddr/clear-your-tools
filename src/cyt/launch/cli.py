@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from cyt.config import DEFAULT_REVERSE_PORT, load_config
@@ -18,6 +19,7 @@ from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import prepare_runtime
 from cyt.proxy.setup import normalize_upstream_kind
+from cyt.skills.agents import launch_agent_env
 
 
 def parse_launch_remainder(remainder: list[str]) -> tuple[AgentName, list[str]]:
@@ -174,6 +176,8 @@ def run(args: argparse.Namespace) -> None:
         credential_sources=runtime.credential_sources,
         endpoint=endpoint,
     )
+
+    os.environ.update(launch_agent_env(agent))
 
     ensure_proxy(
         port=runtime.port,

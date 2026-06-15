@@ -231,11 +231,11 @@ skills:
   #   if_add_node_summary: true
   #   if_add_doc_description: false
   max_tokens_per_request: 20000
-  bm25_node_fallback_threshold: 50
+  bm25_node_fallback_threshold: 15
 
   hook:
-    request_budget_fraction: 10.0
-    inject_cap_multiplier_of_request_tokens: 5.0
+    request_budget_fraction: 30.0
+    inject_cap_multiplier_of_request_tokens: 25.0
 
   proxy:
     request_budget_fraction: 0.02
