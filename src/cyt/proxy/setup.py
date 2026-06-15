@@ -581,6 +581,19 @@ def pipeline_from_choice(choice: PipelineChoice) -> list[str]:
     return ["rerank", "llm"]
 
 
+def skills_pipeline_default_from_tool_pipeline(tool_pipeline: list[str]) -> str:
+    """Default skills pipeline from the tool pruning pipeline chosen in setup."""
+    stages = [str(stage).strip().lower() for stage in tool_pipeline if str(stage).strip()]
+    if not stages:
+        return SKILLS_PIPELINE_DEFAULT
+    if len(stages) == 1 and stages[0] in SKILLS_PIPELINE_CHOICES:
+        return stages[0]
+    for stage in stages:
+        if stage in SKILLS_PIPELINE_CHOICES:
+            return stage
+    return SKILLS_PIPELINE_DEFAULT
+
+
 def upsert_remote_model(
     remote_list: list[dict[str, Any]],
     entry: dict[str, Any],
@@ -1138,6 +1151,7 @@ def _prompt_primary_model_input_cost() -> dict[str, Any]:
     )
     in_cost = _prompt_cost_per_token(
         "Expected input price for your primary/strong model (the model your agent uses to code)",
+        default_per_token=5e-06,
     )
     return {"pricing": {"input_cost_per_token": in_cost}}
 
@@ -1540,7 +1554,11 @@ def _prompt_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
         print("Enter at least one directory path.", file=sys.stderr)
 
 
-def _prompt_skills(existing: dict[str, Any]) -> dict[str, Any]:
+def _prompt_skills(
+    existing: dict[str, Any],
+    *,
+    tool_pipeline: list[str] | None = None,
+) -> dict[str, Any]:
     existing_skills = existing.get("skills")
     skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
     default_enabled = bool(skills_cfg.get("enabled", True))
@@ -1548,7 +1566,13 @@ def _prompt_skills(existing: dict[str, Any]) -> dict[str, Any]:
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:
         return {"enabled": False}
-    pipeline = str(skills_cfg.get("pipeline", SKILLS_PIPELINE_DEFAULT))
+    configured_pipeline = skills_cfg.get("pipeline")
+    if isinstance(configured_pipeline, str) and configured_pipeline.strip():
+        pipeline = str(configured_pipeline).strip()
+    elif tool_pipeline:
+        pipeline = skills_pipeline_default_from_tool_pipeline(tool_pipeline)
+    else:
+        pipeline = SKILLS_PIPELINE_DEFAULT
     try:
         default_index = SKILLS_PIPELINE_CHOICES.index(pipeline)
     except ValueError:
@@ -1932,7 +1956,7 @@ def run_setup(config_path: Path) -> None:
         DEFAULT_MCP_TOOL_POLICY,
     )
 
-    skills_overlay = _prompt_skills(existing)
+    skills_overlay = _prompt_skills(existing, tool_pipeline=pipeline)
     reranker_model, llm_pruner_model = _prompt_skills_pruner_models(
         skills_overlay,
         existing,

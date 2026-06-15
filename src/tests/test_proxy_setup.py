@@ -63,6 +63,7 @@ from cyt.proxy.setup import (
     recommended_pipeline_default_index,
     run_add_costs_wizard,
     run_setup,
+    skills_pipeline_default_from_tool_pipeline,
     upsert_remote_model,
     upstream_entry_endpoint,
     upstream_hostnames_default,
@@ -715,6 +716,19 @@ class TestPipelineFromChoice:
         assert pipeline_from_choice("both") == ["rerank", "llm"]
 
 
+class TestSkillsPipelineDefaultFromToolPipeline:
+    def test_single_stage_mappings(self) -> None:
+        assert skills_pipeline_default_from_tool_pipeline(["rerank"]) == "rerank"
+        assert skills_pipeline_default_from_tool_pipeline(["llm"]) == "llm"
+        assert skills_pipeline_default_from_tool_pipeline(["bm25"]) == "bm25"
+
+    def test_both_defaults_to_rerank(self) -> None:
+        assert skills_pipeline_default_from_tool_pipeline(["rerank", "llm"]) == "rerank"
+
+    def test_empty_defaults_to_bm25(self) -> None:
+        assert skills_pipeline_default_from_tool_pipeline([]) == "bm25"
+
+
 class TestUpsertRemoteModel:
     def test_replaces_same_nick(self) -> None:
         existing = [{"nick": "a", "name": "old"}, {"nick": "b", "name": "keep"}]
@@ -1305,6 +1319,25 @@ class TestPromptSkills:
         skills = _prompt_skills({})
         assert skills["pipeline"] == "bm25"
         assert skills["inject_via"] == "proxy"
+
+    def test_defaults_to_tool_pruning_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["y", "", "1", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        skills = _prompt_skills({}, tool_pipeline=["rerank"])
+        assert skills["pipeline"] == "rerank"
+        assert skills["inject_via"] == "proxy"
+
+    def test_prefers_existing_pipeline_over_tool_pruning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        responses = iter(["y", "", "1", ""])
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+        skills = _prompt_skills(
+            {"skills": {"enabled": True, "pipeline": "llm"}},
+            tool_pipeline=["rerank"],
+        )
+        assert skills["pipeline"] == "llm"
 
 
 class TestPromptSkillsPrunerModels:
