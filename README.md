@@ -89,7 +89,7 @@ keeping required fields for tools that stay in the request.
 ## How it works
 
 <p align="center">
-  <img src="assets/cyt-savings1.gif" alt="Example cyt stats output showing token savings" />
+  <img src="assets/cyt-savings2.gif" alt="Example cyt stats output showing token savings" />
 </p>
 
 ```text
