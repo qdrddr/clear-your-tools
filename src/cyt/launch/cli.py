@@ -21,7 +21,6 @@ from cyt.launch.proxy_guard import (
     require_healthy_proxy,
     resolve_launch_port,
 )
-from cyt.launch.secrets import ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import prepare_runtime
 from cyt.proxy.setup import normalize_upstream_kind
@@ -179,7 +178,6 @@ def run(args: argparse.Namespace) -> None:
         upstream_url=args.upstream,
         upstream_kind=upstream_kind,
         upstream_name=args.upstream_name,
-        resolve_credentials=False,
     )
     runtime.port = resolve_launch_port(runtime.port)
 
@@ -198,13 +196,6 @@ def run(args: argparse.Namespace) -> None:
             env_key=codex_env_key_name(runtime.config),
         )
         return
-
-    ensure_runtime_credentials(
-        runtime.config,
-        agent=agent,
-        credential_sources=runtime.credential_sources,
-        endpoint=endpoint,
-    )
 
     os.environ.update(launch_agent_env(agent))
 

@@ -42,6 +42,14 @@ def load_proxy_env() -> None:
     _proxy_env_loaded = True
 
 
+_PROCESS_ENV_BEFORE_DOTENV: dict[str, str] = dict(os.environ)
+
+
+def process_env_before_dotenv() -> dict[str, str]:
+    """Process environment before ``./.env`` and ``~/.config/cyt/.env`` were loaded."""
+    return _PROCESS_ENV_BEFORE_DOTENV
+
+
 load_proxy_env()
 
 # Default fallbacks - single source of truth for hard-coded values

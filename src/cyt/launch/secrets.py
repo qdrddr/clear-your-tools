@@ -1,4 +1,4 @@
-"""Credential resolution with keyring, env files, shell env, and interactive prompt."""
+"""Credential resolution with shell env, env files, keyring, and interactive prompt."""
 
 from __future__ import annotations
 
@@ -233,13 +233,22 @@ def _resolve_file_credential(name: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _resolve_shell_credential(
-    name: str,
-    before_env: dict[str, str],
-) -> tuple[str | None, str | None]:
-    if shell_value := before_env.get(name):
-        if shell_value:
-            return shell_value, "env: shell"
+def _resolve_terminal_credential(name: str) -> tuple[str | None, str | None]:
+    """Return credentials exported in the shell; terminal values beat ``.env`` and keyring."""
+    from cyt.config import process_env_before_dotenv
+
+    if value := process_env_before_dotenv().get(name):
+        if value:
+            return value, "env: shell"
+
+    if not (value := os.environ.get(name)):
+        return None, None
+
+    file_value, _ = _read_env_file_value(name)
+    if not file_value:
+        return value, "env: shell"
+    if value != file_value:
+        return value, "env: shell"
     return None, None
 
 
@@ -260,36 +269,40 @@ def _resolve_prompt_credential(name: str) -> tuple[str | None, str | None]:
 def resolve_credential(
     name: str,
     *,
-    before_env: dict[str, str],
+    before_env: dict[str, str] | None = None,
     allow_prompt: bool = True,
 ) -> tuple[str | None, str | None]:
     """Return (value, source) for *name* without printing secrets.
 
     Resolution order:
-    1. OS keyring (``cyt`` service, single blob entry)
+    1. Shell / terminal environment (exports take precedence over ``.env`` files)
     2. ``./.env``, then ``~/.config/cyt/.env``
-    3. Shell environment captured before ``load_proxy_env()``
+    3. OS keyring (``cyt`` service, single blob entry)
     4. Interactive prompt; saved to keyring when possible, else current process env
 
     When ``CYT_SKIP_KEYRING=1`` is set, keyring access is skipped and existing
     process environment values are preferred (used by proxy children spawned
     from ``cyt launch``).
     """
+    del before_env  # terminal resolution uses ``process_env_before_dotenv()``
+
     if _skip_keyring_resolution():
-        if process_value := _process_env_credential(name):
-            return process_value
-    else:
-        keyring_value = _resolve_keyring_credential(name)
-        if keyring_value[0] and keyring_value[1]:
-            return keyring_value
+        value, source = _process_env_credential(name)
+        if value and source:
+            return value, source
+        return None, None
+
+    terminal_value = _resolve_terminal_credential(name)
+    if terminal_value[0] and terminal_value[1]:
+        return terminal_value
 
     file_value = _resolve_file_credential(name)
     if file_value[0] and file_value[1]:
         return file_value
 
-    shell_value = _resolve_shell_credential(name, before_env)
-    if shell_value[0] and shell_value[1]:
-        return shell_value
+    keyring_value = _resolve_keyring_credential(name)
+    if keyring_value[0] and keyring_value[1]:
+        return keyring_value
 
     if not allow_prompt:
         return None, None
@@ -321,6 +334,54 @@ def ensure_runtime_credentials(
     ensure_named_credentials(names, credential_sources=credential_sources)
 
 
+def ensure_proxy_pipeline_credentials(
+    config: dict[str, Any],
+    *,
+    credential_sources: dict[str, str],
+) -> None:
+    """Resolve all tool/skills pruner API keys before the proxy accepts traffic."""
+    ensure_runtime_credentials(config, agent=None, credential_sources=credential_sources)
+    verify_pipeline_credentials_resolved(config)
+    warm_pipeline_pruner_settings(config)
+
+
+def verify_pipeline_credentials_resolved(config: dict[str, Any]) -> None:
+    """Fail fast when configured pipeline keys are missing from the process environment."""
+    from cyt.config import require_proxy_env
+
+    require_proxy_env(config)
+
+
+def warm_pipeline_pruner_settings(config: dict[str, Any]) -> None:
+    """Construct configured remote pruner clients at startup (never on first request)."""
+    from cyt.config import (
+        pruning_pipeline_from_config,
+        skills_enabled,
+        skills_pipeline,
+    )
+
+    for stage in pruning_pipeline_from_config(config):
+        if stage == "rerank":
+            from cyt.pruners.rerank import rerank_pruning_settings
+
+            rerank_pruning_settings(config)
+        elif stage == "llm":
+            from cyt.pruners.llm import llm_pruning_settings
+
+            llm_pruning_settings(config)
+
+    if skills_enabled(config):
+        pipeline = skills_pipeline(config).strip().lower()
+        if pipeline == "rerank":
+            from cyt.pruners.rerank import rerank_pruning_settings
+
+            rerank_pruning_settings(config)
+        elif pipeline == "llm":
+            from cyt.pruners.llm import llm_pruning_settings
+
+            llm_pruning_settings(config)
+
+
 def inspect_named_credentials(
     names: list[str],
     *,
@@ -346,7 +407,7 @@ def ensure_wizard_credentials(
     *,
     env_fallback_path: Path | None = None,
 ) -> dict[str, str]:
-    """Ensure *names* exist, preferring keyring; persist to *env_fallback_path* when keyring fails."""
+    """Ensure *names* exist; persist prompted values to *env_fallback_path* when keyring fails."""
     from cyt.proxy.setup import write_env_file
 
     if env_fallback_path is None:
@@ -410,6 +471,7 @@ def ensure_named_credentials(
             allow_prompt=allow_prompt,
         )
         if value and source:
+            os.environ[name] = value
             if credential_sources is not None:
                 credential_sources[name] = source
         else:

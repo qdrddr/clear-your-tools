@@ -46,22 +46,39 @@ def isolated_env_paths(
 
 
 class TestResolveCredentialOrder:
-    def test_keyring_preferred_over_env_file(
+    def test_shell_env_preferred_over_env_file_and_keyring(
         self,
         isolated_env_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         name = _codex_openai_api_key_var()
         isolated_env_paths["cwd_env"].write_text(f"{name}=from-dotenv\n", encoding="utf-8")
+        monkeypatch.setenv(name, "from-shell")
         monkeypatch.setattr(
             "cyt.launch.secrets._read_keyring",
             lambda _name: "from-keyring",
         )
 
-        value, source = resolve_credential(name, before_env={})
+        value, source = resolve_credential(name)
 
-        assert value == "from-keyring"
-        assert source == "keyring"
+        assert value == "from-shell"
+        assert source == "env: shell"
+
+    def test_env_file_preferred_over_keyring(
+        self,
+        isolated_env_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = _codex_openai_api_key_var()
+        isolated_env_paths["user_env"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_env_paths["user_env"].write_text(f"{name}=from-user-env\n", encoding="utf-8")
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+        value, source = resolve_credential(name)
+
+        assert value == "from-user-env"
+        assert source == "env: ~/.config/cyt/.env"
 
     def test_env_file_used_when_keyring_empty(
         self,
@@ -71,30 +88,47 @@ class TestResolveCredentialOrder:
         name = _codex_openai_api_key_var()
         isolated_env_paths["user_env"].parent.mkdir(parents=True, exist_ok=True)
         isolated_env_paths["user_env"].write_text(f"{name}=from-user-env\n", encoding="utf-8")
+        monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
 
-        value, source = resolve_credential(name, before_env={})
+        value, source = resolve_credential(name)
 
         assert value == "from-user-env"
         assert source == "env: ~/.config/cyt/.env"
+
+    def test_keyring_used_when_shell_and_env_files_empty(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = _codex_openai_api_key_var()
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+        value, source = resolve_credential(name)
+
+        assert value == "from-keyring"
+        assert source == "keyring"
 
     def test_shell_env_used_when_keyring_and_env_files_empty(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         name = _codex_openai_api_key_var()
+        monkeypatch.setenv(name, "from-shell")
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
 
-        value, source = resolve_credential(name, before_env={name: "from-shell"})
+        value, source = resolve_credential(name)
 
         assert value == "from-shell"
         assert source == "env: shell"
 
     def test_prompt_persists_to_keyring(
         self,
+        isolated_env_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         name = _codex_openai_api_key_var()
+        monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
         monkeypatch.setattr("cyt.launch.secrets.getpass.getpass", lambda _prompt: "typed-secret")
@@ -106,7 +140,7 @@ class TestResolveCredentialOrder:
 
         monkeypatch.setattr("cyt.launch.secrets._write_keyring", write_keyring)
 
-        value, source = resolve_credential(name, before_env={})
+        value, source = resolve_credential(name)
 
         assert value == "typed-secret"
         assert source == "keyring"
@@ -125,7 +159,7 @@ class TestResolveCredentialOrder:
         monkeypatch.setattr("cyt.launch.secrets.getpass.getpass", lambda _prompt: "session-only")
         monkeypatch.setattr("cyt.launch.secrets._write_keyring", lambda _key, _value: False)
 
-        value, source = resolve_credential(name, before_env={})
+        value, source = resolve_credential(name)
 
         assert value == "session-only"
         assert source == "prompt"
@@ -157,6 +191,7 @@ class TestCodexLaunchCredentials:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         name = _codex_openai_api_key_var()
+        monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "codex-key")
         config = {
             "pruning": {"tools": {"sequence": ["bm25"]}},
@@ -319,7 +354,7 @@ class TestKeyringBlob:
 
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", fail_read)
 
-        value, source = resolve_credential(name, before_env={})
+        value, source = resolve_credential(name)
 
         assert value == "from-parent"
         assert source == "env: process"

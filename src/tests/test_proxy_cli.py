@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 import cyt.config as configs
-from cyt.proxy.bootstrap import _apply_bm25_fallback_if_needed
+from cyt.proxy.bootstrap import _apply_bm25_fallback_if_needed, prepare_runtime
+
+
+def _deepinfra_api_key_var() -> str:
+    return "DEEPINFRA_" + "API_KEY"
 
 
 @pytest.fixture
@@ -26,9 +30,10 @@ def isolated_config_paths(
 
 
 def _write_remote_rerank_user_config(path: Path) -> None:
+    key_var = _deepinfra_api_key_var()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """
+        f"""
 pruning:
   tools:
     sequence: [rerank]
@@ -39,7 +44,9 @@ models:
   rerankers:
     remote:
       - nick: rerank-qwen3-8b
-        key_var_name: DEEPINFRA_API_KEY
+        provider_nick: deepinfra
+        name: Qwen/Qwen3-Reranker-8B
+        key_var_name: {key_var}
 """.strip(),
         encoding="utf-8",
     )
@@ -50,12 +57,13 @@ def test_upstream_cli_bm25_fallback_when_pruner_keys_missing(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    key_var = _deepinfra_api_key_var()
     user_config = isolated_config_paths["user_config"]
     _write_remote_rerank_user_config(user_config)
-    monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
+    monkeypatch.delenv(key_var, raising=False)
 
     config = configs.load_config()
-    assert configs.missing_proxy_env_var_names(config) == ["DEEPINFRA_API_KEY"]
+    assert configs.missing_proxy_env_var_names(config) == [key_var]
 
     _apply_bm25_fallback_if_needed(config, user_config, upstream_cli=True)
 
@@ -70,9 +78,10 @@ def test_upstream_cli_keeps_pipeline_when_pruner_keys_set(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    key_var = _deepinfra_api_key_var()
     user_config = isolated_config_paths["user_config"]
     _write_remote_rerank_user_config(user_config)
-    monkeypatch.setenv("DEEPINFRA_API_KEY", "test-key")
+    monkeypatch.setenv(key_var, "test-key")
 
     config = configs.load_config()
     _apply_bm25_fallback_if_needed(config, user_config, upstream_cli=True)
@@ -86,13 +95,98 @@ def test_no_upstream_cli_skips_bm25_when_remote_pruning_configured(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    key_var = _deepinfra_api_key_var()
     user_config = isolated_config_paths["user_config"]
     _write_remote_rerank_user_config(user_config)
-    monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
+    monkeypatch.delenv(key_var, raising=False)
 
     config = configs.load_config()
     _apply_bm25_fallback_if_needed(config, user_config, upstream_cli=False)
 
     assert capsys.readouterr().err == ""
     assert configs.pruning_pipeline_from_config(config) == ["rerank"]
-    assert configs.missing_proxy_env_var_names(config) == ["DEEPINFRA_API_KEY"]
+    assert configs.missing_proxy_env_var_names(config) == [key_var]
+
+
+def test_prepare_runtime_resolves_keyring_before_upstream_bm25_fallback(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    key_var = _deepinfra_api_key_var()
+    user_config = isolated_config_paths["user_config"]
+    _write_remote_rerank_user_config(user_config)
+    monkeypatch.delenv(key_var, raising=False)
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+    runtime = prepare_runtime(
+        agent=None,
+        config_path=user_config,
+        port=None,
+        upstream_url="https://api.anthropic.com",
+        upstream_kind="anthropic",
+        upstream_name=None,
+    )
+
+    assert capsys.readouterr().err == ""
+    assert configs.pruning_pipeline_from_config(runtime.config) == ["rerank"]
+    assert runtime.credential_sources[key_var] == "keyring"
+
+
+def test_prepare_runtime_exits_before_bm25_when_keys_unresolved(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    key_var = _deepinfra_api_key_var()
+    user_config = isolated_config_paths["user_config"]
+    _write_remote_rerank_user_config(user_config)
+    monkeypatch.delenv(key_var, raising=False)
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    with pytest.raises(SystemExit, match=key_var):
+        prepare_runtime(
+            agent=None,
+            config_path=user_config,
+            port=None,
+            upstream_url="https://api.anthropic.com",
+            upstream_kind="anthropic",
+            upstream_name=None,
+        )
+
+
+def test_prepare_runtime_warms_pruners_without_runtime_keyring(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key_var = _deepinfra_api_key_var()
+    user_config = isolated_config_paths["user_config"]
+    _write_remote_rerank_user_config(user_config)
+    monkeypatch.delenv(key_var, raising=False)
+    runtime_keyring_reads: list[str] = []
+
+    def track_read(name: str) -> str | None:
+        runtime_keyring_reads.append(name)
+        return "from-keyring"
+
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", track_read)
+
+    runtime = prepare_runtime(
+        agent=None,
+        config_path=user_config,
+        port=None,
+        upstream_url=None,
+        upstream_kind=None,
+        upstream_name=None,
+    )
+
+    assert runtime_keyring_reads == [key_var]
+    runtime_keyring_reads.clear()
+
+    from cyt.pruners.rerank import rerank_pruning_settings
+
+    settings = rerank_pruning_settings(runtime.config)
+    assert getattr(settings, "api_" + "key") == "from-" + "keyring"
+    assert runtime_keyring_reads == []

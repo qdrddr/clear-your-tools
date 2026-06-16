@@ -13,7 +13,7 @@ from cyt.config import (
     resolve_config_path,
     resolve_reverse_port,
 )
-from cyt.launch.secrets import ensure_runtime_credentials
+from cyt.launch.secrets import ensure_proxy_pipeline_credentials, ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, ensure_upstream_for_runtime, list_upstreams
 from cyt.proxy.setup import upstream_entry_endpoint
 
@@ -91,11 +91,23 @@ def prepare_runtime(
     )
     config = load_config(path)
     upstream_cli = upstream_url is not None
-    _apply_bm25_fallback_if_needed(config, path, upstream_cli=upstream_cli)
     resolved_port = resolve_reverse_port(config, port)
     credential_sources: dict[str, str] = {}
     if resolve_credentials:
-        ensure_runtime_credentials(config, agent=agent, credential_sources=credential_sources)
+        if agent is None:
+            # Resolve tool/skills pruner keys (shell env → .env → keyring → prompt) and
+            # warm remote pruner clients before any BM25 fallback or request handling.
+            ensure_proxy_pipeline_credentials(
+                config,
+                credential_sources=credential_sources,
+            )
+        else:
+            ensure_runtime_credentials(
+                config,
+                agent=agent,
+                credential_sources=credential_sources,
+            )
+    _apply_bm25_fallback_if_needed(config, path, upstream_cli=upstream_cli)
 
     resolved_upstream_url = upstream_url
     if resolved_upstream_url is None and upstream_endpoint is not None:

@@ -72,7 +72,7 @@ _CLI_OUTCOME_HINTS: dict[str, str] = {
 
 
 def _ensure_skills_credentials(config: dict[str, Any]) -> None:
-    """Load skills-pruner API keys (keyring, .env, shell) before remote search."""
+    """Load skills-pruner API keys (shell env, .env, keyring) before remote search."""
     if not skills_enabled(config):
         return
     names = required_skills_env_var_names(config)
@@ -80,7 +80,7 @@ def _ensure_skills_credentials(config: dict[str, Any]) -> None:
         return
     from cyt.launch.secrets import ensure_named_credentials
 
-    ensure_named_credentials(names, allow_prompt=False)
+    ensure_named_credentials(names, allow_prompt=sys.stdin.isatty())
 
 
 def _print_required_api_keys(label: str, names: list[str], *, empty_hint: str) -> None:

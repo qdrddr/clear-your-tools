@@ -1234,6 +1234,10 @@ async def serve_reverse_async(
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
 ) -> None:
+    from cyt.config import require_proxy_env
+
+    require_proxy_env(config)
+
     proxy_cfg = config["network"]["proxy"]
     routes = build_routes(proxy_cfg)
     pruning_pipeline = pruning_pipeline_from_config(config)

@@ -77,17 +77,13 @@ def resolve_remote_pruning_settings(
     model_name, api_key, base_url = resolve_model(nick, model_kind, "remote", config=cfg)
     key_var = key_var_name_for_model_nick(cfg, model_kind, nick)
     if not api_key:
-        from cyt.launch.secrets import _snapshot_env, resolve_credential
-
-        resolved, _source = resolve_credential(
-            key_var,
-            before_env=_snapshot_env(),
-            allow_prompt=False,
+        print(
+            f"Error: {key_var} is not set in the process environment.\n"
+            "The proxy resolves pruning pipeline API keys at startup "
+            "(shell env, .env, keyring). Restart the proxy after exporting the key "
+            "or run interactively to store it.",
+            file=sys.stderr,
         )
-        if resolved:
-            api_key = resolved
-    if not api_key:
-        print(f"Error: {key_var} not found.", file=sys.stderr)
         sys.exit(1)
 
     entry = remote_model_entry(cfg, model_kind, nick)
