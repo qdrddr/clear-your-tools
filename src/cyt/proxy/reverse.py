@@ -368,6 +368,40 @@ def resolve_upstream(
     return None
 
 
+def is_startup_probe(method: str, path_suffix: str) -> bool:
+    """True for Claude Code gateway reachability checks (HEAD on endpoint root)."""
+    return method.upper() == "HEAD" and path_suffix in ("", "/")
+
+
+async def upstream_reachable(
+    client: httpx.AsyncClient,
+    upstream_base: str,
+    headers: dict[str, str],
+) -> bool:
+    """Return True when upstream responds (connection errors => False)."""
+    url = upstream_base.rstrip("/") or upstream_base
+    try:
+        async with client.stream("HEAD", url, headers=headers):
+            return True
+    except httpx.HTTPError:
+        return False
+
+
+async def _handle_startup_probe(
+    request: Request,
+    *,
+    upstream_base: str,
+    path_suffix: str,
+) -> Response | None:
+    if not is_startup_probe(request.method, path_suffix):
+        return None
+    client: httpx.AsyncClient = request.app.state.http_client
+    headers = filter_headers(dict(request.headers))
+    if await upstream_reachable(client, upstream_base, headers):
+        return Response(status_code=200)
+    return Response("Upstream unreachable", status_code=502)
+
+
 def _needs_request_buffer(
     *,
     kind: str | None,
@@ -1003,6 +1037,13 @@ async def _proxy_request(
         return Response("Not Found", status_code=404)
 
     upstream_base, path_suffix, kind, endpoint_name = match
+    if probe := await _handle_startup_probe(
+        request,
+        upstream_base=upstream_base,
+        path_suffix=path_suffix,
+    ):
+        return probe
+
     query = request.url.query
     target_url = f"{upstream_base}{path_suffix}"
     if query:
