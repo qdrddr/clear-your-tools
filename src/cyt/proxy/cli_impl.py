@@ -523,6 +523,10 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
         endpoint=runtime.upstream_endpoint,
         upstream_url=runtime.upstream_url,
         include_agent_recipe=False,
+        config_path=runtime.config_path,
+        debug=bool(getattr(args, "debug", False)),
+        debug_dry_run=bool(getattr(args, "debug_dry_run", False)),
+        debug_strict=bool(getattr(args, "debug_strict", False)),
     )
 
     if runtime.upstream_endpoint is not None and launch_agent is None:

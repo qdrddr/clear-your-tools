@@ -285,7 +285,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
     print_runtime_env_report(
-        quiet=True,
+        quiet=False,
         credential_sources=runtime.credential_sources,
         port=runtime.port,
         endpoint=endpoint,
@@ -294,8 +294,10 @@ def run(args: argparse.Namespace) -> None:
         agent=agent,
         launch_env=launch_env,
         config=runtime.config,
+        config_path=runtime.config_path,
         debug=debug,
         debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
     )
 
     raise SystemExit(

@@ -390,6 +390,7 @@ class TestEnvReport:
         assert "Proxy:" in err
         assert "  port: 8834" in err
         assert "  endpoint: http://localhost:8834/anthropic" in err
+        assert f"export {key_var}=...  # env: shell" in err
         assert "cyt proxy --port 8834 --upstream https://api.anthropic.com" in err
         assert "Manual proxy recipe" in err
         assert "Manual agent recipe" not in err
@@ -411,7 +412,7 @@ class TestEnvReport:
         assert "Manual agent recipe" in err
         assert "  agent: claude" in err
         assert "ANTHROPIC_BASE_URL" in err
-        assert "cyt proxy --port 8834" in err
+        assert "cyt proxy --port 8834 --launch-agent claude" in err
 
     def test_shows_detected_free_port(
         self,
@@ -1026,7 +1027,7 @@ class TestEnsureProxy:
 
 
 class TestLaunchRun:
-    def test_launch_is_silent_without_quiet_flag(
+    def test_launch_prints_env_report_before_agent(
         self,
         isolated_config_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
@@ -1067,8 +1068,15 @@ class TestLaunchRun:
             run_launch(args)
 
         err = capsys.readouterr().err
-        assert "Proxy:" not in err
-        assert "Manual agent recipe" not in err
+        assert "Proxy:" in err
+        assert "  port: 8835" in err
+        assert "  endpoint: http://localhost:8835/anthropic" in err
+        assert "Vars used this run:" in err
+        assert "Manual proxy recipe" in err
+        assert "cyt proxy --port 8835" in err
+        assert f"--config {user_config}" in err
+        assert "--launch-agent claude" in err
+        assert "Manual agent recipe" in err
 
     def test_launch_claude_exec(
         self,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,6 @@ from typing import Any
 from cyt.config import (
     load_config,
     load_user_config_overlay,
-    provider_nick_for_dns,
     provider_registry,
     resolve_config_path,
     save_user_config,
@@ -27,6 +27,8 @@ from cyt.proxy.setup import (
     normalize_upstream_url,
     upstream_entry_endpoint,
 )
+
+_CLAUDE_UPSTREAM_AUTH_FALLBACKS = ("ANTHROPIC_AUTH_TOKEN",)
 
 
 def upstream_entry_url(entry: dict[str, Any]) -> str:
@@ -46,25 +48,11 @@ def _provider_nick_from_upstream_entry(
     config: dict[str, Any],
     entry: dict[str, Any],
 ) -> str | None:
+    """Return ``provider_nick`` only when explicitly set on the upstream entry."""
+    del config  # registry heuristics require an explicit upstream link
     raw = entry.get("provider_nick")
     if raw is not None and str(raw).strip():
         return str(raw).strip()
-
-    url = upstream_entry_url(entry)
-    if url:
-        hostname = _extract_hostname(url)
-        if nick := provider_nick_for_dns(config, hostname):
-            return nick
-
-    endpoint = upstream_entry_endpoint(entry)
-    if endpoint != "?":
-        registry = provider_registry(config)
-        if endpoint in registry:
-            return endpoint
-        default_nick = derive_upstream_name_from_url(url) if url else endpoint
-        if default_nick in registry:
-            return default_nick
-
     return None
 
 
@@ -222,18 +210,59 @@ def ensure_upstream_provider_registry(
     return config, key_var
 
 
+def _resolve_upstream_credential(
+    key_var_name: str,
+    *,
+    credential_sources: dict[str, str],
+    allow_prompt: bool,
+    fallback_env_names: tuple[str, ...],
+) -> None:
+    """Resolve *key_var_name*, optionally borrowing from *fallback_env_names*."""
+    from cyt.launch.secrets import resolve_credential
+
+    before = dict(os.environ)
+    value, source = resolve_credential(
+        key_var_name,
+        before_env=before,
+        allow_prompt=allow_prompt,
+    )
+    if value and source:
+        os.environ[key_var_name] = value
+        credential_sources[key_var_name] = source
+        return
+
+    for fallback_name in fallback_env_names:
+        fallback_value, fallback_source = resolve_credential(
+            fallback_name,
+            before_env=before,
+            allow_prompt=False,
+        )
+        if fallback_value and fallback_source:
+            os.environ[key_var_name] = fallback_value
+            credential_sources[key_var_name] = f"{fallback_source} (via {fallback_name})"
+            return
+
+    ensure_named_credentials(
+        [key_var_name],
+        credential_sources=credential_sources,
+        allow_prompt=allow_prompt,
+    )
+
+
 def ensure_upstream_credential(
     key_var_name: str,
     *,
     credential_sources: dict[str, str],
     allow_prompt: bool | None = None,
+    fallback_env_names: tuple[str, ...] = _CLAUDE_UPSTREAM_AUTH_FALLBACKS,
 ) -> None:
     """Resolve *key_var_name* into the process environment (shell env wins)."""
     resolved_allow_prompt = sys.stdin.isatty() if allow_prompt is None else allow_prompt
-    ensure_named_credentials(
-        [key_var_name],
+    _resolve_upstream_credential(
+        key_var_name,
         credential_sources=credential_sources,
         allow_prompt=resolved_allow_prompt,
+        fallback_env_names=fallback_env_names,
     )
 
 

@@ -41,20 +41,42 @@ def _proxy_summary_lines(
     return lines
 
 
+def _credential_export_lines(credential_sources: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    for name, source in sorted(credential_sources.items()):
+        lines.append(f"export {name}=...  # {source}")
+    return lines
+
+
 def _proxy_recipe_lines(
     *,
     port: int,
     endpoint: str | None,
     upstream_url: str | None,
+    credential_sources: dict[str, str],
+    config_path: Path | None = None,
+    agent: AgentName | None = None,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+    debug_strict: bool = False,
 ) -> list[str]:
-    lines = [
-        "# Manual proxy recipe",
-        "export OPENROUTER_API_KEY=...   # if required",
-        "export DEEPINFRA_API_KEY=...    # if pruning/skills needs it",
-    ]
+    lines = ["# Manual proxy recipe (reproduce this launch)"]
+    lines.extend(_credential_export_lines(credential_sources))
+    if lines == ["# Manual proxy recipe (reproduce this launch)"]:
+        lines.append("# (no credential env vars required for this run)")
     proxy_cmd = f"cyt proxy --port {port}"
+    if config_path is not None:
+        proxy_cmd += f" --config {config_path}"
     if upstream_url:
         proxy_cmd += f" --upstream {upstream_url}"
+    if agent is not None:
+        proxy_cmd += f" --launch-agent {agent}"
+    if debug:
+        proxy_cmd += " --debug"
+    if debug_dry_run:
+        proxy_cmd += " --debug-dry-run"
+        if debug_strict:
+            proxy_cmd += " --debug-strict"
     lines.append(proxy_cmd)
     lines.append(f"curl -s http://localhost:{port}/health")
     if endpoint is not None:
@@ -110,8 +132,10 @@ def print_runtime_env_report(
     agent: AgentName | None = None,
     launch_env: dict[str, str] | None = None,
     config: dict[str, Any] | None = None,
+    config_path: Path | None = None,
     debug: bool = False,
     debug_dry_run: bool = False,
+    debug_strict: bool = False,
 ) -> None:
     """Print env summary and manual recipes to stderr."""
     if quiet:
@@ -133,6 +157,12 @@ def print_runtime_env_report(
             port=port,
             endpoint=endpoint,
             upstream_url=upstream_url,
+            credential_sources=credential_sources,
+            config_path=config_path,
+            agent=agent,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+            debug_strict=debug_strict,
         ),
     )
 

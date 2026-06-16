@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt.launch.config import launch_claude_models
+from cyt.launch.secrets import _resolve_terminal_credential
 from cyt.launch.upstream_credentials import (
     is_canonical_upstream,
     lookup_upstream_key_var,
@@ -48,10 +49,11 @@ def build_claude_env(
     upstream = upstream_for_endpoint(config, endpoint)
     if upstream is not None and not is_canonical_upstream(upstream):
         key_var = lookup_upstream_key_var(config, upstream)
-        if key_var:
-            token = os.environ.get(key_var)
-            if token:
-                env["ANTHROPIC_AUTH_TOKEN"] = token
+        terminal_auth, _source = _resolve_terminal_credential("ANTHROPIC_AUTH_TOKEN")
+        if terminal_auth:
+            env["ANTHROPIC_AUTH_TOKEN"] = terminal_auth
+        elif key_var and (token := os.environ.get(key_var)):
+            env["ANTHROPIC_AUTH_TOKEN"] = token
         env.setdefault("ANTHROPIC_API_KEY", "")
     else:
         env.setdefault("ANTHROPIC_AUTH_TOKEN", os.environ.get("ANTHROPIC_API_KEY", ""))
