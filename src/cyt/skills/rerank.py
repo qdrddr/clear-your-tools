@@ -16,6 +16,7 @@ from cyt.pruners.documents import (
     extract_md_catalog_document,
     extract_skill_node_document,
 )
+from cyt.pruners.remote import RerankPruningSettings
 from cyt.pruners.rerank import (
     RERANK_ENUMS,
     prune_reranked_catalog,
@@ -104,6 +105,7 @@ def rerank_skill_nodes_with_trace(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    settings: RerankPruningSettings | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], float, StageTokenUsage]:
     """Select skill nodes via rerank and return per-node scores."""
     if not query.strip() or not entries:
@@ -113,7 +115,7 @@ def rerank_skill_nodes_with_trace(
     if not items:
         return [], [], rerank_score_skills(config), empty_usage()
 
-    settings = rerank_pruning_settings(config)
+    settings = rerank_pruning_settings(config, settings=settings)
     scored, usage = rerank_items(
         query,
         items,
@@ -149,9 +151,10 @@ def rerank_prune_tools_and_skills(
     skill_entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    settings: RerankPruningSettings | None = None,
 ) -> tuple[dict[str, Any], list[MatchedSkill], StageTokenUsage]:
     """Combined tool catalog + skill node rerank in one bulk when possible."""
-    settings = rerank_pruning_settings(config)
+    settings = rerank_pruning_settings(config, settings=settings)
     targets: list[tuple[list[dict[str, Any]], Any]] = []
 
     tool_count = catalog_tool_count(data)
@@ -177,8 +180,19 @@ def rerank_prune_tools_and_skills(
         logger.warning("combined rerank prune failed, falling back to sequential: %s", exc)
         from cyt.pruners.rerank import rerank_catalog_dict
 
-        pruned_data, tool_usage = rerank_catalog_dict(data, query, prune=True, merge_pinned=False)
-        skill_matches, skill_usage = rerank_skill_nodes(query, skill_entries, config=config)
+        pruned_data, tool_usage = rerank_catalog_dict(
+            data,
+            query,
+            prune=True,
+            merge_pinned=False,
+            config=config,
+            settings=settings,
+        )
+        skill_matches, skill_usage = rerank_skill_nodes(
+            query,
+            skill_entries,
+            config=config,
+        )
         return pruned_data, skill_matches, tool_usage.merge(skill_usage)
 
     if tool_count >= reranker_minimum_tools(config):

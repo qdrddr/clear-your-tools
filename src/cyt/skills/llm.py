@@ -18,6 +18,7 @@ from cyt.pruners.llm import (
     prepare_catalog_selector_chunks,
     trim_catalog_dict,
 )
+from cyt.pruners.remote import LlmPruningSettings
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
@@ -170,6 +171,7 @@ def llm_skill_nodes_with_trace(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    settings: LlmPruningSettings | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], StageTokenUsage]:
     """Select skill nodes via LLM and return selected node ids."""
     if not query.strip() or not entries:
@@ -184,6 +186,7 @@ def llm_skill_nodes_with_trace(
         SKILLS_SELECTOR_SYSTEM_PROMPT,
         formatted_items,
         config=config,
+        settings=settings,
     )
     search_rows: list[SearchItemRow] = []
     for selector_id, meta in metadata.items():
@@ -209,6 +212,7 @@ def llm_prune_tools_and_skills(
     *,
     trim_before_llm: bool = False,
     config: dict[str, Any] | None = None,
+    settings: LlmPruningSettings | None = None,
 ) -> tuple[dict[str, Any], list[MatchedSkill], StageTokenUsage]:
     """Combined tool catalog + skill node LLM selection in one bulk when possible."""
     if trim_before_llm:
@@ -228,10 +232,17 @@ def llm_prune_tools_and_skills(
             COMBINED_SELECTOR_SYSTEM_PROMPT,
             combined_items,
             config=config,
+            settings=settings,
         )
     except Exception as exc:
         logger.warning("combined llm prune failed, falling back to sequential: %s", exc)
-        pruned_data, tool_usage = llm_catalog_dict(data, query, merge_pinned=False)
+        pruned_data, tool_usage = llm_catalog_dict(
+            data,
+            query,
+            merge_pinned=False,
+            config=config,
+            settings=settings,
+        )
         skill_matches, skill_usage = llm_skill_nodes(query, skill_entries, config=config)
         return pruned_data, skill_matches, tool_usage.merge(skill_usage)
 

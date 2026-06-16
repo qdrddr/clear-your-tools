@@ -16,6 +16,7 @@ from cyt.config import (
 from cyt.launch.secrets import ensure_proxy_pipeline_credentials, ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, ensure_upstream_for_runtime, list_upstreams
 from cyt.proxy.setup import upstream_entry_endpoint
+from cyt.pruners.remote import PrunerSettingsCache
 
 _BM25_FALLBACK_MESSAGE = (
     "No pruner pipeline configured: fallback to BM25. "
@@ -67,6 +68,7 @@ class RuntimeContext:
     credential_sources: dict[str, str]
     upstream_endpoint: str | None
     upstream_url: str | None
+    pruner_settings: PrunerSettingsCache | None = None
 
 
 def prepare_runtime(
@@ -93,11 +95,12 @@ def prepare_runtime(
     upstream_cli = upstream_url is not None
     resolved_port = resolve_reverse_port(config, port)
     credential_sources: dict[str, str] = {}
+    pruner_settings: PrunerSettingsCache | None = None
     if resolve_credentials:
         if agent is None:
             # Resolve tool/skills pruner keys (shell env → .env → keyring → prompt) and
             # warm remote pruner clients before any BM25 fallback or request handling.
-            ensure_proxy_pipeline_credentials(
+            pruner_settings = ensure_proxy_pipeline_credentials(
                 config,
                 credential_sources=credential_sources,
             )
@@ -107,6 +110,10 @@ def prepare_runtime(
                 agent=agent,
                 credential_sources=credential_sources,
             )
+    elif agent is None:
+        from cyt.launch.secrets import build_pruner_settings_cache
+
+        pruner_settings = build_pruner_settings_cache(config)
     _apply_bm25_fallback_if_needed(config, path, upstream_cli=upstream_cli)
 
     resolved_upstream_url = upstream_url
@@ -128,4 +135,5 @@ def prepare_runtime(
         credential_sources=credential_sources,
         upstream_endpoint=upstream_endpoint,
         upstream_url=resolved_upstream_url,
+        pruner_settings=pruner_settings,
     )

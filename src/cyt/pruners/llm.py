@@ -56,8 +56,14 @@ class RelevantChunkIds(BaseModel):
     ids: list[int]
 
 
-def llm_pruning_settings(config: dict[str, Any] | None = None) -> LlmPruningSettings:
+def llm_pruning_settings(
+    config: dict[str, Any] | None = None,
+    *,
+    settings: LlmPruningSettings | None = None,
+) -> LlmPruningSettings:
     """Resolve pruning LLM model from pipeline config."""
+    if settings is not None:
+        return settings
     return resolve_remote_pruning_settings(
         config=config,
         model_kind="llm",
@@ -273,6 +279,7 @@ def llm_select_ids(
     formatted_items: list[str],
     *,
     config: dict[str, Any] | None = None,
+    settings: LlmPruningSettings | None = None,
 ) -> tuple[set[int], StageTokenUsage]:
     """Run LLM selector over formatted chunks; return union of Pydantic-parsed ids."""
     if not formatted_items:
@@ -280,7 +287,7 @@ def llm_select_ids(
 
     from cyt.pruners.split import split_chunks_into_bulks
 
-    settings = llm_pruning_settings(config)
+    resolved_settings = llm_pruning_settings(config, settings=settings)
     bulks = split_chunks_into_bulks(query, system_prompt, formatted_items)
     selected_ids: set[int] = set()
     total_usage = empty_usage()
@@ -289,7 +296,7 @@ def llm_select_ids(
         bulk_tokens = count_llm_request_tokens(query, bulk_text, system_prompt=system_prompt)
         logger.info("llm request tokens: %d", bulk_tokens)
         parsed_response, bulk_usage = call_llm(
-            settings,
+            resolved_settings,
             query,
             bulk_text,
             system_prompt=system_prompt,
@@ -300,7 +307,7 @@ def llm_select_ids(
                 output_tokens=bulk_usage.output_tokens,
                 usage_source=bulk_usage.usage_source,
                 request_id=bulk_usage.request_id,
-                model_name=bulk_usage.model_name,
+                model_name=resolved_settings.model_name,
                 provider_dns_name=bulk_usage.provider_dns_name,
                 provider=bulk_usage.provider,
             )
@@ -375,19 +382,21 @@ def llm_catalog_dict(
     system_policy: SystemToolPolicy | None = None,
     mcp_policy: MCPToolPolicy | None = None,
     merge_pinned: bool = True,
+    config: dict[str, Any] | None = None,
+    settings: LlmPruningSettings | None = None,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     policy_ctx = resolve_policy_context(
         ctx=ctx,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
-        config=None,
+        config=config,
     )
     data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
     if skip_scoring:
         return data, empty_usage()
 
-    if catalog_below_minimum_tools(data, llm_minimum_tools(), stage="llm"):
+    if catalog_below_minimum_tools(data, llm_minimum_tools(config), stage="llm"):
         return data, empty_usage()
 
     formatted_chunks, item_metadata_storage, list_keys = prepare_catalog_selector_chunks(data)
@@ -396,6 +405,8 @@ def llm_catalog_dict(
         query,
         SELECTOR_SYSTEM_PROMPT,
         formatted_chunks,
+        config=config,
+        settings=settings,
     )
 
     result = apply_selector_ids_to_catalog(

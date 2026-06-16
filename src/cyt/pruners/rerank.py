@@ -44,8 +44,14 @@ RERANK_ENUMS: bool = True
 RERANK_ENUM_SCORE: float = 0.0001
 
 
-def rerank_pruning_settings(config: dict[str, Any] | None = None) -> RerankPruningSettings:
+def rerank_pruning_settings(
+    config: dict[str, Any] | None = None,
+    *,
+    settings: RerankPruningSettings | None = None,
+) -> RerankPruningSettings:
     """Resolve pruning reranker model from pipeline config."""
+    if settings is not None:
+        return settings
     return resolve_remote_pruning_settings(
         config=config,
         model_kind="rerankers",
@@ -296,29 +302,31 @@ def rerank_catalog_dict(
     system_policy: SystemToolPolicy | None = None,
     mcp_policy: MCPToolPolicy | None = None,
     merge_pinned: bool = True,
+    config: dict[str, Any] | None = None,
+    settings: RerankPruningSettings | None = None,
 ) -> tuple[dict[str, Any], StageTokenUsage]:
     """Score in-place data['json'] and optionally data['md']; optionally prune by score."""
     policy_ctx = resolve_policy_context(
         ctx=ctx,
         system_policy=system_policy,
         mcp_policy=mcp_policy,
-        config=None,
+        config=config,
     )
     data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
     if skip_scoring:
         return data, empty_usage()
 
-    if catalog_below_minimum_tools(data, reranker_minimum_tools(), stage="rerank"):
+    if catalog_below_minimum_tools(data, reranker_minimum_tools(config), stage="rerank"):
         return data, empty_usage()
 
-    settings = rerank_pruning_settings()
+    resolved_settings = rerank_pruning_settings(config, settings=settings)
     total_usage = empty_usage()
 
     if "json" in data and isinstance(data["json"], list):
         data["json"], json_usage = rerank_items(
             query,
             data["json"],
-            settings,
+            resolved_settings,
             extract_json_catalog_document,
             None,
         )
@@ -328,7 +336,7 @@ def rerank_catalog_dict(
         data["md"], md_usage = rerank_items(
             query,
             data["md"],
-            settings,
+            resolved_settings,
             extract_md_catalog_document,
             None,
         )

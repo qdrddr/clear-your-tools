@@ -185,8 +185,24 @@ def test_prepare_runtime_warms_pruners_without_runtime_keyring(
     assert runtime_keyring_reads == [key_var]
     runtime_keyring_reads.clear()
 
+    assert runtime.pruner_settings is not None
+    assert runtime.pruner_settings.rerank is not None
+    cached = runtime.pruner_settings.rerank
+    assert getattr(cached, "api_" + "key") == "from-" + "keyring"
+
+    resolve_calls: list[str] = []
+
+    def track_resolve(**kwargs: object) -> object:
+        resolve_calls.append(str(kwargs.get("pipeline_name")))
+        return cached
+
+    monkeypatch.setattr(
+        "cyt.pruners.rerank.resolve_remote_pruning_settings",
+        track_resolve,
+    )
     from cyt.pruners.rerank import rerank_pruning_settings
 
-    settings = rerank_pruning_settings(runtime.config)
-    assert getattr(settings, "api_" + "key") == "from-" + "keyring"
+    settings = rerank_pruning_settings(runtime.config, settings=cached)
+    assert settings is cached
+    assert resolve_calls == []
     assert runtime_keyring_reads == []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -50,6 +51,17 @@ class RemotePruningSettings:
 
 LlmPruningSettings = RemotePruningSettings
 RerankPruningSettings = RemotePruningSettings
+
+
+@dataclass
+class PrunerSettingsCache:
+    """Startup-resolved remote pruner settings keyed by pipeline stage."""
+
+    llm: RemotePruningSettings | None = None
+    rerank: RemotePruningSettings | None = None
+
+    def for_stage(self, stage: Literal["llm", "rerank"]) -> RemotePruningSettings | None:
+        return self.llm if stage == "llm" else self.rerank
 
 
 def resolve_remote_pruning_settings(

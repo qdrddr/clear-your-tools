@@ -63,6 +63,7 @@ from cyt.proxy.transport import (
     save_debug_snapshot,
     save_original_debug_snapshot,
 )
+from cyt.pruners.remote import PrunerSettingsCache
 
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
@@ -535,6 +536,7 @@ async def transform_request_body(
     pruning_pipeline: list[str] | None = None,
     debug: bool = False,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[bytes, Any | None, list[dict[str, Any]] | None, Any | None]:
     from cyt.skills.proxy_inject import SkillsProxyInjectMeta
 
@@ -574,6 +576,7 @@ async def transform_request_body(
                 pruning_pipeline,
                 capture_decomposed_catalog=debug,
                 config=config,
+                pruner_settings=pruner_settings,
             )
 
             # #region agent log
@@ -600,6 +603,7 @@ async def transform_request_body(
                 pruning_pipeline,
                 capture_decomposed_catalog=debug,
                 config=config,
+                pruner_settings=pruner_settings,
             )
         return json.dumps(transformed).encode(), pruning, input_tools, skills_meta
     except json.JSONDecodeError:
@@ -901,6 +905,7 @@ async def _process_buffered_proxy_body(
     debug_log_max_body_bytes: int | None,
     debug_log_dir: Path | None,
     config: dict[str, Any] | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[
     bytes,
     Any | None,
@@ -939,6 +944,7 @@ async def _process_buffered_proxy_body(
             pruning_pipeline,
             debug,
             config=config,
+            pruner_settings=pruner_settings,
         )
     finally:
         if debug_log_token is not None:
@@ -1030,6 +1036,7 @@ async def _proxy_request(
     stats_db: StatsDB | None,
     store_full_tools: bool,
     config: dict[str, Any] | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> Response:
     _log_proxy_request_entry(debug_trace, request)
     match = resolve_upstream(request.url.path, routes)
@@ -1084,6 +1091,7 @@ async def _proxy_request(
             debug_log_max_body_bytes=debug_log_max_body_bytes,
             debug_log_dir=debug_log_dir,
             config=config,
+            pruner_settings=pruner_settings,
         )
 
     if stats_db is not None and pruning is not None:
@@ -1166,6 +1174,7 @@ def create_app(
     stats_db: StatsDB | None = None,
     store_full_tools: bool = False,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
     http2_upstream: bool = False,
 ) -> Starlette:
     use_http2_upstream = http2_upstream and http2_package_available()
@@ -1178,6 +1187,7 @@ def create_app(
     async def lifespan(_app: Starlette) -> AsyncIterator[None]:
         client = httpx.AsyncClient(timeout=None, http2=use_http2_upstream)
         _app.state.http_client = client
+        _app.state.pruner_settings = pruner_settings
         try:
             yield
         finally:
@@ -1206,6 +1216,7 @@ def create_app(
             stats_db=stats_db,
             store_full_tools=store_full_tools,
             config=config,
+            pruner_settings=pruner_settings,
         )
 
     return Starlette(
@@ -1233,6 +1244,7 @@ async def serve_reverse_async(
     http2_serve: bool,
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> None:
     from cyt.config import require_proxy_env
 
@@ -1294,6 +1306,7 @@ async def serve_reverse_async(
         stats_db=stats_db,
         store_full_tools=store_full_tools,
         config=config,
+        pruner_settings=pruner_settings,
         http2_upstream=http2_upstream,
     )
 

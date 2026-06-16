@@ -24,6 +24,7 @@ from cyt.config import (
 )
 from cyt.proxy.setup import normalize_upstream_kind
 from cyt.proxy.transport import INTERRUPTED_EXIT_CODE, run_async_cli
+from cyt.pruners.remote import PrunerSettingsCache
 
 if TYPE_CHECKING:
     from cyt.common.pricing import StatsCosts
@@ -216,6 +217,7 @@ async def run_reverse_server(
     http2_serve: bool,
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> None:
     from cyt.proxy.reverse import serve_reverse_async
 
@@ -230,6 +232,7 @@ async def run_reverse_server(
         http2_serve=http2_serve,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile,
+        pruner_settings=pruner_settings,
     )
 
 
@@ -531,6 +534,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
             http2_serve=http2_serve,
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
+            pruner_settings=runtime.pruner_settings,
         ),
     )
 

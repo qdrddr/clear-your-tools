@@ -22,6 +22,7 @@ from cyt.proxy.anthropic import (
 )
 from cyt.proxy.pruning_debug import merge_decomposed_catalog_snapshots
 from cyt.pruners.policies import policy_context_from_config, request_pass_through
+from cyt.pruners.remote import PrunerSettingsCache
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,7 @@ def _prune_openai_tools_array(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[dict[str, Any]] | None, PruneResult | None]:
     """Prune one OpenAI ``tools`` array (flat or namespace) and return updated tools."""
     if not tools:
@@ -302,6 +304,7 @@ def _prune_openai_tools_array(
         skill_entries=skill_entries,
         skill_llm_out=skill_llm_out,
         config=config,
+        pruner_settings=pruner_settings,
     )
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -343,6 +346,7 @@ def _openai_prune_request_tools(
     capture_decomposed_catalog: bool,
     deferred: DeferredSkillsContext | None,
     config: dict[str, Any] | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> PruneResult | None:
     result: PruneResult | None = None
     skill_entries = (
@@ -360,6 +364,7 @@ def _openai_prune_request_tools(
             skill_entries=skill_entries or None,
             skill_llm_out=skill_out if deferred is not None else None,
             config=config,
+            pruner_settings=pruner_settings,
         )
         if final_tools is not None and pass_result is not None and pass_result.status == "applied":
             original["tools"] = final_tools
@@ -379,6 +384,7 @@ def _openai_prune_request_tools(
             skill_entries=skill_entries or None,
             skill_llm_out=skill_out if deferred is not None else None,
             config=config,
+            pruner_settings=pruner_settings,
         )
         if final_tools is not None and pass_result is not None and pass_result.status == "applied":
             item["tools"] = final_tools
@@ -392,6 +398,7 @@ def transform_openai_request(
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult | None, Any]:
     """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
     from cyt.skills.proxy_inject import (
@@ -449,6 +456,7 @@ def transform_openai_request(
         capture_decomposed_catalog,
         deferred,
         config,
+        pruner_settings=pruner_settings,
     )
     original, skills_meta = finish_deferred_skills_openai(
         original,

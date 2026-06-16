@@ -51,6 +51,7 @@ from cyt.pruners.policies import (
     tool_pass_through,
     tools_for_catalog,
 )
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 
 logger = logging.getLogger(__name__)
@@ -416,6 +417,7 @@ def _run_catalog_pruning(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, int],
@@ -480,6 +482,7 @@ def _run_catalog_pruning(
         skill_entries=skill_entries,
         skill_llm_out=skill_llm_out,
         config=resolved_config,
+        pruner_settings=pruner_settings,
     )
     tool_properties_count_out = _count_optional_property_chunks(data)
     pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
@@ -592,8 +595,10 @@ def _run_rerank_stage(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     rerank_usage: StageTokenUsage
+    rerank_settings = pruner_settings.for_stage("rerank") if pruner_settings else None
     tools_already_pruned = False
     if skill_entries:
         from cyt.config import skills_pipeline_uses_rerank
@@ -608,6 +613,7 @@ def _run_rerank_stage(
                 query,
                 skill_entries,
                 config=config,
+                settings=rerank_settings,
             )
             tools_already_pruned = True
             if skill_llm_out is not None:
@@ -618,6 +624,8 @@ def _run_rerank_stage(
                 query,
                 prune=False,
                 merge_pinned=False,
+                config=config,
+                settings=rerank_settings,
             )
     else:
         data, rerank_usage = rerank_catalog_dict(
@@ -625,6 +633,8 @@ def _run_rerank_stage(
             query,
             prune=False,
             merge_pinned=False,
+            config=config,
+            settings=rerank_settings,
         )
     pruning_token_usage["rerank"] = rerank_usage
     if capture_catalog and snapshots is not None:
@@ -655,11 +665,13 @@ def _run_llm_stage(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> dict[str, Any]:
     if trim_before_llm:
         data = trim_catalog_dict(data)
 
     llm_usage: StageTokenUsage
+    llm_settings = pruner_settings.for_stage("llm") if pruner_settings else None
     if skill_entries:
         from cyt.config import skills_pipeline_uses_llm
         from cyt.skills.llm import llm_prune_tools_and_skills
@@ -678,13 +690,26 @@ def _run_llm_stage(
                 skill_entries,
                 trim_before_llm=False,
                 config=config,
+                settings=llm_settings,
             )
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:
-            data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
+            data, llm_usage = llm_catalog_dict(
+                data,
+                query,
+                merge_pinned=False,
+                config=config,
+                settings=llm_settings,
+            )
     else:
-        data, llm_usage = llm_catalog_dict(data, query, merge_pinned=False)
+        data, llm_usage = llm_catalog_dict(
+            data,
+            query,
+            merge_pinned=False,
+            config=config,
+            settings=llm_settings,
+        )
 
     pruning_token_usage["llm"] = llm_usage
     decomposed_breakdown["llm"] = _breakdown_entry(data)
@@ -729,6 +754,7 @@ class _StageKwargs(TypedDict):
     skill_entries: list[Any] | None
     skill_llm_out: dict[str, Any] | None
     config: dict[str, Any] | None
+    pruner_settings: PrunerSettingsCache | None
 
 
 def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
@@ -758,6 +784,7 @@ def _run_pipeline_stage(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     stage_kwargs: _StageKwargs = {
         "data": data,
@@ -770,6 +797,7 @@ def _run_pipeline_stage(
         "skill_entries": skill_entries,
         "skill_llm_out": skill_llm_out,
         "config": config,
+        "pruner_settings": pruner_settings,
     }
     if stage == "rerank":
         try:
@@ -802,6 +830,7 @@ def _run_pruning_pipeline(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -847,6 +876,7 @@ def _run_pruning_pipeline(
             skill_entries=skill_entries,
             skill_llm_out=skill_llm_out,
             config=config,
+            pruner_settings=pruner_settings,
         )
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
@@ -1013,6 +1043,7 @@ def filter_tools_for_query(
     skill_entries: list[Any] | None = None,
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -1129,6 +1160,7 @@ def filter_tools_for_query(
             skill_entries=skill_entries,
             skill_llm_out=skill_llm_out,
             config=config,
+            pruner_settings=pruner_settings,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)
@@ -1273,6 +1305,7 @@ def transform_anthropic_request(
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult | None, Any]:
     """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
     from cyt.skills.proxy_inject import (
@@ -1344,6 +1377,7 @@ def transform_anthropic_request(
         skill_entries=skill_entries_for_prune or None,
         skill_llm_out=skill_out if deferred is not None else None,
         config=config,
+        pruner_settings=pruner_settings,
     )
     return _anthropic_finish_transform(
         original,

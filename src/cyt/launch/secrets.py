@@ -14,6 +14,7 @@ from cyt.config import load_proxy_env, required_proxy_env_var_names
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.upstream import AgentName
 from cyt.proxy.setup import parse_env_file
+from cyt.pruners.remote import PrunerSettingsCache
 
 KEYRING_SERVICE = "cyt"
 KEYRING_BLOB_ACCOUNT = "__credentials__"
@@ -338,11 +339,12 @@ def ensure_proxy_pipeline_credentials(
     config: dict[str, Any],
     *,
     credential_sources: dict[str, str],
-) -> None:
+) -> PrunerSettingsCache:
     """Resolve all tool/skills pruner API keys before the proxy accepts traffic."""
+
     ensure_runtime_credentials(config, agent=None, credential_sources=credential_sources)
     verify_pipeline_credentials_resolved(config)
-    warm_pipeline_pruner_settings(config)
+    return build_pruner_settings_cache(config)
 
 
 def verify_pipeline_credentials_resolved(config: dict[str, Any]) -> None:
@@ -352,34 +354,36 @@ def verify_pipeline_credentials_resolved(config: dict[str, Any]) -> None:
     require_proxy_env(config)
 
 
-def warm_pipeline_pruner_settings(config: dict[str, Any]) -> None:
+def build_pruner_settings_cache(config: dict[str, Any]) -> PrunerSettingsCache:
     """Construct configured remote pruner clients at startup (never on first request)."""
     from cyt.config import (
         pruning_pipeline_from_config,
         skills_enabled,
         skills_pipeline,
     )
+    from cyt.pruners.llm import llm_pruning_settings
+    from cyt.pruners.rerank import rerank_pruning_settings
 
+    cache = PrunerSettingsCache()
     for stage in pruning_pipeline_from_config(config):
         if stage == "rerank":
-            from cyt.pruners.rerank import rerank_pruning_settings
-
-            rerank_pruning_settings(config)
+            cache.rerank = rerank_pruning_settings(config)
         elif stage == "llm":
-            from cyt.pruners.llm import llm_pruning_settings
-
-            llm_pruning_settings(config)
+            cache.llm = llm_pruning_settings(config)
 
     if skills_enabled(config):
         pipeline = skills_pipeline(config).strip().lower()
-        if pipeline == "rerank":
-            from cyt.pruners.rerank import rerank_pruning_settings
+        if pipeline == "rerank" and cache.rerank is None:
+            cache.rerank = rerank_pruning_settings(config)
+        elif pipeline == "llm" and cache.llm is None:
+            cache.llm = llm_pruning_settings(config)
 
-            rerank_pruning_settings(config)
-        elif pipeline == "llm":
-            from cyt.pruners.llm import llm_pruning_settings
+    return cache
 
-            llm_pruning_settings(config)
+
+def warm_pipeline_pruner_settings(config: dict[str, Any]) -> PrunerSettingsCache:
+    """Construct configured remote pruner clients at startup (never on first request)."""
+    return build_pruner_settings_cache(config)
 
 
 def inspect_named_credentials(
