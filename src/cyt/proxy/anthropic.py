@@ -56,6 +56,9 @@ from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 
 logger = logging.getLogger(__name__)
 
+# Initial LLM pruning attempt plus two retries before BM25 fallback.
+LLM_STAGE_MAX_ATTEMPTS = 3
+
 _DEBUG_LOG_PATH = Path(
     "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-16df8c.log",
 )
@@ -806,16 +809,29 @@ def _run_pipeline_stage(
             logger.warning("rerank failed, falling back to bm25: %s", exc)
             return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     if stage == "llm":
-        try:
-            updated = _run_llm_stage(
-                **stage_kwargs,
-                trim_before_llm=stage_index > 0
-                and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
-            )
-            return updated, None, None
-        except Exception as exc:
-            logger.warning("llm pruning failed, falling back to bm25: %s", exc)
-            return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
+        for attempt in range(1, LLM_STAGE_MAX_ATTEMPTS + 1):
+            try:
+                updated = _run_llm_stage(
+                    **stage_kwargs,
+                    trim_before_llm=stage_index > 0
+                    and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
+                )
+                return updated, None, None
+            except Exception as exc:
+                if attempt < LLM_STAGE_MAX_ATTEMPTS:
+                    logger.warning(
+                        "llm pruning failed (attempt %d/%d), retrying: %s",
+                        attempt,
+                        LLM_STAGE_MAX_ATTEMPTS,
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "llm pruning failed after %d attempts, falling back to bm25: %s",
+                        LLM_STAGE_MAX_ATTEMPTS,
+                        exc,
+                    )
+        return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     if stage == "bm25":
         return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     raise ValueError(f"unknown pruning stage: {stage}")

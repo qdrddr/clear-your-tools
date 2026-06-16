@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 from pathlib import Path
 
@@ -21,8 +20,10 @@ from cyt.launch.proxy_guard import (
     require_healthy_proxy,
     resolve_launch_port,
 )
+from cyt.launch.quiet import configure_launch_quiet
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
-from cyt.proxy.bootstrap import prepare_runtime
+from cyt.launch.upstream_credentials import ensure_upstream_credentials, upstream_for_endpoint
+from cyt.proxy.bootstrap import RuntimeContext, prepare_runtime
 from cyt.proxy.setup import normalize_upstream_kind
 from cyt.skills.agents import launch_agent_env
 
@@ -78,7 +79,7 @@ def add_shared_upstream_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Suppress runtime env summary before agent start",
+        help=argparse.SUPPRESS,
     )
 
 
@@ -91,8 +92,8 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
     for action in launch_parser._actions:
         if action.dest == "port":
             action.help = (
-                f"Reverse listen port for launch (default: configured proxy port + "
-                f"{LAUNCH_PORT_OFFSET}, else {DEFAULT_REVERSE_PORT + LAUNCH_PORT_OFFSET})"
+                f"Base reverse port for launch scan (default: configured proxy port, "
+                f"else {DEFAULT_REVERSE_PORT}; spawns on base+{LAUNCH_PORT_OFFSET} when free)"
             )
             break
     launch_parser.add_argument(
@@ -142,6 +143,54 @@ def _validate_upstream_kind_args(args: argparse.Namespace) -> None:
         raise SystemExit("--upstream-name requires --upstream")
 
 
+def _launch_debug_flags(args: argparse.Namespace) -> tuple[bool, bool, bool]:
+    return (
+        bool(getattr(args, "debug", False)),
+        bool(getattr(args, "debug_dry_run", False)),
+        bool(getattr(args, "debug_strict", False)),
+    )
+
+
+def _ensure_launch_upstream_credentials(
+    runtime: RuntimeContext,
+    endpoint: str | None,
+) -> RuntimeContext:
+    if endpoint is None:
+        return runtime
+    upstream_entry = upstream_for_endpoint(runtime.config, endpoint)
+    if upstream_entry is None:
+        return runtime
+    runtime.config = ensure_upstream_credentials(
+        config=runtime.config,
+        config_path=runtime.config_path,
+        entry=upstream_entry,
+        credential_sources=runtime.credential_sources,
+    )
+    return runtime
+
+
+def _run_launched_agent(
+    *,
+    agent: AgentName,
+    runtime: RuntimeContext,
+    endpoint: str,
+    agent_args: list[str],
+) -> int:
+    if agent == "claude":
+        return run_claude(
+            config=runtime.config,
+            port=runtime.port,
+            endpoint=endpoint,
+            agent_args=agent_args,
+        )
+    return run_codex(
+        config=runtime.config,
+        port=runtime.port,
+        endpoint=endpoint,
+        agent_args=agent_args,
+    )
+
+
 def run(args: argparse.Namespace) -> None:
     """Run ``cyt launch`` after argparse."""
     _validate_upstream_kind_args(args)
@@ -171,6 +220,8 @@ def run(args: argparse.Namespace) -> None:
             "(https://api.openai.com or https://api.anthropic.com).",
         )
 
+    configure_launch_quiet()
+
     runtime = prepare_runtime(
         agent=agent,
         config_path=args.config,
@@ -179,7 +230,6 @@ def run(args: argparse.Namespace) -> None:
         upstream_kind=upstream_kind,
         upstream_name=args.upstream_name,
     )
-    runtime.port = resolve_launch_port(runtime.port)
 
     endpoint = resolve_agent_endpoint(
         runtime.config,
@@ -189,9 +239,17 @@ def run(args: argparse.Namespace) -> None:
         upstream_cli_endpoint=runtime.upstream_endpoint,
     )
 
+    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+
     if args.configure:
         configure_provider(
-            port=runtime.port,
+            port=resolve_launch_port(
+                runtime.port,
+                required_endpoint=endpoint,
+                quiet=True,
+                debug=debug,
+                debug_dry_run=debug_dry_run,
+            ),
             endpoint=endpoint,
             env_key=codex_env_key_name(runtime.config),
         )
@@ -199,29 +257,24 @@ def run(args: argparse.Namespace) -> None:
 
     os.environ.update(launch_agent_env(agent))
 
-    debug = bool(getattr(args, "debug", False))
-    debug_dry_run = bool(getattr(args, "debug_dry_run", False))
-    debug_strict = bool(getattr(args, "debug_strict", False))
-    if debug or debug_dry_run:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(levelname)s:%(name)s: %(message)s",
-            force=True,
-        )
-
-    ensure_proxy(
-        port=runtime.port,
+    proxy_guard = ensure_proxy(
+        base_port=runtime.port,
+        required_endpoint=endpoint,
         config_path=runtime.config_path,
-        quiet=args.quiet,
+        quiet=True,
+        agent=agent,
         debug=debug,
         debug_dry_run=debug_dry_run,
         debug_strict=debug_strict,
     )
+    runtime.port = proxy_guard.port
     require_healthy_proxy(
         port=runtime.port,
         debug=debug,
         debug_dry_run=debug_dry_run,
     )
+
+    runtime = _ensure_launch_upstream_credentials(runtime, endpoint)
 
     launch_env: dict[str, str] | None = None
     if agent == "claude":
@@ -232,7 +285,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
     print_runtime_env_report(
-        quiet=args.quiet,
+        quiet=True,
         credential_sources=runtime.credential_sources,
         port=runtime.port,
         endpoint=endpoint,
@@ -245,20 +298,10 @@ def run(args: argparse.Namespace) -> None:
         debug_dry_run=debug_dry_run,
     )
 
-    if agent == "claude":
-        raise SystemExit(
-            run_claude(
-                config=runtime.config,
-                port=runtime.port,
-                endpoint=endpoint,
-                agent_args=agent_args,
-            ),
-        )
-
     raise SystemExit(
-        run_codex(
-            config=runtime.config,
-            port=runtime.port,
+        _run_launched_agent(
+            agent=agent,
+            runtime=runtime,
             endpoint=endpoint,
             agent_args=agent_args,
         ),

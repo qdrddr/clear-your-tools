@@ -354,6 +354,11 @@ def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]
     return routes
 
 
+def health_endpoint_names(routes: dict[str, tuple[str, str | None]]) -> list[str]:
+    """Return configured reverse-proxy endpoint names for ``/health``."""
+    return sorted(route.lstrip("/") for route in routes)
+
+
 def resolve_upstream(
     path: str,
     routes: dict[str, tuple[str, str | None]],
@@ -1176,6 +1181,7 @@ def create_app(
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
     http2_upstream: bool = False,
+    launch_agent: str | None = None,
 ) -> Starlette:
     use_http2_upstream = http2_upstream and http2_package_available()
     if http2_upstream and not use_http2_upstream:
@@ -1194,13 +1200,16 @@ def create_app(
             await client.aclose()
 
     async def health(_: Request) -> JSONResponse:
-        return JSONResponse(
-            {
-                "status": "ok",
-                "debug": debug,
-                "debug_dry_run": debug_terminate,
-            },
-        )
+        payload: dict[str, Any] = {
+            "name": "cyt",
+            "status": "ok",
+            "endpoints": health_endpoint_names(routes),
+            "debug": debug,
+            "debug_dry_run": debug_terminate,
+        }
+        if launch_agent is not None:
+            payload["agent"] = launch_agent
+        return JSONResponse(payload)
 
     async def proxy(request: Request) -> Response:
         return await _proxy_request(
@@ -1245,6 +1254,7 @@ async def serve_reverse_async(
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
     pruner_settings: PrunerSettingsCache | None = None,
+    launch_agent: str | None = None,
 ) -> None:
     from cyt.config import require_proxy_env
 
@@ -1308,6 +1318,7 @@ async def serve_reverse_async(
         config=config,
         pruner_settings=pruner_settings,
         http2_upstream=http2_upstream,
+        launch_agent=launch_agent,
     )
 
     if http2_serve:

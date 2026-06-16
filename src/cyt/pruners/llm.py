@@ -2,7 +2,7 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from litellm import completion, responses
 from pydantic import BaseModel
@@ -203,6 +203,38 @@ def _usage_from_litellm_response(
     )
 
 
+def _llm_response_diagnostics(response: object, *, model_name: str) -> str:
+    """Summarize LiteLLM response fields useful when selector output is missing."""
+    parts = [f"model={model_name!r}"]
+    choices = getattr(response, "choices", None)
+    if isinstance(choices, list) and choices:
+        choice = choices[0]
+        parts.append(f"finish_reason={getattr(choice, 'finish_reason', None)!r}")
+        message = getattr(choice, "message", None)
+        if message is not None:
+            content = getattr(message, "content", None)
+            parts.append(f"content_type={type(content).__name__}")
+    elif (output_text := getattr(response, "output_text", None)) is not None:
+        parts.append(f"output_text_type={type(output_text).__name__}")
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        if completion_tokens is None:
+            completion_tokens = getattr(usage, "output_tokens", None)
+        parts.append(f"completion_tokens={completion_tokens!r}")
+        details = getattr(usage, "completion_tokens_details", None)
+        if details is not None:
+            parts.append(f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)!r}")
+    return ", ".join(parts)
+
+
+def _fail_llm_response(response: object, *, model_name: str, reason: str) -> NoReturn:
+    detail = _llm_response_diagnostics(response, model_name=model_name)
+    message = f"{reason} ({detail})"
+    logger.warning("llm selector response unusable: %s", message)
+    raise ValueError(message)
+
+
 def call_llm(
     settings: LlmPruningSettings,
     query: str,
@@ -236,7 +268,11 @@ def call_llm(
 
     content_val: Any = response.choices[0].message.content
     if not isinstance(content_val, str):
-        raise ValueError(f"Unexpected response content type: {type(content_val)}")
+        _fail_llm_response(
+            response,
+            model_name=settings.model_name,
+            reason=f"Unexpected response content type: {type(content_val)}",
+        )
 
     try:
         parsed = RelevantChunkIds.model_validate_json(content_val)
@@ -246,7 +282,11 @@ def call_llm(
         if json_match := re.search(r"\{.*\}", content_val, re.DOTALL):
             parsed = RelevantChunkIds.model_validate_json(json_match.group(0))
         else:
-            raise ValueError(f"Could not parse LLM response: {content_val}") from None
+            _fail_llm_response(
+                response,
+                model_name=settings.model_name,
+                reason=f"Could not parse LLM response: {content_val!r}",
+            )
 
     usage = _usage_from_litellm_response(response, content_val, settings=settings)
     if usage.usage_source == TIKTOKEN_CL100K:

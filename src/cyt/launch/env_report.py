@@ -26,8 +26,15 @@ def _format_sources(credential_sources: dict[str, str]) -> list[str]:
     return lines
 
 
-def _proxy_summary_lines(*, port: int, endpoint: str | None) -> list[str]:
+def _proxy_summary_lines(
+    *,
+    port: int,
+    endpoint: str | None,
+    agent: AgentName | None = None,
+) -> list[str]:
     lines = [f"  port: {port}"]
+    if agent is not None:
+        lines.append(f"  agent: {agent}")
     lines.append(f"  health: http://localhost:{port}/health")
     if endpoint is not None:
         lines.append(f"  endpoint: http://localhost:{port}/{endpoint}")
@@ -55,13 +62,19 @@ def _proxy_recipe_lines(
     return lines
 
 
-def _claude_recipe_lines(*, port: int, endpoint: str) -> list[str]:
-    return [
-        "# Manual Claude Code recipe",
-        'export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"  # OpenRouter upstream',
-        f'export ANTHROPIC_BASE_URL="http://localhost:{port}/{endpoint}"',
-        'claude --model haiku -p "say hi"',
-    ]
+def _claude_recipe_lines(*, port: int, endpoint: str, key_var_name: str | None = None) -> list[str]:
+    lines = ["# Manual Claude Code recipe"]
+    if key_var_name:
+        lines.append(f'export ANTHROPIC_AUTH_TOKEN="${key_var_name}"')
+    else:
+        lines.append('export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_API_KEY"')
+    lines.extend(
+        [
+            f'export ANTHROPIC_BASE_URL="http://localhost:{port}/{endpoint}"',
+            'claude --model haiku -p "say hi"',
+        ],
+    )
+    return lines
 
 
 def _codex_recipe_lines(*, port: int, endpoint: str, env_key: str) -> list[str]:
@@ -111,7 +124,7 @@ def print_runtime_env_report(
 
     _print_section(
         "Proxy:",
-        _proxy_summary_lines(port=port, endpoint=endpoint),
+        _proxy_summary_lines(port=port, endpoint=endpoint, agent=agent),
     )
     _print_section("Vars used this run:", source_lines or ["  (none)"])
     _print_section(
@@ -136,7 +149,22 @@ def print_runtime_env_report(
         return
 
     if agent == "claude":
-        recipe = _claude_recipe_lines(port=port, endpoint=endpoint)
+        key_var_name = None
+        if endpoint is not None and config is not None:
+            from cyt.launch.upstream_credentials import (
+                is_canonical_upstream,
+                lookup_upstream_key_var,
+                upstream_for_endpoint,
+            )
+
+            upstream = upstream_for_endpoint(config, endpoint)
+            if upstream is not None and not is_canonical_upstream(upstream):
+                key_var_name = lookup_upstream_key_var(config, upstream)
+        recipe = _claude_recipe_lines(
+            port=port,
+            endpoint=endpoint,
+            key_var_name=key_var_name,
+        )
     else:
         env_key = codex_env_key_name(config or {})
         recipe = _codex_recipe_lines(port=port, endpoint=endpoint, env_key=env_key)

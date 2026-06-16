@@ -25,10 +25,11 @@ _BM25_FALLBACK_MESSAGE = (
 )
 
 
-def _apply_bm25_fallback_pipeline(config: dict[str, Any]) -> None:
-    import sys
+def _apply_bm25_fallback_pipeline(config: dict[str, Any], *, quiet: bool = False) -> None:
+    if not quiet:
+        import sys
 
-    print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
+        print(_BM25_FALLBACK_MESSAGE, file=sys.stderr)
     pruning = config.setdefault("pruning", {})
     if isinstance(pruning, dict):
         tools = pruning.setdefault("tools", {})
@@ -41,6 +42,7 @@ def _apply_bm25_fallback_if_needed(
     config_path: Path,
     *,
     upstream_cli: bool,
+    quiet: bool = False,
 ) -> None:
     from cyt.config import (
         load_user_config_overlay,
@@ -51,13 +53,13 @@ def _apply_bm25_fallback_if_needed(
     if upstream_cli:
         if not missing_proxy_env_var_names(config):
             return
-        _apply_bm25_fallback_pipeline(config)
+        _apply_bm25_fallback_pipeline(config, quiet=quiet)
         return
 
     user_config = load_user_config_overlay(config_path)
     if remote_pruning_pipeline_configured(user_config):
         return
-    _apply_bm25_fallback_pipeline(config)
+    _apply_bm25_fallback_pipeline(config, quiet=quiet)
 
 
 @dataclass
@@ -114,7 +116,12 @@ def prepare_runtime(
         from cyt.launch.secrets import build_pruner_settings_cache
 
         pruner_settings = build_pruner_settings_cache(config)
-    _apply_bm25_fallback_if_needed(config, path, upstream_cli=upstream_cli)
+    _apply_bm25_fallback_if_needed(
+        config,
+        path,
+        upstream_cli=upstream_cli,
+        quiet=agent is not None,
+    )
 
     resolved_upstream_url = upstream_url
     if resolved_upstream_url is None and upstream_endpoint is not None:

@@ -218,6 +218,7 @@ async def run_reverse_server(
     ssl_keyfile: str | None,
     ssl_certfile: str | None,
     pruner_settings: PrunerSettingsCache | None = None,
+    launch_agent: str | None = None,
 ) -> None:
     from cyt.proxy.reverse import serve_reverse_async
 
@@ -233,6 +234,7 @@ async def run_reverse_server(
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile,
         pruner_settings=pruner_settings,
+        launch_agent=launch_agent,
     )
 
 
@@ -328,6 +330,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-resolve-credentials",
         action="store_true",
         help="Skip keyring/.env credential resolution (use inherited process environment)",
+    )
+    from cyt.launch.upstream import parse_agent_name
+
+    proxy_parser.add_argument(
+        "--launch-agent",
+        type=parse_agent_name,
+        default=None,
+        help=argparse.SUPPRESS,
     )
 
     from cyt.launch.cli import add_launch_parser
@@ -470,12 +480,17 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
 
     _apply_proxy_skills_agent_filter(getattr(args, "upstream_kind", None))
 
-    if args.debug or args.debug_dry_run:
+    launch_agent = getattr(args, "launch_agent", None)
+    if (args.debug or args.debug_dry_run) and launch_agent is None:
         logging.basicConfig(
             level=logging.INFO,
             format="%(levelname)s:%(name)s: %(message)s",
             force=True,
         )
+    elif launch_agent is not None:
+        from cyt.launch.quiet import configure_launch_quiet
+
+        configure_launch_quiet()
 
     from cyt.launch.env_report import print_runtime_env_report
     from cyt.proxy.bootstrap import prepare_runtime
@@ -491,6 +506,16 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
     )
     config = runtime.config
 
+    if not bool(getattr(args, "no_resolve_credentials", False)):
+        from cyt.launch.upstream_credentials import ensure_non_canonical_upstream_credentials
+
+        config = ensure_non_canonical_upstream_credentials(
+            config=config,
+            config_path=runtime.config_path,
+            credential_sources=runtime.credential_sources,
+        )
+        runtime.config = config
+
     print_runtime_env_report(
         quiet=bool(getattr(args, "quiet", False)),
         credential_sources=runtime.credential_sources,
@@ -500,7 +525,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
         include_agent_recipe=False,
     )
 
-    if runtime.upstream_endpoint is not None:
+    if runtime.upstream_endpoint is not None and launch_agent is None:
         from cyt.proxy.setup import print_proxy_urls
 
         print_proxy_urls(runtime.port, [runtime.upstream_endpoint])
@@ -535,6 +560,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
             pruner_settings=runtime.pruner_settings,
+            launch_agent=getattr(args, "launch_agent", None),
         ),
     )
 

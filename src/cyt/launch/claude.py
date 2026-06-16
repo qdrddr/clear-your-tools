@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from cyt.launch.config import launch_claude_models
-from cyt.proxy.setup import normalize_upstream_url, upstream_entry_endpoint
+from cyt.launch.upstream_credentials import (
+    is_canonical_upstream,
+    lookup_upstream_key_var,
+    upstream_for_endpoint,
+)
 
 _CLAUDE_CANDIDATES = (
     Path.home() / ".local" / "bin" / "claude",
@@ -29,24 +33,6 @@ def find_claude() -> str:
     )
 
 
-def _upstream_for_endpoint(config: dict[str, Any], endpoint: str) -> dict[str, Any] | None:
-    reverse = config.get("network", {}).get("proxy", {}).get("reverse", {})
-    upstreams = reverse.get("upstreams", [])
-    if not isinstance(upstreams, list):
-        return None
-    for entry in upstreams:
-        if isinstance(entry, dict) and upstream_entry_endpoint(entry) == endpoint:
-            return entry
-    return None
-
-
-def _is_openrouter_upstream(entry: dict[str, Any] | None) -> bool:
-    if entry is None:
-        return False
-    url = entry.get("url") or entry.get("host_url") or entry.get("base_url") or ""
-    return "openrouter" in normalize_upstream_url(str(url)).lower()
-
-
 def build_claude_env(
     *,
     config: dict[str, Any],
@@ -59,10 +45,13 @@ def build_claude_env(
     env["ANTHROPIC_BASE_URL"] = base_url
     reportable = {"ANTHROPIC_BASE_URL": base_url}
 
-    upstream = _upstream_for_endpoint(config, endpoint)
-    if _is_openrouter_upstream(upstream):
-        token = os.environ.get("OPENROUTER_API_KEY", "")
-        env["ANTHROPIC_AUTH_TOKEN"] = token
+    upstream = upstream_for_endpoint(config, endpoint)
+    if upstream is not None and not is_canonical_upstream(upstream):
+        key_var = lookup_upstream_key_var(config, upstream)
+        if key_var:
+            token = os.environ.get(key_var)
+            if token:
+                env["ANTHROPIC_AUTH_TOKEN"] = token
         env.setdefault("ANTHROPIC_API_KEY", "")
     else:
         env.setdefault("ANTHROPIC_AUTH_TOKEN", os.environ.get("ANTHROPIC_API_KEY", ""))

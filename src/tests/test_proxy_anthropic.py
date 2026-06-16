@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+from cyt.common.token_usage import StageTokenUsage
 from cyt.proxy.anthropic import (
     PruneResult,
     clean_messages,
@@ -310,7 +312,6 @@ def test_snapshot_catalog_omits_tools() -> None:
 
 
 def test_input_tools_from_payload_deep_copies_tools() -> None:
-    from typing import Any
 
     from cyt.proxy.reverse import _input_tools_from_payload, _pruning_meta_for_debug
 
@@ -461,3 +462,74 @@ def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> 
     mock_combined.assert_not_called()
     mock_tools_only.assert_called_once()
     assert "matches" not in skill_out
+
+
+def test_run_pipeline_stage_llm_retries_before_bm25_fallback() -> None:
+    from cyt.proxy.anthropic import LLM_STAGE_MAX_ATTEMPTS, _run_pipeline_stage
+
+    data = {"json": [{"file_path": "tool.json"}], "md": []}
+    decomposed_breakdown: dict[str, dict[str, int]] = {}
+    decomposed: dict[str, int] = {}
+    pruning_token_usage: dict[str, StageTokenUsage] = {}
+
+    with (
+        patch(
+            "cyt.proxy.anthropic._run_llm_stage",
+            side_effect=RuntimeError("llm unavailable"),
+        ) as mock_llm,
+        patch(
+            "cyt.proxy.anthropic._run_bm25_stage",
+            return_value=(data, None, None),
+        ) as mock_bm25,
+    ):
+        updated, post_rerank, post_rerank_scored = _run_pipeline_stage(
+            "llm",
+            stage_index=0,
+            pruning_pipeline=["llm"],
+            data=data,
+            query="find tools",
+            capture_catalog=False,
+            snapshots=None,
+            decomposed_breakdown=decomposed_breakdown,
+            decomposed=decomposed,
+            pruning_token_usage=pruning_token_usage,
+        )
+
+    assert mock_llm.call_count == LLM_STAGE_MAX_ATTEMPTS
+    mock_bm25.assert_called_once()
+    assert updated is data
+    assert post_rerank is None
+    assert post_rerank_scored is None
+
+
+def test_run_pipeline_stage_llm_succeeds_without_retry() -> None:
+    from cyt.proxy.anthropic import _run_pipeline_stage
+
+    data = {"json": [{"file_path": "tool.json"}], "md": []}
+    pruned: dict[str, Any] = {"json": [], "md": []}
+    decomposed_breakdown: dict[str, dict[str, int]] = {}
+    decomposed: dict[str, int] = {}
+    pruning_token_usage: dict[str, StageTokenUsage] = {}
+
+    with (
+        patch("cyt.proxy.anthropic._run_llm_stage", return_value=pruned) as mock_llm,
+        patch("cyt.proxy.anthropic._run_bm25_stage") as mock_bm25,
+    ):
+        updated, post_rerank, post_rerank_scored = _run_pipeline_stage(
+            "llm",
+            stage_index=0,
+            pruning_pipeline=["llm"],
+            data=data,
+            query="find tools",
+            capture_catalog=False,
+            snapshots=None,
+            decomposed_breakdown=decomposed_breakdown,
+            decomposed=decomposed,
+            pruning_token_usage=pruning_token_usage,
+        )
+
+    mock_llm.assert_called_once()
+    mock_bm25.assert_not_called()
+    assert updated is pruned
+    assert post_rerank is None
+    assert post_rerank_scored is None

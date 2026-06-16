@@ -44,6 +44,49 @@ async def test_upstream_reachable_false_on_connection_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_health_endpoint_includes_cyt_name() -> None:
+    app = create_app({"/anthropic": ("https://api.example.com", "anthropic")})
+
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "cyt",
+        "status": "ok",
+        "endpoints": ["anthropic"],
+        "debug": False,
+        "debug_dry_run": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_includes_launch_agent_and_all_endpoints() -> None:
+    app = create_app(
+        {
+            "/openrouter": ("https://openrouter.ai/api", "anthropic"),
+            "/anthropic": ("https://api.example.com", "anthropic"),
+        },
+        launch_agent="claude",
+    )
+
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "cyt",
+        "status": "ok",
+        "endpoints": ["anthropic", "openrouter"],
+        "agent": "claude",
+        "debug": False,
+        "debug_dry_run": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_proxy_startup_probe_returns_200_when_upstream_reachable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "HEAD"

@@ -6,6 +6,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from cyt.common.token_usage import empty_usage
 from cyt.pruners.llm import LlmPruningSettings, RelevantChunkIds, call_llm, llm_select_ids
 
@@ -100,3 +102,29 @@ def test_call_llm_uses_responses_api_when_enabled() -> None:
     assert usage.input_tokens == 12
     assert usage.output_tokens == 4
     assert usage.usage_source == "provider"
+
+
+def test_call_llm_none_content_includes_response_diagnostics() -> None:
+    fake_response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=None),
+                finish_reason="length",
+            ),
+        ],
+        usage=SimpleNamespace(
+            completion_tokens=0,
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=0),
+        ),
+        id="chatcmpl-bad",
+    )
+
+    with patch("cyt.pruners.llm.completion", return_value=fake_response):
+        with pytest.raises(ValueError, match=r"model='openai/gpt-5\.5'") as exc_info:
+            call_llm(_settings(responses_api=False), "find tools", "<chunk>")
+
+    message = str(exc_info.value)
+    assert "finish_reason='length'" in message
+    assert "content_type=NoneType" in message
+    assert "completion_tokens=0" in message
+    assert "reasoning_tokens=0" in message

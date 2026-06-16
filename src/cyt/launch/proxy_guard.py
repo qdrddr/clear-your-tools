@@ -5,24 +5,26 @@ from __future__ import annotations
 import atexit
 import json
 import os
-import signal
+import socket
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypeGuard
 from urllib.error import URLError
 from urllib.request import urlopen
 
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV
 
 LOCAL_HOST = "127.0.0.1"
+CYT_HEALTH_NAME = "cyt"
 LAUNCH_PORT_OFFSET = 1
 HEALTH_TIMEOUT_SECONDS = 1.5
 STARTUP_POLL_SECONDS = 0.2
 STARTUP_TIMEOUT_SECONDS = 35.0
-PROXY_SHUTDOWN_SECONDS = 2.0
+
+LaunchPortAction = Literal["reuse", "spawn", "skip"]
 
 
 @dataclass
@@ -31,6 +33,7 @@ class ProxyGuard:
 
     process: subprocess.Popen[bytes] | None
     started_by_launch: bool
+    port: int
 
     def terminate_if_started(self) -> None:
         if not self.started_by_launch or self.process is None:
@@ -59,7 +62,22 @@ def _proxy_health(port: int) -> dict[str, Any] | None:
 
 def _health_ok(port: int) -> bool:
     payload = _proxy_health(port)
-    return isinstance(payload, dict) and payload.get("status") == "ok"
+    return _is_cyt_health(payload)
+
+
+def _is_cyt_health(health: dict[str, Any] | None) -> TypeGuard[dict[str, Any]]:
+    return (
+        isinstance(health, dict)
+        and health.get("status") == "ok"
+        and health.get("name") == CYT_HEALTH_NAME
+    )
+
+
+def _health_has_endpoint(health: dict[str, Any], endpoint: str) -> bool:
+    endpoints = health.get("endpoints")
+    if not isinstance(endpoints, list):
+        return False
+    return endpoint in [str(item) for item in endpoints]
 
 
 def _proxy_debug_matches(
@@ -73,20 +91,84 @@ def _proxy_debug_matches(
     return bool(health.get("debug")) == debug and bool(health.get("debug_dry_run")) == debug_dry_run
 
 
-def _listener_pids_on_port(port: int) -> list[int]:
-    """Return PIDs listening on *port* (not clients connected to it)."""
-    result = subprocess.run(
-        ["lsof", "-nP", "-iTCP", f":{port}", "-sTCP:LISTEN", "-t"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return [int(pid) for pid in result.stdout.split() if pid.strip().isdigit()]
+def _is_reusable_cyt_proxy(
+    health: dict[str, Any] | None,
+    *,
+    endpoint: str,
+    debug: bool,
+    debug_dry_run: bool,
+) -> TypeGuard[dict[str, Any]]:
+    if not _is_cyt_health(health):
+        return False
+    if not _health_has_endpoint(health, endpoint):
+        return False
+    if (debug or debug_dry_run) and not _proxy_debug_matches(
+        health,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+    ):
+        return False
+    return True
 
 
 def is_port_in_use(port: int) -> bool:
-    """Return whether a process is already listening on *port*."""
-    return bool(_listener_pids_on_port(port))
+    """Return whether *port* is already bound on ``LOCAL_HOST``."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((LOCAL_HOST, port))
+        except OSError:
+            return True
+    return False
+
+
+def _evaluate_launch_port(
+    port: int,
+    *,
+    base_port: int,
+    required_endpoint: str,
+    debug: bool,
+    debug_dry_run: bool,
+) -> LaunchPortAction:
+    if is_port_in_use(port):
+        health = _proxy_health(port)
+        if _is_reusable_cyt_proxy(
+            health,
+            endpoint=required_endpoint,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+        ):
+            return "reuse"
+        return "skip"
+    if port == base_port:
+        return "skip"
+    return "spawn"
+
+
+def resolve_launch_proxy_port(
+    *,
+    base_port: int,
+    required_endpoint: str,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+    max_attempts: int = 100,
+) -> tuple[int, Literal["reuse", "spawn"]]:
+    """Pick a port to reuse an existing proxy or spawn a new one."""
+    for attempt in range(max_attempts):
+        port = base_port + attempt
+        action = _evaluate_launch_port(
+            port,
+            base_port=base_port,
+            required_endpoint=required_endpoint,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+        )
+        if action == "reuse":
+            return port, "reuse"
+        if action == "spawn":
+            return port, "spawn"
+    raise SystemExit(
+        f"No free port found starting from {base_port} (tried {max_attempts} ports).",
+    )
 
 
 def find_available_port(start: int, *, max_attempts: int = 100) -> int:
@@ -101,37 +183,28 @@ def find_available_port(start: int, *, max_attempts: int = 100) -> int:
     )
 
 
-def resolve_launch_port(base_port: int) -> int:
-    """Pick a listen port for ``cyt launch``, starting one above the proxy default."""
-    start = base_port + LAUNCH_PORT_OFFSET
-    port = find_available_port(start)
-    if port != start:
+def resolve_launch_port(
+    base_port: int,
+    *,
+    required_endpoint: str,
+    quiet: bool = False,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+) -> int:
+    """Pick the listen port ``cyt launch`` would use for this agent endpoint."""
+    port, _ = resolve_launch_proxy_port(
+        base_port=base_port,
+        required_endpoint=required_endpoint,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+    )
+    preferred = base_port + LAUNCH_PORT_OFFSET
+    if not quiet and port != preferred:
         print(
-            f"Port {start} is in use; launching on {port}.",
+            f"Port {preferred} is in use; launching on {port}.",
             file=sys.stderr,
         )
     return port
-
-
-def _terminate_listeners_on_port(port: int) -> None:
-    pids = _listener_pids_on_port(port)
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            continue
-    if not pids:
-        return
-    deadline = time.monotonic() + PROXY_SHUTDOWN_SECONDS
-    while time.monotonic() < deadline:
-        if not _health_ok(port):
-            return
-        time.sleep(STARTUP_POLL_SECONDS)
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            continue
 
 
 def _spawn_proxy(
@@ -139,6 +212,7 @@ def _spawn_proxy(
     port: int,
     config_path: Path | None,
     quiet: bool,
+    agent: str | None = None,
     debug: bool = False,
     debug_dry_run: bool = False,
     debug_strict: bool = False,
@@ -156,48 +230,40 @@ def _spawn_proxy(
     cmd.append("--no-resolve-credentials")
     if config_path is not None:
         cmd.extend(["--config", str(config_path)])
+    if agent is not None:
+        cmd.extend(["--launch-agent", agent])
     if debug:
         cmd.append("--debug")
     if debug_dry_run:
         cmd.append("--debug-dry-run")
         if debug_strict:
             cmd.append("--debug-strict")
-    stderr = None if debug or debug_dry_run else subprocess.DEVNULL
     child_env = os.environ.copy()
     child_env[CYT_SKIP_KEYRING_ENV] = "1"
     return subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
-        stderr=stderr,
+        stderr=subprocess.DEVNULL,
         env=child_env,
     )
 
 
-def ensure_proxy(
+def _spawn_and_wait_for_healthy_proxy(
     *,
     port: int,
-    config_path: Path | None = None,
-    quiet: bool = False,
-    debug: bool = False,
-    debug_dry_run: bool = False,
-    debug_strict: bool = False,
-) -> ProxyGuard:
-    """Return immediately when proxy is healthy; otherwise spawn one in the background."""
-    health = _proxy_health(port)
-    if health is not None and health.get("status") == "ok":
-        needs_debug = debug or debug_dry_run
-        if not needs_debug or _proxy_debug_matches(
-            health,
-            debug=debug,
-            debug_dry_run=debug_dry_run,
-        ):
-            return ProxyGuard(process=None, started_by_launch=False)
-        _terminate_listeners_on_port(port)
-
+    config_path: Path | None,
+    quiet: bool,
+    agent: str | None,
+    debug: bool,
+    debug_dry_run: bool,
+    debug_strict: bool,
+) -> ProxyGuard | None:
+    """Spawn a proxy on *port*; return ``None`` when it exits before becoming healthy."""
     process = _spawn_proxy(
         port=port,
         config_path=config_path,
         quiet=quiet,
+        agent=agent,
         debug=debug,
         debug_dry_run=debug_dry_run,
         debug_strict=debug_strict,
@@ -205,15 +271,11 @@ def ensure_proxy(
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise SystemExit(
-                f"cyt proxy exited before becoming healthy on port {port}.",
-            )
+            return None
         if _health_ok(port):
             if process.poll() is not None:
-                raise SystemExit(
-                    f"cyt proxy exited before becoming healthy on port {port}.",
-                )
-            guard = ProxyGuard(process=process, started_by_launch=True)
+                return None
+            guard = ProxyGuard(process=process, started_by_launch=True, port=port)
             atexit.register(guard.terminate_if_started)
             return guard
         time.sleep(STARTUP_POLL_SECONDS)
@@ -224,10 +286,64 @@ def ensure_proxy(
     )
 
 
+def ensure_proxy(
+    *,
+    base_port: int,
+    required_endpoint: str,
+    config_path: Path | None = None,
+    quiet: bool = False,
+    agent: str | None = None,
+    debug: bool = False,
+    debug_dry_run: bool = False,
+    debug_strict: bool = False,
+    max_attempts: int = 100,
+) -> ProxyGuard:
+    """Reuse or spawn a CYT reverse proxy for this launch."""
+    preferred_spawn = base_port + LAUNCH_PORT_OFFSET
+    for attempt in range(max_attempts):
+        port = base_port + attempt
+        action = _evaluate_launch_port(
+            port,
+            base_port=base_port,
+            required_endpoint=required_endpoint,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+        )
+        if action == "reuse":
+            if not quiet and port != preferred_spawn:
+                print(
+                    f"Port {preferred_spawn} is in use; launching on {port}.",
+                    file=sys.stderr,
+                )
+            return ProxyGuard(process=None, started_by_launch=False, port=port)
+        if action != "spawn":
+            continue
+        guard = _spawn_and_wait_for_healthy_proxy(
+            port=port,
+            config_path=config_path,
+            quiet=quiet,
+            agent=agent,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+            debug_strict=debug_strict,
+        )
+        if guard is not None:
+            if not quiet and port != preferred_spawn:
+                print(
+                    f"Port {preferred_spawn} is in use; launching on {port}.",
+                    file=sys.stderr,
+                )
+            return guard
+
+    raise SystemExit(
+        f"No free port found starting from {base_port} (tried {max_attempts} ports).",
+    )
+
+
 def require_healthy_proxy(*, port: int, debug: bool = False, debug_dry_run: bool = False) -> None:
     """Fail fast when the reverse proxy is not accepting requests."""
     health = _proxy_health(port)
-    if health is None or health.get("status") != "ok":
+    if not _is_cyt_health(health):
         raise SystemExit(
             f"cyt proxy is not healthy on http://{LOCAL_HOST}:{port}/health. "
             "Check for a stale process on that port or retry launch.",
