@@ -328,6 +328,13 @@ repos:
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
+      - id: all-fallow
+        name: fallow checks (ui all-fallow)
+        entry: bash 'search/all-fallow.sh'
+        language: system
+        files: ^(ui/|sdk/(typescript|e2e/typescript)/|package\.json|package-lock\.json)
+        pass_filenames: false
+
       # Keep `suggestion` last
       - id: suggestion
         name: Suggestion
