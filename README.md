@@ -401,6 +401,8 @@ history, user message, etc.).
 2. Clear Your Tools prunes tools based on the user request; the rest of
 the request is unchanged. Codex agent has an efficient tool use and CYT saves less tokens.
 3. CYT by default injects relevant skills consuming some of the savings produced by the tool pruners. To disable run `cyt steup` or set `skills.enabled: false` in `~/.config/cyt/config.yaml`
+4. If you have **no MCP tools** and only the agent's **built-in system tools**, there is less to
+   prune — expect **lower overall savings**, typically around **10–20%**.
 
 How much you save overall depends on:
 
