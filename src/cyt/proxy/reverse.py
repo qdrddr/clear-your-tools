@@ -942,15 +942,27 @@ async def _process_buffered_proxy_body(
             reverse_debug_proxy_log_path(endpoint_name, debug_log_dir=debug_log_dir),
         )
     try:
-        body, pruning, input_tools, skills_meta = await transform_request_body(
-            body,
-            content_type,
-            kind,
-            pruning_pipeline,
-            debug,
-            config=config,
-            pruner_settings=pruner_settings,
+        from cyt.proxy.upstream_auth import (
+            apply_request_auth_to_pruner_settings,
+            request_pruner_settings_scope,
         )
+
+        effective_pruner_settings = apply_request_auth_to_pruner_settings(
+            pruner_settings,
+            request.headers,
+            config,
+            endpoint_name,
+        )
+        with request_pruner_settings_scope(effective_pruner_settings):
+            body, pruning, input_tools, skills_meta = await transform_request_body(
+                body,
+                content_type,
+                kind,
+                pruning_pipeline,
+                debug,
+                config=config,
+                pruner_settings=effective_pruner_settings,
+            )
     finally:
         if debug_log_token is not None:
             debug_endpoint_proxy_log_path.reset(debug_log_token)

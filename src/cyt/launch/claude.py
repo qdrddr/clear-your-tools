@@ -56,6 +56,7 @@ def build_claude_env(
             reportable["ANTHROPIC_AUTH_TOKEN"] = "env"
         # Claude Code must use ANTHROPIC_AUTH_TOKEN for third-party gateways; clear API key.
         env["ANTHROPIC_API_KEY"] = ""
+        reportable["ANTHROPIC_API_KEY"] = '""'
     else:
         env.setdefault("ANTHROPIC_AUTH_TOKEN", os.environ.get("ANTHROPIC_API_KEY", ""))
 

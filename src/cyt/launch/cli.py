@@ -16,7 +16,6 @@ from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import (
-    LAUNCH_PORT_OFFSET,
     ensure_proxy,
     require_healthy_proxy,
     resolve_launch_port,
@@ -93,7 +92,7 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
         if action.dest == "port":
             action.help = (
                 f"Base reverse port for launch scan (default: configured proxy port, "
-                f"else {DEFAULT_REVERSE_PORT}; spawns on base+{LAUNCH_PORT_OFFSET} when free)"
+                f"else {DEFAULT_REVERSE_PORT}; spawns on base port when free)"
             )
             break
     launch_parser.add_argument(
@@ -194,6 +193,22 @@ def _run_launched_agent(
     )
 
 
+def _proxy_spawn_extra_env(
+    *,
+    credential_sources: dict[str, str],
+    auth_binding: AgentAuthBinding | None,
+) -> dict[str, str] | None:
+    """Credential env vars for a launch-spawned proxy child (never agent auth)."""
+    extra: dict[str, str] = {}
+    agent_var = auth_binding.agent_env_var if auth_binding is not None else None
+    for name in credential_sources:
+        if name == agent_var:
+            continue
+        if value := os.environ.get(name):
+            extra[name] = value
+    return extra or None
+
+
 def _launch_env_for_agent(
     *,
     agent: AgentName,
@@ -232,11 +247,10 @@ def _run_launch_session(
         endpoint=endpoint,
     )
 
-    proxy_extra_env: dict[str, str] | None = None
-    if auth_binding is not None and auth_binding.upstream_key_var is not None:
-        upstream_value = os.environ.get(auth_binding.upstream_key_var)
-        if upstream_value:
-            proxy_extra_env = {auth_binding.upstream_key_var: upstream_value}
+    proxy_extra_env = _proxy_spawn_extra_env(
+        credential_sources=runtime.credential_sources,
+        auth_binding=auth_binding,
+    )
 
     proxy_guard = ensure_proxy(
         base_port=runtime.port,

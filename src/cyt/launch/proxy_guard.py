@@ -19,7 +19,7 @@ from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV
 
 LOCAL_HOST = "127.0.0.1"
 CYT_HEALTH_NAME = "cyt"
-LAUNCH_PORT_OFFSET = 1
+LAUNCH_PORT_OFFSET = 0
 HEALTH_TIMEOUT_SECONDS = 1.5
 STARTUP_POLL_SECONDS = 0.2
 STARTUP_TIMEOUT_SECONDS = 35.0
@@ -139,8 +139,6 @@ def _evaluate_launch_port(
         ):
             return "reuse"
         return "skip"
-    if port == base_port:
-        return "skip"
     return "spawn"
 
 
@@ -228,6 +226,7 @@ def _spawn_proxy(
     ]
     # Launch prints the env report; keep the background child quiet on stderr.
     cmd.append("--quiet")
+    # Inherit pruning credentials via extra_env; skip resolving every upstream in config.
     cmd.append("--no-resolve-credentials")
     if config_path is not None:
         cmd.extend(["--config", str(config_path)])

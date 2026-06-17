@@ -59,3 +59,16 @@ def test_pruner_settings_cache_for_stage() -> None:
     cache = PrunerSettingsCache(rerank=cached)
     assert cache.for_stage("rerank") is cached
     assert cache.for_stage("llm") is None
+
+
+def test_llm_pruning_settings_uses_request_scoped_cache() -> None:
+    from cyt.pruners.llm import llm_pruning_settings
+    from cyt.pruners.remote import push_request_pruner_settings, reset_request_pruner_settings
+
+    cached = _cached_rerank_settings()
+    cache = PrunerSettingsCache(llm=cached)
+    token = push_request_pruner_settings(cache)
+    try:
+        assert llm_pruning_settings(settings=None) is cached
+    finally:
+        reset_request_pruner_settings(token)

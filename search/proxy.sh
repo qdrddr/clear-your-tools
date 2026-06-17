@@ -12,6 +12,8 @@ export OPENROUTER_API_KEY
 DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w)"
 export DEEPINFRA_API_KEY
 
+lsof -ti :8834 | xargs kill
+
 # Start the proxy in the background (plain HTTP unless you enable http2.serve + TLS certs)
 cyt proxy --upstream https://api.openai.com --upstream-kind openai
 cyt proxy --upstream https://api.anthropic.com --upstream-kind anthropic

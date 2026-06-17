@@ -16,9 +16,35 @@ from cyt.launch.agent_credentials import ensure_agent_upstream_auth, ensure_code
 from cyt.launch.secrets import clear_keyring_cache
 
 
+def _credential_env_vars() -> tuple[str, ...]:
+    return (
+        "OPENROUTER_" + "API_KEY",
+        "ANTHROPIC_" + "API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_" + "API_KEY",
+        "CODEX_OPENAI_" + "API_KEY",
+        "DEEPINFRA_" + "API_KEY",
+    )
+
+
 @pytest.fixture(autouse=True)
-def _reset_credential_caches() -> Generator[None]:
+def _isolate_credential_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Generator[None]:
+    """Keep real shell, .env, and keyring credentials out of resolution tests."""
     clear_keyring_cache()
+    for name in _credential_env_vars():
+        monkeypatch.delenv(name, raising=False)
+    work_dir = tmp_path / "credential-work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
+    cwd_env = work_dir / ".env"
+    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
+    monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setattr("cyt.config.process_env_before_dotenv", dict)
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
     yield
     clear_keyring_cache()
 

@@ -11,7 +11,8 @@ import pytest
 import yaml
 
 import cyt.config as configs
-from cyt.launch.cli import parse_launch_remainder
+from cyt.launch.agent_credentials import AgentAuthBinding
+from cyt.launch.cli import _proxy_spawn_extra_env, parse_launch_remainder
 from cyt.launch.cli import run as run_launch
 from cyt.launch.codex import (
     MANAGED_END,
@@ -58,6 +59,10 @@ def _openai_api_key_var() -> str:
 
 def _openrouter_api_key_var() -> str:
     return "OPENROUTER_" + "API_KEY"
+
+
+def _deepinfra_api_key_var() -> str:
+    return "DEEPINFRA_" + "API_KEY"
 
 
 @pytest.fixture
@@ -453,6 +458,63 @@ class TestEnvReport:
         )
         assert capsys.readouterr().err == ""
 
+    def test_proxy_recipe_omits_agent_auth_token(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        or_key = _openrouter_api_key_var()
+        binding = AgentAuthBinding(
+            agent_env_var="ANTHROPIC_AUTH_TOKEN",
+            source=f"keyring (via {or_key})",
+            token="or-token",
+            upstream_key_var=or_key,
+        )
+        print_runtime_env_report(
+            quiet=False,
+            credential_sources={
+                or_key: "keyring",
+                "ANTHROPIC_AUTH_TOKEN": binding.source,
+            },
+            port=8834,
+            endpoint="openrouter",
+            upstream_url="https://openrouter.ai/api",
+            include_agent_recipe=True,
+            agent="claude",
+            auth_binding=binding,
+        )
+        err = capsys.readouterr().err
+        assert f"export {or_key}=...  # keyring" in err
+        assert "export ANTHROPIC_AUTH_TOKEN" not in err.split("Manual agent recipe")[0]
+        assert 'export ANTHROPIC_API_KEY=""' in err
+
+    def test_proxy_spawn_extra_env_excludes_agent_auth(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        or_key = _openrouter_api_key_var()
+        deep_key = _deepinfra_api_key_var()
+        monkeypatch.setenv(or_key, "or-" + "token")
+        monkeypatch.setenv(deep_key, "deep-" + "token")
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "agent-" + "token")
+        binding = AgentAuthBinding(
+            agent_env_var="ANTHROPIC_AUTH_TOKEN",
+            source="keyring",
+            token="agent-" + "token",
+            upstream_key_var=or_key,
+        )
+        extra = _proxy_spawn_extra_env(
+            credential_sources={
+                or_key: "keyring",
+                deep_key: "keyring",
+                "ANTHROPIC_AUTH_TOKEN": "keyring",
+            },
+            auth_binding=binding,
+        )
+        assert extra == {
+            or_key: "or-" + "token",
+            deep_key: "deep-" + "token",
+        }
+
 
 class TestPrepareRuntime:
     def test_launch_confirm_writes_config(
@@ -713,7 +775,7 @@ class TestResolveLaunchProxyPort:
         assert port == 8834
         assert action == "reuse"
 
-    def test_spawns_on_base_plus_one_when_base_free(
+    def test_spawns_on_base_when_base_free(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -726,7 +788,7 @@ class TestResolveLaunchProxyPort:
             base_port=8834,
             required_endpoint="anthropic",
         )
-        assert port == 8835
+        assert port == 8834
         assert action == "spawn"
 
     def test_skips_base_when_endpoint_mismatch(
@@ -818,7 +880,7 @@ class TestResolveLaunchProxyPort:
             == 8837
         )
         err = capsys.readouterr().err
-        assert "Port 8835 is in use; launching on 8837." in err
+        assert "Port 8834 is in use; launching on 8837." in err
 
     def test_resolve_launch_port_quiet_skips_bump_message(
         self,
@@ -846,12 +908,12 @@ class TestResolveLaunchProxyPort:
     ) -> None:
         monkeypatch.setattr(
             "cyt.launch.proxy_guard.resolve_launch_proxy_port",
-            lambda **kwargs: (8835, "spawn"),
+            lambda **kwargs: (8834, "spawn"),
         )
-        assert resolve_launch_port(8834, required_endpoint="anthropic") == 8835
+        assert resolve_launch_port(8834, required_endpoint="anthropic") == 8834
         assert capsys.readouterr().err == ""
 
-    def test_resolve_launch_port_defaults_above_proxy_port(
+    def test_resolve_launch_port_defaults_to_proxy_port(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -859,7 +921,7 @@ class TestResolveLaunchProxyPort:
             "cyt.launch.proxy_guard.is_port_in_use",
             lambda port: False,
         )
-        assert resolve_launch_port(8834, required_endpoint="anthropic") == 8835
+        assert resolve_launch_port(8834, required_endpoint="anthropic") == 8834
 
 
 class TestEnsureProxy:
@@ -887,7 +949,7 @@ class TestEnsureProxy:
         guard = ensure_proxy(base_port=8834, required_endpoint="anthropic")
         assert guard.started_by_launch is True
         assert guard.process is process
-        assert guard.port == 8835
+        assert guard.port == 8834
 
     def test_reuses_existing_proxy_on_base_port(
         self,
@@ -983,7 +1045,7 @@ class TestEnsureProxy:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        unavailable = {8835}
+        unavailable = {8834}
 
         def fake_in_use(port: int) -> bool:
             return port in unavailable
@@ -996,12 +1058,12 @@ class TestEnsureProxy:
             fake_in_use,
         )
         monkeypatch.setattr("cyt.launch.proxy_guard._proxy_health", lambda port: None)
-        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8836)
+        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8835)
         monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", lambda **kwargs: process)
         monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)
 
         guard = ensure_proxy(base_port=8834, required_endpoint="anthropic")
-        assert guard.port == 8836
+        assert guard.port == 8835
 
     def test_ensure_proxy_bumps_after_bind_failure(
         self,
@@ -1014,7 +1076,7 @@ class TestEnsureProxy:
             assert isinstance(port, int)
             spawned_ports.append(port)
             process = MagicMock()
-            process.poll.return_value = 1 if port == 8835 else None
+            process.poll.return_value = 1 if port == 8834 else None
             return process
 
         monkeypatch.setattr(
@@ -1022,12 +1084,12 @@ class TestEnsureProxy:
             lambda port: False,
         )
         monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", fake_spawn)
-        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8836)
+        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8835)
         monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)
 
         guard = ensure_proxy(base_port=8834, required_endpoint="anthropic")
-        assert spawned_ports == [8835, 8836]
-        assert guard.port == 8836
+        assert spawned_ports == [8834, 8835]
+        assert guard.port == 8835
 
 
 class TestLaunchRun:

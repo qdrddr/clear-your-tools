@@ -49,6 +49,16 @@ def _credential_export_lines(credential_sources: dict[str, str]) -> list[str]:
     return lines
 
 
+def _proxy_recipe_credential_sources(
+    credential_sources: dict[str, str],
+    *,
+    auth_binding: AgentAuthBinding | None = None,
+) -> dict[str, str]:
+    """Proxy-only credentials (exclude agent-facing auth copied from upstream keys)."""
+    agent_var = auth_binding.agent_env_var if auth_binding is not None else None
+    return {name: source for name, source in credential_sources.items() if name != agent_var}
+
+
 def _proxy_recipe_lines(
     *,
     port: int,
@@ -57,12 +67,17 @@ def _proxy_recipe_lines(
     credential_sources: dict[str, str],
     config_path: Path | None = None,
     agent: AgentName | None = None,
+    auth_binding: AgentAuthBinding | None = None,
     debug: bool = False,
     debug_dry_run: bool = False,
     debug_strict: bool = False,
 ) -> list[str]:
     lines = ["# Manual proxy recipe (reproduce this launch)"]
-    lines.extend(_credential_export_lines(credential_sources))
+    proxy_sources = _proxy_recipe_credential_sources(
+        credential_sources,
+        auth_binding=auth_binding,
+    )
+    lines.extend(_credential_export_lines(proxy_sources))
     if lines == ["# Manual proxy recipe (reproduce this launch)"]:
         lines.append("# (no credential env vars required for this run)")
     proxy_cmd = f"cyt proxy --port {port}"
@@ -95,7 +110,9 @@ def _claude_recipe_lines(
     lines = ["# Manual Claude Code recipe"]
     if auth_binding is not None:
         lines.append(f"export {auth_binding.agent_env_var}=...  # {auth_binding.source}")
+        lines.append('export ANTHROPIC_API_KEY=""')
     elif key_var_name:
+        lines.append('export ANTHROPIC_API_KEY=""')
         lines.append(f'export ANTHROPIC_AUTH_TOKEN="${key_var_name}"')
     else:
         lines.append('export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_API_KEY"')
@@ -227,6 +244,7 @@ def print_runtime_env_report(
             credential_sources=credential_sources,
             config_path=config_path,
             agent=agent,
+            auth_binding=auth_binding,
             debug=debug,
             debug_dry_run=debug_dry_run,
             debug_strict=debug_strict,

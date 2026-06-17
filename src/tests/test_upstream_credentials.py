@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +13,46 @@ from cyt import config as configs
 from cyt.config import load_config
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.claude import build_claude_env
+from cyt.launch.secrets import clear_keyring_cache
 from cyt.launch.upstream_credentials import (
     ensure_upstream_credentials,
     is_canonical_upstream,
     lookup_upstream_key_var,
     upstream_for_endpoint,
 )
+
+
+def _credential_env_vars() -> tuple[str, ...]:
+    return (
+        "OPENROUTER_" + "API_KEY",
+        "ANTHROPIC_" + "API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "OPENAI_" + "API_KEY",
+        "CODEX_OPENAI_" + "API_KEY",
+        "DEEPINFRA_" + "API_KEY",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_credential_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Generator[None]:
+    """Keep real shell, .env, and keyring credentials out of resolution tests."""
+    clear_keyring_cache()
+    for name in _credential_env_vars():
+        monkeypatch.delenv(name, raising=False)
+    work_dir = tmp_path / "credential-work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
+    cwd_env = work_dir / ".env"
+    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
+    monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setattr("cyt.config.process_env_before_dotenv", dict)
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    yield
+    clear_keyring_cache()
 
 
 @pytest.fixture
@@ -106,18 +141,12 @@ class TestBuildClaudeEnv:
         monkeypatch.delenv("OPENROUTER_" + "API_KEY", raising=False)
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "user-token")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-        sources: dict[str, str] = {}
-        _, binding = self._bind_openrouter(
-            config=config,
-            config_path=isolated_config_paths["user_config"],
-            sources=sources,
-        )
 
         env, _ = build_claude_env(
             config=config,
             port=8835,
             endpoint="openrouter",
-            auth_binding=binding,
+            auth_binding=None,
         )
         assert env["ANTHROPIC_AUTH_TOKEN"] == "user-token"
         assert env["ANTHROPIC_BASE_URL"] == "http://localhost:8835/openrouter"
@@ -185,6 +214,7 @@ class TestBuildClaudeEnv:
             "upstreams"
         ] = [_openrouter_upstream()]
         monkeypatch.setenv("OPENROUTER_" + "API_KEY", "or-token")
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "oauth-managed-key")
         sources: dict[str, str] = {}
         _, binding = self._bind_openrouter(

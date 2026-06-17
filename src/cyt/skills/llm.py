@@ -161,8 +161,14 @@ def llm_skill_nodes(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    settings: LlmPruningSettings | None = None,
 ) -> tuple[list[MatchedSkill], StageTokenUsage]:
-    matches, _rows, usage = llm_skill_nodes_with_trace(query, entries, config=config)
+    matches, _rows, usage = llm_skill_nodes_with_trace(
+        query,
+        entries,
+        config=config,
+        settings=settings,
+    )
     return matches, usage
 
 
@@ -243,7 +249,12 @@ def llm_prune_tools_and_skills(
             config=config,
             settings=settings,
         )
-        skill_matches, skill_usage = llm_skill_nodes(query, skill_entries, config=config)
+        skill_matches, skill_usage = llm_skill_nodes(
+            query,
+            skill_entries,
+            config=config,
+            settings=settings,
+        )
         return pruned_data, skill_matches, tool_usage.merge(skill_usage)
 
     tool_selected = {sid for sid in selected_ids if sid in tool_metadata}

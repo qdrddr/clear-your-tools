@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -16,6 +17,11 @@ from cyt.config import (
     remote_model_entry,
     resolve_model,
     stats_provider_for_entry,
+)
+
+_request_pruner_settings: ContextVar[PrunerSettingsCache | None] = ContextVar(
+    "request_pruner_settings",
+    default=None,
 )
 
 
@@ -48,6 +54,16 @@ class RemotePruningSettings:
         self.provider_dns = provider_dns
         self.responses_api = responses_api
 
+    def with_api_key(self, api_key: str) -> RemotePruningSettings:
+        return RemotePruningSettings(
+            self.model_name,
+            api_key,
+            self.base_url,
+            self.provider,
+            self.provider_dns,
+            responses_api=self.responses_api,
+        )
+
 
 LlmPruningSettings = RemotePruningSettings
 RerankPruningSettings = RemotePruningSettings
@@ -62,6 +78,78 @@ class PrunerSettingsCache:
 
     def for_stage(self, stage: Literal["llm", "rerank"]) -> RemotePruningSettings | None:
         return self.llm if stage == "llm" else self.rerank
+
+    def with_request_upstream_auth(
+        self,
+        token: str,
+        *,
+        config: dict[str, Any],
+        upstream_key_var: str,
+    ) -> PrunerSettingsCache:
+        """Clone cache entries whose configured key var matches the upstream provider."""
+        return PrunerSettingsCache(
+            llm=_override_stage_auth(
+                self.llm,
+                stage="llm",
+                token=token,
+                config=config,
+                upstream_key_var=upstream_key_var,
+            ),
+            rerank=_override_stage_auth(
+                self.rerank,
+                stage="rerank",
+                token=token,
+                config=config,
+                upstream_key_var=upstream_key_var,
+            ),
+        )
+
+
+def push_request_pruner_settings(
+    cache: PrunerSettingsCache | None,
+) -> Token[PrunerSettingsCache | None]:
+    return _request_pruner_settings.set(cache)
+
+
+def reset_request_pruner_settings(token: Token[PrunerSettingsCache | None]) -> None:
+    _request_pruner_settings.reset(token)
+
+
+def request_pruner_settings() -> PrunerSettingsCache | None:
+    return _request_pruner_settings.get()
+
+
+def _stage_model_kind(stage: Literal["llm", "rerank"]) -> str:
+    return "llm" if stage == "llm" else "rerankers"
+
+
+def _stage_key_var_name(
+    config: dict[str, Any],
+    stage: Literal["llm", "rerank"],
+) -> str | None:
+    model_nick = pruning_stage_model_nick(config, stage)
+    if not model_nick:
+        return None
+    try:
+        return key_var_name_for_model_nick(config, _stage_model_kind(stage), str(model_nick))
+    except ValueError:
+        return None
+
+
+def _override_stage_auth(
+    settings: RemotePruningSettings | None,
+    *,
+    stage: Literal["llm", "rerank"],
+    token: str,
+    config: dict[str, Any],
+    upstream_key_var: str,
+) -> RemotePruningSettings | None:
+    if settings is None:
+        return None
+    stage_key_var = _stage_key_var_name(config, stage)
+    if stage_key_var != upstream_key_var:
+        return settings
+    return settings.with_api_key(token)
 
 
 def resolve_remote_pruning_settings(

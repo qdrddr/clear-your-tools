@@ -36,7 +36,11 @@ from cyt.pruners.policies import (
     SystemToolPolicy,
     configure_policies_from_config,
 )
-from cyt.pruners.remote import RerankPruningSettings, resolve_remote_pruning_settings
+from cyt.pruners.remote import (
+    RerankPruningSettings,
+    request_pruner_settings,
+    resolve_remote_pruning_settings,
+)
 from cyt.pruners.split import split_into_bulks
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,9 @@ def rerank_pruning_settings(
     """Resolve pruning reranker model from pipeline config."""
     if settings is not None:
         return settings
+    request_cache = request_pruner_settings()
+    if request_cache is not None and (cached := request_cache.for_stage("rerank")) is not None:
+        return cached
     return resolve_remote_pruning_settings(
         config=config,
         model_kind="rerankers",
