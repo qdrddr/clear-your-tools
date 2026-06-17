@@ -45,6 +45,16 @@ Codex already reduces tool sets by removing unused tools, but CYT goes further:
 it also prunes irrelevant optional fields and enums, something Codex never touches.
 Even when both are used together, CYT still cuts input tokens by an additional ~20%.
 
+## Model Cache
+
+Mutating tools invalidates the provider’s prompt cache, because tool definitions usually
+appear before the system and user messages. Any change to that prefix forces a cache miss
+for everything that follows.
+
+That trade-off is usually acceptable: system and user messages are typically short, so the
+lost cache hit rate (often saves 50%) is smaller compared with the token savings from pruning
+the tool list (typically 80–95% of the original size of the tools).
+
 ## Pruner Strategy and Accuracy
 
 CYT’s default pruner is BM25: fast, local, and free. It isn’t the most advanced method,
