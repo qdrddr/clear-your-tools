@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
 import cyt.config as configs
+from cyt.launch.secrets import clear_keyring_cache
 from cyt.proxy.bootstrap import _apply_bm25_fallback_if_needed, prepare_runtime
+
+
+@pytest.fixture(autouse=True)
+def _reset_credential_caches() -> Generator[None]:
+    clear_keyring_cache()
+    yield
+    clear_keyring_cache()
 
 
 def _deepinfra_api_key_var() -> str:
@@ -155,6 +164,66 @@ def test_prepare_runtime_exits_before_bm25_when_keys_unresolved(
             upstream_kind="anthropic",
             upstream_name=None,
         )
+
+
+def _openrouter_api_key_var() -> str:
+    return "OPENROUTER_" + "API_KEY"
+
+
+def _write_openrouter_llm_user_config(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """
+pruning:
+  tools:
+    sequence: [llm]
+    pipelines:
+      llm:
+        model_nick: mercury-2
+network:
+  proxy:
+    reverse:
+      upstreams:
+        - endpoint: openrouter
+          kind: openrouter
+          url: https://openrouter.ai/api
+          provider_nick: openrouter
+      endpoints:
+        - openrouter
+""".strip(),
+        encoding="utf-8",
+    )
+
+
+def test_prepare_runtime_keeps_keyring_source_after_upstream_credentials(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upstream credential pass must not relabel keyring keys as shell env."""
+    from cyt.launch.upstream_credentials import ensure_non_canonical_upstream_credentials
+
+    key_var = _openrouter_api_key_var()
+    user_config = isolated_config_paths["user_config"]
+    _write_openrouter_llm_user_config(user_config)
+    monkeypatch.delenv(key_var, raising=False)
+    monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+    runtime = prepare_runtime(
+        agent=None,
+        config_path=user_config,
+        port=None,
+        upstream_url=None,
+        upstream_kind=None,
+        upstream_name=None,
+    )
+    assert runtime.credential_sources[key_var] == "keyring"
+
+    ensure_non_canonical_upstream_credentials(
+        config=runtime.config,
+        config_path=runtime.config_path,
+        credential_sources=runtime.credential_sources,
+    )
+    assert runtime.credential_sources[key_var] == "keyring"
 
 
 def test_prepare_runtime_warms_pruners_without_runtime_keyring(

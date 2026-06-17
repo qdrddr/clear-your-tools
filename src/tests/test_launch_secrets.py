@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
 import cyt.config as configs
+from cyt.config import load_config
+from cyt.launch.agent_credentials import ensure_agent_upstream_auth, ensure_codex_agent_auth
 from cyt.launch.secrets import (
     KEYRING_BLOB_ACCOUNT,
     KEYRING_SERVICE,
     clear_keyring_cache,
-    ensure_runtime_credentials,
     keyring_backend_available,
     preload_keyring_credentials,
     resolve_credential,
@@ -21,6 +24,13 @@ from cyt.launch.secrets import (
 
 def _codex_openai_api_key_var() -> str:
     return "CODEX_OPENAI_" + "API_KEY"
+
+
+@pytest.fixture(autouse=True)
+def _reset_credential_caches() -> Generator[None]:
+    clear_keyring_cache()
+    yield
+    clear_keyring_cache()
 
 
 @pytest.fixture
@@ -173,6 +183,7 @@ class TestResolveCredentialOrder:
         from cyt.launch.secrets import ensure_wizard_credentials
 
         name = "OPENROUTER_" + "API_KEY"
+        monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
         monkeypatch.setattr("cyt.launch.secrets.getpass.getpass", lambda _prompt: "from-prompt")
@@ -185,23 +196,54 @@ class TestResolveCredentialOrder:
 
 
 class TestCodexLaunchCredentials:
-    def test_codex_resolves_from_keyring(
+    def test_keyring_value_not_mislabeled_as_shell_on_second_resolve(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = _codex_openai_api_key_var()
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+        first_value, first_source = resolve_credential(name, allow_prompt=False)
+        assert first_value == "from-keyring"
+        assert first_source == "keyring"
+
+        second_value, second_source = resolve_credential(name, allow_prompt=False)
+        assert second_value == "from-keyring"
+        assert second_source == "keyring"
+
+    def test_codex_resolves_from_provider_key_via_launch_auth(
         self,
         isolated_env_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         name = _codex_openai_api_key_var()
+        config = load_config(isolated_env_paths["user_config"])
+        config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
+            "upstreams"
+        ] = [
+            {
+                "endpoint": "openai",
+                "kind": "openai",
+                "url": "https://api.openai.com",
+            },
+        ]
         monkeypatch.delenv(name, raising=False)
-        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "codex-key")
-        config = {
-            "pruning": {"tools": {"sequence": ["bm25"]}},
-            "launch": {"codex": {"env_key": name}},
-        }
+        monkeypatch.setenv("OPENAI_" + "API_KEY", "openai-" + "token")
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "stale-codex-key")
         sources: dict[str, str] = {}
 
-        ensure_runtime_credentials(config, agent="codex", credential_sources=sources)
+        ensure_agent_upstream_auth(
+            agent="codex",
+            config=config,
+            config_path=isolated_env_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=False,
+        )
 
-        assert sources[name] == "keyring"
+        assert os.environ[name] == "openai-" + "token"
+        assert "via OPENAI_" in sources[name]
 
     def test_codex_requires_configured_env_key(
         self,
@@ -210,13 +252,26 @@ class TestCodexLaunchCredentials:
     ) -> None:
         custom_name = "CUSTOM_CODEX_" + "API_KEY"
         monkeypatch.setenv(custom_name, "from-shell")
-        config = {
-            "pruning": {"tools": {"sequence": ["bm25"]}},
-            "launch": {"codex": {"env_key": custom_name}},
-        }
+        config = load_config(isolated_env_paths["user_config"])
+        config["launch"] = {"codex": {"env_key": custom_name}}
+        config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
+            "upstreams"
+        ] = [
+            {
+                "endpoint": "openai",
+                "kind": "openai",
+                "url": "https://api.openai.com",
+            },
+        ]
         sources: dict[str, str] = {}
 
-        ensure_runtime_credentials(config, agent="codex", credential_sources=sources)
+        ensure_codex_agent_auth(
+            config=config,
+            config_path=isolated_env_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=False,
+        )
 
         assert sources[custom_name] == "env: shell"
 

@@ -23,6 +23,7 @@ CYT_SKIP_KEYRING_ENV = "CYT_SKIP_KEYRING"
 _keyring_cache: dict[str, str] = {}
 _keyring_blob: dict[str, str] | None = None
 _keyring_blob_loaded = False
+_runtime_credential_sources: dict[str, str] = {}
 
 
 def _cwd_env_path() -> Path:
@@ -68,6 +69,7 @@ def clear_keyring_cache() -> None:
     _keyring_cache.clear()
     _keyring_blob_loaded = False
     globals()["_keyring_blob"] = None
+    _runtime_credential_sources.clear()
 
 
 def _skip_keyring_resolution() -> bool:
@@ -219,9 +221,14 @@ def _process_env_credential(name: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _remember_runtime_credential(name: str, source: str) -> None:
+    _runtime_credential_sources[name] = source
+
+
 def _resolve_keyring_credential(name: str) -> tuple[str | None, str | None]:
     if value := _read_keyring(name):
         os.environ[name] = value
+        _remember_runtime_credential(name, "keyring")
         return value, "keyring"
     return None, None
 
@@ -230,25 +237,27 @@ def _resolve_file_credential(name: str) -> tuple[str | None, str | None]:
     file_value, file_source = _read_env_file_value(name)
     if file_value and file_source:
         os.environ[name] = file_value
+        _remember_runtime_credential(name, file_source)
         return file_value, file_source
     return None, None
 
 
-def _resolve_terminal_credential(name: str) -> tuple[str | None, str | None]:
+def _resolve_terminal_credential(
+    name: str,
+    *,
+    before_env: dict[str, str],
+) -> tuple[str | None, str | None]:
     """Return credentials exported in the shell; terminal values beat ``.env`` and keyring."""
     from cyt.config import process_env_before_dotenv
 
-    if value := process_env_before_dotenv().get(name):
-        if value:
-            return value, "env: shell"
+    pre_dotenv = process_env_before_dotenv()
+    if value := pre_dotenv.get(name):
+        return value, "env: shell"
 
-    if not (value := os.environ.get(name)):
+    if name in _runtime_credential_sources:
         return None, None
 
-    file_value, _ = _read_env_file_value(name)
-    if not file_value:
-        return value, "env: shell"
-    if value != file_value:
+    if value := before_env.get(name):
         return value, "env: shell"
     return None, None
 
@@ -263,8 +272,23 @@ def _resolve_prompt_credential(name: str) -> tuple[str | None, str | None]:
 
     os.environ[name] = value
     if _write_keyring(name, value):
+        _remember_runtime_credential(name, "keyring")
         return value, "keyring"
+    _remember_runtime_credential(name, "prompt")
     return value, "prompt"
+
+
+def resolve_shell_or_file_credential(
+    name: str,
+    *,
+    before_env: dict[str, str] | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve *name* from shell exports and ``.env`` files only (no keyring or prompt)."""
+    resolved_before_env = before_env if before_env is not None else _snapshot_env()
+    terminal_value = _resolve_terminal_credential(name, before_env=resolved_before_env)
+    if terminal_value[0] and terminal_value[1]:
+        return terminal_value
+    return _resolve_file_credential(name)
 
 
 def resolve_credential(
@@ -285,15 +309,19 @@ def resolve_credential(
     process environment values are preferred (used by proxy children spawned
     from ``cyt launch``).
     """
-    del before_env  # terminal resolution uses ``process_env_before_dotenv()``
-
     if _skip_keyring_resolution():
         value, source = _process_env_credential(name)
         if value and source:
             return value, source
         return None, None
 
-    terminal_value = _resolve_terminal_credential(name)
+    if cached_source := _runtime_credential_sources.get(name):
+        if value := os.environ.get(name):
+            return value, cached_source
+
+    resolved_before_env = before_env if before_env is not None else _snapshot_env()
+
+    terminal_value = _resolve_terminal_credential(name, before_env=resolved_before_env)
     if terminal_value[0] and terminal_value[1]:
         return terminal_value
 

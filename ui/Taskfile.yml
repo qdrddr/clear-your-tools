@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# Fallow checks for TypeScript packages. Delegates to sdk/ where fallow runs today.
+version: "3"
+
+tasks:
+  all-fallow:
+    desc: Run all fallow checks sequentially, stop on failure
+    cmds:
+      - task -d ../sdk all-fallow

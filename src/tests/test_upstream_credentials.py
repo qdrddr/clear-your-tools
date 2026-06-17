@@ -10,6 +10,7 @@ import pytest
 
 from cyt import config as configs
 from cyt.config import load_config
+from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.claude import build_claude_env
 from cyt.launch.upstream_credentials import (
     ensure_upstream_credentials,
@@ -77,6 +78,22 @@ class TestLookupUpstreamKeyVar:
 
 
 class TestBuildClaudeEnv:
+    def _bind_openrouter(
+        self,
+        *,
+        config: dict[str, Any],
+        config_path: Path,
+        sources: dict[str, str],
+    ) -> tuple[dict[str, Any], AgentAuthBinding | None]:
+        return ensure_agent_upstream_auth(
+            agent="claude",
+            config=config,
+            config_path=config_path,
+            endpoint="openrouter",
+            credential_sources=sources,
+            allow_prompt=False,
+        )
+
     def test_preserves_anthropic_auth_token_when_openrouter_key_missing(
         self,
         isolated_config_paths: dict,
@@ -89,8 +106,19 @@ class TestBuildClaudeEnv:
         monkeypatch.delenv("OPENROUTER_" + "API_KEY", raising=False)
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "user-token")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        sources: dict[str, str] = {}
+        _, binding = self._bind_openrouter(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            sources=sources,
+        )
 
-        env, _ = build_claude_env(config=config, port=8835, endpoint="openrouter")
+        env, _ = build_claude_env(
+            config=config,
+            port=8835,
+            endpoint="openrouter",
+            auth_binding=binding,
+        )
         assert env["ANTHROPIC_AUTH_TOKEN"] == "user-token"
         assert env["ANTHROPIC_BASE_URL"] == "http://localhost:8835/openrouter"
 
@@ -105,8 +133,19 @@ class TestBuildClaudeEnv:
         ] = [_openrouter_upstream()]
         monkeypatch.setenv("OPENROUTER_" + "API_KEY", "or-token")
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "user-token")
+        sources: dict[str, str] = {}
+        _, binding = self._bind_openrouter(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            sources=sources,
+        )
 
-        env, _ = build_claude_env(config=config, port=8835, endpoint="openrouter")
+        env, _ = build_claude_env(
+            config=config,
+            port=8835,
+            endpoint="openrouter",
+            auth_binding=binding,
+        )
         assert env["ANTHROPIC_AUTH_TOKEN"] == "user-token"
 
     def test_uses_openrouter_key_when_auth_token_missing(
@@ -120,9 +159,48 @@ class TestBuildClaudeEnv:
         ] = [_openrouter_upstream()]
         monkeypatch.setenv("OPENROUTER_" + "API_KEY", "or-token")
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        sources: dict[str, str] = {}
+        _, binding = self._bind_openrouter(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            sources=sources,
+        )
 
-        env, _ = build_claude_env(config=config, port=8835, endpoint="openrouter")
+        env, reportable = build_claude_env(
+            config=config,
+            port=8835,
+            endpoint="openrouter",
+            auth_binding=binding,
+        )
         assert env["ANTHROPIC_AUTH_TOKEN"] == "or-token"
+        assert "ANTHROPIC_AUTH_TOKEN" in reportable
+
+    def test_clears_anthropic_api_key_for_openrouter(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
+            "upstreams"
+        ] = [_openrouter_upstream()]
+        monkeypatch.setenv("OPENROUTER_" + "API_KEY", "or-token")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "oauth-managed-key")
+        sources: dict[str, str] = {}
+        _, binding = self._bind_openrouter(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            sources=sources,
+        )
+
+        env, _ = build_claude_env(
+            config=config,
+            port=8835,
+            endpoint="openrouter",
+            auth_binding=binding,
+        )
+        assert env["ANTHROPIC_AUTH_TOKEN"] == "or-token"
+        assert env["ANTHROPIC_API_KEY"] == ""
 
 
 class TestEnsureUpstreamCredentials:
@@ -147,7 +225,7 @@ class TestEnsureUpstreamCredentials:
         assert os.environ.get("OPENROUTER_" + "API_KEY") == "from-shell"
         assert "OPENROUTER_" + "API_KEY" in sources
 
-    def test_uses_anthropic_auth_token_fallback(
+    def test_upstream_key_resolves_independently_of_auth_token(
         self,
         isolated_config_paths: dict,
         monkeypatch: pytest.MonkeyPatch,
@@ -158,16 +236,14 @@ class TestEnsureUpstreamCredentials:
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
         sources: dict[str, str] = {}
 
-        ensure_upstream_credentials(
-            config=config,
-            config_path=isolated_config_paths["user_config"],
-            entry=_openrouter_upstream(),
-            credential_sources=sources,
-            allow_prompt=False,
-        )
-
-        assert os.environ.get("OPENROUTER_" + "API_KEY") == "from-shell-auth"
-        assert "via ANTHROPIC_AUTH_TOKEN" in sources["OPENROUTER_" + "API_KEY"]
+        with pytest.raises(SystemExit):
+            ensure_upstream_credentials(
+                config=config,
+                config_path=isolated_config_paths["user_config"],
+                entry=_openrouter_upstream(),
+                credential_sources=sources,
+                allow_prompt=False,
+            )
 
     def test_upstream_for_endpoint(self, isolated_config_paths: dict) -> None:
         config = load_config(isolated_config_paths["user_config"])
@@ -177,3 +253,41 @@ class TestEnsureUpstreamCredentials:
         entry = upstream_for_endpoint(config, "openrouter")
         assert entry is not None
         assert entry["url"] == "https://openrouter.ai/api"
+
+
+class TestClaudeLaunchRuntimeCredentials:
+    def test_prepare_runtime_requires_openrouter_key(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cyt.proxy.bootstrap import prepare_runtime
+
+        config = load_config(isolated_config_paths["user_config"])
+        config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
+            "upstreams"
+        ] = [_openrouter_upstream()]
+        config["network"]["proxy"]["reverse"]["endpoints"] = ["openrouter"]
+        config.setdefault("pruning", {}).setdefault("tools", {})["sequence"] = ["llm"]
+        config["pruning"]["tools"].setdefault("pipelines", {})["llm"] = {
+            "model_nick": "mercury-2",
+        }
+        isolated_config_paths["user_config"].parent.mkdir(parents=True, exist_ok=True)
+        import yaml
+
+        isolated_config_paths["user_config"].write_text(yaml.dump(config), encoding="utf-8")
+
+        monkeypatch.delenv("OPENROUTER_" + "API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "from-shell-auth")
+        monkeypatch.setenv("DEEPINFRA_" + "API_KEY", "deepinfra-token")
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+
+        with pytest.raises(SystemExit):
+            prepare_runtime(
+                agent="claude",
+                config_path=isolated_config_paths["user_config"],
+                port=None,
+                upstream_url=None,
+                upstream_kind=None,
+                upstream_name=None,
+            )

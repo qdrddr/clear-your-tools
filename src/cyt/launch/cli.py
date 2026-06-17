@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from cyt.config import DEFAULT_REVERSE_PORT, load_config
+from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.claude import build_claude_env
 from cyt.launch.claude import run as run_claude
 from cyt.launch.codex import configure_provider, restore_provider
@@ -22,7 +23,6 @@ from cyt.launch.proxy_guard import (
 )
 from cyt.launch.quiet import configure_launch_quiet
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
-from cyt.launch.upstream_credentials import ensure_upstream_credentials, upstream_for_endpoint
 from cyt.proxy.bootstrap import RuntimeContext, prepare_runtime
 from cyt.proxy.setup import normalize_upstream_kind
 from cyt.skills.agents import launch_agent_env
@@ -151,22 +151,22 @@ def _launch_debug_flags(args: argparse.Namespace) -> tuple[bool, bool, bool]:
     )
 
 
-def _ensure_launch_upstream_credentials(
+def _ensure_launch_agent_auth(
     runtime: RuntimeContext,
+    *,
+    agent: AgentName,
     endpoint: str | None,
-) -> RuntimeContext:
+) -> tuple[RuntimeContext, AgentAuthBinding | None]:
     if endpoint is None:
-        return runtime
-    upstream_entry = upstream_for_endpoint(runtime.config, endpoint)
-    if upstream_entry is None:
-        return runtime
-    runtime.config = ensure_upstream_credentials(
+        return runtime, None
+    runtime.config, binding = ensure_agent_upstream_auth(
+        agent=agent,
         config=runtime.config,
         config_path=runtime.config_path,
-        entry=upstream_entry,
+        endpoint=endpoint,
         credential_sources=runtime.credential_sources,
     )
-    return runtime
+    return runtime, binding
 
 
 def _run_launched_agent(
@@ -175,6 +175,7 @@ def _run_launched_agent(
     runtime: RuntimeContext,
     endpoint: str,
     agent_args: list[str],
+    auth_binding: AgentAuthBinding | None = None,
 ) -> int:
     if agent == "claude":
         return run_claude(
@@ -182,12 +183,107 @@ def _run_launched_agent(
             port=runtime.port,
             endpoint=endpoint,
             agent_args=agent_args,
+            auth_binding=auth_binding,
         )
     return run_codex(
         config=runtime.config,
         port=runtime.port,
         endpoint=endpoint,
         agent_args=agent_args,
+        auth_binding=auth_binding,
+    )
+
+
+def _launch_env_for_agent(
+    *,
+    agent: AgentName,
+    runtime: RuntimeContext,
+    endpoint: str,
+    auth_binding: AgentAuthBinding | None,
+) -> dict[str, str] | None:
+    if agent == "claude":
+        _, launch_env = build_claude_env(
+            config=runtime.config,
+            port=runtime.port,
+            endpoint=endpoint,
+            auth_binding=auth_binding,
+        )
+        return launch_env
+    if auth_binding is not None:
+        return {auth_binding.agent_env_var: auth_binding.source}
+    return None
+
+
+def _run_launch_session(
+    *,
+    args: argparse.Namespace,
+    agent: AgentName,
+    agent_args: list[str],
+    runtime: RuntimeContext,
+    endpoint: str,
+) -> int:
+    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+
+    os.environ.update(launch_agent_env(agent))
+
+    runtime, auth_binding = _ensure_launch_agent_auth(
+        runtime,
+        agent=agent,
+        endpoint=endpoint,
+    )
+
+    proxy_extra_env: dict[str, str] | None = None
+    if auth_binding is not None and auth_binding.upstream_key_var is not None:
+        upstream_value = os.environ.get(auth_binding.upstream_key_var)
+        if upstream_value:
+            proxy_extra_env = {auth_binding.upstream_key_var: upstream_value}
+
+    proxy_guard = ensure_proxy(
+        base_port=runtime.port,
+        required_endpoint=endpoint,
+        config_path=runtime.config_path,
+        quiet=True,
+        agent=agent,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
+        extra_env=proxy_extra_env,
+    )
+    runtime.port = proxy_guard.port
+    require_healthy_proxy(
+        port=runtime.port,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+    )
+
+    print_runtime_env_report(
+        quiet=False,
+        credential_sources=runtime.credential_sources,
+        port=runtime.port,
+        endpoint=endpoint,
+        upstream_url=runtime.upstream_url,
+        include_agent_recipe=True,
+        agent=agent,
+        launch_env=_launch_env_for_agent(
+            agent=agent,
+            runtime=runtime,
+            endpoint=endpoint,
+            auth_binding=auth_binding,
+        ),
+        config=runtime.config,
+        config_path=runtime.config_path,
+        auth_binding=auth_binding,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
+    )
+
+    return _run_launched_agent(
+        agent=agent,
+        runtime=runtime,
+        endpoint=endpoint,
+        agent_args=agent_args,
+        auth_binding=auth_binding,
     )
 
 
@@ -239,7 +335,7 @@ def run(args: argparse.Namespace) -> None:
         upstream_cli_endpoint=runtime.upstream_endpoint,
     )
 
-    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+    debug, debug_dry_run, _debug_strict = _launch_debug_flags(args)
 
     if args.configure:
         configure_provider(
@@ -255,56 +351,12 @@ def run(args: argparse.Namespace) -> None:
         )
         return
 
-    os.environ.update(launch_agent_env(agent))
-
-    proxy_guard = ensure_proxy(
-        base_port=runtime.port,
-        required_endpoint=endpoint,
-        config_path=runtime.config_path,
-        quiet=True,
-        agent=agent,
-        debug=debug,
-        debug_dry_run=debug_dry_run,
-        debug_strict=debug_strict,
-    )
-    runtime.port = proxy_guard.port
-    require_healthy_proxy(
-        port=runtime.port,
-        debug=debug,
-        debug_dry_run=debug_dry_run,
-    )
-
-    runtime = _ensure_launch_upstream_credentials(runtime, endpoint)
-
-    launch_env: dict[str, str] | None = None
-    if agent == "claude":
-        _, launch_env = build_claude_env(
-            config=runtime.config,
-            port=runtime.port,
-            endpoint=endpoint,
-        )
-
-    print_runtime_env_report(
-        quiet=False,
-        credential_sources=runtime.credential_sources,
-        port=runtime.port,
-        endpoint=endpoint,
-        upstream_url=runtime.upstream_url,
-        include_agent_recipe=True,
-        agent=agent,
-        launch_env=launch_env,
-        config=runtime.config,
-        config_path=runtime.config_path,
-        debug=debug,
-        debug_dry_run=debug_dry_run,
-        debug_strict=debug_strict,
-    )
-
     raise SystemExit(
-        _run_launched_agent(
+        _run_launch_session(
+            args=args,
             agent=agent,
+            agent_args=agent_args,
             runtime=runtime,
             endpoint=endpoint,
-            agent_args=agent_args,
         ),
     )

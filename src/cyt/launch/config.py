@@ -75,7 +75,4 @@ def required_launch_env_var_names(
     for name in required_proxy_env_var_names(merged):
         _append_unique(required, seen, name)
 
-    if agent == "codex":
-        _append_unique(required, seen, codex_env_key_name(config))
-
     return required

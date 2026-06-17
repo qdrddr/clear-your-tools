@@ -216,6 +216,7 @@ def _spawn_proxy(
     debug: bool = False,
     debug_dry_run: bool = False,
     debug_strict: bool = False,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.Popen[bytes]:
     cmd = [
         sys.executable,
@@ -240,6 +241,8 @@ def _spawn_proxy(
             cmd.append("--debug-strict")
     child_env = os.environ.copy()
     child_env[CYT_SKIP_KEYRING_ENV] = "1"
+    if extra_env:
+        child_env.update(extra_env)
     return subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -257,6 +260,7 @@ def _spawn_and_wait_for_healthy_proxy(
     debug: bool,
     debug_dry_run: bool,
     debug_strict: bool,
+    extra_env: dict[str, str] | None = None,
 ) -> ProxyGuard | None:
     """Spawn a proxy on *port*; return ``None`` when it exits before becoming healthy."""
     process = _spawn_proxy(
@@ -267,6 +271,7 @@ def _spawn_and_wait_for_healthy_proxy(
         debug=debug,
         debug_dry_run=debug_dry_run,
         debug_strict=debug_strict,
+        extra_env=extra_env,
     )
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
@@ -297,6 +302,7 @@ def ensure_proxy(
     debug_dry_run: bool = False,
     debug_strict: bool = False,
     max_attempts: int = 100,
+    extra_env: dict[str, str] | None = None,
 ) -> ProxyGuard:
     """Reuse or spawn a CYT reverse proxy for this launch."""
     preferred_spawn = base_port + LAUNCH_PORT_OFFSET
@@ -326,6 +332,7 @@ def ensure_proxy(
             debug=debug,
             debug_dry_run=debug_dry_run,
             debug_strict=debug_strict,
+            extra_env=extra_env,
         )
         if guard is not None:
             if not quiet and port != preferred_spawn:

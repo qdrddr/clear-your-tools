@@ -8,11 +8,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.config import launch_claude_models
-from cyt.launch.secrets import _resolve_terminal_credential
 from cyt.launch.upstream_credentials import (
     is_canonical_upstream,
-    lookup_upstream_key_var,
     upstream_for_endpoint,
 )
 
@@ -39,22 +38,24 @@ def build_claude_env(
     config: dict[str, Any],
     port: int,
     endpoint: str,
+    auth_binding: AgentAuthBinding | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Build process env for Claude Code; return (env, reportable non-secrets)."""
     env = dict(os.environ)
     base_url = f"http://localhost:{port}/{endpoint}"
     env["ANTHROPIC_BASE_URL"] = base_url
-    reportable = {"ANTHROPIC_BASE_URL": base_url}
+    reportable: dict[str, str] = {"ANTHROPIC_BASE_URL": base_url}
 
     upstream = upstream_for_endpoint(config, endpoint)
     if upstream is not None and not is_canonical_upstream(upstream):
-        key_var = lookup_upstream_key_var(config, upstream)
-        terminal_auth, _source = _resolve_terminal_credential("ANTHROPIC_AUTH_TOKEN")
-        if terminal_auth:
-            env["ANTHROPIC_AUTH_TOKEN"] = terminal_auth
-        elif key_var and (token := os.environ.get(key_var)):
+        if auth_binding is not None:
+            env[auth_binding.agent_env_var] = auth_binding.token
+            reportable[auth_binding.agent_env_var] = auth_binding.source
+        elif token := os.environ.get("ANTHROPIC_AUTH_TOKEN"):
             env["ANTHROPIC_AUTH_TOKEN"] = token
-        env.setdefault("ANTHROPIC_API_KEY", "")
+            reportable["ANTHROPIC_AUTH_TOKEN"] = "env"
+        # Claude Code must use ANTHROPIC_AUTH_TOKEN for third-party gateways; clear API key.
+        env["ANTHROPIC_API_KEY"] = ""
     else:
         env.setdefault("ANTHROPIC_AUTH_TOKEN", os.environ.get("ANTHROPIC_API_KEY", ""))
 
@@ -79,10 +80,16 @@ def run(
     port: int,
     endpoint: str,
     agent_args: list[str],
+    auth_binding: AgentAuthBinding | None = None,
 ) -> int:
     """Exec Claude Code with proxy env wiring."""
     claude = find_claude()
-    env, _reportable = build_claude_env(config=config, port=port, endpoint=endpoint)
+    env, _reportable = build_claude_env(
+        config=config,
+        port=port,
+        endpoint=endpoint,
+        auth_binding=auth_binding,
+    )
     try:
         result = subprocess.run([claude, *agent_args], env=env, check=False)
     except KeyboardInterrupt:

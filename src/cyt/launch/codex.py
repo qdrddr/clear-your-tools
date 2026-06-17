@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -9,9 +10,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.config import codex_env_key_name
 
 CODEX_CONFIG_PATH = Path.home() / ".codex" / "config.toml"
+CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
 PROVIDER_NAME = "cyt"
 MANAGED_START = "# cyt-launch-managed-start"
 MANAGED_END = "# cyt-launch-managed-end"
@@ -28,6 +31,23 @@ def find_codex() -> str:
     if found := shutil.which("codex"):
         return found
     raise SystemExit("Codex CLI not found. Install it or add `codex` to PATH.")
+
+
+def read_codex_auth_openai_api_key() -> str | None:
+    """Return ``OPENAI_API_KEY`` from ``~/.codex/auth.json`` when set and non-null."""
+    if not CODEX_AUTH_PATH.is_file():
+        return None
+    try:
+        payload = json.loads(CODEX_AUTH_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("OPENAI_API_KEY")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _provider_block(*, base_url: str, env_key: str) -> str:
@@ -204,6 +224,7 @@ def run(
     port: int,
     endpoint: str,
     agent_args: list[str],
+    auth_binding: AgentAuthBinding | None = None,
 ) -> int:
     """Exec Codex with optional config.toml provider wiring."""
     validate_agent_args(agent_args)
@@ -211,6 +232,8 @@ def run(
     ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
     codex = find_codex()
     env = dict(os.environ)
+    if auth_binding is not None and auth_binding.agent_env_var in os.environ:
+        env[auth_binding.agent_env_var] = auth_binding.token
     try:
         result = subprocess.run([codex, *agent_args], env=env, check=False)
     except KeyboardInterrupt:

@@ -28,7 +28,7 @@ from cyt.proxy.setup import (
     upstream_entry_endpoint,
 )
 
-_CLAUDE_UPSTREAM_AUTH_FALLBACKS = ("ANTHROPIC_AUTH_TOKEN",)
+_CLAUDE_UPSTREAM_AUTH_FALLBACKS: tuple[str, ...] = ()
 
 
 def upstream_entry_url(entry: dict[str, Any]) -> str:
@@ -219,6 +219,9 @@ def _resolve_upstream_credential(
 ) -> None:
     """Resolve *key_var_name*, optionally borrowing from *fallback_env_names*."""
     from cyt.launch.secrets import resolve_credential
+
+    if key_var_name in credential_sources:
+        return
 
     before = dict(os.environ)
     value, source = resolve_credential(

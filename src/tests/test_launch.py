@@ -283,9 +283,12 @@ class TestParseLaunchRemainder:
 
 
 class TestRequiredLaunchEnvVars:
-    def test_codex_requires_codex_key(self, isolated_config_paths: dict[str, Path]) -> None:
+    def test_codex_does_not_require_codex_key_in_prepare_runtime(
+        self,
+        isolated_config_paths: dict[str, Path],
+    ) -> None:
         names = required_launch_env_var_names({}, "codex")
-        assert _codex_openai_api_key_var() in names
+        assert _codex_openai_api_key_var() not in names
 
     def test_claude_does_not_require_upstream_keys(
         self,
@@ -992,6 +995,7 @@ class TestEnsureProxy:
             "cyt.launch.proxy_guard.is_port_in_use",
             fake_in_use,
         )
+        monkeypatch.setattr("cyt.launch.proxy_guard._proxy_health", lambda port: None)
         monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8836)
         monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", lambda **kwargs: process)
         monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)

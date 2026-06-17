@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.config import reverse_debug_log_dir
+from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.upstream import AgentName
 
@@ -84,9 +85,17 @@ def _proxy_recipe_lines(
     return lines
 
 
-def _claude_recipe_lines(*, port: int, endpoint: str, key_var_name: str | None = None) -> list[str]:
+def _claude_recipe_lines(
+    *,
+    port: int,
+    endpoint: str,
+    auth_binding: AgentAuthBinding | None = None,
+    key_var_name: str | None = None,
+) -> list[str]:
     lines = ["# Manual Claude Code recipe"]
-    if key_var_name:
+    if auth_binding is not None:
+        lines.append(f"export {auth_binding.agent_env_var}=...  # {auth_binding.source}")
+    elif key_var_name:
         lines.append(f'export ANTHROPIC_AUTH_TOKEN="${key_var_name}"')
     else:
         lines.append('export ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_API_KEY"')
@@ -99,11 +108,18 @@ def _claude_recipe_lines(*, port: int, endpoint: str, key_var_name: str | None =
     return lines
 
 
-def _codex_recipe_lines(*, port: int, endpoint: str, env_key: str) -> list[str]:
+def _codex_recipe_lines(
+    *,
+    port: int,
+    endpoint: str,
+    env_key: str,
+    auth_binding: AgentAuthBinding | None = None,
+) -> list[str]:
     base_url = f"http://127.0.0.1:{port}/{endpoint}/v1"
+    source = auth_binding.source if auth_binding is not None else "resolved"
     return [
         "# Manual Codex recipe",
-        f"export {env_key}=...",
+        f"export {env_key}=...  # {source}",
         "codex -m gpt-5.4-mini \\",
         "  -c 'model_provider=\"cyt\"' \\",
         f"  -c 'model_providers.cyt.base_url=\"{base_url}\"' \\",
@@ -121,6 +137,57 @@ def _debug_log_lines(*, endpoint: str, debug_log_dir: Path) -> list[str]:
     ]
 
 
+def _launch_env_source_lines(
+    launch_env: dict[str, str],
+    credential_sources: dict[str, str],
+) -> list[str]:
+    lines: list[str] = []
+    for key, value in sorted(launch_env.items()):
+        if key in credential_sources:
+            continue
+        if key.endswith(("_TOKEN", "_API_KEY")) or "AUTH" in key:
+            lines.append(f"  {key}: {value}")
+        else:
+            lines.append(f"  {key}={value}")
+    return lines
+
+
+def _agent_recipe_lines(
+    *,
+    agent: AgentName,
+    port: int,
+    endpoint: str,
+    config: dict[str, Any] | None,
+    auth_binding: AgentAuthBinding | None,
+) -> list[str]:
+    if agent == "claude":
+        key_var_name = None
+        if config is not None:
+            from cyt.launch.upstream_credentials import (
+                is_canonical_upstream,
+                lookup_upstream_key_var,
+                upstream_for_endpoint,
+            )
+
+            upstream = upstream_for_endpoint(config, endpoint)
+            if upstream is not None and not is_canonical_upstream(upstream):
+                key_var_name = lookup_upstream_key_var(config, upstream)
+        return _claude_recipe_lines(
+            port=port,
+            endpoint=endpoint,
+            auth_binding=auth_binding,
+            key_var_name=key_var_name,
+        )
+
+    env_key = codex_env_key_name(config or {})
+    return _codex_recipe_lines(
+        port=port,
+        endpoint=endpoint,
+        env_key=env_key,
+        auth_binding=auth_binding,
+    )
+
+
 def print_runtime_env_report(
     *,
     quiet: bool,
@@ -133,6 +200,7 @@ def print_runtime_env_report(
     launch_env: dict[str, str] | None = None,
     config: dict[str, Any] | None = None,
     config_path: Path | None = None,
+    auth_binding: AgentAuthBinding | None = None,
     debug: bool = False,
     debug_dry_run: bool = False,
     debug_strict: bool = False,
@@ -143,8 +211,7 @@ def print_runtime_env_report(
 
     source_lines = _format_sources(credential_sources)
     if launch_env:
-        for key, value in sorted(launch_env.items()):
-            source_lines.append(f"  {key}={value}")
+        source_lines.extend(_launch_env_source_lines(launch_env, credential_sources))
 
     _print_section(
         "Proxy:",
@@ -178,25 +245,13 @@ def print_runtime_env_report(
     if not include_agent_recipe or agent is None or endpoint is None:
         return
 
-    if agent == "claude":
-        key_var_name = None
-        if endpoint is not None and config is not None:
-            from cyt.launch.upstream_credentials import (
-                is_canonical_upstream,
-                lookup_upstream_key_var,
-                upstream_for_endpoint,
-            )
-
-            upstream = upstream_for_endpoint(config, endpoint)
-            if upstream is not None and not is_canonical_upstream(upstream):
-                key_var_name = lookup_upstream_key_var(config, upstream)
-        recipe = _claude_recipe_lines(
+    _print_section(
+        "Manual agent recipe:",
+        _agent_recipe_lines(
+            agent=agent,
             port=port,
             endpoint=endpoint,
-            key_var_name=key_var_name,
-        )
-    else:
-        env_key = codex_env_key_name(config or {})
-        recipe = _codex_recipe_lines(port=port, endpoint=endpoint, env_key=env_key)
-
-    _print_section("Manual agent recipe:", recipe)
+            config=config,
+            auth_binding=auth_binding,
+        ),
+    )
