@@ -50,6 +50,29 @@ CYT’s default pruner is BM25: fast, local, and free. It isn’t the most advan
 but you can swap it for a reranker or a small, cheap LLM if you want higher‑quality pruning.
 This is often worthwhile when using Claude Code, since Sonnet is expensive.
 
+### BM25 language and tokenization
+
+Languages with complex morphology (Arabic, Finnish, Turkish) or no whitespace (Chinese, Japanese)
+require specialized tokenizers. CYT’s BM25 stack is built on **Tantivy** (Rust) and aligned with
+its tokenization model.
+
+**Tantivy (Rust)**
+
+- Supports BM25 with tokenizers for English and multilingual ICU.
+- Additional tokenizers are available via plugins.
+- Tantivy’s default tokenizer is language‑agnostic (splits on whitespace + punctuation).
+  It works for any language that uses whitespace.
+
+**Stemming**
+
+Stemming is only available for these 18 languages:
+
+Arabic, Danish, Dutch, English, Finnish, French, German, Greek, Hungarian, Italian, Norwegian,
+Portuguese, Romanian, Spanish, Swedish, Tamil, Turkish.
+
+You can implement your own tokenizer or integrate external ones (e.g., for Chinese/Japanese/Korean).
+Tantivy encourages using `tantivy-tokenizer-api` for custom tokenizers.
+
 A common worry is that pruning might cause multi‑step agents to “lose” tools or degrade semantics
 by removing tools. In practice, we haven’t seen this happen, for two reasons:
 
