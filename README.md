@@ -159,7 +159,7 @@ Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and 
 <summary><strong>SDK & CLI</strong></summary>
 
 All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
-chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./search/cyt-indexer-cli.sh)
+chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./scripts/cyt-indexer-cli.sh)
 <!-- markdownlint-disable MD013 -->
 <table border="0">
   <tr>
@@ -497,14 +497,13 @@ Use `http://localhost:8834/anthropic` unless you have enabled Hypercorn TLS in c
 <details>
 <summary><strong>Should I use .env</strong></summary>
 
-We strongly recommend using password vaults like macOS KeyChain
+We strongly recommend storing API keys via `cyt setup` (uses the macOS Keychain **cyt** service through the Python keyring backend). Shell exports and `~/.config/cyt/.env` also work.
 
 ```bash
-# Store key in secure vault
-security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
+cyt setup   # interactive; stores keys in Keychain service "cyt"
 
-# Now you can access the key like this:
-export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+# Optional: inspect or seed Keychain manually (service must be "cyt", not a custom name)
+security find-generic-password -s "cyt" -a "__credentials__" -w
 ```
 
 </details>

@@ -16,72 +16,72 @@ tasks:
   sync:
     desc: Install/sync Python dependencies with uv
     cmds:
-      - uv sync --all-extras --group dev --group test --locked
+      - rtk uv sync --all-extras --group dev --group test --locked
 
   check:
     desc: Run ty type checker
     cmds:
-      - uv run ty check src/ --project . --output-format=concise
+      - rtk uv run ty check src/ --project . --output-format=concise
 
   ruff:
     desc: Lint with auto-fix
     cmds:
-      - uv run ruff check --fix src/cyt src/tests sdk/python
+      - rtk uv run ruff check --fix src/cyt src/tests sdk/python
 
   ruff-check:
     desc: Lint without auto-fix (CI mode)
     cmds:
-      - uv run ruff check src/cyt src/tests sdk/python
+      - rtk uv run ruff check src/cyt src/tests sdk/python
 
   format:
     desc: Format code
     cmds:
-      - uv run ruff format src/cyt src/tests sdk/python
+      - rtk uv run ruff format src/cyt src/tests sdk/python
 
   format-check:
     desc: Check formatting (CI mode)
     cmds:
-      - uv run ruff format --check src/cyt src/tests sdk/python
+      - rtk uv run ruff format --check src/cyt src/tests sdk/python
 
   mypy:
     desc: Run mypy static analysis
     cmds:
-      - uv run mypy -p cyt
+      - rtk uv run mypy -p cyt
 
   pytest:
     desc: Run tests
     cmds:
-      - uv run pytest src/tests
+      - rtk uv run pytest src/tests
 
   ast-test:
     desc: Test ast-grep lint rules
     cmds:
-      - ast-grep test --skip-snapshot-tests
+      - rtk ast-grep test --skip-snapshot-tests
 
   ast-scan:
     desc: Pattern-based security/quality scan
     cmds:
-      - ast-grep scan src/ sdk/
+      - rtk ast-grep scan src/ sdk/
 
   right:
     desc: Run BasedPyright static analysis
     cmds:
-      - basedpyright src sdk/python/src
+      - rtk basedpyright src sdk/python/src
 
   build:
     desc: Build Python package wheel/sdist
     cmds:
-      - uv build
+      - rtk uv build
 
   verify-sdk:
     desc: Verify cyt-indexer-sdk native import
     cmds:
-      - uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
+      - rtk uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
 
   prek:
     desc: Run Python pre-commit hooks
     cmds:
-      - uv run prek run ty-check mypy pytest basedpyright ruff ruff-format --all-files
+      - rtk uv run prek run ty-check mypy pytest basedpyright ruff ruff-format --all-files
 
   ci:
     desc: Mirror CI Python checks

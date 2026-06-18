@@ -8,7 +8,7 @@ mkdir -p ./.catalog
 jq '.body.tools' debug/temp.json >./.catalog/input.json
 
 # Build the application locally
-./search/local-dev.sh all
+./scripts/local-dev.sh all
 
 # Build the catalog from the tools file
 ./target/release/cyt-indexer build tools --tools ./.catalog/input.json --output ./.catalog
@@ -31,34 +31,34 @@ jq '{
 	--tool-policy mcp__fff__multi_grep=prune_all_descriptions \
 	--removed-output ./.catalog/removed.json
 
-OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+OPENROUTER_API_KEY="$(security find-generic-password -s "cyt" -a "OPENROUTER_API_KEY" -w)"
 export OPENROUTER_API_KEY
-DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w)"
+DEEPINFRA_API_KEY="$(security find-generic-password -s "cyt" -a "DEEPINFRA_API_KEY" -w)"
 export DEEPINFRA_API_KEY
 
-./search/local-dev.sh proxy --port 8834
+./scripts/local-dev.sh proxy --port 8834
 # BM25 test
-./search/local-dev.sh proxy --upstream https://openrouter.ai/api --upstream-kind anthropic --debug
+./scripts/local-dev.sh proxy --upstream https://openrouter.ai/api --upstream-kind anthropic --debug
 
 # Skills
 rm -rf ./.catalog/skills/
-./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
+./scripts/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
 
 rm -rf ./.catalog/skills/
-./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
+./scripts/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
 	--window-mode word \
 	--similarity-window 10 \
 	--chunk-size 100 \
 	--skip-window 0
 
 # Optimal parameters
-./search/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
+./scripts/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog \
 	--window-mode word \
 	--similarity-window 100 \
 	--chunk-size 500 \
 	--skip-window 2
 
-./search/local-dev.sh indexer retrieve skills \
+./scripts/local-dev.sh indexer retrieve skills \
 	--catalog ./.catalog \
 	--doc-id lean-ctx__skill \
 	--query content \
@@ -66,7 +66,7 @@ rm -rf ./.catalog/skills/
 	--output skill_out.json \
 	--keep-all-headers
 
-./search/local-dev.sh indexer retrieve skills \
+./scripts/local-dev.sh indexer retrieve skills \
 	--catalog ./.catalog \
 	--doc-id lean-ctx__skill \
 	--query content \

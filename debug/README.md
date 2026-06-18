@@ -5,7 +5,7 @@ How to run the reverse proxy with pruning debug output and inspect which tools w
 ## cyt-indexer CLI
 
 Check how the app mutates the requests by decomposing tools and then re-composed based on survivors
-to see what the tool will change using [cyt-indexer-cli.sh](../search/cyt-indexer-cli.sh) script.
+to see what the tool will change using [cyt-indexer-cli.sh](../scripts/cyt-indexer-cli.sh) script.
 
 ## Install and run
 
@@ -36,7 +36,7 @@ export ANTHROPIC_AUTH_TOKEN="${OPENROUTER_API_KEY}"
 ```
 
 Pruning needs API keys for the configured pipeline (e.g. `OPENROUTER_API_KEY`, `DEEPINFRA_API_KEY`).
-See `search/proxy.sh` for a local example.
+See `scripts/proxy.sh` for a local example.
 
 ## SQLite: full tool lists before and after pruning
 

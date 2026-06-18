@@ -15,14 +15,13 @@ The default upstream in `config.yaml` is OpenRouter's Anthropic-compatible endpo
 <details>
 <summary><strong>Should I use .env</strong></summary>
 
-We strongly recommend using password vaults like macOS KeyChain
+We strongly recommend storing API keys via `cyt setup` (Keychain service **cyt**).
+Shell exports and `~/.config/cyt/.env` also work.
 
 ```shell
-# Store key in secure vault
-security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
-
-# Now you can access the key like this:
-export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+cyt setup
+export OPENROUTER_API_KEY="..."   # or rely on cyt keyring after setup
+export ANTHROPIC_AUTH_TOKEN="${OPENROUTER_API_KEY}"
 ```
 
 </details>

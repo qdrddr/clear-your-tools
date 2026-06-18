@@ -1,6 +1,6 @@
 # SKIP=pytest,mypy,basedpyright uv run prek run -a
 # prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
-fail_fast: true
+fail_fast: false
 default_language_version:
   python: "3.13"
 repos:
@@ -98,7 +98,8 @@ repos:
     hooks:
       - id: sync-version
         name: sync-version
-        entry: bash 'search/sync-version.sh'
+        entry: bash scripts/prek-hook.sh
+        args: ["rtk bash scripts/sync-version.sh"]
         language: system
         verbose: true
         pass_filenames: false
@@ -198,7 +199,11 @@ repos:
     hooks:
       - id: ty-check
         name: Ty type checker
-        entry: bash -c 'source .venv/bin/activate && uv run ty check src/ --project . --output-format concise'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            "source .venv/bin/activate && rtk uv run ty check src/ --project . --output-format concise",
+          ]
         language: system
         types: [python]
         pass_filenames: false
@@ -214,11 +219,10 @@ repos:
           )
       - id: check-filenames
         name: Check for spaces in all filenames
-        entry: bash
+        entry: bash scripts/prek-hook.sh
         args:
-          - -c
           - |
-            git ls-files \
+            rtk git ls-files \
               | grep -vE '^"?(postman/|documents/|backlog/|dirs/)' \
               | grep " " \
               && echo "Filenames should not contain spaces!" && exit 1 \
@@ -228,13 +232,15 @@ repos:
         pass_filenames: false
       - id: mypy
         name: mypy
-        entry: bash -c "source .venv/bin/activate && cd src && mypy ."
+        entry: bash scripts/prek-hook.sh
+        args: ["source .venv/bin/activate && cd src && rtk mypy ."]
         pass_filenames: false
         language: system
         files: '^src/.*\.py$'
       - id: pytest
         name: pytest
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && uv run pytest'
+        entry: bash scripts/prek-hook.sh
+        args: ['cd "$(git rev-parse --show-toplevel)" && rtk uv run pytest']
         pass_filenames: false
         language: system
         # Run when app code or tests change (tests live under src/tests/).
@@ -245,7 +251,9 @@ repos:
     hooks:
       - id: basedpyright
         name: basedpyright
-        entry: bash -c 'source .venv/bin/activate && basedpyright src sdk/python/src'
+        entry: bash scripts/prek-hook.sh
+        args:
+          ["source .venv/bin/activate && rtk basedpyright src sdk/python/src"]
         language: system
         pass_filenames: false
         files: '^(src/.*\.py|sdk/python/.*\.py)$'
@@ -254,83 +262,111 @@ repos:
     hooks:
       - id: ast-test
         name: ast-grep rule tests
-        entry: bash -c 'ast-grep test --skip-snapshot-tests'
+        entry: bash scripts/prek-hook.sh
+        args: ["rtk ast-grep test --skip-snapshot-tests"]
         language: system
         files: ^\.ast-grep/
         pass_filenames: false
 
       - id: uv-build
         name: Python package build
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && uv build'
+        entry: bash scripts/prek-hook.sh
+        args: ['cd "$(git rev-parse --show-toplevel)" && rtk uv build']
         language: system
         files: ^(pyproject\.toml|src/)
         pass_filenames: false
 
       - id: verify-sdk
         name: Verify cyt-indexer-sdk native import
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"',
+          ]
         language: system
         files: ^(sdk/(rust|python)/|pyproject\.toml)
         pass_filenames: false
 
       - id: cargo-clippy
         name: cargo clippy (cyt-indexer)
-        entry: bash -c 'cd "$(git rev-parse --show-toplevel)" && cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc -W clippy::wildcard_imports -W clippy::enum_glob_use -W clippy::module_name_repetitions -W clippy::pub_use -W clippy::bool_comparison -W clippy::match_bool -W clippy::match_same_arms -W clippy::match_wild_err_arm -W clippy::needless_borrow -W clippy::needless_lifetimes -W clippy::inefficient_to_string -W clippy::large_enum_variant -W clippy::large_stack_arrays -W clippy::map_clone -W unused -W dead_code'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc -W clippy::wildcard_imports -W clippy::enum_glob_use -W clippy::module_name_repetitions -W clippy::pub_use -W clippy::bool_comparison -W clippy::match_bool -W clippy::match_same_arms -W clippy::match_wild_err_arm -W clippy::needless_borrow -W clippy::needless_lifetimes -W clippy::inefficient_to_string -W clippy::large_enum_variant -W clippy::large_stack_arrays -W clippy::map_clone -W unused -W dead_code',
+          ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
         pass_filenames: false
 
       - id: typescript-typecheck
         name: TypeScript SDK typecheck
-        entry: bash -c 'cd sdk/typescript && npx tsc --noEmit && npx tsc --noEmit -p ../e2e/typescript'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            "cd sdk/typescript && rtk npx tsc --noEmit && rtk npx tsc --noEmit -p ../e2e/typescript",
+          ]
         language: system
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       - id: typescript-test
         name: TypeScript SDK test
-        entry: bash -c 'cd sdk/typescript && npm test'
+        entry: bash scripts/prek-hook.sh
+        args: ["cd sdk/typescript && rtk npm test"]
         language: system
         files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
         pass_filenames: false
 
       - id: typescript-build
         name: TypeScript SDK build
-        entry: bash -c 'cd sdk/typescript && npm run build'
+        entry: bash scripts/prek-hook.sh
+        args: ["cd sdk/typescript && rtk npm run build"]
         language: system
         files: ^sdk/typescript/
         pass_filenames: false
 
       - id: typescript-npm-audit
         name: TypeScript SDK npm audit
-        entry: bash -c 'set -euo pipefail; audit_if_locked() { if [[ -f package-lock.json ]]; then npm audit --audit-level=high; fi; }; (cd sdk/typescript && audit_if_locked); (cd sdk/e2e/typescript && audit_if_locked)'
+        entry: bash scripts/prek-hook.sh
+        args:
+          - "set -euo pipefail; audit_if_locked() { if [[ -f package-lock.json ]]; then rtk npm audit --audit-level=high; fi; }; (cd sdk/typescript && audit_if_locked); (cd sdk/e2e/typescript && audit_if_locked)"
         language: system
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       - id: typescript-sort-package-json
         name: TypeScript SDK sort-package-json
-        entry: bash -c 'cd sdk/typescript && npx --yes sort-package-json package.json && cd ../e2e/typescript && npx --yes sort-package-json package.json.in'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            "cd sdk/typescript && rtk npx --yes sort-package-json package.json && cd ../e2e/typescript && rtk npx --yes sort-package-json package.json.in",
+          ]
         language: system
         files: ^sdk/(typescript/package\.json|e2e/typescript/package\.json\.in)$
         pass_filenames: false
 
       - id: ast-scan
         name: Ast rule scan
-        entry: bash -c 'ast-grep scan src/ sdk/'
+        entry: bash scripts/prek-hook.sh
+        args: ["rtk ast-grep scan src/ sdk/"]
         language: system
         pass_filenames: false
 
       - id: typescript-ast-scan
         name: TypeScript SDK ast-scan
-        entry: bash -c 'ast-grep scan sdk/typescript sdk/e2e/typescript --globs "!sdk/typescript/src/test/**"'
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'rtk ast-grep scan sdk/typescript sdk/e2e/typescript --globs "!sdk/typescript/src/test/**"',
+          ]
         language: system
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
       - id: all-fallow
         name: fallow checks (ui all-fallow)
-        entry: bash 'search/all-fallow.sh'
+        entry: bash scripts/prek-hook.sh
+        args: ["rtk bash scripts/all-fallow.sh"]
         language: system
         files: ^(ui/|sdk/(typescript|e2e/typescript)/|package\.json|package-lock\.json)
         pass_filenames: false

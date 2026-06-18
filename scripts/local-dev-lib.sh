@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Shared helpers for local monorepo development (source search/local-dev-lib.sh).
+# Shared helpers for local monorepo development (source scripts/local-dev-lib.sh).
 # Not meant to be executed directly.
 
 if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
@@ -339,7 +339,7 @@ sdk_root = (root / "sdk" / "python").resolve()
 try:
     dist = metadata.distribution("cyt-indexer-sdk")
 except metadata.PackageNotFoundError:
-    sys.exit("cyt-indexer-sdk is not installed; run: ./search/local-dev.sh setup sdk-python")
+    sys.exit("cyt-indexer-sdk is not installed; run: ./scripts/local-dev.sh setup sdk-python")
 
 install_kind = "editable"
 try:
@@ -358,7 +358,7 @@ except FileNotFoundError:
             "cyt-indexer-sdk is not loaded from sdk/python\n"
             f"  package file: {pkg_dir}\n"
             f"  expected under: {sdk_root}\n"
-            "Use this repo's pyproject.toml [tool.uv.sources] and run ./search/local-dev.sh setup"
+            "Use this repo's pyproject.toml [tool.uv.sources] and run ./scripts/local-dev.sh setup"
         )
     install_kind = "path"
 
@@ -403,7 +403,7 @@ PY
 	# Expected .env locations (same order as src/cyt/config load_proxy_env):
 	#   1. ${CYT_REPO_ROOT}/.env          e.g. .../tool-attention/.env
 	#   2. ${HOME}/.config/cyt/.env
-	# If a key is still unset, fall back to macOS Keychain (search/proxy.sh).
+	# If a key is still unset, fall back to macOS Keychain (scripts/proxy.sh).
 	CYT_ENV_PATHS=(
 		"${CYT_REPO_ROOT}/.env"
 		"${HOME}/.config/cyt/.env"
@@ -437,7 +437,7 @@ PY
 	_cyt_keychain_api_key() {
 		local var_name="$1"
 		command -v security >/dev/null 2>&1 || return 1
-		security find-generic-password -s "nono" -a "${var_name}" -w 2>/dev/null
+		security find-generic-password -s "cyt" -a "${var_name}" -w 2>/dev/null
 	}
 
 	_cyt_ensure_api_key() {
@@ -458,7 +458,7 @@ PY
 
 		if value="$(_cyt_keychain_api_key "${var_name}")"; then
 			export "${var_name}=${value}"
-			info "loaded ${var_name} from macOS Keychain (service: nono)"
+			info "loaded ${var_name} from macOS Keychain (service: cyt)"
 			return 0
 		fi
 

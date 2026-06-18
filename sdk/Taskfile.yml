@@ -8,6 +8,7 @@ version: "3"
 vars:
   REPO_ROOT:
     sh: cd "{{.TASKFILE_DIR}}/.." && pwd
+  UI_DIR: "{{.REPO_ROOT}}/ui"
   TYPESCRIPT_DIR: "{{.TASKFILE_DIR}}/typescript"
   E2E_TYPESCRIPT_DIR: "{{.TASKFILE_DIR}}/e2e/typescript"
 
@@ -92,16 +93,10 @@ tasks:
         vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}", FALLOW_CMD: dead-code }
 
   fallow-audit:
+    desc: Fallow audit report (markdown, paths shortened)
     cmds:
-      - task: _fallow
-        vars:
-          { WORKDIR: "{{.TYPESCRIPT_DIR}}", FALLOW_CMD: "audit --format json" }
-      - task: _fallow
-        vars:
-          {
-            WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}",
-            FALLOW_CMD: "audit --format json",
-          }
+      - task: _fallow-audit
+        vars: { WORKDIR: "{{.UI_DIR}}" }
 
   fallow-health:
     cmds:
@@ -109,13 +104,13 @@ tasks:
         vars:
           {
             WORKDIR: "{{.TYPESCRIPT_DIR}}",
-            FALLOW_CMD: "health --score --hotspots --targets",
+            FALLOW_CMD: "health --score --hotspots --targets --format markdown",
           }
       - task: _fallow
         vars:
           {
             WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}",
-            FALLOW_CMD: "health --score --hotspots --targets",
+            FALLOW_CMD: "health --score --hotspots --targets --format markdown",
           }
 
   fallow-auto:
@@ -166,6 +161,14 @@ tasks:
     dir: "{{.WORKDIR}}"
     cmds:
       - fallow {{.FALLOW_CMD}}
+
+  _fallow-audit:
+    internal: true
+    dir: "{{.WORKDIR}}"
+    cmds:
+      - |
+        rtk fallow audit --format markdown --gate all 2>&1 \
+          | SHORTEN_ROOT="{{.REPO_ROOT}}" "{{.REPO_ROOT}}/scripts/shorten-paths.sh"
 
   all-tests:
     desc: Run all checks, continue on failure

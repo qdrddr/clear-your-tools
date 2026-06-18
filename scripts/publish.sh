@@ -20,8 +20,8 @@ git push origin "${tag}"
 # git tag -f cyt-indexer-rust-v0.1.6
 # git push -f origin cyt-indexer-rust-v0.1.6
 
-# bash search/sync-version.sh
-# export CARGO_REGISTRY_TOKEN="$(security find-generic-password -s "nono" -a "CARGO_REGISTRY_TOKEN" -w)"
+# bash scripts/sync-version.sh
+# export CARGO_REGISTRY_TOKEN="$(security find-generic-password -s "cyt" -a "CARGO_REGISTRY_TOKEN" -w)"
 # cargo build -p cyt-indexer
 # cargo test -p cyt-indexer
 # cargo publish -p cyt-indexer --dry-run

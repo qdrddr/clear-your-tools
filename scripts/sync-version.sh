@@ -2,12 +2,17 @@
 # Propagate a single semver to all package manifests and lockfiles.
 #
 # Usage:
-#   ./search/sync-version.sh [VERSION]
+#   ./scripts/sync-version.sh [VERSION]
 #
 # If VERSION is omitted, read it from the root pyproject.toml.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/shorten-paths.sh"
+export SHORTEN_ROOT="${ROOT}"
 ROOT_PYPROJECT="${ROOT}/pyproject.toml"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 CARGO_LOCK="${ROOT}/Cargo.lock"
@@ -157,7 +162,7 @@ if [[ $# -eq 1 ]]; then
 else
 	version="$(read_root_pyproject_version)"
 	if [[ -z "${version}" ]]; then
-		echo "error: could not read version from ${ROOT_PYPROJECT}" >&2
+		printf 'error: could not read version from %s\n' "${ROOT_PYPROJECT}" | shorten_paths >&2
 		exit 1
 	fi
 fi
@@ -173,7 +178,7 @@ for file in \
 	"${PACKAGE_JSON}" \
 	"${PACKAGE_LOCK}"; do
 	if [[ ! -f "${file}" ]]; then
-		echo "error: missing ${file}" >&2
+		printf 'error: missing %s\n' "${file}" | shorten_paths >&2
 		exit 1
 	fi
 done
@@ -191,7 +196,7 @@ update_package_json_version "${version}"
 update_package_lock_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 
-cat <<EOF
+cat <<EOF | shorten_paths
 synced version ${version} to:
   ${ROOT_PYPROJECT} (project + cyt-indexer-sdk dependency)
   ${CARGO_TOML}

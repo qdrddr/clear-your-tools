@@ -2,10 +2,10 @@
 # Claude Code hook wrapper for `cyt hook --stdin`.
 set -euo pipefail
 
-# Required for pruning pipeline: [rerank, llm] (Keychain service "nono", or already exported)
-OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-$(/usr/bin/security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w 2>/dev/null || true)}"
+# Required for pruning pipeline: [rerank, llm] (Keychain service "cyt", or already exported)
+OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-$(/usr/bin/security find-generic-password -s "cyt" -a "OPENROUTER_API_KEY" -w 2>/dev/null || true)}"
 export OPENROUTER_API_KEY
-DEEPINFRA_API_KEY="${DEEPINFRA_API_KEY:-$(/usr/bin/security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w 2>/dev/null || true)}"
+DEEPINFRA_API_KEY="${DEEPINFRA_API_KEY:-$(/usr/bin/security find-generic-password -s "cyt" -a "DEEPINFRA_API_KEY" -w 2>/dev/null || true)}"
 export DEEPINFRA_API_KEY
 
 CYT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"

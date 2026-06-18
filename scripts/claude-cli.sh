@@ -2,7 +2,7 @@
 PORT=8834
 
 export ANTHROPIC_API_KEY=""
-ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "cyt" -a "OPENROUTER_API_KEY" -w)"
 export ANTHROPIC_AUTH_TOKEN
 export ANTHROPIC_BASE_URL="http://localhost:${PORT}/openrouter"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="deepseek/deepseek-v4-pro"

@@ -7,9 +7,9 @@ uv tool upgrade 'clear-your-tools[all]==v0.5.3' -p 3.14
 
 # Required for pruning.pipeline: [rerank, llm] (keys in src/.env or exported)
 
-OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+OPENROUTER_API_KEY="$(security find-generic-password -s "cyt" -a "OPENROUTER_API_KEY" -w)"
 export OPENROUTER_API_KEY
-DEEPINFRA_API_KEY="$(security find-generic-password -s "nono" -a "DEEPINFRA_API_KEY" -w)"
+DEEPINFRA_API_KEY="$(security find-generic-password -s "cyt" -a "DEEPINFRA_API_KEY" -w)"
 export DEEPINFRA_API_KEY
 
 lsof -ti :8834 | xargs kill

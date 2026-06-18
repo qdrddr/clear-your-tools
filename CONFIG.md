@@ -283,14 +283,13 @@ cp .env.example .env
 ```
 
 <details>
-<summary><strong>Though we strongly recommend using password vaults like macOS KeyChain</strong></summary>
+<summary><strong>Though we strongly recommend storing keys via `cyt setup` (Keychain service "cyt")</strong></summary>
 
 ```shell
-# Store key in secure vault
-security add-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w "sk-..."  # macOS
+cyt setup   # interactive; stores keys in Keychain service "cyt"
 
-# Now you can access the key like this:
-export ANTHROPIC_AUTH_TOKEN="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
+# Optional manual Keychain access (advanced; cyt uses account "__credentials__" JSON blob)
+security find-generic-password -s "cyt" -a "__credentials__" -w
 ```
 
 </details>
