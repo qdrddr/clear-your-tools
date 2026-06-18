@@ -14,6 +14,7 @@ from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.indexer.tokens import count_tokens
 from cyt.pruners.llm import (
+    SELECTOR_NO_MATCH_INSTRUCTION,
     SELECTOR_SYSTEM_PROMPT,
     apply_selector_ids_to_catalog,
     llm_catalog_dict,
@@ -70,7 +71,8 @@ SKILLS_SELECTOR_SYSTEM_PROMPT = (
     "Your task is to select the most relevant skill-node(s) based on the user query. "
     "Later the selected nodes will be recompiled into partial skill markdown for another LLM. "
     "Return the selector id values from the skill-node id attributes that match the user query. "
-    "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise."
+    "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise. "
+    f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
 
 COMBINED_SELECTOR_SYSTEM_PROMPT = (

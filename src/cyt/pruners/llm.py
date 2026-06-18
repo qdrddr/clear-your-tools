@@ -4,7 +4,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, NoReturn, TypeVar
+from typing import Any, TypeVar, cast
 
 from litellm import completion, responses
 from pydantic import BaseModel
@@ -77,6 +77,12 @@ LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id")
 # Only decomposed catalog lists are selectable; ``tools`` is metadata, not a chunk.
 LLM_CATALOG_LIST_KEYS: tuple[str, ...] = ("json", "md")
 
+SELECTOR_EMPTY_ID = -1
+
+SELECTOR_NO_MATCH_INSTRUCTION = (
+    f"If nothing is suitable for the user query, return ids: [{SELECTOR_EMPTY_ID}] only."
+)
+
 SELECTOR_SYSTEM_PROMPT = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
     "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
@@ -86,11 +92,17 @@ SELECTOR_SYSTEM_PROMPT = (
     "to save on tokens by removing the irrelevant to user query noise."
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
     "potentially be useful for the request. "
+    f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
 
 
 class RelevantChunkIds(BaseModel):
     ids: list[int]
+
+
+def normalize_selector_ids(ids: list[int]) -> list[int]:
+    """Drop the empty-selection sentinel; ``[-1]`` means no chunks matched."""
+    return [chunk_id for chunk_id in ids if chunk_id != SELECTOR_EMPTY_ID]
 
 
 def llm_pruning_settings(
@@ -224,10 +236,17 @@ def _usage_from_litellm_response(
         completion = getattr(usage, "completion_tokens", None)
         if completion is None:
             completion = getattr(usage, "output_tokens", None)
+        reasoning_tokens: int | None = None
+        details = getattr(usage, "completion_tokens_details", None)
+        if details is not None:
+            raw_reasoning = getattr(details, "reasoning_tokens", None)
+            if raw_reasoning is not None:
+                reasoning_tokens = int(raw_reasoning)
         if prompt is not None or completion is not None:
             return StageTokenUsage(
                 input_tokens=int(prompt or 0),
                 output_tokens=int(completion or 0),
+                reasoning_tokens=reasoning_tokens,
                 usage_source="provider",
                 request_id=getattr(response, "id", None),
                 model_name=settings.model_name,
@@ -243,6 +262,64 @@ def _usage_from_litellm_response(
     )
 
 
+def _message_field(message: object | None, name: str) -> object | None:
+    if message is None:
+        return None
+    dict_get = getattr(message, "get", None)
+    if callable(dict_get):
+        return cast(object | None, dict_get(name))
+    return cast(object | None, getattr(message, name, None))
+
+
+def _structured_selector_content(response: object) -> tuple[str | None, str]:
+    """Return selector payload from Pydantic ``response_format`` content only."""
+    choices = getattr(response, "choices", None)
+    if isinstance(choices, list) and choices:
+        message = getattr(choices[0], "message", None)
+        content = _message_field(message, "content")
+        if isinstance(content, str) and content.strip():
+            return content.strip(), "content"
+
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip(), "output_text"
+    return None, "none"
+
+
+def _selector_uses_openrouter(settings: LlmPruningSettings) -> bool:
+    model = settings.model_name.lower()
+    if "openrouter" in model:
+        return True
+    dns = (settings.provider_dns or "").lower()
+    return "openrouter" in dns
+
+
+def _selector_completion_extras(settings: LlmPruningSettings) -> dict[str, Any]:
+    """Request kwargs so reasoning models emit structured selector JSON in content."""
+    if _selector_uses_openrouter(settings):
+        return {"reasoning": {"effort": "none"}}
+    return {}
+
+
+def _parse_selector_json(content_val: str) -> RelevantChunkIds | None:
+    try:
+        return RelevantChunkIds.model_validate_json(content_val)
+    except Exception:
+        import re
+
+        if json_match := re.search(r"\{.*\}", content_val, re.DOTALL):
+            try:
+                return RelevantChunkIds.model_validate_json(json_match.group(0))
+            except Exception:
+                pass
+    return None
+
+
+def _warn_empty_selector_response(response: object, *, model_name: str, reason: str) -> None:
+    detail = _llm_response_diagnostics(response, model_name=model_name)
+    logger.warning("llm selector %s; treating as zero selections (%s)", reason, detail)
+
+
 def _llm_response_diagnostics(response: object, *, model_name: str) -> str:
     """Summarize LiteLLM response fields useful when selector output is missing."""
     parts = [f"model={model_name!r}"]
@@ -252,8 +329,15 @@ def _llm_response_diagnostics(response: object, *, model_name: str) -> str:
         parts.append(f"finish_reason={getattr(choice, 'finish_reason', None)!r}")
         message = getattr(choice, "message", None)
         if message is not None:
-            content = getattr(message, "content", None)
+            content = _message_field(message, "content")
             parts.append(f"content_type={type(content).__name__}")
+            for field in ("reasoning_content", "reasoning"):
+                val = _message_field(message, field)
+                if val is not None:
+                    parts.append(f"{field}_type={type(val).__name__}")
+            details = _message_field(message, "reasoning_details")
+            if isinstance(details, list):
+                parts.append(f"reasoning_details_len={len(details)}")
     elif (output_text := getattr(response, "output_text", None)) is not None:
         parts.append(f"output_text_type={type(output_text).__name__}")
     usage = getattr(response, "usage", None)
@@ -266,13 +350,6 @@ def _llm_response_diagnostics(response: object, *, model_name: str) -> str:
         if details is not None:
             parts.append(f"reasoning_tokens={getattr(details, 'reasoning_tokens', None)!r}")
     return ", ".join(parts)
-
-
-def _fail_llm_response(response: object, *, model_name: str, reason: str) -> NoReturn:
-    detail = _llm_response_diagnostics(response, model_name=model_name)
-    message = f"{reason} ({detail})"
-    logger.warning("llm selector response unusable: %s", message)
-    raise ValueError(message)
 
 
 def call_llm(
@@ -304,10 +381,15 @@ def call_llm(
             {"role": "user", "content": user_message},
         ]
         request_kwargs["response_format"] = RelevantChunkIds
+        request_kwargs.update(_selector_completion_extras(settings))
         response = completion(**request_kwargs)
 
-    content_val: Any = response.choices[0].message.content
-    message = response.choices[0].message
+    content_val, content_source = _structured_selector_content(response)
+    message = (
+        getattr(response.choices[0], "message", None)
+        if getattr(response, "choices", None)
+        else None
+    )
     # #region agent log
     _debug_llm_log(
         hypothesis_id="A",
@@ -315,36 +397,17 @@ def call_llm(
         message="llm selector response content",
         data={
             "model": settings.model_name,
-            "content_type": type(content_val).__name__,
-            "has_reasoning_content": hasattr(message, "reasoning_content")
-            and getattr(message, "reasoning_content", None) is not None,
-            "has_tool_calls": bool(getattr(message, "tool_calls", None)),
-            "finish_reason": getattr(response.choices[0], "finish_reason", None),
+            "content_source": content_source,
+            "content_len": len(content_val) if content_val else 0,
+            "has_reasoning_content": bool(_message_field(message, "reasoning_content")),
+            "finish_reason": getattr(response.choices[0], "finish_reason", None)
+            if getattr(response, "choices", None)
+            else None,
         },
     )
     # #endregion
-    if not isinstance(content_val, str):
-        _fail_llm_response(
-            response,
-            model_name=settings.model_name,
-            reason=f"Unexpected response content type: {type(content_val)}",
-        )
 
-    try:
-        parsed = RelevantChunkIds.model_validate_json(content_val)
-    except Exception:
-        import re
-
-        if json_match := re.search(r"\{.*\}", content_val, re.DOTALL):
-            parsed = RelevantChunkIds.model_validate_json(json_match.group(0))
-        else:
-            _fail_llm_response(
-                response,
-                model_name=settings.model_name,
-                reason=f"Could not parse LLM response: {content_val!r}",
-            )
-
-    usage = _usage_from_litellm_response(response, content_val, settings=settings)
+    usage = _usage_from_litellm_response(response, content_val or "", settings=settings)
     if usage.usage_source == TIKTOKEN_CL100K:
         usage = StageTokenUsage(
             input_tokens=input_tokens,
@@ -366,7 +429,26 @@ def call_llm(
             provider_dns_name=usage.provider_dns_name,
             provider=usage.provider,
         )
-    return parsed, usage
+
+    if not content_val:
+        _warn_empty_selector_response(
+            response,
+            model_name=settings.model_name,
+            reason="returned no structured content",
+        )
+        return RelevantChunkIds(ids=[]), usage
+
+    parsed = _parse_selector_json(content_val)
+    if parsed is None:
+        _warn_empty_selector_response(
+            response,
+            model_name=settings.model_name,
+            reason="structured content failed Pydantic validation",
+        )
+        return RelevantChunkIds(ids=[]), usage
+
+    normalized_ids = normalize_selector_ids(parsed.ids)
+    return RelevantChunkIds(ids=normalized_ids), usage
 
 
 def llm_select_ids(
