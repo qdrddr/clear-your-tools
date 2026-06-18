@@ -2,6 +2,8 @@ import argparse
 import json
 import logging
 import sys
+import time
+from pathlib import Path
 from typing import Any, NoReturn, TypeVar
 
 from litellm import completion, responses
@@ -31,6 +33,37 @@ from cyt.pruners.remote import (
 )
 
 logger = logging.getLogger(__name__)
+
+_DEBUG_LOG_PATH = Path(
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
+)
+
+
+def _debug_llm_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "47c99d",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    # #endregion
+
 
 T = TypeVar("T")
 
@@ -274,6 +307,22 @@ def call_llm(
         response = completion(**request_kwargs)
 
     content_val: Any = response.choices[0].message.content
+    message = response.choices[0].message
+    # #region agent log
+    _debug_llm_log(
+        hypothesis_id="A",
+        location="pruners/llm.py:call_llm",
+        message="llm selector response content",
+        data={
+            "model": settings.model_name,
+            "content_type": type(content_val).__name__,
+            "has_reasoning_content": hasattr(message, "reasoning_content")
+            and getattr(message, "reasoning_content", None) is not None,
+            "has_tool_calls": bool(getattr(message, "tool_calls", None)),
+            "finish_reason": getattr(response.choices[0], "finish_reason", None),
+        },
+    )
+    # #endregion
     if not isinstance(content_val, str):
         _fail_llm_response(
             response,

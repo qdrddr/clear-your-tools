@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 LLM_STAGE_MAX_ATTEMPTS = 3
 
 _DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-16df8c.log",
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
 )
 
 
@@ -75,7 +75,7 @@ def _debug_prune_log(
     # #region agent log
     try:
         payload = {
-            "sessionId": "16df8c",
+            "sessionId": "47c99d",
             "runId": run_id,
             "hypothesisId": hypothesis_id,
             "location": location,
@@ -447,6 +447,19 @@ def _run_catalog_pruning(
         catalog_tool_count(data),
         configured_pipeline=configured_pipeline,
     )
+    # #region agent log
+    _debug_prune_log(
+        hypothesis_id="B",
+        location="anthropic.py:_run_catalog_pruning:pipeline",
+        message="effective pruning pipeline",
+        data={
+            "configured_pipeline": configured_pipeline,
+            "effective_pipeline": pipeline,
+            "catalog_tool_count": catalog_tool_count(data),
+            "skill_entry_count": len(skill_entries or []),
+        },
+    )
+    # #endregion
     terminal_stage = pipeline[-1] if pipeline else None
     reinstate_ctx = output_ctx or output_policy_context_from_config(
         resolved_config,
@@ -682,11 +695,28 @@ def _run_llm_stage(
         skill_matches_resolved = (
             skill_llm_out is not None and skill_llm_out.get("matches") is not None
         )
-        if (
+        catalog_count = catalog_tool_count(data)
+        llm_min = llm_minimum_tools(config)
+        use_combined = (
             skills_pipeline_uses_llm(config)
-            and catalog_tool_count(data) >= llm_minimum_tools(config)
+            and catalog_count >= llm_min
             and not skill_matches_resolved
-        ):
+        )
+        # #region agent log
+        _debug_prune_log(
+            hypothesis_id="A,D",
+            location="anthropic.py:_run_llm_stage",
+            message="llm stage branch",
+            data={
+                "use_combined": use_combined,
+                "skill_entry_count": len(skill_entries),
+                "catalog_tool_count": catalog_count,
+                "llm_minimum_tools": llm_min,
+                "skill_matches_resolved": skill_matches_resolved,
+            },
+        )
+        # #endregion
+        if use_combined:
             data, skill_matches, llm_usage = llm_prune_tools_and_skills(
                 data,
                 query,
@@ -1283,6 +1313,7 @@ def _anthropic_finish_transform(
     config: dict[str, Any] | None,
     skill_out: dict[str, Any],
     query: str | None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
     from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
 
@@ -1298,6 +1329,7 @@ def _anthropic_finish_transform(
                 matches=skill_out.get("matches"),
                 query=query,
                 prune_result=result,
+                pruner_settings=pruner_settings,
             )
             return original, result, skills_meta
 
@@ -1312,6 +1344,7 @@ def _anthropic_finish_transform(
         matches=skill_out.get("matches"),
         query=query,
         prune_result=result,
+        pruner_settings=pruner_settings,
     )
     return original, result, skills_meta
 
@@ -1361,6 +1394,7 @@ def transform_anthropic_request(
             deferred,
             config,
             query=query,
+            pruner_settings=pruner_settings,
         )
         return original, None, skills_meta
 
@@ -1371,6 +1405,7 @@ def transform_anthropic_request(
             deferred,
             config,
             query=query,
+            pruner_settings=pruner_settings,
         )
         return original, _anthropic_pass_through_prune_result(tools), skills_meta
 
@@ -1381,6 +1416,7 @@ def transform_anthropic_request(
             skills_meta,
             deferred,
             config,
+            pruner_settings=pruner_settings,
         )
         return original, _anthropic_skipped_no_query_prune_result(tools), skills_meta
 
@@ -1403,4 +1439,5 @@ def transform_anthropic_request(
         config,
         skill_out,
         query,
+        pruner_settings=pruner_settings,
     )

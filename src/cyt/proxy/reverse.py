@@ -50,7 +50,6 @@ from cyt.proxy.transport import (
     append_agent_trace_log,
     append_debug_log_block,
     debug_endpoint_proxy_log_path,
-    filter_headers,
     forward_upstream,
     header_content_encoding,
     http2_package_available,
@@ -63,6 +62,7 @@ from cyt.proxy.transport import (
     save_debug_snapshot,
     save_original_debug_snapshot,
 )
+from cyt.proxy.upstream_auth import prepare_forward_headers
 from cyt.pruners.remote import PrunerSettingsCache
 
 METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
@@ -398,11 +398,17 @@ async def _handle_startup_probe(
     *,
     upstream_base: str,
     path_suffix: str,
+    endpoint_name: str,
+    config: dict[str, Any] | None,
 ) -> Response | None:
     if not is_startup_probe(request.method, path_suffix):
         return None
     client: httpx.AsyncClient = request.app.state.http_client
-    headers = filter_headers(dict(request.headers))
+    headers = prepare_forward_headers(
+        request.headers,
+        config=config,
+        endpoint_name=endpoint_name,
+    )
     if await upstream_reachable(client, upstream_base, headers):
         return Response(status_code=200)
     return Response("Upstream unreachable", status_code=502)
@@ -1065,6 +1071,8 @@ async def _proxy_request(
         request,
         upstream_base=upstream_base,
         path_suffix=path_suffix,
+        endpoint_name=endpoint_name,
+        config=config,
     ):
         return probe
 
@@ -1137,7 +1145,11 @@ async def _proxy_request(
             skills_final_md=skills_meta.skills_final_md if debug else None,
             config=config or {},
         )
-    forward_headers = filter_headers(dict(request.headers))
+    forward_headers = prepare_forward_headers(
+        request.headers,
+        config=config,
+        endpoint_name=endpoint_name,
+    )
 
     if debug and debug_request_seq is not None:
         early = await _handle_debug_snapshot(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -104,6 +105,14 @@ class PrunerSettingsCache:
             ),
         )
 
+    def with_stage_env_auth(self, *, config: dict[str, Any]) -> PrunerSettingsCache:
+        """Refresh each stage from its configured key var in the process environment."""
+        llm = _apply_stage_env_auth(self.llm, stage="llm", config=config)
+        rerank = _apply_stage_env_auth(self.rerank, stage="rerank", config=config)
+        if llm is self.llm and rerank is self.rerank:
+            return self
+        return PrunerSettingsCache(llm=llm, rerank=rerank)
+
 
 def push_request_pruner_settings(
     cache: PrunerSettingsCache | None,
@@ -152,6 +161,23 @@ def _override_stage_auth(
     return settings.with_api_key(token)
 
 
+def _apply_stage_env_auth(
+    settings: RemotePruningSettings | None,
+    *,
+    stage: Literal["llm", "rerank"],
+    config: dict[str, Any],
+) -> RemotePruningSettings | None:
+    if settings is None:
+        return None
+    stage_key_var = _stage_key_var_name(config, stage)
+    if not stage_key_var:
+        return settings
+    token = os.environ.get(stage_key_var, "").strip()
+    if not token or token == settings.api_key:
+        return settings
+    return settings.with_api_key(token)
+
+
 def resolve_remote_pruning_settings(
     *,
     config: dict[str, Any] | None = None,
@@ -181,7 +207,7 @@ def resolve_remote_pruning_settings(
             f"Error: {key_var} is not set in the process environment.\n"
             "The proxy resolves pruning pipeline API keys at startup "
             "(shell env, .env, keyring). Restart the proxy after exporting the key "
-            "or run interactively to store it.",
+            "or run `cyt setup` to store one.",
             file=sys.stderr,
         )
         sys.exit(1)

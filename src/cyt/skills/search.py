@@ -12,6 +12,7 @@ from cyt.config import (
     skills_pipeline_uses_llm,
     skills_pipeline_uses_rerank,
 )
+from cyt.pruners.remote import LlmPruningSettings, PrunerSettingsCache
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import BudgetItemRow, SearchItemRow, SkillsSearchTrace
 
@@ -92,11 +93,20 @@ def _run_bm25_pipeline(
     return matches, search_rows, threshold
 
 
+def _llm_settings_from_pruner_cache(
+    pruner_settings: PrunerSettingsCache | None,
+) -> LlmPruningSettings | None:
+    if pruner_settings is None:
+        return None
+    return pruner_settings.for_stage("llm")
+
+
 def _run_search_pipeline_with_trace(
     query: str,
     eligible: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun, str, float | None, list[SearchItemRow]]:
     configured = skills_pipeline(config).strip().lower()
 
@@ -151,11 +161,13 @@ def _run_search_pipeline_with_trace(
     if skills_pipeline_uses_llm(config):
         from cyt.skills.llm import llm_skill_nodes_with_trace
 
+        llm_settings = _llm_settings_from_pruner_cache(pruner_settings)
         try:
             matches, search_rows, _usage = llm_skill_nodes_with_trace(
                 query,
                 eligible,
                 config=config,
+                settings=llm_settings,
             )
             return (
                 matches,
@@ -193,11 +205,13 @@ def _run_search_pipeline(
     eligible: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun]:
     matches, pipeline_run, _kind, _threshold, _rows = _run_search_pipeline_with_trace(
         query,
         eligible,
         config=config,
+        pruner_settings=pruner_settings,
     )
     return matches, pipeline_run
 
@@ -208,6 +222,7 @@ def search_skills_with_trace(
     *,
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsSearchTrace]:
     """Return matched skills plus frontmatter gate and search scoring diagnostics."""
     from cyt.skills.bm25 import frontmatter_gate_trace
@@ -239,6 +254,7 @@ def search_skills_with_trace(
         query,
         eligible,
         config=config,
+        pruner_settings=pruner_settings,
     )
     pre_budget_matches = tuple(candidates)
     budget_rows: list[BudgetItemRow] = []
@@ -273,6 +289,7 @@ def search_skills_with_pipeline(
     *,
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun]:
     """Return matched skills and the configured vs executed search pipeline."""
     matches, trace = search_skills_with_trace(
@@ -280,6 +297,7 @@ def search_skills_with_pipeline(
         entries,
         config=config,
         max_tokens=max_tokens,
+        pruner_settings=pruner_settings,
     )
     return matches, trace.pipeline_run
 
@@ -290,6 +308,7 @@ def search_skills(
     *,
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> list[MatchedSkill]:
     """Return matched skill reconstructions sorted by score (highest first)."""
     matches, _pipeline_run = search_skills_with_pipeline(
@@ -297,5 +316,6 @@ def search_skills(
         entries,
         config=config,
         max_tokens=max_tokens,
+        pruner_settings=pruner_settings,
     )
     return matches

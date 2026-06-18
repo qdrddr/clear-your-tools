@@ -20,6 +20,12 @@ _CLAUDE_CANDIDATES = (
     Path.home() / ".claude" / "local" / "claude",
 )
 
+# OAuth env vars override ANTHROPIC_AUTH_TOKEN in interactive Claude Code sessions.
+_CLAUDE_OAUTH_ENV_VARS = (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+)
+
 
 def find_claude() -> str:
     """Locate the Claude Code CLI binary."""
@@ -57,6 +63,8 @@ def build_claude_env(
         # Claude Code must use ANTHROPIC_AUTH_TOKEN for third-party gateways; clear API key.
         env["ANTHROPIC_API_KEY"] = ""
         reportable["ANTHROPIC_API_KEY"] = '""'
+        for oauth_var in _CLAUDE_OAUTH_ENV_VARS:
+            env.pop(oauth_var, None)
     else:
         env.setdefault("ANTHROPIC_AUTH_TOKEN", os.environ.get("ANTHROPIC_API_KEY", ""))
 

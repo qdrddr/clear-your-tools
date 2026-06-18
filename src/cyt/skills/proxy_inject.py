@@ -20,12 +20,13 @@ from cyt.proxy.anthropic import (
     format_search_query,
 )
 from cyt.proxy.openai_responses import clean_input, extract_user_query_from_input
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.catalog import build_registry
 from cyt.skills.inject import format_agent_skills, injection_token_count
 from cyt.skills.search import MatchedSkill, search_skills
 
 _DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-445722.log",
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
 )
 
 
@@ -40,7 +41,7 @@ def _agent_debug_log(
     # #region agent log
     try:
         payload = {
-            "sessionId": "445722",
+            "sessionId": "47c99d",
             "runId": run_id,
             "hypothesisId": hypothesis_id,
             "location": location,
@@ -103,11 +104,28 @@ def prepare_deferred_skills_context(
 
     ctx = DeferredSkillsContext()
     if not query:
+        # #region agent log
+        _agent_debug_log(
+            hypothesis_id="C",
+            location="proxy_inject.py:prepare_deferred_skills_context",
+            message="deferred skills skipped: no query",
+            data={"kind": kind},
+        )
+        # #endregion
         return ctx
 
     from cyt.skills.budget import proxy_pre_pruner_budget_allows, resolve_inject_budget
 
-    if body is not None and not proxy_pre_pruner_budget_allows(config, body, kind=kind):
+    budget_allows = body is None or proxy_pre_pruner_budget_allows(config, body, kind=kind)
+    if not budget_allows:
+        # #region agent log
+        _agent_debug_log(
+            hypothesis_id="C",
+            location="proxy_inject.py:prepare_deferred_skills_context",
+            message="deferred skills skipped: budget precheck failed",
+            data={"kind": kind},
+        )
+        # #endregion
         return ctx
 
     ctx.skills_allowed = True
@@ -130,6 +148,20 @@ def prepare_deferred_skills_context(
         build_registry(config, upstream_kind=kind),
         config=config,
     )
+    # #region agent log
+    _agent_debug_log(
+        hypothesis_id="C,D",
+        location="proxy_inject.py:prepare_deferred_skills_context",
+        message="deferred skills context ready",
+        data={
+            "kind": kind,
+            "skills_allowed": ctx.skills_allowed,
+            "skill_entry_count": len(ctx.skill_entries),
+            "pre_pruner_effective_max": ctx.pre_pruner_effective_max,
+            "query_len": len(query),
+        },
+    )
+    # #endregion
     return ctx
 
 
@@ -142,6 +174,7 @@ def finish_deferred_skills_anthropic(
     query: str | None = None,
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if config is None:
         return body, meta
@@ -154,6 +187,7 @@ def finish_deferred_skills_anthropic(
         query=query,
         matches=matches,
         prune_result=prune_result,
+        pruner_settings=pruner_settings,
     )
 
 
@@ -166,6 +200,7 @@ def finish_deferred_skills_openai(
     query: str | None = None,
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if config is None:
         return body, meta
@@ -178,6 +213,7 @@ def finish_deferred_skills_openai(
         query=query,
         matches=matches,
         prune_result=prune_result,
+        pruner_settings=pruner_settings,
     )
 
 
@@ -193,9 +229,16 @@ def resolve_skills_for_query(
     *,
     max_tokens: int | None = None,
     upstream_kind: str | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> list[MatchedSkill]:
     entries = build_registry(config, upstream_kind=upstream_kind)
-    return search_skills(query, entries, config=config, max_tokens=max_tokens)
+    return search_skills(
+        query,
+        entries,
+        config=config,
+        max_tokens=max_tokens,
+        pruner_settings=pruner_settings,
+    )
 
 
 def inject_skills_for_proxy_request(
@@ -206,6 +249,7 @@ def inject_skills_for_proxy_request(
     query: str | None = None,
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if not skills_inject_via_proxy(config, kind):
         return body, SkillsProxyInjectMeta()
@@ -253,6 +297,7 @@ def inject_skills_for_proxy_request(
             config,
             max_tokens=budget.effective_max,
             upstream_kind=kind,
+            pruner_settings=pruner_settings,
         )
     else:
         from cyt.skills.select import select_skills_within_budget

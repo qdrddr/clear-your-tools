@@ -237,7 +237,10 @@ def test_prepare_runtime_warms_pruners_without_runtime_keyring(
     runtime_keyring_reads: list[str] = []
 
     def track_read(name: str) -> str | None:
+        from cyt.launch.secrets import _mark_keyring_reconciled
+
         runtime_keyring_reads.append(name)
+        _mark_keyring_reconciled(name, "from-keyring")
         return "from-keyring"
 
     monkeypatch.setattr("cyt.launch.secrets._read_keyring", track_read)

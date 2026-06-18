@@ -16,13 +16,13 @@ from cyt.launch.upstream import AgentName
 from cyt.proxy.setup import parse_env_file
 from cyt.pruners.remote import PrunerSettingsCache
 
-KEYRING_SERVICE = "cyt"
+KEYRING_SERVICE = "cyt"  # macOS Keychain service name for the Python keyring backend
 KEYRING_BLOB_ACCOUNT = "__credentials__"
 CYT_SKIP_KEYRING_ENV = "CYT_SKIP_KEYRING"
-
 _keyring_cache: dict[str, str] = {}
 _keyring_blob: dict[str, str] | None = None
 _keyring_blob_loaded = False
+_reconciled_keyring_names: set[str] = set()
 _runtime_credential_sources: dict[str, str] = {}
 
 
@@ -67,6 +67,7 @@ def clear_keyring_cache() -> None:
     """Reset in-process keyring caches (for tests)."""
     global _keyring_blob_loaded
     _keyring_cache.clear()
+    _reconciled_keyring_names.clear()
     _keyring_blob_loaded = False
     globals()["_keyring_blob"] = None
     _runtime_credential_sources.clear()
@@ -133,8 +134,18 @@ def _ensure_keyring_blob_loaded() -> dict[str, str]:
 
     globals()["_keyring_blob"] = blob
     _keyring_blob_loaded = True
-    _keyring_cache.update(blob)
     return blob
+
+
+def _mark_keyring_reconciled(name: str, value: str | None) -> None:
+    _reconciled_keyring_names.add(name)
+    _keyring_cache[name] = value or ""
+
+
+def _reconciled_keyring_value(name: str) -> str | None:
+    if name not in _reconciled_keyring_names:
+        return None
+    return _keyring_cache.get(name) or None
 
 
 def _save_keyring_blob(blob: dict[str, str]) -> bool:
@@ -146,7 +157,8 @@ def _save_keyring_blob(blob: dict[str, str]) -> bool:
     except Exception:
         return False
     globals()["_keyring_blob"] = dict(blob)
-    _keyring_cache.update(blob)
+    for name, value in blob.items():
+        _mark_keyring_reconciled(name, value)
     return True
 
 
@@ -168,32 +180,42 @@ def preload_keyring_credentials(names: list[str]) -> None:
     if not names or _skip_keyring_resolution():
         return
     _ensure_keyring_blob_loaded()
-    for name in names:
-        if name in _keyring_cache:
+    for name in dict.fromkeys(names):
+        if name in _reconciled_keyring_names:
             continue
-        if _keyring_blob is not None and (value := _keyring_blob.get(name)):
-            _keyring_cache[name] = value
+        _read_keyring(name)
 
 
 def _read_keyring(name: str) -> str | None:
     if _skip_keyring_resolution():
         return None
-    if name in _keyring_cache:
-        cached = _keyring_cache[name]
-        return cached or None
+    if name in _reconciled_keyring_names:
+        return _reconciled_keyring_value(name)
 
     blob = _ensure_keyring_blob_loaded()
-    if value := blob.get(name):
-        _keyring_cache[name] = value
-        return value
+    legacy = _read_legacy_keyring(name)
+    blob_value = blob.get(name)
 
-    if legacy := _read_legacy_keyring(name):
+    # Prefer the legacy per-key slot when it disagrees with the blob. Users who
+    # updated credentials via the old keychain account still have the real key
+    # there while the migrated blob may retain a stale placeholder.
+    if legacy and blob_value and legacy != blob_value:
         blob[name] = legacy
-        _keyring_cache[name] = legacy
+        _save_keyring_blob(blob)
+        _mark_keyring_reconciled(name, legacy)
+        return legacy
+
+    if blob_value:
+        _mark_keyring_reconciled(name, blob_value)
+        return blob_value
+
+    if legacy:
+        blob[name] = legacy
+        _mark_keyring_reconciled(name, legacy)
         _save_keyring_blob(blob)
         return legacy
 
-    _keyring_cache[name] = ""
+    _mark_keyring_reconciled(name, None)
     return None
 
 
@@ -202,7 +224,7 @@ def _write_keyring(name: str, value: str) -> bool:
     blob[name] = value
     if not _save_keyring_blob(blob):
         return False
-    _keyring_cache[name] = value
+    _mark_keyring_reconciled(name, value)
     return True
 
 
@@ -226,6 +248,12 @@ def _remember_runtime_credential(name: str, source: str) -> None:
 
 
 def _resolve_keyring_credential(name: str) -> tuple[str | None, str | None]:
+    if name in _reconciled_keyring_names:
+        if value := _reconciled_keyring_value(name):
+            os.environ[name] = value
+            _remember_runtime_credential(name, "keyring")
+            return value, "keyring"
+        return None, None
     if value := _read_keyring(name):
         os.environ[name] = value
         _remember_runtime_credential(name, "keyring")
@@ -257,7 +285,13 @@ def _resolve_terminal_credential(
     if name in _runtime_credential_sources:
         return None, None
 
+    # Values loaded from ``./.env`` or ``~/.config/cyt/.env`` at import time are
+    # already in ``before_env`` but are not shell exports; let file resolution
+    # label them correctly.
     if value := before_env.get(name):
+        file_value, _ = _read_env_file_value(name)
+        if file_value and file_value == value:
+            return None, None
         return value, "env: shell"
     return None, None
 

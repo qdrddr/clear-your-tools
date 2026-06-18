@@ -232,6 +232,35 @@ class TestBuildClaudeEnv:
         assert env["ANTHROPIC_AUTH_TOKEN"] == "or-token"
         assert env["ANTHROPIC_API_KEY"] == ""
 
+    def test_strips_oauth_env_for_openrouter(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
+            "upstreams"
+        ] = [_openrouter_upstream()]
+        monkeypatch.setenv("OPENROUTER_" + "API_KEY", "or-token")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-token")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "oauth-refresh")
+        sources: dict[str, str] = {}
+        _, binding = self._bind_openrouter(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            sources=sources,
+        )
+
+        env, _ = build_claude_env(
+            config=config,
+            port=8835,
+            endpoint="openrouter",
+            auth_binding=binding,
+        )
+        assert env["ANTHROPIC_AUTH_TOKEN"] == "or-token"
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+        assert "CLAUDE_CODE_OAUTH_REFRESH_TOKEN" not in env
+
 
 class TestEnsureUpstreamCredentials:
     def test_resolves_existing_env_without_prompt(

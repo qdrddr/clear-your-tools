@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
@@ -29,6 +32,37 @@ from cyt.skills.search import (
 )
 
 logger = logging.getLogger(__name__)
+
+_DEBUG_LOG_PATH = Path(
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
+)
+
+
+def _debug_skills_llm_log(
+    *,
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict[str, Any],
+    run_id: str = "pre-fix",
+) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "47c99d",
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    # #endregion
+
 
 SKILLS_SELECTOR_SYSTEM_PROMPT = (
     'These are agent skills in a "decomposed" state, represented as skill nodes. '
@@ -242,6 +276,18 @@ def llm_prune_tools_and_skills(
         )
     except Exception as exc:
         logger.warning("combined llm prune failed, falling back to sequential: %s", exc)
+        # #region agent log
+        _debug_skills_llm_log(
+            hypothesis_id="A",
+            location="skills/llm.py:llm_prune_tools_and_skills",
+            message="combined llm prune failed",
+            data={
+                "error": str(exc),
+                "tool_chunk_count": len(tool_chunks),
+                "skill_item_count": len(skill_items),
+            },
+        )
+        # #endregion
         pruned_data, tool_usage = llm_catalog_dict(
             data,
             query,
@@ -255,6 +301,18 @@ def llm_prune_tools_and_skills(
             config=config,
             settings=settings,
         )
+        # #region agent log
+        _debug_skills_llm_log(
+            hypothesis_id="A",
+            location="skills/llm.py:llm_prune_tools_and_skills",
+            message="sequential llm prune completed",
+            data={
+                "skill_match_count": len(skill_matches),
+                "tool_usage_tokens": tool_usage.input_tokens + tool_usage.output_tokens,
+                "skill_usage_tokens": skill_usage.input_tokens + skill_usage.output_tokens,
+            },
+        )
+        # #endregion
         return pruned_data, skill_matches, tool_usage.merge(skill_usage)
 
     tool_selected = {sid for sid in selected_ids if sid in tool_metadata}
@@ -266,4 +324,16 @@ def llm_prune_tools_and_skills(
         skill_entries,
         config=config,
     )
+    # #region agent log
+    _debug_skills_llm_log(
+        hypothesis_id="A",
+        location="skills/llm.py:llm_prune_tools_and_skills",
+        message="combined llm prune succeeded",
+        data={
+            "skill_match_count": len(skill_matches),
+            "tool_selected_count": len(tool_selected),
+            "skill_selected_count": len(skill_selected),
+        },
+    )
+    # #endregion
     return result, skill_matches, usage

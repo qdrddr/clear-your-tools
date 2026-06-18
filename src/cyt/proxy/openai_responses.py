@@ -436,6 +436,7 @@ def transform_openai_request(
             deferred,
             config,
             query=query,
+            pruner_settings=pruner_settings,
         )
         return original, None, skills_meta
 
@@ -446,6 +447,7 @@ def transform_openai_request(
             skills_meta,
             deferred,
             config,
+            pruner_settings=pruner_settings,
         )
         return original, _openai_skipped_no_query_prune_result(tools), skills_meta
 
@@ -466,5 +468,6 @@ def transform_openai_request(
         matches=skill_out.get("matches"),
         query=query,
         prune_result=result,
+        pruner_settings=pruner_settings,
     )
     return original, result, skills_meta

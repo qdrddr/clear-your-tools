@@ -74,6 +74,24 @@ class TestResolveCredentialOrder:
         assert value == "from-shell"
         assert source == "env: shell"
 
+    def test_import_time_env_file_not_mislabeled_as_shell(
+        self,
+        isolated_env_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = "OPENAI_" + "API_KEY"
+        isolated_env_paths["user_env"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_env_paths["user_env"].write_text(f"{name}=from-user-env\n", encoding="utf-8")
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+        # Simulate load_proxy_env() at import: value is in os.environ but not the shell.
+        monkeypatch.setenv(name, "from-user-env")
+
+        value, source = resolve_credential(name, allow_prompt=False)
+
+        assert value == "from-user-env"
+        assert source == "env: ~/.config/cyt/.env"
+
     def test_env_file_preferred_over_keyring(
         self,
         isolated_env_paths: dict[str, Path],
@@ -381,7 +399,8 @@ class TestKeyringBlob:
 
         preload_keyring_credentials(["KEY_A", "KEY_B", "KEY_A"])
 
-        assert calls["count"] == 1
+        # One blob read plus one legacy-slot lookup per unique credential name.
+        assert calls["count"] == 3
 
     def test_migrates_legacy_per_key_entries_to_blob(
         self,
@@ -395,6 +414,26 @@ class TestKeyringBlob:
 
         assert _read_keyring(name) == "legacy-secret"
         assert (KEYRING_SERVICE, KEYRING_BLOB_ACCOUNT) in fake_keyring_store
+
+    def test_prefers_legacy_per_key_entry_when_blob_value_is_stale(
+        self,
+        fake_keyring_store: dict[tuple[str, str], str],
+    ) -> None:
+        from cyt.launch.secrets import KEYRING_BLOB_ACCOUNT, _encode_keyring_blob, _read_keyring
+
+        name = "OPENROUTER_" + "API_KEY"
+        stale = "legacy-secret"
+        current = "sk-or-v1-" + ("x" * 64)
+        fake_keyring_store[(KEYRING_SERVICE, KEYRING_BLOB_ACCOUNT)] = _encode_keyring_blob(
+            {name: stale},
+        )
+        fake_keyring_store[(KEYRING_SERVICE, name)] = current
+        clear_keyring_cache()
+
+        assert _read_keyring(name) == current
+        assert fake_keyring_store[(KEYRING_SERVICE, KEYRING_BLOB_ACCOUNT)] == _encode_keyring_blob(
+            {name: current},
+        )
 
     def test_skip_keyring_uses_process_env(
         self,
