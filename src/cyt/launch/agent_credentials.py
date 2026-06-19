@@ -10,7 +10,11 @@ from typing import Any
 
 from cyt.config import resolve_config_path
 from cyt.launch.config import codex_env_key_name
-from cyt.launch.secrets import resolve_credential, resolve_shell_or_file_credential
+from cyt.launch.secrets import (
+    _snapshot_env,
+    resolve_credential,
+    resolve_shell_or_file_credential,
+)
 from cyt.launch.upstream import AgentName
 from cyt.launch.upstream_credentials import (
     ensure_upstream_credential,
@@ -100,6 +104,7 @@ def ensure_codex_agent_auth(
     endpoint: str,
     credential_sources: dict[str, str],
     allow_prompt: bool | None = None,
+    launch_before_env: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], AgentAuthBinding]:
     """Resolve ``CODEX_OPENAI_API_KEY`` for a Codex launch.
 
@@ -114,6 +119,7 @@ def ensure_codex_agent_auth(
     upstream = upstream_for_endpoint(config, endpoint)
     agent_env_var = codex_env_key_name(config)
     resolved_allow_prompt = sys.stdin.isatty() if allow_prompt is None else allow_prompt
+    resolved_before_env = launch_before_env if launch_before_env is not None else _snapshot_env()
     path = resolve_config_path(config_path)
 
     upstream_key_var: str | None = None
@@ -126,7 +132,10 @@ def ensure_codex_agent_auth(
             allow_prompt=resolved_allow_prompt,
         )
 
-    direct_value, direct_source = resolve_shell_or_file_credential(agent_env_var)
+    direct_value, direct_source = resolve_shell_or_file_credential(
+        agent_env_var,
+        before_env=resolved_before_env,
+    )
     if direct_value and direct_source:
         credential_sources[agent_env_var] = direct_source
         return config, _binding(
@@ -156,9 +165,13 @@ def ensure_codex_agent_auth(
         )
 
     if key_var:
-        provider_value = os.environ.get(key_var)
-        if provider_value:
-            upstream_source = credential_sources.get(key_var, "resolved")
+        provider_value, upstream_source = resolve_credential(
+            key_var,
+            before_env=resolved_before_env,
+            allow_prompt=resolved_allow_prompt,
+        )
+        if provider_value and upstream_source:
+            credential_sources[key_var] = upstream_source
             source = _agent_source_via_upstream(key_var, upstream_source)
             credential_sources[agent_env_var] = source
             return config, _binding(
@@ -170,6 +183,7 @@ def ensure_codex_agent_auth(
 
     fallback_value, fallback_source = resolve_credential(
         agent_env_var,
+        before_env=resolved_before_env,
         allow_prompt=resolved_allow_prompt,
     )
     if fallback_value and fallback_source:
@@ -203,6 +217,7 @@ def ensure_agent_upstream_auth(
     endpoint: str,
     credential_sources: dict[str, str],
     allow_prompt: bool | None = None,
+    launch_before_env: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], AgentAuthBinding | None]:
     """Resolve proxy and agent credentials for a non-canonical upstream endpoint.
 
@@ -222,6 +237,7 @@ def ensure_agent_upstream_auth(
             endpoint=endpoint,
             credential_sources=credential_sources,
             allow_prompt=allow_prompt,
+            launch_before_env=launch_before_env,
         )
 
     upstream = upstream_for_endpoint(config, endpoint)

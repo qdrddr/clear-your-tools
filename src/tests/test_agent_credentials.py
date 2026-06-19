@@ -345,6 +345,37 @@ class TestEnsureAgentUpstreamAuth:
         assert os.environ[_codex_openai_api_key_var()] == _openai_token()
         assert "via OPENAI_" in sources[_codex_openai_api_key_var()]
 
+    def test_codex_reresolves_upstream_key_for_agent_auth(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        openai_key = _openai_api_key_var()
+        codex_key = _codex_openai_api_key_var()
+        monkeypatch.delenv(codex_key, raising=False)
+        monkeypatch.setenv(openai_key, "stale-runtime-value")
+        monkeypatch.setattr(
+            "cyt.launch.secrets._read_keyring",
+            lambda name: "keyring-" + "openai" if name == openai_key else None,
+        )
+        sources: dict[str, str] = {openai_key: "env: shell"}
+
+        _, binding = ensure_codex_agent_auth(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=False,
+            launch_before_env={},
+        )
+
+        assert binding is not None
+        assert binding.token == "keyring-" + "openai"
+        assert os.environ[codex_key] == "keyring-" + "openai"
+        assert sources[openai_key] == "keyring"
+        assert sources[codex_key] == f"keyring (via {openai_key})"
+
     def test_codex_uses_auth_json_before_keyring(
         self,
         isolated_config_paths: dict,

@@ -218,6 +218,17 @@ def ensure_provider_configured(
     _sync_managed_provider_block(port=port, endpoint=endpoint, env_key=env_key)
 
 
+def build_codex_env(
+    *,
+    auth_binding: AgentAuthBinding | None = None,
+) -> dict[str, str]:
+    """Build process env for Codex; inject resolved agent auth when present."""
+    env = dict(os.environ)
+    if auth_binding is not None:
+        env[auth_binding.agent_env_var] = auth_binding.token
+    return env
+
+
 def run(
     *,
     config: dict[str, Any],
@@ -231,9 +242,7 @@ def run(
     env_key = codex_env_key_name(config)
     ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
     codex = find_codex()
-    env = dict(os.environ)
-    if auth_binding is not None and auth_binding.agent_env_var in os.environ:
-        env[auth_binding.agent_env_var] = auth_binding.token
+    env = build_codex_env(auth_binding=auth_binding)
     try:
         result = subprocess.run([codex, *agent_args], env=env, check=False)
     except KeyboardInterrupt:

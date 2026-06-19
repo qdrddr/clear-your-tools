@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,16 +19,21 @@ from cyt.launch.cli import run as run_launch
 from cyt.launch.codex import (
     MANAGED_END,
     MANAGED_START,
+    build_codex_env,
     configure_provider,
     ensure_provider_configured,
     managed_provider_base_url,
     restore_provider,
     validate_agent_args,
 )
+from cyt.launch.codex import (
+    run as run_codex,
+)
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import (
+    ProxyGuard,
     _spawn_proxy,
     ensure_proxy,
     find_available_port,
@@ -716,6 +723,122 @@ class TestCodexProvider:
         cfg = tomllib.loads(codex_path.read_text(encoding="utf-8"))
         assert cfg["model_provider"] == "cyt"
         assert "custom_openai" in cfg["model_providers"]
+
+    def test_build_codex_env_injects_auth_binding(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        env_key = _codex_openai_api_key_var()
+        monkeypatch.delenv(env_key, raising=False)
+        binding = AgentAuthBinding(
+            agent_env_var=env_key,
+            source="keyring (via OPENAI_" + "API_KEY)",
+            token="codex-" + "token",
+            upstream_key_var="OPENAI_" + "API_KEY",
+        )
+
+        env = build_codex_env(auth_binding=binding)
+
+        assert env[env_key] == "codex-" + "token"
+        assert env_key not in os.environ
+
+    def test_run_injects_auth_binding_without_prior_process_env(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        env_key = _codex_openai_api_key_var()
+        monkeypatch.delenv(env_key, raising=False)
+        binding = AgentAuthBinding(
+            agent_env_var=env_key,
+            source="keyring (via OPENAI_" + "API_KEY)",
+            token="codex-" + "token",
+            upstream_key_var="OPENAI_" + "API_KEY",
+        )
+        captured: dict[str, dict[str, str]] = {}
+
+        def fake_run(
+            cmd: list[str],
+            *,
+            env: dict[str, str],
+            check: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            del cmd, check
+            captured["env"] = env
+            return subprocess.CompletedProcess(args=[], returncode=0)
+
+        monkeypatch.setattr("cyt.launch.codex.subprocess.run", fake_run)
+        monkeypatch.setattr("cyt.launch.codex.find_codex", lambda: "codex")
+        monkeypatch.setattr(
+            "cyt.launch.codex.ensure_provider_configured",
+            lambda **_kwargs: None,
+        )
+
+        result = run_codex(
+            config={},
+            port=8834,
+            endpoint="openai",
+            agent_args=[],
+            auth_binding=binding,
+        )
+
+        assert result == 0
+        assert captured["env"][env_key] == "codex-" + "token"
+
+
+class TestProxyGuardTerminate:
+    def test_terminate_if_started_ignores_keyboard_interrupt(self) -> None:
+        class FakeProcess:
+            terminated = False
+            killed = False
+
+            def poll(self) -> None:
+                return None
+
+            def terminate(self) -> None:
+                self.terminated = True
+
+            def kill(self) -> None:
+                self.killed = True
+
+            def wait(self, timeout: float | None = None) -> int:
+                del timeout
+                raise KeyboardInterrupt
+
+        proc = FakeProcess()
+        guard = ProxyGuard(
+            process=cast(subprocess.Popen[bytes], proc),
+            started_by_launch=True,
+            port=8834,
+        )
+
+        guard.terminate_if_started()
+
+        assert proc.terminated is True
+        assert proc.killed is True
+        assert guard.process is None
+        assert guard.started_by_launch is False
+
+    def test_terminate_if_started_is_idempotent(self) -> None:
+        class FakeProcess:
+            terminate_calls = 0
+
+            def poll(self) -> int:
+                return 0
+
+            def terminate(self) -> None:
+                self.terminate_calls += 1
+
+        proc = FakeProcess()
+        guard = ProxyGuard(
+            process=cast(subprocess.Popen[bytes], proc),
+            started_by_launch=True,
+            port=8834,
+        )
+
+        guard.terminate_if_started()
+        guard.terminate_if_started()
+
+        assert proc.terminate_calls == 0
 
 
 def _anthropic_health_payload() -> dict[str, object]:

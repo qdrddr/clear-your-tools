@@ -38,13 +38,32 @@ class ProxyGuard:
     def terminate_if_started(self) -> None:
         if not self.started_by_launch or self.process is None:
             return
-        if self.process.poll() is not None:
+        proc = self.process
+        if proc.poll() is not None:
+            self.process = None
+            self.started_by_launch = False
             return
-        self.process.terminate()
         try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=1)
+            except KeyboardInterrupt:
+                proc.kill()
+                try:
+                    proc.wait(timeout=1)
+                except (subprocess.TimeoutExpired, KeyboardInterrupt):
+                    pass
+        except KeyboardInterrupt:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        finally:
+            self.process = None
+            self.started_by_launch = False
 
 
 def _proxy_health(port: int) -> dict[str, Any] | None:

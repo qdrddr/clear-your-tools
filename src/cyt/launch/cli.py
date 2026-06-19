@@ -155,6 +155,7 @@ def _ensure_launch_agent_auth(
     *,
     agent: AgentName,
     endpoint: str | None,
+    launch_before_env: dict[str, str] | None = None,
 ) -> tuple[RuntimeContext, AgentAuthBinding | None]:
     if endpoint is None:
         return runtime, None
@@ -164,6 +165,7 @@ def _ensure_launch_agent_auth(
         config_path=runtime.config_path,
         endpoint=endpoint,
         credential_sources=runtime.credential_sources,
+        launch_before_env=launch_before_env,
     )
     return runtime, binding
 
@@ -240,11 +242,13 @@ def _run_launch_session(
     debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
 
     os.environ.update(launch_agent_env(agent))
+    launch_before_env = dict(os.environ)
 
     runtime, auth_binding = _ensure_launch_agent_auth(
         runtime,
         agent=agent,
         endpoint=endpoint,
+        launch_before_env=launch_before_env,
     )
 
     proxy_extra_env = _proxy_spawn_extra_env(
@@ -292,13 +296,16 @@ def _run_launch_session(
         debug_strict=debug_strict,
     )
 
-    return _run_launched_agent(
-        agent=agent,
-        runtime=runtime,
-        endpoint=endpoint,
-        agent_args=agent_args,
-        auth_binding=auth_binding,
-    )
+    try:
+        return _run_launched_agent(
+            agent=agent,
+            runtime=runtime,
+            endpoint=endpoint,
+            agent_args=agent_args,
+            auth_binding=auth_binding,
+        )
+    finally:
+        proxy_guard.terminate_if_started()
 
 
 def run(args: argparse.Namespace) -> None:
