@@ -20,6 +20,11 @@ from cyt.launch.secrets import (
     preload_keyring_credentials,
     resolve_credential,
 )
+from tests.test_credential_helpers import (
+    env_file_source_label,
+    install_test_pre_dotenv,
+    isolate_credential_env_paths,
+)
 
 
 def _codex_openai_api_key_var() -> str:
@@ -33,26 +38,22 @@ def _reset_credential_caches() -> Generator[None]:
     clear_keyring_cache()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_credential_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    isolate_credential_env_paths(monkeypatch, tmp_path)
+    install_test_pre_dotenv(monkeypatch)
+
+
 @pytest.fixture
 def isolated_env_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, Path]:
-    work_dir = tmp_path / "work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
-    cwd_env = work_dir / ".env"
+    paths = isolate_credential_env_paths(monkeypatch, tmp_path)
     user_config = tmp_path / "home" / ".config" / "cyt" / "config.yaml"
-    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
-    monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
     monkeypatch.setattr(configs, "DEFAULT_USER_CONFIG_PATH", user_config)
-    monkeypatch.chdir(work_dir)
-    return {
-        "work_dir": work_dir,
-        "cwd_env": cwd_env,
-        "user_env": user_env,
-        "user_config": user_config,
-    }
+    paths["user_config"] = user_config
+    return paths
 
 
 class TestResolveCredentialOrder:
@@ -83,14 +84,14 @@ class TestResolveCredentialOrder:
         isolated_env_paths["user_env"].parent.mkdir(parents=True, exist_ok=True)
         isolated_env_paths["user_env"].write_text(f"{name}=from-user-env\n", encoding="utf-8")
         monkeypatch.delenv(name, raising=False)
-        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
         # Simulate load_proxy_env() at import: value is in os.environ but not the shell.
-        monkeypatch.setenv(name, "from-user-env")
+        os.environ[name] = "from-user-env"
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
 
         value, source = resolve_credential(name, allow_prompt=False)
 
         assert value == "from-user-env"
-        assert source == "env: ~/.config/cyt/.env"
+        assert source == env_file_source_label(isolated_env_paths["user_env"])
 
     def test_env_file_preferred_over_keyring(
         self,
@@ -106,7 +107,7 @@ class TestResolveCredentialOrder:
         value, source = resolve_credential(name)
 
         assert value == "from-user-env"
-        assert source == "env: ~/.config/cyt/.env"
+        assert source == env_file_source_label(isolated_env_paths["user_env"])
 
     def test_env_file_used_when_keyring_empty(
         self,
@@ -122,7 +123,7 @@ class TestResolveCredentialOrder:
         value, source = resolve_credential(name)
 
         assert value == "from-user-env"
-        assert source == "env: ~/.config/cyt/.env"
+        assert source == env_file_source_label(isolated_env_paths["user_env"])
 
     def test_keyring_used_when_shell_and_env_files_empty(
         self,
@@ -133,6 +134,21 @@ class TestResolveCredentialOrder:
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
 
         value, source = resolve_credential(name)
+
+        assert value == "from-keyring"
+        assert source == "keyring"
+
+    def test_post_import_process_env_not_mislabeled_as_shell(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Values injected after import (e.g. LiteLLM ``load_dotenv``) are not shell exports."""
+        name = "OPENAI_" + "API_KEY"
+        monkeypatch.delenv(name, raising=False)
+        os.environ[name] = "from-litellm-dotenv"
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "from-keyring")
+
+        value, source = resolve_credential(name, allow_prompt=False)
 
         assert value == "from-keyring"
         assert source == "keyring"
@@ -149,6 +165,22 @@ class TestResolveCredentialOrder:
 
         assert value == "from-shell"
         assert source == "env: shell"
+
+    def test_shell_export_matching_env_file_reports_file_source(
+        self,
+        isolated_env_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        name = _codex_openai_api_key_var()
+        isolated_env_paths["user_env"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_env_paths["user_env"].write_text(f"{name}=shared-secret\n", encoding="utf-8")
+        monkeypatch.setenv(name, "shared-secret")
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+
+        value, source = resolve_credential(name)
+
+        assert value == "shared-secret"
+        assert source == env_file_source_label(isolated_env_paths["user_env"])
 
     def test_prompt_persists_to_keyring(
         self,
@@ -209,7 +241,7 @@ class TestResolveCredentialOrder:
 
         sources = ensure_wizard_credentials([name])
 
-        assert sources[name] == "env: ~/.config/cyt/.env"
+        assert sources[name] == env_file_source_label(isolated_env_paths["user_env"])
         assert isolated_env_paths["user_env"].read_text(encoding="utf-8") == f"{name}=from-prompt\n"
 
 
@@ -269,7 +301,7 @@ class TestCodexLaunchCredentials:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         custom_name = "CUSTOM_CODEX_" + "API_KEY"
-        monkeypatch.setenv(custom_name, "from-shell")
+        monkeypatch.delenv("OPENAI_" + "API_KEY", raising=False)
         config = load_config(isolated_env_paths["user_config"])
         config["launch"] = {"codex": {"env_key": custom_name}}
         config.setdefault("network", {}).setdefault("proxy", {}).setdefault("reverse", {})[
@@ -281,6 +313,10 @@ class TestCodexLaunchCredentials:
                 "url": "https://api.openai.com",
             },
         ]
+        monkeypatch.setattr(
+            "cyt.launch.secrets._read_keyring",
+            lambda name: "from-keyring" if name == custom_name else None,
+        )
         sources: dict[str, str] = {}
 
         ensure_codex_agent_auth(
@@ -291,7 +327,8 @@ class TestCodexLaunchCredentials:
             allow_prompt=False,
         )
 
-        assert sources[custom_name] == "env: shell"
+        assert os.environ[custom_name] == "from-keyring"
+        assert sources[custom_name] == "keyring"
 
 
 class TestKeyringBackend:

@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/prek-loop.sh [--short]
+# Usage: ./scripts/prek-loop.sh [--short] [--one-run]
 # Run `prek run -a` iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality.
 
 set -uo pipefail
 
 SHORT=false
-if [[ "${1:-}" == "--short" ]]; then
-	SHORT=true
-elif [[ -n "${1:-}" ]]; then
-	echo "Usage: $0 [--short]" >&2
-	exit 1
-fi
+ONE_RUN=false
+while (($#)); do
+	case "$1" in
+	--short)
+		SHORT=true
+		;;
+	--one-run)
+		ONE_RUN=true
+		;;
+	*)
+		echo "Usage: $0 [--short] [--one-run]" >&2
+		exit 1
+		;;
+	esac
+	shift
+done
 
 ROOT="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 cd "$ROOT" || exit 1
@@ -24,10 +34,13 @@ mapfile -t HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
 }
 
 total=${#HOOKS[@]}
-if $SHORT; then
-	echo "Prek loop (short): $total hooks until all pass."
+mode="Prek loop"
+$SHORT && mode+=" (short)"
+$ONE_RUN && mode+=" (one run)"
+if $ONE_RUN; then
+	echo "$mode: $total hooks, single iteration."
 else
-	echo "Prek loop: $total hooks until all pass."
+	echo "$mode: $total hooks until all pass."
 fi
 echo
 
@@ -153,6 +166,9 @@ while true; do
 		exit 0
 	fi
 	echo "Failures: ${failed_hooks[*]}"
+	if $ONE_RUN; then
+		exit 1
+	fi
 	echo "Re-running..."
 	echo
 done

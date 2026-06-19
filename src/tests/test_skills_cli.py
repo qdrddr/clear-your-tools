@@ -13,6 +13,12 @@ from unittest.mock import patch
 import pytest
 
 from cyt.skills import cli as skills_cli
+from tests.test_credential_helpers import install_test_pre_dotenv
+
+
+@pytest.fixture(autouse=True)
+def _track_shell_exports(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_test_pre_dotenv(monkeypatch)
 
 
 def _write_skill(path: Path, body: str) -> None:

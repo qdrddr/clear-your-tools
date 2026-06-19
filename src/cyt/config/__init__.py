@@ -20,6 +20,9 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+# LiteLLM loads ``~/.env`` on import when ``LITELLM_MODE=DEV`` (the default).
+# CYT manages env files explicitly via :func:`load_proxy_env`.
+os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
 
 BUNDLED_DEFAULTS_NAME = "defaults.yaml"
 USER_ENV_PATH = Path("~/.config/cyt/.env").expanduser()

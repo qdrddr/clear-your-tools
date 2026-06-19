@@ -33,8 +33,13 @@ def find_codex() -> str:
     raise SystemExit("Codex CLI not found. Install it or add `codex` to PATH.")
 
 
+def codex_auth_json_source() -> str:
+    """Return the credential source label for ``~/.codex/auth.json``."""
+    return str(CODEX_AUTH_PATH.expanduser().resolve())
+
+
 def read_codex_auth_openai_api_key() -> str | None:
-    """Return ``OPENAI_API_KEY`` from ``~/.codex/auth.json`` when set and non-null."""
+    """Return ``OPENAI_API_KEY`` from ``~/.codex/auth.json`` when set, non-null, and non-empty."""
     if not CODEX_AUTH_PATH.is_file():
         return None
     try:

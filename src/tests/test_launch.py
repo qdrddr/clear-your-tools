@@ -50,6 +50,7 @@ from cyt.launch.upstream import (
 )
 from cyt.proxy.bootstrap import prepare_runtime
 from cyt.proxy.setup import apply_upstream_cli_to_config
+from tests.test_credential_helpers import install_test_pre_dotenv, isolate_credential_env_paths
 
 
 def _anthropic_api_key_var() -> str:
@@ -429,6 +430,47 @@ class TestEnvReport:
         assert "ANTHROPIC_BASE_URL" in err
         assert "cyt proxy --port 8834 --launch-agent claude" in err
 
+    def test_shows_upstream_key_var_resolution_step_zero(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        openai_key = _openai_api_key_var()
+        config = {
+            "network": {
+                "proxy": {
+                    "reverse": {
+                        "upstreams": [
+                            {
+                                "endpoint": "openai",
+                                "kind": "openai",
+                                "url": "https://api.openai.com",
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+        print_runtime_env_report(
+            quiet=False,
+            credential_sources={
+                openai_key: "keyring",
+                _codex_openai_api_key_var(): "via OPENAI_" + "API_KEY",
+            },
+            port=8834,
+            endpoint="openai",
+            upstream_url="https://api.openai.com",
+            include_agent_recipe=True,
+            agent="codex",
+            config=config,
+        )
+        err = capsys.readouterr().err
+        assert "Upstream API-key env var: OPENAI_" + "API_KEY" in err
+        assert "provider_nick: openai" in err
+        assert "inferred via canonical upstream https://api.openai.com" in err
+        assert "models.providers.openai" in err
+        assert "matches codex agent default kind: openai" in err
+        assert f"{openai_key}: keyring" in err
+
     def test_shows_detected_free_port(
         self,
         capsys: pytest.CaptureFixture[str],
@@ -619,7 +661,10 @@ class TestCredentials:
         self,
         isolated_config_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
+        isolate_credential_env_paths(monkeypatch, tmp_path)
+        install_test_pre_dotenv(monkeypatch)
         user_config = isolated_config_paths["user_config"]
         _write_upstream_config(
             user_config,
@@ -732,7 +777,7 @@ class TestCodexProvider:
         monkeypatch.delenv(env_key, raising=False)
         binding = AgentAuthBinding(
             agent_env_var=env_key,
-            source="keyring (via OPENAI_" + "API_KEY)",
+            source="via OPENAI_" + "API_KEY",
             token="codex-" + "token",
             upstream_key_var="OPENAI_" + "API_KEY",
         )
@@ -750,7 +795,7 @@ class TestCodexProvider:
         monkeypatch.delenv(env_key, raising=False)
         binding = AgentAuthBinding(
             agent_env_var=env_key,
-            source="keyring (via OPENAI_" + "API_KEY)",
+            source="via OPENAI_" + "API_KEY",
             token="codex-" + "token",
             upstream_key_var="OPENAI_" + "API_KEY",
         )

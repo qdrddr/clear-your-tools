@@ -226,7 +226,19 @@ def print_runtime_env_report(
     if quiet:
         return
 
-    source_lines = _format_sources(credential_sources)
+    source_lines: list[str] = []
+    if config is not None and endpoint is not None:
+        from cyt.launch.upstream_credentials import (
+            describe_upstream_key_var_resolution,
+            format_upstream_key_var_resolution_line,
+            upstream_for_endpoint,
+        )
+
+        upstream = upstream_for_endpoint(config, endpoint)
+        if resolution := describe_upstream_key_var_resolution(config, upstream, agent=agent):
+            source_lines.append(format_upstream_key_var_resolution_line(resolution))
+
+    source_lines.extend(_format_sources(credential_sources))
     if launch_env:
         source_lines.extend(_launch_env_source_lines(launch_env, credential_sources))
 

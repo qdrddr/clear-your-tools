@@ -13,6 +13,7 @@ from cyt.launch.config import codex_env_key_name
 from cyt.launch.secrets import (
     _snapshot_env,
     resolve_credential,
+    resolve_keyring_or_prompt_credential,
     resolve_shell_or_file_credential,
 )
 from cyt.launch.upstream import AgentName
@@ -25,7 +26,7 @@ from cyt.launch.upstream_credentials import (
 )
 
 _CLAUDE_AGENT_AUTH_VAR = "ANTHROPIC_AUTH_TOKEN"
-_CODEX_AUTH_JSON_SOURCE = "~/.codex/auth.json"
+_OPENAI_UPSTREAM_KEY_VAR = "OPENAI_" + "API_KEY"
 
 
 @dataclass(frozen=True)
@@ -45,9 +46,13 @@ def agent_auth_env_var(agent: AgentName, config: dict[str, Any]) -> str:
     return codex_env_key_name(config)
 
 
-def _agent_source_via_upstream(key_var: str, upstream_source: str) -> str:
-    if upstream_source:
-        return f"{upstream_source} (via {key_var})"
+def _codex_auth_json_source() -> str:
+    from cyt.launch.codex import codex_auth_json_source
+
+    return codex_auth_json_source()
+
+
+def _agent_source_via_upstream(key_var: str) -> str:
     return f"via {key_var}"
 
 
@@ -67,34 +72,103 @@ def _binding(
     )
 
 
-def _ensure_upstream_provider_key(
+def _agent_source_for_upstream_token(*, upstream_key_var: str) -> str:
+    return _agent_source_via_upstream(upstream_key_var)
+
+
+def _sync_canonical_upstream_credential(
+    *,
+    token: str,
+    agent_source: str,
+    agent_env_var: str,
+    upstream_key_var: str | None,
+    credential_sources: dict[str, str],
+) -> None:
+    """Mirror a resolved Codex token onto the canonical upstream key for the proxy."""
+    if upstream_key_var is None or upstream_key_var == agent_env_var:
+        return
+    os.environ[upstream_key_var] = token
+    if upstream_key_var in credential_sources:
+        return
+    if agent_source.startswith("via "):
+        return
+    if agent_source == _codex_auth_json_source():
+        credential_sources[upstream_key_var] = agent_source
+
+
+def _lookup_codex_upstream_key_var(
     *,
     config: dict[str, Any],
     config_path: Path,
-    upstream: dict[str, Any],
-    credential_sources: dict[str, str],
-    allow_prompt: bool,
-) -> tuple[dict[str, Any], str]:
+    upstream: dict[str, Any] | None,
+) -> tuple[dict[str, Any], str | None]:
+    """Resolve the upstream API-key env var name without loading credentials."""
+    if upstream is None:
+        return config, None
     if is_canonical_upstream(upstream):
-        key_var = lookup_upstream_key_var(config, upstream)
-        if key_var is None:
-            raise SystemExit("Cannot resolve API key env var for canonical upstream.")
-        ensure_upstream_credential(
-            key_var,
-            credential_sources=credential_sources,
-            allow_prompt=allow_prompt,
-            fallback_env_names=(),
-        )
-        return config, key_var
+        return config, lookup_upstream_key_var(config, upstream)
+    config, _key_var = ensure_upstream_provider_registry(config, config_path, upstream)
+    return config, lookup_upstream_key_var(config, upstream)
 
-    config, key_var = ensure_upstream_provider_registry(config, config_path, upstream)
-    ensure_upstream_credential(
-        key_var,
-        credential_sources=credential_sources,
-        allow_prompt=allow_prompt,
-        fallback_env_names=(),
+
+def _resolve_codex_agent_token(
+    *,
+    agent_env_var: str,
+    upstream_key_var: str | None,
+    before_env: dict[str, str],
+    allow_prompt: bool,
+) -> tuple[str | None, str | None, str | None]:
+    """Return ``(token, agent_source, upstream_source)`` for a Codex launch.
+
+    0. Resolve the upstream API-key env var name from a canonical default or an
+       explicit upstream ``provider_nick`` (see
+       :func:`cyt.launch.upstream_credentials.describe_upstream_key_var_resolution`).
+    Then:
+
+    1. Shell export for that env var name
+    2. ``./.env`` and ``~/.config/cyt/.env`` for that env var name
+    3. ``OPENAI_API_KEY`` from ``~/.codex/auth.json`` when present, non-null, and non-empty
+    4. OS keyring for the configured Codex env key
+    5. Interactive terminal prompt for the configured Codex env key
+
+    *agent_source* describes how the Codex env var was populated (``via
+    OPENAI_API_KEY``, ``keyring``, etc.). *upstream_source* is set when the
+    token was copied from an upstream key and records where that key came from
+    (shell, env file, ``auth.json``, keyring).
+    """
+    from cyt.launch.codex import read_codex_auth_openai_api_key
+
+    if upstream_key_var:
+        value, source = resolve_shell_or_file_credential(
+            upstream_key_var,
+            before_env=before_env,
+        )
+        if value and source:
+            return (
+                value,
+                _agent_source_for_upstream_token(upstream_key_var=upstream_key_var),
+                source,
+            )
+
+    if auth_value := read_codex_auth_openai_api_key():
+        auth_source = _codex_auth_json_source()
+        return auth_value, _agent_source_via_upstream(_OPENAI_UPSTREAM_KEY_VAR), auth_source
+
+    value, source = resolve_keyring_or_prompt_credential(
+        agent_env_var,
+        allow_prompt=False,
     )
-    return config, key_var
+    if value and source:
+        return value, source, None
+
+    value, source = resolve_keyring_or_prompt_credential(
+        agent_env_var,
+        allow_prompt=allow_prompt,
+    )
+    if value and source:
+        return value, source, None
+
+    return None, None, None
 
 
 def ensure_codex_agent_auth(
@@ -108,104 +182,70 @@ def ensure_codex_agent_auth(
 ) -> tuple[dict[str, Any], AgentAuthBinding]:
     """Resolve ``CODEX_OPENAI_API_KEY`` for a Codex launch.
 
-    Resolution order:
-    1. Shell export or ``.env`` value for the configured Codex env key
-    2. ``OPENAI_API_KEY`` from ``~/.codex/auth.json`` when non-null
-    3. Upstream ``provider_nick`` registry key (shell, ``.env``, keyring, prompt)
-    4. Codex env key from keyring, then interactive prompt
+    The upstream API-key env var name is resolved first (``OPENAI_API_KEY`` for
+    canonical OpenAI when no ``provider_nick`` is set). Agent credentials are
+    then resolved in :func:`_resolve_codex_agent_token` order.
     """
-    from cyt.launch.codex import read_codex_auth_openai_api_key
-
     upstream = upstream_for_endpoint(config, endpoint)
     agent_env_var = codex_env_key_name(config)
     resolved_allow_prompt = sys.stdin.isatty() if allow_prompt is None else allow_prompt
     resolved_before_env = launch_before_env if launch_before_env is not None else _snapshot_env()
     path = resolve_config_path(config_path)
 
-    upstream_key_var: str | None = None
-    if upstream is not None and not is_canonical_upstream(upstream):
-        config, upstream_key_var = _ensure_upstream_provider_key(
-            config=config,
-            config_path=path,
-            upstream=upstream,
-            credential_sources=credential_sources,
-            allow_prompt=resolved_allow_prompt,
-        )
-
-    direct_value, direct_source = resolve_shell_or_file_credential(
-        agent_env_var,
-        before_env=resolved_before_env,
+    config, upstream_key_var = _lookup_codex_upstream_key_var(
+        config=config,
+        config_path=path,
+        upstream=upstream,
     )
-    if direct_value and direct_source:
-        credential_sources[agent_env_var] = direct_source
-        return config, _binding(
-            agent_env_var=agent_env_var,
-            source=direct_source,
-            token=direct_value,
-            upstream_key_var=upstream_key_var,
-        )
 
-    if auth_value := read_codex_auth_openai_api_key():
-        credential_sources[agent_env_var] = _CODEX_AUTH_JSON_SOURCE
-        return config, _binding(
-            agent_env_var=agent_env_var,
-            source=_CODEX_AUTH_JSON_SOURCE,
-            token=auth_value,
-            upstream_key_var=upstream_key_var,
-        )
-
-    key_var: str | None = upstream_key_var
-    if upstream is not None and key_var is None:
-        config, key_var = _ensure_upstream_provider_key(
-            config=config,
-            config_path=path,
-            upstream=upstream,
+    if upstream is not None and not is_canonical_upstream(upstream) and upstream_key_var:
+        ensure_upstream_credential(
+            upstream_key_var,
             credential_sources=credential_sources,
             allow_prompt=resolved_allow_prompt,
+            fallback_env_names=(),
         )
 
-    if key_var:
-        provider_value, upstream_source = resolve_credential(
-            key_var,
-            before_env=resolved_before_env,
-            allow_prompt=resolved_allow_prompt,
-        )
-        if provider_value and upstream_source:
-            credential_sources[key_var] = upstream_source
-            source = _agent_source_via_upstream(key_var, upstream_source)
-            credential_sources[agent_env_var] = source
-            return config, _binding(
-                agent_env_var=agent_env_var,
-                source=source,
-                token=provider_value,
-                upstream_key_var=key_var,
-            )
-
-    fallback_value, fallback_source = resolve_credential(
-        agent_env_var,
+    token, agent_source, upstream_source = _resolve_codex_agent_token(
+        agent_env_var=agent_env_var,
+        upstream_key_var=upstream_key_var,
         before_env=resolved_before_env,
         allow_prompt=resolved_allow_prompt,
     )
-    if fallback_value and fallback_source:
-        credential_sources[agent_env_var] = fallback_source
+    if token and agent_source:
+        credential_sources[agent_env_var] = agent_source
+        if upstream_source:
+            if agent_source == _agent_source_via_upstream(_OPENAI_UPSTREAM_KEY_VAR):
+                credential_sources[_OPENAI_UPSTREAM_KEY_VAR] = upstream_source
+            elif upstream_key_var is not None:
+                credential_sources[upstream_key_var] = upstream_source
+        if upstream is not None and is_canonical_upstream(upstream):
+            _sync_canonical_upstream_credential(
+                token=token,
+                agent_source=agent_source,
+                agent_env_var=agent_env_var,
+                upstream_key_var=upstream_key_var,
+                credential_sources=credential_sources,
+            )
         return config, _binding(
             agent_env_var=agent_env_var,
-            source=fallback_source,
-            token=fallback_value,
-            upstream_key_var=key_var,
+            source=agent_source,
+            token=token,
+            upstream_key_var=upstream_key_var,
         )
 
-    if key_var:
+    if upstream_key_var:
         raise SystemExit(
             f"Required API key not set for upstream {endpoint!r}.\n"
-            f"Export {key_var} in the shell, add to ~/.config/cyt/.env, "
-            "store it in the keyring, or run interactively.",
+            f"Export {upstream_key_var} in the shell, add to ~/.config/cyt/.env, "
+            f"set OPENAI_API_KEY in {_codex_auth_json_source()}, "
+            f"store {agent_env_var} in the keyring, or run interactively.",
         )
     raise SystemExit(
         f"Required Codex API key not set.\n"
-        f"Export {agent_env_var} in the shell, add to ~/.config/cyt/.env, "
-        f"set OPENAI_API_KEY in {_CODEX_AUTH_JSON_SOURCE}, "
-        "or run interactively.",
+        f"Export the upstream API key in the shell, add to ~/.config/cyt/.env, "
+        f"set OPENAI_API_KEY in {_codex_auth_json_source()}, "
+        f"store {agent_env_var} in the keyring, or run interactively.",
     )
 
 
@@ -275,8 +315,7 @@ def ensure_agent_upstream_auth(
         source = direct_source
     else:
         token = upstream_value
-        upstream_source = credential_sources.get(key_var, "resolved")
-        source = _agent_source_via_upstream(key_var, upstream_source)
+        source = _agent_source_via_upstream(key_var)
 
     credential_sources[agent_env_var] = source
     return config, _binding(

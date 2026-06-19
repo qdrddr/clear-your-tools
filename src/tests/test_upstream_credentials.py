@@ -15,22 +15,22 @@ from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream
 from cyt.launch.claude import build_claude_env
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.launch.upstream_credentials import (
+    describe_upstream_key_var_resolution,
     ensure_upstream_credentials,
+    format_upstream_key_var_resolution_line,
     is_canonical_upstream,
     lookup_upstream_key_var,
     upstream_for_endpoint,
 )
+from tests.test_credential_helpers import (
+    DEFAULT_CREDENTIAL_ENV_VARS,
+    install_test_pre_dotenv,
+    isolate_credential_env_paths,
+)
 
 
 def _credential_env_vars() -> tuple[str, ...]:
-    return (
-        "OPENROUTER_" + "API_KEY",
-        "ANTHROPIC_" + "API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "OPENAI_" + "API_KEY",
-        "CODEX_OPENAI_" + "API_KEY",
-        "DEEPINFRA_" + "API_KEY",
-    )
+    return DEFAULT_CREDENTIAL_ENV_VARS
 
 
 @pytest.fixture(autouse=True)
@@ -42,14 +42,8 @@ def _isolate_credential_resolution(
     clear_keyring_cache()
     for name in _credential_env_vars():
         monkeypatch.delenv(name, raising=False)
-    work_dir = tmp_path / "credential-work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
-    cwd_env = work_dir / ".env"
-    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
-    monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
-    monkeypatch.chdir(work_dir)
-    monkeypatch.setattr("cyt.config.process_env_before_dotenv", dict)
+    isolate_credential_env_paths(monkeypatch, tmp_path)
+    install_test_pre_dotenv(monkeypatch)
     monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
     yield
     clear_keyring_cache()
@@ -110,6 +104,57 @@ class TestLookupUpstreamKeyVar:
         config = load_config(isolated_config_paths["user_config"])
         key_var = lookup_upstream_key_var(config, _anthropic_upstream())
         assert key_var == "ANTHROPIC_" + "API_KEY"
+
+
+class TestDescribeUpstreamKeyVarResolution:
+    def test_canonical_openai_infers_provider_nick_from_url(
+        self,
+        isolated_config_paths: dict,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        upstream = {
+            "endpoint": "openai",
+            "kind": "openai",
+            "url": "https://api.openai.com",
+        }
+        resolution = describe_upstream_key_var_resolution(config, upstream, agent="codex")
+
+        assert resolution is not None
+        assert resolution.key_var_name == "OPENAI_" + "API_KEY"
+        assert resolution.provider_nick == "openai"
+        assert (
+            "inferred via canonical upstream https://api.openai.com"
+            in resolution.provider_nick_source
+        )
+        assert "models.providers.openai" in resolution.provider_nick_source
+        assert "matches codex agent default kind: openai" in resolution.provider_nick_source
+        formatted = format_upstream_key_var_resolution_line(resolution)
+        assert "Upstream API-key env var: OPENAI_" + "API_KEY" in formatted
+        assert "provider_nick: openai" in formatted
+
+    def test_linked_openrouter_uses_upstream_provider_nick(
+        self,
+        isolated_config_paths: dict,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        resolution = describe_upstream_key_var_resolution(config, _openrouter_upstream())
+
+        assert resolution is not None
+        assert resolution.key_var_name == "OPENROUTER_" + "API_KEY"
+        assert resolution.provider_nick == "openrouter"
+        assert resolution.provider_nick_source == "from config.yaml upstream provider_nick"
+
+    def test_unlinked_openrouter_is_unresolved(self, isolated_config_paths: dict) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        resolution = describe_upstream_key_var_resolution(
+            config,
+            _openrouter_upstream(linked=False),
+        )
+
+        assert resolution is not None
+        assert resolution.key_var_name is None
+        assert resolution.provider_nick is None
+        assert "no provider_nick on upstream entry" in resolution.provider_nick_source
 
 
 class TestBuildClaudeEnv:

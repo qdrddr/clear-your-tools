@@ -4,27 +4,26 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from cyt import config as configs
+import cyt.config as configs
 from cyt.config import load_config
 from cyt.launch.agent_credentials import ensure_agent_upstream_auth, ensure_codex_agent_auth
 from cyt.launch.secrets import clear_keyring_cache
+from tests.test_credential_helpers import (
+    DEFAULT_CREDENTIAL_ENV_VARS,
+    install_test_pre_dotenv,
+    isolate_credential_env_paths,
+)
 
 
 def _credential_env_vars() -> tuple[str, ...]:
-    return (
-        "OPENROUTER_" + "API_KEY",
-        "ANTHROPIC_" + "API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "OPENAI_" + "API_KEY",
-        "CODEX_OPENAI_" + "API_KEY",
-        "DEEPINFRA_" + "API_KEY",
-    )
+    return DEFAULT_CREDENTIAL_ENV_VARS
 
 
 @pytest.fixture(autouse=True)
@@ -36,14 +35,8 @@ def _isolate_credential_resolution(
     clear_keyring_cache()
     for name in _credential_env_vars():
         monkeypatch.delenv(name, raising=False)
-    work_dir = tmp_path / "credential-work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
-    cwd_env = work_dir / ".env"
-    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
-    monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
-    monkeypatch.chdir(work_dir)
-    monkeypatch.setattr("cyt.config.process_env_before_dotenv", dict)
+    isolate_credential_env_paths(monkeypatch, tmp_path)
+    install_test_pre_dotenv(monkeypatch)
     monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
     yield
     clear_keyring_cache()
@@ -195,7 +188,7 @@ class TestEnsureAgentUpstreamAuth:
         assert binding.agent_env_var == _codex_openai_api_key_var()
         assert os.environ[_codex_openai_api_key_var()] == _or_token()
 
-    def test_codex_prefers_direct_codex_env_key(
+    def test_codex_uses_upstream_shell_over_codex_shell(
         self,
         isolated_config_paths: dict,
         monkeypatch: pytest.MonkeyPatch,
@@ -211,7 +204,6 @@ class TestEnsureAgentUpstreamAuth:
                 "provider_nick": "openrouter",
             },
         ]
-        monkeypatch.delenv(_openrouter_api_key_var(), raising=False)
         monkeypatch.setenv(_codex_openai_api_key_var(), "codex-direct")
         monkeypatch.setenv(_openrouter_api_key_var(), _or_token())
         sources: dict[str, str] = {}
@@ -226,11 +218,11 @@ class TestEnsureAgentUpstreamAuth:
         )
 
         assert binding is not None
-        assert binding.token == "codex-direct"
-        assert os.environ[_codex_openai_api_key_var()] == "codex-direct"
+        assert binding.token == _or_token()
+        assert os.environ[_codex_openai_api_key_var()] == _or_token()
         assert os.environ[_openrouter_api_key_var()] == _or_token()
 
-    def test_codex_direct_env_resolves_upstream_key_from_keyring(
+    def test_codex_keyring_resolves_upstream_key_from_keyring(
         self,
         isolated_config_paths: dict,
         monkeypatch: pytest.MonkeyPatch,
@@ -247,10 +239,13 @@ class TestEnsureAgentUpstreamAuth:
             },
         ]
         monkeypatch.delenv(_openrouter_api_key_var(), raising=False)
-        monkeypatch.setenv(_codex_openai_api_key_var(), "codex-direct")
+        monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.setattr(
             "cyt.launch.secrets._read_keyring",
-            lambda name: _or_token() if name == _openrouter_api_key_var() else None,
+            lambda name: {
+                _codex_openai_api_key_var(): "codex-direct",
+                _openrouter_api_key_var(): _or_token(),
+            }.get(name),
         )
         sources: dict[str, str] = {}
 
@@ -268,6 +263,7 @@ class TestEnsureAgentUpstreamAuth:
         assert os.environ[_codex_openai_api_key_var()] == "codex-direct"
         assert os.environ[_openrouter_api_key_var()] == _or_token()
         assert sources[_openrouter_api_key_var()] == "keyring"
+        assert sources[_codex_openai_api_key_var()] == "keyring"
 
     def test_codex_auth_json_resolves_upstream_key_from_keyring(
         self,
@@ -318,7 +314,8 @@ class TestEnsureAgentUpstreamAuth:
         assert binding.upstream_key_var == _openrouter_api_key_var()
         assert os.environ[_openrouter_api_key_var()] == _or_token()
         assert sources[_openrouter_api_key_var()] == "keyring"
-        assert sources[_codex_openai_api_key_var()] == "~/.codex/auth.json"
+        assert sources[_codex_openai_api_key_var()] == f"via {_openai_api_key_var()}"
+        assert sources[_openai_api_key_var()] == str(auth_path.resolve())
 
     def test_codex_canonical_openai_uses_provider_key(
         self,
@@ -343,9 +340,10 @@ class TestEnsureAgentUpstreamAuth:
         assert binding is not None
         assert binding.token == _openai_token()
         assert os.environ[_codex_openai_api_key_var()] == _openai_token()
-        assert "via OPENAI_" in sources[_codex_openai_api_key_var()]
+        assert sources[_codex_openai_api_key_var()] == f"via {_openai_api_key_var()}"
+        assert sources[_openai_api_key_var()] == "env: shell"
 
-    def test_codex_reresolves_upstream_key_for_agent_auth(
+    def test_codex_reresolves_codex_key_from_keyring(
         self,
         isolated_config_paths: dict,
         monkeypatch: pytest.MonkeyPatch,
@@ -354,10 +352,10 @@ class TestEnsureAgentUpstreamAuth:
         openai_key = _openai_api_key_var()
         codex_key = _codex_openai_api_key_var()
         monkeypatch.delenv(codex_key, raising=False)
-        monkeypatch.setenv(openai_key, "stale-runtime-value")
+        os.environ[openai_key] = "stale-runtime-value"
         monkeypatch.setattr(
             "cyt.launch.secrets._read_keyring",
-            lambda name: "keyring-" + "openai" if name == openai_key else None,
+            lambda name: "keyring-" + "codex" if name == codex_key else None,
         )
         sources: dict[str, str] = {openai_key: "env: shell"}
 
@@ -371,10 +369,10 @@ class TestEnsureAgentUpstreamAuth:
         )
 
         assert binding is not None
-        assert binding.token == "keyring-" + "openai"
-        assert os.environ[codex_key] == "keyring-" + "openai"
-        assert sources[openai_key] == "keyring"
-        assert sources[codex_key] == f"keyring (via {openai_key})"
+        assert binding.token == "keyring-" + "codex"
+        assert os.environ[codex_key] == "keyring-" + "codex"
+        assert sources[codex_key] == "keyring"
+        assert sources[openai_key] == "env: shell"
 
     def test_codex_uses_auth_json_before_keyring(
         self,
@@ -409,7 +407,8 @@ class TestEnsureAgentUpstreamAuth:
 
         assert binding is not None
         assert binding.token == _auth_json_token()
-        assert sources[_codex_openai_api_key_var()] == "~/.codex/auth.json"
+        assert sources[_codex_openai_api_key_var()] == f"via {_openai_api_key_var()}"
+        assert sources[_openai_api_key_var()] == str(auth_path.resolve())
 
     def test_codex_skips_null_auth_json_openai_key(
         self,
@@ -438,4 +437,110 @@ class TestEnsureAgentUpstreamAuth:
 
         assert binding is not None
         assert binding.token == _openai_token()
-        assert "via OPENAI_" in sources[_codex_openai_api_key_var()]
+        assert sources[_codex_openai_api_key_var()] == f"via {_openai_api_key_var()}"
+        assert sources[_openai_api_key_var()] == "env: shell"
+
+    def test_codex_skips_empty_auth_json_openai_key(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        auth_path = tmp_path / "auth.json"
+        auth_path.write_text(
+            json.dumps({"auth_mode": "chatgpt", _openai_api_key_var(): ""}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
+        monkeypatch.delenv(_openai_api_key_var(), raising=False)
+        monkeypatch.setattr(
+            "cyt.launch.secrets._read_keyring",
+            lambda name: "keyring-" + "codex" if name == _codex_openai_api_key_var() else None,
+        )
+        sources: dict[str, str] = {}
+
+        _, binding = ensure_codex_agent_auth(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=False,
+        )
+
+        assert binding is not None
+        assert binding.token == "keyring-" + "codex"
+        assert sources[_codex_openai_api_key_var()] == "keyring"
+
+    def test_codex_prefers_shell_openai_over_auth_json(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        auth_path = tmp_path / "auth.json"
+        auth_path.write_text(
+            json.dumps(
+                {
+                    "auth_mode": "chatgpt",
+                    _openai_api_key_var(): _auth_json_token(),
+                },
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
+        monkeypatch.setenv(_openai_api_key_var(), _openai_token())
+        sources: dict[str, str] = {}
+
+        _, binding = ensure_codex_agent_auth(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=False,
+        )
+
+        assert binding is not None
+        assert binding.token == _openai_token()
+        assert sources[_codex_openai_api_key_var()] == f"via {_openai_api_key_var()}"
+        assert sources[_openai_api_key_var()] == "env: shell"
+        assert sources[_codex_openai_api_key_var()] != str(auth_path.resolve())
+
+    def test_codex_prompts_when_no_other_credentials(
+        self,
+        isolated_config_paths: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        config = load_config(isolated_config_paths["user_config"])
+        monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
+        monkeypatch.delenv(_openai_api_key_var(), raising=False)
+        monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(
+            "cyt.launch.secrets.getpass.getpass",
+            lambda _prompt: "prompt-" + "secret",
+        )
+        writes: list[tuple[str, str]] = []
+
+        def write_keyring(key: str, value: str) -> bool:
+            writes.append((key, value))
+            return True
+
+        monkeypatch.setattr("cyt.launch.secrets._write_keyring", write_keyring)
+        sources: dict[str, str] = {}
+
+        _, binding = ensure_codex_agent_auth(
+            config=config,
+            config_path=isolated_config_paths["user_config"],
+            endpoint="openai",
+            credential_sources=sources,
+            allow_prompt=True,
+        )
+
+        assert binding is not None
+        assert binding.token == "prompt-" + "secret"
+        assert sources[_codex_openai_api_key_var()] == "keyring"
+        assert writes == [(_codex_openai_api_key_var(), "prompt-" + "secret")]

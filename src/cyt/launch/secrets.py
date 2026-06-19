@@ -38,15 +38,17 @@ def _user_env_path() -> Path:
     return USER_ENV_PATH
 
 
+def _env_file_paths() -> tuple[Path, ...]:
+    return (_cwd_env_path(), _user_env_path())
+
+
+def env_file_source_label(path: Path) -> str:
+    """Return a credential source label for *path* using its absolute path."""
+    return f"env: {path.expanduser().resolve()}"
+
+
 def _env_file_source(path: Path) -> str:
-    expanded = path.expanduser()
-    cwd_env = _cwd_env_path()
-    user_env = _user_env_path()
-    if expanded == cwd_env:
-        return "env: ./.env"
-    if expanded == user_env:
-        return "env: ~/.config/cyt/.env"
-    return f"env: {expanded}"
+    return env_file_source_label(path)
 
 
 def _snapshot_env() -> dict[str, str]:
@@ -55,7 +57,7 @@ def _snapshot_env() -> dict[str, str]:
 
 def _read_env_file_value(name: str) -> tuple[str | None, str | None]:
     """Return (value, source) from ``./.env`` then ``~/.config/cyt/.env``."""
-    for path in (_cwd_env_path(), _user_env_path()):
+    for path in _env_file_paths():
         values = parse_env_file(path)
         value = values.get(name)
         if value:
@@ -280,19 +282,20 @@ def _resolve_terminal_credential(
 
     pre_dotenv = process_env_before_dotenv()
     if value := pre_dotenv.get(name):
+        file_value, file_source = _read_env_file_value(name)
+        if file_value and file_value == value and file_source:
+            return value, file_source
         return value, "env: shell"
 
     if name in _runtime_credential_sources:
         return None, None
 
-    # Values loaded from ``./.env`` or ``~/.config/cyt/.env`` at import time are
-    # already in ``before_env`` but are not shell exports; let file resolution
-    # label them correctly.
+    # Values loaded from ``.env`` files at import time are already in
+    # ``before_env`` but are not shell exports; let file resolution label them.
     if value := before_env.get(name):
         file_value, _ = _read_env_file_value(name)
         if file_value and file_value == value:
             return None, None
-        return value, "env: shell"
     return None, None
 
 
@@ -323,6 +326,20 @@ def resolve_shell_or_file_credential(
     if terminal_value[0] and terminal_value[1]:
         return terminal_value
     return _resolve_file_credential(name)
+
+
+def resolve_keyring_or_prompt_credential(
+    name: str,
+    *,
+    allow_prompt: bool = True,
+) -> tuple[str | None, str | None]:
+    """Resolve *name* from the OS keyring, then an interactive terminal prompt."""
+    keyring_value = _resolve_keyring_credential(name)
+    if keyring_value[0] and keyring_value[1]:
+        return keyring_value
+    if not allow_prompt:
+        return None, None
+    return _resolve_prompt_credential(name)
 
 
 def resolve_credential(

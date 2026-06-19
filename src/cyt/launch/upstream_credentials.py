@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,12 @@ from cyt.config import (
     save_user_config,
 )
 from cyt.launch.secrets import ensure_named_credentials
-from cyt.launch.upstream import infer_upstream_kind_from_url, list_upstreams
+from cyt.launch.upstream import (
+    AgentName,
+    infer_upstream_kind_from_agent,
+    infer_upstream_kind_from_url,
+    list_upstreams,
+)
 from cyt.proxy.setup import (
     _extract_hostname,
     _prompt_key_var_name,
@@ -80,6 +86,82 @@ def lookup_upstream_key_var(config: dict[str, Any], entry: dict[str, Any]) -> st
     if provider_nick:
         return _key_var_from_provider_nick(config, provider_nick)
     return None
+
+
+@dataclass(frozen=True)
+class UpstreamKeyVarResolution:
+    """How the upstream API-key env var name was chosen for an upstream entry."""
+
+    key_var_name: str | None
+    provider_nick: str | None
+    provider_nick_source: str
+
+
+def _agent_default_kind_note(*, agent: AgentName | None, provider_nick: str | None) -> str:
+    if agent is None or not provider_nick:
+        return ""
+    if infer_upstream_kind_from_agent(agent) != provider_nick:
+        return ""
+    return f"; matches {agent} agent default kind: {provider_nick}"
+
+
+def describe_upstream_key_var_resolution(
+    config: dict[str, Any],
+    entry: dict[str, Any] | None,
+    *,
+    agent: AgentName | None = None,
+) -> UpstreamKeyVarResolution | None:
+    """Describe step 0: resolve the upstream API-key env var name for *entry*."""
+    if entry is None:
+        return None
+
+    key_var = lookup_upstream_key_var(config, entry)
+    explicit_nick = _provider_nick_from_upstream_entry(config, entry)
+    if explicit_nick:
+        return UpstreamKeyVarResolution(
+            key_var_name=key_var,
+            provider_nick=explicit_nick,
+            provider_nick_source="from config.yaml upstream provider_nick",
+        )
+
+    if is_canonical_upstream(entry):
+        kind = infer_upstream_kind_from_url(upstream_entry_url(entry))
+        registry_nick = str(kind) if kind else None
+        url = upstream_entry_url(entry)
+        agent_note = _agent_default_kind_note(agent=agent, provider_nick=registry_nick)
+        if registry_nick:
+            source = (
+                f"inferred via canonical upstream {url} "
+                f"→ models.providers.{registry_nick}{agent_note}"
+            )
+        else:
+            source = f"inferred via canonical upstream {url}{agent_note}"
+        return UpstreamKeyVarResolution(
+            key_var_name=key_var,
+            provider_nick=registry_nick,
+            provider_nick_source=source,
+        )
+
+    return UpstreamKeyVarResolution(
+        key_var_name=key_var,
+        provider_nick=None,
+        provider_nick_source=(
+            "no provider_nick on upstream entry; add provider_nick under "
+            "network.proxy.reverse.upstreams[] in config.yaml"
+        ),
+    )
+
+
+def format_upstream_key_var_resolution_line(resolution: UpstreamKeyVarResolution) -> str:
+    """Format step 0 for the launch credential summary."""
+    key_part = resolution.key_var_name or "?"
+    if resolution.provider_nick:
+        nick_line = (
+            f"  provider_nick: {resolution.provider_nick} ({resolution.provider_nick_source})\n"
+        )
+    else:
+        nick_line = f"  provider_nick: unresolved ({resolution.provider_nick_source})\n"
+    return f"  Upstream API-key env var: {key_part}\n{nick_line}"
 
 
 def _default_provider_nick(entry: dict[str, Any]) -> str:
