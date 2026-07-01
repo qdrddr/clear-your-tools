@@ -2,7 +2,7 @@
 name = "clear-your-tools-registry-e2e"
 version = "0.0.0"
 requires-python = ">=3.13,<4.0"
-dependencies = ["clear-your-tools==@CYT_RELEASE_VERSION@"]
+dependencies = ["clear-your-tools[all]==@CYT_RELEASE_VERSION@"]
 
 [dependency-groups]
 test = ["pytest>=8.0"]

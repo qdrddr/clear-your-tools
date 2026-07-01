@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.6.0"
+version = "0.6.1"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -18,16 +18,12 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "cyt-indexer-sdk==0.6.0",
-    "tiktoken==0.12.0",
+    "cyt-indexer-sdk==0.6.1",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
     "pyyaml==6.0.3",
     "keyring==25.6.0",
-    "numpy>=2.0",
-    "pystemmer==3.1.0",
-    "bm25s[core]==0.3.9",
     "uuid7==0.1.0",
 ]
 
@@ -201,8 +197,6 @@ module = [
     "litellm.*",
     "google.*",
     "uuid_extensions.*",
-    "bm25s.*",
-    "Stemmer.*",
     "cyt_indexer.*",
 ]
 ignore_missing_imports = true

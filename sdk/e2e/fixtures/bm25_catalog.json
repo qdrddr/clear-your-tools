@@ -1,0 +1,13 @@
+{
+  "json": [
+    {
+      "file_path": "schemas/decomposed/mcp__test__read.json",
+      "content": "Read files from disk path storage"
+    },
+    {
+      "file_path": "schemas/decomposed/mcp__test__write.json",
+      "content": "Write output to unrelated finance topic"
+    }
+  ],
+  "md": []
+}

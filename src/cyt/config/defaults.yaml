@@ -144,6 +144,10 @@ models:
 pruning:
   tools:
     inject_via: proxy # hook | proxy
+    hook:
+      tools_from: client # client | definitions
+      mcp_client_file: ~/.config/cyt/mcp.json
+      mcp_definitions_file: ~/.config/cyt/mcp-definitions.json
     policy:
       system_tool: prune_optional
       mcp_tool: prune_all
@@ -212,7 +216,7 @@ stats:
 
 skills:
   enabled: true
-  frontmatter_upper_limit: 0.4
+  frontmatter_upper_limit: 0.45
   inject_via: proxy # hook | proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
