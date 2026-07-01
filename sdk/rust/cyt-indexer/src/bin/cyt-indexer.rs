@@ -1,14 +1,17 @@
+#![allow(clippy::multiple_crate_versions, clippy::too_many_lines)]
+
 use clap::{Parser, Subcommand, ValueEnum};
 use cyt_indexer::{
-    DecomposedCatalog, PageIndexConfig, PolicyContext, ReconstructOptions, RemovedChunksOptions,
-    RetrieveOptions, SkillsBuilder, TokenCounterKind, WindowMode, apply_per_tool_overrides,
-    build_catalog_from_tools, build_process_groups_options, get_skill_content_retrieve_result,
-    get_skill_document, get_skill_line_content, get_skill_structure, load_catalog_from_dir,
-    load_skills_index_from_dir, parse_tool_policy, parse_tool_policy_pair,
-    per_tool_policies_from_value, policy_context_from_values, removed_chunks,
-    retrieve_tools_from_catalog, write_reconstructed_skill,
+    Bm25CohesionChunker, Bm25CohesionConfig, DecomposedCatalog, PageIndexConfig, PolicyContext,
+    ReconstructOptions, RemovedChunksOptions, RetrieveOptions, ScoreCatalogOptions, SkillsBuilder,
+    TokenCounterKind, WindowMode, apply_per_tool_overrides, build_catalog_from_tools,
+    build_process_groups_options, get_skill_content_retrieve_result, get_skill_document,
+    get_skill_line_content, get_skill_structure, load_catalog_from_dir, load_skills_index_from_dir,
+    parse_tool_policy, parse_tool_policy_pair, per_tool_policies_from_value,
+    policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
+    score_catalog_in_place, write_reconstructed_skill,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -38,6 +41,52 @@ enum Commands {
         #[command(subcommand)]
         target: RemovedTarget,
     },
+    /// Chunk arbitrary text with BM25 cohesion segmentation
+    Chunk {
+        #[arg(long, conflicts_with = "file")]
+        text: Option<String>,
+        #[arg(long, conflicts_with = "text")]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = WindowModeArg::Sentence)]
+        window_mode: WindowModeArg,
+        #[arg(long)]
+        similarity_window: Option<usize>,
+        #[arg(long, default_value_t = 2048)]
+        chunk_size: usize,
+        #[arg(long, value_enum, default_value_t = TokenCounterArg::Tiktoken)]
+        token_counter: TokenCounterArg,
+        #[arg(long, default_value_t = 0)]
+        skip_window: usize,
+        #[arg(long)]
+        dump_similarity_curve: Option<PathBuf>,
+    },
+    /// BM25 search over a catalog JSON file
+    Search {
+        #[command(subcommand)]
+        target: SearchTarget,
+    },
+}
+
+#[derive(Subcommand)]
+enum SearchTarget {
+    /// Score json/md lists in a catalog dict
+    Catalog {
+        #[arg(long)]
+        input: PathBuf,
+        query: String,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        prune_json_threshold: Option<f64>,
+        #[arg(long)]
+        prune_md_threshold: Option<f64>,
+        #[arg(long, default_value_t = true)]
+        prune_enums: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -61,7 +110,7 @@ enum BuildTarget {
         similarity_window: Option<usize>,
         #[arg(long, default_value_t = 2048)]
         chunk_size: usize,
-        #[arg(long, value_enum, default_value_t = TokenCounterArg::Approximate)]
+        #[arg(long, value_enum, default_value_t = TokenCounterArg::Tiktoken)]
         token_counter: TokenCounterArg,
         #[arg(long, default_value_t = 0)]
         skip_window: usize,
@@ -147,6 +196,7 @@ enum WindowModeArg {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum TokenCounterArg {
+    Tiktoken,
     Approximate,
     Character,
 }
@@ -163,6 +213,7 @@ impl From<WindowModeArg> for WindowMode {
 impl From<TokenCounterArg> for TokenCounterKind {
     fn from(value: TokenCounterArg) -> Self {
         match value {
+            TokenCounterArg::Tiktoken => Self::Tiktoken,
             TokenCounterArg::Approximate => Self::Approximate,
             TokenCounterArg::Character => Self::Character,
         }
@@ -510,6 +561,97 @@ fn run_removed_tools(
     Ok(())
 }
 
+struct ChunkArgs<'a> {
+    text: Option<&'a str>,
+    file: Option<&'a Path>,
+    output: Option<&'a Path>,
+    config_path: Option<&'a Path>,
+    window_mode: WindowModeArg,
+    similarity_window: Option<usize>,
+    chunk_size: usize,
+    token_counter: TokenCounterArg,
+    skip_window: usize,
+    dump_similarity_curve: Option<&'a Path>,
+}
+
+fn run_chunk(args: &ChunkArgs<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    let input_text = match (args.text, args.file) {
+        (Some(text), None) => text.to_string(),
+        (None, Some(path)) => fs::read_to_string(path)?,
+        _ => return Err("exactly one of --text or --file is required".into()),
+    };
+
+    let mut cfg = if let Some(path) = args.config_path {
+        let raw = fs::read_to_string(path)?;
+        Bm25CohesionConfig::from_partial(&serde_json::from_str(&raw)?)
+    } else {
+        Bm25CohesionConfig::default()
+    };
+    let mode: WindowMode = args.window_mode.into();
+    cfg.apply_mode_defaults(mode);
+    cfg.window_mode = mode;
+    cfg.chunk_size = args.chunk_size;
+    cfg.token_counter = args.token_counter.into();
+    cfg.skip_window = args.skip_window;
+    if let Some(w) = args.similarity_window {
+        cfg.similarity_window = w;
+    }
+    cfg.validate()?;
+
+    let chunker = Bm25CohesionChunker::new(cfg)?;
+    if let Some(curve_path) = args.dump_similarity_curve {
+        let curve = chunker.similarity_curve_values(&input_text)?;
+        write_json_pretty(curve_path, serde_json::to_string_pretty(&curve)?)?;
+    }
+
+    let chunks: Vec<Value> = chunker
+        .chunk(&input_text)
+        .into_iter()
+        .map(|c| {
+            json!({
+                "text": c.text,
+                "start_index": c.start_index,
+                "end_index": c.end_index,
+                "token_count": c.token_count,
+            })
+        })
+        .collect();
+
+    let payload = serde_json::to_string_pretty(&chunks)?;
+    if let Some(path) = args.output {
+        write_json_pretty(path, payload)?;
+    } else {
+        println!("{payload}");
+    }
+    Ok(())
+}
+
+fn run_search_catalog(
+    input: &Path,
+    query: &str,
+    output: Option<&Path>,
+    prune_json_threshold: Option<f64>,
+    prune_md_threshold: Option<f64>,
+    prune_enums: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = fs::read_to_string(input)?;
+    let mut data: Value = serde_json::from_str(&raw)?;
+    let options = ScoreCatalogOptions {
+        prune_json_threshold,
+        prune_md_threshold,
+        prune_enums,
+        ..ScoreCatalogOptions::default()
+    };
+    score_catalog_in_place(&mut data, query, &options)?;
+    let payload = serde_json::to_string_pretty(&data)?;
+    if let Some(path) = output {
+        write_json_pretty(path, payload)?;
+    } else {
+        println!("{payload}");
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
@@ -599,6 +741,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 full,
                 score_filter,
             } => run_removed_tools(&catalog, &input, &output, full.as_deref(), score_filter)?,
+        },
+        Commands::Chunk {
+            text,
+            file,
+            output,
+            config,
+            window_mode,
+            similarity_window,
+            chunk_size,
+            token_counter,
+            skip_window,
+            dump_similarity_curve,
+        } => run_chunk(&ChunkArgs {
+            text: text.as_deref(),
+            file: file.as_deref(),
+            output: output.as_deref(),
+            config_path: config.as_deref(),
+            window_mode,
+            similarity_window,
+            chunk_size,
+            token_counter,
+            skip_window,
+            dump_similarity_curve: dump_similarity_curve.as_deref(),
+        })?,
+        Commands::Search { target } => match target {
+            SearchTarget::Catalog {
+                input,
+                query,
+                output,
+                prune_json_threshold,
+                prune_md_threshold,
+                prune_enums,
+            } => run_search_catalog(
+                &input,
+                &query,
+                output.as_deref(),
+                prune_json_threshold,
+                prune_md_threshold,
+                prune_enums,
+            )?,
         },
     }
     Ok(())

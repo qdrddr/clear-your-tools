@@ -1,17 +1,14 @@
 use chunk::{filter_split_indices, find_local_minima_interpolated, find_merge_indices};
 
 use super::config::Bm25CohesionConfig;
-use super::scorer::Bm25Scorer;
 use super::segment::segment_units;
 use super::similarity::similarity_curve;
 use super::token_counter::TokenCounter;
-use super::tokenizer::TextAnalyzerPipeline;
 use super::types::{CohesionChunk, TextUnit};
 
 pub struct Bm25CohesionChunker {
     config: Bm25CohesionConfig,
     token_counter: Box<dyn TokenCounter>,
-    pipeline: TextAnalyzerPipeline,
 }
 
 impl Bm25CohesionChunker {
@@ -21,17 +18,28 @@ impl Bm25CohesionChunker {
     pub fn new(config: Bm25CohesionConfig) -> Result<Self, String> {
         config.validate()?;
         let token_counter = config.token_counter_impl();
-        let pipeline = TextAnalyzerPipeline::new(&config);
         Ok(Self {
             config,
             token_counter,
-            pipeline,
         })
     }
 
     #[must_use]
     pub fn needs_chunking(&self, text: &str) -> bool {
         self.config.chunk_size > 0 && self.token_counter.count(text) > self.config.chunk_size
+    }
+
+    /// Sliding-window BM25 similarity curve for `text`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when BM25 scoring fails.
+    pub fn similarity_curve_values(&self, text: &str) -> Result<Vec<f64>, String> {
+        let units = segment_units(text, &self.config, self.token_counter.as_ref());
+        if units.len() <= self.config.similarity_window {
+            return Ok(Vec::new());
+        }
+        similarity_curve(&units, &self.config)
     }
 
     #[must_use]
@@ -55,11 +63,11 @@ impl Bm25CohesionChunker {
             return vec![Self::units_to_chunk(text, &units)];
         }
 
-        let similarities = similarity_curve(&units, &self.config, &self.pipeline);
+        let similarities = similarity_curve(&units, &self.config).unwrap_or_default();
         let split_indices = self.split_indices(&similarities, units.len());
         let mut groups = group_units(&units, &split_indices);
         if self.config.skip_window > 0 && groups.len() > 1 {
-            groups = skip_and_merge(&groups, &self.config, &self.pipeline);
+            groups = skip_and_merge(&groups, &self.config);
         }
         let mut chunks = self.groups_to_chunks(text, &groups);
         if chunks.len() > 1 {
@@ -241,11 +249,7 @@ fn group_units(units: &[TextUnit], split_indices: &[usize]) -> Vec<Vec<TextUnit>
     groups
 }
 
-fn skip_and_merge(
-    groups: &[Vec<TextUnit>],
-    config: &Bm25CohesionConfig,
-    pipeline: &TextAnalyzerPipeline,
-) -> Vec<Vec<TextUnit>> {
+fn skip_and_merge(groups: &[Vec<TextUnit>], config: &Bm25CohesionConfig) -> Vec<Vec<TextUnit>> {
     if groups.len() <= 1 || config.skip_window == 0 {
         return groups.to_vec();
     }
@@ -254,7 +258,6 @@ fn skip_and_merge(
         .map(|g| g.iter().map(|u| u.text.as_str()).collect())
         .collect();
     let refs: Vec<&str> = group_texts.iter().map(String::as_str).collect();
-    let scorer = Bm25Scorer::from_documents(pipeline, &refs);
 
     let mut merged_groups = Vec::new();
     let mut i = 0usize;
@@ -267,7 +270,9 @@ fn skip_and_merge(
         let mut best_score = -1.0_f64;
         let mut best_idx = None;
         for j in (i + 1)..=skip_index {
-            let score = scorer.score_query_doc(&group_texts[i], j);
+            let score =
+                crate::bm25_search::score_query_against_doc(&group_texts[i], refs[j], &refs)
+                    .unwrap_or(0.0);
             if score >= config.merge_threshold && score > best_score {
                 best_score = score;
                 best_idx = Some(j);
@@ -343,7 +348,7 @@ mod tests {
     fn word_mode_preserves_markdown_formatting() -> Result<(), String> {
         let text = "### Step 2: Select the Best Match\n\nFrom the resolution results, choose based on:\n\n- Exact or closest name match to what the user asked for\n- Higher benchmark scores indicate better documentation quality\n- If the user mentioned a version (e.g., \"React 19\"), prefer version-specific IDs";
         let cfg = Bm25CohesionConfig {
-            chunk_size: 100,
+            chunk_size: 30,
             similarity_window: 10,
             skip_window: 0,
             ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)

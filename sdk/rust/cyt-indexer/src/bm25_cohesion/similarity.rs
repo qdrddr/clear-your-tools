@@ -1,19 +1,6 @@
 use super::config::Bm25CohesionConfig;
-use super::scorer::Bm25Scorer;
-use super::tokenizer::TextAnalyzerPipeline;
 use super::types::{TextUnit, WindowMode};
-
-fn min_max_normalize(values: &[f64]) -> Vec<f64> {
-    if values.is_empty() {
-        return Vec::new();
-    }
-    let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if (max - min).abs() < f64::EPSILON {
-        return vec![0.5; values.len()];
-    }
-    values.iter().map(|v| (v - min) / (max - min)).collect()
-}
+use crate::bm25_search::{NormalizeMode, normalize_scores, score_corpus, score_query_against_doc};
 
 fn join_units(units: &[TextUnit]) -> String {
     units.iter().map(|u| u.text.as_str()).collect()
@@ -39,21 +26,23 @@ fn build_corpus_units(units: &[TextUnit], config: &Bm25CohesionConfig) -> Vec<St
     }
 }
 
-#[must_use]
+/// Sliding-window BM25 similarity curve (min-max normalized).
+///
+/// # Errors
+///
+/// Returns an error when BM25 scoring fails.
 pub fn similarity_curve(
     units: &[TextUnit],
     config: &Bm25CohesionConfig,
-    pipeline: &TextAnalyzerPipeline,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, String> {
     let w = config.similarity_window;
     let n = config.next_unit_size;
     if units.len() <= w {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let corpus = build_corpus_units(units, config);
     let corpus_refs: Vec<&str> = corpus.iter().map(String::as_str).collect();
-    let scorer = Bm25Scorer::from_documents(pipeline, &corpus_refs);
 
     let mut raw = Vec::new();
     match config.window_mode {
@@ -62,7 +51,8 @@ pub fn similarity_curve(
                 let query = join_units(&units[i..i + w]);
                 let doc_idx = i + w;
                 if doc_idx < corpus.len() {
-                    raw.push(scorer.score_query_doc(&query, doc_idx));
+                    let doc = corpus[doc_idx].as_str();
+                    raw.push(score_query_against_doc(&query, doc, &corpus_refs)?);
                 }
             }
         }
@@ -71,9 +61,18 @@ pub fn similarity_curve(
             for i in 0..limit {
                 let query = join_units(&units[i..i + w]);
                 let doc = join_units(&units[i + w..i + w + n]);
-                raw.push(scorer.score_query_text(&query, &doc));
+                raw.push(score_query_against_doc(&query, &doc, &corpus_refs)?);
             }
         }
     }
-    min_max_normalize(&raw)
+    Ok(normalize_scores(&raw, NormalizeMode::MinMax))
+}
+
+/// Score a query against each document in corpus (for SDPM merge pass).
+///
+/// # Errors
+///
+/// Returns an error when BM25 scoring fails.
+pub fn score_groups(query: &str, groups: &[&str]) -> Result<Vec<f64>, String> {
+    score_corpus(query, groups)
 }

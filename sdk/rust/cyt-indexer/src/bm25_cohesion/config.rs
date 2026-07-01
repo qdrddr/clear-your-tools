@@ -49,7 +49,7 @@ impl Bm25CohesionConfig {
             threshold: 0.8,
             merge_threshold: 0.7,
             chunk_size: 2048,
-            token_counter: TokenCounterKind::Approximate,
+            token_counter: TokenCounterKind::Tiktoken,
             similarity_window: 3,
             next_unit_size: 1,
             skip_window: 0,
@@ -247,12 +247,13 @@ fn parse_window_mode(v: Option<&Value>) -> Option<WindowMode> {
 fn parse_token_counter(v: &Value) -> TokenCounterKind {
     match v
         .as_str()
-        .unwrap_or("approximate")
+        .unwrap_or("tiktoken")
         .to_ascii_lowercase()
         .as_str()
     {
         "character" => TokenCounterKind::Character,
-        _ => TokenCounterKind::Approximate,
+        "approximate" => TokenCounterKind::Approximate,
+        _ => TokenCounterKind::Tiktoken,
     }
 }
 

@@ -1,8 +1,14 @@
 //! Flat re-exports and stable cross-language names (`build_catalog_index`, etc.)
 //! intentionally repeat module prefixes where clippy would prefer shorter names.
-#![allow(clippy::pub_use, clippy::module_name_repetitions)]
+#![allow(
+    clippy::pub_use,
+    clippy::module_name_repetitions,
+    clippy::multiple_crate_versions
+)]
 
+pub mod analyzer;
 pub mod bm25_cohesion;
+pub mod bm25_search;
 pub mod build;
 pub mod catalog_builder;
 pub mod catalog_io;
@@ -15,6 +21,7 @@ pub mod retrieve;
 pub mod runtime_config;
 pub mod skills_builder;
 pub mod skills_io;
+pub mod tiktoken;
 pub mod tool_entries;
 
 #[cfg(feature = "python")]
@@ -29,6 +36,13 @@ pub mod ffi;
 pub use bm25_cohesion::{
     ApproximateTokenCounter, Bm25CohesionChunker, Bm25CohesionConfig, CharacterTokenCounter,
     CohesionChunk, TokenCounter, TokenCounterKind, WindowMode, approximate_token_count,
+};
+pub use bm25_search::{
+    Bm25SearchConfig, CatalogDocument, NormalizeMode, ScoreCatalogOptions, bm25_frontmatter_gate,
+    bm25_search_skill_chunks, catalog_fingerprint, collect_catalog_documents,
+    configure as configure_bm25_search, exp_similarity, index_path_for_catalog, min_max_normalize,
+    normalize_scores, score_catalog_dict, score_catalog_in_place, score_corpus,
+    score_query_against_doc, snapshot as bm25_search_snapshot, term_frequencies,
 };
 pub use build::{
     CatalogIndex, build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,
@@ -90,6 +104,10 @@ pub use skills_builder::SkillsBuilder;
 pub use skills_io::{
     load_decomposed_files_for_index, load_skills_index_from_dir, skills_index_from_decomposed_dir,
     write_skills_index,
+};
+pub use tiktoken::{
+    configure as configure_tiktoken, count_json_tokens, count_tokens, count_tokens_or_min,
+    snapshot as tiktoken_snapshot,
 };
 pub use tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,

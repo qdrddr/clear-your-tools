@@ -2,8 +2,31 @@ use chunk::{IncludeDelim, split_at_patterns};
 
 use super::config::Bm25CohesionConfig;
 use super::token_counter::TokenCounter;
-use super::tokenizer::simple_word_spans;
 use super::types::{IncludeDelimMode, TextUnit, WindowMode};
+
+/// Word-boundary spans preserving original text (for `WordSegmenter` output).
+#[must_use]
+pub fn simple_word_spans(text: &str, min_chars: usize) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut spans = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        let start = i;
+        while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i - start >= min_chars {
+            spans.push((start, i));
+        }
+    }
+    spans
+}
 
 pub trait UnitSegmenter {
     fn segment(

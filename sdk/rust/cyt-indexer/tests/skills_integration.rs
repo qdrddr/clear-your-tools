@@ -18,7 +18,7 @@ fn word_mode_chunk_config() -> PageIndexConfig {
         "bm25_cohesion": {
             "window_mode": "word",
             "similarity_window": 10,
-            "chunk_size": 100,
+            "chunk_size": 30,
             "skip_window": 0
         }
     }))

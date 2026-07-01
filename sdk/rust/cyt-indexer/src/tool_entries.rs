@@ -5,46 +5,12 @@ use crate::build::{CatalogIndex, build_catalog_index};
 use crate::paths::collect_enums;
 use serde_json::{Value, json};
 
-use crate::bm25_cohesion::approximate_token_count;
+use crate::tiktoken;
 
-/// Truncate text to at most `max_tokens` (approximate), preferring a word boundary.
+/// Truncate text to at most `max_tokens` (tiktoken), preferring a word boundary.
 #[must_use]
 pub fn truncate_description(description: &str, max_tokens: usize) -> String {
-    if description.is_empty() {
-        return String::new();
-    }
-    if approximate_token_count(description) <= max_tokens {
-        return description.to_string();
-    }
-
-    let suffix = "...";
-    let suffix_tokens = approximate_token_count(suffix);
-    let body_budget = max_tokens.saturating_sub(suffix_tokens);
-    if body_budget == 0 {
-        return suffix.to_string();
-    }
-
-    let chars: Vec<char> = description.chars().collect();
-    let mut lo = 0usize;
-    let mut hi = chars.len();
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let slice: String = chars[..mid].iter().collect();
-        if approximate_token_count(&slice) <= body_budget {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-
-    let mut body: String = chars[..lo].iter().collect();
-    if let Some(sp) = body.rfind(' ')
-        && sp > 0
-    {
-        body.truncate(sp);
-    }
-
-    format!("{body}{suffix}")
+    tiktoken::truncate_description_or_passthrough(description, max_tokens)
 }
 
 fn anthropic_input_schema(tool: &Value) -> Value {

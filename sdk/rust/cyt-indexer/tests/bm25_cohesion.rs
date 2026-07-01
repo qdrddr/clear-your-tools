@@ -67,7 +67,7 @@ fn word_mode_default_window_500() {
 fn word_mode_markdown_formatting_preserved() -> Result<(), String> {
     let text = "### Step 2: Select the Best Match\n\nFrom the resolution results, choose based on:\n\n- Exact or closest name match to what the user asked for\n- Higher benchmark scores indicate better documentation quality\n- If the user mentioned a version (e.g., \"React 19\"), prefer version-specific IDs";
     let cfg = Bm25CohesionConfig {
-        chunk_size: 100,
+        chunk_size: 30,
         similarity_window: 10,
         skip_window: 0,
         ..Bm25CohesionConfig::default_for_mode(WindowMode::Word)

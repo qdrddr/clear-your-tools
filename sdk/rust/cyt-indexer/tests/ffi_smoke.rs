@@ -1,6 +1,8 @@
 #![cfg(feature = "ffi")]
 
-use cyt_indexer::ffi::{CYT_OK, cyt_build_catalog_index, cyt_catalog_tool_count, cyt_free_string};
+use cyt_indexer::ffi::{
+    CYT_OK, cyt_build_catalog_index, cyt_catalog_tool_count, cyt_count_tokens, cyt_free_string,
+};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
@@ -35,6 +37,13 @@ fn build_catalog_index_smoke() {
     let json = unsafe { read_out(out) };
     assert!(json.contains("\"tools\""));
     assert!(json.contains("\"files\""));
+}
+
+#[test]
+fn count_tokens_smoke() {
+    let text = cstr(b"hello world\0");
+    let count = unsafe { cyt_count_tokens(text.as_ptr()) };
+    assert!(count >= 1);
 }
 
 #[test]

@@ -7,6 +7,12 @@ mod pageindex_python;
 #[path = "bm25_cohesion_python.rs"]
 mod bm25_cohesion_python;
 
+#[path = "bm25_search_python.rs"]
+mod bm25_search_python;
+
+#[path = "tokens_python.rs"]
+mod tokens_python;
+
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
 use crate::paths::{self, PathConfig, collect_enums};
 use crate::policies::policy_context_from_values;
@@ -554,5 +560,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     policies_python::register(m)?;
     pageindex_python::register(m)?;
     bm25_cohesion_python::register(m)?;
+    bm25_search_python::register(m)?;
+    tokens_python::register(m)?;
     Ok(())
 }

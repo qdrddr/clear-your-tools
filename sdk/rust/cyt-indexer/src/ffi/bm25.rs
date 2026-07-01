@@ -20,7 +20,7 @@ pub unsafe extern "C" fn cyt_bm25_cohesion_default_config(out: *mut *mut c_char)
             "threshold": cfg.threshold,
             "merge_threshold": cfg.merge_threshold,
             "chunk_size": cfg.chunk_size,
-            "token_counter": "approximate",
+            "token_counter": "tiktoken",
             "similarity_window": cfg.similarity_window,
             "next_unit_size": cfg.next_unit_size,
             "skip_window": cfg.skip_window,
