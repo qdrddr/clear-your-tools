@@ -73,5 +73,7 @@ Same as the C API: JSON in/out at the FFI boundary; error messages are thread-lo
 ## Related SDKs
 
 - [C SDK](../c/README.md) — shared build step and header
+- [Go SDK](../go/README.md)
+- [Rust SDK](../rust/README.md)
 - [Python SDK](../python/README.md)
 - [TypeScript SDK](../typescript/)
