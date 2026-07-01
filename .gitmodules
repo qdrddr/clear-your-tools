@@ -1,6 +1,0 @@
-[submodule "fastmcp"]
-	path = fastmcp
-	url = https://github.com/PrefectHQ/fastmcp.git
-[submodule "cocoindex-code"]
-	path = cocoindex-code
-	url = git@github.com:cocoindex-io/cocoindex-code.git

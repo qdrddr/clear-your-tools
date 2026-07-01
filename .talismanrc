@@ -1,0 +1,46 @@
+{
+  "threshold": "medium",
+  "custom_severities": [
+    {
+      "detector": "HexContent",
+      "severity": "low"
+    },
+    {
+      "detector": "Base64Content",
+      "severity": "low"
+    }
+  ],
+  "allowed_patterns": [
+    "DEEPINFRA_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "HasJSON",
+    "GetJSON"
+  ],
+  "fileignoreconfig": [
+    {
+      "filename": "assets/logo.png",
+      "ignore_detectors": ["filesize", "filename"]
+    },
+    {
+      "filename": "assets/claude.png",
+      "ignore_detectors": ["filesize", "filename"]
+    },
+    {
+      "filename": "assets/codex.png",
+      "ignore_detectors": ["filesize", "filename"]
+    },
+    {
+      "filename": ".env.example",
+      "ignore_detectors": ["content"]
+    },
+    {
+      "filename": ".secrets.baseline",
+      "ignore_detectors": ["content"]
+    },
+    {
+      "filename": "hedl",
+      "ignore_detectors": ["filesize"]
+    }
+  ]
+}

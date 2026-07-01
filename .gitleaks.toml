@@ -1,0 +1,14 @@
+title = "clear-your-tools gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known safe paths and fixtures"
+paths = [
+  '''\.env\.example$''',
+  '''^\.ast-grep/''',
+  '''^\.secrets\.baseline$''',
+  '''^sdk/e2e/''',
+  '''test_bm25_migration\.py$''',
+]

@@ -1,0 +1,108 @@
+# Language groups for scripts/prek-loop.sh
+#
+# Hooks may appear in more than one group. The `suggestion` hook is omitted
+# intentionally (informational only).
+#
+# Usage:
+#   ./scripts/prek-loop.sh -g python
+#   ./scripts/prek-loop.sh --group python typescript
+#
+groups:
+  python:
+    - add-trailing-comma
+    - basedpyright
+    - check-builtin-literals
+    - check-docstring-first
+    - debug-statements
+    - flake8
+    - mypy
+    - name-tests-test
+    - python-check-blanket-noqa
+    - python-check-blanket-type-ignore
+    - python-check-mock-methods
+    - pyupgrade
+    - pytest
+    - ruff
+    - ruff-format
+    - ty-check
+    - uv-build
+    - uv-export
+    - uv-lock
+    - uv-sync
+    - verify-sdk
+
+  rust:
+    - build-c-lib-for-go
+    - cargo-audit
+    - cargo-clippy
+    - cargo-deny
+    - cargo-fmt
+    - cargo-ffi-smoke
+    - cargo-sort
+    - cargo-udeps
+    - cbindgen-header-drift
+    - c-header-sync
+    - verify-sdk
+
+  go:
+    - build-c-lib-for-go
+    - go-build-repo-mod
+    - go-critic
+    - go-fumpt
+    - go-imports
+    - go-mod-tidy-repo
+    - go-sec-repo-mod
+    - go-staticcheck-repo-mod
+    - go-test-repo-mod
+
+  c:
+    - build-c-lib-for-go
+    - cargo-ffi-smoke
+    - c-header-sync
+    - cbindgen-header-drift
+    - clang-format
+    - clang-tidy
+    - cmake-compile-db
+    - cppcheck
+    - cpplint
+
+  typescript:
+    - all-fallow
+    - typescript-ast-scan
+    - typescript-build
+    - typescript-npm-audit
+    - typescript-sort-package-json
+    - typescript-test
+    - typescript-typecheck
+
+  universal:
+    - actionlint
+    - ast-scan
+    - ast-test
+    - check-added-large-files
+    - check-case-conflict
+    - check-filenames
+    - check-github-workflows
+    - check-json
+    - check-jsonschema
+    - check-merge-conflict
+    - check-symlinks
+    - check-toml
+    - check-yaml
+    - codespell
+    - committed
+    - detect-private-key
+    - detect-secrets
+    - end-of-file-fixer
+    - gitleaks
+    - markdownlint-cli2
+    - mixed-line-ending
+    - oxipng
+    - prettier
+    - shellcheck
+    - shfmt
+    - sync-version
+    - talisman-commit
+    - trailing-whitespace
+    - trufflehog
+    - typos

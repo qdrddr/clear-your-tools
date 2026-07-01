@@ -18,6 +18,7 @@ env/
 
 *.tsv
 *.txt
+!sdk/c/CMakeLists.txt
 # Generated benchmark artifacts
 src/catalog/tools.json
 #src/catalog/schemas/decomposed
@@ -37,6 +38,7 @@ src/nogo_
 
 # Build outputs
 /target/
+sdk/c/build/
 *.pdf.bak
 paper.tex.bak
 
@@ -126,3 +128,15 @@ sdk/e2e/clear-your-tools/uv.lock
 sdk/e2e/clear-your-tools/.venv/
 
 .catalog/
+# Stray manual C compiles (CMake uses sdk/c/build/)
+sdk/c/**/*.o
+sdk/c/**/*.obj
+sdk/c/**/*.exe
+sdk/c/cyt_example_*
+sdk/c/compile_commands.json
+
+# Go SDK local build/test artifacts
+sdk/go/**/*.test
+sdk/go/coverage.out
+sdk/go/coverage.html
+sdk/go/vendor/

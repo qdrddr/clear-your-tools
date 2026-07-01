@@ -1,51 +1,183 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/prek-loop.sh [--short] [--one-run]
-# Run `prek run -a` iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality.
+# Usage: ./scripts/prek-loop.sh [--short] [--one-run] [-g|--group GROUP...]
+#
+# Run prek hooks one at a time, staging fixes after each, until all pass.
+# Groups are optional; see scripts/prek-hook-groups.yaml:
+#   python, rust, go, c, typescript, universal
+#
+# Examples:
+#   ./scripts/prek-loop.sh -g python
+#   ./scripts/prek-loop.sh --group python typescript
+#
+# If prek-hook-groups.yaml is missing, all hooks run regardless of --group.
+# Examples:
+# Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
+# ./scripts/prek-loop.sh --short --one-run --group python rust typescript universal
+# ./scripts/prek-loop.sh --short --one-run --group go c universal
 
 set -uo pipefail
 
 SHORT=false
 ONE_RUN=false
+SELECTED_GROUPS=()
 while (($#)); do
 	case "$1" in
 	--short)
 		SHORT=true
+		shift
 		;;
 	--one-run)
 		ONE_RUN=true
+		shift
+		;;
+	-g | --group)
+		shift
+		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
+			echo "--group requires at least one group name." >&2
+			echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+			exit 1
+		fi
+		while (($#)) && [[ $1 != -* ]]; do
+			SELECTED_GROUPS+=("$1")
+			shift
+		done
+		;;
+	-h | --help)
+		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+		echo "Groups: python rust go c typescript universal (see scripts/prek-hook-groups.yaml)" >&2
+		exit 0
+		;;
+	-*)
+		echo "Unknown option: $1" >&2
+		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+		exit 1
 		;;
 	*)
-		echo "Usage: $0 [--short] [--one-run]" >&2
+		echo "Unexpected argument: $1" >&2
+		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
 		exit 1
 		;;
 	esac
-	shift
 done
 
 ROOT="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 cd "$ROOT" || exit 1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GROUPS_FILE="$SCRIPT_DIR/prek-hook-groups.yaml"
+export SHORTEN_ROOT="$ROOT"
+
 trap 'echo; echo "Interrupted."; exit 130' INT TERM
 
-mapfile -t HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
-((${#HOOKS[@]})) || {
+echo "Discovering prek hooks..." >&2
+mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
+((${#ALL_HOOKS[@]})) || {
 	echo "No prek hooks found." >&2
 	exit 1
 }
+
+declare -A ALL_HOOK_SET=()
+for hook in "${ALL_HOOKS[@]}"; do
+	ALL_HOOK_SET["$hook"]=1
+done
+
+load_group_hooks() {
+	local group="$1"
+	uv run python - "$group" "$GROUPS_FILE" <<'PY'
+import sys
+
+import yaml
+
+group, path = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as fh:
+    data = yaml.safe_load(fh) or {}
+
+groups = data.get("groups") or {}
+if group not in groups:
+    known = ", ".join(sorted(groups))
+    print(f"ERROR:unknown-group:{group}:{known}")
+    sys.exit(2)
+
+hooks = groups[group] or []
+for hook in hooks:
+    if hook:
+        print(hook)
+PY
+}
+
+resolve_hooks() {
+	if ((${#SELECTED_GROUPS[@]} == 0)); then
+		HOOKS=("${ALL_HOOKS[@]}")
+		return 0
+	fi
+
+	if [[ ! -f $GROUPS_FILE ]]; then
+		echo "Warning: $GROUPS_FILE not found; running all hooks (ignoring groups: ${SELECTED_GROUPS[*]})." >&2
+		HOOKS=("${ALL_HOOKS[@]}")
+		return 0
+	fi
+
+	declare -A SEEN_HOOKS=()
+	HOOKS=()
+	local group group_hooks_raw group_exit missing=()
+
+	for group in "${SELECTED_GROUPS[@]}"; do
+		group_exit=0
+		group_hooks_raw=$(load_group_hooks "$group") || group_exit=$?
+		if ((group_exit == 2)); then
+			if [[ $group_hooks_raw == ERROR:unknown-group:* ]]; then
+				local known="${group_hooks_raw#ERROR:unknown-group:"${group}":}"
+				echo "Unknown group '$group'. Valid groups: $known" >&2
+				exit 1
+			fi
+		fi
+		if ((group_exit != 0)); then
+			echo "Failed to read hook groups from $GROUPS_FILE." >&2
+			exit 1
+		fi
+
+		mapfile -t GROUP_HOOKS <<<"${group_hooks_raw:-}"
+
+		for hook in "${GROUP_HOOKS[@]}"; do
+			[[ -z $hook ]] && continue
+			if [[ -z ${ALL_HOOK_SET[$hook]+x} ]]; then
+				missing+=("$group:$hook")
+				continue
+			fi
+			if [[ -z ${SEEN_HOOKS[$hook]+x} ]]; then
+				HOOKS+=("$hook")
+				SEEN_HOOKS[$hook]=1
+			fi
+		done
+	done
+
+	if ((${#missing[@]})); then
+		echo "Warning: groups list hooks not in prek config: ${missing[*]}" >&2
+	fi
+
+	if ((${#HOOKS[@]} == 0)); then
+		echo "Groups (${SELECTED_GROUPS[*]}) have no runnable hooks." >&2
+	fi
+}
+
+resolve_hooks
 
 total=${#HOOKS[@]}
 mode="Prek loop"
 $SHORT && mode+=" (short)"
 $ONE_RUN && mode+=" (one run)"
+if ((${#SELECTED_GROUPS[@]})); then
+	mode+=" [${SELECTED_GROUPS[*]}]"
+fi
 if $ONE_RUN; then
 	echo "$mode: $total hooks, single iteration."
 else
 	echo "$mode: $total hooks until all pass."
 fi
+if ((${#SELECTED_GROUPS[@]})) && [[ -f $GROUPS_FILE ]] && ((total > 0)); then
+	echo "Hooks: ${HOOKS[*]}"
+fi
 echo
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export SHORTEN_ROOT="$ROOT"
 
 # prek prints "hook-name.....<status>"; extract <status> from dot-padded lines.
 parse_prek_output() {
@@ -115,6 +247,11 @@ run_hook() {
 	parse_prek_output "$output"
 	return "$exit_code"
 }
+
+if ((total == 0)); then
+	echo "Nothing to run."
+	exit 0
+fi
 
 iteration=0
 while true; do

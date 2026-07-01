@@ -19,6 +19,8 @@ CARGO_LOCK="${ROOT}/Cargo.lock"
 SDK_PYPROJECT="${ROOT}/sdk/python/pyproject.toml"
 PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
 PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
+C_CMAKE="${ROOT}/sdk/c/CMakeLists.txt"
+GO_VERSION="${ROOT}/sdk/go/version.go"
 UV_LOCK="${ROOT}/uv.lock"
 TAG_FILE="${ROOT}/search/.publish-tag"
 
@@ -34,6 +36,8 @@ Propagate VERSION to all manifests and lockfiles:
   - uv.lock (clear-your-tools + cyt-indexer-sdk)
   - sdk/typescript/package.json
   - sdk/typescript/package-lock.json
+  - sdk/c/CMakeLists.txt (project VERSION)
+  - sdk/go/version.go (ModuleVersion)
 
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
 EOF
@@ -147,6 +151,34 @@ update_package_lock_version() {
 	mv "${tmp}" "${PACKAGE_LOCK}"
 }
 
+update_cmake_project_version() {
+	local version="$1"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v version="${version}" '
+    /^project\(cyt-indexer-c VERSION / {
+      print "project(cyt-indexer-c VERSION " version " LANGUAGES C)"
+      next
+    }
+    { print }
+  ' "${C_CMAKE}" >"${tmp}"
+	mv "${tmp}" "${C_CMAKE}"
+}
+
+update_go_module_version() {
+	local version="$1"
+	local tmp
+	tmp="$(mktemp)"
+	awk -v version="${version}" '
+    /^const ModuleVersion = "/ {
+      print "const ModuleVersion = \"" version "\""
+      next
+    }
+    { print }
+  ' "${GO_VERSION}" >"${tmp}"
+	mv "${tmp}" "${GO_VERSION}"
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	usage
 	exit 0
@@ -176,7 +208,9 @@ for file in \
 	"${SDK_PYPROJECT}" \
 	"${UV_LOCK}" \
 	"${PACKAGE_JSON}" \
-	"${PACKAGE_LOCK}"; do
+	"${PACKAGE_LOCK}" \
+	"${C_CMAKE}" \
+	"${GO_VERSION}"; do
 	if [[ ! -f "${file}" ]]; then
 		printf 'error: missing %s\n' "${file}" | shorten_paths >&2
 		exit 1
@@ -194,6 +228,8 @@ update_uv_lock_package_version "clear-your-tools" "${version}"
 update_uv_lock_package_version "cyt-indexer-sdk" "${version}"
 update_package_json_version "${version}"
 update_package_lock_version "${version}"
+update_cmake_project_version "${version}"
+update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 
 cat <<EOF | shorten_paths
@@ -205,5 +241,7 @@ synced version ${version} to:
   ${UV_LOCK} (clear-your-tools + cyt-indexer-sdk)
   ${PACKAGE_JSON}
   ${PACKAGE_LOCK}
+  ${C_CMAKE} (project VERSION)
+  ${GO_VERSION} (ModuleVersion)
   ${TAG_FILE} (tag=${tag})
 EOF

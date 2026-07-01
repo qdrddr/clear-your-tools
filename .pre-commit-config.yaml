@@ -84,9 +84,136 @@ repos:
       - id: detect-secrets
         args:
           [
+            "--baseline",
+            ".secrets.baseline",
             "--exclude-files",
-            "app/migrations/versions/.*|ast-grep/rule-tests/.*|app/tests/test_bm25_migration.py|.env.example",
+            "app/migrations/versions/.*|ast-grep/rule-tests/.*|app/tests/test_bm25_migration.py|.env.example|.ast-grep/.*|.talismanrc",
           ]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.92.3
+    hooks:
+      - id: trufflehog
+        args: ["--only-verified"]
+
+  - repo: https://github.com/thoughtworks/talisman
+    rev: v1.37.0
+    hooks:
+      - id: talisman-commit
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.10
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.ya?ml$
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.36.0
+    hooks:
+      - id: check-github-workflows
+        files: ^\.github/workflows/
+      - id: check-jsonschema
+        name: check pre-commit config
+        files: ^\.pre-commit-config\.yaml$
+        args:
+          - --schemafile
+          - https://json.schemastore.org/pre-commit-config.json
+
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-check-mock-methods
+
+  - repo: https://github.com/oxipng/oxipng
+    rev: v9.1.5
+    hooks:
+      - id: oxipng
+        files: ^assets/.*\.png$
+
+  - repo: local
+    hooks:
+      - id: clang-format
+        name: clang-format (sdk/c)
+        entry: bash scripts/c-sdk-precommit.sh clang-format
+        language: system
+        files: ^sdk/c/.*\.(c|h)$
+        exclude: ^sdk/c/include/cyt_indexer\.h$
+        args: ["-i", "--style=file"]
+      - id: cppcheck
+        name: cppcheck (sdk/c)
+        entry: bash scripts/c-sdk-precommit.sh cppcheck
+        language: system
+        files: ^sdk/c/.*\.(c|h)$
+        exclude: ^sdk/c/include/cyt_indexer\.h$
+        args: ["--suppress=missingIncludeSystem", "--error-exitcode=1"]
+      - id: clang-tidy
+        name: clang-tidy (sdk/c)
+        entry: bash scripts/c-sdk-precommit.sh clang-tidy
+        language: system
+        files: ^sdk/c/.*\.(c|h)$
+        exclude: ^sdk/c/include/cyt_indexer\.h$
+        args:
+          - "-p=sdk/c/build"
+          - "--warnings-as-errors=*"
+      - id: cpplint
+        name: cpplint (sdk/c examples)
+        entry: bash scripts/c-sdk-precommit.sh cpplint
+        language: system
+        files: ^sdk/c/examples/.*\.c$
+        args: ["--filter=-legal/copyright"]
+      - id: go-fumpt
+        name: go-fumpt (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh fumpt
+        language: system
+        files: ^sdk/go/.*\.go$
+      - id: go-imports
+        name: go-imports (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh imports
+        language: system
+        files: ^sdk/go/.*\.go$
+      - id: go-mod-tidy-repo
+        name: go-mod-tidy (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh tidy
+        language: system
+        files: ^sdk/go/
+        pass_filenames: false
+      - id: go-staticcheck-repo-mod
+        name: go-staticcheck (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh staticcheck
+        language: system
+        files: ^sdk/go/
+        pass_filenames: false
+      - id: go-critic
+        name: go-critic (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh critic
+        language: system
+        files: ^sdk/go/.*\.go$
+      - id: go-sec-repo-mod
+        name: go-sec (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh sec
+        language: system
+        files: ^sdk/go/
+        pass_filenames: false
+      - id: go-build-repo-mod
+        name: go-build (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh build
+        language: system
+        files: ^sdk/go/
+        pass_filenames: false
+      - id: go-test-repo-mod
+        name: go-test (sdk/go)
+        entry: bash scripts/go-sdk-precommit.sh test
+        language: system
+        files: ^sdk/go/
+        pass_filenames: false
+
   - repo: https://github.com/PyCQA/flake8
     rev: 7.3.0
     hooks:
@@ -168,6 +295,8 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
       - id: trailing-whitespace
       - id: check-yaml
         exclude: ^(.ast-grep/rules/.*|\.github/workflows/.*)$
@@ -295,7 +424,67 @@ repos:
             'cd "$(git rev-parse --show-toplevel)" && rtk cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc -W clippy::wildcard_imports -W clippy::enum_glob_use -W clippy::module_name_repetitions -W clippy::pub_use -W clippy::bool_comparison -W clippy::match_bool -W clippy::match_same_arms -W clippy::match_wild_err_arm -W clippy::needless_borrow -W clippy::needless_lifetimes -W clippy::inefficient_to_string -W clippy::large_enum_variant -W clippy::large_stack_arrays -W clippy::map_clone -W unused -W dead_code',
           ]
         language: system
-        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|sdk/c/|sdk/go/)
+        pass_filenames: false
+
+      - id: cargo-fmt
+        name: cargo fmt (cyt-indexer)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk cargo fmt --all -- --check',
+          ]
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|rustfmt\.toml$)
+        pass_filenames: false
+
+      - id: cbindgen-header-drift
+        name: cbindgen header drift check
+        entry: bash scripts/prek-hook.sh
+        args:
+          - |
+            set -euo pipefail
+            root="$(git rev-parse --show-toplevel)"
+            cd "$root"
+            rtk cargo build -p cyt-indexer --no-default-features --features ffi
+            git diff --exit-code sdk/rust/cyt-indexer/cyt_indexer.h
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/ffi/|cbindgen\.toml|build\.rs)
+        pass_filenames: false
+
+      - id: c-header-sync
+        name: sdk/c header sync check
+        entry: bash scripts/prek-hook.sh
+        args:
+          - cmp sdk/rust/cyt-indexer/cyt_indexer.h sdk/c/include/cyt_indexer.h
+        language: system
+        files: ^sdk/(rust/cyt-indexer/cyt_indexer\.h|c/include/cyt_indexer\.h)
+        pass_filenames: false
+
+      - id: cargo-ffi-smoke
+        name: cargo test ffi_smoke
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi_smoke\.rs|cyt_indexer\.h)
+        pass_filenames: false
+
+      - id: cmake-compile-db
+        name: Generate sdk/c compile_commands.json
+        entry: bash scripts/prek-hook.sh
+        args:
+          - cmake -S sdk/c -B sdk/c/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release
+        language: system
+        files: ^sdk/c/
+        pass_filenames: false
+
+      - id: build-c-lib-for-go
+        name: build C lib for Go CGO
+        entry: bash scripts/prek-hook.sh
+        args: ["bash sdk/c/scripts/build-c-lib.sh --no-sync-header"]
+        language: system
+        files: ^(sdk/(go/|rust/cyt-indexer/src/ffi/)|sdk/c/include/)
         pass_filenames: false
 
       - id: typescript-typecheck
