@@ -54,6 +54,7 @@ build)
 	go build ./...
 	;;
 test)
+	env -u CARGO_TARGET_DIR "${ROOT}/sdk/c/scripts/build-c-lib.sh" --no-sync-header
 	env -u CARGO_TARGET_DIR go test ./...
 	;;
 *)

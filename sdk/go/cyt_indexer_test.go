@@ -72,3 +72,24 @@ func TestRuntimeDefaultsSmoke(t *testing.T) {
 		t.Fatalf("unexpected decomposed score: %v", RuntimeDecomposedScore())
 	}
 }
+
+func TestCountTokensSmoke(t *testing.T) {
+	count, err := CountTokens("hello world")
+	if err != nil {
+		t.Fatalf("CountTokens: %v", err)
+	}
+	if count < 1 {
+		t.Fatalf("expected token count >= 1, got %d", count)
+	}
+}
+
+func TestBm25ScoreCatalogSmoke(t *testing.T) {
+	catalog := `{"json":[{"file_path":"a.json","content":{"name":"read files from disk"}}],"md":[{"file_path":"b.md","content":"write disk files"}]}`
+	scoredJSON, err := Bm25ScoreCatalog(catalog, "read files disk", "")
+	if err != nil {
+		t.Fatalf("Bm25ScoreCatalog: %v", err)
+	}
+	if !strings.Contains(scoredJSON, `"score"`) {
+		t.Fatalf("expected score field in result: %s", scoredJSON)
+	}
+}

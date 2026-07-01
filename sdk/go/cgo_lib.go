@@ -179,6 +179,106 @@ func cgoTruncateDescription(description string, maxTokens uint64) (string, error
 	return takeJSON(&out)
 }
 
+func cgoCountTokens(text string) (int64, error) {
+	cText := cString(text)
+	defer freeCString(cText)
+	count := C.cyt_count_tokens(cText)
+	if count < 0 {
+		return 0, lastError()
+	}
+	return int64(count), nil
+}
+
+func cgoCountJsonTokens(jsonStr string) (int64, error) {
+	cJSON := cString(jsonStr)
+	defer freeCString(cJSON)
+	count := C.cyt_count_json_tokens(cJSON)
+	if count < 0 {
+		return 0, lastError()
+	}
+	return int64(count), nil
+}
+
+func cgoConfigureTokenizerDefaults(configJSON string) error {
+	var cCfg *C.char
+	if configJSON != "" {
+		cCfg = cString(configJSON)
+		defer freeCString(cCfg)
+	}
+	if C.cyt_configure_tokenizer_defaults(cCfg) != ok {
+		return lastError()
+	}
+	return nil
+}
+
+func cgoConfigureBm25Defaults(configJSON string) error {
+	var cCfg *C.char
+	if configJSON != "" {
+		cCfg = cString(configJSON)
+		defer freeCString(cCfg)
+	}
+	if C.cyt_configure_bm25_defaults(cCfg) != ok {
+		return lastError()
+	}
+	return nil
+}
+
+func cgoBm25CatalogFingerprint(dataJSON string) (string, error) {
+	cData := cString(dataJSON)
+	defer freeCString(cData)
+	var out *C.char
+	if C.cyt_bm25_catalog_fingerprint(cData, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBm25ScoreCatalog(dataJSON, query, optionsJSON string) (string, error) {
+	cData := cString(dataJSON)
+	defer freeCString(cData)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	var cOpts *C.char
+	if optionsJSON != "" {
+		cOpts = cString(optionsJSON)
+		defer freeCString(cOpts)
+	}
+	var out *C.char
+	if C.cyt_bm25_score_catalog(cData, cQuery, cOpts, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBm25FrontmatterGate(entriesJSON, query string, upperLimit float64) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	var out *C.char
+	if C.cyt_bm25_frontmatter_gate(cEntries, cQuery, C.double(upperLimit), &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBm25SearchSkillChunks(entriesJSON, query string, threshold float64, excludedJSON string) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	var cExcluded *C.char
+	if excludedJSON != "" {
+		cExcluded = cString(excludedJSON)
+		defer freeCString(cExcluded)
+	}
+	var out *C.char
+	if C.cyt_bm25_search_skill_chunks(cEntries, cQuery, C.double(threshold), cExcluded, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoWriteCatalogIndex(indexJSON, outputDir string, prune bool) error {
 	cIndex := cString(indexJSON)
 	defer freeCString(cIndex)
