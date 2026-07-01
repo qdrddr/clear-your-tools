@@ -93,3 +93,16 @@ not churn release versions.
 | [`scripts/render-manifests.sh`](scripts/render-manifests.sh) | Generate manifests from `.in` templates |
 | [`scripts/wait-registry.sh`](scripts/wait-registry.sh) | Poll registry/tag until version is installable |
 | [`scripts/uv-sync-with-retry.sh`](scripts/uv-sync-with-retry.sh) | Retry `uv sync` while PyPI index propagates (`UV_SYNC_MAX_ATTEMPTS`, `UV_SYNC_RETRY_SECS`) |
+
+## Shared fixtures
+
+Language-neutral fixtures under [`fixtures/`](fixtures/) support BM25, token, and cohesion smoke tests:
+
+| File | Purpose |
+| ---- | ------- |
+| `fixtures/bm25_catalog.json` | Small tool catalog for BM25 ranking smoke |
+| `fixtures/cohesion_sample.md` | Markdown section for chunk coverage invariant |
+| `fixtures/cohesion_config.json` | Word-mode cohesion config (`chunk_size: 2048`, `token_counter: tiktoken`) |
+
+Rust, Python, TypeScript, Go, and C harnesses can exercise `count_tokens`, `bm25_score_catalog`, and
+`bm25_cohesion_chunk` against these fixtures after release (workspace mode for local runs).

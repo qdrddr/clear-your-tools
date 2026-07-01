@@ -55,6 +55,21 @@ export {
   type CohesionChunk,
 } from "./bm25Cohesion.js";
 export {
+  bm25CatalogFingerprint,
+  bm25FrontmatterGate,
+  bm25ScoreCatalog,
+  bm25SearchSkillChunks,
+  configureBm25Defaults,
+  type Bm25FrontmatterGateResult,
+  type Bm25ScoreCatalogOptions,
+  type Bm25SearchSkillChunksResult,
+} from "./bm25Search.js";
+export {
+  configureTokenizerDefaults,
+  countJsonTokens,
+  countTokens,
+} from "./tokens.js";
+export {
   SkillsBuilder,
   buildSkillsIndex,
   defaultPageIndexConfig,

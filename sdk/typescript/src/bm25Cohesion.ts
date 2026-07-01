@@ -7,7 +7,7 @@ export interface Bm25CohesionConfig {
   threshold?: number;
   mergeThreshold?: number;
   chunkSize?: number;
-  tokenCounter?: "approximate" | "character";
+  tokenCounter?: "approximate" | "character" | "tiktoken";
   similarityWindow?: number;
   nextUnitSize?: number;
   skipWindow?: number;
@@ -38,7 +38,7 @@ export function defaultBm25CohesionConfig(): Bm25CohesionConfig {
     threshold: 0.8,
     mergeThreshold: 0.7,
     chunkSize: 2048,
-    tokenCounter: "approximate",
+    tokenCounter: "tiktoken",
     similarityWindow: 3,
     nextUnitSize: 1,
     skipWindow: 0,

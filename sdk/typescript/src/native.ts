@@ -140,6 +140,19 @@ export const parseSkillChunkIdsNative = native.parseSkillChunkIdsNapi;
 export const SkillsBuilderNative = native.SkillsBuilderNapi;
 export const bm25CohesionChunkNative = native.bm25CohesionChunkNapi;
 
+// Tokens
+export const countTokensNative = native.countTokens;
+export const countJsonTokensNative = native.countJsonTokens;
+export const configureTokenizerDefaultsNative =
+  native.configureTokenizerDefaults;
+
+// BM25 search
+export const configureBm25DefaultsNative = native.configureBm25Defaults;
+export const bm25CatalogFingerprintNative = native.bm25CatalogFingerprint;
+export const bm25ScoreCatalogNative = native.bm25ScoreCatalog;
+export const bm25FrontmatterGateNative = native.bm25FrontmatterGate;
+export const bm25SearchSkillChunksNative = native.bm25SearchSkillChunks;
+
 export type {
   PolicyOptions,
   PolicyContextJs,
