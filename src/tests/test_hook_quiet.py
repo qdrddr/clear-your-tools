@@ -12,14 +12,9 @@ import pytest
 from cyt.skills import hook_quiet
 
 
-def test_configure_hook_quiet_patches_bm25s_tqdm() -> None:
-    hook_quiet._bm25s_tqdm_patched = False
+def test_configure_hook_quiet_is_idempotent() -> None:
     hook_quiet.configure_hook_quiet()
-
-    import bm25s.tokenization as tokenization
-
-    items = ["one", "two"]
-    assert list(tokenization.tqdm(items, desc="Tokenize texts")) == items
+    hook_quiet.configure_hook_quiet()
 
 
 def _write_skill(path: Path, body: str) -> None:

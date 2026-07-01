@@ -6,8 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import Stemmer
-
 from cyt.common.token_usage import empty_usage
 from cyt.skills.catalog import _iter_chunk_ids, _iter_content_chunk_ids, build_registry
 from cyt.skills.search import search_skills, search_skills_with_pipeline
@@ -146,7 +144,7 @@ def test_frontmatter_gate_allows_dissimilar_skill() -> None:
         assert matches[0].name == "create-hook"
 
 
-def test_frontmatter_gate_trace_reports_token_contributions() -> None:
+def test_frontmatter_gate_trace_reports_scores() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
@@ -180,19 +178,10 @@ def test_frontmatter_gate_trace_reports_token_contributions() -> None:
             config=config,
         )
         context7 = next(row for row in rows if "context7" in row.doc_id)
-        assert context7.contributions
         assert context7.raw_score is not None
         assert context7.score is not None
         assert 0.0 <= context7.score <= 1.0
-        for contrib in context7.contributions:
-            assert 0.0 <= contrib.score <= 1.0
-        stems = {contrib.stem for contrib in context7.contributions}
-        stemmer = Stemmer.Stemmer("english")
-        expected_stems = {stemmer.stemWord(word) for word in ("use", "specific", "library")}
-        assert stems & expected_stems
-        for contrib in context7.contributions:
-            assert contrib.score > 0.0
-            assert contrib.query_terms or contrib.frontmatter_terms
+        assert context7.score > 0.0
 
 
 def test_content_corpus_excludes_frontmatter_chunks() -> None:

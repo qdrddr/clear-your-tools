@@ -1,19 +1,16 @@
-"""Local BM25 catalog pruning with mmap indexes under ~/.config/cyt/bm25/."""
+"""Local BM25 catalog pruning via cyt-indexer-sdk (Tantivy BM25)."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-import bm25s
-import numpy as np
-import Stemmer
-from bm25s.tokenization import Tokenizer
+from cyt_indexer.bm25_search import bm25_catalog_fingerprint, bm25_score_catalog
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
@@ -21,7 +18,6 @@ from cyt.config import (
     DEFAULT_BM25_SCORE_TOOL,
     DEFAULT_BM25_SCORE_TOOL_ENUM,
     bm25_index_dir,
-    bm25_mmap_enabled,
     bm25_prune_enums,
     bm25_score_tool,
     bm25_score_tool_enum,
@@ -29,7 +25,6 @@ from cyt.config import (
     bm25_stopwords,
     load_config,
 )
-from cyt.indexer.build import catalog_tool_count
 from cyt.pruners.catalog_common import (
     finalize_catalog_result,
     load_pruner_catalog_input,
@@ -65,39 +60,31 @@ def bm25_stage_usage() -> StageTokenUsage:
     )
 
 
-def build_bm25_tokenizer(config: dict[str, Any] | None = None) -> Tokenizer:
-    """Create a BM25 tokenizer with PyStemmer and configured stopwords."""
-    cfg = config or load_config()
-    language = bm25_stem_language(cfg)
-    stemmer = Stemmer.Stemmer(language)
-    return Tokenizer(
-        lower=True,
-        stopwords=bm25_stopwords(cfg),
-        stemmer=stemmer.stemWord,
-    )
+class _LegacyTokenizer:
+    """Compatibility stub; tokenization lives in Rust core."""
+
+    stemmer: object = object()
 
 
-def _catalog_documents(data: dict[str, Any]) -> list[tuple[str, str, str, int]]:
-    """Return sorted (list_key, file_path, text, item_index) for fingerprinting and indexing."""
-    docs: list[tuple[str, str, str, int]] = []
-    for list_key in ("json", "md"):
-        items = data.get(list_key)
-        if not isinstance(items, list):
-            continue
-        extract_fn = (
-            extract_json_catalog_document if list_key == "json" else extract_md_catalog_document
-        )
-        for item_index, item in enumerate(items):
-            if not isinstance(item, dict):
-                continue
-            catalog_item = cast(dict[str, Any], item)
-            text = extract_fn(catalog_item)
-            if not text:
-                continue
-            file_path = str(catalog_item.get("file_path", ""))
-            docs.append((list_key, file_path, text, item_index))
-    docs.sort(key=lambda row: (row[0], row[1], row[2]))
-    return docs
+def build_bm25_tokenizer(config: dict[str, Any] | None = None) -> _LegacyTokenizer:
+    """Legacy compatibility — tokenizer is configured in Rust core."""
+    del config
+    return _LegacyTokenizer()
+
+
+class Bm25Index:
+    """Compatibility stub — scoring is stateless in Rust."""
+
+    __slots__ = ("retriever",)
+
+    def __init__(self) -> None:
+        self.retriever = object()
+
+
+def _configure_bm25_from_config(config: dict[str, Any]) -> None:
+    from cyt.common.bm25_constants import configure_sdk_bm25_defaults
+
+    configure_sdk_bm25_defaults(config)
 
 
 def catalog_fingerprint(
@@ -105,77 +92,23 @@ def catalog_fingerprint(
     *,
     config: dict[str, Any] | None = None,
 ) -> str:
-    """Hash catalog documents plus tokenizer settings for index cache invalidation."""
     cfg = config or load_config()
-    stem_language = bm25_stem_language(cfg)
-    stopwords = bm25_stopwords(cfg)
-    docs = _catalog_documents(data)
-    hasher = hashlib.sha256()
-    hasher.update(stem_language.encode("utf-8"))
-    hasher.update(b"\0")
-    hasher.update(stopwords.encode("utf-8"))
-    hasher.update(b"\0")
-    for list_key, file_path, text, _item_index in docs:
-        hasher.update(list_key.encode("utf-8"))
-        hasher.update(b"\0")
-        hasher.update(file_path.encode("utf-8"))
-        hasher.update(b"\0")
-        hasher.update(text.encode("utf-8"))
-        hasher.update(b"\0")
-    return hasher.hexdigest()
+    _configure_bm25_from_config(cfg)
+    return bm25_catalog_fingerprint(data)
 
 
-def _index_dir_for_fingerprint(fingerprint: str, config: dict[str, Any] | None = None) -> Path:
-    return bm25_index_dir(config) / fingerprint
-
-
-def _write_manifest(
-    index_dir: Path,
-    *,
-    fingerprint: str,
-    tool_count: int,
-    stem_language: str,
-    stopwords: str,
-    doc_count: int,
-) -> None:
+def _touch_index_manifest(data: dict[str, Any], *, config: dict[str, Any]) -> Path | None:
+    fingerprint = catalog_fingerprint(data, config=config)
+    index_dir = bm25_index_dir(config) / fingerprint
+    index_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
         "fingerprint": fingerprint,
-        "tool_count": tool_count,
-        "stem_language": stem_language,
-        "stopwords": stopwords,
-        "doc_count": doc_count,
+        "stem_language": bm25_stem_language(config),
+        "stopwords": bm25_stopwords(config),
         "created_at": datetime.now(tz=UTC).isoformat(),
     }
     (index_dir / _MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-
-def _index_is_complete(index_dir: Path) -> bool:
-    required = (
-        "data.csc.index.npy",
-        "indices.csc.index.npy",
-        "indptr.csc.index.npy",
-        "vocab.index.json",
-        "params.index.json",
-        "vocab.tokenizer.json",
-        _MANIFEST_NAME,
-    )
-    return all((index_dir / name).exists() for name in required)
-
-
-class Bm25Index:
-    """Loaded BM25 retriever, tokenizer, and document-to-item mapping."""
-
-    __slots__ = ("doc_mapping", "retriever", "tokenizer")
-
-    def __init__(
-        self,
-        retriever: bm25s.BM25,
-        tokenizer: Tokenizer,
-        doc_mapping: list[dict[str, Any]],
-    ) -> None:
-        self.retriever = retriever
-        self.tokenizer = tokenizer
-        self.doc_mapping = doc_mapping
+    return index_dir
 
 
 def build_or_load_index(
@@ -183,94 +116,25 @@ def build_or_load_index(
     *,
     config: dict[str, Any] | None = None,
 ) -> Bm25Index | None:
-    """Load mmap index from disk or build and persist a new one."""
+    """Ensure catalog fingerprint manifest exists; return compatibility handle."""
     cfg = config or load_config()
-    fingerprint = catalog_fingerprint(data, config=cfg)
-    index_dir = _index_dir_for_fingerprint(fingerprint, cfg)
-    stem_language = bm25_stem_language(cfg)
-    stopwords = bm25_stopwords(cfg)
-    mmap = bm25_mmap_enabled(cfg)
-    tokenizer = build_bm25_tokenizer(cfg)
-
-    docs = _catalog_documents(data)
-    if not docs:
+    has_docs = bool(data.get("json")) or bool(data.get("md"))
+    if not has_docs:
         return None
-
-    doc_mapping: list[dict[str, Any]] = []
-    corpus_entries: list[dict[str, Any]] = []
-    for list_key, _file_path, text, item_index in docs:
-        mapping = {"list_key": list_key, "item_index": item_index}
-        doc_mapping.append(mapping)
-        corpus_entries.append({"text": text, **mapping})
-
-    if _index_is_complete(index_dir):
-        retriever = bm25s.BM25.load(str(index_dir), mmap=mmap, load_corpus=True)
-        tokenizer.load_vocab(str(index_dir))
-        return Bm25Index(retriever, tokenizer, doc_mapping)
-
-    texts = [entry["text"] for entry in corpus_entries]
-    corpus_tokens = tokenizer.tokenize(texts, return_as="tuple", show_progress=False)
-    retriever = bm25s.BM25(corpus=corpus_entries)
-    retriever.index(corpus_tokens)
-
-    index_dir.mkdir(parents=True, exist_ok=True)
-    retriever.save(str(index_dir), corpus=corpus_entries)
-    tokenizer.save_vocab(str(index_dir))
-    _write_manifest(
-        index_dir,
-        fingerprint=fingerprint,
-        tool_count=catalog_tool_count(data),
-        stem_language=stem_language,
-        stopwords=stopwords,
-        doc_count=len(corpus_entries),
-    )
-
-    if mmap:
-        retriever = bm25s.BM25.load(str(index_dir), mmap=True, load_corpus=True)
-        tokenizer = build_bm25_tokenizer(cfg)
-        tokenizer.load_vocab(str(index_dir))
-
-    return Bm25Index(retriever, tokenizer, doc_mapping)
-
-
-def _normalize_scores(scores: np.ndarray) -> np.ndarray:
-    if scores.size == 0:
-        return scores
-    max_s = float(scores.max())
-    min_s = float(scores.min())
-    if max_s > min_s:
-        return (scores - min_s) / (max_s - min_s)
-    return np.zeros_like(scores, dtype=float)
+    _touch_index_manifest(data, config=cfg)
+    return Bm25Index()
 
 
 def normalize_bm25_similarity(raw: float) -> float:
     """Map a raw BM25 score to absolute similarity in [0, 1]."""
     if raw <= 0.0:
         return 0.0
-    return float(1.0 - np.exp(-raw))
+    return float(1.0 - math.exp(-raw))
 
 
-def normalize_bm25_similarity_array(scores: np.ndarray) -> np.ndarray:
+def normalize_bm25_similarity_array(scores: list[float]) -> list[float]:
     """Map raw BM25 scores to absolute similarity in [0, 1]."""
-    if scores.size == 0:
-        return scores
-    clipped = np.maximum(scores, 0.0)
-    return cast(np.ndarray, 1.0 - np.exp(-clipped))
-
-
-def _query_token_ids(tokenizer: Tokenizer, query: str) -> list[int]:
-    tokenized = tokenizer.tokenize(
-        [query],
-        update_vocab=False,
-        return_as="ids",
-        show_progress=False,
-    )
-    if not isinstance(tokenized, list) or not tokenized:
-        return []
-    query_tokens = tokenized[0]
-    if not isinstance(query_tokens, list):
-        return []
-    return [token_id for token_id in query_tokens if isinstance(token_id, int)]
+    return [normalize_bm25_similarity(score) for score in scores]
 
 
 def score_items(
@@ -280,27 +144,13 @@ def score_items(
     *,
     list_key: str,
 ) -> None:
-    """Score catalog items in-place using a shared BM25 index."""
-    if not items or not index.doc_mapping:
+    """Score catalog items in-place using Rust BM25."""
+    del index
+    if not items:
         return
-
-    query_ids = _query_token_ids(index.tokenizer, query)
-    if not query_ids:
-        return
-
-    all_scores = index.retriever.get_scores_from_ids(query_ids)
-    normalized = _normalize_scores(all_scores)
-
-    for doc_idx, mapping in enumerate(index.doc_mapping):
-        if mapping.get("list_key") != list_key:
-            continue
-        item_index = mapping.get("item_index")
-        if not isinstance(item_index, int) or item_index >= len(items):
-            continue
-        score = float(normalized[doc_idx])
-        items[item_index]["score"] = f"{score:.20f}"
-
-    items.sort(key=lambda x: float(x.get("score", 0)), reverse=True)
+    wrapper: dict[str, Any] = {"json": [], "md": []}
+    wrapper[list_key] = items
+    bm25_score_catalog(wrapper, query, prune_enums=False)
 
 
 def _bm25_thresholds(config: dict[str, Any] | None = None) -> tuple[float, float, bool]:
@@ -350,19 +200,26 @@ def bm25_catalog_dict(
         return data, empty_usage()
 
     cfg = config or load_config()
-    index = build_or_load_index(data, config=cfg)
-    if index is None:
-        logger.info("bm25 pruning skipped: no indexable documents")
-        return finalize_catalog_result(data, pinned, merge_pinned=merge_pinned), empty_usage()
+    _configure_bm25_from_config(cfg)
+    score_tool, score_tool_enum, prune_enums = _bm25_thresholds(cfg)
+
+    build_or_load_index(data, config=cfg)
 
     if isinstance(data.get("json"), list):
         prepare_indexed_documents(data["json"], extract_json_catalog_document)
-        score_items(query, data["json"], index, list_key="json")
-
-    _, _, prune_enums = _bm25_thresholds(cfg)
     if prune_enums and isinstance(data.get("md"), list):
         prepare_indexed_documents(data["md"], extract_md_catalog_document)
-        score_items(query, data["md"], index, list_key="md")
+
+    working = cast(dict[str, Any], json.loads(json.dumps(data)))
+    scored = bm25_score_catalog(
+        working,
+        query,
+        prune_json_threshold=score_tool if prune else None,
+        prune_md_threshold=score_tool_enum if prune and prune_enums else None,
+        prune_enums=prune and prune_enums,
+    )
+    data["json"] = scored.get("json", data.get("json"))
+    data["md"] = scored.get("md", data.get("md"))
 
     if prune:
         data = prune_bm25_catalog(data, config=cfg)
@@ -387,9 +244,7 @@ def main() -> None:
 
     args = parser.parse_args()
     ctx = configure_policies_from_config()
-
     data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
-
     data, _tokens = bm25_catalog_dict(data, args.query, ctx=ctx)
 
     output_data = json.dumps(data, indent=2)

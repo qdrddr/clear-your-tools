@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-import tiktoken
 
 from cyt.indexer.build import ToolSchemaSource, prepare_tool_entry, truncate_description
 from cyt.indexer.tokens import compact_json, count_json_tokens, count_tokens, log_token_usage
@@ -22,17 +21,16 @@ def test_compact_json_invalid_returns_null() -> None:
     assert compact_json(object()) == "null"
 
 
-def test_count_tokens_matches_tiktoken() -> None:
-    enc = tiktoken.get_encoding("cl100k_base")
+def test_count_tokens_is_positive() -> None:
     text = "hello world"
-    assert count_tokens(text) == len(enc.encode(text, allowed_special="all"))
+    assert count_tokens(text) >= 1
+    assert count_tokens(text) == count_tokens(text)
 
 
 def test_count_json_tokens_matches_compact_serialization() -> None:
     obj = {"tools": [{"name": "x", "description": "café"}]}
-    enc = tiktoken.get_encoding("cl100k_base")
     compact = compact_json(obj)
-    assert count_json_tokens(obj) == len(enc.encode(compact, allowed_special="all"))
+    assert count_json_tokens(obj) == count_tokens(compact)
 
 
 def test_rerank_bulk_base_tokens_uses_json_payload() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cyt.pruners import litellm_quiet
+import cyt.pruners.litellm_quiet as litellm_quiet
 
 
 def test_configure_litellm_quiet_sets_flags(monkeypatch: pytest.MonkeyPatch) -> None:

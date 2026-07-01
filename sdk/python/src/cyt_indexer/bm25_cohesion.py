@@ -14,7 +14,7 @@ class Bm25CohesionConfig:
     threshold: float = 0.8
     merge_threshold: float = 0.7
     chunk_size: int = 2048
-    token_counter: str = "approximate"
+    token_counter: str = "tiktoken"
     similarity_window: int = 3
     next_unit_size: int = 1
     skip_window: int = 0

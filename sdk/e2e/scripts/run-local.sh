@@ -21,14 +21,14 @@ TARGET:
 
 OPTIONS:
   --skip-wait, -s   Skip polling registries (packages must already be published)
-  --workspace, -w   Use monorepo checkout for go/c (unreleased local testing)
+  --workspace, -w   Use monorepo checkout (path deps for rust/python/ts/app; staging for go/c)
   --help, -h        Show this help
 
 Environment:
   CYT_RELEASE_VERSION   Same as VERSION
   TAG                   Release tag to parse (e.g. v0.1.10)
   SKIP_REGISTRY_WAIT=1  Same as --skip-wait
-  CYT_E2E_USE_WORKSPACE=1  Same as --workspace (go/c only)
+  CYT_E2E_USE_WORKSPACE=1  Same as --workspace
 
 Examples:
   ${SCRIPT_NAME}

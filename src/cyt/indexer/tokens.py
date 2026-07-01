@@ -1,12 +1,16 @@
-"""Token counting — tiktoken cl100k_base."""
+"""Token counting — re-export from cyt-indexer-sdk."""
 
 from __future__ import annotations
 
 import json
 import logging
-from functools import lru_cache
+import sys
 
-import tiktoken
+from cyt_indexer.tokens import (
+    count_json_tokens,
+    count_tokens,
+    truncate_description,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +23,6 @@ __all__ = [
 ]
 
 
-@lru_cache(maxsize=1)
-def _encoding() -> tiktoken.Encoding:
-    return tiktoken.get_encoding("cl100k_base")
-
-
 def compact_json(obj: object) -> str:
     """Serialize JSON without indentation (stable token accounting)."""
     try:
@@ -32,48 +31,8 @@ def compact_json(obj: object) -> str:
         return "null"
 
 
-def count_tokens(text: str) -> int:
-    """Return tiktoken count for text under cl100k_base."""
-    return len(_encoding().encode(text, allowed_special="all"))
-
-
-def count_json_tokens(obj: object) -> int:
-    """Compact-serialize obj and return its token count."""
-    return count_tokens(compact_json(obj))
-
-
-def truncate_description(description: str | None, max_tokens: int = 60) -> str:
-    """Truncate text to at most ``max_tokens`` under cl100k_base, preferring a word boundary."""
-    if not description:
-        return ""
-    if count_tokens(description) <= max_tokens:
-        return description
-
-    suffix = "..."
-    suffix_tokens = count_tokens(suffix)
-    body_budget = max_tokens - suffix_tokens
-    if body_budget <= 0:
-        return suffix
-
-    lo, hi = 0, len(description)
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if count_tokens(description[:mid]) <= body_budget:
-            lo = mid
-        else:
-            hi = mid - 1
-
-    body = description[:lo]
-    if " " in body and (trimmed := body.rsplit(" ", 1)[0]):
-        body = trimmed
-
-    return f"{body}{suffix}"
-
-
 def log_token_usage(label: str, tokens: int) -> None:
     """Log a token count line to stderr (stdout is reserved for hook JSON)."""
-    import sys
-
     msg = f"{label}: {tokens} tokens"
     logger.info(msg)
     print(msg, file=sys.stderr, flush=True)  # ast-grep-ignore: no-print-statements

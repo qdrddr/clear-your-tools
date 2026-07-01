@@ -150,11 +150,6 @@ def test_stemming_ranks_reading_above_unrelated(
 
     reloaded = build_or_load_index(data, config=config)
     assert reloaded is not None
-    reloaded_scores: list[float] = []
-    for item in json_items:
-        if "read_path" in str(item.get("file_path", "")):
-            reloaded_scores.append(float(item["score"]))
-    assert reloaded.retriever is not None
 
 
 def test_bm25_prune_drops_low_scoring_chunks() -> None:
@@ -330,7 +325,7 @@ def test_proxy_falls_back_to_bm25_when_rerank_fails(
     assert len(result.tools) <= len(tools)
 
 
-def test_build_bm25_tokenizer_uses_stemmer() -> None:
+def test_build_bm25_tokenizer_legacy_stub() -> None:
     tokenizer = build_bm25_tokenizer(
         {
             "models": {

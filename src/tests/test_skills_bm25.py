@@ -7,8 +7,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from cyt.common.token_usage import empty_usage
-from cyt.pruners.bm25 import bm25_catalog_dict
 from cyt.skills.bm25 import (
     bm25_skill_chunks,
     reconstruct_skills_from_bm25_items,
@@ -107,15 +105,15 @@ def test_reconstruct_skills_omits_preamble_when_chunk_one_not_selected() -> None
         assert "Body text" in matches[0].markdown
 
 
-def test_bm25_skill_chunks_wires_bm25_catalog_dict() -> None:
+def test_bm25_skill_chunks_wires_native_search() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
         entries = build_registry(config)
 
         with patch(
-            "cyt.skills.bm25.bm25_catalog_dict",
-            return_value=({"md": []}, empty_usage()),
+            "cyt.skills.bm25.bm25_search_skill_chunks",
+            return_value={"matches": [], "trace_rows": [], "threshold": 0.0},
         ) as bm25_mock:
             matches, _usage = bm25_skill_chunks("agent hooks", entries, config=config)
 
@@ -177,8 +175,11 @@ def test_transcript_enriched_query_improves_bm25_match() -> None:
         )
 
         with patch(
-            "cyt.skills.bm25.bm25_catalog_dict",
-            wraps=bm25_catalog_dict,
+            "cyt.skills.bm25.bm25_search_skill_chunks",
+            wraps=__import__(
+                "cyt_indexer.bm25_search",
+                fromlist=["bm25_search_skill_chunks"],
+            ).bm25_search_skill_chunks,
         ) as bm25_mock:
             matches, _ = bm25_skill_chunks(enriched_query or "", entries, config=config)
 

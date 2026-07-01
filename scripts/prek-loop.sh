@@ -13,7 +13,7 @@
 # Examples:
 # Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
 # ./scripts/prek-loop.sh --short --one-run --group python rust typescript universal
-# ./scripts/prek-loop.sh --short --one-run --group go c universal
+# ./scripts/prek-loop.sh --short --one-run --group rust go c universal
 
 set -uo pipefail
 

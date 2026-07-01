@@ -10,31 +10,10 @@ from collections.abc import Iterator
 
 from cyt.pruners.litellm_quiet import configure_litellm_quiet
 
-_bm25s_tqdm_patched = False
-
-
-def _noop_tqdm(*args: object, **_kwargs: object) -> object:
-    """bm25s-compatible tqdm stand-in that never writes progress to stdout."""
-    return args[0] if args else None
-
-
-def _silence_bm25s_tqdm() -> None:
-    """Replace bm25s.tokenization.tqdm after import (no env vars)."""
-    global _bm25s_tqdm_patched
-    if _bm25s_tqdm_patched:
-        return
-    try:
-        import bm25s.tokenization as tokenization
-    except ImportError:
-        return
-    object.__setattr__(tokenization, "tqdm", _noop_tqdm)
-    _bm25s_tqdm_patched = True
-
 
 def configure_hook_quiet() -> None:
     """Idempotently silence libraries that write progress or debug text to stdout."""
     configure_litellm_quiet()
-    _silence_bm25s_tqdm()
 
 
 @contextlib.contextmanager

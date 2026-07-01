@@ -18,6 +18,14 @@ from cyt_indexer.retrieve import (
     removed_chunks,
     retrieve_tools,
 )
+from cyt_indexer.bm25_search import (
+    bm25_catalog_fingerprint,
+    bm25_frontmatter_gate,
+    bm25_score_catalog,
+    bm25_search_skill_chunks,
+    configure_bm25_defaults,
+)
+from cyt_indexer.tokens import count_json_tokens, count_tokens, configure_tokenizer_defaults
 from cyt_indexer.bm25_cohesion import (
     Bm25CohesionConfig,
     chunk as bm25_cohesion_chunk,
@@ -58,10 +66,18 @@ __all__ = [
     "cohesion_config_dict",
     "anthropic_tool_to_catalog_entry",
     "anthropic_tools_to_catalog_entries",
+    "bm25_catalog_fingerprint",
+    "bm25_frontmatter_gate",
+    "bm25_score_catalog",
+    "bm25_search_skill_chunks",
+    "configure_bm25_defaults",
+    "configure_tokenizer_defaults",
+    "count_json_tokens",
+    "count_tokens",
     "bm25_cohesion_chunk",
     "default_bm25_cohesion_config",
-    "build_catalog_from_tools",
     "build_catalog_index",
+    "build_catalog_from_tools",
     "catalog_tool_count",
     "collect_enums",
     "load_catalog",

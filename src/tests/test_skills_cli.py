@@ -273,6 +273,7 @@ def test_cli_prompt_prints_injection_text(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.chdir(root)
 
         config = _skills_config(root, skills_dir, catalog_dir)
+        config["skills"]["frontmatter_upper_limit"] = 0.99
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -302,6 +303,7 @@ def test_cli_prompt_reports_configured_and_executed_pipeline(
 
         config = _skills_config(root, skills_dir, catalog_dir)
         config["skills"]["pipeline"] = "rerank"
+        config["skills"]["frontmatter_upper_limit"] = 0.99
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -331,6 +333,7 @@ def test_cli_prompt_reports_frontmatter_and_chunk_scores(
         monkeypatch.chdir(root)
 
         config = _skills_config(root, skills_dir, catalog_dir)
+        config["skills"]["frontmatter_upper_limit"] = 0.99
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -403,10 +406,9 @@ def test_cli_prompt_debug_prints_frontmatter_token_contributions(
             skills_cli.run(prompt="use context7 library docs", debug=True)
 
         err = capsys.readouterr().err
-        assert "stem" in err
-        assert "similarity" in err
-        assert "query" in err
-        assert "frontmatter" in err
+        assert "score=" in err
+        assert "blocked" in err or "pass" in err
+        assert "skills.search (chunk" in err
 
 
 def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -506,6 +508,7 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "max_tokens_per_request": 4000,
+                "frontmatter_upper_limit": 0.99,
                 "pageindex": {"enable_bm25_chunking": True},
                 "hook": {
                     "request_budget_fraction": 50.0,

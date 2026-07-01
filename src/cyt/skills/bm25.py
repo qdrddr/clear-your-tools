@@ -1,49 +1,22 @@
-"""BM25 selection over cached skill chunks (not decomposed nodes)."""
+"""BM25 selection over cached skill chunks via cyt-indexer-sdk."""
 
 from __future__ import annotations
 
 import logging
-import re
-from pathlib import Path
 from typing import Any
 
-import numpy as np
-from bm25s.tokenization import Tokenizer
 from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
+from cyt_indexer.bm25_search import bm25_frontmatter_gate, bm25_search_skill_chunks
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import bm25_score_skills, skills_frontmatter_upper_limit
-from cyt.indexer.tokens import count_tokens
-from cyt.pruners.bm25 import (
-    Bm25Index,
-    _query_token_ids,
-    bm25_catalog_dict,
-    build_or_load_index,
-    normalize_bm25_similarity,
-)
-from cyt.skills.catalog import SkillEntryRef, _iter_content_chunk_ids, _shorten_home_path
-from cyt.skills.diagnostics import FrontmatterGateRow, FrontmatterTokenContribution, SearchItemRow
+from cyt.pruners.bm25 import bm25_stage_usage, normalize_bm25_similarity
+from cyt.skills.catalog import SkillEntryRef, _shorten_home_path
+from cyt.skills.diagnostics import FrontmatterGateRow, SearchItemRow
 from cyt.skills.frontmatter import frontmatter_search_text, skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
 
 logger = logging.getLogger(__name__)
-
-_WORD_RE = re.compile(r"[A-Za-z0-9]+")
-
-
-def _tokenized_string_stems(tokenizer: Tokenizer, text: str) -> list[str]:
-    tokenized = tokenizer.tokenize(
-        [text],
-        update_vocab=False,
-        return_as="string",
-        show_progress=False,
-    )
-    if not isinstance(tokenized, list) or not tokenized:
-        return []
-    stems = tokenized[0]
-    if not isinstance(stems, list):
-        return []
-    return [stem for stem in stems if isinstance(stem, str)]
 
 
 def _strip_frontmatter(content: str) -> str:
@@ -56,158 +29,21 @@ def _strip_frontmatter(content: str) -> str:
     return content[body_start:].lstrip("\n")
 
 
-def _build_frontmatter_corpus(entries: list[SkillEntryRef]) -> dict[str, Any]:
-    md_items: list[dict[str, Any]] = []
+def _entries_payload(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
     for entry in entries:
         raw = entry.document.get("frontmatter")
         frontmatter = raw if isinstance(raw, str) else None
-        content = frontmatter_search_text(frontmatter)
-        if not content.strip():
-            continue
-        file_path = _shorten_home_path(entry.source_path)
-        md_items.append(
+        payload.append(
             {
-                "id": entry.doc_id,
-                "doc_id": entry.doc_id,
-                "file_path": file_path,
-                "content": content,
-                "score": 0.0,
-                "start_line": 1,
-                "end_line": 1,
-                "language": "markdown",
-                "cache_key": entry.cache_key,
                 "entry_dir": entry.entry_dir,
+                "doc_id": entry.doc_id,
+                "source_path": _shorten_home_path(entry.source_path),
+                "frontmatter": frontmatter_search_text(frontmatter) or None,
+                "cache_key": entry.cache_key,
             },
         )
-    return {"md": md_items}
-
-
-def _surface_forms_for_stem(text: str, stem: str, tokenizer: Tokenizer) -> tuple[str, ...]:
-    forms: list[str] = []
-    seen: set[str] = set()
-    for word in _WORD_RE.findall(text):
-        stems = _tokenized_string_stems(tokenizer, word)
-        if not stems or stems[0] != stem:
-            continue
-        key = word.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        forms.append(word)
-    return tuple(forms)
-
-
-def _frontmatter_doc_key_maps(
-    md_items: list[dict[str, Any]],
-    doc_mapping: list[dict[str, Any]],
-) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str], str]]:
-    key_to_doc_idx: dict[tuple[str, str], int] = {}
-    key_to_content: dict[tuple[str, str], str] = {}
-    for mapping_idx, mapping in enumerate(doc_mapping):
-        if mapping.get("list_key") != "md":
-            continue
-        item_index = mapping.get("item_index")
-        if not isinstance(item_index, int) or item_index >= len(md_items):
-            continue
-        item = md_items[item_index]
-        entry_dir = str(item.get("entry_dir", ""))
-        doc_id = str(item.get("doc_id", ""))
-        if not entry_dir or not doc_id:
-            continue
-        key = (entry_dir, doc_id)
-        key_to_doc_idx[key] = mapping_idx
-        key_to_content[key] = str(item.get("content", ""))
-    return key_to_doc_idx, key_to_content
-
-
-def _query_stem_scores(index: Bm25Index, query: str) -> dict[str, np.ndarray]:
-    unique_stems = list(dict.fromkeys(_tokenized_string_stems(index.tokenizer, query)))
-    stem_scores: dict[str, np.ndarray] = {}
-    for stem in unique_stems:
-        token_ids = _query_token_ids(index.tokenizer, stem)
-        if not token_ids:
-            continue
-        scores = np.asarray(index.retriever.get_scores_from_ids(token_ids), dtype=float).reshape(-1)
-        if scores.size:
-            stem_scores[stem] = scores
-    return stem_scores
-
-
-def _frontmatter_token_contributions(
-    doc_idx: int,
-    content: str,
-    query: str,
-    stem_scores: dict[str, np.ndarray],
-    tokenizer: Tokenizer,
-) -> tuple[FrontmatterTokenContribution, ...]:
-    rows: list[FrontmatterTokenContribution] = []
-    for stem, scores in stem_scores.items():
-        if doc_idx >= scores.size:
-            continue
-        score = float(scores[doc_idx])
-        if score <= 0.0:
-            continue
-        rows.append(
-            FrontmatterTokenContribution(
-                stem=stem,
-                score=normalize_bm25_similarity(score),
-                query_terms=_surface_forms_for_stem(query, stem, tokenizer),
-                frontmatter_terms=_surface_forms_for_stem(content, stem, tokenizer),
-            ),
-        )
-    rows.sort(key=lambda row: (-row.score, row.stem))
-    return tuple(rows)
-
-
-def _frontmatter_bm25_by_key(
-    query: str,
-    md_items: list[dict[str, Any]],
-    corpus: dict[str, Any],
-    *,
-    config: dict[str, Any] | None = None,
-) -> dict[tuple[str, str], tuple[float, float, tuple[FrontmatterTokenContribution, ...]]]:
-    """Return raw score, normalized score, and token contributions per skill."""
-    if not query.strip() or not md_items:
-        return {}
-
-    index = build_or_load_index(corpus, config=config)
-    if index is None:
-        return {}
-
-    key_to_doc_idx, key_to_content = _frontmatter_doc_key_maps(md_items, index.doc_mapping)
-
-    query_token_ids = _query_token_ids(index.tokenizer, query)
-    if not query_token_ids:
-        return {}
-
-    raw_scores = np.asarray(
-        index.retriever.get_scores_from_ids(query_token_ids),
-        dtype=float,
-    ).reshape(-1)
-
-    stem_scores = _query_stem_scores(index, query)
-
-    by_key: dict[
-        tuple[str, str],
-        tuple[float, float, tuple[FrontmatterTokenContribution, ...]],
-    ] = {}
-    for key, doc_idx in key_to_doc_idx.items():
-        if doc_idx >= raw_scores.size:
-            continue
-        content = key_to_content[key]
-        contributions = _frontmatter_token_contributions(
-            doc_idx,
-            content,
-            query,
-            stem_scores,
-            index.tokenizer,
-        )
-        by_key[key] = (
-            float(raw_scores[doc_idx]),
-            normalize_bm25_similarity(float(raw_scores[doc_idx])),
-            contributions,
-        )
-    return by_key
+    return payload
 
 
 def frontmatter_gate_trace(
@@ -218,31 +54,51 @@ def frontmatter_gate_trace(
 ) -> tuple[list[FrontmatterGateRow], float]:
     """Return BM25 frontmatter scores for every skill and the exclusion upper limit."""
     upper = skills_frontmatter_upper_limit(config)
-    corpus = _build_frontmatter_corpus(entries)
-    md_items = corpus.get("md")
-    bm25_by_key: dict[
-        tuple[str, str],
-        tuple[float, float, tuple[FrontmatterTokenContribution, ...]],
-    ] = {}
-    if isinstance(md_items, list) and md_items:
-        bm25_by_key = _frontmatter_bm25_by_key(query, md_items, corpus, config=config)
+    if not query.strip() or not entries:
+        return [], upper
 
+    result = bm25_frontmatter_gate(_entries_payload(entries), query, upper_limit=upper)
+    trace = result.get("trace") if isinstance(result, dict) else {}
+    trace_rows = trace.get("rows") if isinstance(trace, dict) else []
     rows: list[FrontmatterGateRow] = []
+    seen: set[tuple[str, str]] = set()
+
+    if isinstance(trace_rows, list):
+        for row in trace_rows:
+            if not isinstance(row, dict):
+                continue
+            entry_dir = str(row.get("entry_dir", ""))
+            doc_id = str(row.get("doc_id", ""))
+            key = (entry_dir, doc_id)
+            seen.add(key)
+            score_val = row.get("score")
+            normalized_score = float(score_val) if score_val is not None else None
+            rows.append(
+                FrontmatterGateRow(
+                    entry_dir=entry_dir,
+                    doc_id=doc_id,
+                    file_path=next(
+                        (_shorten_home_path(e.source_path) for e in entries if e.doc_id == doc_id),
+                        doc_id,
+                    ),
+                    score=normalized_score,
+                    raw_score=normalized_score,
+                    passed=bool(row.get("passed", True)),
+                ),
+            )
+
     for entry in entries:
         key = (entry.entry_dir, entry.doc_id)
-        trace = bm25_by_key.get(key)
-        raw_score = trace[0] if trace else None
-        normalized_score = trace[1] if trace else None
-        contributions = trace[2] if trace else ()
+        if key in seen:
+            continue
         rows.append(
             FrontmatterGateRow(
                 entry_dir=entry.entry_dir,
                 doc_id=entry.doc_id,
                 file_path=_shorten_home_path(entry.source_path),
-                score=normalized_score,
-                raw_score=raw_score,
-                passed=normalized_score is None or normalized_score < upper,
-                contributions=contributions,
+                score=None,
+                raw_score=None,
+                passed=True,
             ),
         )
     return rows, upper
@@ -267,38 +123,6 @@ def excluded_by_frontmatter_gate(
             upper,
         )
     return excluded
-
-
-def _build_corpus(entries: list[SkillEntryRef]) -> dict[str, Any]:
-    md_items: list[dict[str, Any]] = []
-    for entry in entries:
-        doc_dir = Path(entry.entry_dir) / "skills" / "decomposed" / entry.doc_id
-        structure = entry.document.get("structure")
-        if not structure:
-            continue
-        file_path = _shorten_home_path(entry.source_path)
-        for chunk_id in _iter_content_chunk_ids(structure):
-            chunk_path = doc_dir / "chunks" / f"{chunk_id}.md"
-            if not chunk_path.is_file():
-                continue
-            content = _strip_frontmatter(chunk_path.read_text(encoding="utf-8"))
-            if not content.strip():
-                continue
-            md_items.append(
-                {
-                    "id": str(chunk_id),
-                    "doc_id": entry.doc_id,
-                    "file_path": file_path,
-                    "content": content,
-                    "score": 0.0,
-                    "start_line": 1,
-                    "end_line": 1,
-                    "language": "markdown",
-                    "cache_key": entry.cache_key,
-                    "entry_dir": entry.entry_dir,
-                },
-            )
-    return {"md": md_items}
 
 
 def _reconstruct_for_doc(
@@ -347,6 +171,8 @@ def _matched_skill_for_survivor_items(
     markdown = _reconstruct_for_doc(entry_dir, doc_id, chunk_ids)
     if not markdown.strip():
         return None
+    from cyt.indexer.tokens import count_tokens
+
     return MatchedSkill(
         doc_id=doc_id,
         file_path=file_path,
@@ -364,7 +190,7 @@ def reconstruct_skills_from_bm25_items(
     config: dict[str, Any] | None = None,
 ) -> list[MatchedSkill]:
     """Group surviving chunk items by doc and rebuild MatchedSkill list."""
-    del config  # reserved for future reconstruction policy hooks
+    del config
     by_doc = _group_survivors_by_doc(survivors)
     if not by_doc:
         return []
@@ -401,6 +227,17 @@ def bm25_skill_chunks(
     return matches, usage
 
 
+def _match_from_native(item: dict[str, Any]) -> MatchedSkill:
+    return MatchedSkill(
+        doc_id=str(item.get("doc_id", "")),
+        file_path=str(item.get("file_path", "")),
+        markdown=str(item.get("markdown", "")),
+        name=item.get("name") if item.get("name") is not None else None,
+        score=float(item.get("score", 0)),
+        token_count=int(item.get("token_count", 0)),
+    )
+
+
 def bm25_skill_chunks_with_trace(
     query: str,
     entries: list[SkillEntryRef],
@@ -408,42 +245,45 @@ def bm25_skill_chunks_with_trace(
     config: dict[str, Any] | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], float, StageTokenUsage]:
     """Select skill chunks via BM25 and return per-chunk scores."""
-    if not query.strip() or not entries:
-        return [], [], bm25_score_skills(config), empty_usage()
-
-    corpus = _build_corpus(entries)
-    md_items = corpus.get("md")
-    if not isinstance(md_items, list) or not md_items:
-        return [], [], bm25_score_skills(config), empty_usage()
-
-    scored, usage = bm25_catalog_dict(corpus, query, prune=False, config=config)
     threshold = bm25_score_skills(config)
+    if not query.strip() or not entries:
+        return [], [], threshold, empty_usage()
+
+    result = bm25_search_skill_chunks(
+        _entries_payload(entries),
+        query,
+        threshold=threshold,
+        excluded=None,
+    )
+
     search_rows: list[SearchItemRow] = []
-    survivors: list[dict[str, Any]] = []
-    for item in scored.get("md", []):
-        if not isinstance(item, dict):
+    for row in result.get("trace_rows", []) if isinstance(result, dict) else []:
+        if not isinstance(row, dict):
             continue
-        score = float(item.get("score", 0))
-        passed = score >= threshold
         search_rows.append(
             SearchItemRow(
-                file_path=str(item.get("file_path", "")),
-                doc_id=str(item.get("doc_id", "")),
-                item_id=str(item.get("id", "")),
+                file_path=str(row.get("file_path", "")),
+                doc_id=str(row.get("doc_id", "")),
+                item_id=str(row.get("item_id", "")),
                 item_kind="chunk",
-                score=score,
-                passed=passed,
+                score=float(row.get("score", 0)),
+                passed=bool(row.get("passed", False)),
             ),
         )
-        if passed:
-            survivors.append(item)
 
-    if not survivors:
-        return [], search_rows, threshold, usage
+    matches: list[MatchedSkill] = []
+    for item in result.get("matches", []) if isinstance(result, dict) else []:
+        if isinstance(item, dict):
+            matches.append(_match_from_native(item))
 
-    matches = reconstruct_skills_from_bm25_items(
-        survivors,
-        entries,
-        config=config,
-    )
-    return matches, search_rows, threshold, usage
+    return matches, search_rows, threshold, bm25_stage_usage()
+
+
+__all__ = [
+    "bm25_skill_chunks",
+    "bm25_skill_chunks_with_trace",
+    "excluded_by_frontmatter_gate",
+    "frontmatter_gate_trace",
+    "normalize_bm25_similarity",
+    "reconstruct_skills_from_bm25_items",
+]
