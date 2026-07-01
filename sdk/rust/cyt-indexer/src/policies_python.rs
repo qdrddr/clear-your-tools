@@ -1,11 +1,11 @@
 //! `PyO3` bindings for policies (included from python.rs).
 
 use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
-use crate::policies::{self, parse_tool_policy, policy_context_from_values, PolicyContext};
+use crate::policies::{self, PolicyContext, parse_tool_policy, policy_context_from_values};
 use crate::runtime_config;
+use pyo3::Bound;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3::Bound;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -105,9 +105,7 @@ pub fn ctx_from_py(dict: &Bound<'_, PyDict>) -> PyResult<PolicyContext> {
         .get_item("system_policy")?
         .and_then(|v| v.extract::<String>().ok())
         .and_then(|s| parse_tool_policy(&s))
-        .or_else(|| {
-            parse_tool_policy(&runtime_config::default_system_policy())
-        });
+        .or_else(|| parse_tool_policy(&runtime_config::default_system_policy()));
     let mcp_policy = dict
         .get_item("mcp_policy")?
         .and_then(|v| v.extract::<String>().ok())
@@ -115,19 +113,26 @@ pub fn ctx_from_py(dict: &Bound<'_, PyDict>) -> PyResult<PolicyContext> {
         .or_else(|| parse_tool_policy(&runtime_config::default_mcp_policy()));
     let mut per_tool = HashMap::new();
     if let Some(item) = dict.get_item("per_tool")?
-        && let Ok(sub) = item.cast_into::<PyDict>() {
-            for (k, v) in sub.iter() {
-                let key: String = k.extract()?;
-                let pol: String = v.extract()?;
-                if let Some(p) = parse_tool_policy(&pol) {
-                    per_tool.insert(key, p);
-                }
+        && let Ok(sub) = item.cast_into::<PyDict>()
+    {
+        for (k, v) in sub.iter() {
+            let key: String = k.extract()?;
+            let pol: String = v.extract()?;
+            if let Some(p) = parse_tool_policy(&pol) {
+                per_tool.insert(key, p);
             }
         }
-    Ok(PolicyContext::with_overrides(system_policy, mcp_policy, per_tool))
+    }
+    Ok(PolicyContext::with_overrides(
+        system_policy,
+        mcp_policy,
+        per_tool,
+    ))
 }
 
-fn llm_selected_paths_from_py(paths: Option<Bound<'_, PyAny>>) -> PyResult<Option<HashSet<String>>> {
+fn llm_selected_paths_from_py(
+    paths: Option<Bound<'_, PyAny>>,
+) -> PyResult<Option<HashSet<String>>> {
     let Some(obj) = paths else {
         return Ok(None);
     };
@@ -168,14 +173,23 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(request_pass_through_py, m)?)?;
     m.add_function(wrap_pyfunction!(full_pass_through_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_decomposed_tool_root_chunk_py, m)?)?;
-    m.add_function(wrap_pyfunction!(is_decomposed_optional_property_chunk_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        is_decomposed_optional_property_chunk_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(filter_recompose_json_entries_py, m)?)?;
     m.add_function(wrap_pyfunction!(mitigate_empty_optional_properties_py, m)?)?;
-    m.add_function(wrap_pyfunction!(append_description_reinstate_entries_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        append_description_reinstate_entries_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(needs_description_reinstate_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_description_policy_py, m)?)?;
     m.add_function(wrap_pyfunction!(scoring_policy_py, m)?)?;
-    m.add_function(wrap_pyfunction!(drop_recomposed_tools_with_empty_properties_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        drop_recomposed_tools_with_empty_properties_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(extract_json_catalog_document_py, m)?)?;
     m.add_function(wrap_pyfunction!(extract_md_catalog_document_py, m)?)?;
     m.add_function(wrap_pyfunction!(write_catalog_index_py, m)?)?;
@@ -208,11 +222,20 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mcp_tools_pass_through_py, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic_tool_is_system_py, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic_tool_is_mcp_py, m)?)?;
-    m.add_function(wrap_pyfunction!(direct_root_optional_chunks_for_tool_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        direct_root_optional_chunks_for_tool_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(root_chunk_properties_empty_py, m)?)?;
     m.add_function(wrap_pyfunction!(tool_id_has_empty_decomposed_root_py, m)?)?;
-    m.add_function(wrap_pyfunction!(tool_id_had_empty_original_root_properties_py, m)?)?;
-    m.add_function(wrap_pyfunction!(is_direct_root_optional_property_chunk_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        tool_id_had_empty_original_root_properties_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        is_direct_root_optional_property_chunk_py,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(extract_document_text_py, m)?)?;
     m.add_function(wrap_pyfunction!(extract_level_info_py, m)?)?;
     Ok(())
@@ -239,7 +262,9 @@ fn policy_context_from_values_py(config: Bound<'_, PyAny>) -> PyResult<PyPolicyC
 #[pyfunction(name = "effective_policy")]
 fn effective_policy_py(ctx: &Bound<'_, PyAny>, tool_id: &str) -> PyResult<String> {
     let ctx = ctx_from_py_any(ctx)?;
-    Ok(policies::effective_policy(&ctx, tool_id).as_str().to_string())
+    Ok(policies::effective_policy(&ctx, tool_id)
+        .as_str()
+        .to_string())
 }
 
 #[pyfunction(name = "tool_pass_through")]
@@ -282,7 +307,10 @@ fn catalog_needs_partition_py(data: Bound<'_, PyAny>, ctx: &Bound<'_, PyAny>) ->
 }
 
 #[pyfunction(name = "catalog_needs_pruned_recompose")]
-fn catalog_needs_pruned_recompose_py(data: Bound<'_, PyAny>, ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn catalog_needs_pruned_recompose_py(
+    data: Bound<'_, PyAny>,
+    ctx: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
     Ok(policies::catalog_needs_pruned_recompose(&data_val, &ctx))
@@ -304,12 +332,16 @@ fn full_pass_through_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 #[pyfunction(name = "is_decomposed_tool_root_chunk")]
 fn is_decomposed_tool_root_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::is_decomposed_tool_root_chunk(&super::py_to_value(item)?))
+    Ok(policies::is_decomposed_tool_root_chunk(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "is_decomposed_optional_property_chunk")]
 fn is_decomposed_optional_property_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::is_decomposed_optional_property_chunk(&super::py_to_value(item)?))
+    Ok(policies::is_decomposed_optional_property_chunk(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "filter_recompose_json_entries")]
@@ -347,9 +379,7 @@ fn mitigate_empty_optional_properties_py(
     let entries_val = super::py_to_value(entries)?;
     let arr = entries_val.as_array().cloned().unwrap_or_default();
     let index = super::catalog_index_from_py(catalog_index)?;
-    let scored = post_rerank_scored
-        .map(super::py_to_value)
-        .transpose()?;
+    let scored = post_rerank_scored.map(super::py_to_value).transpose()?;
     let pipeline_vec = pipeline.extract::<Vec<String>>()?;
     let result = policies::mitigate_empty_optional_properties(
         &ctx,
@@ -394,8 +424,9 @@ fn is_description_policy_py(policy: &str) -> bool {
 
 #[pyfunction(name = "scoring_policy")]
 fn scoring_policy_py(policy: &str) -> PyResult<String> {
-    let p = parse_tool_policy(policy)
-        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(format!("invalid policy: {policy}")))?;
+    let p = parse_tool_policy(policy).ok_or_else(|| {
+        pyo3::exceptions::PyValueError::new_err(format!("invalid policy: {policy}"))
+    })?;
     Ok(policies::scoring_policy(p).as_str().to_string())
 }
 
@@ -416,12 +447,16 @@ fn drop_recomposed_tools_with_empty_properties_py(
 
 #[pyfunction(name = "extract_json_catalog_document")]
 fn extract_json_catalog_document_py(item: Bound<'_, PyAny>) -> PyResult<Option<String>> {
-    Ok(crate::documents::extract_json_catalog_document(&super::py_to_value(item)?))
+    Ok(crate::documents::extract_json_catalog_document(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "extract_md_catalog_document")]
 fn extract_md_catalog_document_py(item: Bound<'_, PyAny>) -> PyResult<Option<String>> {
-    Ok(crate::documents::extract_md_catalog_document(&super::py_to_value(item)?))
+    Ok(crate::documents::extract_md_catalog_document(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "write_catalog_index")]
@@ -442,7 +477,9 @@ fn write_catalog_index_py(
 
 #[pyfunction(name = "root_tool_id_from_chunk")]
 fn root_tool_id_from_chunk_py(item: Bound<'_, PyAny>) -> PyResult<String> {
-    Ok(policies::root_tool_id_from_chunk(&super::py_to_value(item)?))
+    Ok(policies::root_tool_id_from_chunk(&super::py_to_value(
+        item,
+    )?))
 }
 
 #[pyfunction(name = "is_non_system_tool_id")]
@@ -482,7 +519,9 @@ fn is_mcp_root_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
 
 #[pyfunction(name = "is_system_optional_chunk")]
 fn is_system_optional_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::is_system_optional_chunk(&super::py_to_value(item)?))
+    Ok(policies::is_system_optional_chunk(&super::py_to_value(
+        item,
+    )?))
 }
 
 #[pyfunction(name = "is_mcp_optional_chunk")]
@@ -548,14 +587,22 @@ fn split_anthropic_tools_py(
 }
 
 #[pyfunction(name = "entries_for_policy")]
-fn entries_for_policy_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, all_entries: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+fn entries_for_policy_py(
+    py: Python<'_>,
+    ctx: &Bound<'_, PyAny>,
+    all_entries: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(all_entries)?;
     super::value_to_py(py, &Value::Array(policies::entries_for_policy(&ctx, &arr)))
 }
 
 #[pyfunction(name = "tools_for_catalog")]
-fn tools_for_catalog_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, tools: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+fn tools_for_catalog_py(
+    py: Python<'_>,
+    ctx: &Bound<'_, PyAny>,
+    tools: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
     let ctx = ctx_from_py_any(ctx)?;
     let arr = py_list_values(tools)?;
     super::value_to_py(py, &Value::Array(policies::tools_for_catalog(&ctx, &arr)))
@@ -629,7 +676,9 @@ fn mcp_tools_pass_through_py(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 #[pyfunction(name = "anthropic_tool_is_system")]
 fn anthropic_tool_is_system_py(tool: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::anthropic_tool_is_system(&super::py_to_value(tool)?))
+    Ok(policies::anthropic_tool_is_system(&super::py_to_value(
+        tool,
+    )?))
 }
 
 #[pyfunction(name = "anthropic_tool_is_mcp")]
@@ -650,11 +699,16 @@ fn direct_root_optional_chunks_for_tool_py(
 
 #[pyfunction(name = "root_chunk_properties_empty")]
 fn root_chunk_properties_empty_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::root_chunk_properties_empty(&super::py_to_value(item)?))
+    Ok(policies::root_chunk_properties_empty(&super::py_to_value(
+        item,
+    )?))
 }
 
 #[pyfunction(name = "tool_id_has_empty_decomposed_root")]
-fn tool_id_has_empty_decomposed_root_py(catalog_index: Bound<'_, PyAny>, tool_id: &str) -> PyResult<bool> {
+fn tool_id_has_empty_decomposed_root_py(
+    catalog_index: Bound<'_, PyAny>,
+    tool_id: &str,
+) -> PyResult<bool> {
     let index = super::catalog_index_from_py(catalog_index)?;
     Ok(policies::tool_id_has_empty_decomposed_root(&index, tool_id))
 }
@@ -665,17 +719,23 @@ fn tool_id_had_empty_original_root_properties_py(
     tool_id: &str,
 ) -> PyResult<bool> {
     let index = super::catalog_index_from_py(catalog_index)?;
-    Ok(policies::tool_id_had_empty_original_root_properties(&index, tool_id))
+    Ok(policies::tool_id_had_empty_original_root_properties(
+        &index, tool_id,
+    ))
 }
 
 #[pyfunction(name = "is_direct_root_optional_property_chunk")]
 fn is_direct_root_optional_property_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(policies::is_direct_root_optional_property_chunk(&super::py_to_value(item)?))
+    Ok(policies::is_direct_root_optional_property_chunk(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "extract_document_text")]
 fn extract_document_text_py(item: Bound<'_, PyAny>) -> PyResult<Option<String>> {
-    Ok(crate::documents::extract_document_text(&super::py_to_value(item)?))
+    Ok(crate::documents::extract_document_text(
+        &super::py_to_value(item)?,
+    ))
 }
 
 #[pyfunction(name = "extract_level_info")]
@@ -706,9 +766,13 @@ impl PyCatalogBuilder {
         Ok(())
     }
 
-    fn get_tool_info(&self, py: Python<'_>, server_name: &str, tool_name: &str) -> PyResult<Option<Py<PyAny>>> {
-        self
-            .inner
+    fn get_tool_info(
+        &self,
+        py: Python<'_>,
+        server_name: &str,
+        tool_name: &str,
+    ) -> PyResult<Option<Py<PyAny>>> {
+        self.inner
             .get_tool_info(server_name, tool_name)
             .map(|v| super::value_to_py(py, v))
             .transpose()

@@ -13,9 +13,8 @@ fn bm25_cohesion_chunk_py(
         Some(obj) => Bm25CohesionConfig::from_partial(&py_to_value(obj)?),
         None => Bm25CohesionConfig::default(),
     };
-    let chunker = Bm25CohesionChunker::new(cfg).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-    })?;
+    let chunker =
+        Bm25CohesionChunker::new(cfg).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     let chunks: Vec<serde_json::Value> = chunker
         .chunk(text)
         .into_iter()

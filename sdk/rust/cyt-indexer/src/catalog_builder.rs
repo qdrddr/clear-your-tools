@@ -1,4 +1,4 @@
-use crate::build::{build_catalog_index, CatalogIndex};
+use crate::build::{CatalogIndex, build_catalog_index};
 use crate::catalog_io::write_catalog_index;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -15,10 +15,7 @@ pub struct CatalogBuilder {
 
 impl CatalogBuilder {
     #[must_use]
-    pub fn new_with_options(
-        memory_only: Option<bool>,
-        output_dir: Option<PathBuf>,
-    ) -> Self {
+    pub fn new_with_options(memory_only: Option<bool>, output_dir: Option<PathBuf>) -> Self {
         let cfg = crate::paths::snapshot();
         Self {
             tools: Vec::new(),
@@ -52,8 +49,7 @@ impl CatalogBuilder {
             .get("full_schema")
             .and_then(|fs| fs.get("inputSchema"))
         {
-            self.all_enums
-                .extend(crate::paths::collect_enums(schema));
+            self.all_enums.extend(crate::paths::collect_enums(schema));
         }
         self.tools.push(entry);
         self.index = None;
@@ -92,7 +88,8 @@ impl CatalogBuilder {
     }
 
     pub fn to_catalog_dict_with_prefix(&mut self, catalog_prefix: &str) -> Value {
-        self.build_index().to_catalog_dict_with_prefix(catalog_prefix)
+        self.build_index()
+            .to_catalog_dict_with_prefix(catalog_prefix)
     }
 }
 

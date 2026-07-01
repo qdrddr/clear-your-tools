@@ -1,0 +1,63 @@
+# cbindgen configuration for cyt-indexer FFI
+
+language = "C"
+cpp_compat = true
+
+header = """
+/**
+ * @file cyt_indexer.h
+ * @brief cyt-indexer C FFI interface
+ *
+ * Tool schema decomposition and catalog indexing for MCP tool gating.
+ *
+ * # Memory Management
+ *
+ * - Strings returned via `char**` out parameters MUST be freed with `cyt_free_string()`.
+ * - Opaque handles (`CytCatalogBuilder`, `CytDecomposedCatalog`, `CytSkillsBuilder`)
+ *   MUST be freed with their matching `cyt_*_free()` function.
+ * - Input C strings remain owned by the caller.
+ *
+ * # Thread Safety
+ *
+ * Error messages are stored in thread-local storage. Call `cyt_get_last_error()`
+ * from the same thread that received a non-zero error code.
+ *
+ * # Return Conventions
+ *
+ * - `CYT_OK` (0) on success for status functions.
+ * - Negative error codes on failure; see `cyt_get_last_error()`.
+ * - JSON outputs: int return code + `char**` out param.
+ * - Boolean queries: 1 true, 0 false, negative on error (or `int*` out with `CYT_OK`).
+ */
+"""
+
+include_guard = "CYT_INDEXER_H"
+pragma_once = true
+
+sys_includes = ["stdint.h", "stdbool.h"]
+
+tab_width = 4
+line_length = 100
+documentation_style = "c"
+documentation_length = "full"
+
+namespace = "cyt"
+
+[export]
+prefix = "CYT_"
+
+[parse]
+parse_deps = false
+clean = true
+
+[enum]
+rename_variants = "None"
+
+[struct]
+derive_eq = false
+derive_neq = false
+
+[export.rename]
+"CytCatalogBuilder" = "CytCatalogBuilder"
+"CytDecomposedCatalog" = "CytDecomposedCatalog"
+"CytSkillsBuilder" = "CytSkillsBuilder"

@@ -1,5 +1,5 @@
 use crate::paths::{self, decomposed_prefix, json_ext, md_ext};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -99,9 +99,10 @@ fn path_stem(path: &str) -> String {
 #[must_use]
 pub fn catalog_tool_count(data: &Value) -> usize {
     if let Some(tools) = data.get("tools").and_then(|v| v.as_array())
-        && !tools.is_empty() {
-            return tools.len();
-        }
+        && !tools.is_empty()
+    {
+        return tools.len();
+    }
     let Some(json_items) = data.get("json").and_then(|v| v.as_array()) else {
         return 0;
     };
@@ -111,10 +112,11 @@ pub fn catalog_tool_count(data: &Value) -> usize {
             continue;
         };
         if let Some(fp) = obj.get("file_path").and_then(|v| v.as_str())
-            && !fp.is_empty() {
-                tool_ids.insert(paths::tool_id_from_decomposed_rel(fp));
-                continue;
-            }
+            && !fp.is_empty()
+        {
+            tool_ids.insert(paths::tool_id_from_decomposed_rel(fp));
+            continue;
+        }
         let id = obj
             .get("id")
             .or_else(|| obj.get("name"))

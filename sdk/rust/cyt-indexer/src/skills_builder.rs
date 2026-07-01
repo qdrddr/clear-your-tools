@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::pageindex::{build_skills_index, PageIndexConfig, SkillsIndex};
+use crate::pageindex::{PageIndexConfig, SkillsIndex, build_skills_index};
 use crate::skills_io::write_skills_index;
 
 pub struct SkillsBuilder {

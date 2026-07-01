@@ -67,7 +67,10 @@ pub fn extract_nodes_from_markdown(markdown_content: &str) -> (Vec<HeaderNode>, 
 }
 
 #[must_use]
-pub fn extract_node_text_content(node_list: &[HeaderNode], markdown_lines: &[String]) -> Vec<ContentNode> {
+pub fn extract_node_text_content(
+    node_list: &[HeaderNode],
+    markdown_lines: &[String],
+) -> Vec<ContentNode> {
     let mut all_nodes = Vec::new();
 
     for node in node_list {

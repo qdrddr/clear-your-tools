@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::bm25_cohesion::{Bm25CohesionChunker, CohesionChunk};
 
@@ -6,7 +6,7 @@ use super::chunk_id::next_chunk_id;
 use super::config::PageIndexConfig;
 use super::node_id::node_id_from_value;
 use super::tree::structure_to_list;
-use super::types::{chunk_md_rel, document_json_rel, node_md_rel, SkillDocument, SkillsIndex};
+use super::types::{SkillDocument, SkillsIndex, chunk_md_rel, document_json_rel, node_md_rel};
 
 /// Attach BM25 cohesion chunks to structure nodes and write chunk markdown files.
 ///
@@ -62,7 +62,11 @@ pub fn attach_chunks_to_structure(
     Ok(())
 }
 
-pub(crate) fn insert_chunks_on_node(structure: &mut Value, target_node_id: u32, chunks: Vec<Value>) -> bool {
+pub(crate) fn insert_chunks_on_node(
+    structure: &mut Value,
+    target_node_id: u32,
+    chunks: Vec<Value>,
+) -> bool {
     match structure {
         Value::Object(map) => {
             let id = node_id_from_value(map.get("node_id"));
@@ -98,9 +102,7 @@ pub fn decompose_document(
     config: &PageIndexConfig,
 ) {
     let doc_json = serde_json::to_string_pretty(&doc.to_json()).unwrap_or_default();
-    index
-        .files
-        .insert(document_json_rel(&doc.id), doc_json);
+    index.files.insert(document_json_rel(&doc.id), doc_json);
 
     let nodes = structure_to_list(flat_structure);
     for node in nodes {

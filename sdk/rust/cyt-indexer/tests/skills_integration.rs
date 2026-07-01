@@ -1,7 +1,7 @@
 use cyt_indexer::{
-    build_skills_index, get_skill_document, get_skill_line_content_from_spec, get_skill_structure,
-    load_skills_index_from_dir, repair_skill_chunks, skills_index_from_decomposed_dir,
-    PageIndexConfig, SkillsBuilder, SkillsIndex,
+    PageIndexConfig, SkillsBuilder, SkillsIndex, build_skills_index, get_skill_document,
+    get_skill_line_content_from_spec, get_skill_structure, load_skills_index_from_dir,
+    repair_skill_chunks, skills_index_from_decomposed_dir,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -101,7 +101,10 @@ fn in_memory_build_and_retrieve() -> Result<(), String> {
     assert_eq!(index.documents.len(), 1);
     let doc_id = "create-hook";
     let meta = get_skill_document(&index.documents, doc_id);
-    assert_eq!(meta.get("doc_name").and_then(|v| v.as_str()), Some("create-hook"));
+    assert_eq!(
+        meta.get("doc_name").and_then(|v| v.as_str()),
+        Some("create-hook")
+    );
     let structure = get_skill_structure(&index.documents, doc_id);
     assert!(structure.is_array());
     let content = get_skill_line_content_from_spec(&index, doc_id, "1,5");
@@ -125,7 +128,11 @@ fn write_reconstruct_and_retrieve_via_cli_flow() -> Result<(), String> {
     builder.write_catalog()?;
 
     assert!(catalog.join("skills_index.json").is_file());
-    assert!(catalog.join("skills/decomposed/create-hook/document.json").is_file());
+    assert!(
+        catalog
+            .join("skills/decomposed/create-hook/document.json")
+            .is_file()
+    );
 
     fs::remove_file(catalog.join("skills_index.json")).map_err(|e| e.to_string())?;
     let rebuilt = skills_index_from_decomposed_dir(&catalog)?;
@@ -254,7 +261,7 @@ fn build_without_bm25_chunking_emits_one_chunk_per_node() -> Result<(), String> 
 
 #[test]
 fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
-    use cyt_indexer::pageindex::{reconstruct_skill_markdown, ReconstructOptions};
+    use cyt_indexer::pageindex::{ReconstructOptions, reconstruct_skill_markdown};
 
     const SECTION: &str = "### Step 2: Select the Best Match\n\nFrom the resolution results, choose based on:\n\n- Exact or closest name match to what the user asked for\n- Higher benchmark scores indicate better documentation quality\n- If the user mentioned a version (e.g., \"React 19\"), prefer version-specific IDs";
 
@@ -277,7 +284,10 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
         .filter(|k| k.contains("/chunks/"))
         .cloned()
         .collect();
-    assert!(chunk_paths.len() > 1, "expected section to split into multiple chunks");
+    assert!(
+        chunk_paths.len() > 1,
+        "expected section to split into multiple chunks"
+    );
     for path in &chunk_paths {
         let body = strip_frontmatter(index.files.get(path).ok_or("missing chunk file")?);
         assert!(body.contains(' '), "chunk should preserve spaces: {path}");
@@ -285,12 +295,22 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
 
     let (target_node_id, chunk_ids) =
         find_split_section_chunk_ids(&index, doc_id, "### Step 2: Select the Best Match")?;
-    assert!(chunk_ids.len() > 1, "expected target section to split into multiple chunks");
+    assert!(
+        chunk_ids.len() > 1,
+        "expected target section to split into multiple chunks"
+    );
 
     let parent_rel = format!("skills/decomposed/{doc_id}/{target_node_id}.md");
-    let parent_body =
-        strip_frontmatter(index.files.get(&parent_rel).ok_or("missing parent node file")?);
-    assert_eq!(concat_chunk_bodies(&index, doc_id, &chunk_ids)?, parent_body);
+    let parent_body = strip_frontmatter(
+        index
+            .files
+            .get(&parent_rel)
+            .ok_or("missing parent node file")?,
+    );
+    assert_eq!(
+        concat_chunk_bodies(&index, doc_id, &chunk_ids)?,
+        parent_body
+    );
 
     let chunk_spec = chunk_ids
         .iter()
@@ -306,8 +326,16 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
         &ReconstructOptions::default(),
     )?;
     assert!(reconstructed.matched_chunk_ids.len() >= 2);
-    assert!(reconstructed.markdown.contains("### Step 2: Select the Best Match"));
-    assert!(reconstructed.markdown.contains("- Exact or closest name match"));
+    assert!(
+        reconstructed
+            .markdown
+            .contains("### Step 2: Select the Best Match")
+    );
+    assert!(
+        reconstructed
+            .markdown
+            .contains("- Exact or closest name match")
+    );
 
     let _ = fs::remove_dir_all(&tmp);
     Ok(())

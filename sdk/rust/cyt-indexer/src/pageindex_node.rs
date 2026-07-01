@@ -1,9 +1,9 @@
 use crate::bm25_cohesion::{Bm25CohesionChunker, Bm25CohesionConfig};
 use crate::pageindex::{
-    build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
-    get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids,
-    reconstruct_skill_markdown, spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig,
-    ReconstructOptions, SkillDocument, SkillsIndex,
+    PageIndexConfig, ReconstructOptions, SkillDocument, SkillsIndex, build_skills_index,
+    get_content_retrieve_result, get_document, get_document_structure, get_line_content,
+    get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
+    spec_refs::OwnedSpecRefs, write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -148,11 +148,7 @@ pub fn md_to_tree_napi(
     let cfg = page_index_config_from_napi(config);
     let markdown_content = markdown_content.into_boxed_str();
     let source_path = source_path.into_boxed_str();
-    let result = md_to_tree(
-        markdown_content.as_ref(),
-        source_path.as_ref(),
-        &cfg,
-    );
+    let result = md_to_tree(markdown_content.as_ref(), source_path.as_ref(), &cfg);
     Ok(serde_json::json!({
         "doc_name": result.doc_name,
         "line_count": result.line_count,
@@ -361,10 +357,7 @@ impl SkillsBuilderNapi {
     #[napi(constructor)]
     pub fn new(memory_only: Option<bool>, output_dir: Option<String>) -> Self {
         Self {
-            inner: SkillsBuilder::new(
-                memory_only.unwrap_or(true),
-                output_dir.map(PathBuf::from),
-            ),
+            inner: SkillsBuilder::new(memory_only.unwrap_or(true), output_dir.map(PathBuf::from)),
         }
     }
 
@@ -391,10 +384,7 @@ impl SkillsBuilderNapi {
     /// Returns an error when the index has not been built or files cannot be written.
     #[napi]
     pub fn write_catalog(&mut self) -> Result<HashMap<String, Value>> {
-        let index = self
-            .inner
-            .write_catalog()
-            .map_err(Error::from_reason)?;
+        let index = self.inner.write_catalog().map_err(Error::from_reason)?;
         Ok(skills_index_to_napi(index))
     }
 
@@ -424,7 +414,9 @@ impl SkillsBuilderNapi {
 /// Returns an error when config validation fails.
 #[napi]
 pub fn bm25_cohesion_chunk_napi(text: String, config: Option<Value>) -> Result<Value> {
-    let cfg = config.map_or_else(Bm25CohesionConfig::default, |v| Bm25CohesionConfig::from_partial(&v));
+    let cfg = config.map_or_else(Bm25CohesionConfig::default, |v| {
+        Bm25CohesionConfig::from_partial(&v)
+    });
     let text = text.into_boxed_str();
     let chunker = Bm25CohesionChunker::new(cfg).map_err(Error::from_reason)?;
     let chunks: Vec<Value> = chunker

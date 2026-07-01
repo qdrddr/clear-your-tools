@@ -1,0 +1,32 @@
+@PACKAGE_INIT@
+
+set(CYT_RUST_TARGET "@CYT_RUST_TARGET@")
+set(CYT_LIB_PROFILE "@CYT_LIB_PROFILE@")
+set(CYT_TARGET_DIR "@CYT_TARGET_DIR@")
+set(CYT_INCLUDE_DIR "@CYT_INCLUDE_DIR@")
+
+if(WIN32)
+    set(CYT_SHARED_LIB "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}/cyt_indexer.dll")
+    set(CYT_IMPORT_LIB "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}/cyt_indexer.dll.lib")
+else()
+    if(APPLE)
+        set(CYT_SHARED_LIB "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}/libcyt_indexer.dylib")
+    else()
+        set(CYT_SHARED_LIB "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}/libcyt_indexer.so")
+    endif()
+endif()
+
+if(NOT TARGET CYT::cyt_indexer)
+    add_library(CYT::cyt_indexer SHARED IMPORTED)
+    set_target_properties(CYT::cyt_indexer PROPERTIES
+        IMPORTED_LOCATION "${CYT_SHARED_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${CYT_INCLUDE_DIR}"
+    )
+    if(WIN32)
+        set_target_properties(CYT::cyt_indexer PROPERTIES
+            IMPORTED_IMPLIB "${CYT_IMPORT_LIB}"
+        )
+    endif()
+endif()
+
+check_required_components(CYT)

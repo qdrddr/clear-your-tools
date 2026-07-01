@@ -45,13 +45,14 @@ fn size_cap_respected() -> Result<(), String> {
     let mut text = String::new();
     for i in 0..80 {
         use std::fmt::Write;
-        let _ = write!(
-            text,
-            "Sentence number {i} with extra words for length. "
-        );
+        let _ = write!(text, "Sentence number {i} with extra words for length. ");
     }
     for chunk in chunker.chunk(&text) {
-        assert!(chunk.token_count <= 30, "chunk had {} tokens", chunk.token_count);
+        assert!(
+            chunk.token_count <= 30,
+            "chunk had {} tokens",
+            chunk.token_count
+        );
     }
     Ok(())
 }
@@ -85,7 +86,7 @@ fn word_mode_markdown_formatting_preserved() -> Result<(), String> {
 
 #[test]
 fn chunks_created_for_skill_build() -> Result<(), String> {
-    use cyt_indexer::{build_skills_index, PageIndexConfig};
+    use cyt_indexer::{PageIndexConfig, build_skills_index};
     use std::fs;
     use std::path::PathBuf;
 
@@ -99,10 +100,7 @@ fn chunks_created_for_skill_build() -> Result<(), String> {
     )
     .map_err(|err| err.to_string())?;
     let index = build_skills_index(&[PathBuf::from(&skills)], &PageIndexConfig::default())?;
-    assert!(index
-        .files
-        .keys()
-        .any(|k| k.contains("/chunks/")));
+    assert!(index.files.keys().any(|k| k.contains("/chunks/")));
     let _ = fs::remove_dir_all(&tmp);
     Ok(())
 }

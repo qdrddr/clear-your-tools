@@ -2,14 +2,16 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::chunk_id::chunk_id_from_value;
 use super::node_id::node_id_from_value;
 use super::parse::extract_skill_prefix;
-use super::retrieve::{merge_chunk_id_specs, merge_line_num_specs, merge_node_id_specs, strip_decomposed_frontmatter};
-use super::tree::{is_frontmatter_node, is_preamble_node, structure_to_list, NODE_ID_PREAMBLE};
-use super::types::{chunk_md_rel, node_md_rel, SkillDocument, SkillsIndex};
+use super::retrieve::{
+    merge_chunk_id_specs, merge_line_num_specs, merge_node_id_specs, strip_decomposed_frontmatter,
+};
+use super::tree::{NODE_ID_PREAMBLE, is_frontmatter_node, is_preamble_node, structure_to_list};
+use super::types::{SkillDocument, SkillsIndex, chunk_md_rel, node_md_rel};
 
 /// Subdirectory under a catalog where pruned skill markdown is written.
 pub const RETRIEVE_DIR: &str = "skills/retrieve";
@@ -314,7 +316,10 @@ fn collect_matched_node_ids_from_chunks(
     matched
 }
 
-fn node_has_selected_chunks(obj: &serde_json::Map<String, Value>, chunk_ids: &HashSet<u32>) -> bool {
+fn node_has_selected_chunks(
+    obj: &serde_json::Map<String, Value>,
+    chunk_ids: &HashSet<u32>,
+) -> bool {
     obj.get("chunks")
         .and_then(|v| v.as_array())
         .is_some_and(|arr| {
@@ -427,11 +432,7 @@ fn prune_structure(structure: &Value, kept: &HashSet<u32>) -> Value {
                     .iter()
                     .filter_map(|child| {
                         let pruned = prune_structure(child, kept);
-                        if pruned.is_null() {
-                            None
-                        } else {
-                            Some(pruned)
-                        }
+                        if pruned.is_null() { None } else { Some(pruned) }
                     })
                     .collect();
                 if pruned_children.is_empty() {
@@ -447,11 +448,7 @@ fn prune_structure(structure: &Value, kept: &HashSet<u32>) -> Value {
                 .iter()
                 .filter_map(|item| {
                     let pruned = prune_structure(item, kept);
-                    if pruned.is_null() {
-                        None
-                    } else {
-                        Some(pruned)
-                    }
+                    if pruned.is_null() { None } else { Some(pruned) }
                 })
                 .collect(),
         ),
@@ -511,7 +508,11 @@ fn assemble_markdown(
     parts.join("\n\n")
 }
 
-fn resolve_node_header(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<String, Value>) -> String {
+fn resolve_node_header(
+    index: &SkillsIndex,
+    doc_id: &str,
+    node: &serde_json::Map<String, Value>,
+) -> String {
     let body = resolve_node_body(index, doc_id, node);
     if let Some(first_line) = body.lines().next() {
         let trimmed = first_line.trim();
@@ -526,7 +527,11 @@ fn resolve_node_header(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map
         .unwrap_or_default()
 }
 
-fn resolve_node_body(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<String, Value>) -> String {
+fn resolve_node_body(
+    index: &SkillsIndex,
+    doc_id: &str,
+    node: &serde_json::Map<String, Value>,
+) -> String {
     if let Some(Value::String(text)) = node.get("text")
         && !text.is_empty()
     {
@@ -563,7 +568,7 @@ fn resolve_preamble(doc: &SkillDocument) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pageindex::{build_skills_index, PageIndexConfig};
+    use crate::pageindex::{PageIndexConfig, build_skills_index};
 
     #[test]
     fn node_id_retrieve_includes_parent() -> Result<(), String> {
@@ -579,13 +584,28 @@ mod tests {
 
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
         let doc_id = "lean-ctx__skill";
-        let result =
-            reconstruct_skill_markdown(&index, doc_id, &[], &["3"], &[], &ReconstructOptions::default())?;
+        let result = reconstruct_skill_markdown(
+            &index,
+            doc_id,
+            &[],
+            &["3"],
+            &[],
+            &ReconstructOptions::default(),
+        )?;
 
-        assert!(result.node_ids.contains(&2), "parent node 2 should be included");
-        assert!(result.node_ids.contains(&3), "matched node 3 should be included");
+        assert!(
+            result.node_ids.contains(&2),
+            "parent node 2 should be included"
+        );
+        assert!(
+            result.node_ids.contains(&3),
+            "matched node 3 should be included"
+        );
         assert!(!result.node_ids.contains(&4));
-        assert!(!result.node_ids.contains(&0), "frontmatter is not an ancestor of content nodes");
+        assert!(
+            !result.node_ids.contains(&0),
+            "frontmatter is not an ancestor of content nodes"
+        );
         assert!(result.markdown.contains("name: lean-ctx"));
         assert!(result.markdown.contains("# Root"));
         assert!(result.markdown.contains("## Setup"));
@@ -597,7 +617,8 @@ mod tests {
 
     #[test]
     fn writes_under_catalog_retrieve_dir() -> Result<(), String> {
-        let tmp = std::env::temp_dir().join(format!("cyt-reconstruct-write-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("cyt-reconstruct-write-{}", std::process::id()));
         let skills_root = tmp.join("skills");
         let skills_dir = skills_root.join("lean-ctx");
         let catalog = tmp.join("catalog");
@@ -646,8 +667,14 @@ mod tests {
         )
         .map_err(|e| e.to_string())?;
 
-        let result =
-            reconstruct_skill_markdown(&index, "demo__skill", &[], &["3"], &[], &ReconstructOptions::default())?;
+        let result = reconstruct_skill_markdown(
+            &index,
+            "demo__skill",
+            &[],
+            &["3"],
+            &[],
+            &ReconstructOptions::default(),
+        )?;
         assert!(result.markdown.contains("description: catalog snapshot"));
         assert!(!result.markdown.contains("description: live file changed"));
 
@@ -668,11 +695,20 @@ mod tests {
         .map_err(|e| e.to_string())?;
 
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
-        let result =
-            get_content_retrieve_result(&index, "lean-ctx__skill", &[], &["3"], &[], &ReconstructOptions::default());
+        let result = get_content_retrieve_result(
+            &index,
+            "lean-ctx__skill",
+            &[],
+            &["3"],
+            &[],
+            &ReconstructOptions::default(),
+        );
 
         assert_eq!(
-            result.get("matched_node_ids").and_then(|v| v.as_array()).map(Vec::len),
+            result
+                .get("matched_node_ids")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
             Some(1)
         );
         assert_eq!(
@@ -702,7 +738,12 @@ mod tests {
             .map_or(0, Vec::len);
         assert_eq!(nodes, 2);
 
-        assert!(result.get("restored_markdown").and_then(|v| v.as_str()).is_some());
+        assert!(
+            result
+                .get("restored_markdown")
+                .and_then(|v| v.as_str())
+                .is_some()
+        );
         assert_eq!(
             result.get("restored_path").and_then(|v| v.as_str()),
             Some("skills/retrieve/lean-ctx/SKILL.md")
@@ -714,7 +755,8 @@ mod tests {
 
     #[test]
     fn keep_all_headers_preserves_unmatched_section_headings() -> Result<(), String> {
-        let tmp = std::env::temp_dir().join(format!("cyt-reconstruct-headers-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("cyt-reconstruct-headers-{}", std::process::id()));
         let skills_root = tmp.join("skills");
         let skills_dir = skills_root.join("lean-ctx");
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
@@ -725,8 +767,14 @@ mod tests {
         .map_err(|e| e.to_string())?;
 
         let index = build_skills_index(&[skills_root], &PageIndexConfig::default())?;
-        let default_result =
-            reconstruct_skill_markdown(&index, "lean-ctx__skill", &[], &["3"], &[], &ReconstructOptions::default())?;
+        let default_result = reconstruct_skill_markdown(
+            &index,
+            "lean-ctx__skill",
+            &[],
+            &["3"],
+            &[],
+            &ReconstructOptions::default(),
+        )?;
         assert!(!default_result.markdown.contains("## Other"));
 
         let kept_headers = reconstruct_skill_markdown(
@@ -750,7 +798,8 @@ mod tests {
 
     #[test]
     fn frontmatter_preamble_and_headings_use_reserved_node_ids() -> Result<(), String> {
-        let tmp = std::env::temp_dir().join(format!("cyt-reconstruct-preamble-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("cyt-reconstruct-preamble-{}", std::process::id()));
         let skills_root = tmp.join("skills");
         let skills_dir = skills_root.join("ctx");
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
@@ -785,7 +834,10 @@ mod tests {
             .and_then(|node| node.as_object())
             .ok_or("missing preamble node")?;
         assert_eq!(node_id_from_value(preamble.get("node_id")), 1);
-        assert_eq!(preamble.get("kind").and_then(|v| v.as_str()), Some("preamble"));
+        assert_eq!(
+            preamble.get("kind").and_then(|v| v.as_str()),
+            Some("preamble")
+        );
         assert_eq!(
             preamble.get("line_num").and_then(serde_json::Value::as_u64),
             Some(5)
@@ -809,8 +861,16 @@ mod tests {
             .ok_or("missing root heading node")?;
         assert_eq!(node_id_from_value(first_heading.get("node_id")), 2);
 
-        assert!(index.files.contains_key("skills/decomposed/ctx__skill/0.md"));
-        assert!(index.files.contains_key("skills/decomposed/ctx__skill/1.md"));
+        assert!(
+            index
+                .files
+                .contains_key("skills/decomposed/ctx__skill/0.md")
+        );
+        assert!(
+            index
+                .files
+                .contains_key("skills/decomposed/ctx__skill/1.md")
+        );
 
         let _ = fs::remove_dir_all(&tmp);
         Ok(())
@@ -818,8 +878,10 @@ mod tests {
 
     #[test]
     fn chunk_retrieve_omits_preamble_when_chunk_one_not_selected() -> Result<(), String> {
-        let tmp =
-            std::env::temp_dir().join(format!("cyt-reconstruct-chunk-preamble-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!(
+            "cyt-reconstruct-chunk-preamble-{}",
+            std::process::id()
+        ));
         let skills_root = tmp.join("skills");
         let skills_dir = skills_root.join("ctx");
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
@@ -897,7 +959,10 @@ mod tests {
             &ReconstructOptions::default(),
         )?;
 
-        assert!(!result.node_ids.contains(&1), "preamble node should not be kept");
+        assert!(
+            !result.node_ids.contains(&1),
+            "preamble node should not be kept"
+        );
         assert!(!result.matched_chunk_ids.contains(&1));
         assert!(!result.markdown.contains("Intro line"));
         assert!(result.markdown.contains("Body"));
@@ -929,9 +994,6 @@ mod tests {
             frontmatter: None,
             preamble: None,
         };
-        assert_eq!(
-            retrieve_output_rel_path(&doc),
-            "lean-ctx/SKILL.md"
-        );
+        assert_eq!(retrieve_output_rel_path(&doc), "lean-ctx/SKILL.md");
     }
 }

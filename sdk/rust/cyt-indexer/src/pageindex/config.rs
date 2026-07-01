@@ -125,7 +125,10 @@ mod tests {
     #[test]
     fn from_value_ignores_unknown_keys() {
         let cfg = PageIndexConfig::from_value(&json!({"if_add_node_summary": "yes"}));
-        assert_eq!(cfg.if_add_node_id, PageIndexConfig::default().if_add_node_id);
+        assert_eq!(
+            cfg.if_add_node_id,
+            PageIndexConfig::default().if_add_node_id
+        );
     }
 
     #[test]

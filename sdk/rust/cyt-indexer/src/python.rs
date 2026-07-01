@@ -8,24 +8,24 @@ mod pageindex_python;
 mod bm25_cohesion_python;
 
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
+use crate::paths::{self, PathConfig, collect_enums};
+use crate::policies::policy_context_from_values;
+use crate::retrieve::process_groups_options_from_fields;
+use crate::retrieve::{
+    DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
+    build_process_groups_options, chunk_survivor_key, load_catalog_from_dir, removed_chunks,
+    resolve_build_catalog, retrieve_core, retrieve_tools_from_catalog,
+};
+use crate::runtime_config::{self, RuntimeConfig};
 use crate::tool_entries::{
     anthropic_tool_to_catalog_entry, build_catalog_from_tools, prepare_tool_entry,
     truncate_description,
 };
-use crate::paths::{self, collect_enums, PathConfig};
-use crate::retrieve::process_groups_options_from_fields;
-use std::path::PathBuf;
-use crate::policies::policy_context_from_values;
-use crate::retrieve::{
-    build_process_groups_options, chunk_survivor_key, load_catalog_from_dir, removed_chunks,
-    resolve_build_catalog, retrieve_core, retrieve_tools_from_catalog, DecomposedCatalog,
-    ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
-};
-use crate::runtime_config::{self, RuntimeConfig};
 use policies_python::ctx_from_py_any;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 use serde_json::Value;
+use std::path::PathBuf;
 
 pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     let json_str = serde_json::to_string(value)
@@ -106,19 +106,20 @@ fn process_groups_from_policy_dict(
     let mut required_enum_values_by_tool = None;
     for key in ["required_by_tool", "required_enum_values_by_tool"] {
         if let Some(item) = policy.get_item(key)?
-            && let Ok(dict) = item.cast_into::<PyDict>() {
-                let map = dict_to_required_by_tool(&dict)?;
-                let vec_map: std::collections::HashMap<String, Vec<String>> = map
-                    .into_iter()
-                    .map(|(k, v)| (k, v.into_iter().collect()))
-                    .collect();
-                if key == "required_by_tool" {
-                    required_by_tool = Some(vec_map);
-                } else {
-                    required_enum_values_by_tool = Some(vec_map);
-                }
-                break;
+            && let Ok(dict) = item.cast_into::<PyDict>()
+        {
+            let map = dict_to_required_by_tool(&dict)?;
+            let vec_map: std::collections::HashMap<String, Vec<String>> = map
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().collect()))
+                .collect();
+            if key == "required_by_tool" {
+                required_by_tool = Some(vec_map);
+            } else {
+                required_enum_values_by_tool = Some(vec_map);
             }
+            break;
+        }
     }
     Ok(process_groups_options_from_fields(
         system_preserve,
@@ -343,8 +344,8 @@ fn catalog_index_to_catalog_dict_py(
 
 #[pyfunction(name = "load_catalog")]
 fn load_catalog_py(py: Python<'_>, dir_path: &str) -> PyResult<Py<PyAny>> {
-    let catalog = load_catalog_from_dir(dir_path)
-        .map_err(PyErr::new::<pyo3::exceptions::PyOSError, _>)?;
+    let catalog =
+        load_catalog_from_dir(dir_path).map_err(PyErr::new::<pyo3::exceptions::PyOSError, _>)?;
     value_to_py(py, &catalog)
 }
 
@@ -401,8 +402,7 @@ impl PyDecomposedCatalog {
     }
 
     fn get_json(&self, py: Python<'_>, key: &str) -> PyResult<Option<Py<PyAny>>> {
-        self
-            .inner
+        self.inner
             .get_json(key)
             .map(|v| value_to_py(py, v))
             .transpose()

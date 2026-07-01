@@ -11,7 +11,7 @@ use super::decompose::insert_chunks_on_node;
 use super::node_id::node_id_from_value;
 use super::retrieve::strip_decomposed_frontmatter;
 use super::tree::structure_to_list;
-use super::types::{chunk_md_rel, document_json_rel, node_md_rel, SkillsIndex};
+use super::types::{SkillsIndex, chunk_md_rel, document_json_rel, node_md_rel};
 use crate::skills_io::skills_index_from_decomposed_dir;
 
 fn populate_structure_text_from_node_files(
@@ -169,8 +169,7 @@ pub fn repair_skill_chunks(
     if let Some(obj) = doc_val.as_object_mut() {
         obj.insert("structure".to_string(), structure.clone());
     }
-    let serialized =
-        serde_json::to_string_pretty(&doc_val).map_err(|e| e.to_string())?;
+    let serialized = serde_json::to_string_pretty(&doc_val).map_err(|e| e.to_string())?;
     fs::write(&doc_path, serialized).map_err(|e| e.to_string())?;
 
     let mut updated = doc;

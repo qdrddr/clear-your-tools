@@ -6,20 +6,26 @@ use super::decompose::{attach_chunks_to_structure, decompose_document};
 use super::index::md_to_tree;
 use super::parse::{extract_node_text_content, extract_nodes_from_markdown, extract_skill_prefix};
 use super::tree::{build_tree_from_nodes, finalize_skill_structure};
-use super::types::{build_skill_document, doc_id_from_rel_path, MdIndexResult, SkillsIndex};
+use super::types::{MdIndexResult, SkillsIndex, build_skill_document, doc_id_from_rel_path};
 
 /// Build an in-memory skills index from one or more skill directories.
 ///
 /// # Errors
 ///
 /// Returns an error when a directory is missing or a markdown file cannot be read.
-pub fn build_skills_index(skill_dirs: &[PathBuf], config: &PageIndexConfig) -> Result<SkillsIndex, String> {
+pub fn build_skills_index(
+    skill_dirs: &[PathBuf],
+    config: &PageIndexConfig,
+) -> Result<SkillsIndex, String> {
     let mut index = SkillsIndex::default();
 
     for dir in skill_dirs {
         let expanded = expand_path(dir)?;
         if !expanded.is_dir() {
-            return Err(format!("skills directory not found: {}", expanded.display()));
+            return Err(format!(
+                "skills directory not found: {}",
+                expanded.display()
+            ));
         }
         walk_skill_md_files(&expanded, &expanded, config, &mut index)?;
     }
@@ -142,11 +148,15 @@ mod tests {
     #[test]
     fn stores_home_paths_with_tilde_prefix() -> Result<(), String> {
         let home = home_dir()?;
-        let skills_dir = PathBuf::from(&home).join(format!(".cyt-skills-home-{}", std::process::id()));
+        let skills_dir =
+            PathBuf::from(&home).join(format!(".cyt-skills-home-{}", std::process::id()));
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
         fs::write(skills_dir.join("example.md"), "# Example\n\nBody").map_err(|e| e.to_string())?;
 
-        let index = build_skills_index(std::slice::from_ref(&skills_dir), &PageIndexConfig::default())?;
+        let index = build_skills_index(
+            std::slice::from_ref(&skills_dir),
+            &PageIndexConfig::default(),
+        )?;
         let doc = index
             .documents
             .get("example")

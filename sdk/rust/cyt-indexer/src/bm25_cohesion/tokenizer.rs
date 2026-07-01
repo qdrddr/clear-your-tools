@@ -56,7 +56,11 @@ impl TextAnalyzerPipeline {
 }
 
 fn simple_tokens(text: &str) -> impl Iterator<Item = &str> {
-    SimpleTokenSplit { text, start: None, cursor: 0 }
+    SimpleTokenSplit {
+        text,
+        start: None,
+        cursor: 0,
+    }
 }
 
 struct SimpleTokenSplit<'a> {

@@ -1,7 +1,7 @@
 use super::config::PageIndexConfig;
 use super::node_id::node_id_value;
 use super::parse::ContentNode;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 /// Reserved node id for YAML frontmatter (`0.md`).
 pub const NODE_ID_FRONTMATTER: u32 = 0;
@@ -142,7 +142,9 @@ pub fn remove_fields(data: &Value, fields: &[&str]) -> Value {
             }
             Value::Object(out)
         }
-        Value::Array(items) => Value::Array(items.iter().map(|v| remove_fields(v, fields)).collect()),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|v| remove_fields(v, fields)).collect())
+        }
         other => other.clone(),
     }
 }
@@ -201,7 +203,12 @@ pub fn finalize_skill_structure(
     }
     if let Some(text) = preamble.map(str::trim).filter(|text| !text.is_empty()) {
         let line_num = preamble_line_num.unwrap_or(1);
-        prefix_nodes.push(prefix_node(NODE_KIND_PREAMBLE, NODE_ID_PREAMBLE, line_num, text));
+        prefix_nodes.push(prefix_node(
+            NODE_KIND_PREAMBLE,
+            NODE_ID_PREAMBLE,
+            line_num,
+            text,
+        ));
     }
 
     let merged = if prefix_nodes.is_empty() {
@@ -233,7 +240,9 @@ pub fn finalize_skill_structure(
 #[must_use]
 pub fn format_structure_for_output(structure: &Value, config: &PageIndexConfig) -> Value {
     let order: Vec<&str> = if config.if_add_node_text {
-        vec!["title", "node_id", "kind", "line_num", "text", "chunks", "nodes"]
+        vec![
+            "title", "node_id", "kind", "line_num", "text", "chunks", "nodes",
+        ]
     } else {
         vec!["title", "node_id", "kind", "line_num", "chunks", "nodes"]
     };
@@ -287,7 +296,9 @@ mod tests {
         let tree = build_tree_from_nodes(&nodes);
         let arr = tree.as_array();
         assert!(arr.is_some_and(|items| !items.is_empty()));
-        let first = arr.and_then(|items| items.first()).and_then(|v| v.as_object());
+        let first = arr
+            .and_then(|items| items.first())
+            .and_then(|v| v.as_object());
         assert!(first.is_some_and(|obj| obj.contains_key("nodes")));
     }
 }

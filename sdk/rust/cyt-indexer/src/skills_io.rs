@@ -3,8 +3,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::pageindex::{SkillDocument, SkillsIndex};
 use crate::pageindex::types::skills_decomposed_prefix;
+use crate::pageindex::{SkillDocument, SkillsIndex};
 
 const SKILLS_INDEX_FILE: &str = "skills_index.json";
 
@@ -24,8 +24,8 @@ pub fn write_skills_index(index: &SkillsIndex, output_dir: &Path) -> Result<(), 
         fs::write(&path, content).map_err(|e| e.to_string())?;
     }
 
-    let snapshot = serde_json::to_string_pretty(&index.to_skills_index_json())
-        .map_err(|e| e.to_string())?;
+    let snapshot =
+        serde_json::to_string_pretty(&index.to_skills_index_json()).map_err(|e| e.to_string())?;
     fs::write(output_dir.join(SKILLS_INDEX_FILE), snapshot).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -93,7 +93,10 @@ pub fn load_decomposed_files_for_index(
     load_decomposed_files_into_index(catalog_dir, index)
 }
 
-fn load_decomposed_files_into_index(catalog_dir: &Path, index: &mut SkillsIndex) -> Result<(), String> {
+fn load_decomposed_files_into_index(
+    catalog_dir: &Path,
+    index: &mut SkillsIndex,
+) -> Result<(), String> {
     let decomposed_root = catalog_dir.join(skills_decomposed_prefix());
     if !decomposed_root.is_dir() {
         return Ok(());
@@ -165,7 +168,7 @@ pub fn merge_skills_index_files(index: &mut SkillsIndex, other: &SkillsIndex) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pageindex::{build_skills_index, PageIndexConfig};
+    use crate::pageindex::{PageIndexConfig, build_skills_index};
     use std::fs;
     #[test]
     fn write_and_reconstruct_without_snapshot() -> Result<(), String> {

@@ -42,11 +42,7 @@ pub fn next_chunk_id(structure: &Value) -> u32 {
             }
         }
     });
-    if found {
-        max_id.saturating_add(1)
-    } else {
-        0
-    }
+    if found { max_id.saturating_add(1) } else { 0 }
 }
 
 fn walk_structure(structure: &Value, visit: &mut impl FnMut(&serde_json::Map<String, Value>)) {
@@ -84,7 +80,9 @@ pub fn parse_chunk_ids(spec: &str) -> Result<Vec<u32>, String> {
             let start = parse_chunk_id_token(start)?;
             let end = parse_chunk_id_token(end)?;
             if start > end {
-                return Err(format!("invalid chunk_id range '{part}': start must be <= end"));
+                return Err(format!(
+                    "invalid chunk_id range '{part}': start must be <= end"
+                ));
             }
             result.extend(start..=end);
         } else {

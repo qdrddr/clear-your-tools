@@ -60,9 +60,10 @@ fn apply_outputs(output_map: &HashMap<PathBuf, String>) -> Result<(), String> {
     for (path, content) in output_map {
         if path.exists()
             && let Ok(existing) = fs::read_to_string(path)
-                && existing == *content {
-                    continue;
-                }
+            && existing == *content
+        {
+            continue;
+        }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -72,12 +73,10 @@ fn apply_outputs(output_map: &HashMap<PathBuf, String>) -> Result<(), String> {
 }
 
 fn should_skip_hidden(path: &Path, root: &Path) -> bool {
-    path.strip_prefix(root)
-        .ok()
-        .is_some_and(|rel| {
-            rel.components()
-                .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-        })
+    path.strip_prefix(root).ok().is_some_and(|rel| {
+        rel.components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    })
 }
 
 fn prune_stale_files(root: &Path, expected_paths: &HashSet<PathBuf>) -> Result<(), String> {
@@ -102,10 +101,9 @@ fn prune_stale_files(root: &Path, expected_paths: &HashSet<PathBuf>) -> Result<(
         if should_skip_hidden(&path, root) {
             continue;
         }
-        if path.is_dir()
-            && path.read_dir().is_ok_and(|mut d| d.next().is_none()) {
-                let _ = fs::remove_dir(path);
-            }
+        if path.is_dir() && path.read_dir().is_ok_and(|mut d| d.next().is_none()) {
+            let _ = fs::remove_dir(path);
+        }
     }
     Ok(())
 }

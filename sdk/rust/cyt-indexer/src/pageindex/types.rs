@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 
 use super::config::PageIndexConfig;
@@ -39,7 +39,10 @@ impl SkillDocument {
         });
         if let Some(map) = obj.as_object_mut() {
             if let Some(frontmatter) = &self.frontmatter {
-                map.insert("frontmatter".to_string(), Value::String(frontmatter.clone()));
+                map.insert(
+                    "frontmatter".to_string(),
+                    Value::String(frontmatter.clone()),
+                );
             }
             if let Some(preamble) = &self.preamble {
                 map.insert("preamble".to_string(), Value::String(preamble.clone()));
@@ -62,14 +65,21 @@ impl SkillDocument {
                 .and_then(|v| v.as_str())
                 .unwrap_or("md")
                 .to_string(),
-            path: obj.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            path: obj
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             doc_name: obj
                 .get("doc_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
             line_count,
-            structure: obj.get("structure").cloned().unwrap_or(Value::Array(vec![])),
+            structure: obj
+                .get("structure")
+                .cloned()
+                .unwrap_or(Value::Array(vec![])),
             frontmatter: obj
                 .get("frontmatter")
                 .and_then(|v| v.as_str())
@@ -114,7 +124,10 @@ impl SkillsIndex {
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
                 && !rel_path.contains("/chunks/");
-            let is_chunk_md = rel_path.contains("/chunks/") && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+            let is_chunk_md = rel_path.contains("/chunks/")
+                && path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
             if (!is_node_md && !is_chunk_md) || rel_path.ends_with("document.json") {
                 continue;
             }
@@ -200,7 +213,10 @@ pub fn node_md_rel(doc_id: &str, node_id: u32) -> String {
 
 #[must_use]
 pub fn chunk_md_rel(doc_id: &str, chunk_id: u32) -> String {
-    format!("{}{doc_id}/chunks/{chunk_id}.md", skills_decomposed_prefix())
+    format!(
+        "{}{doc_id}/chunks/{chunk_id}.md",
+        skills_decomposed_prefix()
+    )
 }
 
 #[must_use]

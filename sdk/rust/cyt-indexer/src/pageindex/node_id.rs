@@ -16,10 +16,7 @@ pub fn parse_node_id_token(token: &str) -> Result<u32, String> {
 #[must_use]
 pub fn node_id_from_value(v: Option<&Value>) -> u32 {
     match v {
-        Some(Value::Number(n)) => n
-            .as_u64()
-            .and_then(|u| u32::try_from(u).ok())
-            .unwrap_or(0),
+        Some(Value::Number(n)) => n.as_u64().and_then(|u| u32::try_from(u).ok()).unwrap_or(0),
         Some(Value::String(s)) => parse_node_id_token(s).unwrap_or(0),
         _ => 0,
     }

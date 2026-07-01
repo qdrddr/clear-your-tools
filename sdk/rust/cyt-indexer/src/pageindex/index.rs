@@ -12,7 +12,11 @@ fn line_count_u32(markdown_content: &str) -> u32 {
 
 /// Parse markdown content into a hierarchical document tree.
 #[must_use]
-pub fn md_to_tree(markdown_content: &str, source_path: &str, config: &PageIndexConfig) -> MdIndexResult {
+pub fn md_to_tree(
+    markdown_content: &str,
+    source_path: &str,
+    config: &PageIndexConfig,
+) -> MdIndexResult {
     let line_count = line_count_u32(markdown_content);
     let doc_name = Path::new(source_path)
         .file_stem()

@@ -350,7 +350,10 @@ mod tests {
         };
         let chunker = Bm25CohesionChunker::new(cfg)?;
         let chunks = chunker.chunk(text);
-        assert!(chunks.len() > 1, "expected section to split into multiple chunks");
+        assert!(
+            chunks.len() > 1,
+            "expected section to split into multiple chunks"
+        );
         for chunk in &chunks {
             assert!(chunk.text.contains(' '), "chunk should preserve spaces");
             assert_eq!(

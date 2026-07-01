@@ -1,4 +1,4 @@
-use chunk::{split_at_patterns, IncludeDelim};
+use chunk::{IncludeDelim, split_at_patterns};
 
 use super::config::Bm25CohesionConfig;
 use super::token_counter::TokenCounter;
@@ -6,13 +6,23 @@ use super::tokenizer::simple_word_spans;
 use super::types::{IncludeDelimMode, TextUnit, WindowMode};
 
 pub trait UnitSegmenter {
-    fn segment(&self, text: &str, config: &Bm25CohesionConfig, counter: &dyn TokenCounter) -> Vec<TextUnit>;
+    fn segment(
+        &self,
+        text: &str,
+        config: &Bm25CohesionConfig,
+        counter: &dyn TokenCounter,
+    ) -> Vec<TextUnit>;
 }
 
 pub struct SentenceSegmenter;
 
 impl UnitSegmenter for SentenceSegmenter {
-    fn segment(&self, text: &str, config: &Bm25CohesionConfig, counter: &dyn TokenCounter) -> Vec<TextUnit> {
+    fn segment(
+        &self,
+        text: &str,
+        config: &Bm25CohesionConfig,
+        counter: &dyn TokenCounter,
+    ) -> Vec<TextUnit> {
         if text.trim().is_empty() {
             return Vec::new();
         }
@@ -60,7 +70,12 @@ impl UnitSegmenter for SentenceSegmenter {
 pub struct WordSegmenter;
 
 impl UnitSegmenter for WordSegmenter {
-    fn segment(&self, text: &str, config: &Bm25CohesionConfig, counter: &dyn TokenCounter) -> Vec<TextUnit> {
+    fn segment(
+        &self,
+        text: &str,
+        config: &Bm25CohesionConfig,
+        counter: &dyn TokenCounter,
+    ) -> Vec<TextUnit> {
         if text.trim().is_empty() {
             return Vec::new();
         }
@@ -80,7 +95,11 @@ impl UnitSegmenter for WordSegmenter {
 }
 
 #[must_use]
-pub fn segment_units(text: &str, config: &Bm25CohesionConfig, counter: &dyn TokenCounter) -> Vec<TextUnit> {
+pub fn segment_units(
+    text: &str,
+    config: &Bm25CohesionConfig,
+    counter: &dyn TokenCounter,
+) -> Vec<TextUnit> {
     match config.window_mode {
         WindowMode::Sentence => SentenceSegmenter.segment(text, config, counter),
         WindowMode::Word => WordSegmenter.segment(text, config, counter),

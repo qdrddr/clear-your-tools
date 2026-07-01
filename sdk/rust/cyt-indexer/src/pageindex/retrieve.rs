@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::chunk_id::parse_chunk_ids;
 use super::node_id::{node_id_from_value, parse_node_id_token};
 use super::tree::{remove_fields, structure_to_list};
-use super::types::{chunk_md_rel, node_md_rel, SkillDocument, SkillsIndex};
+use super::types::{SkillDocument, SkillsIndex, chunk_md_rel, node_md_rel};
 
 fn u64_to_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(0)
@@ -64,7 +64,9 @@ pub fn parse_node_ids(spec: &str) -> Result<Vec<u32>, String> {
             let start = parse_node_id_token(start.trim())?;
             let end = parse_node_id_token(end.trim())?;
             if start > end {
-                return Err(format!("invalid node_id range '{part}': start must be <= end"));
+                return Err(format!(
+                    "invalid node_id range '{part}': start must be <= end"
+                ));
             }
             result.extend(start..=end);
         } else {
@@ -239,7 +241,11 @@ pub fn get_line_content_from_spec(index: &SkillsIndex, doc_id: &str, line_num_sp
     get_line_content(index, doc_id, &[line_num_spec], &[], &[])
 }
 
-fn resolve_node_content(index: &SkillsIndex, doc_id: &str, node: &serde_json::Map<String, Value>) -> String {
+fn resolve_node_content(
+    index: &SkillsIndex,
+    doc_id: &str,
+    node: &serde_json::Map<String, Value>,
+) -> String {
     if let Some(Value::String(text)) = node.get("text")
         && !text.is_empty()
     {
@@ -260,7 +266,11 @@ pub(crate) fn strip_decomposed_frontmatter(content: &str) -> String {
     }
     if let Some(end) = content[3..].find("\n---") {
         let body_start = 3 + end + 4;
-        return content.get(body_start..).unwrap_or("").trim_start().to_string();
+        return content
+            .get(body_start..)
+            .unwrap_or("")
+            .trim_start()
+            .to_string();
     }
     content.to_string()
 }

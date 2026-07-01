@@ -3,12 +3,12 @@
 
 use crate::build::CatalogIndex;
 use crate::json_util::value_to_string;
-use crate::runtime_config;
 use crate::paths::{
     collect_enums, decomposed_prefix, decomposed_root, get_root_tool_key, json_ext,
     to_decomposed_key, tool_id_from_decomposed_rel,
 };
-use serde_json::{json, Map, Value};
+use crate::runtime_config;
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
@@ -27,8 +27,7 @@ const PARTITION_METADATA_KEYS: &[&str] = &[
     "required_enum_values_by_tool",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ToolPolicy {
     AlwaysInclude,
     #[default]
@@ -119,7 +118,6 @@ pub fn needs_description_reinstate(ctx: &PolicyContext) -> bool {
     }
     ctx.per_tool.values().any(|p| is_description_policy(*p))
 }
-
 
 #[derive(Debug, Clone, Default)]
 pub struct PolicyContext {
@@ -232,9 +230,8 @@ pub fn per_tool_policies_from_value(val: &Value) -> Result<HashMap<String, ToolP
         let Some(policy_str) = policy_val.as_str() else {
             return Err(format!("policy for {tool_id} must be a string"));
         };
-        let policy = parse_tool_policy(policy_str).ok_or_else(|| {
-            format!("invalid policy for {tool_id}: {policy_str}")
-        })?;
+        let policy = parse_tool_policy(policy_str)
+            .ok_or_else(|| format!("invalid policy for {tool_id}: {policy_str}"))?;
         out.insert(tool_id.clone(), policy);
     }
     Ok(out)
@@ -253,18 +250,14 @@ fn item_object(item: &Value) -> Option<&Map<String, Value>> {
 }
 
 fn str_field(obj: &Map<String, Value>, key: &str) -> String {
-    obj.get(key)
-        .map(value_to_string)
-        .unwrap_or_default()
+    obj.get(key).map(value_to_string).unwrap_or_default()
 }
 
 fn copy_dict_list(items: &Value) -> Vec<Value> {
     let Some(arr) = items.as_array() else {
         return Vec::new();
     };
-    arr.iter()
-        .filter(|x| x.is_object()).cloned()
-        .collect()
+    arr.iter().filter(|x| x.is_object()).cloned().collect()
 }
 
 /// Python `not schema.get("properties")` (missing, null, or empty object).
@@ -677,7 +670,10 @@ pub fn partition_catalog(data: &Value, ctx: &PolicyContext) -> (Value, Value) {
             Value::Array(sorted.into_iter().map(Value::String).collect()),
         );
     }
-    pinned.insert("required_enum_values_by_tool".into(), Value::Object(by_tool));
+    pinned.insert(
+        "required_enum_values_by_tool".into(),
+        Value::Object(by_tool),
+    );
 
     (Value::Object(processable), Value::Object(pinned))
 }
@@ -705,17 +701,20 @@ pub fn merge_catalog(processed: &Value, pinned: &Value) -> Value {
         }
     }
     if pinned.get("system_required_enum_values").is_some()
-        && let Some(v) = pinned.get("system_required_enum_values") {
-            merged_obj.insert("system_required_enum_values".into(), v.clone());
-        }
+        && let Some(v) = pinned.get("system_required_enum_values")
+    {
+        merged_obj.insert("system_required_enum_values".into(), v.clone());
+    }
     if pinned.get("mcp_required_enum_values").is_some()
-        && let Some(v) = pinned.get("mcp_required_enum_values") {
-            merged_obj.insert("mcp_required_enum_values".into(), v.clone());
-        }
+        && let Some(v) = pinned.get("mcp_required_enum_values")
+    {
+        merged_obj.insert("mcp_required_enum_values".into(), v.clone());
+    }
     if pinned.get("required_enum_values_by_tool").is_some()
-        && let Some(v) = pinned.get("required_enum_values_by_tool") {
-            merged_obj.insert("required_enum_values_by_tool".into(), v.clone());
-        }
+        && let Some(v) = pinned.get("required_enum_values_by_tool")
+    {
+        merged_obj.insert("required_enum_values_by_tool".into(), v.clone());
+    }
     merged
 }
 
@@ -723,10 +722,7 @@ pub fn merge_catalog(processed: &Value, pinned: &Value) -> Value {
 pub fn stash_system_tools(tools: &[Value]) -> Vec<Value> {
     tools
         .iter()
-        .filter(|t| {
-            item_object(t)
-                .is_some_and(|o| is_system_tool_id(&str_field(o, "name")))
-        })
+        .filter(|t| item_object(t).is_some_and(|o| is_system_tool_id(&str_field(o, "name"))))
         .cloned()
         .collect()
 }
@@ -740,10 +736,7 @@ pub fn restore_system_tools(stash: &[Value]) -> Vec<Value> {
 pub fn stash_mcp_tools(tools: &[Value]) -> Vec<Value> {
     tools
         .iter()
-        .filter(|t| {
-            item_object(t)
-                .is_some_and(|o| is_non_system_tool_id(&str_field(o, "name")))
-        })
+        .filter(|t| item_object(t).is_some_and(|o| is_non_system_tool_id(&str_field(o, "name"))))
         .cloned()
         .collect()
 }
@@ -779,14 +772,12 @@ pub fn merge_tools_preserving_order<S: std::hash::BuildHasher>(
 
 #[must_use]
 pub fn anthropic_tool_is_system(tool: &Value) -> bool {
-    item_object(tool)
-        .is_some_and(|o| is_system_tool_id(&str_field(o, "name")))
+    item_object(tool).is_some_and(|o| is_system_tool_id(&str_field(o, "name")))
 }
 
 #[must_use]
 pub fn anthropic_tool_is_mcp(tool: &Value) -> bool {
-    item_object(tool)
-        .is_some_and(|o| is_non_system_tool_id(&str_field(o, "name")))
+    item_object(tool).is_some_and(|o| is_non_system_tool_id(&str_field(o, "name")))
 }
 
 #[must_use]
@@ -848,16 +839,15 @@ pub fn mcp_required_enum_values(data: &Value) -> HashSet<String> {
 }
 
 pub fn required_enum_values_by_tool(data: &Value) -> HashMap<String, HashSet<String>> {
-    let Some(raw) = data.get("required_enum_values_by_tool").and_then(Value::as_object) else {
+    let Some(raw) = data
+        .get("required_enum_values_by_tool")
+        .and_then(Value::as_object)
+    else {
         return HashMap::new();
     };
     raw.iter()
         .filter_map(|(tool_id, values)| {
-            let set: HashSet<String> = values
-                .as_array()?
-                .iter()
-                .map(value_to_string)
-                .collect();
+            let set: HashSet<String> = values.as_array()?.iter().map(value_to_string).collect();
             Some((tool_id.clone(), set))
         })
         .collect()
@@ -876,17 +866,20 @@ pub fn optional_leaf_survived_rerank<S: std::hash::BuildHasher>(
         .map(|o| str_field(o, "file_path"))
         .unwrap_or_default();
     if let Some(paths) = llm_selected_paths
-        && paths.contains(&file_path) {
-            return true;
-        }
+        && paths.contains(&file_path)
+    {
+        return true;
+    }
     let policy = scoring_policy(effective_policy(ctx, &root_tool_id_from_chunk(item)));
     match policy {
         ToolPolicy::PruneAll => true,
-        ToolPolicy::PruneOptional => item_object(item)
-            .and_then(|o| o.get("score"))
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            >= rerank_score,
+        ToolPolicy::PruneOptional => {
+            item_object(item)
+                .and_then(|o| o.get("score"))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0)
+                >= rerank_score
+        }
         ToolPolicy::AlwaysInclude
         | ToolPolicy::PruneOptionalDescriptions
         | ToolPolicy::PruneAllDescriptions => false,
@@ -979,13 +972,13 @@ fn original_tool_input_schema(catalog_index: &CatalogIndex, tool_id: &str) -> Ma
     let full_rel = format!("schemas/full/{tool_id}{}", json_ext());
     if let Some(raw) = catalog_index.files.get(&full_rel)
         && let Ok(parsed) = serde_json::from_str::<Value>(raw)
-            && let Some(schema) = parsed
-                .get("inputSchema")
-                .or_else(|| parsed.get("input_schema"))
-                .and_then(Value::as_object)
-            {
-                return schema.clone();
-            }
+        && let Some(schema) = parsed
+            .get("inputSchema")
+            .or_else(|| parsed.get("input_schema"))
+            .and_then(Value::as_object)
+    {
+        return schema.clone();
+    }
     for entry in &catalog_index.tools {
         if item_object(entry).map(|o| str_field(o, "id")).as_deref() != Some(tool_id) {
             continue;
@@ -995,9 +988,9 @@ fn original_tool_input_schema(catalog_index: &CatalogIndex, tool_id: &str) -> Ma
                 .get("inputSchema")
                 .or_else(|| full_schema.get("input_schema"))
                 .and_then(Value::as_object)
-            {
-                return schema.clone();
-            }
+        {
+            return schema.clone();
+        }
     }
     Map::new()
 }
@@ -1111,9 +1104,7 @@ fn drop_tools_from_entries(entries: &[Value], tools_to_drop: &HashSet<String>) -
     }
     entries
         .iter()
-        .filter(|item| {
-            item.is_object() && !tools_to_drop.contains(&root_tool_id_from_chunk(item))
-        })
+        .filter(|item| item.is_object() && !tools_to_drop.contains(&root_tool_id_from_chunk(item)))
         .cloned()
         .collect()
 }
@@ -1243,9 +1234,9 @@ fn strip_descriptions_in_chunk_content(chunk: &mut Value) {
 }
 
 fn root_chunk_survived_for_tool(entries: &[Value], tool_id: &str) -> bool {
-    entries.iter().any(|item| {
-        is_decomposed_tool_root_chunk(item) && root_tool_id_from_chunk(item) == tool_id
-    })
+    entries
+        .iter()
+        .any(|item| is_decomposed_tool_root_chunk(item) && root_tool_id_from_chunk(item) == tool_id)
 }
 
 fn build_root_chunk_from_catalog(build_catalog: &Value, tool_id: &str) -> Option<Value> {
@@ -1258,10 +1249,7 @@ fn build_root_chunk_from_catalog(build_catalog: &Value, tool_id: &str) -> Option
         .cloned()
 }
 
-fn build_synthetic_required_root_chunk(
-    build_catalog: &Value,
-    tool_id: &str,
-) -> Option<Value> {
+fn build_synthetic_required_root_chunk(build_catalog: &Value, tool_id: &str) -> Option<Value> {
     let mut synthetic = build_root_chunk_from_catalog(build_catalog, tool_id)?;
     strip_descriptions_in_chunk_content(&mut synthetic);
     Some(synthetic)

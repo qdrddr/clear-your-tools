@@ -1,8 +1,8 @@
 use crate::pageindex::{
-    build_skills_index, get_content_retrieve_result, get_document, get_document_structure,
-    get_line_content, get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
-    repair_skill_chunks, spec_refs::OwnedSpecRefs, write_reconstructed_skill, PageIndexConfig,
-    ReconstructOptions, SkillsIndex,
+    PageIndexConfig, ReconstructOptions, SkillsIndex, build_skills_index,
+    get_content_retrieve_result, get_document, get_document_structure, get_line_content,
+    get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
+    repair_skill_chunks, spec_refs::OwnedSpecRefs, write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -40,9 +40,8 @@ fn build_skills_index_py(
 ) -> PyResult<Py<PyAny>> {
     let cfg = page_index_config_from_py(config)?;
     let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
-    let index = build_skills_index(&dirs, &cfg).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-    })?;
+    let index =
+        build_skills_index(&dirs, &cfg).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     skills_index_to_py(py, &index)
 }
 
@@ -64,16 +63,14 @@ fn write_skills_index_py(index: Bound<'_, PyAny>, output_dir: String) -> PyResul
             }
         }
     }
-    write_skills_index(&skills, PathBuf::from(output_dir).as_path()).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-    })
+    write_skills_index(&skills, PathBuf::from(output_dir).as_path())
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
 }
 
 #[pyfunction(name = "load_skills_index_from_dir")]
 fn load_skills_index_from_dir_py(py: Python<'_>, catalog_dir: String) -> PyResult<Py<PyAny>> {
-    let index = load_skills_index_from_dir(PathBuf::from(catalog_dir).as_path()).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-    })?;
+    let index = load_skills_index_from_dir(PathBuf::from(catalog_dir).as_path())
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     skills_index_to_py(py, &index)
 }
 
@@ -90,9 +87,8 @@ fn repair_skill_chunks_py(
 
 #[pyfunction(name = "skills_index_from_decomposed_dir")]
 fn skills_index_from_decomposed_dir_py(py: Python<'_>, dir: String) -> PyResult<Py<PyAny>> {
-    let index = skills_index_from_decomposed_dir(PathBuf::from(dir).as_path()).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-    })?;
+    let index = skills_index_from_decomposed_dir(PathBuf::from(dir).as_path())
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     skills_index_to_py(py, &index)
 }
 
@@ -115,7 +111,9 @@ fn md_to_tree_py(
     )
 }
 
-fn documents_from_py(documents: Bound<'_, PyAny>) -> PyResult<std::collections::HashMap<String, crate::pageindex::SkillDocument>> {
+fn documents_from_py(
+    documents: Bound<'_, PyAny>,
+) -> PyResult<std::collections::HashMap<String, crate::pageindex::SkillDocument>> {
     let val = py_to_value(documents)?;
     let mut out = std::collections::HashMap::new();
     let obj = val.as_object().ok_or_else(|| {
@@ -164,13 +162,21 @@ fn skills_index_from_py(index_or_docs: Bound<'_, PyAny>) -> PyResult<SkillsIndex
 }
 
 #[pyfunction(name = "get_skill_document")]
-fn get_skill_document_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<Py<PyAny>> {
+fn get_skill_document_py(
+    py: Python<'_>,
+    documents: Bound<'_, PyAny>,
+    doc_id: &str,
+) -> PyResult<Py<PyAny>> {
     let docs = documents_from_py(documents)?;
     value_to_py(py, &get_document(&docs, doc_id))
 }
 
 #[pyfunction(name = "get_skill_structure")]
-fn get_skill_structure_py(py: Python<'_>, documents: Bound<'_, PyAny>, doc_id: &str) -> PyResult<Py<PyAny>> {
+fn get_skill_structure_py(
+    py: Python<'_>,
+    documents: Bound<'_, PyAny>,
+    doc_id: &str,
+) -> PyResult<Py<PyAny>> {
     let docs = documents_from_py(documents)?;
     value_to_py(py, &get_document_structure(&docs, doc_id))
 }
@@ -183,7 +189,10 @@ fn get_skill_line_content_from_spec_py(
     line_num_spec: &str,
 ) -> PyResult<Py<PyAny>> {
     let index = skills_index_from_py(index_or_docs)?;
-    value_to_py(py, &get_line_content_from_spec(&index, doc_id, line_num_spec))
+    value_to_py(
+        py,
+        &get_line_content_from_spec(&index, doc_id, line_num_spec),
+    )
 }
 
 #[pyclass(name = "ReconstructOptions", from_py_object)]
@@ -270,7 +279,7 @@ fn reconstruct_skill_markdown_py(
         &specs.chunk_refs(),
         &opts,
     )
-        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(
         py,
         &serde_json::json!({
@@ -343,8 +352,7 @@ fn parse_skill_chunk_ids_py(py: Python<'_>, spec: &str) -> PyResult<Py<PyAny>> {
 
 #[pyfunction(name = "parse_skill_node_ids")]
 fn parse_skill_node_ids_py(py: Python<'_>, spec: &str) -> PyResult<Py<PyAny>> {
-    let ids = parse_node_ids(spec)
-        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    let ids = parse_node_ids(spec).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &serde_json::json!(ids))
 }
 
@@ -359,10 +367,7 @@ impl PySkillsBuilder {
     #[pyo3(signature = (memory_only=true, output_dir=None))]
     fn new(memory_only: bool, output_dir: Option<String>) -> Self {
         Self {
-            inner: SkillsBuilder::new(
-                memory_only,
-                output_dir.map(PathBuf::from),
-            ),
+            inner: SkillsBuilder::new(memory_only, output_dir.map(PathBuf::from)),
         }
     }
 
@@ -374,16 +379,18 @@ impl PySkillsBuilder {
     ) -> PyResult<Py<PyAny>> {
         let cfg = page_index_config_from_py(config)?;
         let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
-        let index = self.inner.build_from_dirs(&dirs, &cfg).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-        })?;
+        let index = self
+            .inner
+            .build_from_dirs(&dirs, &cfg)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
         skills_index_to_py(py, index)
     }
 
     fn write_catalog(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let index = self.inner.write_catalog().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(e)
-        })?;
+        let index = self
+            .inner
+            .write_catalog()
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
         skills_index_to_py(py, index)
     }
 

@@ -1,9 +1,9 @@
 //! Convert Anthropic API tools or catalog entries into the format expected by [`build_catalog_index`].
 //! Port of `src/cyt/indexer/build.py` + `anthropic_tools_to_catalog_entries` in the proxy.
 
-use crate::build::{build_catalog_index, CatalogIndex};
+use crate::build::{CatalogIndex, build_catalog_index};
 use crate::paths::collect_enums;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::bm25_cohesion::approximate_token_count;
 
@@ -39,9 +39,10 @@ pub fn truncate_description(description: &str, max_tokens: usize) -> String {
 
     let mut body: String = chars[..lo].iter().collect();
     if let Some(sp) = body.rfind(' ')
-        && sp > 0 {
-            body.truncate(sp);
-        }
+        && sp > 0
+    {
+        body.truncate(sp);
+    }
 
     format!("{body}{suffix}")
 }
@@ -168,10 +169,7 @@ mod tests {
         });
         let index = build_catalog_from_tools(&[tool]);
         assert!(index.files.contains_key("schemas/decomposed/Agent.json"));
-        assert!(index
-            .files
-            .keys()
-            .any(|k| k.contains("Agent/model")));
+        assert!(index.files.keys().any(|k| k.contains("Agent/model")));
         assert!(index.files.contains_key("schemas/decomposed/haiku.md"));
     }
 
@@ -197,9 +195,11 @@ mod tests {
             }
         });
         let index = build_catalog_from_tools(&[tool]);
-        assert!(index
-            .files
-            .contains_key("schemas/decomposed/mcp__test__foo.json"));
+        assert!(
+            index
+                .files
+                .contains_key("schemas/decomposed/mcp__test__foo.json")
+        );
         assert!(index.files.keys().any(|k| k.contains("optional_field")));
     }
 

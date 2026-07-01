@@ -12,14 +12,16 @@ fn extract_level_info_value(data: &Value, results: &mut Vec<String>) {
             if let Some(desc) = desc {
                 let mut line = desc.to_string();
                 if let Some(d) = default_val
-                    && !d.is_null() {
-                        let _ = write!(line, "; Default: {}", value_to_string(d));
-                    }
+                    && !d.is_null()
+                {
+                    let _ = write!(line, "; Default: {}", value_to_string(d));
+                }
                 if let Some(items) = enums
-                    && !items.is_empty() {
-                        let enums_str: Vec<String> = items.iter().map(value_to_string).collect();
-                        let _ = write!(line, "; Options: {}", enums_str.join(", "));
-                    }
+                    && !items.is_empty()
+                {
+                    let enums_str: Vec<String> = items.iter().map(value_to_string).collect();
+                    let _ = write!(line, "; Options: {}", enums_str.join(", "));
+                }
                 results.push(line);
             }
 

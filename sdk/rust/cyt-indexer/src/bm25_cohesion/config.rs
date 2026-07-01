@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::token_counter::{TokenCounterKind, token_counter_for_kind, TokenCounter};
+use super::token_counter::{TokenCounter, TokenCounterKind, token_counter_for_kind};
 use super::types::{IncludeDelimMode, WindowMode};
 
 const DEFAULT_DELIMITERS: &[&str] = &[". ", "! ", "? ", "\n"];
@@ -58,7 +58,10 @@ impl Bm25CohesionConfig {
             minimum_sentences: 1,
             min_characters_per_sentence: 24,
             min_characters_per_word: 2,
-            delimiters: DEFAULT_DELIMITERS.iter().map(|s| (*s).to_string()).collect(),
+            delimiters: DEFAULT_DELIMITERS
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
             include_delim: IncludeDelimMode::Prev,
             use_stopwords: true,
             filter_window: 5,
@@ -129,7 +132,11 @@ impl Bm25CohesionConfig {
     pub fn from_partial(value: &Value) -> Self {
         let mode = value
             .get("window_mode")
-            .or_else(|| value.get("bm25_cohesion").and_then(|v| v.get("window_mode")))
+            .or_else(|| {
+                value
+                    .get("bm25_cohesion")
+                    .and_then(|v| v.get("window_mode"))
+            })
             .and_then(|v| parse_window_mode(Some(v)))
             .unwrap_or(WindowMode::Sentence);
         let mut cfg = Self::default_for_mode(mode);
@@ -143,7 +150,10 @@ impl Bm25CohesionConfig {
     }
 }
 
-fn merge_partial_fields(cfg: &mut Bm25CohesionConfig, obj: Option<&serde_json::Map<String, Value>>) {
+fn merge_partial_fields(
+    cfg: &mut Bm25CohesionConfig,
+    obj: Option<&serde_json::Map<String, Value>>,
+) {
     let Some(obj) = obj else {
         return;
     };
@@ -235,7 +245,12 @@ fn parse_window_mode(v: Option<&Value>) -> Option<WindowMode> {
 }
 
 fn parse_token_counter(v: &Value) -> TokenCounterKind {
-    match v.as_str().unwrap_or("approximate").to_ascii_lowercase().as_str() {
+    match v
+        .as_str()
+        .unwrap_or("approximate")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "character" => TokenCounterKind::Character,
         _ => TokenCounterKind::Approximate,
     }

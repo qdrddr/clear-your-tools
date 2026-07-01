@@ -1,0 +1,16 @@
+Checks: >-
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -clang-analyzer-security.insecureAPI.*,
+  -misc-include-cleaner,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -portability-avoid-pragma-once,
+  -readability-duplicate-include
+HeaderFilterRegex: "sdk/c/examples/.*"
+WarningsAsErrors: "*"

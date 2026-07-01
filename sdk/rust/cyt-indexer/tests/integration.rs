@@ -23,9 +23,11 @@ fn build_simple_tool() {
         }
     });
     let index = build_catalog_from_tools(&[tool]);
-    assert!(index
-        .files
-        .contains_key("schemas/decomposed/mcp__test__foo.json"));
+    assert!(
+        index
+            .files
+            .contains_key("schemas/decomposed/mcp__test__foo.json")
+    );
     assert!(index.files.keys().any(|k| k.contains("optional_field")));
 }
 
@@ -53,11 +55,17 @@ fn build_from_anthropic_tools() {
 fn enum_md_files_without_json_quotes() {
     let index = cyt_indexer::build_catalog_index(&[], &[json!("Bash"), json!("auto")]);
     assert_eq!(
-        index.files.get("schemas/decomposed/Bash.md").map(String::as_str),
+        index
+            .files
+            .get("schemas/decomposed/Bash.md")
+            .map(String::as_str),
         Some("Bash"),
     );
     assert_eq!(
-        index.files.get("schemas/decomposed/auto.md").map(String::as_str),
+        index
+            .files
+            .get("schemas/decomposed/auto.md")
+            .map(String::as_str),
         Some("auto"),
     );
 }

@@ -1,13 +1,12 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use cyt_indexer::{
-    apply_per_tool_overrides, build_catalog_from_tools, build_process_groups_options,
-    get_skill_content_retrieve_result, get_skill_document, get_skill_line_content,
-    get_skill_structure, load_catalog_from_dir, load_skills_index_from_dir,
-    parse_tool_policy_pair, per_tool_policies_from_value, parse_tool_policy,
-    policy_context_from_values, removed_chunks, retrieve_tools_from_catalog,
-    write_reconstructed_skill, DecomposedCatalog, PageIndexConfig, PolicyContext,
-    ReconstructOptions, RemovedChunksOptions, RetrieveOptions, SkillsBuilder, TokenCounterKind,
-    WindowMode,
+    DecomposedCatalog, PageIndexConfig, PolicyContext, ReconstructOptions, RemovedChunksOptions,
+    RetrieveOptions, SkillsBuilder, TokenCounterKind, WindowMode, apply_per_tool_overrides,
+    build_catalog_from_tools, build_process_groups_options, get_skill_content_retrieve_result,
+    get_skill_document, get_skill_line_content, get_skill_structure, load_catalog_from_dir,
+    load_skills_index_from_dir, parse_tool_policy, parse_tool_policy_pair,
+    per_tool_policies_from_value, policy_context_from_values, removed_chunks,
+    retrieve_tools_from_catalog, write_reconstructed_skill,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -209,12 +208,11 @@ fn policy_context_from_cli(
     };
 
     if let Some(s) = system_policy {
-        ctx.system_policy = parse_tool_policy(s)
-            .ok_or_else(|| format!("invalid system policy: {s}"))?;
+        ctx.system_policy =
+            parse_tool_policy(s).ok_or_else(|| format!("invalid system policy: {s}"))?;
     }
     if let Some(m) = mcp_policy {
-        ctx.mcp_policy = parse_tool_policy(m)
-            .ok_or_else(|| format!("invalid mcp policy: {m}"))?;
+        ctx.mcp_policy = parse_tool_policy(m).ok_or_else(|| format!("invalid mcp policy: {m}"))?;
     }
 
     if let Some(path) = per_tool {
@@ -244,9 +242,9 @@ fn resolve_skills_output_path(catalog: &Path, output: Option<&Path>) -> PathBuf 
 }
 
 fn catalog_path_utf8(catalog: &Path) -> Result<&str, Box<dyn std::error::Error>> {
-    catalog.to_str().ok_or_else(|| {
-        format!("catalog path is not valid UTF-8: {}", catalog.display()).into()
-    })
+    catalog
+        .to_str()
+        .ok_or_else(|| format!("catalog path is not valid UTF-8: {}", catalog.display()).into())
 }
 
 fn run_build_tools(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -260,7 +258,11 @@ fn run_build_tools(tools: &Path, output: &Path) -> Result<(), Box<dyn std::error
         }
         fs::write(path, content)?;
     }
-    eprintln!("Wrote {} tool files to {}", index.files.len(), output.display());
+    eprintln!(
+        "Wrote {} tool files to {}",
+        index.files.len(),
+        output.display()
+    );
     Ok(())
 }
 
@@ -370,8 +372,7 @@ fn run_retrieve_tools(args: &RetrieveArgs<'_>) -> Result<(), Box<dyn std::error:
     let input_raw = fs::read_to_string(args.input)?;
     let data: Value = serde_json::from_str(&input_raw)?;
     let preserve_set = (!args.preserve.is_empty()).then(|| args.preserve.to_vec());
-    let process_groups =
-        build_process_groups_options(&ctx, &catalog_dict, &store, preserve_set);
+    let process_groups = build_process_groups_options(&ctx, &catalog_dict, &store, preserve_set);
     let opts = RetrieveOptions {
         apply_decomposed_score_filter: apply_score_filter,
         process_groups,
@@ -417,7 +418,8 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
         SkillQuery::Content => {
             if args.line_nums.is_empty() && args.node_ids.is_empty() && args.chunk_ids.is_empty() {
                 return Err(
-                    "content query requires at least one --line_num, --node_id, or --chunk_id".into(),
+                    "content query requires at least one --line_num, --node_id, or --chunk_id"
+                        .into(),
                 );
             }
             let line_num_specs: Vec<&str> = args.line_nums.iter().map(String::as_str).collect();
@@ -469,10 +471,7 @@ fn run_retrieve_skills(args: &RetrieveSkillsArgs<'_>) -> Result<(), Box<dyn std:
                 &chunk_id_specs,
                 &reconstruct_opts,
             )?;
-            eprintln!(
-                "Wrote reconstructed skill to {}",
-                reconstructed.display()
-            );
+            eprintln!("Wrote reconstructed skill to {}", reconstructed.display());
         }
     }
 

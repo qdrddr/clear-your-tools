@@ -1,14 +1,16 @@
 //! Decomposed catalog retrieval: merge tool schemas, score filtering, and enum pruning.
 
-use crate::build::{catalog_index_from_value, CatalogIndex};
-use crate::paths::{self, decomposed_prefix, get_root_tool_key, json_ext, md_ext, tool_id_from_decomposed_rel};
+use crate::build::{CatalogIndex, catalog_index_from_value};
+use crate::paths::{
+    self, decomposed_prefix, get_root_tool_key, json_ext, md_ext, tool_id_from_decomposed_rel,
+};
 use crate::policies::{
-    append_description_reinstate_entries, effective_policy, mcp_required_enum_values,
-    needs_description_reinstate, required_enum_values_by_tool, system_required_enum_values,
-    PolicyContext, ToolPolicy,
+    PolicyContext, ToolPolicy, append_description_reinstate_entries, effective_policy,
+    mcp_required_enum_values, needs_description_reinstate, required_enum_values_by_tool,
+    system_required_enum_values,
 };
 use crate::runtime_config;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -37,11 +39,13 @@ impl DecomposedCatalog {
     pub fn from_catalog_index(index: &CatalogIndex) -> Self {
         let mut json_files = HashMap::new();
         for (rel_path, content) in &index.files {
-            if rel_path.starts_with(&decomposed_prefix()) && rel_path.ends_with(&json_ext())
+            if rel_path.starts_with(&decomposed_prefix())
+                && rel_path.ends_with(&json_ext())
                 && let Ok(parsed) = serde_json::from_str::<Value>(content)
-                    && parsed.is_object() {
-                        json_files.insert(rel_path.clone(), parsed);
-                    }
+                && parsed.is_object()
+            {
+                json_files.insert(rel_path.clone(), parsed);
+            }
         }
         Self { json_files }
     }
@@ -132,10 +136,12 @@ pub fn deep_merge(base: &Value, override_val: &Value) -> Value {
             let mut result = base_map.clone();
             for (key, val) in override_map {
                 if let Some(existing) = result.get(key)
-                    && existing.is_object() && val.is_object() {
-                        result.insert(key.clone(), deep_merge(existing, val));
-                        continue;
-                    }
+                    && existing.is_object()
+                    && val.is_object()
+                {
+                    result.insert(key.clone(), deep_merge(existing, val));
+                    continue;
+                }
                 result.insert(key.clone(), val.clone());
             }
             Value::Object(result)
@@ -199,9 +205,10 @@ pub fn extract_scores(data: &Value) -> HashMap<String, f64> {
                 && let (Some(content), Some(score)) = (
                     e.get("content").and_then(|v| v.as_str()),
                     json_f64(e.get("score")),
-                ) {
-                    scores.insert(content.to_string(), score);
-                }
+                )
+            {
+                scores.insert(content.to_string(), score);
+            }
         }
     }
     if let Some(json_arr) = obj.get("json").and_then(|v| v.as_array()) {
@@ -210,9 +217,10 @@ pub fn extract_scores(data: &Value) -> HashMap<String, f64> {
                 && let (Some(fp), Some(score)) = (
                     e.get("file_path").and_then(|v| v.as_str()),
                     json_f64(e.get("score")),
-                ) {
-                    scores.insert(fp.to_string(), score);
-                }
+                )
+            {
+                scores.insert(fp.to_string(), score);
+            }
         }
     }
     scores
@@ -224,8 +232,7 @@ fn json_f64(value: Option<&Value>) -> Option<f64> {
     if let Some(n) = v.as_f64() {
         return Some(n);
     }
-    v.as_str()
-        .and_then(|s| s.trim().parse::<f64>().ok())
+    v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
 }
 
 fn extract_from_dict(
@@ -240,20 +247,22 @@ fn extract_from_dict(
         if let Some(arr) = value.as_array() {
             for entry in arr {
                 if let Some(e) = entry.as_object()
-                    && let Some(fp) = e.get("file_path").and_then(|v| v.as_str()) {
-                        if key == "json" && apply_decomposed_score_filter {
-                            let score = json_f64(e.get("score")).unwrap_or(0.0);
-                            if score <= runtime_config::decomposed_score() {
-                                continue;
-                            }
+                    && let Some(fp) = e.get("file_path").and_then(|v| v.as_str())
+                {
+                    if key == "json" && apply_decomposed_score_filter {
+                        let score = json_f64(e.get("score")).unwrap_or(0.0);
+                        if score <= runtime_config::decomposed_score() {
+                            continue;
                         }
-                        input_files.push(fp.to_string());
                     }
+                    input_files.push(fp.to_string());
+                }
             }
         } else if let Some(e) = value.as_object()
-            && let Some(fp) = e.get("file_path").and_then(|v| v.as_str()) {
-                input_files.push(fp.to_string());
-            }
+            && let Some(fp) = e.get("file_path").and_then(|v| v.as_str())
+        {
+            input_files.push(fp.to_string());
+        }
     }
     input_files
 }
@@ -327,9 +336,7 @@ pub fn filter_and_sort_enums<S: std::hash::BuildHasher, P: std::hash::BuildHashe
                         let mut preserved = Vec::new();
                         let mut prunable = Vec::new();
                         for item in items {
-                            if preserve_values
-                                .is_some_and(|pv| pv.contains(&item.to_string()))
-                            {
+                            if preserve_values.is_some_and(|pv| pv.contains(&item.to_string())) {
                                 preserved.push(item);
                             } else {
                                 prunable.push(item);
@@ -383,8 +390,11 @@ pub fn group_files(
             .strip_prefix(&decomposed_root)
             .unwrap_or_else(|_| Path::new(&key));
         let parts: Vec<_> = rel.components().collect();
-        let is_tool =
-            parts.len() == 1 && parts[0].as_os_str().to_string_lossy().ends_with(&json_ext());
+        let is_tool = parts.len() == 1
+            && parts[0]
+                .as_os_str()
+                .to_string_lossy()
+                .ends_with(&json_ext());
 
         let Some(root_tool) = paths::get_root_tool_key(&key) else {
             continue;
@@ -418,9 +428,10 @@ pub fn build_process_groups_options(
 ) -> ProcessGroupsOptions {
     let mut system_preserve = system_required_enum_values(catalog_dict);
     if let Some(pv) = preserve_values
-        && system_preserve.is_empty() {
-            system_preserve = pv.into_iter().collect();
-        }
+        && system_preserve.is_empty()
+    {
+        system_preserve = pv.into_iter().collect();
+    }
     let mcp_preserve = mcp_required_enum_values(catalog_dict);
     let required_by_tool = required_enum_values_by_tool(catalog_dict);
 
@@ -599,12 +610,8 @@ pub fn apply_description_reinstate_to_data(
         tools: Vec::new(),
         files: HashMap::new(),
     };
-    let mitigated = append_description_reinstate_entries(
-        ctx,
-        json_entries,
-        build_catalog,
-        &empty_index,
-    );
+    let mitigated =
+        append_description_reinstate_entries(ctx, json_entries, build_catalog, &empty_index);
     if let Some(obj) = retrieve_data.as_object_mut() {
         obj.insert("json".into(), Value::Array(mitigated));
     }
@@ -656,9 +663,10 @@ pub fn chunk_survivor_key(entry: &Value, section: &str) -> Option<String> {
         return paths::to_decomposed_key(fp).or_else(|| Some(fp.to_string()));
     }
     if section == "md"
-        && let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-            return Some(format!("md:content:{content}"));
-        }
+        && let Some(content) = obj.get("content").and_then(|v| v.as_str())
+    {
+        return Some(format!("md:content:{content}"));
+    }
     None
 }
 
@@ -697,11 +705,7 @@ fn survivor_key_sets(
     (json_keys, md_keys)
 }
 
-fn removed_section(
-    full: &Value,
-    section: &str,
-    survivor_keys: &HashSet<String>,
-) -> Vec<Value> {
+fn removed_section(full: &Value, section: &str, survivor_keys: &HashSet<String>) -> Vec<Value> {
     let Some(arr) = full.get(section).and_then(|v| v.as_array()) else {
         return Vec::new();
     };
@@ -723,8 +727,7 @@ pub fn removed_chunks(
     surviving: &Value,
     opts: &RemovedChunksOptions,
 ) -> Value {
-    let (json_keys, md_keys) =
-        survivor_key_sets(surviving, opts.apply_decomposed_score_filter);
+    let (json_keys, md_keys) = survivor_key_sets(surviving, opts.apply_decomposed_score_filter);
     let json = removed_section(full_catalog, "json", &json_keys);
     let md = removed_section(full_catalog, "md", &md_keys);
     json!({
@@ -760,8 +763,9 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
         let is_skills_md = paths::to_skills_decomposed_key(&path_str).is_some()
             && suffix.eq_ignore_ascii_case(trim_dot(&md_ext()))
             && path.file_name().and_then(|n| n.to_str()) != Some("document.json");
-        if is_skills_md || (paths::to_decomposed_key(&path_str).is_some()
-            && suffix.eq_ignore_ascii_case(trim_dot(&md_ext())))
+        if is_skills_md
+            || (paths::to_decomposed_key(&path_str).is_some()
+                && suffix.eq_ignore_ascii_case(trim_dot(&md_ext())))
         {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 md_entries.push(json!({

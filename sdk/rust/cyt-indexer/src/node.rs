@@ -4,9 +4,22 @@ mod pageindex_node;
 pub use pageindex_node::*;
 
 use crate::build::{
-    build_catalog_index as core_build_catalog_index,
-    catalog_index_from_value, catalog_tool_count as core_catalog_tool_count,
+    build_catalog_index as core_build_catalog_index, catalog_index_from_value,
+    catalog_tool_count as core_catalog_tool_count,
 };
+use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
+use crate::paths::{self, collect_enums as paths_collect_enums};
+use crate::policies::{
+    self as policies, PolicyContext, parse_tool_policy, policy_context_from_values,
+    tool_policy_strings,
+};
+use crate::retrieve::{
+    DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
+    build_process_groups_options, chunk_survivor_key, decomposed_catalog_from_value,
+    load_catalog_from_dir, process_groups_options_from_fields, removed_chunks,
+    resolve_build_catalog, retrieve_core as core_retrieve_core, retrieve_tools_from_catalog,
+};
+use crate::runtime_config;
 use crate::tool_entries::{
     anthropic_tool_to_catalog_entry as core_anthropic_tool_to_catalog_entry,
     anthropic_tools_to_catalog_entries as core_anthropic_tools_to_catalog_entries,
@@ -14,21 +27,11 @@ use crate::tool_entries::{
     prepare_tool_entry as core_prepare_tool_entry,
     truncate_description as core_truncate_description,
 };
-use crate::paths::{self, collect_enums as paths_collect_enums};
-use crate::policies::{self as policies, parse_tool_policy, policy_context_from_values, tool_policy_strings, PolicyContext};
-use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
-use crate::retrieve::{
-    build_process_groups_options, chunk_survivor_key, decomposed_catalog_from_value,
-    load_catalog_from_dir, process_groups_options_from_fields, removed_chunks,
-    resolve_build_catalog, retrieve_core as core_retrieve_core, retrieve_tools_from_catalog,
-    DecomposedCatalog, ProcessGroupsOptions, RemovedChunksOptions, RetrieveOptions,
-};
-use crate::runtime_config;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
 
 #[napi(object)]
 pub struct PolicyOptions {
@@ -137,9 +140,8 @@ impl DecomposedCatalogNapi {
 #[napi]
 pub fn catalog_tool_count(data: Value) -> Result<u32> {
     let data = Box::new(data);
-    u32::try_from(core_catalog_tool_count(&data)).map_err(|_| {
-        Error::from_reason("catalog tool count exceeds u32::MAX")
-    })
+    u32::try_from(core_catalog_tool_count(&data))
+        .map_err(|_| Error::from_reason("catalog tool count exceeds u32::MAX"))
 }
 
 /// # Errors
@@ -383,8 +385,7 @@ pub fn rerank_score_napi() -> f64 {
 #[napi(js_name = "emptyOptionalFallbackK")]
 #[must_use]
 pub fn empty_optional_fallback_k_napi() -> u32 {
-    u32::try_from(runtime_config::empty_optional_fallback_k())
-        .unwrap_or(u32::MAX)
+    u32::try_from(runtime_config::empty_optional_fallback_k()).unwrap_or(u32::MAX)
 }
 
 #[napi]
