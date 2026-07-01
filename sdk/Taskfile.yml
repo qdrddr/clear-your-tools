@@ -121,6 +121,43 @@ tasks:
         vars: { WORKDIR: "{{.E2E_TYPESCRIPT_DIR}}", FALLOW_CMD: "fix --yes" }
   #      - fallow fix --dry-run        # Preview automatic cleanup
 
+  test-go:
+    desc: Run Go SDK tests (requires build-c-lib)
+    dir: "{{.TASKFILE_DIR}}/go"
+    cmds:
+      - CGO_ENABLED=1 go test ./...
+
+  build-c-lib:
+    desc: Build shared C library for host triplet
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - bash sdk/c/scripts/build-c-lib.sh
+
+  build-c-lib-all:
+    desc: Build shared C library for all six triplets
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - bash sdk/c/scripts/build-c-lib.sh --all
+
+  build-c-lib-target:
+    desc: Build shared C library for a specific triplet
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - bash sdk/c/scripts/build-c-lib.sh --target {{.TRIPLET}}
+
+  test-c:
+    desc: Build and test sdk/c via CMake/CTest
+    cmds:
+      - cmake -S sdk/c -B sdk/c/build -DCMAKE_BUILD_TYPE=Release
+      - cmake --build sdk/c/build
+      - ctest --test-dir sdk/c/build --output-on-failure
+
+  test-ffi:
+    desc: Run Rust FFI integration tests
+    dir: "{{.REPO_ROOT}}"
+    cmds:
+      - cargo test -p cyt-indexer --no-default-features --features ffi
+
   _tsc:
     internal: true
     dir: "{{.TYPESCRIPT_DIR}}"

@@ -47,6 +47,15 @@ jobs:
       - name: Rust tests (cyt-indexer)
         run: cargo test -p cyt-indexer
 
+      - name: Rust fmt
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy (cyt-indexer)
+        run: cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings
+
+      - name: Rust FFI smoke test
+        run: cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
+
       - name: Build package
         run: uv build
 

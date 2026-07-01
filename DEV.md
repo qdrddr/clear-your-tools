@@ -11,8 +11,11 @@ Install on your machine before the setup steps below:
 | [`uv`](https://docs.astral.sh/uv/) | Python deps, `prek`, `uv run` |
 | Python **3.13+** | App and SDK (see [`pyproject.toml`](pyproject.toml)) |
 | **Rust** (stable) | Editable `cyt-indexer-sdk` (maturin), `cargo` prek hooks, TypeScript native build |
+| **Go 1.24+** | [`sdk/go/`](sdk/go/) cgo bindings; pre-commit uses `go tool` from `sdk/go/go.mod` |
 | **Node.js ≥20** | TypeScript SDK build and prek hooks under `sdk/typescript/` |
 | **`ast-grep`** CLI | `ast-grep` / `ast-scan` prek hooks ([install](https://ast-grep.github.io/guide/quick-start.html#install)) |
+| **C toolchain** | [`sdk/c/`](sdk/c/) examples and cgo; same as Rust FFI build |
+| **clang-format, clang-tidy, cppcheck, cpplint** | C SDK pre-commit hooks (macOS: `brew install llvm cppcheck cpplint`) |
 
 Registry E2E (published crates/PyPI/npm only) needs `cargo`, `npm`, and network access — see [`sdk/e2e/README.md`](sdk/e2e/README.md).
 
@@ -63,6 +66,44 @@ task ci                     # Python checks mirroring CI (sync, ruff, mypy, pyte
 TypeScript-only hooks: `task -d sdk prek` or `cd sdk/typescript && npm test`.
 
 Skip one hook: `SKIP=<hook-id> git commit …` (for example `SKIP=pytest`). Registry E2E against live packages: [`sdk/e2e/scripts/run-local.sh`](sdk/e2e/scripts/run-local.sh).
+
+### C SDK (for clang-tidy pre-commit hook)
+
+Generate `compile_commands.json` once after clone (re-run when `sdk/c/CMakeLists.txt` changes):
+
+```bash
+cmake -S sdk/c -B sdk/c/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release
+```
+
+Build the shared library and C examples:
+
+```bash
+bash sdk/c/scripts/build-c-lib.sh
+cmake --build sdk/c/build
+ctest --test-dir sdk/c/build --output-on-failure
+```
+
+### Go SDK (for pre-commit hooks)
+
+Requires **Go 1.24+** with **CGO enabled**. Install pinned dev tools into the module:
+
+```bash
+bash sdk/c/scripts/build-c-lib.sh
+cd sdk/go && go mod tidy
+go tool gofumpt -version
+go test ./...
+```
+
+### Secret scanning
+
+Pre-commit runs layered scanners: `detect-secrets` (baseline in [`.secrets.baseline`](.secrets.baseline)),
+[gitleaks](.gitleaks.toml), truffleHog, and [talisman](.talismanrc). After intentional false positives, update
+the relevant allowlist or baseline:
+
+```bash
+detect-secrets scan --baseline .secrets.baseline
+detect-secrets audit .secrets.baseline
+```
 
 ## Run from a checkout
 

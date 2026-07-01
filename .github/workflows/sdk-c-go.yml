@@ -1,0 +1,104 @@
+name: SDK C/Go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - sdk/rust/cyt-indexer/**
+      - sdk/c/**
+      - sdk/c/scripts/**
+      - sdk/go/**
+      - Cargo.toml
+      - .github/workflows/sdk-c-go.yml
+  pull_request:
+    paths:
+      - sdk/rust/cyt-indexer/**
+      - sdk/c/**
+      - sdk/c/scripts/**
+      - sdk/go/**
+      - Cargo.toml
+      - .github/workflows/sdk-c-go.yml
+
+concurrency:
+  group: sdk-c-go-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sdk-c-go:
+    name: C + Go (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            goarch: arm64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            goarch: arm64
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            goarch: amd64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            goarch: amd64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            goarch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - name: Install uv (parity tests)
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Sync Python SDK (parity reference)
+        run: uv sync --all-extras --group dev --group test --locked
+
+      - name: Build shared C library
+        shell: bash
+        run: bash sdk/c/scripts/build-c-lib.sh --target ${{ matrix.target }}
+
+      - name: Rust FFI tests
+        run: |
+          cargo test -p cyt-indexer --no-default-features --features ffi \
+            --target ${{ matrix.target }}
+
+      - name: Configure CMake (sdk/c)
+        shell: bash
+        run: |
+          cmake -S sdk/c -B sdk/c/build -DCMAKE_BUILD_TYPE=Release \
+            -DCYT_RUST_TARGET=${{ matrix.target }}
+
+      - name: Build and test sdk/c
+        shell: bash
+        run: |
+          cmake --build sdk/c/build
+          ctest --test-dir sdk/c/build --output-on-failure
+
+      - name: Go tests (sdk/go)
+        shell: bash
+        working-directory: sdk/go
+        env:
+          CGO_ENABLED: "1"
+          GOARCH: ${{ matrix.goarch }}
+        run: go test -v ./...
