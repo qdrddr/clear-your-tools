@@ -131,6 +131,65 @@ int cyt_bm25_cohesion_default_config(char **out);
 int cyt_bm25_cohesion_chunk(const char *text, const char *config_json, char **out);
 
 /*
+ Override BM25 search defaults. `config_json` may be null or partial JSON.
+
+ # Safety
+
+ When non-null, `config_json` must be a valid null-terminated UTF-8 C string.
+ */
+int cyt_configure_bm25_defaults(const char *config_json);
+
+/*
+ Hash catalog documents plus analyzer settings.
+
+ # Safety
+
+ `data_json` and `out` must be valid pointers. `out` receives an allocated string
+ that the caller must free with [`cyt_free_string`].
+ */
+int cyt_bm25_catalog_fingerprint(const char *data_json, char **out);
+
+/*
+ Score catalog json/md lists in-place and return the updated catalog JSON.
+
+ # Safety
+
+ `data_json`, `query`, and `out` must be valid pointers. `options_json` may be null.
+ `out` receives an allocated JSON string that the caller must free with [`cyt_free_string`].
+ */
+int cyt_bm25_score_catalog(const char *data_json,
+                           const char *query,
+                           const char *options_json,
+                           char **out);
+
+/*
+ Return excluded entry refs and trace metadata for frontmatter gating.
+
+ # Safety
+
+ `entries_json`, `query`, and `out` must be valid pointers. `out` receives an allocated
+ JSON string that the caller must free with [`cyt_free_string`].
+ */
+int cyt_bm25_frontmatter_gate(const char *entries_json,
+                              const char *query,
+                              double upper_limit,
+                              char **out);
+
+/*
+ Search skill chunks, reconstruct matches, return matches + trace JSON.
+
+ # Safety
+
+ `entries_json`, `query`, and `out` must be valid pointers. `excluded_json` may be null.
+ `out` receives an allocated JSON string that the caller must free with [`cyt_free_string`].
+ */
+int cyt_bm25_search_skill_chunks(const char *entries_json,
+                                 const char *query,
+                                 double threshold,
+                                 const char *excluded_json,
+                                 char **out);
+
+/*
  Count tools in a catalog dict JSON.
 
  # Safety
@@ -510,6 +569,38 @@ uintptr_t cyt_runtime_empty_optional_fallback_k(void);
 int cyt_runtime_default_system_policy(char **out);
 
 int cyt_runtime_default_mcp_policy(char **out);
+
+/*
+ Count tokens in UTF-8 text using the configured tiktoken encoding.
+
+ Returns the token count on success, or `-1` on error (`cyt_get_last_error()`).
+
+ # Safety
+
+ `text` must be a valid null-terminated UTF-8 C string, or null (returns -1).
+ */
+long cyt_count_tokens(const char *text);
+
+/*
+ Count tokens for compact JSON text.
+
+ Returns the token count on success, or `-1` on error.
+
+ # Safety
+
+ `json` must be a valid null-terminated UTF-8 C string, or null (returns -1).
+ */
+long cyt_count_json_tokens(const char *json);
+
+/*
+ Override tokenizer defaults. `config_json` may be null or partial JSON:
+ `{"encoding":"cl100k_base","allowed_special":"all"|"none"}`.
+
+ # Safety
+
+ When non-null, `config_json` must be a valid null-terminated UTF-8 C string.
+ */
+int cyt_configure_tokenizer_defaults(const char *config_json);
 
 #ifdef __cplusplus
 }  // extern "C"
