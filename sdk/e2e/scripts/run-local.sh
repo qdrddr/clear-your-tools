@@ -16,17 +16,19 @@ VERSION:
   version from sdk/rust/cyt-indexer/Cargo.toml.
 
 TARGET:
-  rust | python | typescript | clear-your-tools | all
+  rust | python | typescript | clear-your-tools | go | c | all
   Default: all
 
 OPTIONS:
   --skip-wait, -s   Skip polling registries (packages must already be published)
+  --workspace, -w   Use monorepo checkout for go/c (unreleased local testing)
   --help, -h        Show this help
 
 Environment:
   CYT_RELEASE_VERSION   Same as VERSION
   TAG                   Release tag to parse (e.g. v0.1.10)
   SKIP_REGISTRY_WAIT=1  Same as --skip-wait
+  CYT_E2E_USE_WORKSPACE=1  Same as --workspace (go/c only)
 
 Examples:
   ${SCRIPT_NAME}
@@ -67,6 +69,7 @@ resolve_version() {
 }
 
 SKIP_WAIT="${SKIP_REGISTRY_WAIT:-0}"
+USE_WORKSPACE="${CYT_E2E_USE_WORKSPACE:-0}"
 TARGETS=()
 
 while [[ $# -gt 0 ]]; do
@@ -75,11 +78,15 @@ while [[ $# -gt 0 ]]; do
 		SKIP_WAIT=1
 		shift
 		;;
+	--workspace | -w)
+		USE_WORKSPACE=1
+		shift
+		;;
 	--help | -h)
 		usage
 		exit 0
 		;;
-	all | rust | python | typescript | clear-your-tools)
+	all | rust | python | typescript | clear-your-tools | go | c)
 		TARGETS+=("$1")
 		shift
 		;;
@@ -106,6 +113,20 @@ fi
 
 resolve_version
 export SKIP_REGISTRY_WAIT="$SKIP_WAIT"
+export CYT_E2E_USE_WORKSPACE="$USE_WORKSPACE"
+
+needs_go_c=0
+for target in "${TARGETS[@]}"; do
+	if [[ "$target" == "all" || "$target" == "go" || "$target" == "c" ]]; then
+		needs_go_c=1
+		break
+	fi
+done
+if [[ "$needs_go_c" -eq 1 ]]; then
+	_cyt_e2e_staging="$("${ROOT}/scripts/prepare-release-checkout.sh")"
+	export CYT_E2E_STAGING="$_cyt_e2e_staging"
+	unset _cyt_e2e_staging
+fi
 
 echo "Registry E2E: CYT_RELEASE_VERSION=${CYT_RELEASE_VERSION}"
 "${ROOT}/scripts/render-manifests.sh"
@@ -119,7 +140,7 @@ for target in "${TARGETS[@]}"; do
 done
 
 if [[ "$run_all" -eq 1 ]]; then
-	for target in rust python typescript clear-your-tools; do
+	for target in rust python typescript clear-your-tools go c; do
 		"${ROOT}/scripts/run-target.sh" "$target"
 	done
 	echo "All registry E2E smokes passed."

@@ -1,0 +1,7 @@
+module cyt-indexer-go-registry-e2e
+
+go 1.25.0
+
+require github.com/qdrddr/clear-your-tools/sdk/go v@CYT_RELEASE_VERSION@
+
+replace github.com/qdrddr/clear-your-tools/sdk/go => @CYT_E2E_STAGING@/sdk/go

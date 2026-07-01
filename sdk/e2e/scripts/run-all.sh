@@ -14,7 +14,7 @@ export CYT_RELEASE_VERSION="${CYT_RELEASE_VERSION:?set CYT_RELEASE_VERSION or TA
 
 "${ROOT}/scripts/render-manifests.sh"
 
-for target in rust python typescript clear-your-tools; do
+for target in rust python typescript clear-your-tools go c; do
 	"${ROOT}/scripts/run-target.sh" "$target"
 done
 

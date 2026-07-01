@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Wait until a published package version is available on a registry.
-# Usage: CYT_RELEASE_VERSION=0.1.10 ./wait-registry.sh <crate|pypi-sdk|pypi-app|npm>
+# Usage: CYT_RELEASE_VERSION=0.1.10 ./wait-registry.sh <crate|pypi-sdk|pypi-app|npm|tag>
 set -euo pipefail
 
 TARGET="${1:-}"
 VERSION="${CYT_RELEASE_VERSION:-}"
 if [[ -z "$TARGET" || -z "$VERSION" ]]; then
-	echo "usage: CYT_RELEASE_VERSION=x.y.z $0 <crate|pypi-sdk|pypi-app|npm>" >&2
+	echo "usage: CYT_RELEASE_VERSION=x.y.z $0 <crate|pypi-sdk|pypi-app|npm|tag>" >&2
 	exit 1
 fi
 
@@ -52,6 +52,13 @@ npm_has_version() {
 	npm view "cyt-indexer-sdk@${ver}" version 2>/dev/null | grep -qxF "$ver"
 }
 
+tag_has_version() {
+	local ver="$1"
+	local tag="v${ver}"
+	local repo="${CYT_E2E_GIT_REPO:-https://github.com/qdrddr/clear-your-tools.git}"
+	git ls-remote --tags "$repo" "refs/tags/${tag}" | grep -q .
+}
+
 wait_loop() {
 	local label="$1"
 	shift
@@ -82,6 +89,9 @@ pypi-app)
 	;;
 npm)
 	wait_loop "npm/cyt-indexer-sdk" npm_has_version "$VERSION"
+	;;
+tag)
+	wait_loop "GitHub/clear-your-tools" tag_has_version "$VERSION"
 	;;
 *)
 	echo "unknown target: ${TARGET}" >&2

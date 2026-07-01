@@ -126,6 +126,8 @@ sdk/e2e/typescript/node_modules/
 sdk/e2e/clear-your-tools/pyproject.toml
 sdk/e2e/clear-your-tools/uv.lock
 sdk/e2e/clear-your-tools/.venv/
+sdk/e2e/go/go.mod
+sdk/e2e/go/go.sum
 
 .catalog/
 # Stray manual C compiles (CMake uses sdk/c/build/)

@@ -143,6 +143,7 @@ models:
 
 pruning:
   tools:
+    inject_via: proxy # hook | proxy
     policy:
       system_tool: prune_optional
       mcp_tool: prune_all

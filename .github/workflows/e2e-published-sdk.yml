@@ -154,3 +154,57 @@ jobs:
         run: |
           ../scripts/uv-sync-with-retry.sh --group test
           uv run pytest
+
+  e2e-go:
+    name: 4. E2E Go SDK (GitHub tag)
+    needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for GitHub tag
+        continue-on-error: true
+        run: sdk/e2e/scripts/wait-registry.sh tag
+
+      - name: Test published Go module
+        run: sdk/e2e/scripts/run-target.sh go
+
+  e2e-c:
+    name: 4. E2E C SDK (GitHub tag)
+    needs: resolve-version
+    if: |
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Render manifests
+        run: sdk/e2e/scripts/render-manifests.sh
+
+      - name: Wait for GitHub tag
+        continue-on-error: true
+        run: sdk/e2e/scripts/wait-registry.sh tag
+
+      - name: Test published C SDK
+        run: sdk/e2e/scripts/run-target.sh c
