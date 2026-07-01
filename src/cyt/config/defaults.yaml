@@ -88,6 +88,13 @@ models:
         pricing:
           input_cost_per_token: 3e-06
           output_cost_per_token: 15e-06
+      - name: claude-sonnet-5
+        provider_nick: anthropic
+        nick: sonnet46
+        max_tokens: 1000000
+        pricing:
+          input_cost_per_token: 3e-06
+          output_cost_per_token: 15e-06
       - name: gpt-5.4-nano
         provider_nick: openai
         nick: gpt-5.4-nano
