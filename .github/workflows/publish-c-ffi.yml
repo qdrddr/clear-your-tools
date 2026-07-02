@@ -1,74 +1,61 @@
-# Publish C FFI artifacts to GitHub Release when cyt-indexer is published to crates.io.
+# Publish C FFI artifacts to GitHub Release when a semver tag vX.Y.Z is pushed.
 #
+# Builds libcyt_indexer from the tagged monorepo source (no crates.io dependency).
 # Runs in parallel with:
+#   1. Publish cyt-indexer to crates.io    (publish-crates.yml)
 #   2. Publish cyt-indexer-sdk to npm      (publish-npm-sdk.yml)
 #   2. Publish cyt-indexer-sdk to PyPI     (publish-pypi-sdk.yml)
 #
-# Triggered by workflow_run after:
-#   1. Publish cyt-indexer to crates.io    (publish-crates.yml)
-#
-# Manual runs: workflow_dispatch (optional version input).
+# Manual runs: workflow_dispatch (requires version input).
 
-name: 2. Publish C FFI artifacts to GitHub Release
+name: 1. Publish C FFI artifacts to GitHub Release
 
 on:
-  workflow_run:
-    workflows: ["1. Publish cyt-indexer to crates.io"]
-    types: [completed]
+  push:
+    tags:
+      # GitHub glob: digits only, no prerelease suffix (validated again in the job).
+      - "v[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
     inputs:
       version:
-        description: Semver to publish (manual runs only)
-        required: false
+        description: Semver to publish (e.g. 1.2.3)
+        required: true
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   resolve-version:
     name: Resolve release version
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
-
       - name: Resolve version
         id: parse
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-        run: sdk/e2e/scripts/resolve-version-from-parent.sh
-
-  wait-for-crate:
-    name: Wait for cyt-indexer on crates.io
-    needs: resolve-version
-    if: |
-      (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
-      needs.resolve-version.outputs.version != ''
-    runs-on: ubuntu-latest
-    env:
-      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Wait for crates.io
-        run: sdk/e2e/scripts/wait-registry.sh crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${{ github.ref_name }}"
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Tag must be vX.Y.Z (e.g. v0.1.2), got: ${TAG}"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Version must be X.Y.Z (e.g. 0.1.2), got: ${VERSION}"
+              exit 1
+            fi
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "CYT_RELEASE_VERSION=${VERSION}"
 
   build-native:
     name: Build C FFI (${{ matrix.target }})
-    needs: [resolve-version, wait-for-crate]
-    if: |
-      (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
-      needs.resolve-version.result == 'success' &&
-      (needs.wait-for-crate.result == 'success' || needs.wait-for-crate.result == 'skipped')
+    needs: resolve-version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -87,8 +74,10 @@ jobs:
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
     steps:
-      - name: Checkout
+      - name: Checkout tag
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -144,17 +133,10 @@ jobs:
   publish-release:
     name: Upload C FFI to GitHub Release
     needs: [build-native, resolve-version]
-    if: |
-      (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
-      needs.resolve-version.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
       - name: Download triplet archives
         uses: actions/download-artifact@v4
         with:

@@ -42,7 +42,7 @@ if err != nil {
 
 The Go module is source-only on `go get`. The Rust/C implementation ships as **prebuilt C FFI artifacts**
 attached to each [GitHub Release](https://github.com/qdrddr/clear-your-tools/releases) (published by
-`2. Publish C FFI artifacts to GitHub Release` in CI).
+`1. Publish C FFI artifacts to GitHub Release` in CI).
 
 ### Automatic (recommended)
 
