@@ -24,7 +24,7 @@ prepare_go_c() {
 	export CYT_E2E_STAGING="$_cyt_e2e_staging"
 	unset _cyt_e2e_staging
 	"${ROOT}/scripts/render-manifests.sh"
-	"${ROOT}/scripts/build-staging-c-lib.sh"
+	"${ROOT}/scripts/ensure-release-native.sh"
 }
 
 case "$TARGET" in
@@ -49,14 +49,16 @@ clear-your-tools)
 	(cd "${ROOT}/clear-your-tools" && "${ROOT}/scripts/uv-sync-with-retry.sh" --group test && uv run pytest)
 	;;
 go)
-	echo "=== Go SDK (GitHub tag) ==="
+	echo "=== Go SDK (GitHub tag + release C FFI) ==="
 	maybe_wait "GitHub tag v${CYT_RELEASE_VERSION}" tag
+	maybe_wait "GitHub Release C FFI v${CYT_RELEASE_VERSION}" release-assets
 	prepare_go_c
 	(cd "${ROOT}/go" && CGO_ENABLED=1 go mod tidy && CGO_ENABLED=1 go test ./...)
 	;;
 c)
-	echo "=== C SDK (GitHub tag) ==="
+	echo "=== C SDK (GitHub tag + release C FFI) ==="
 	maybe_wait "GitHub tag v${CYT_RELEASE_VERSION}" tag
+	maybe_wait "GitHub Release C FFI v${CYT_RELEASE_VERSION}" release-assets
 	prepare_go_c
 	export CARGO_TARGET_DIR="${CYT_E2E_STAGING}/target"
 	cmake -S "${ROOT}/c" -B "${ROOT}/c/build" -DCMAKE_BUILD_TYPE=Release \

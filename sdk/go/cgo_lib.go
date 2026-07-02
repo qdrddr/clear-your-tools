@@ -1,14 +1,15 @@
 package cytindexer
 
+//go:generate go run ./cmd/cyt-native-ensure
+
 /*
 #cgo CFLAGS: -I${SRCDIR}/../c/include
-#cgo LDFLAGS: -lcyt_indexer
-#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/../../target/x86_64-unknown-linux-gnu/release
-#cgo linux,arm64 LDFLAGS: -L${SRCDIR}/../../target/aarch64-unknown-linux-gnu/release
-#cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/../../target/x86_64-apple-darwin/release
-#cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/../../target/aarch64-apple-darwin/release
-#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/../../target/x86_64-pc-windows-msvc/release cyt_indexer.dll.lib
-#cgo windows,arm64 LDFLAGS: -L${SRCDIR}/../../target/aarch64-pc-windows-msvc/release cyt_indexer.dll.lib
+#cgo linux,amd64 LDFLAGS: -L${SRCDIR}/native/x86_64-unknown-linux-gnu -L${SRCDIR}/../../target/x86_64-unknown-linux-gnu/release -lcyt_indexer -lm -ldl -pthread
+#cgo linux,arm64 LDFLAGS: -L${SRCDIR}/native/aarch64-unknown-linux-gnu -L${SRCDIR}/../../target/aarch64-unknown-linux-gnu/release -lcyt_indexer -lm -ldl -pthread
+#cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/native/x86_64-apple-darwin -L${SRCDIR}/../../target/x86_64-apple-darwin/release -lcyt_indexer -framework Security -lpthread
+#cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/native/aarch64-apple-darwin -L${SRCDIR}/../../target/aarch64-apple-darwin/release -lcyt_indexer -framework Security -lpthread
+#cgo windows,amd64 LDFLAGS: -L${SRCDIR}/native/x86_64-pc-windows-msvc -L${SRCDIR}/../../target/x86_64-pc-windows-msvc/release cyt_indexer.lib
+#cgo windows,arm64 LDFLAGS: -L${SRCDIR}/native/aarch64-pc-windows-msvc -L${SRCDIR}/../../target/aarch64-pc-windows-msvc/release cyt_indexer.lib
 #ifdef index
 #undef index
 #endif

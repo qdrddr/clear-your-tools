@@ -15,8 +15,8 @@
 #    - No secrets needed when using PyPI trusted publishing (OIDC)
 #
 # 3. Push tag vX.Y.Z to trigger publish-crates.yml; when that workflow succeeds,
-#    this workflow runs automatically (workflow_run). Version comes from the
-#    crates publish artifact. Polls crates.io briefly before building wheels.
+#    this workflow runs automatically (workflow_run) in parallel with npm SDK and
+#    C FFI GitHub Release publish. Version comes from the crates publish artifact.
 #
 # Manual runs: workflow_dispatch (optional version input).
 

@@ -1,0 +1,207 @@
+# Publish C FFI artifacts to GitHub Release when cyt-indexer is published to crates.io.
+#
+# Runs in parallel with:
+#   2. Publish cyt-indexer-sdk to npm      (publish-npm-sdk.yml)
+#   2. Publish cyt-indexer-sdk to PyPI     (publish-pypi-sdk.yml)
+#
+# Triggered by workflow_run after:
+#   1. Publish cyt-indexer to crates.io    (publish-crates.yml)
+#
+# Manual runs: workflow_dispatch (optional version input).
+
+name: 2. Publish C FFI artifacts to GitHub Release
+
+on:
+  workflow_run:
+    workflows: ["1. Publish cyt-indexer to crates.io"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver to publish (manual runs only)
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  resolve-version:
+    name: Resolve release version
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: parse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: sdk/e2e/scripts/resolve-version-from-parent.sh
+
+  wait-for-crate:
+    name: Wait for cyt-indexer on crates.io
+    needs: resolve-version
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
+      needs.resolve-version.outputs.version != ''
+    runs-on: ubuntu-latest
+    env:
+      CYT_RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Wait for crates.io
+        run: sdk/e2e/scripts/wait-registry.sh crate
+
+  build-native:
+    name: Build C FFI (${{ matrix.target }})
+    needs: [resolve-version, wait-for-crate]
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
+      needs.resolve-version.result == 'success' &&
+      (needs.wait-for-crate.result == 'success' || needs.wait-for-crate.result == 'skipped')
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Configure Cargo for Windows network reliability
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "${HOME}/.cargo"
+          cat >> "${HOME}/.cargo/config.toml" <<'EOF'
+          [http]
+          multiplexing = false
+          EOF
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          cache-on-failure: true
+
+      - name: Build and package C library
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_dir="artifacts/cyt-indexer-ffi-${{ matrix.target }}"
+          bash sdk/c/scripts/build-c-lib.sh \
+            --target "${{ matrix.target }}" \
+            --sync-header \
+            --package "${pkg_dir}"
+          tar -czf "artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz" \
+            -C "${pkg_dir}" .
+          ls -la "artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz"
+          ls -la "${pkg_dir}/"
+
+      - name: Upload triplet archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyt-indexer-ffi-${{ matrix.target }}
+          path: artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+      - name: Upload header (once)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyt-indexer-header
+          path: sdk/c/include/cyt_indexer.h
+          if-no-files-found: error
+
+  publish-release:
+    name: Upload C FFI to GitHub Release
+    needs: [build-native, resolve-version]
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')) &&
+      needs.resolve-version.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download triplet archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cyt-indexer-ffi-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download header
+        uses: actions/download-artifact@v4
+        with:
+          name: cyt-indexer-header
+          path: release-assets
+
+      - name: Generate SHA256SUMS
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(cyt-indexer-ffi-*.tar.gz cyt_indexer.h)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No release assets found"
+            ls -la
+            exit 1
+          fi
+          sha256sum "${files[@]}" > SHA256SUMS
+          cat SHA256SUMS
+          archives=(cyt-indexer-ffi-*.tar.gz)
+          expected_archives=6
+          if [ ${#archives[@]} -ne "${expected_archives}" ]; then
+            echo "::error::Expected ${expected_archives} triplet archives, found ${#archives[@]}"
+            ls -la
+            exit 1
+          fi
+
+      - name: Upload GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "cyt-indexer v${VERSION}" \
+              --notes "C FFI artifacts for cyt-indexer v${VERSION} (Go/C SDK consumers)."
+          fi
+          gh release upload "$tag" release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber

@@ -21,8 +21,8 @@
 #    OIDC cannot create a brand-new package; it only works after the package exists.
 #
 # 4. Push tag vX.Y.Z to trigger publish-crates.yml; when that workflow succeeds,
-#    this workflow runs automatically (workflow_run). Polls crates.io briefly
-#    before building native bindings.
+#    this workflow runs automatically (workflow_run) in parallel with PyPI SDK and
+#    C FFI GitHub Release publish. Polls crates.io briefly before building native bindings.
 #
 # Manual runs: workflow_dispatch (optional version input).
 #

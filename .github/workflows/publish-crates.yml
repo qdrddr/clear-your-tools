@@ -15,8 +15,11 @@
 #    - No secrets needed when using crates.io trusted publishing (OIDC)
 #
 # 3. Push a semver tag: v0.2.0, v1.0.0 (exact form vX.Y.Z only). On success,
-#    publish-pypi-sdk.yml, publish-npm-sdk.yml, and e2e-published-sdk.yml run
-#    via workflow_run (not on GitHub Release).
+#    these run in parallel via workflow_run:
+#      2. Publish cyt-indexer-sdk to npm      (publish-npm-sdk.yml)
+#      2. Publish cyt-indexer-sdk to PyPI     (publish-pypi-sdk.yml)
+#      2. Publish C FFI artifacts to GitHub Release (publish-c-ffi.yml)
+#      4. E2E published packages              (e2e-published-sdk.yml)
 #
 # See RFC 3691: https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html
 

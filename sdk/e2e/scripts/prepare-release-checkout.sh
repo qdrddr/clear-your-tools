@@ -34,7 +34,7 @@ rm -rf "$STAGING"
 git clone --depth 1 --branch "$TAG" --filter=blob:none --sparse "$REPO" "$STAGING"
 (
 	cd "$STAGING"
-	git sparse-checkout set Cargo.toml Cargo.lock sdk/rust/cyt-indexer sdk/c sdk/go
+	git sparse-checkout set Cargo.toml Cargo.lock sdk/rust/cyt-indexer sdk/c sdk/go sdk/go/cmd/cyt-native-ensure
 )
 
 if [[ ! -f "${STAGING}/sdk/go/go.mod" ]]; then

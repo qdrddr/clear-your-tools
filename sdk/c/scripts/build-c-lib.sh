@@ -25,6 +25,7 @@ PROFILE="${CYT_C_LIB_PROFILE:-release}"
 SYNC_HEADER=1
 PRINT_ONLY=0
 BUILD_ALL=0
+PACKAGE_DIR=""
 TARGET=""
 
 usage() {
@@ -40,6 +41,7 @@ Options:
   --debug              Debug profile
   --sync-header        Copy cyt_indexer.h to sdk/c/include (default)
   --no-sync-header     Skip header copy
+  --package DIR        Copy shared + static libs and header into DIR (for CI)
   --print-artifacts    Print artifact paths and exit
   -h, --help           Show this help
 
@@ -83,7 +85,7 @@ cargo_target_dir() {
 	fi
 }
 
-artifact_paths() {
+artifact_paths_shared() {
 	local triplet="$1"
 	local prof="$2"
 	local base
@@ -101,6 +103,48 @@ artifact_paths() {
 		echo "${base}/libcyt_indexer.so"
 		;;
 	esac
+}
+
+artifact_paths_static() {
+	local triplet="$1"
+	local prof="$2"
+	local base
+	base="$(cargo_target_dir)/${triplet}/${prof}"
+
+	case "${triplet}" in
+	*-pc-windows-msvc)
+		echo "${base}/cyt_indexer.lib"
+		;;
+	*)
+		echo "${base}/libcyt_indexer.a"
+		;;
+	esac
+}
+
+artifact_paths() {
+	local triplet="$1"
+	local prof="$2"
+	artifact_paths_shared "$triplet" "$prof"
+	artifact_paths_static "$triplet" "$prof"
+}
+
+package_artifacts() {
+	local triplet="$1"
+	local prof="$2"
+	local dest="$3"
+	local path
+
+	mkdir -p "$dest"
+	while IFS= read -r path; do
+		[[ -f "$path" ]] || die "expected artifact missing: $path"
+		cp -f "$path" "${dest}/$(basename "$path")"
+	done < <(artifact_paths "$triplet" "$prof")
+
+	local header="${INCLUDE_DIR}/cyt_indexer.h"
+	[[ -f "$header" ]] || header="${CRATE_DIR}/cyt_indexer.h"
+	[[ -f "$header" ]] || die "header not found for packaging: $header"
+	cp -f "$header" "${dest}/cyt_indexer.h"
+	info "packaged artifacts -> ${dest}"
 }
 
 sync_header() {
@@ -142,6 +186,10 @@ build_one() {
 		[[ -f "$path" ]] || die "expected artifact missing: $path"
 		echo "  $path"
 	done < <(artifact_paths "$triplet" "$prof")
+
+	if [[ -n "$PACKAGE_DIR" ]]; then
+		package_artifacts "$triplet" "$prof" "$PACKAGE_DIR"
+	fi
 }
 
 _cyt_build_c_lib_main() {
@@ -175,6 +223,11 @@ _cyt_build_c_lib_main() {
 		--print-artifacts)
 			PRINT_ONLY=1
 			shift
+			;;
+		--package)
+			[[ $# -ge 2 ]] || die "missing value for --package"
+			PACKAGE_DIR="$2"
+			shift 2
 			;;
 		-h | --help)
 			usage

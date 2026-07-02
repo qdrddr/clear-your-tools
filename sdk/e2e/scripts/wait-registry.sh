@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Wait until a published package version is available on a registry.
-# Usage: CYT_RELEASE_VERSION=0.1.10 ./wait-registry.sh <crate|pypi-sdk|pypi-app|npm|tag>
+# Usage: CYT_RELEASE_VERSION=0.1.10 ./wait-registry.sh <crate|pypi-sdk|pypi-app|npm|tag|release-assets>
 set -euo pipefail
 
 TARGET="${1:-}"
 VERSION="${CYT_RELEASE_VERSION:-}"
 if [[ -z "$TARGET" || -z "$VERSION" ]]; then
-	echo "usage: CYT_RELEASE_VERSION=x.y.z $0 <crate|pypi-sdk|pypi-app|npm|tag>" >&2
+	echo "usage: CYT_RELEASE_VERSION=x.y.z $0 <crate|pypi-sdk|pypi-app|npm|tag|release-assets>" >&2
 	exit 1
 fi
 
@@ -59,6 +59,31 @@ tag_has_version() {
 	git ls-remote --tags "$repo" "refs/tags/${tag}" | grep -q .
 }
 
+release_has_ffi_assets() {
+	local ver="$1"
+	local tag="v${ver}"
+	local slug="${CYT_E2E_GITHUB_REPO:-qdrddr/clear-your-tools}"
+	local url="https://api.github.com/repos/${slug}/releases/tags/${tag}"
+	local json
+	json="$(curl -fsSL "$url")"
+	local expected=(
+		cyt-indexer-ffi-x86_64-unknown-linux-gnu.tar.gz
+		cyt-indexer-ffi-aarch64-unknown-linux-gnu.tar.gz
+		cyt-indexer-ffi-x86_64-apple-darwin.tar.gz
+		cyt-indexer-ffi-aarch64-apple-darwin.tar.gz
+		cyt-indexer-ffi-x86_64-pc-windows-msvc.tar.gz
+		cyt-indexer-ffi-aarch64-pc-windows-msvc.tar.gz
+		SHA256SUMS
+		cyt_indexer.h
+	)
+	local name
+	for name in "${expected[@]}"; do
+		if ! printf '%s' "$json" | grep -q "\"name\": \"${name}\""; then
+			return 1
+		fi
+	done
+}
+
 wait_loop() {
 	local label="$1"
 	shift
@@ -92,6 +117,9 @@ npm)
 	;;
 tag)
 	wait_loop "GitHub/clear-your-tools" tag_has_version "$VERSION"
+	;;
+release-assets)
+	wait_loop "GitHub Release C FFI assets" release_has_ffi_assets "$VERSION"
 	;;
 *)
 	echo "unknown target: ${TARGET}" >&2
