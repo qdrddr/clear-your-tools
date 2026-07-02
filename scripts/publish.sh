@@ -17,6 +17,9 @@ git pull origin main
 git tag "${tag}"
 git push origin "${tag}"
 
+git tag "sdk/go/v${version}"
+git push origin "sdk/go/v${version}"
+
 # git tag -f cyt-indexer-rust-v0.1.6
 # git push -f origin cyt-indexer-rust-v0.1.6
 

@@ -1,0 +1,9 @@
+module cyt-go-git-smoke
+
+go 1.24.0
+
+require github.com/qdrddr/clear-your-tools/sdk/go v0.6.4
+
+replace github.com/qdrddr/clear-your-tools/sdk/go => @CYT_GIT_STAGING@/sdk/go
+
+tool github.com/qdrddr/clear-your-tools/sdk/go/cmd/cyt-native-ensure

@@ -121,6 +121,14 @@ The Go package searches, in order:
 | `CYT_NATIVE_DIR` | Root directory for cached natives (instead of XDG cache) |
 | `CGO_LDFLAGS` / `CGO_CFLAGS` | Set via `eval "$(go tool cyt-native-ensure --print-env)"` when needed |
 
+`cyt-native-ensure` flags:
+
+| Flag | Description |
+| --- | --- |
+| `-static-only` | Install only static library + header (recommended on macOS; release dylibs embed CI rpaths) |
+| `-native-dir` | Copy artifacts into a writable directory (default: `sdk/go/native/<triplet>/` when writable) |
+| `-force` | Re-download even if cached artifacts exist |
+
 ### Static vs shared linking
 
 Go prefers **static** `libcyt_indexer.a` when present in the `-L` search path (`native/` or cache).

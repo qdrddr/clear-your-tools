@@ -55,6 +55,7 @@ build)
 	;;
 test)
 	env -u CARGO_TARGET_DIR "${ROOT}/sdk/c/scripts/build-c-lib.sh" --no-sync-header
+	go run ./cmd/cyt-native-ensure -static-only
 	env -u CARGO_TARGET_DIR go test ./...
 	;;
 *)

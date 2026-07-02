@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	moduleVersion      = "0.6.1"
 	dirPerm            = 0o750
 	filePerm           = 0o644
 	maxExtractFileSize = 512 * 1024 * 1024
@@ -35,12 +34,13 @@ var (
 
 func main() {
 	var (
-		version   = flag.String("version", "", "Release semver (default: CYT_RELEASE_VERSION, then embedded module version)")
-		repo      = flag.String("repo", defaultRepo, "GitHub owner/repo for release downloads")
-		printEnv  = flag.Bool("print-env", false, "Print shell exports for CGO_LDFLAGS/CGO_CFLAGS")
-		cacheDir  = flag.String("cache-dir", "", "Override cache root (default: XDG_CACHE_HOME/cyt-indexer)")
-		nativeDir = flag.String("native-dir", "", "Also copy artifacts here (default: <module>/native/<triplet> when writable)")
-		force     = flag.Bool("force", false, "Re-download even if artifacts exist")
+		version    = flag.String("version", "", "Release semver (default: CYT_RELEASE_VERSION, then sdk/go/version.go)")
+		repo       = flag.String("repo", defaultRepo, "GitHub owner/repo for release downloads")
+		printEnv   = flag.Bool("print-env", false, "Print shell exports for CGO_LDFLAGS/CGO_CFLAGS")
+		cacheDir   = flag.String("cache-dir", "", "Override cache root (default: XDG_CACHE_HOME/cyt-indexer)")
+		nativeDir  = flag.String("native-dir", "", "Also copy artifacts here (default: <sdk/go>/native/<triplet> when writable)")
+		staticOnly = flag.Bool("static-only", false, "Install only static library + header (avoids release dylib rpaths on macOS)")
+		force      = flag.Bool("force", false, "Re-download even if cached artifacts exist")
 	)
 	flag.Parse()
 
@@ -53,13 +53,14 @@ func main() {
 		fatal(err)
 	}
 
-	dest, err := ensureNative(ensureConfig{
-		version:   ver,
-		repo:      *repo,
-		triplet:   triplet,
-		cacheRoot: *cacheDir,
-		nativeDir: *nativeDir,
-		force:     *force,
+	dest, nativeInstalled, err := ensureNative(ensureConfig{
+		version:    ver,
+		repo:       *repo,
+		triplet:    triplet,
+		cacheRoot:  *cacheDir,
+		nativeDir:  *nativeDir,
+		staticOnly: *staticOnly,
+		force:      *force,
 	})
 	if err != nil {
 		fatal(err)
@@ -73,18 +74,19 @@ func main() {
 	fmt.Printf("cyt-indexer native artifacts ready: %s\n", dest)
 	fmt.Printf("triplet: %s\n", triplet)
 	fmt.Printf("version: %s\n", ver)
-	if moduleNativePath(triplet) == "" {
+	if !nativeInstalled {
 		fmt.Fprintf(os.Stderr, "hint: eval \"$(go tool cyt-native-ensure --print-env)\" before go build\n")
 	}
 }
 
 type ensureConfig struct {
-	version   string
-	repo      string
-	triplet   string
-	cacheRoot string
-	nativeDir string
-	force     bool
+	version    string
+	repo       string
+	triplet    string
+	cacheRoot  string
+	nativeDir  string
+	staticOnly bool
+	force      bool
 }
 
 func resolveVersion(flagVersion string) string {
@@ -94,39 +96,59 @@ func resolveVersion(flagVersion string) string {
 	if env := os.Getenv("CYT_RELEASE_VERSION"); env != "" {
 		return strings.TrimPrefix(env, "v")
 	}
-	return moduleVersion
+	if v := moduleVersionFromSDKRoot(); v != "" {
+		return v
+	}
+	return fallbackModuleVersion
 }
 
-func ensureNative(cfg ensureConfig) (string, error) {
-	cacheDest, err := cacheDestDir(cfg.cacheRoot, cfg.version, cfg.triplet)
+func ensureNative(cfg ensureConfig) (cacheDest string, nativeInstalled bool, err error) {
+	cacheDest, err = cacheDestDir(cfg.cacheRoot, cfg.version, cfg.triplet)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	if monorepoDir := monorepoArtifactDir(cfg.triplet); monorepoDir != "" {
 		if err := mkdirAll(cacheDest); err != nil {
-			return "", err
+			return "", false, err
 		}
-		if err := copyArtifacts(monorepoDir, cacheDest, cfg.triplet); err != nil {
-			return "", err
+		if err := copyArtifacts(monorepoDir, cacheDest, cfg.triplet, cfg.staticOnly); err != nil {
+			return "", false, err
 		}
-		maybeCopyToNativeDir(cacheDest, cfg.nativeDir, cfg.triplet)
-		return cacheDest, nil
 	}
 
-	if !cfg.force && hasNativeLibs(cacheDest, cfg.triplet) {
-		maybeCopyToNativeDir(cacheDest, cfg.nativeDir, cfg.triplet)
-		return cacheDest, nil
+	if cfg.force || !hasNativeLibs(cacheDest, cfg.triplet) {
+		if err := mkdirAll(cacheDest); err != nil {
+			return "", false, err
+		}
+		if err := downloadReleaseArtifacts(cfg.repo, cfg.version, cfg.triplet, cacheDest); err != nil {
+			return "", false, err
+		}
+		if cfg.staticOnly {
+			removeSharedLib(cacheDest, cfg.triplet)
+		}
 	}
 
-	if err := mkdirAll(cacheDest); err != nil {
-		return "", err
+	if !hasNativeLibs(cacheDest, cfg.triplet) {
+		return "", false, fmt.Errorf("native library not found in %s after ensure", cacheDest)
 	}
-	if err := downloadReleaseArtifacts(cfg.repo, cfg.version, cfg.triplet, cacheDest); err != nil {
-		return "", err
+
+	nativeDest := cfg.nativeDir
+	if nativeDest == "" {
+		nativeDest = moduleNativePath(cfg.triplet)
 	}
-	maybeCopyToNativeDir(cacheDest, cfg.nativeDir, cfg.triplet)
-	return cacheDest, nil
+	if nativeDest == "" {
+		return cacheDest, false, nil
+	}
+
+	installStaticOnly := cfg.staticOnly || cfg.nativeDir == ""
+	if err := copyArtifacts(cacheDest, nativeDest, cfg.triplet, installStaticOnly); err != nil {
+		return "", false, err
+	}
+	if !hasNativeLibs(nativeDest, cfg.triplet) {
+		return "", false, fmt.Errorf("failed to install native library under %s", nativeDest)
+	}
+	return cacheDest, true, nil
 }
 
 func mkdirAll(dir string) error {
@@ -185,23 +207,12 @@ func hasNativeLibs(dir, triplet string) bool {
 		return true
 	}
 	_, err := os.Stat(filepath.Join(dir, sharedLibName(triplet)))
-	return err != nil
-}
-
-func maybeCopyToNativeDir(cacheDest, nativeDir, triplet string) {
-	dest := nativeDir
-	if dest == "" {
-		dest = moduleNativePath(triplet)
-	}
-	if dest == "" {
-		return
-	}
-	_ = copyArtifacts(cacheDest, dest, triplet)
+	return err == nil
 }
 
 func moduleNativePath(triplet string) string {
-	root, err := findModuleRoot()
-	if err != nil {
+	root := sdkModuleRoot()
+	if root == "" {
 		return ""
 	}
 	dir := filepath.Join(root, "native", triplet)
@@ -211,35 +222,25 @@ func moduleNativePath(triplet string) string {
 	return dir
 }
 
-func findModuleRoot() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for dir := wd; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-		if dir == filepath.Dir(dir) {
-			break
-		}
-	}
-	return "", fmt.Errorf("go.mod not found from %s", wd)
-}
-
-func copyArtifacts(srcDir, destDir, triplet string) error {
-	if err := mkdirAll(destDir); err != nil {
-		return err
-	}
+func artifactNames(triplet string, staticOnly bool) []string {
 	names := []string{
 		staticLibName(triplet),
-		sharedLibName(triplet),
 		"cyt_indexer.h",
+	}
+	if !staticOnly {
+		names = append(names, sharedLibName(triplet))
 	}
 	if isWindowsMSVC(triplet) {
 		names = append(names, "cyt_indexer.dll.lib")
 	}
-	for _, name := range names {
+	return names
+}
+
+func copyArtifacts(srcDir, destDir, triplet string, staticOnly bool) error {
+	if err := mkdirAll(destDir); err != nil {
+		return err
+	}
+	for _, name := range artifactNames(triplet, staticOnly) {
 		src := filepath.Join(srcDir, name)
 		if _, err := os.Stat(src); err != nil {
 			continue
@@ -248,7 +249,14 @@ func copyArtifacts(srcDir, destDir, triplet string) error {
 			return err
 		}
 	}
+	if staticOnly {
+		removeSharedLib(destDir, triplet)
+	}
 	return nil
+}
+
+func removeSharedLib(dir, triplet string) {
+	_ = os.Remove(filepath.Join(dir, sharedLibName(triplet)))
 }
 
 func copyFile(src, dest string) error {
@@ -434,14 +442,14 @@ func printShellEnv(dest, triplet string) {
 	var ldflags string
 	switch runtime.GOOS {
 	case "linux":
-		ldflags = fmt.Sprintf("%q -lm -ldl -pthread", static)
+		ldflags = static + " -lm -ldl -pthread"
 	case "darwin":
-		ldflags = fmt.Sprintf("%q -framework Security -lpthread", static)
+		ldflags = static + " -framework Security -lpthread"
 	default:
-		ldflags = fmt.Sprintf("%q", static)
+		ldflags = static
 	}
 	fmt.Printf("export CGO_CFLAGS=-I%q\n", dest)
-	fmt.Printf("export CGO_LDFLAGS=%s\n", ldflags)
+	fmt.Printf("export CGO_LDFLAGS=%q\n", ldflags)
 }
 
 func fatal(err error) {
