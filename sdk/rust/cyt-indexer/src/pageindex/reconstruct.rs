@@ -7,11 +7,12 @@ use serde_json::{Value, json};
 use super::chunk_id::chunk_id_from_value;
 use super::node_id::node_id_from_value;
 use super::parse::extract_skill_prefix;
+use super::retrieve::find_chunk_rel;
 use super::retrieve::{
     merge_chunk_id_specs, merge_line_num_specs, merge_node_id_specs, strip_decomposed_frontmatter,
 };
 use super::tree::{NODE_ID_PREAMBLE, is_frontmatter_node, is_preamble_node, structure_to_list};
-use super::types::{SkillDocument, SkillsIndex, chunk_md_rel, node_md_rel};
+use super::types::{SkillDocument, SkillsIndex, node_md_rel};
 
 /// Subdirectory under a catalog where pruned skill markdown is written.
 pub const RETRIEVE_DIR: &str = "skills/retrieve";
@@ -341,13 +342,17 @@ fn ordered_chunk_ids_for_node(obj: &serde_json::Map<String, Value>) -> Vec<u32> 
         .unwrap_or_default()
 }
 
-fn resolve_chunk_body(index: &SkillsIndex, doc_id: &str, chunk_id: u32) -> String {
-    let rel = chunk_md_rel(doc_id, chunk_id);
-    index
-        .files
-        .get(&rel)
-        .map(|raw| strip_decomposed_frontmatter(raw))
-        .unwrap_or_default()
+fn resolve_chunk_body(index: &SkillsIndex, _doc_id: &str, chunk_id: u32) -> String {
+    let rel = index
+        .chunk_md_rel_for(chunk_id)
+        .or_else(|| find_chunk_rel(index, chunk_id));
+    rel.and_then(|rel| {
+        index
+            .files
+            .get(&rel)
+            .map(|raw| strip_decomposed_frontmatter(raw))
+    })
+    .unwrap_or_default()
 }
 
 fn resolve_node_body_chunk_aware(
@@ -529,7 +534,7 @@ fn resolve_node_header(
 
 fn resolve_node_body(
     index: &SkillsIndex,
-    doc_id: &str,
+    _doc_id: &str,
     node: &serde_json::Map<String, Value>,
 ) -> String {
     if let Some(Value::String(text)) = node.get("text")
@@ -539,7 +544,7 @@ fn resolve_node_body(
     }
 
     let node_id = node_id_from_value(node.get("node_id"));
-    let rel = node_md_rel(doc_id, node_id);
+    let rel = node_md_rel(node_id);
     index
         .files
         .get(&rel)
@@ -824,7 +829,7 @@ mod tests {
         );
         let frontmatter_md = index
             .files
-            .get("skills/decomposed/ctx__skill/0.md")
+            .get("nodes/n0.md")
             .ok_or("missing frontmatter decomposed file")?;
         assert!(frontmatter_md.contains("name: ctx"));
 
@@ -844,7 +849,7 @@ mod tests {
         );
         let preamble_md = index
             .files
-            .get("skills/decomposed/ctx__skill/1.md")
+            .get("nodes/n1.md")
             .ok_or("missing preamble decomposed file")?;
         assert!(preamble_md.contains("Intro line"));
 
@@ -861,16 +866,8 @@ mod tests {
             .ok_or("missing root heading node")?;
         assert_eq!(node_id_from_value(first_heading.get("node_id")), 2);
 
-        assert!(
-            index
-                .files
-                .contains_key("skills/decomposed/ctx__skill/0.md")
-        );
-        assert!(
-            index
-                .files
-                .contains_key("skills/decomposed/ctx__skill/1.md")
-        );
+        assert!(index.files.contains_key("nodes/n0.md"));
+        assert!(index.files.contains_key("nodes/n1.md"));
 
         let _ = fs::remove_dir_all(&tmp);
         Ok(())

@@ -131,7 +131,8 @@ limit **0.4**) are skipped.
 | `rerank` | Yes | Reranker picks the best sections |
 | `llm` | Yes | LLM picks sections; can run inside proxy pruning |
 
-Indexes are built on first use under `~/.config/cyt/skills/entries/` and reused afterward.
+Indexes are built on first use under `~/.config/cyt/skills/entries/{content_sha256}/` and reused afterward.
+Each entry stores node files under `nodes/` and BM25 chunk variants under `chunks/bm25/{index_params_hash}/`.
 
 ### Build and retrieve manually (`cyt-indexer`)
 
@@ -154,9 +155,10 @@ cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
 
 | Path | What it is |
 | ---- | ---------- |
-| `.catalog/skills_index.json` | Index of all skills (`doc_id` → tree structure) |
-| `.catalog/skills/decomposed/{doc_id}/document.json` | Page tree for one skill |
-| `.catalog/skills/decomposed/{doc_id}/{node_id}.md` | One file per section (node) |
+| `.catalog/nodes/page_index.json` | Page tree metadata for one skill (node-only structure) |
+| `.catalog/nodes/n{node_id}.md` | One file per section (node), e.g. `n0.md`, `n2.md` |
+| `.catalog/chunks/bm25/{hash}/chunk_index.json` | Chunk-aware structure for a pipeline variant |
+| `.catalog/chunks/bm25/{hash}/c{chunk_id}.md` | One file per BM25 chunk, e.g. `c0.md` |
 
 | `node_id` | Section |
 | --------- | ------- |
@@ -164,7 +166,7 @@ cyt-indexer build skills --skills ~/.claude/skills --output ./.catalog
 | `1` | Preamble (text before the first heading) |
 | `2+` | Headings and nested sections |
 
-Find `doc_id` values under `documents` in `skills_index.json` (for example `context7-mcp__skill`).
+Find `doc_id` in `nodes/page_index.json` under the `id` field (for example `context7-mcp__skill`).
 
 **Inspect the tree** (section titles and node IDs):
 

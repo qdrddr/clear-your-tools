@@ -1,12 +1,15 @@
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillsIndex, build_skills_index,
+    PageIndexConfig, ReconstructOptions, SkillDocumentExtras, SkillsIndex, build_chunk_variant,
+    build_page_index_only, build_skills_index, chunk_variant_valid, finalize_document_json,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
-    get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
-    repair_skill_chunks, spec_refs::OwnedSpecRefs, write_reconstructed_skill,
+    get_line_content_from_spec, load_merged_document_json, md_to_tree, page_index_valid,
+    parse_node_ids, reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
+    spec_refs::OwnedSpecRefs, update_document_source_path, write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
-    load_skills_index_from_dir, skills_index_from_decomposed_dir, write_skills_index,
+    load_skills_index_from_dir, load_skills_index_from_entry, skills_index_from_decomposed_dir,
+    write_skills_index,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -83,6 +86,156 @@ fn repair_skill_chunks_py(
     let cfg = page_index_config_from_py(config)?;
     repair_skill_chunks(PathBuf::from(entry_dir).as_path(), doc_id, &cfg)
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
+}
+
+#[pyfunction(name = "repair_skill_variant_chunks")]
+#[pyo3(signature = (entry_dir, doc_id, pipeline, params_hash, config=None))]
+fn repair_skill_variant_chunks_py(
+    entry_dir: String,
+    doc_id: &str,
+    pipeline: &str,
+    params_hash: &str,
+    config: Option<Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let cfg = page_index_config_from_py(config)?;
+    repair_skill_variant_chunks(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id,
+        pipeline,
+        params_hash,
+        &cfg,
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
+}
+
+#[pyfunction(name = "build_page_index_only")]
+fn build_page_index_only_py(
+    py: Python<'_>,
+    skill_dirs: Vec<String>,
+    config: Option<Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let cfg = page_index_config_from_py(config)?;
+    let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
+    let index = build_page_index_only(&dirs, &cfg)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    skills_index_to_py(py, &index)
+}
+
+#[pyfunction(name = "build_chunk_variant")]
+#[pyo3(signature = (entry_dir, doc_id, pipeline, params_hash, config=None))]
+fn build_chunk_variant_py(
+    py: Python<'_>,
+    entry_dir: String,
+    doc_id: &str,
+    pipeline: &str,
+    params_hash: &str,
+    config: Option<Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let cfg = page_index_config_from_py(config)?;
+    let index = build_chunk_variant(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id,
+        pipeline,
+        params_hash,
+        &cfg,
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    skills_index_to_py(py, &index)
+}
+
+#[pyfunction(name = "page_index_valid")]
+#[pyo3(signature = (entry_dir, content_sha256))]
+fn page_index_valid_py(entry_dir: String, content_sha256: &str) -> bool {
+    page_index_valid(PathBuf::from(entry_dir).as_path(), content_sha256)
+}
+
+#[pyfunction(name = "chunk_variant_valid")]
+fn chunk_variant_valid_py(
+    entry_dir: String,
+    doc_id: &str,
+    pipeline: &str,
+    params_hash: &str,
+) -> bool {
+    chunk_variant_valid(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id,
+        pipeline,
+        params_hash,
+    )
+}
+
+#[pyfunction(name = "load_skills_index_from_entry")]
+#[pyo3(signature = (entry_dir, doc_id, chunk_dir=None))]
+fn load_skills_index_from_entry_py(
+    py: Python<'_>,
+    entry_dir: String,
+    doc_id: &str,
+    chunk_dir: Option<String>,
+) -> PyResult<Py<PyAny>> {
+    let chunk_path = chunk_dir.map(PathBuf::from);
+    let index = load_skills_index_from_entry(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id,
+        chunk_path.as_deref(),
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    skills_index_to_py(py, &index)
+}
+
+#[pyfunction(name = "load_merged_skill_document_json")]
+#[pyo3(signature = (entry_dir, doc_id, chunk_dir=None))]
+fn load_merged_skill_document_json_py(
+    py: Python<'_>,
+    entry_dir: String,
+    doc_id: &str,
+    chunk_dir: Option<String>,
+) -> PyResult<Py<PyAny>> {
+    let chunk_path = chunk_dir.map(PathBuf::from);
+    let value = load_merged_document_json(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id,
+        chunk_path.as_deref(),
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &value)
+}
+
+#[pyfunction(name = "finalize_skill_document_json")]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (entry_dir, doc_id, *, content_sha256, pipeline, index_params, built_at, source_path))]
+fn finalize_skill_document_json_py(
+    py: Python<'_>,
+    entry_dir: String,
+    doc_id: &str,
+    content_sha256: &str,
+    pipeline: &str,
+    index_params: Bound<'_, PyAny>,
+    built_at: &str,
+    source_path: &str,
+) -> PyResult<Py<PyAny>> {
+    let extras = SkillDocumentExtras {
+        content_sha256: content_sha256.to_string(),
+        pipeline: pipeline.to_string(),
+        index_params: py_to_value(index_params)?,
+        built_at: built_at.to_string(),
+        source_path: source_path.to_string(),
+    };
+    let value = finalize_document_json(PathBuf::from(entry_dir).as_path(), doc_id, &extras)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &value)
+}
+
+#[pyfunction(name = "update_skill_document_source_path")]
+fn update_skill_document_source_path_py(
+    py: Python<'_>,
+    entry_dir: String,
+    doc_id: &str,
+    source_path: &str,
+) -> PyResult<Py<PyAny>> {
+    let value =
+        update_document_source_path(PathBuf::from(entry_dir).as_path(), doc_id, source_path)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &value)
 }
 
 #[pyfunction(name = "skills_index_from_decomposed_dir")]
@@ -415,7 +568,16 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build_skills_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(write_skills_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(load_skills_index_from_dir_py, m)?)?;
+    m.add_function(wrap_pyfunction!(load_skills_index_from_entry_py, m)?)?;
     m.add_function(wrap_pyfunction!(repair_skill_chunks_py, m)?)?;
+    m.add_function(wrap_pyfunction!(repair_skill_variant_chunks_py, m)?)?;
+    m.add_function(wrap_pyfunction!(build_page_index_only_py, m)?)?;
+    m.add_function(wrap_pyfunction!(build_chunk_variant_py, m)?)?;
+    m.add_function(wrap_pyfunction!(page_index_valid_py, m)?)?;
+    m.add_function(wrap_pyfunction!(chunk_variant_valid_py, m)?)?;
+    m.add_function(wrap_pyfunction!(load_merged_skill_document_json_py, m)?)?;
+    m.add_function(wrap_pyfunction!(finalize_skill_document_json_py, m)?)?;
+    m.add_function(wrap_pyfunction!(update_skill_document_source_path_py, m)?)?;
     m.add_function(wrap_pyfunction!(skills_index_from_decomposed_dir_py, m)?)?;
     m.add_function(wrap_pyfunction!(md_to_tree_py, m)?)?;
     m.add_function(wrap_pyfunction!(get_skill_document_py, m)?)?;

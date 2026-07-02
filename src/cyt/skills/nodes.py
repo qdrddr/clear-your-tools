@@ -17,8 +17,14 @@ def skill_name(entry: SkillEntryRef) -> str | None:
 
 
 def load_node_body(entry: SkillEntryRef, node_id: int) -> str:
-    doc_dir = Path(entry.entry_dir) / "skills" / "decomposed" / entry.doc_id
-    node_path = doc_dir / f"{node_id}.md"
+    if not entry.disk_backed and entry.memory_index is not None:
+        files = entry.memory_index.get("files")
+        if isinstance(files, dict):
+            rel = f"nodes/n{node_id}.md"
+            raw = files.get(rel)
+            if isinstance(raw, str):
+                return _strip_frontmatter(raw).strip()
+    node_path = Path(entry.nodes_dir) / f"n{node_id}.md"
     if not node_path.is_file():
         return ""
     return _strip_frontmatter(node_path.read_text(encoding="utf-8")).strip()

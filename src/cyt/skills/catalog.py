@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import shutil
 import tempfile
@@ -12,12 +11,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from cyt_indexer import SkillsBuilder, repair_skill_chunks
+from cyt_indexer import (
+    SkillsBuilder,
+    build_chunk_variant,
+    build_page_index_only,
+    chunk_variant_valid,
+    finalize_skill_document_json,
+    load_merged_skill_document_json,
+    page_index_valid,
+    repair_skill_variant_chunks,
+    update_skill_document_source_path,
+    write_skills_index,
+)
+from cyt_indexer.pageindex import page_index_config_without_chunking
 
 from cyt.config import (
     load_config,
     skills_catalog_dir,
     skills_directories,
+    skills_index_params_fingerprint,
     skills_pageindex_config,
     skills_pipeline,
 )
@@ -26,7 +38,10 @@ from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_age
 
 logger = logging.getLogger(__name__)
 
-_DECOMPOSED_PREFIX = "skills/decomposed"
+_NODES_DIR = "nodes"
+_CHUNKS_DIR = "chunks"
+_PAGE_INDEX_FILE = "page_index.json"
+_BM25_PIPELINE = "bm25"
 
 
 @dataclass(frozen=True)
@@ -36,7 +51,14 @@ class SkillEntryRef:
     content_sha256: str
     cache_key: str
     entry_dir: str
+    nodes_dir: str
+    chunk_dir: str
+    bm25_chunk_dir: str
+    pipeline: str
+    index_params_hash: str
+    disk_backed: bool
     document: dict[str, Any]
+    memory_index: dict[str, Any] | None = None
 
 
 def doc_id_from_path(source_path: Path) -> str:
@@ -50,19 +72,45 @@ def content_sha256_for_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def compute_cache_key(content_hash: str, pipeline: str, index_params: dict[str, Any]) -> str:
-    canonical = json.dumps(index_params, sort_keys=True, separators=(",", ":"))
-    payload = f"{content_hash}\0{pipeline}\0{canonical}".encode()
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _index_params(config: dict[str, Any] | None) -> dict[str, Any]:
     pageindex = skills_pageindex_config(config) or {}
     return dict(pageindex)
 
 
-def _doc_dir(entry_dir: Path, doc_id: str) -> Path:
-    return entry_dir / _DECOMPOSED_PREFIX / doc_id
+def _nodes_dir(entry_dir: Path) -> Path:
+    return entry_dir / _NODES_DIR
+
+
+def _chunk_variant_dir(entry_dir: Path, pipeline: str, params_hash: str) -> Path:
+    return entry_dir / _CHUNKS_DIR / pipeline.strip().lower() / params_hash
+
+
+def _skill_marker_path(entry_dir: Path, skill_name: str) -> Path:
+    safe = skill_name.strip() or "skill"
+    return entry_dir / f"{safe}.md"
+
+
+def _skill_name_from_source(source_path: Path, content: str | None = None) -> str:
+    raw = content if content is not None else source_path.read_text(encoding="utf-8")
+    if raw.startswith("---"):
+        end = raw.find("\n---", 3)
+        if end != -1:
+            frontmatter = raw[3:end]
+            for line in frontmatter.splitlines():
+                if line.strip().startswith("name:"):
+                    return line.split(":", 1)[1].strip()
+    return doc_id_from_path(source_path)
+
+
+def _catalog_writable(entry_dir: Path) -> bool:
+    try:
+        entry_dir.mkdir(parents=True, exist_ok=True)
+        probe = entry_dir / ".write_probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def _is_frontmatter_node(mapping: dict[str, Any]) -> bool:
@@ -116,7 +164,6 @@ def _iter_node_ids_from_structure(structure: object, *, skip_frontmatter: bool) 
 
 
 def _iter_content_node_ids(structure: object) -> list[int]:
-    """Collect node ids from all nodes except frontmatter (node 0)."""
     return _iter_node_ids_from_structure(structure, skip_frontmatter=True)
 
 
@@ -155,50 +202,32 @@ def _pipeline_uses_nodes_only(pipeline: str) -> bool:
     return pipeline.strip().lower() in ("llm", "rerank")
 
 
-def _entry_state_nodes(entry_dir: Path, doc_id: str, document: dict[str, Any]) -> str:
-    doc_json = _doc_dir(entry_dir, doc_id) / "document.json"
-    if not doc_json.is_file():
-        return "missing"
-    structure = document.get("structure")
-    if not structure:
-        return "partial"
-    for node_id in _iter_content_node_ids(structure):
-        node_path = _doc_dir(entry_dir, doc_id) / f"{node_id}.md"
-        if not node_path.is_file():
-            return "partial"
-    return "complete"
+def _pipeline_materializes_chunks(pipeline: str) -> bool:
+    return pipeline.strip().lower() == _BM25_PIPELINE
 
 
-def _entry_state(
+def _chunk_variants_for_startup(pipeline: str) -> list[str]:
+    variants = [_BM25_PIPELINE]
+    normalized = pipeline.strip().lower()
+    if normalized in ("llm", "rerank") and _pipeline_materializes_chunks(normalized):
+        variants.append(normalized)
+    return variants
+
+
+def _load_document_json(
     entry_dir: Path,
     doc_id: str,
-    document: dict[str, Any],
     *,
-    pipeline: str,
-) -> str:
-    if _pipeline_uses_nodes_only(pipeline):
-        return _entry_state_nodes(entry_dir, doc_id, document)
-
-    doc_json = _doc_dir(entry_dir, doc_id) / "document.json"
-    if not doc_json.is_file():
-        return "missing"
-    structure = document.get("structure")
-    if not structure:
-        return "partial"
-    for chunk_id in _iter_chunk_ids(structure):
-        chunk_path = _doc_dir(entry_dir, doc_id) / "chunks" / f"{chunk_id}.md"
-        if not chunk_path.is_file():
-            return "partial"
-    return "complete"
-
-
-def _load_document_json(entry_dir: Path, doc_id: str) -> dict[str, Any]:
-    doc_json = _doc_dir(entry_dir, doc_id) / "document.json"
-    with doc_json.open(encoding="utf-8") as handle:
-        data = json.load(handle)
-    if not isinstance(data, dict):
-        raise ValueError(f"invalid document.json for {doc_id}")
-    return data
+    chunk_dir: Path | None = None,
+) -> dict[str, Any]:
+    document = load_merged_skill_document_json(
+        str(entry_dir),
+        doc_id,
+        str(chunk_dir) if chunk_dir is not None else None,
+    )
+    if not isinstance(document, dict):
+        raise ValueError(f"invalid page_index.json for {doc_id}")
+    return document
 
 
 def _augment_document_json(
@@ -210,18 +239,15 @@ def _augment_document_json(
     index_params: dict[str, Any],
     source_path: str,
 ) -> dict[str, Any]:
-    doc_json_path = _doc_dir(entry_dir, doc_id) / "document.json"
-    document = _load_document_json(entry_dir, doc_id)
-    document["content_sha256"] = content_hash
-    document["pipeline"] = pipeline
-    document["index_params"] = index_params
-    document["built_at"] = datetime.now(UTC).isoformat()
-    # SkillsBuilder indexes a temp copy; always record the real skill source path.
-    document["path"] = _shorten_home_path(source_path)
-    with doc_json_path.open("w", encoding="utf-8") as handle:
-        json.dump(document, handle, indent=2)
-        handle.write("\n")
-    return document
+    return finalize_skill_document_json(
+        str(entry_dir),
+        doc_id,
+        content_sha256=content_hash,
+        pipeline=pipeline,
+        index_params=index_params,
+        built_at=datetime.now(UTC).isoformat(),
+        source_path=source_path,
+    )
 
 
 def _shorten_home_path(path: str) -> str:
@@ -234,24 +260,39 @@ def _shorten_home_path(path: str) -> str:
         return expanded.as_posix()
 
 
-def _full_build_entry(
+def _write_skill_marker(entry_dir: Path, source_path: Path) -> None:
+    skill_name = _skill_name_from_source(source_path)
+    marker = _skill_marker_path(entry_dir, skill_name)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("", encoding="utf-8")
+
+
+def _build_page_index_disk(
     source_path: Path,
     entry_dir: Path,
     *,
-    pipeline: str,
-    index_params: dict[str, Any],
     pageindex_config: dict[str, Any] | None,
     content_hash: str,
+    pipeline: str,
+    index_params: dict[str, Any],
 ) -> dict[str, Any]:
     entry_dir.mkdir(parents=True, exist_ok=True)
     doc_id = doc_id_from_path(source_path)
+    nodes_only_config = page_index_config_without_chunking().to_dict()
+    if pageindex_config:
+        nodes_only_config.update(
+            {k: v for k, v in pageindex_config.items() if k != "enable_bm25_chunking"},
+        )
+        nodes_only_config["enable_bm25_chunking"] = False
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         dest = tmp_path / source_path.name
         shutil.copy2(source_path, dest)
-        builder = SkillsBuilder(memory_only=False, output_dir=str(entry_dir))
-        builder.build_from_dirs([str(tmp_path)], config=pageindex_config)
-        builder.write_catalog()
+        index = build_page_index_only([str(tmp_path)], config=nodes_only_config)
+        write_skills_index(index, str(entry_dir))
+
+    _write_skill_marker(entry_dir, source_path)
     return _augment_document_json(
         entry_dir,
         doc_id,
@@ -262,14 +303,64 @@ def _full_build_entry(
     )
 
 
-def _repair_entry(
-    entry_dir: Path,
-    doc_id: str,
+def _build_page_index_memory(
+    source_path: Path,
     *,
     pageindex_config: dict[str, Any] | None,
-) -> dict[str, Any]:
-    repair_skill_chunks(str(entry_dir), doc_id, config=pageindex_config)
-    return _load_document_json(entry_dir, doc_id)
+    pipeline: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    doc_id = doc_id_from_path(source_path)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        dest = tmp_path / source_path.name
+        shutil.copy2(source_path, dest)
+        if pipeline.strip().lower() == _BM25_PIPELINE:
+            builder = SkillsBuilder(memory_only=True)
+            builder.build_from_dirs([str(tmp_path)], config=pageindex_config)
+            index = builder.to_skills_index_json()
+        else:
+            nodes_only_config = page_index_config_without_chunking().to_dict()
+            if pageindex_config:
+                nodes_only_config.update(pageindex_config)
+                nodes_only_config["enable_bm25_chunking"] = False
+            index = build_page_index_only([str(tmp_path)], config=nodes_only_config)
+        if not isinstance(index, dict):
+            raise ValueError("skills index build returned no index")
+        documents = index.get("documents")
+        if not isinstance(documents, dict) or doc_id not in documents:
+            raise ValueError(f"missing document {doc_id} in memory index")
+        document = documents[doc_id]
+        if not isinstance(document, dict):
+            raise ValueError(f"invalid document for {doc_id}")
+        return document, index
+
+
+def _ensure_chunk_variant(
+    entry_dir: Path,
+    doc_id: str,
+    pipeline: str,
+    params_hash: str,
+    *,
+    pageindex_config: dict[str, Any] | None,
+) -> None:
+    if chunk_variant_valid(str(entry_dir), doc_id, pipeline, params_hash):
+        return
+    try:
+        repair_skill_variant_chunks(
+            str(entry_dir),
+            doc_id,
+            pipeline,
+            params_hash,
+            config=pageindex_config,
+        )
+    except ValueError:
+        build_chunk_variant(
+            str(entry_dir),
+            doc_id,
+            pipeline,
+            params_hash,
+            config=pageindex_config,
+        )
 
 
 def _walk_skill_md_files(directories: list[str]) -> list[Path]:
@@ -282,6 +373,18 @@ def _walk_skill_md_files(directories: list[str]) -> list[Path]:
             if path.is_file():
                 files.append(path)
     return files
+
+
+def load_entry_skills_index(entry: SkillEntryRef) -> dict[str, Any]:
+    """Load the skills index dict for an entry (disk or in-memory)."""
+    if not entry.disk_backed:
+        if entry.memory_index is None:
+            raise ValueError(f"memory-backed entry missing index: {entry.doc_id}")
+        return entry.memory_index
+    from cyt_indexer import load_skills_index_from_entry
+
+    chunk_dir = entry.bm25_chunk_dir
+    return load_skills_index_from_entry(entry.entry_dir, entry.doc_id, chunk_dir)
 
 
 def build_registry(
@@ -299,6 +402,7 @@ def build_registry(
     pipeline = skills_pipeline(cfg)
     index_params = _index_params(cfg)
     pageindex_config = skills_pageindex_config(cfg)
+    index_params_hash = skills_index_params_fingerprint(cfg)
 
     seen_content: set[str] = set()
     entries: list[SkillEntryRef] = []
@@ -311,49 +415,74 @@ def build_registry(
             continue
         seen_content.add(content_hash)
 
-        cache_key = compute_cache_key(content_hash, pipeline, index_params)
-        entry_dir = catalog_root / "entries" / cache_key
+        entry_dir = catalog_root / "entries" / content_hash
         doc_id = doc_id_from_path(source_path)
+        nodes_dir = _nodes_dir(entry_dir)
+        bm25_chunk_dir = _chunk_variant_dir(entry_dir, _BM25_PIPELINE, index_params_hash)
+        chunk_dir = (
+            _chunk_variant_dir(entry_dir, pipeline, index_params_hash)
+            if _pipeline_materializes_chunks(pipeline)
+            else bm25_chunk_dir
+        )
+        disk_backed = _catalog_writable(entry_dir)
+        memory_index: dict[str, Any] | None = None
+        document: dict[str, Any]
 
-        document: dict[str, Any] | None = None
-        if (_doc_dir(entry_dir, doc_id) / "document.json").is_file():
-            document = _load_document_json(entry_dir, doc_id)
-        state = _entry_state(entry_dir, doc_id, document or {}, pipeline=pipeline)
+        if disk_backed:
+            if not page_index_valid(str(entry_dir), content_hash):
+                document = _build_page_index_disk(
+                    source_path,
+                    entry_dir,
+                    pageindex_config=pageindex_config,
+                    content_hash=content_hash,
+                    pipeline=pipeline,
+                    index_params=index_params,
+                )
+            else:
+                document = _load_document_json(entry_dir, doc_id)
 
-        if state == "missing":
-            document = _full_build_entry(
+            for variant_pipeline in _chunk_variants_for_startup(pipeline):
+                _ensure_chunk_variant(
+                    entry_dir,
+                    doc_id,
+                    variant_pipeline,
+                    index_params_hash,
+                    pageindex_config=pageindex_config,
+                )
+
+            merge_chunk_dir = chunk_dir if _pipeline_materializes_chunks(pipeline) else None
+            document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
+        else:
+            logger.debug("skills catalog not writable; using in-memory index for %s", source_path)
+            document, memory_index = _build_page_index_memory(
                 source_path,
-                entry_dir,
+                pageindex_config=pageindex_config,
                 pipeline=pipeline,
-                index_params=index_params,
-                pageindex_config=pageindex_config,
-                content_hash=content_hash,
             )
-        elif state == "partial":
-            document = _repair_entry(
-                entry_dir,
-                doc_id,
-                pageindex_config=pageindex_config,
-            )
-        elif document is None:
-            continue
 
         canonical_path = _shorten_home_path(str(source_path))
-        if document.get("path") != canonical_path:
-            document["path"] = canonical_path
-            doc_json_path = _doc_dir(entry_dir, doc_id) / "document.json"
-            with doc_json_path.open("w", encoding="utf-8") as handle:
-                json.dump(document, handle, indent=2)
-                handle.write("\n")
+        if disk_backed and document.get("path") != canonical_path:
+            document = update_skill_document_source_path(
+                str(entry_dir),
+                doc_id,
+                str(source_path),
+            )
 
         entries.append(
             SkillEntryRef(
                 source_path=str(source_path),
                 doc_id=doc_id,
                 content_sha256=content_hash,
-                cache_key=cache_key,
+                cache_key=content_hash,
                 entry_dir=str(entry_dir),
+                nodes_dir=str(nodes_dir),
+                chunk_dir=str(chunk_dir),
+                bm25_chunk_dir=str(bm25_chunk_dir),
+                pipeline=pipeline,
+                index_params_hash=index_params_hash,
+                disk_backed=disk_backed,
                 document=document,
+                memory_index=memory_index,
             ),
         )
 

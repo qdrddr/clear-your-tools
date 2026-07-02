@@ -45,7 +45,7 @@ fn find_split_section_chunk_ids(
             continue;
         }
         let node_id = node_id_from_value(obj.get("node_id"));
-        let rel = format!("skills/decomposed/{doc_id}/{node_id}.md");
+        let rel = format!("nodes/n{node_id}.md");
         let body = strip_frontmatter(index.files.get(&rel).ok_or("missing node md")?);
         if !body.contains(section_marker) {
             continue;
@@ -67,14 +67,17 @@ fn find_split_section_chunk_ids(
 
 fn concat_chunk_bodies(
     index: &SkillsIndex,
-    doc_id: &str,
+    _doc_id: &str,
     chunk_ids: &[u32],
 ) -> Result<String, String> {
     use cyt_indexer::pageindex::types::chunk_md_rel;
 
+    const PIPELINE: &str = "bm25";
+    const PARAMS_HASH: &str = "default";
+
     let mut concatenated = String::new();
     for chunk_id in chunk_ids {
-        let rel = chunk_md_rel(doc_id, *chunk_id);
+        let rel = chunk_md_rel(PIPELINE, PARAMS_HASH, *chunk_id);
         concatenated.push_str(&strip_frontmatter(
             index.files.get(&rel).ok_or("missing chunk")?,
         ));
@@ -127,16 +130,12 @@ fn write_reconstruct_and_retrieve_via_cli_flow() -> Result<(), String> {
     builder.build_from_dirs(&[skills_dir], &PageIndexConfig::default())?;
     builder.write_catalog()?;
 
-    assert!(catalog.join("skills_index.json").is_file());
+    assert!(catalog.join("nodes/page_index.json").is_file());
     assert!(
         catalog
-            .join("skills/decomposed/create-hook/document.json")
+            .join("chunks/bm25/default/chunk_index.json")
             .is_file()
     );
-
-    fs::remove_file(catalog.join("skills_index.json")).map_err(|e| e.to_string())?;
-    let rebuilt = skills_index_from_decomposed_dir(&catalog)?;
-    assert_eq!(rebuilt.documents.len(), 1);
 
     let loaded = load_skills_index_from_dir(&catalog)?;
     let doc_id = "create-hook";
@@ -164,7 +163,7 @@ fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
     let index = build_skills_index(&[skills_dir], &PageIndexConfig::default())?;
     let content = index
         .files
-        .get("skills/decomposed/skill/2.md")
+        .get("nodes/n2.md")
         .ok_or_else(|| "missing decomposed node file".to_string())?;
 
     assert!(
@@ -186,15 +185,15 @@ fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
 
 fn assert_one_full_text_chunk_per_node(index: &SkillsIndex, doc_id: &str) -> Result<(), String> {
     assert!(
-        index.files.keys().any(|k| k.contains("/chunks/")),
+        index.files.keys().any(|k| k.starts_with("chunks/")),
         "expected chunk files"
     );
     assert!(
         index.files.keys().any(|k| {
-            Path::new(k)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-                && !k.contains("/chunks/")
+            k.starts_with("nodes/")
+                && Path::new(k)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
         }),
         "expected node-level markdown files"
     );
@@ -251,8 +250,12 @@ fn build_without_bm25_chunking_emits_one_chunk_per_node() -> Result<(), String> 
     assert_eq!(index.documents.len(), 1);
     assert_one_full_text_chunk_per_node(&index, "create-hook")?;
     assert!(
-        index.files.keys().any(|k| k.ends_with("/document.json")),
-        "expected document.json"
+        index.files.keys().any(|k| k.ends_with("/page_index.json")),
+        "expected page_index.json"
+    );
+    assert!(
+        index.files.keys().any(|k| k.ends_with("/chunk_index.json")),
+        "expected chunk_index.json"
     );
 
     let _ = fs::remove_dir_all(&tmp);
@@ -281,7 +284,7 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
     let chunk_paths: Vec<_> = index
         .files
         .keys()
-        .filter(|k| k.contains("/chunks/"))
+        .filter(|k| k.starts_with("chunks/"))
         .cloned()
         .collect();
     assert!(
@@ -300,7 +303,7 @@ fn word_mode_chunks_preserve_formatting_and_recompile() -> Result<(), String> {
         "expected target section to split into multiple chunks"
     );
 
-    let parent_rel = format!("skills/decomposed/{doc_id}/{target_node_id}.md");
+    let parent_rel = format!("nodes/n{target_node_id}.md");
     let parent_body = strip_frontmatter(
         index
             .files
@@ -377,7 +380,7 @@ fn bm25_pipeline_always_emits_chunk_files() -> Result<(), String> {
     let doc_id = "create-hook";
     let doc = index.documents.get(doc_id).ok_or("missing doc")?;
     for chunk_id in collect_structure_chunk_ids(&doc.structure) {
-        let rel = format!("skills/decomposed/{doc_id}/chunks/{chunk_id}.md");
+        let rel = format!("chunks/bm25/default/c{chunk_id}.md");
         assert!(
             catalog.join(&rel).is_file(),
             "missing chunk file for chunk_id {chunk_id}"
@@ -400,7 +403,7 @@ fn repair_skill_chunks_fills_missing_chunk_files() -> Result<(), String> {
     builder.write_catalog()?;
 
     let doc_id = "create-hook";
-    let chunks_dir = catalog.join(format!("skills/decomposed/{doc_id}/chunks"));
+    let chunks_dir = catalog.join("chunks/bm25/default");
     for entry in fs::read_dir(&chunks_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
@@ -411,7 +414,7 @@ fn repair_skill_chunks_fills_missing_chunk_files() -> Result<(), String> {
     let index = skills_index_from_decomposed_dir(&catalog)?;
     let doc = index.documents.get(doc_id).ok_or("missing doc")?;
     for chunk_id in collect_structure_chunk_ids(&doc.structure) {
-        let rel = format!("skills/decomposed/{doc_id}/chunks/{chunk_id}.md");
+        let rel = format!("chunks/bm25/default/c{chunk_id}.md");
         assert!(
             catalog.join(&rel).is_file(),
             "repair did not restore chunk file for chunk_id {chunk_id}"

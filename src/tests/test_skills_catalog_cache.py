@@ -6,11 +6,11 @@ import json
 import tempfile
 from pathlib import Path
 
+from cyt.config import skills_index_params_fingerprint
 from cyt.skills.catalog import (
     SkillEntryRef,
     _shorten_home_path,
     build_registry,
-    compute_cache_key,
     content_sha256_for_file,
     doc_id_from_path,
 )
@@ -21,7 +21,7 @@ def _write_skill(path: Path, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
-def test_content_sha256_dedup_and_cache_key_changes_with_pipeline() -> None:
+def test_content_sha256_dedup_uses_content_hash_as_cache_key() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         skill_a = root / "a" / "alpha.md"
@@ -32,10 +32,6 @@ def test_content_sha256_dedup_and_cache_key_changes_with_pipeline() -> None:
         hash_a = content_sha256_for_file(skill_a)
         hash_b = content_sha256_for_file(skill_b)
         assert hash_a == hash_b
-
-        key_bm25 = compute_cache_key(hash_a, "bm25", {"enable_bm25_chunking": True})
-        key_other = compute_cache_key(hash_a, "external", {"enable_bm25_chunking": False})
-        assert key_bm25 != key_other
 
 
 def test_build_registry_complete_and_dedup() -> None:
@@ -68,16 +64,15 @@ def test_build_registry_complete_and_dedup() -> None:
         entry = entries[0]
         assert isinstance(entry, SkillEntryRef)
         assert entry.doc_id == doc_id_from_path(skills_dir / "create-hook.md")
-        assert (
-            Path(entry.entry_dir) / "skills/decomposed" / entry.doc_id / "document.json"
-        ).is_file()
-        doc = json.loads(
-            (
-                Path(entry.entry_dir) / "skills/decomposed" / entry.doc_id / "document.json"
-            ).read_text(),
-        )
+        assert entry.cache_key == entry.content_sha256
+        assert (Path(entry.nodes_dir) / "page_index.json").is_file()
+        params_hash = skills_index_params_fingerprint(config)
+        assert (Path(entry.bm25_chunk_dir) / "chunk_index.json").is_file()
+        assert entry.bm25_chunk_dir.endswith(f"chunks/bm25/{params_hash}")
+        doc = json.loads((Path(entry.nodes_dir) / "page_index.json").read_text())
         assert doc["content_sha256"] == content_sha256_for_file(skills_dir / "create-hook.md")
         assert doc["pipeline"] == "bm25"
         skill_path = skills_dir / "create-hook.md"
         assert doc["path"] == _shorten_home_path(str(skill_path))
         assert doc["path"].endswith("create-hook.md")
+        assert entry.disk_backed is True

@@ -3,6 +3,9 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 
+pub use super::cache_layout::{
+    chunk_index_rel, chunk_md_rel, node_md_rel, page_index_rel, skill_entry_dir,
+};
 use super::config::PageIndexConfig;
 
 #[derive(Debug, Clone)]
@@ -96,6 +99,10 @@ impl SkillDocument {
 pub struct SkillsIndex {
     pub documents: HashMap<String, SkillDocument>,
     pub files: HashMap<String, String>,
+    /// Active chunk variant pipeline segment (`bm25`, `llm`, …) when chunk files are loaded.
+    pub chunk_pipeline: Option<String>,
+    /// `index_params_hash` for the active chunk variant directory.
+    pub chunk_params_hash: Option<String>,
 }
 
 impl SkillsIndex {
@@ -120,15 +127,24 @@ impl SkillsIndex {
         for rel_path in paths {
             let content = &self.files[rel_path];
             let path = Path::new(rel_path);
-            let is_node_md = path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-                && !rel_path.contains("/chunks/");
-            let is_chunk_md = rel_path.contains("/chunks/")
+            let is_node_md = rel_path.starts_with("nodes/")
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with('n'))
                 && path
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
-            if (!is_node_md && !is_chunk_md) || rel_path.ends_with("document.json") {
+            let is_chunk_md = rel_path.starts_with("chunks/")
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with('c'))
+                && path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+            if (!is_node_md && !is_chunk_md)
+                || rel_path.ends_with("page_index.json")
+                || rel_path.ends_with("chunk_index.json")
+            {
                 continue;
             }
             let id = path
@@ -146,14 +162,14 @@ impl SkillsIndex {
                 "content": content,
             });
             if is_chunk_md
-                && let Some(parent) = path.parent().and_then(|p| p.parent())
-                && let Some(doc_id) = parent.file_name()
+                && let Some(doc_id) = self
+                    .documents
+                    .keys()
+                    .next()
+                    .map(std::string::ToString::to_string)
                 && let Some(entry_obj) = entry.as_object_mut()
             {
-                entry_obj.insert(
-                    "doc_id".to_string(),
-                    Value::String(doc_id.to_string_lossy().into_owned()),
-                );
+                entry_obj.insert("doc_id".to_string(), Value::String(doc_id));
             }
             md_entries.push(entry);
         }
@@ -197,26 +213,28 @@ pub fn doc_id_from_rel_path(rel_path: &str) -> String {
 }
 
 #[must_use]
-pub const fn skills_decomposed_prefix() -> &'static str {
-    "skills/decomposed/"
+pub fn page_index_json_rel(_doc_id: &str) -> String {
+    page_index_rel().to_string()
 }
 
 #[must_use]
-pub fn document_json_rel(doc_id: &str) -> String {
-    format!("{}{doc_id}/document.json", skills_decomposed_prefix())
+pub fn chunk_index_json_rel(pipeline: &str, params_hash: &str) -> String {
+    chunk_index_rel(pipeline, params_hash)
 }
 
 #[must_use]
-pub fn node_md_rel(doc_id: &str, node_id: u32) -> String {
-    format!("{}{doc_id}/{node_id}.md", skills_decomposed_prefix())
+pub fn document_json_rel(_doc_id: &str) -> String {
+    page_index_rel().to_string()
 }
 
-#[must_use]
-pub fn chunk_md_rel(doc_id: &str, chunk_id: u32) -> String {
-    format!(
-        "{}{doc_id}/chunks/{chunk_id}.md",
-        skills_decomposed_prefix()
-    )
+impl SkillsIndex {
+    #[must_use]
+    pub fn chunk_md_rel_for(&self, chunk_id: u32) -> Option<String> {
+        match (&self.chunk_pipeline, &self.chunk_params_hash) {
+            (Some(pipeline), Some(hash)) => Some(chunk_md_rel(pipeline, hash, chunk_id)),
+            _ => None,
+        }
+    }
 }
 
 #[must_use]

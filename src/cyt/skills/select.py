@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cyt.skills.catalog import SkillEntryRef, _shorten_home_path
+from cyt.skills.catalog import SkillEntryRef, _shorten_home_path, load_entry_skills_index
 from cyt.skills.diagnostics import BudgetItemRow, SearchItemRow
 from cyt.skills.search import MatchedSkill
 
@@ -27,32 +27,34 @@ def _reconstruct_matches_from_items(
     *,
     item_kind: str,
 ) -> list[MatchedSkill]:
-    from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
+    from cyt_indexer import reconstruct_skill_markdown
 
     from cyt.indexer.tokens import count_tokens
     from cyt.skills.frontmatter import skill_name_from_frontmatter
     from cyt.skills.search import _frontmatter_by_doc
 
-    by_doc: dict[tuple[str, str], list[SearchItemRow]] = {}
+    by_doc: dict[tuple[str, str], tuple[SkillEntryRef, list[SearchItemRow]]] = {}
     for row in items:
         entry = _entry_for_row(row, entries)
         if entry is None:
             continue
         key = (entry.entry_dir, entry.doc_id)
-        by_doc.setdefault(key, []).append(row)
+        if key not in by_doc:
+            by_doc[key] = (entry, [])
+        by_doc[key][1].append(row)
 
     if not by_doc:
         return []
 
     frontmatter_by_doc = _frontmatter_by_doc(entries)
     matched: list[MatchedSkill] = []
-    for (entry_dir, doc_id), rows in by_doc.items():
+    for (entry_dir, doc_id), (entry, rows) in by_doc.items():
         top_score = max(row.score for row in rows)
         file_path = rows[0].file_path
         frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
         name = skill_name_from_frontmatter(frontmatter)
         id_specs = sorted({row.item_id for row in rows}, key=lambda item_id: int(item_id))
-        index = load_skills_index_from_dir(entry_dir)
+        index = load_entry_skills_index(entry)
         if item_kind == "chunk":
             result = reconstruct_skill_markdown(
                 index,

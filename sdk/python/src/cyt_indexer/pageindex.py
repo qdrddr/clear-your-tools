@@ -8,8 +8,16 @@ from typing import Any
 from cyt_indexer.bm25_cohesion import Bm25CohesionConfig, default_bm25_cohesion_config
 from cyt_indexer.bm25_cohesion import cohesion_config_dict as _cohesion_config_dict
 from cyt_indexer._native import ReconstructOptions as _ReconstructOptions
+from cyt_indexer._native import build_chunk_variant as _build_chunk_variant
+from cyt_indexer._native import build_page_index_only as _build_page_index_only
+from cyt_indexer._native import chunk_variant_valid as _chunk_variant_valid
+from cyt_indexer._native import page_index_valid as _page_index_valid
+from cyt_indexer._native import repair_skill_variant_chunks as _repair_skill_variant_chunks
+from cyt_indexer._native import load_skills_index_from_entry as _load_skills_index_from_entry
 from cyt_indexer._native import SkillsBuilder as _SkillsBuilder
 from cyt_indexer._native import build_skills_index as _build_skills_index
+from cyt_indexer._native import load_merged_skill_document_json as _load_merged_skill_document_json
+from cyt_indexer._native import finalize_skill_document_json as _finalize_skill_document_json
 from cyt_indexer._native import get_skill_content_retrieve_result as _get_skill_content_retrieve_result
 from cyt_indexer._native import get_skill_document as _get_skill_document
 from cyt_indexer._native import get_skill_line_content as _get_skill_line_content
@@ -22,6 +30,7 @@ from cyt_indexer._native import parse_skill_node_ids as _parse_skill_node_ids
 from cyt_indexer._native import reconstruct_skill_markdown as _reconstruct_skill_markdown
 from cyt_indexer._native import repair_skill_chunks as _repair_skill_chunks
 from cyt_indexer._native import skills_index_from_decomposed_dir as _skills_index_from_decomposed_dir
+from cyt_indexer._native import update_skill_document_source_path as _update_skill_document_source_path
 from cyt_indexer._native import write_reconstructed_skill as _write_reconstructed_skill
 from cyt_indexer._native import write_skills_index as _write_skills_index
 
@@ -154,6 +163,97 @@ def repair_skill_chunks(
 ) -> None:
     cfg = _config_dict(config)
     _repair_skill_chunks(entry_dir, doc_id, cfg)
+
+
+def load_merged_skill_document_json(
+    entry_dir: str,
+    doc_id: str,
+    chunk_dir: str | None = None,
+) -> dict[str, Any]:
+    return _load_merged_skill_document_json(entry_dir, doc_id, chunk_dir)
+
+
+def build_page_index_only(
+    skill_dirs: list[str],
+    *,
+    config: PageIndexConfigInput | None = None,
+) -> dict[str, Any]:
+    cfg = _config_dict(config)
+    return _build_page_index_only(skill_dirs, cfg)
+
+
+def build_chunk_variant(
+    entry_dir: str,
+    doc_id: str,
+    pipeline: str,
+    params_hash: str,
+    *,
+    config: PageIndexConfigInput | None = None,
+) -> dict[str, Any]:
+    cfg = _config_dict(config)
+    return _build_chunk_variant(entry_dir, doc_id, pipeline, params_hash, cfg)
+
+
+def repair_skill_variant_chunks(
+    entry_dir: str,
+    doc_id: str,
+    pipeline: str,
+    params_hash: str,
+    *,
+    config: PageIndexConfigInput | None = None,
+) -> None:
+    cfg = _config_dict(config)
+    _repair_skill_variant_chunks(entry_dir, doc_id, pipeline, params_hash, cfg)
+
+
+def page_index_valid(entry_dir: str, content_sha256: str) -> bool:
+    return _page_index_valid(entry_dir, content_sha256)
+
+
+def chunk_variant_valid(
+    entry_dir: str,
+    doc_id: str,
+    pipeline: str,
+    params_hash: str,
+) -> bool:
+    return _chunk_variant_valid(entry_dir, doc_id, pipeline, params_hash)
+
+
+def load_skills_index_from_entry(
+    entry_dir: str,
+    doc_id: str,
+    chunk_dir: str | None = None,
+) -> dict[str, Any]:
+    return _load_skills_index_from_entry(entry_dir, doc_id, chunk_dir)
+
+
+def finalize_skill_document_json(
+    entry_dir: str,
+    doc_id: str,
+    *,
+    content_sha256: str,
+    pipeline: str,
+    index_params: dict[str, Any],
+    built_at: str,
+    source_path: str,
+) -> dict[str, Any]:
+    return _finalize_skill_document_json(
+        entry_dir,
+        doc_id,
+        content_sha256=content_sha256,
+        pipeline=pipeline,
+        index_params=index_params,
+        built_at=built_at,
+        source_path=source_path,
+    )
+
+
+def update_skill_document_source_path(
+    entry_dir: str,
+    doc_id: str,
+    source_path: str,
+) -> dict[str, Any]:
+    return _update_skill_document_source_path(entry_dir, doc_id, source_path)
 
 
 def md_to_tree(

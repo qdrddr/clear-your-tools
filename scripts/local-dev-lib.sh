@@ -88,17 +88,15 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		info "cyt-indexer build skills ${forwarded[*]}"
 		"${CYT_INDEXER_BIN}" build skills "${forwarded[@]}"
 
-		[[ -f "${output_dir}/skills_index.json" ]] ||
-			die "skills build did not produce ${output_dir}/skills_index.json"
 		[[ -d "${output_dir}/skills/decomposed" ]] ||
 			die "skills build did not produce ${output_dir}/skills/decomposed"
 		local doc_count
 		doc_count="$(
-			find "${output_dir}/skills/decomposed" -mindepth 1 -maxdepth 1 -type d 2>/dev/null |
+			find "${output_dir}/skills/decomposed" -mindepth 2 -maxdepth 2 -name page_index.json 2>/dev/null |
 				wc -l | tr -d ' '
 		)"
 		[[ "${doc_count}" -gt 0 ]] ||
-			die "no skill documents in ${output_dir}/skills/decomposed"
+			die "no skill page_index.json files in ${output_dir}/skills/decomposed"
 		info "skills build ok (${doc_count} documents -> ${output_dir}/skills/decomposed)"
 	}
 

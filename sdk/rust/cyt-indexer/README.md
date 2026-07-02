@@ -65,8 +65,9 @@ Build stores each skill's YAML `frontmatter` and preamble in `document.json`; co
 uses that catalog snapshot (not the live file) so `name`/`description` match what was indexed.
 Falls back to the indexed path when older catalogs lack those fields.
 
-Build writes `skills/decomposed/{doc_id}/document.json`, `{node_id}.md` (numeric ids `0`, `1`, …), and a
-reconstructable `skills_index.json` snapshot. YAML frontmatter is always node `0` when present; preamble
+Build writes `nodes/page_index.json`, `nodes/n{node_id}.md` (prefixed ids such as `n0`, `n1`, …), and
+`chunks/bm25/{index_params_hash}/chunk_index.json` plus `c{chunk_id}.md` chunk bodies when BM25 chunking
+is enabled. YAML frontmatter is always node `0` when present; preamble
 text (after frontmatter, before the first heading) is always node `1` when present. Heading sections
 start at node `2`, even when frontmatter and/or preamble are absent.
 
@@ -101,7 +102,7 @@ cohesion instead of embeddings — no model calls, deterministic, fast.
 
 During skills build, each section gets at least one chunk when BM25 chunking is enabled
 (default). Sections larger than `chunk_size` are split; chunk files land at
-`skills/decomposed/{doc_id}/chunks/{chunk_id}.md` with `chunks: [{chunk_id}]` in
+`chunks/bm25/{index_params_hash}/c{chunk_id}.md` with `chunks: [{chunk_id}]` in
 `document.json`. Parent `{node_id}.md` keeps the full section text.
 
 **Default (BM25 splitting on):** returns node-level files and BM25 chunk files. Sections

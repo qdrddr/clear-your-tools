@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
+from cyt_indexer import reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import rerank_score_skills, reranker_minimum_tools
@@ -25,7 +25,7 @@ from cyt.pruners.rerank import (
     rerank_pruning_settings,
     rerank_unified_item_lists,
 )
-from cyt.skills.catalog import SkillEntryRef
+from cyt.skills.catalog import SkillEntryRef, load_entry_skills_index
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import build_skill_node_items
@@ -53,13 +53,17 @@ def reconstruct_skills_from_reranked_items(
         return []
 
     frontmatter_by_doc = _frontmatter_by_doc(entries)
+    entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
     matched: list[MatchedSkill] = []
     for (entry_dir, doc_id), items in by_doc.items():
+        entry = entry_by_key.get((entry_dir, doc_id))
+        if entry is None:
+            continue
         items.sort(key=lambda row: float(row.get("score", 0)), reverse=True)
         top_score = float(items[0].get("score", 0))
         file_path = str(items[0].get("file_path", ""))
         node_ids = [int(item["node_id"]) for item in items if item.get("node_id") is not None]
-        index = load_skills_index_from_dir(entry_dir)
+        index = load_entry_skills_index(entry)
         node_specs = [str(node_id) for node_id in sorted(set(node_ids))]
         result = reconstruct_skill_markdown(
             index,

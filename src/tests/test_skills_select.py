@@ -45,12 +45,19 @@ def _search_row(
 
 
 def _entry(doc_id: str) -> SkillEntryRef:
+    entry_dir = "/tmp/catalog/entry"
     return SkillEntryRef(
         source_path=f"/tmp/{doc_id}.md",
         doc_id=doc_id,
         content_sha256="abc",
-        cache_key="key",
-        entry_dir="/tmp/catalog/entry",
+        cache_key="abc",
+        entry_dir=entry_dir,
+        nodes_dir=f"{entry_dir}/nodes",
+        chunk_dir=f"{entry_dir}/chunks/bm25/hash",
+        bm25_chunk_dir=f"{entry_dir}/chunks/bm25/hash",
+        pipeline="bm25",
+        index_params_hash="hash",
+        disk_backed=True,
         document={"structure": []},
     )
 

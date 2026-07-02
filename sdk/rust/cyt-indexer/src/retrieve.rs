@@ -762,7 +762,8 @@ pub fn load_catalog_from_dir(dir_path: &str) -> Result<Value, String> {
         let suffix = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         let is_skills_md = paths::to_skills_decomposed_key(&path_str).is_some()
             && suffix.eq_ignore_ascii_case(trim_dot(&md_ext()))
-            && path.file_name().and_then(|n| n.to_str()) != Some("document.json");
+            && path.file_name().and_then(|n| n.to_str()) != Some("page_index.json")
+            && path.file_name().and_then(|n| n.to_str()) != Some("chunk_index.json");
         if is_skills_md
             || (paths::to_decomposed_key(&path_str).is_some()
                 && suffix.eq_ignore_ascii_case(trim_dot(&md_ext())))

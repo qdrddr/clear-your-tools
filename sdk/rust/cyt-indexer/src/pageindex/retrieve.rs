@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use super::chunk_id::parse_chunk_ids;
 use super::node_id::{node_id_from_value, parse_node_id_token};
 use super::tree::{remove_fields, structure_to_list};
-use super::types::{SkillDocument, SkillsIndex, chunk_md_rel, node_md_rel};
+use super::types::{SkillDocument, SkillsIndex, node_md_rel};
 
 fn u64_to_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(0)
@@ -183,8 +183,12 @@ pub fn get_line_content(
     if !chunk_ids.is_empty() {
         let chunk_set: HashSet<u32> = chunk_ids.into_iter().collect();
         for chunk_id in chunk_set {
-            let rel = chunk_md_rel(doc_id, chunk_id);
-            if let Some(raw) = index.files.get(&rel) {
+            let rel = index
+                .chunk_md_rel_for(chunk_id)
+                .or_else(|| find_chunk_rel(index, chunk_id));
+            if let Some(rel) = rel
+                && let Some(raw) = index.files.get(&rel)
+            {
                 results.push(json!({
                     "chunk_id": chunk_id,
                     "content": strip_decomposed_frontmatter(raw),
@@ -243,7 +247,7 @@ pub fn get_line_content_from_spec(index: &SkillsIndex, doc_id: &str, line_num_sp
 
 fn resolve_node_content(
     index: &SkillsIndex,
-    doc_id: &str,
+    _doc_id: &str,
     node: &serde_json::Map<String, Value>,
 ) -> String {
     if let Some(Value::String(text)) = node.get("text")
@@ -253,11 +257,20 @@ fn resolve_node_content(
     }
 
     let node_id = node_id_from_value(node.get("node_id"));
-    let rel = node_md_rel(doc_id, node_id);
+    let rel = node_md_rel(node_id);
     if let Some(raw) = index.files.get(&rel) {
         return strip_decomposed_frontmatter(raw);
     }
     String::new()
+}
+
+pub(crate) fn find_chunk_rel(index: &SkillsIndex, chunk_id: u32) -> Option<String> {
+    let suffix = format!("c{chunk_id}.md");
+    index
+        .files
+        .keys()
+        .find(|rel| rel.ends_with(&suffix))
+        .cloned()
 }
 
 pub(crate) fn strip_decomposed_frontmatter(content: &str) -> String {

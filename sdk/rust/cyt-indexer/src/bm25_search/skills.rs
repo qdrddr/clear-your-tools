@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use crate::bm25_search::{NormalizeMode, ScoreCatalogOptions, score_catalog_dict};
+use crate::pageindex::cache_layout::chunk_md_path;
 use crate::pageindex::{ReconstructOptions, reconstruct_skill_markdown};
-use crate::skills_io::load_skills_index_from_dir;
+use crate::pageindex::{load_merged_document_json, parse_document_on_disk};
+use crate::skills_io::load_skills_index_from_entry;
 use crate::tiktoken;
 
 #[derive(Debug, Clone)]
@@ -19,6 +21,7 @@ pub struct SkillEntryInput {
     pub source_path: String,
     pub frontmatter: Option<String>,
     pub cache_key: String,
+    pub bm25_chunk_dir: String,
 }
 
 fn parse_entries(entries: &[Value]) -> Vec<SkillEntryInput> {
@@ -43,6 +46,16 @@ fn parse_entries(entries: &[Value]) -> Vec<SkillEntryInput> {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string(),
+                bm25_chunk_dir: obj
+                    .get("bm25_chunk_dir")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        obj.get("entry_dir")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_default(),
             })
         })
         .collect()
@@ -102,22 +115,23 @@ fn walk_structure(node: &Value, out: &mut Vec<i64>, skip_frontmatter: bool) {
 fn build_chunk_corpus(entries: &[SkillEntryInput]) -> Value {
     let mut md_items = Vec::new();
     for entry in entries {
-        let doc_dir = PathBuf::from(&entry.entry_dir)
-            .join("skills")
-            .join("decomposed")
-            .join(&entry.doc_id);
-        let doc_json_path = doc_dir.join("document.json");
-        let Ok(raw) = fs::read_to_string(&doc_json_path) else {
+        let entry_path = PathBuf::from(&entry.entry_dir);
+        let chunk_dir = PathBuf::from(&entry.bm25_chunk_dir);
+        let Ok(doc) = load_merged_document_json(&entry_path, &entry.doc_id, Some(&chunk_dir))
+        else {
             continue;
         };
-        let Ok(doc) = serde_json::from_str::<Value>(&raw) else {
+        let Some(parsed) = parse_document_on_disk(&doc) else {
             continue;
         };
-        let Some(structure) = doc.get("structure") else {
-            continue;
+        let source_path = if parsed.path.is_empty() {
+            entry.source_path.clone()
+        } else {
+            parsed.path
         };
-        for chunk_id in iter_content_chunk_ids(structure) {
-            let chunk_path = doc_dir.join("chunks").join(format!("{chunk_id}.md"));
+        for chunk_id in iter_content_chunk_ids(&parsed.structure) {
+            let chunk_id = u32::try_from(chunk_id).unwrap_or(u32::MAX);
+            let chunk_path = chunk_md_path(&chunk_dir, chunk_id);
             let Ok(content) = fs::read_to_string(&chunk_path) else {
                 continue;
             };
@@ -127,12 +141,13 @@ fn build_chunk_corpus(entries: &[SkillEntryInput]) -> Value {
             }
             md_items.push(json!({
                 "id": chunk_id.to_string(),
-                "doc_id": entry.doc_id,
-                "file_path": entry.source_path,
+                "doc_id": parsed.doc_id,
+                "file_path": source_path,
                 "content": body,
                 "score": "0.0",
                 "entry_dir": entry.entry_dir,
                 "cache_key": entry.cache_key,
+                "bm25_chunk_dir": entry.bm25_chunk_dir,
             }));
         }
     }
@@ -268,6 +283,12 @@ fn rebuild_skill_matches(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        let bm25_chunk_dir = items
+            .first()
+            .and_then(|i| i.get("bm25_chunk_dir"))
+            .and_then(Value::as_str)
+            .unwrap_or(entry_dir.as_str())
+            .to_string();
         let mut chunk_ids: Vec<i64> = items
             .iter()
             .filter_map(|i| i.get("id").and_then(Value::as_str))
@@ -276,7 +297,11 @@ fn rebuild_skill_matches(
         chunk_ids.sort_unstable();
         chunk_ids.dedup();
 
-        let index = load_skills_index_from_dir(Path::new(&entry_dir))?;
+        let index = load_skills_index_from_entry(
+            Path::new(&entry_dir),
+            &doc_id,
+            Some(Path::new(&bm25_chunk_dir)),
+        )?;
         let specs: Vec<String> = chunk_ids
             .iter()
             .map(std::string::ToString::to_string)

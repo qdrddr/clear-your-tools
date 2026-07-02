@@ -55,14 +55,16 @@ pub use documents::{
 };
 pub use pageindex::{
     MdIndexResult, PageIndexConfig, RETRIEVE_DIR, ReconstructOptions, ReconstructResult,
-    SkillDocument, SkillsIndex, build_skills_index,
+    SkillDocument, SkillDocumentExtras, SkillsIndex, build_skills_index,
+    finalize_document_json as finalize_skill_document_json,
     get_content_retrieve_result as get_skill_content_retrieve_result,
     get_document as get_skill_document, get_document_structure as get_skill_structure,
     get_line_content as get_skill_line_content,
-    get_line_content_from_spec as get_skill_line_content_from_spec, md_to_tree,
+    get_line_content_from_spec as get_skill_line_content_from_spec,
+    load_merged_document_json as load_merged_skill_document_json, md_to_tree,
     parse_chunk_ids as parse_skill_chunk_ids, parse_line_nums as parse_skill_line_nums,
     parse_node_ids as parse_skill_node_ids, reconstruct_skill_markdown, repair_skill_chunks,
-    retrieve_output_rel_path, write_reconstructed_skill,
+    retrieve_output_rel_path, update_document_source_path, write_reconstructed_skill,
 };
 pub use paths::{
     PathConfig, collect_enums, configure as configure_paths, get_root_tool_key,

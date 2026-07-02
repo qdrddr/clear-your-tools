@@ -20,11 +20,11 @@ from cyt_indexer import (  # noqa: E402
     get_skill_line_content,
     get_skill_line_content_from_spec,
     get_skill_structure,
+    load_skills_index_from_dir,
     page_index_config_from_mapping,
     page_index_config_without_chunking,
     parse_skill_chunk_ids,
     md_to_tree,
-    skills_index_from_decomposed_dir,
     write_skills_index,
 )
 
@@ -71,16 +71,15 @@ def test_build_write_reconstruct() -> None:
         index = build_skills_index([str(skills_dir)])
         assert "documents" in index
         assert index["documents"]
-        assert any("/chunks/" in k for k in index["files"])
+        assert any(k.startswith("chunks/") for k in index["files"])
 
         catalog = Path(tmp) / "catalog"
         write_skills_index(index, str(catalog))
-        snapshot = catalog / "skills_index.json"
-        assert snapshot.is_file()
-        snapshot.unlink()
+        doc_id = next(iter(index["documents"]))
+        assert (catalog / "nodes" / "page_index.json").is_file()
+        assert (catalog / "chunks" / "bm25" / "default" / "chunk_index.json").is_file()
 
-        rebuilt = skills_index_from_decomposed_dir(str(catalog))
-        doc_id = next(iter(rebuilt["documents"]))
+        rebuilt = load_skills_index_from_dir(str(catalog))
         meta = get_skill_document(rebuilt["documents"], doc_id)
         assert meta["type"] == "md"
         structure = get_skill_structure(rebuilt["documents"], doc_id)
@@ -99,11 +98,15 @@ def test_retrieve_by_chunk_id_after_disk_roundtrip() -> None:
         )
         index = build_skills_index([str(skills_dir)])
         doc_id = next(iter(index["documents"]))
-        chunk_id = next(k.split("/")[-1].removesuffix(".md") for k in index["files"] if "/chunks/" in k)
+        chunk_id = next(
+            k.split("/")[-1].removeprefix("c").removesuffix(".md")
+            for k in index["files"]
+            if k.startswith("chunks/") and k.endswith(".md")
+        )
 
         catalog = Path(tmp) / "catalog"
         write_skills_index(index, str(catalog))
-        rebuilt = skills_index_from_decomposed_dir(str(catalog))
+        rebuilt = load_skills_index_from_dir(str(catalog))
         rows = get_skill_line_content(rebuilt, doc_id, chunk_id_specs=[chunk_id])
         assert rows
         assert rows[0]["chunk_id"] == int(chunk_id)
@@ -119,8 +122,9 @@ def test_build_without_bm25_chunking_emits_one_chunk_per_node() -> None:
         index = build_skills_index([str(skills_dir)], config=page_index_config_without_chunking())
         assert "documents" in index
         assert index["documents"]
-        assert any("/chunks/" in k for k in index["files"])
-        assert any(k.endswith("/document.json") for k in index["files"])
+        assert any(k.startswith("chunks/") for k in index["files"])
+        assert any(k.endswith("/page_index.json") for k in index["files"])
+        assert any(k.endswith("/chunk_index.json") for k in index["files"])
         assert any(k.endswith(".md") and "/chunks/" not in k for k in index["files"])
 
         doc_id = next(iter(index["documents"]))

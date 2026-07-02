@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
+from cyt_indexer import reconstruct_skill_markdown
 from cyt_indexer.bm25_search import bm25_frontmatter_gate, bm25_search_skill_chunks
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import bm25_score_skills, skills_frontmatter_upper_limit
 from cyt.pruners.bm25 import bm25_stage_usage, normalize_bm25_similarity
-from cyt.skills.catalog import SkillEntryRef, _shorten_home_path
+from cyt.skills.catalog import SkillEntryRef, _shorten_home_path, load_entry_skills_index
 from cyt.skills.diagnostics import FrontmatterGateRow, SearchItemRow
 from cyt.skills.frontmatter import frontmatter_search_text, skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
@@ -41,6 +41,7 @@ def _entries_payload(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
                 "source_path": _shorten_home_path(entry.source_path),
                 "frontmatter": frontmatter_search_text(frontmatter) or None,
                 "cache_key": entry.cache_key,
+                "bm25_chunk_dir": entry.bm25_chunk_dir,
             },
         )
     return payload
@@ -126,15 +127,14 @@ def excluded_by_frontmatter_gate(
 
 
 def _reconstruct_for_doc(
-    entry_dir: str,
-    doc_id: str,
+    entry: SkillEntryRef,
     chunk_ids: list[int],
 ) -> str:
-    index = load_skills_index_from_dir(entry_dir)
+    index = load_entry_skills_index(entry)
     chunk_specs = [str(chunk_id) for chunk_id in sorted(chunk_ids)]
     result = reconstruct_skill_markdown(
         index,
-        doc_id,
+        entry.doc_id,
         chunk_id_specs=chunk_specs,
     )
     return str(result.get("markdown", ""))
@@ -155,8 +155,7 @@ def _group_survivors_by_doc(
 def _matched_skill_for_survivor_items(
     items: list[dict[str, Any]],
     *,
-    entry_dir: str,
-    doc_id: str,
+    entry: SkillEntryRef,
     frontmatter: str | None,
 ) -> MatchedSkill | None:
     """Rebuild one skill from all BM25 chunk survivors for that doc."""
@@ -168,13 +167,13 @@ def _matched_skill_for_survivor_items(
     top_score = float(ordered[0].get("score", 0))
     name = skill_name_from_frontmatter(frontmatter)
     chunk_ids = [int(item["id"]) for item in ordered if item.get("id") is not None]
-    markdown = _reconstruct_for_doc(entry_dir, doc_id, chunk_ids)
+    markdown = _reconstruct_for_doc(entry, chunk_ids)
     if not markdown.strip():
         return None
     from cyt.indexer.tokens import count_tokens
 
     return MatchedSkill(
-        doc_id=doc_id,
+        doc_id=entry.doc_id,
         file_path=file_path,
         markdown=markdown,
         name=name,
@@ -196,14 +195,17 @@ def reconstruct_skills_from_bm25_items(
         return []
 
     frontmatter_by_doc = _frontmatter_by_doc(entries)
+    entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
     matched: list[MatchedSkill] = []
     for doc_id, items in by_doc.items():
         entry_dir = str(items[0].get("entry_dir", ""))
+        entry = entry_by_key.get((entry_dir, doc_id))
+        if entry is None:
+            continue
         frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
         match = _matched_skill_for_survivor_items(
             items,
-            entry_dir=entry_dir,
-            doc_id=doc_id,
+            entry=entry,
             frontmatter=frontmatter,
         )
         if match is not None:

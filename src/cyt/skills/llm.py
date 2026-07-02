@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from cyt_indexer import load_skills_index_from_dir, reconstruct_skill_markdown
+from cyt_indexer import reconstruct_skill_markdown
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.indexer.tokens import count_tokens
@@ -23,7 +23,12 @@ from cyt.pruners.llm import (
     trim_catalog_dict,
 )
 from cyt.pruners.remote import LlmPruningSettings
-from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
+from cyt.skills.catalog import (
+    SkillEntryRef,
+    _iter_content_node_ids,
+    _shorten_home_path,
+    load_entry_skills_index,
+)
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import load_node_body, skill_name
@@ -162,9 +167,13 @@ def reconstruct_skills_from_llm_ids(
         return []
 
     frontmatter_by_doc = _frontmatter_by_doc(entries)
+    entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
     matched: list[MatchedSkill] = []
     for (entry_dir, doc_id), node_ids in by_doc.items():
-        index = load_skills_index_from_dir(entry_dir)
+        entry = entry_by_key.get((entry_dir, doc_id))
+        if entry is None:
+            continue
+        index = load_entry_skills_index(entry)
         node_specs = [str(node_id) for node_id in sorted(set(node_ids))]
         result = reconstruct_skill_markdown(
             index,

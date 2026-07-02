@@ -1,179 +1,257 @@
 use std::fs;
 use std::path::Path;
 
-use serde_json::Value;
-
-use crate::pageindex::types::skills_decomposed_prefix;
+use crate::pageindex::cache_layout::{CHUNKS_DIR, NODES_DIR, nodes_dir, page_index_rel};
+use crate::pageindex::document_json::load_merged_document_from_entry;
 use crate::pageindex::{SkillDocument, SkillsIndex};
 
-const SKILLS_INDEX_FILE: &str = "skills_index.json";
+/// Write node and page-index files from an in-memory index to `entry_dir`.
+///
+/// # Errors
+///
+/// Returns an error when directories or files cannot be created or written.
+pub fn write_page_index_files(index: &SkillsIndex, entry_dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(entry_dir).map_err(|e| e.to_string())?;
+    write_selected_files(index, entry_dir, |rel| {
+        rel == page_index_rel() || rel.starts_with(&format!("{NODES_DIR}/"))
+    })
+}
 
-/// Write decomposed skill files and a `skills_index.json` snapshot to `output_dir`.
+/// Write chunk variant files from an in-memory index to `entry_dir`.
+///
+/// # Errors
+///
+/// Returns an error when directories or files cannot be created or written.
+pub fn write_chunk_variant_files(
+    index: &SkillsIndex,
+    entry_dir: &Path,
+    pipeline: &str,
+    params_hash: &str,
+) -> Result<(), String> {
+    let prefix = format!(
+        "{CHUNKS_DIR}/{}/{}",
+        pipeline.trim().to_ascii_lowercase(),
+        params_hash
+    );
+    write_selected_files(index, entry_dir, |rel| rel.starts_with(&prefix))
+}
+
+/// Write all known index files (page + any chunk variants present in the file map).
 ///
 /// # Errors
 ///
 /// Returns an error when directories or files cannot be created or written.
 pub fn write_skills_index(index: &SkillsIndex, output_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
+    write_selected_files(index, output_dir, |_| true)
+}
 
+fn write_selected_files(
+    index: &SkillsIndex,
+    output_dir: &Path,
+    include: impl Fn(&str) -> bool,
+) -> Result<(), String> {
     for (rel, content) in &index.files {
+        if !include(rel) {
+            continue;
+        }
         let path = output_dir.join(rel);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         fs::write(&path, content).map_err(|e| e.to_string())?;
     }
-
-    let snapshot =
-        serde_json::to_string_pretty(&index.to_skills_index_json()).map_err(|e| e.to_string())?;
-    fs::write(output_dir.join(SKILLS_INDEX_FILE), snapshot).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Load a skills index from `skills_index.json` or reconstruct from decomposed files.
+/// Write node markdown files referenced in the index file map.
+///
+/// # Errors
+///
+/// Returns an error when files cannot be written.
+pub fn write_node_files_from_index(index: &SkillsIndex, entry_dir: &Path) -> Result<(), String> {
+    write_selected_files(index, entry_dir, |rel| {
+        rel.starts_with(&format!("{NODES_DIR}/"))
+    })
+}
+
+/// Load page-index-only skills index from an entry directory.
+///
+/// # Errors
+///
+/// Returns an error when the entry directory is invalid or files cannot be read.
+pub fn load_page_index_from_entry(entry_dir: &Path, doc_id: &str) -> Result<SkillsIndex, String> {
+    load_skills_index_from_entry(entry_dir, doc_id, None)
+}
+
+/// Load a skills index from an entry directory, optionally overlaying a chunk variant.
+///
+/// # Errors
+///
+/// Returns an error when the catalog directory is invalid or files cannot be read.
+pub fn load_skills_index_from_entry(
+    entry_dir: &Path,
+    doc_id: &str,
+    chunk_variant: Option<&Path>,
+) -> Result<SkillsIndex, String> {
+    let mut index = SkillsIndex::default();
+    load_entry_files_into_index(entry_dir, chunk_variant, &mut index)?;
+
+    let merged = load_merged_document_from_entry(entry_dir, chunk_variant)?;
+    if let Some(doc) = SkillDocument::from_json(&merged) {
+        index.documents.insert(doc_id.to_string(), doc);
+    }
+
+    if let Some(variant_dir) = chunk_variant {
+        let pipeline = variant_dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned());
+        let params_hash = variant_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned());
+        index.chunk_pipeline = pipeline;
+        index.chunk_params_hash = params_hash;
+    }
+
+    if index.documents.is_empty() {
+        return Err(format!(
+            "no skill document found in entry directory: {}",
+            entry_dir.display()
+        ));
+    }
+    Ok(index)
+}
+
+/// Load a skills index from an entry directory (page index + optional default chunk overlay).
 ///
 /// # Errors
 ///
 /// Returns an error when the catalog directory is invalid or files cannot be read.
 pub fn load_skills_index_from_dir(catalog_dir: &Path) -> Result<SkillsIndex, String> {
-    let snapshot_path = catalog_dir.join(SKILLS_INDEX_FILE);
-    if snapshot_path.is_file() {
-        let raw = fs::read_to_string(&snapshot_path).map_err(|e| e.to_string())?;
-        let val: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-        let mut index = SkillsIndex::from_skills_index_json(&val)?;
-        load_decomposed_files_into_index(catalog_dir, &mut index)?;
-        return Ok(index);
-    }
-    SkillsIndex::from_decomposed_dir(catalog_dir)
+    let doc_id = infer_doc_id_from_entry(catalog_dir)?;
+    load_skills_index_from_entry(catalog_dir, &doc_id, None)
 }
 
-/// Reconstruct a skills index from `skills/decomposed/` without a snapshot file.
+/// Reconstruct a skills index from an entry directory.
 ///
 /// # Errors
 ///
-/// Returns an error when the decomposed directory is missing or contains no documents.
+/// Returns an error when the entry directory is missing or contains no documents.
 pub fn skills_index_from_decomposed_dir(dir: &Path) -> Result<SkillsIndex, String> {
-    SkillsIndex::from_decomposed_dir(dir)
+    load_skills_index_from_dir(dir)
 }
 
 impl SkillsIndex {
-    /// Reconstruct a skills index from decomposed files under `catalog_dir`.
+    /// Reconstruct a skills index from files under `catalog_dir`.
     ///
     /// # Errors
     ///
-    /// Returns an error when the decomposed directory is missing or contains no documents.
+    /// Returns an error when the entry directory is missing or contains no documents.
     pub fn from_decomposed_dir(catalog_dir: &Path) -> Result<Self, String> {
-        let decomposed_root = catalog_dir.join(skills_decomposed_prefix());
-        if !decomposed_root.is_dir() {
-            return Err(format!(
-                "skills decomposed directory not found: {}",
-                decomposed_root.display()
-            ));
-        }
-
-        let mut index = Self::default();
-        load_decomposed_files_into_index(catalog_dir, &mut index)?;
-
-        if index.documents.is_empty() {
-            return Err("no skill documents found in decomposed directory".to_string());
-        }
-        Ok(index)
+        load_skills_index_from_dir(catalog_dir)
     }
 }
 
-/// Load decomposed skill files from `catalog_dir` into an existing index.
+/// Load entry files from disk into an existing index.
 ///
 /// # Errors
 ///
-/// Returns an error when decomposed files cannot be read or parsed.
+/// Returns an error when files cannot be read.
 pub fn load_decomposed_files_for_index(
     catalog_dir: &Path,
     index: &mut SkillsIndex,
 ) -> Result<(), String> {
-    load_decomposed_files_into_index(catalog_dir, index)
+    load_entry_files_into_index(catalog_dir, None, index)
 }
 
-fn load_decomposed_files_into_index(
-    catalog_dir: &Path,
+fn load_entry_files_into_index(
+    entry_dir: &Path,
+    chunk_variant: Option<&Path>,
     index: &mut SkillsIndex,
 ) -> Result<(), String> {
-    let decomposed_root = catalog_dir.join(skills_decomposed_prefix());
-    if !decomposed_root.is_dir() {
-        return Ok(());
+    let nodes = nodes_dir(entry_dir);
+    if nodes.is_dir() {
+        load_dir_files(entry_dir, &nodes, index)?;
     }
 
-    for doc_entry in fs::read_dir(&decomposed_root).map_err(|e| e.to_string())? {
-        let doc_entry = doc_entry.map_err(|e| e.to_string())?;
-        let doc_dir = doc_entry.path();
-        if !doc_dir.is_dir() {
-            continue;
+    if let Some(variant_dir) = chunk_variant {
+        if variant_dir.is_dir() {
+            load_dir_files(entry_dir, variant_dir, index)?;
         }
-
-        let doc_id = doc_dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned();
-
-        for file_entry in fs::read_dir(&doc_dir).map_err(|e| e.to_string())? {
-            let file_entry = file_entry.map_err(|e| e.to_string())?;
-            let path = file_entry.path();
-            if !path.is_file() {
+    } else if let Ok(entries) = fs::read_dir(entry_dir.join(CHUNKS_DIR)) {
+        for entry in entries.flatten() {
+            let pipeline_dir = entry.path();
+            if !pipeline_dir.is_dir() {
                 continue;
             }
-
-            let rel = path
-                .strip_prefix(catalog_dir)
-                .map_err(|e| e.to_string())?
-                .to_string_lossy()
-                .replace('\\', "/");
-
-            let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            index.files.insert(rel.clone(), content.clone());
-
-            if path.file_name().and_then(|n| n.to_str()) == Some("document.json") {
-                let val: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-                if let Some(doc) = SkillDocument::from_json(&val) {
-                    index.documents.insert(doc_id.clone(), doc);
+            if let Ok(hash_entries) = fs::read_dir(&pipeline_dir) {
+                for hash_entry in hash_entries.flatten() {
+                    let variant = hash_entry.path();
+                    if variant.is_dir() {
+                        load_dir_files(entry_dir, &variant, index)?;
+                    }
                 }
-            }
-        }
-
-        let chunks_dir = doc_dir.join("chunks");
-        if chunks_dir.is_dir() {
-            for file_entry in fs::read_dir(&chunks_dir).map_err(|e| e.to_string())? {
-                let file_entry = file_entry.map_err(|e| e.to_string())?;
-                let path = file_entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                let rel = path
-                    .strip_prefix(catalog_dir)
-                    .map_err(|e| e.to_string())?
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                index.files.insert(rel, content);
             }
         }
     }
     Ok(())
 }
 
+fn load_dir_files(entry_dir: &Path, dir: &Path, index: &mut SkillsIndex) -> Result<(), String> {
+    for file_entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let file_entry = file_entry.map_err(|e| e.to_string())?;
+        let path = file_entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(entry_dir)
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        index.files.insert(rel, content);
+    }
+    Ok(())
+}
+
+fn infer_doc_id_from_entry(entry_dir: &Path) -> Result<String, String> {
+    let page_path = entry_dir.join(page_index_rel());
+    if page_path.is_file() {
+        let raw = fs::read_to_string(&page_path).map_err(|e| e.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
+            return Ok(id.to_string());
+        }
+    }
+    Err(format!(
+        "could not infer doc_id from entry directory: {}",
+        entry_dir.display()
+    ))
+}
+
 pub fn merge_skills_index_files(index: &mut SkillsIndex, other: &SkillsIndex) {
     index.documents.extend(other.documents.clone());
     index.files.extend(other.files.clone());
+    if index.chunk_pipeline.is_none() {
+        index.chunk_pipeline.clone_from(&other.chunk_pipeline);
+    }
+    if index.chunk_params_hash.is_none() {
+        index.chunk_params_hash.clone_from(&other.chunk_params_hash);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pageindex::{PageIndexConfig, build_skills_index};
-    use std::fs;
+
     #[test]
-    fn write_and_reconstruct_without_snapshot() -> Result<(), String> {
+    fn write_and_reconstruct_from_split_index_files() -> Result<(), String> {
         let dir = std::env::temp_dir().join(format!("cyt-skills-{}", std::process::id()));
         let skills_dir = dir.join("skills-src");
+        let entry_dir = dir.join("entry");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
         fs::write(
@@ -183,12 +261,16 @@ mod tests {
         .map_err(|e| e.to_string())?;
 
         let index = build_skills_index(&[skills_dir], &PageIndexConfig::default())?;
-        write_skills_index(&index, &dir)?;
+        write_skills_index(&index, &entry_dir)?;
 
-        let snapshot = dir.join(SKILLS_INDEX_FILE);
-        fs::remove_file(&snapshot).map_err(|e| e.to_string())?;
+        assert!(entry_dir.join("nodes/page_index.json").is_file());
+        assert!(
+            entry_dir
+                .join("chunks/bm25/default/chunk_index.json")
+                .is_file()
+        );
 
-        let rebuilt = SkillsIndex::from_decomposed_dir(&dir)?;
+        let rebuilt = load_skills_index_from_entry(&entry_dir, "skill", None)?;
         assert_eq!(rebuilt.documents.len(), index.documents.len());
         assert!(!rebuilt.files.is_empty());
         let _ = fs::remove_dir_all(&dir);
