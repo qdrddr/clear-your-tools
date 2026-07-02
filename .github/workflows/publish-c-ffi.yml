@@ -1,4 +1,9 @@
-# Publish C FFI artifacts to GitHub Release when a semver tag vX.Y.Z is pushed.
+# Publish C FFI artifacts to an existing GitHub Release when a semver tag vX.Y.Z is pushed.
+#
+# Maintainer flow:
+#   1. Push tag vX.Y.Z (and optionally sdk/go/vX.Y.Z; CI creates the Go tag if missing).
+#   2. Create the GitHub Release for vX.Y.Z manually (title, notes, pre-release flag).
+#   3. This workflow builds libcyt_indexer and uploads release assets to the existing release.
 #
 # Builds libcyt_indexer from the tagged monorepo source (no crates.io dependency).
 # Runs in parallel with:
@@ -6,7 +11,7 @@
 #   2. Publish cyt-indexer-sdk to npm      (publish-npm-sdk.yml)
 #   2. Publish cyt-indexer-sdk to PyPI     (publish-pypi-sdk.yml)
 #
-# Manual runs: workflow_dispatch (requires version input).
+# Manual runs: workflow_dispatch (requires version input; vX.Y.Z tag must already exist).
 
 name: 1. Publish C FFI artifacts to GitHub Release
 
@@ -52,6 +57,45 @@ jobs:
           fi
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "CYT_RELEASE_VERSION=${VERSION}"
+
+  ensure-go-module-tag:
+    name: Ensure sdk/go module tag
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
+          fetch-depth: 1
+
+      - name: Create sdk/go tag if missing
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_tag="v${VERSION}"
+          go_tag="sdk/go/v${VERSION}"
+
+          if git ls-remote --exit-code origin "refs/tags/${go_tag}" >/dev/null 2>&1; then
+            remote_sha="$(git ls-remote origin "refs/tags/${go_tag}" | awk '{print $1}')"
+            release_sha="$(git rev-parse HEAD)"
+            if [[ "${remote_sha}" != "${release_sha}" ]]; then
+              echo "::warning::Tag ${go_tag} already exists on remote (${remote_sha:0:7}) but points to a different commit than ${release_tag} (${release_sha:0:7}); leaving it unchanged"
+            else
+              echo "Tag ${go_tag} already exists on remote; skipping"
+            fi
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          release_sha="$(git rev-parse HEAD)"
+          git tag "${go_tag}"
+          git push origin "refs/tags/${go_tag}"
+          echo "Created and pushed ${go_tag} at ${release_sha:0:7}"
 
   build-native:
     name: Build C FFI (${{ matrix.target }})
@@ -174,16 +218,13 @@ jobs:
       - name: Upload GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
           set -euo pipefail
           tag="v${VERSION}"
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "cyt-indexer v${VERSION}" \
-              --notes "C FFI artifacts for cyt-indexer v${VERSION} (Go/C SDK consumers)."
+            echo "::error::GitHub Release ${tag} not found. Create the release manually, then re-run this workflow."
+            exit 1
           fi
-          gh release upload "$tag" release-assets/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --clobber
+          gh release upload "$tag" release-assets/* --clobber
