@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from cyt.indexer.tokens import count_tokens
 from cyt.tools.serialize import minimize_json_single_quotes
 
 _INTRO = (
-    "Based on the user query, pruned MCP tool definitions are listed below. "
-    "Each tool entry is minimized JSON suitable for tool selection context."
+    "Pruned MCP tool definitions below—minimized JSON for selection. "
+    "Name and description live on each <tool> tag; JSON carries input_schema with "
+    "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
 )
+
+
+def _xml_single_quoted_attr(value: str) -> str:
+    escaped = json.dumps(value, ensure_ascii=False)[1:-1]
+    escaped = escaped.replace('\\"', '"')
+    return escaped.replace("&", "&amp;").replace("'", "&apos;")
+
+
+def _tool_open_tag(name: str, description: str) -> str:
+    attrs = [f"name='{_xml_single_quoted_attr(name)}'"]
+    if description:
+        attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
+    return f"<tool {' '.join(attrs)}>"
 
 
 def format_agent_tools(pruned_tools: list[dict[str, Any]]) -> str:
@@ -21,8 +36,10 @@ def format_agent_tools(pruned_tools: list[dict[str, Any]]) -> str:
         name = str(tool.get("name", "")).strip()
         if not name:
             continue
-        lines.append(f'<tool name="{name}">')
-        lines.append(minimize_json_single_quotes(tool))
+        description = str(tool.get("description", "") or "").strip()
+        lines.append(_tool_open_tag(name, description))
+        body = {"input_schema": tool.get("input_schema", {})}
+        lines.append(minimize_json_single_quotes(body))
         lines.append("</tool>")
     lines.append("</agent-tools>")
     return "\n".join(lines)

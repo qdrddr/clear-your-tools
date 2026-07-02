@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -35,6 +36,7 @@ def handle_user_prompt_tools(
     *,
     plain_output: bool = False,
     debug: bool = False,
+    io_guarded: bool = False,
 ) -> tuple[str, dict[str, Any], str]:
     """Return (outcome, details, injection_text)."""
     if not tools_inject_allowed(config, "hook", cli_prompt=plain_output):
@@ -59,7 +61,7 @@ def handle_user_prompt_tools(
         return "skipped_budget_zero", {"request_tokens": request_tokens}, ""
 
     model = _resolve_model(payload) or "hook"
-    pruned, result, catalog = _prune_hook_tool_catalog(query, config)
+    pruned, result, catalog = _prune_hook_tool_catalog(query, config, io_guarded=io_guarded)
     if catalog is None:
         return "skipped_missing_tools_catalog", {}, ""
     if not pruned:
@@ -132,25 +134,26 @@ def _finish_tools_hook_injection(
 def _prune_hook_tool_catalog(
     query: str,
     config: dict[str, Any],
+    *,
+    io_guarded: bool = False,
 ) -> tuple[list[dict[str, Any]], PruneResult, list[dict[str, Any]] | None]:
-    with hook_safe_stdout():
+    stdout_guard = contextlib.nullcontext() if io_guarded else hook_safe_stdout()
+    with stdout_guard:
         catalog = load_tool_catalog(config)
-    if catalog is None:
-        return (
-            [],
-            PruneResult(
-                tools=None,
-                status="skipped",
-                query=query,
-                tools_in=0,
-                mcp_tools_in=0,
-                tools_out=None,
-                error="missing catalog",
-            ),
-            None,
-        )
-
-    with hook_safe_stdout():
+        if catalog is None:
+            return (
+                [],
+                PruneResult(
+                    tools=None,
+                    status="skipped",
+                    query=query,
+                    tools_in=0,
+                    mcp_tools_in=0,
+                    tools_out=None,
+                    error="missing catalog",
+                ),
+                None,
+            )
         result = prune_tools_for_query(catalog, query, config=config)
     return result.tools or [], result, catalog
 

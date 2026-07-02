@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/prek-loop.sh [--short] [--one-run] [-g|--group GROUP...]
+# Usage: ./scripts/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
 # Groups are optional; see scripts/prek-hook-groups.yaml:
-#   python, rust, go, c, typescript, universal
+#   py, rust, go, c, ts, uni
 #
 # Examples:
-#   ./scripts/prek-loop.sh -g python
-#   ./scripts/prek-loop.sh --group python typescript
+#   ./scripts/prek-loop.sh -g py
+#   ./scripts/prek-loop.sh --group py ts
 #
 # If prek-hook-groups.yaml is missing, all hooks run regardless of --group.
 # Examples:
 # Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
-# ./scripts/prek-loop.sh --short --one-run --group python rust typescript universal
-# ./scripts/prek-loop.sh --short --one-run --group rust go c universal
+# ./scripts/prek-loop.sh --short --one-run --group py rust ts uni
+# ./scripts/prek-loop.sh --short --one-run --group rust go c uni
 
 set -uo pipefail
 
 SHORT=false
 ONE_RUN=false
+NO_GIT_ADD=false
 SELECTED_GROUPS=()
 while (($#)); do
 	case "$1" in
@@ -30,11 +31,15 @@ while (($#)); do
 		ONE_RUN=true
 		shift
 		;;
+	--no-git-add)
+		NO_GIT_ADD=true
+		shift
+		;;
 	-g | --group)
 		shift
 		if ((${#} == 0)) || [[ ${1:-} == -* ]]; then
 			echo "--group requires at least one group name." >&2
-			echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+			echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
 			exit 1
 		fi
 		while (($#)) && [[ $1 != -* ]]; do
@@ -43,18 +48,18 @@ while (($#)); do
 		done
 		;;
 	-h | --help)
-		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
-		echo "Groups: python rust go c typescript universal (see scripts/prek-hook-groups.yaml)" >&2
+		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
+		echo "Groups: py rust go c ts uni (see scripts/prek-hook-groups.yaml)" >&2
 		exit 0
 		;;
 	-*)
 		echo "Unknown option: $1" >&2
-		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
 		exit 1
 		;;
 	*)
 		echo "Unexpected argument: $1" >&2
-		echo "Usage: $0 [--short] [--one-run] [-g|--group GROUP...]" >&2
+		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
 		exit 1
 		;;
 	esac
@@ -278,7 +283,9 @@ while true; do
 		fi
 
 		if $SHORT && ! $hook_failed; then
-			rtk git add -A >/dev/null 2>&1 || true
+			if ! $NO_GIT_ADD; then
+				rtk git add -A >/dev/null 2>&1 || true
+			fi
 			continue
 		fi
 
@@ -293,7 +300,9 @@ while true; do
 			echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
 		fi
 		[[ -n $PREK_DETAILS ]] && printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/shorten-paths.sh"
-		rtk git add -A >/dev/null 2>&1 || true
+		if ! $NO_GIT_ADD; then
+			rtk git add -A >/dev/null 2>&1 || true
+		fi
 	done
 
 	echo

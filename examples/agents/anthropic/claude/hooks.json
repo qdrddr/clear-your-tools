@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "cyt hook --stdin",
-            "timeout": 30
+            "timeout": 60
           }
         ]
       }

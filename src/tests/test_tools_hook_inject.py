@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import threading
+import time
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -85,6 +87,71 @@ def test_hook_injects_agent_tools_block() -> None:
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
         assert "<agent-tools>" in context
         assert "mcp__filesystem__read_file" in context
+
+
+def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> dict[str, Any]:
+    return {
+        "skills": {
+            "enabled": True,
+            "inject_via": "hook",
+            "pipeline": "bm25",
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+            "hook": {
+                "request_budget_fraction": 50.0,
+                "inject_cap_multiplier_of_request_tokens": 5.0,
+            },
+        },
+        "pruning": {
+            "tools": {
+                "inject_via": "hook",
+                "hook": {
+                    "tools_from": "definitions",
+                    "mcp_definitions_file": str(definitions),
+                },
+                "sequence": ["bm25"],
+            },
+        },
+        "stats": {"database": {"path": str(root / "stats.db")}},
+    }
+
+
+def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
+    overlap = threading.Event()
+    active = {"count": 0}
+    lock = threading.Lock()
+
+    def slow_skills(*_args: object, **_kwargs: object) -> tuple[str, dict[str, Any], str]:
+        with lock:
+            active["count"] += 1
+            if active["count"] == 2:
+                overlap.set()
+        time.sleep(0.15)
+        return "user_prompt_skills_injected", {}, "<agent-skills>skills</agent-skills>"
+
+    def slow_tools(*_args: object, **_kwargs: object) -> tuple[str, dict[str, Any], str]:
+        with lock:
+            active["count"] += 1
+            if active["count"] == 2:
+                overlap.set()
+        time.sleep(0.15)
+        return "user_prompt_tools_injected", {}, "<agent-tools>tools</agent-tools>"
+
+    payload = _hook_payload("parallel injection")
+    config = _combined_hook_config(Path("/tmp"), Path("/tmp/definitions.json"), Path("/tmp/skills"))
+
+    with (
+        patch.object(skills_cli, "_handle_user_prompt_skills", side_effect=slow_skills),
+        patch.object(skills_cli, "handle_user_prompt_tools", side_effect=slow_tools),
+    ):
+        started = time.perf_counter()
+        outcome, _details = skills_cli._handle_user_prompt(payload, config)
+        elapsed = time.perf_counter() - started
+
+    assert overlap.is_set()
+    assert outcome == "user_prompt_injected"
+    assert elapsed < 0.28
 
 
 def test_hook_skips_silently_when_catalog_missing() -> None:

@@ -52,6 +52,91 @@ def test_cyt_hook_entry_sets_launch_agent_env_for_agent_specific_hooks() -> None
 
     assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook --stdin"
     assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt hook --stdin --debug"
+    assert claude_entry["timeout"] == hook_setup.HOOK_TIMEOUT_SECONDS
+    assert codex_entry["timeout"] == hook_setup.HOOK_TIMEOUT_SECONDS
+
+
+def test_is_cyt_hook_command_recognizes_launch_agent_prefix() -> None:
+    assert hook_setup._is_cyt_hook_command("CYT_LAUNCH_AGENT=claude cyt hook --stdin")
+    assert hook_setup._is_cyt_hook_command("CYT_LAUNCH_AGENT=codex cyt hook --stdin --debug")
+    assert not hook_setup._is_cyt_hook_command("/usr/local/bin/other-hook")
+
+
+def test_merge_cyt_hook_skips_env_prefixed_existing_command() -> None:
+    existing = {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "CYT_LAUNCH_AGENT=claude cyt hook --stdin --debug",
+                        "timeout": 60,
+                    },
+                ],
+            },
+        ],
+    }
+    entry = hook_setup.cyt_hook_entry(agent="claude", debug=False)
+    merged, changed = hook_setup.merge_cyt_hook(existing, entry)
+
+    assert changed is False
+    assert merged == existing
+
+
+def test_upsert_cyt_hook_replaces_duplicate_debug_variants() -> None:
+    existing = {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "CYT_LAUNCH_AGENT=claude cyt hook --stdin --debug",
+                        "timeout": 60,
+                    },
+                    {
+                        "type": "command",
+                        "command": "CYT_LAUNCH_AGENT=claude cyt hook --stdin",
+                        "timeout": 60,
+                    },
+                    {
+                        "type": "command",
+                        "command": "/usr/local/bin/other-hook",
+                        "timeout": 10,
+                    },
+                ],
+            },
+        ],
+    }
+    entry = hook_setup.cyt_hook_entry(agent="claude", debug=False)
+    merged, changed = hook_setup.upsert_cyt_hook(existing, entry)
+
+    assert changed is True
+    hooks = merged["UserPromptSubmit"][0]["hooks"]
+    assert len(hooks) == 2
+    commands = [hook["command"] for hook in hooks]
+    assert "CYT_LAUNCH_AGENT=claude cyt hook --stdin" in commands
+    assert "/usr/local/bin/other-hook" in commands
+
+
+def test_upsert_cyt_hook_is_noop_when_settings_match() -> None:
+    existing = {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "CYT_LAUNCH_AGENT=codex cyt hook --stdin --debug",
+                        "timeout": 60,
+                    },
+                ],
+            },
+        ],
+    }
+    entry = hook_setup.cyt_hook_entry(agent="codex", debug=True)
+    merged, changed = hook_setup.upsert_cyt_hook(existing, entry)
+
+    assert changed is False
+    assert merged == existing
 
 
 def test_merge_cyt_hook_adds_user_prompt_submit_entry() -> None:
@@ -67,7 +152,7 @@ def test_merge_cyt_hook_skips_existing_cyt_hook_command() -> None:
         "UserPromptSubmit": [
             {
                 "hooks": [
-                    {"type": "command", "command": "cyt hook --stdin --debug", "timeout": 30},
+                    {"type": "command", "command": "cyt hook --stdin --debug", "timeout": 60},
                 ],
             },
         ],
@@ -82,7 +167,7 @@ def test_merge_cyt_hook_skips_existing_cyt_hook_command() -> None:
 def test_merge_cyt_hook_skips_legacy_cyt_skills_command() -> None:
     existing = {
         "UserPromptSubmit": [
-            {"hooks": [{"type": "command", "command": "cyt skills", "timeout": 30}]},
+            {"hooks": [{"type": "command", "command": "cyt skills", "timeout": 60}]},
         ],
     }
     entry = hook_setup.cyt_hook_entry()
@@ -276,6 +361,68 @@ def test_save_hook_skills_directories_skips_when_already_configured(tmp_path: Pa
     )
 
 
+def test_run_hook_setup_updates_duplicate_hooks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_dir = tmp_path / "claude"
+    claude_dir.mkdir()
+    claude_path = claude_dir / "settings.json"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "UserPromptSubmit": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "CYT_LAUNCH_AGENT=claude cyt hook --stdin --debug",
+                                    "timeout": hook_setup.HOOK_TIMEOUT_SECONDS,
+                                },
+                                {
+                                    "type": "command",
+                                    "command": "CYT_LAUNCH_AGENT=claude cyt hook --stdin",
+                                    "timeout": hook_setup.HOOK_TIMEOUT_SECONDS,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    missing_codex = tmp_path / "missing-codex" / "hooks.json"
+
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", missing_codex)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(
+        hook_setup,
+        "_configure_hook_skills_directories",
+        lambda **_kwargs: None,
+    )
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        if "debug" in text.lower():
+            return False
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda *_args, **_kwargs: "update")
+    _stub_tools_hook_wizard(monkeypatch)
+
+    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+        hook_setup.run_hook_setup()
+
+    claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
+    hooks = claude_data["hooks"]["UserPromptSubmit"][0]["hooks"]
+    assert len(hooks) == 1
+    assert hooks[0]["command"] == "CYT_LAUNCH_AGENT=claude cyt hook --stdin"
+
+
 def test_run_hook_setup_merges_existing_agent_configs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -390,7 +537,7 @@ def test_remove_cyt_hooks_removes_only_cyt_commands() -> None:
         "UserPromptSubmit": [
             {
                 "hooks": [
-                    {"type": "command", "command": "cyt hook --stdin", "timeout": 30},
+                    {"type": "command", "command": "cyt hook --stdin", "timeout": 60},
                     {"type": "command", "command": "/usr/local/bin/other-hook", "timeout": 10},
                 ],
             },
@@ -415,7 +562,7 @@ def test_uninstall_hooks_from_file_preserves_other_settings(tmp_path: Path) -> N
                     "UserPromptSubmit": [
                         {
                             "hooks": [
-                                {"type": "command", "command": "cyt skills", "timeout": 30},
+                                {"type": "command", "command": "cyt skills", "timeout": 60},
                             ],
                         },
                     ],

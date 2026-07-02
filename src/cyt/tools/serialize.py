@@ -26,6 +26,10 @@ def _swap_json_delimiter_quotes(compact: str) -> str:
         while i < n:
             inner = compact[i]
             if inner == "\\" and i + 1 < n:
+                if compact[i + 1] == '"':
+                    out.append('"')
+                    i += 2
+                    continue
                 out.append(inner)
                 out.append(compact[i + 1])
                 i += 2

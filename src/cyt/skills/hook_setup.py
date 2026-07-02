@@ -19,7 +19,7 @@ from cyt.config import (
     skills_enabled,
 )
 from cyt.launch.upstream import AgentName
-from cyt.proxy.setup import _prompt, _prompt_yes_no, parse_path_list
+from cyt.proxy.setup import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
@@ -27,6 +27,7 @@ CODEX_HOOKS_PATH = Path("~/.codex/hooks.json")
 CLAUDE_SKILLS_DIR = Path("~/.claude/skills")
 CODEX_SKILLS_DIR = Path("~/.codex/skills")
 HOOK_EVENT_NAME = "UserPromptSubmit"
+HOOK_TIMEOUT_SECONDS = 60
 CYT_HOOK_COMMAND_PREFIX = "cyt hook"
 HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
     "session_id": "sess-00000000-0000-4000-8000-000000000001",
@@ -206,14 +207,55 @@ def cyt_hook_entry(*, debug: bool = False, agent: AgentName | None = None) -> di
         from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
 
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
-    return {"type": "command", "command": command, "timeout": 30}
+    return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
 
 
 def _is_cyt_hook_command(command: object) -> bool:
     if not isinstance(command, str):
         return False
     normalized = command.strip()
-    return normalized.startswith((CYT_HOOK_COMMAND_PREFIX, "cyt skills"))
+    if normalized.startswith("cyt skills"):
+        return True
+    # Agent hooks prefix the command with CYT_LAUNCH_AGENT=...
+    return f" {normalized} ".casefold().find(f" {CYT_HOOK_COMMAND_PREFIX} ") >= 0
+
+
+def _collect_cyt_hook_commands(hooks_section: object) -> list[str]:
+    """Return all configured CYT hook command strings."""
+    if not isinstance(hooks_section, dict):
+        return []
+    section = cast(dict[str, Any], hooks_section)
+    return [
+        command
+        for command in _iter_hook_commands(section)
+        if isinstance(command, str) and _is_cyt_hook_command(command)
+    ]
+
+
+def _cyt_hook_has_debug_flag(command: str) -> bool:
+    normalized = f" {command.strip()} "
+    return " --debug " in normalized or normalized.rstrip().endswith(" --debug")
+
+
+def _format_existing_hook_status(commands: list[str]) -> str:
+    if len(commands) > 1:
+        debug_bits = {_cyt_hook_has_debug_flag(command) for command in commands}
+        if len(debug_bits) == 1:
+            debug_label = "with --debug" if debug_bits.pop() else "without --debug"
+            return f"found {len(commands)} duplicate CYT hooks ({debug_label})"
+        return f"found {len(commands)} duplicate CYT hooks (mixed debug settings)"
+    command = commands[0]
+    debug_label = "with --debug" if _cyt_hook_has_debug_flag(command) else "without --debug"
+    return f"CYT hook already configured ({debug_label})"
+
+
+def _cyt_hook_needs_update(existing_commands: list[str], entry: dict[str, Any]) -> bool:
+    desired = entry.get("command")
+    if not isinstance(desired, str):
+        return True
+    if len(existing_commands) != 1:
+        return True
+    return existing_commands[0] != desired
 
 
 def _iter_hook_commands(hooks_section: dict[str, Any]) -> Iterator[object]:
@@ -239,14 +281,11 @@ def cyt_hook_command_exists(hooks_section: object) -> bool:
     return any(_is_cyt_hook_command(command) for command in _iter_hook_commands(section))
 
 
-def merge_cyt_hook(
+def _append_hook_entry(
     hooks_section: dict[str, Any],
     entry: dict[str, Any],
-) -> tuple[dict[str, Any], bool]:
-    """Append *entry* to hooks unless an equivalent CYT hook already exists."""
+) -> dict[str, Any]:
     merged = copy.deepcopy(hooks_section) if hooks_section else {}
-    if cyt_hook_command_exists(merged):
-        return merged, False
 
     wrappers = merged.setdefault(HOOK_EVENT_NAME, [])
     if not isinstance(wrappers, list):
@@ -264,11 +303,33 @@ def merge_cyt_hook(
 
     inner = target["hooks"]
     assert isinstance(inner, list)
-    command = entry.get("command")
-    for hook in inner:
-        if isinstance(hook, dict) and hook.get("command") == command:
-            return merged, False
     inner.append(copy.deepcopy(entry))
+    return merged
+
+
+def merge_cyt_hook(
+    hooks_section: dict[str, Any],
+    entry: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Append *entry* to hooks unless an equivalent CYT hook already exists."""
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    if cyt_hook_command_exists(merged):
+        return merged, False
+    return _append_hook_entry(merged, entry), True
+
+
+def upsert_cyt_hook(
+    hooks_section: dict[str, Any],
+    entry: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Ensure exactly one CYT hook exists and matches *entry*."""
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    existing = _collect_cyt_hook_commands(merged)
+    if not _cyt_hook_needs_update(existing, entry):
+        return merged, False
+
+    merged, _ = remove_cyt_hooks(merged)
+    merged = _append_hook_entry(merged, entry)
     return merged, True
 
 
@@ -362,6 +423,20 @@ def _write_json_object(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _save_hooks_section_to_file(
+    path: Path,
+    hooks_section: dict[str, Any],
+    *,
+    hooks_key: str = "hooks",
+) -> None:
+    existing = _load_json_object(path)
+    if hooks_section:
+        existing[hooks_key] = hooks_section
+    else:
+        existing.pop(hooks_key, None)
+    _write_json_object(path, existing)
+
+
 def merge_hooks_into_file(
     path: Path,
     entry: dict[str, Any],
@@ -376,8 +451,25 @@ def merge_hooks_into_file(
     merged_hooks, changed = merge_cyt_hook(hooks_section, entry)
     if not changed:
         return False
-    existing[hooks_key] = merged_hooks
-    _write_json_object(path, existing)
+    _save_hooks_section_to_file(path, merged_hooks, hooks_key=hooks_key)
+    return True
+
+
+def upsert_hooks_into_file(
+    path: Path,
+    entry: dict[str, Any],
+    *,
+    hooks_key: str = "hooks",
+) -> bool:
+    """Replace CYT hooks in *path* with a single *entry*; return True when changed."""
+    existing = _load_json_object(path)
+    hooks_section = existing.get(hooks_key)
+    if not isinstance(hooks_section, dict):
+        hooks_section = {}
+    merged_hooks, changed = upsert_cyt_hook(hooks_section, entry)
+    if not changed:
+        return False
+    _save_hooks_section_to_file(path, merged_hooks, hooks_key=hooks_key)
     return True
 
 
@@ -462,15 +554,49 @@ def _install_cyt_hooks_for_targets(
     debug: bool,
 ) -> bool:
     any_changed = False
+    action_choices = ("update", "remove", "skip")
     for label, path, agent in targets:
         entry = cyt_hook_entry(debug=debug, agent=agent)
-        if cyt_hook_command_exists(_load_json_object(path).get("hooks")):
-            print(f"{label}: CYT hook already configured in {path}")
+        hooks_data = _load_json_object(path)
+        hooks_section = hooks_data.get("hooks")
+        if not isinstance(hooks_section, dict):
+            hooks_section = {}
+
+        existing_commands = _collect_cyt_hook_commands(hooks_section)
+        if existing_commands:
+            print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
+            default_action = (
+                "update" if _cyt_hook_needs_update(existing_commands, entry) else "skip"
+            )
+            action = _prompt_choice(
+                f"{label}: existing CYT hook — choose action (update | remove | skip)",
+                list(action_choices),
+                default_index=action_choices.index(default_action),
+            )
+            if action == "skip":
+                print(f"{label}: kept existing hook")
+                continue
+            if action == "remove":
+                merged_hooks, changed = remove_cyt_hooks(hooks_section)
+                if changed:
+                    _save_hooks_section_to_file(path, merged_hooks)
+                    print(f"{label}: removed CYT hook from {path}")
+                    any_changed = True
+                else:
+                    print(f"{label}: no CYT hook to remove in {path}")
+                continue
+
+            if upsert_hooks_into_file(path, entry):
+                print(f"{label}: updated CYT hook in {path}")
+                any_changed = True
+            else:
+                print(f"{label}: CYT hook already matches selected settings")
             continue
+
         if not _prompt_yes_no(f"Install CYT hook for {label}?", default_yes=True):
             print(f"{label}: skipped")
             continue
-        if merge_hooks_into_file(path, entry):
+        if upsert_hooks_into_file(path, entry):
             print(f"{label}: added CYT hook to {path}")
             any_changed = True
         else:

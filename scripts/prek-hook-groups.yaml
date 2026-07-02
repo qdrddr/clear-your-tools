@@ -4,11 +4,11 @@
 # intentionally (informational only).
 #
 # Usage:
-#   ./scripts/prek-loop.sh -g python
-#   ./scripts/prek-loop.sh --group python typescript
+#   ./scripts/prek-loop.sh -g py
+#   ./scripts/prek-loop.sh --group py ts
 #
 groups:
-  python:
+  py:
     - add-trailing-comma
     - basedpyright
     - check-builtin-literals
@@ -66,7 +66,7 @@ groups:
     - cppcheck
     - cpplint
 
-  typescript:
+  ts:
     - all-fallow
     - typescript-ast-scan
     - typescript-build
@@ -75,7 +75,7 @@ groups:
     - typescript-test
     - typescript-typecheck
 
-  universal:
+  uni:
     - actionlint
     - ast-scan
     - ast-test

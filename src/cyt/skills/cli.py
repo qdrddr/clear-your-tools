@@ -6,6 +6,7 @@ import contextlib
 import json
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -213,10 +214,11 @@ def _search_skills_for_user_prompt(
     max_tokens: int,
     plain_output: bool,
     debug: bool,
+    io_guarded: bool = False,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun | None, SkillsSearchTrace | None]:
     configure_hook_quiet()
-    stdout_guard = contextlib.nullcontext() if plain_output else hook_safe_stdout()
-    stderr_guard = contextlib.nullcontext() if plain_output else hook_quiet_stderr()
+    stdout_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_safe_stdout()
+    stderr_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
         entries = build_registry(config, agent=resolve_skills_agent())
         if plain_output:
@@ -266,6 +268,7 @@ def _handle_user_prompt_skills(
     *,
     plain_output: bool = False,
     debug: bool = False,
+    io_guarded: bool = False,
 ) -> tuple[str, dict[str, Any], str]:
     query = skills_search_query_from_hook_payload(payload)
     if not query:
@@ -292,6 +295,7 @@ def _handle_user_prompt_skills(
         max_tokens=budget.effective_max,
         plain_output=plain_output,
         debug=debug,
+        io_guarded=io_guarded,
     )
     if not matches:
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
@@ -336,19 +340,52 @@ def _combine_injection_parts(parts: list[str]) -> str:
     return "\n\n".join(part for part in parts if part.strip())
 
 
-def _handle_user_prompt(
+def _run_user_prompt_injection(
     payload: dict[str, Any],
     config: dict[str, Any],
     *,
-    plain_output: bool = False,
-    debug: bool = False,
-) -> tuple[str, dict[str, Any]]:
-    skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
-    tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
-
+    plain_output: bool,
+    debug: bool,
+    skills_allowed: bool,
+    tools_allowed: bool,
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Run skills/tools hook injection; parallelize when both are enabled."""
     parts: list[str] = []
     details: dict[str, Any] = {}
     outcomes: list[str] = []
+
+    if skills_allowed and tools_allowed:
+        io_guarded = not plain_output
+        stdout_guard = hook_safe_stdout(active=io_guarded)
+        stderr_guard = hook_quiet_stderr(active=io_guarded)
+        with stdout_guard, stderr_guard:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="cyt-hook") as executor:
+                skills_future = executor.submit(
+                    _handle_user_prompt_skills,
+                    payload,
+                    config,
+                    plain_output=plain_output,
+                    debug=debug,
+                    io_guarded=io_guarded,
+                )
+                tools_future = executor.submit(
+                    handle_user_prompt_tools,
+                    payload,
+                    config,
+                    plain_output=plain_output,
+                    debug=debug,
+                    io_guarded=io_guarded,
+                )
+                skills_outcome, skills_details, skills_text = skills_future.result()
+                tools_outcome, tools_details, tools_text = tools_future.result()
+        outcomes.extend((skills_outcome, tools_outcome))
+        details.update(skills_details)
+        details.update(tools_details)
+        if skills_text:
+            parts.append(skills_text)
+        if tools_text:
+            parts.append(tools_text)
+        return parts, outcomes, details
 
     if skills_allowed:
         skills_outcome, skills_details, skills_text = _handle_user_prompt_skills(
@@ -373,6 +410,28 @@ def _handle_user_prompt(
         details.update(tools_details)
         if tools_text:
             parts.append(tools_text)
+
+    return parts, outcomes, details
+
+
+def _handle_user_prompt(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    plain_output: bool = False,
+    debug: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
+    tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
+
+    parts, outcomes, details = _run_user_prompt_injection(
+        payload,
+        config,
+        plain_output=plain_output,
+        debug=debug,
+        skills_allowed=skills_allowed,
+        tools_allowed=tools_allowed,
+    )
 
     combined = _combine_injection_parts(parts)
     if combined:
