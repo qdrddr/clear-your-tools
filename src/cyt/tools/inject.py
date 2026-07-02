@@ -9,7 +9,7 @@ from cyt.indexer.tokens import count_tokens
 from cyt.tools.serialize import minimize_json_single_quotes
 
 _INTRO = (
-    "Pruned MCP tool definitions below—minimized JSON for selection. "
+    "Pruned MCP tool definitions below—minimized JSON with relevant properties and enums only for selection. "
     "Name and description live on each <tool> tag; JSON carries input_schema with "
     "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
 )
