@@ -6,6 +6,8 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +19,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/qdrddr/clear-your-tools/sdk/go/moduleversion"
 )
 
 const (
@@ -34,7 +38,7 @@ var (
 
 func main() {
 	var (
-		version    = flag.String("version", "", "Release semver (default: CYT_RELEASE_VERSION, then sdk/go/version.go)")
+		version    = flag.String("version", "", "Release semver (default: CYT_RELEASE_VERSION, then module version)")
 		repo       = flag.String("repo", defaultRepo, "GitHub owner/repo for release downloads")
 		printEnv   = flag.Bool("print-env", false, "Print shell exports for CGO_LDFLAGS/CGO_CFLAGS")
 		cacheDir   = flag.String("cache-dir", "", "Override cache root (default: XDG_CACHE_HOME/cyt-indexer)")
@@ -96,10 +100,7 @@ func resolveVersion(flagVersion string) string {
 	if env := os.Getenv("CYT_RELEASE_VERSION"); env != "" {
 		return strings.TrimPrefix(env, "v")
 	}
-	if v := moduleVersionFromSDKRoot(); v != "" {
-		return v
-	}
-	return fallbackModuleVersion
+	return moduleversion.Version
 }
 
 func ensureNative(cfg ensureConfig) (cacheDest string, nativeInstalled bool, err error) {
@@ -141,8 +142,7 @@ func ensureNative(cfg ensureConfig) (cacheDest string, nativeInstalled bool, err
 		return cacheDest, false, nil
 	}
 
-	installStaticOnly := cfg.staticOnly || cfg.nativeDir == ""
-	if err := copyArtifacts(cacheDest, nativeDest, cfg.triplet, installStaticOnly); err != nil {
+	if err := copyArtifacts(cacheDest, nativeDest, cfg.triplet, cfg.staticOnly); err != nil {
 		return "", false, err
 	}
 	if !hasNativeLibs(nativeDest, cfg.triplet) {
@@ -308,7 +308,8 @@ func downloadReleaseArtifacts(repo, version, triplet, destDir string) error {
 	}
 
 	archive := archiveName(triplet)
-	if err := verifyChecksumListed(sumData, archive); err != nil {
+	expectedHash, err := lookupChecksum(sumData, archive)
+	if err != nil {
 		return err
 	}
 
@@ -319,6 +320,9 @@ func downloadReleaseArtifacts(repo, version, triplet, destDir string) error {
 	data, err := httpGet(archiveURL)
 	if err != nil {
 		return fmt.Errorf("fetch %s: %w", archive, err)
+	}
+	if err := verifyDownloadSHA256(data, expectedHash); err != nil {
+		return fmt.Errorf("verify %s: %w", archive, err)
 	}
 	return extractTarGz(data, destDir)
 }
@@ -344,15 +348,24 @@ func releaseAssetURL(repo, tag, asset string) (string, error) {
 	return parsed.String(), nil
 }
 
-func verifyChecksumListed(sumData []byte, archive string) error {
+func lookupChecksum(sumData []byte, archive string) (string, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(sumData))
 	for scanner.Scan() {
 		fields := strings.Fields(strings.TrimSpace(scanner.Text()))
 		if len(fields) == 2 && fields[1] == archive {
-			return nil
+			return fields[0], nil
 		}
 	}
-	return fmt.Errorf("SHA256SUMS has no entry for %s", archive)
+	return "", fmt.Errorf("SHA256SUMS has no entry for %s", archive)
+}
+
+func verifyDownloadSHA256(data []byte, expectedHex string) error {
+	sum := sha256.Sum256(data)
+	got := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(got, expectedHex) {
+		return fmt.Errorf("SHA256 mismatch: expected %s, got %s", expectedHex, got)
+	}
+	return nil
 }
 
 func httpGet(rawURL string) ([]byte, error) {

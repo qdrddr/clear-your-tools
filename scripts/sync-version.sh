@@ -20,7 +20,7 @@ SDK_PYPROJECT="${ROOT}/sdk/python/pyproject.toml"
 PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
 PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
 C_CMAKE="${ROOT}/sdk/c/CMakeLists.txt"
-GO_VERSION="${ROOT}/sdk/go/version.go"
+GO_VERSION="${ROOT}/sdk/go/moduleversion/version.go"
 UV_LOCK="${ROOT}/uv.lock"
 TAG_FILE="${ROOT}/search/.publish-tag"
 
@@ -37,7 +37,7 @@ Propagate VERSION to all manifests and lockfiles:
   - sdk/typescript/package.json
   - sdk/typescript/package-lock.json
   - sdk/c/CMakeLists.txt (project VERSION)
-  - sdk/go/version.go (ModuleVersion)
+  - sdk/go/moduleversion/version.go (Version)
 
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
 EOF
@@ -170,8 +170,8 @@ update_go_module_version() {
 	local tmp
 	tmp="$(mktemp)"
 	awk -v version="${version}" '
-    /^const ModuleVersion = "/ {
-      print "const ModuleVersion = \"" version "\""
+    /^const Version = "/ {
+      print "const Version = \"" version "\""
       next
     }
     { print }
@@ -242,6 +242,6 @@ synced version ${version} to:
   ${PACKAGE_JSON}
   ${PACKAGE_LOCK}
   ${C_CMAKE} (project VERSION)
-  ${GO_VERSION} (ModuleVersion)
+  ${GO_VERSION} (Version)
   ${TAG_FILE} (tag=${tag})
 EOF

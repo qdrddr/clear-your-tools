@@ -1,5 +1,7 @@
 package cytindexer
 
+import "github.com/qdrddr/clear-your-tools/sdk/go/moduleversion"
+
 // ModuleVersion is the Go SDK module semver (synced by scripts/sync-version.sh).
 // For the native cyt-indexer library version, use Version().
-const ModuleVersion = "0.6.5"
+const ModuleVersion = moduleversion.Version

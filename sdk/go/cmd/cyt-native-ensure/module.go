@@ -3,17 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
-const (
-	sdkModulePath           = "github.com/qdrddr/clear-your-tools/sdk/go"
-	fallbackModuleVersion   = "0.6.4"
-	moduleVersionConstRegex = `const ModuleVersion = "([^"]+)"`
-)
-
-var moduleVersionPattern = regexp.MustCompile(moduleVersionConstRegex)
+const sdkModulePath = "github.com/qdrddr/clear-your-tools/sdk/go"
 
 func sdkModuleRoot() string {
 	if exe, err := os.Executable(); err == nil {
@@ -59,31 +52,4 @@ func isSDKModuleRoot(dir string) bool {
 		}
 	}
 	return false
-}
-
-func moduleVersionFromSDKRoot() string {
-	root := sdkModuleRoot()
-	if root == "" {
-		return ""
-	}
-	return parseModuleVersionFile(filepath.Join(root, "version.go"))
-}
-
-func parseModuleVersionFile(path string) string {
-	dir, name := filepath.Split(path)
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return ""
-	}
-	defer root.Close()
-
-	data, err := root.ReadFile(name)
-	if err != nil {
-		return ""
-	}
-	match := moduleVersionPattern.FindSubmatch(data)
-	if len(match) != 2 {
-		return ""
-	}
-	return string(match[1])
 }
