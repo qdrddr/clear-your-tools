@@ -116,7 +116,7 @@ jobs:
           ls -la "${pkg_dir}/"
 
       - name: Upload triplet archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cyt-indexer-ffi-${{ matrix.target }}
           path: artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload header (once)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cyt-indexer-header
           path: sdk/c/include/cyt_indexer.h
@@ -138,14 +138,14 @@ jobs:
       contents: write
     steps:
       - name: Download triplet archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: cyt-indexer-ffi-*
           merge-multiple: true
           path: release-assets
 
       - name: Download header
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cyt-indexer-header
           path: release-assets

@@ -96,7 +96,7 @@ jobs:
 
       - name: Store release version artifact
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cyt-release-version
           path: cyt-release-version.txt

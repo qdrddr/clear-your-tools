@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Go SDK pre-commit tools scoped to sdk/go (avoids hedl submodule).
+# Run Go SDK pre-commit tools scoped to sdk/go.
 set -euo pipefail
 
 ROOT="$(cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && pwd -P)"

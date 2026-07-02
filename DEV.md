@@ -140,7 +140,7 @@ from cyt.pruners.policies import configure_policies_from_config
 from cyt.proxy.reverse import create_app  # requires clear-your-tools[proxy]
 ```
 
-Advanced (submodules — not re-exported from `cyt.indexer`):
+Advanced (not re-exported from `cyt.indexer`):
 
 ```python
 from cyt.indexer.catalog_io import CatalogBuilder, write_catalog_index

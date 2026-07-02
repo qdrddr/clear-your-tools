@@ -211,7 +211,7 @@ jobs:
           ls -la "artifacts/bindings-${{ matrix.target }}/"
 
       - name: Upload native binding
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-${{ matrix.target }}
           path: artifacts/bindings-${{ matrix.target }}/
@@ -219,7 +219,7 @@ jobs:
 
       - name: Upload native loader stubs
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-loader-stubs
           path: |
@@ -273,13 +273,13 @@ jobs:
           npm version "${{ needs.resolve-version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Download native loader stubs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: native-loader-stubs
           path: sdk/typescript
 
       - name: Download native bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: bindings-*
           merge-multiple: true
