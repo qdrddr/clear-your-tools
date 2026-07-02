@@ -20,6 +20,7 @@ from cyt.config import (
 )
 from cyt.launch.upstream import AgentName
 from cyt.proxy.setup import _prompt, _prompt_yes_no, parse_path_list
+from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
 CODEX_HOOKS_PATH = Path("~/.codex/hooks.json")
@@ -438,6 +439,45 @@ def _ensure_hook_credentials(config: dict[str, Any]) -> None:
             print(f"  {name}: {sources[name]}")
 
 
+def _save_tools_hook_wizard_config(
+    resolved_config_path: Path,
+    config: dict[str, Any],
+    *,
+    config_path: Path | None,
+) -> dict[str, Any]:
+    tools_overlay = prompt_tools_hook_config(config, context="hook")
+    if save_user_config(
+        resolved_config_path,
+        {"pruning": tools_overlay},
+        apply_bundled_sections=False,
+    ):
+        print(f"Saved tools hook settings to {resolved_config_path}")
+        return load_config(config_path)
+    return config
+
+
+def _install_cyt_hooks_for_targets(
+    targets: list[tuple[str, Path, AgentName]],
+    *,
+    debug: bool,
+) -> bool:
+    any_changed = False
+    for label, path, agent in targets:
+        entry = cyt_hook_entry(debug=debug, agent=agent)
+        if cyt_hook_command_exists(_load_json_object(path).get("hooks")):
+            print(f"{label}: CYT hook already configured in {path}")
+            continue
+        if not _prompt_yes_no(f"Install CYT hook for {label}?", default_yes=True):
+            print(f"{label}: skipped")
+            continue
+        if merge_hooks_into_file(path, entry):
+            print(f"{label}: added CYT hook to {path}")
+            any_changed = True
+        else:
+            print(f"{label}: CYT hook already configured in {path}")
+    return any_changed
+
+
 def run_hook_setup(*, config_path: Path | None = None) -> None:
     """Install CYT agent hooks and ensure runtime credentials."""
     resolved_config_path = resolve_setup_config_path(config_path)
@@ -451,6 +491,12 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
         )
 
     _ensure_hook_credentials(config)
+
+    config = _save_tools_hook_wizard_config(
+        resolved_config_path,
+        config,
+        config_path=config_path,
+    )
 
     include_claude = _agent_config_ready(CLAUDE_SETTINGS_PATH)
     include_codex = _agent_config_ready(CODEX_HOOKS_PATH)
@@ -479,20 +525,7 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
 
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
 
-    any_changed = False
-    for label, path, agent in targets:
-        entry = cyt_hook_entry(debug=debug, agent=agent)
-        if cyt_hook_command_exists(_load_json_object(path).get("hooks")):
-            print(f"{label}: CYT hook already configured in {path}")
-            continue
-        if not _prompt_yes_no(f"Install CYT hook for {label}?", default_yes=True):
-            print(f"{label}: skipped")
-            continue
-        if merge_hooks_into_file(path, entry):
-            print(f"{label}: added CYT hook to {path}")
-            any_changed = True
-        else:
-            print(f"{label}: CYT hook already configured in {path}")
+    any_changed = _install_cyt_hooks_for_targets(targets, debug=debug)
 
     if any_changed:
         print("\nRestart your agent so hook changes take effect.")

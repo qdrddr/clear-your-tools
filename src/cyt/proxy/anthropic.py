@@ -22,6 +22,7 @@ from cyt.config import (
     llm_minimum_tools,
     load_config,
     pruning_pipeline_from_config,
+    tools_inject_via,
 )
 from cyt.indexer.build import (
     CatalogIndex,
@@ -1090,11 +1091,30 @@ def filter_tools_for_query(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    *,
+    for_hook: bool = False,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
     config = config or load_config()
+    if not for_hook and tools_inject_via(config) == "hook":
+        tokens_in = count_json_tokens(original_tools)
+        return PruneResult(
+            tools=original_tools,
+            status="pass_through",
+            query=query or None,
+            tools_in=tools_in,
+            mcp_tools_in=catalog_tools_in,
+            tools_out=tools_in,
+            error=None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_in,
+            tokens_saved=0,
+            tools_accepted=copy.deepcopy(original_tools),
+            tools_final=copy.deepcopy(original_tools),
+        )
+
     configured_pipeline = (
         pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
     )

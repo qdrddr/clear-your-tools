@@ -107,7 +107,13 @@ DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
 DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
 DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
+DEFAULT_TOOLS_INJECT_VIA: str = "proxy"
+DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "client"
+DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE: str = "~/.config/cyt/mcp.json"
+DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
+ToolsInjectVia = Literal["proxy", "hook"]
+ToolsHookSource = Literal["client", "definitions"]
 
 
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -143,6 +149,12 @@ _DEFAULTS: dict[str, Any] = {
     },
     "pruning": {
         "tools": {
+            "inject_via": DEFAULT_TOOLS_INJECT_VIA,
+            "hook": {
+                "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
+                "mcp_client_file": DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE,
+                "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
+            },
             "policy": {
                 "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
                 "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
@@ -958,6 +970,74 @@ def _skills_proxy_settings(config: dict[str, Any]) -> dict[str, Any]:
     skills = _skills_settings(config)
     proxy = skills.get("proxy")
     return proxy if isinstance(proxy, dict) else {}
+
+
+def _tools_hook_settings(config: dict[str, Any]) -> dict[str, Any]:
+    tools = _tools(_merged_config(config))
+    hook = tools.get("hook")
+    return hook if isinstance(hook, dict) else {}
+
+
+def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
+    cfg = config or load_config()
+    value = _tools(_merged_config(cfg)).get("inject_via", DEFAULT_TOOLS_INJECT_VIA)
+    mode = str(value).strip().lower()
+    if mode == "hook":
+        return "hook"
+    return "proxy"
+
+
+def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSource:
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "tools_from",
+        DEFAULT_TOOLS_HOOK_TOOLS_FROM,
+    )
+    mode = str(value).strip().lower()
+    if mode == "definitions":
+        return "definitions"
+    return "client"
+
+
+def tools_hook_mcp_client_file(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    path = _tools_hook_settings(_merged_config(cfg)).get(
+        "mcp_client_file",
+        DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE,
+    )
+    return Path(str(path)).expanduser()
+
+
+def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    path = _tools_hook_settings(_merged_config(cfg)).get(
+        "mcp_definitions_file",
+        DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
+    )
+    return Path(str(path)).expanduser()
+
+
+def resolved_tools_hook_file(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    if tools_hook_tools_from(cfg) == "definitions":
+        return tools_hook_mcp_definitions_file(cfg)
+    return tools_hook_mcp_client_file(cfg)
+
+
+def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    if tools_inject_via(cfg) != "hook":
+        return False
+    return not resolved_tools_hook_file(cfg).is_file()
+
+
+def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    if tools_inject_via(cfg) == "proxy":
+        return True
+    if skills_enabled(cfg) and skills_inject_via(cfg) == "proxy":
+        return True
+    return False
 
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:

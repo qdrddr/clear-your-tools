@@ -17,6 +17,7 @@ from cyt.config import (
     required_skills_env_var_names,
     skills_enabled,
     skills_pipeline,
+    tools_inject_via,
 )
 from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
@@ -51,6 +52,8 @@ from cyt.skills.transcript import (
     skills_search_query_from_hook_payload,
     transcript_path_from_payload,
 )
+from cyt.tools.budget import tools_inject_allowed
+from cyt.tools.hook import handle_user_prompt_tools
 
 logger = logging.getLogger(__name__)
 
@@ -71,16 +74,24 @@ _CLI_OUTCOME_HINTS: dict[str, str] = {
 }
 
 
-def _ensure_skills_credentials(config: dict[str, Any]) -> None:
-    """Load skills-pruner API keys (shell env, .env, keyring) before remote search."""
-    if not skills_enabled(config):
-        return
-    names = required_skills_env_var_names(config)
+def _ensure_hook_credentials(config: dict[str, Any]) -> None:
+    """Load pruner API keys before remote skills/tools search."""
+    names: list[str] = []
+    if skills_enabled(config):
+        names.extend(required_skills_env_var_names(config))
+    if tools_inject_via(config) == "hook":
+        names.extend(required_pruning_env_var_names(config))
+    names = list(dict.fromkeys(names))
     if not names:
         return
     from cyt.launch.secrets import ensure_named_credentials
 
     ensure_named_credentials(names, allow_prompt=sys.stdin.isatty())
+
+
+def _ensure_skills_credentials(config: dict[str, Any]) -> None:
+    """Back-compat alias for hook credential loading."""
+    _ensure_hook_credentials(config)
 
 
 def _print_required_api_keys(label: str, names: list[str], *, empty_hint: str) -> None:
@@ -249,22 +260,19 @@ def _user_prompt_no_matches_outcome(
     }
 
 
-def _handle_user_prompt(
+def _handle_user_prompt_skills(
     payload: dict[str, Any],
     config: dict[str, Any],
     *,
     plain_output: bool = False,
     debug: bool = False,
-) -> tuple[str, dict[str, Any]]:
-    if not skills_inject_allowed(config, "hook", cli_prompt=plain_output):
-        return "skipped_inject_via_proxy", {}
-
+) -> tuple[str, dict[str, Any], str]:
     query = skills_search_query_from_hook_payload(payload)
     if not query:
-        return "user_prompt_missing_prompt", {}
+        return "user_prompt_missing_prompt", {}, ""
 
     if not skills_budget_precheck(config):
-        return "skipped_budget_zero", {}
+        return "skipped_budget_zero", {}, ""
 
     request_tokens = count_hook_request_tokens(payload)
     budget = resolve_inject_budget(
@@ -273,7 +281,7 @@ def _handle_user_prompt(
         total_request_tokens=request_tokens,
     )
     if budget.effective_max <= 0:
-        return "skipped_budget_zero", {"request_tokens": request_tokens}
+        return "skipped_budget_zero", {"request_tokens": request_tokens}, ""
 
     prompt = prompt_from_payload(payload) or query
     model = _resolve_model(payload) or "hook"
@@ -286,14 +294,19 @@ def _handle_user_prompt(
         debug=debug,
     )
     if not matches:
-        return _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
+        outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
+        return outcome, details, ""
 
     injected = format_agent_skills(matches)
     if not injected:
-        return "user_prompt_empty_injection", {
-            "resolved_model": model,
-            "search_trace": search_trace,
-        }
+        return (
+            "user_prompt_empty_injection",
+            {
+                "resolved_model": model,
+                "search_trace": search_trace,
+            },
+            "",
+        )
 
     skills_in = injection_token_count(injected)
     if skills_in > 0:
@@ -307,13 +320,68 @@ def _handle_user_prompt(
             config=config,
         )
 
-    _emit_injection(injected, payload, plain=plain_output)
-    return "user_prompt_injected", {
-        "resolved_model": model,
-        "pipeline_run": pipeline_run,
-        "search_trace": search_trace,
-        "injected": injected if debug else None,
-    }
+    return (
+        "user_prompt_skills_injected",
+        {
+            "resolved_model": model,
+            "pipeline_run": pipeline_run,
+            "search_trace": search_trace,
+            "injected": injected if debug else None,
+        },
+        injected,
+    )
+
+
+def _combine_injection_parts(parts: list[str]) -> str:
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _handle_user_prompt(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    plain_output: bool = False,
+    debug: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
+    tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
+
+    parts: list[str] = []
+    details: dict[str, Any] = {}
+    outcomes: list[str] = []
+
+    if skills_allowed:
+        skills_outcome, skills_details, skills_text = _handle_user_prompt_skills(
+            payload,
+            config,
+            plain_output=plain_output,
+            debug=debug,
+        )
+        outcomes.append(skills_outcome)
+        details.update(skills_details)
+        if skills_text:
+            parts.append(skills_text)
+
+    if tools_allowed:
+        tools_outcome, tools_details, tools_text = handle_user_prompt_tools(
+            payload,
+            config,
+            plain_output=plain_output,
+            debug=debug,
+        )
+        outcomes.append(tools_outcome)
+        details.update(tools_details)
+        if tools_text:
+            parts.append(tools_text)
+
+    combined = _combine_injection_parts(parts)
+    if combined:
+        _emit_injection(combined, payload, plain=plain_output)
+        return "user_prompt_injected", details
+
+    if outcomes:
+        return outcomes[-1], details
+    return "skipped_inject_via_proxy", details
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:
@@ -340,20 +408,21 @@ def _read_run_input(
     return raw_stdin, payload, cli_prompt
 
 
-def _exit_if_skills_disabled(
+def _exit_if_hook_disabled(
     *,
-    enabled: bool,
+    skills_enabled_flag: bool,
+    tools_hook_enabled: bool,
     cli_prompt: bool,
     debug: bool,
     raw_stdin: str,
     payload: dict[str, Any],
     cwd: str | None,
 ) -> bool:
-    if enabled or cli_prompt:
+    if skills_enabled_flag or tools_hook_enabled or cli_prompt:
         return False
     print(
-        "cyt hook: skills.enabled is false in config; hook produced no injection. "
-        "Set skills.enabled: true in ~/.config/cyt/config.yaml",
+        "cyt hook: skills.enabled is false and tools hook injection is disabled; "
+        "hook produced no injection. Enable skills or set pruning.tools.inject_via: hook",
         file=sys.stderr,
     )
     return True
@@ -379,7 +448,9 @@ def _dispatch_hook_event(
                 "model": model_from_payload(payload),
             }
     elif event_name in _PROMPT_EVENTS:
-        if not skills_inject_allowed(config, "hook", cli_prompt=cli_prompt):
+        skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=cli_prompt)
+        tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=cli_prompt)
+        if not skills_allowed and not tools_allowed:
             outcome = "skipped_inject_via_proxy"
         else:
             outcome, details = _handle_user_prompt(
@@ -411,6 +482,7 @@ def run(
     raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
     cwd = hook_cwd(payload)
     enabled = skills_enabled(config)
+    tools_hook_enabled = tools_inject_allowed(config, "hook", cli_prompt=cli_prompt)
 
     if cli_prompt:
         print(
@@ -418,8 +490,9 @@ def run(
             file=sys.stderr,
         )
 
-    if _exit_if_skills_disabled(
-        enabled=enabled,
+    if _exit_if_hook_disabled(
+        skills_enabled_flag=enabled,
+        tools_hook_enabled=tools_hook_enabled,
         cli_prompt=cli_prompt,
         debug=debug,
         raw_stdin=raw_stdin,
@@ -428,7 +501,7 @@ def run(
     ):
         return
 
-    _ensure_skills_credentials(config)
+    _ensure_hook_credentials(config)
 
     event_name = hook_event_name(payload)
     outcome, details = _dispatch_hook_event(

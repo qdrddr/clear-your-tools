@@ -1,0 +1,50 @@
+{
+  "tools": [
+    {
+      "name": "mcp__filesystem__read_file",
+      "description": "Read a file from disk",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute or relative file path"
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "mcp__filesystem__write_file",
+      "description": "Write content to a file",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Target file path"
+          },
+          "content": {
+            "type": "string",
+            "description": "File contents"
+          }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "mcp__search__query",
+      "description": "Search indexed documents",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query text"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}

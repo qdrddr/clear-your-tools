@@ -449,6 +449,37 @@ See [`DEV.md`](DEV.md) for checkout setup, repository layout, library usage, and
 
 ---
 
+## Tool hook injection
+
+When `pruning.tools.inject_via` is `hook`, tool definitions are pruned inside `cyt hook --stdin`
+and injected into the agent turn via `hookSpecificOutput.additionalContext` (same channel as
+skills hook injection). The reverse proxy does not mutate request `tools` arrays in this mode.
+
+| Key | Values | Default |
+| --- | ------ | ------- |
+| `pruning.tools.inject_via` | `proxy` \| `hook` | `proxy` |
+| `pruning.tools.hook.tools_from` | `client` \| `definitions` | `client` |
+| `pruning.tools.hook.mcp_client_file` | path | `~/.config/cyt/mcp.json` |
+| `pruning.tools.hook.mcp_definitions_file` | path | `~/.config/cyt/mcp-definitions.json` |
+
+- **`proxy`**: unchanged — CYT prunes tools in upstream HTTP bodies via the reverse proxy.
+- **`hook`**: load a catalog from the definitions file or live MCP servers (`tools_from: client`),
+  run the BM25/rerank/LLM pipeline, inject `<agent-tools>…</agent-tools>` context. Missing catalog
+  files are skipped silently at hook time (configure paths with `cyt hook`, `cyt setup`, or optional
+  `cyt launch` repair prompt).
+
+Live MCP listing requires the optional dependency:
+
+```bash
+uv pip install 'clear-your-tools[mcp]'
+```
+
+`cyt launch` skips the reverse proxy when **both** tools and skills use hook injection (or skills are
+disabled). Mixed mode (`skills.inject_via: proxy`, `tools.inject_via: hook`) still starts the proxy
+for skills injection.
+
+---
+
 ## Schema migration
 
 Canonical config shape (since vNext):

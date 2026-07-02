@@ -45,10 +45,16 @@ def build_claude_env(
     port: int,
     endpoint: str,
     auth_binding: AgentAuthBinding | None = None,
+    use_proxy: bool = True,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Build process env for Claude Code; return (env, reportable non-secrets)."""
+    from cyt.launch.upstream import direct_upstream_base_url
+
     env = dict(os.environ)
-    base_url = f"http://localhost:{port}/{endpoint}"
+    if use_proxy:
+        base_url = f"http://localhost:{port}/{endpoint}"
+    else:
+        base_url = direct_upstream_base_url(config, endpoint)
     env["ANTHROPIC_BASE_URL"] = base_url
     reportable: dict[str, str] = {"ANTHROPIC_BASE_URL": base_url}
 
@@ -90,14 +96,16 @@ def run(
     endpoint: str,
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
+    use_proxy: bool = True,
 ) -> int:
-    """Exec Claude Code with proxy env wiring."""
+    """Exec Claude Code with proxy or direct upstream env wiring."""
     claude = find_claude()
     env, _reportable = build_claude_env(
         config=config,
         port=port,
         endpoint=endpoint,
         auth_binding=auth_binding,
+        use_proxy=use_proxy,
     )
     try:
         result = subprocess.run([claude, *agent_args], env=env, check=False)

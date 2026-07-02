@@ -11,6 +11,24 @@ import pytest
 from cyt.skills import hook_setup
 
 
+def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        hook_setup,
+        "prompt_tools_hook_config",
+        lambda existing, *, context: {
+            "tools": {
+                "inject_via": "proxy",
+                "hook": {
+                    "tools_from": "client",
+                    "mcp_client_file": "~/.config/cyt/mcp.json",
+                    "mcp_definitions_file": "~/.config/cyt/mcp-definitions.json",
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(hook_setup, "save_user_config", lambda *args, **kwargs: False)
+
+
 def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
     command = hook_setup.format_hook_stdin_test_command()
 
@@ -286,6 +304,7 @@ def test_run_hook_setup_merges_existing_agent_configs(
         return True
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup()
@@ -331,6 +350,7 @@ def test_run_hook_setup_skips_declined_agent_install(
         return "Claude" in text
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup()
@@ -353,6 +373,7 @@ def test_run_hook_setup_skips_missing_agent_configs(
     monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", missing_claude)
     monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", missing_codex)
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    _stub_tools_hook_wizard(monkeypatch)
 
     with pytest.raises(SystemExit, match="No agent config files found"):
         with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):

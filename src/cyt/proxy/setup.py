@@ -1965,6 +1965,10 @@ def run_setup(config_path: Path) -> None:
         max_pruner_input_cost=max_pruner_input_cost,
     )
 
+    from cyt.tools.hook_setup import prompt_tools_hook_config
+
+    tools_overlay = prompt_tools_hook_config(existing, context="setup")
+
     stats_db = _prompt("Stats database path", DEFAULT_STATS_DB_PATH)
 
     overlay = build_setup_overlay(
@@ -1980,6 +1984,7 @@ def run_setup(config_path: Path) -> None:
         stats_db_path=stats_db,
         skills=skills_overlay,
     )
+    overlay["pruning"]["tools"].update(tools_overlay)
 
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):

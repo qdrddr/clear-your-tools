@@ -1447,6 +1447,7 @@ class TestRunSetupKeyring:
                 "",  # system policy default
                 "",  # mcp policy default
                 "n",  # skills disabled
+                "",  # tools inject_via default (proxy)
                 "",  # stats db default
             ],
         )

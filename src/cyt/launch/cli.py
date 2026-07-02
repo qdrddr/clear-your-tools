@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
-from cyt.config import DEFAULT_REVERSE_PORT, load_config
+from cyt.config import DEFAULT_REVERSE_PORT, launch_needs_proxy, load_config
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.claude import build_claude_env
 from cyt.launch.claude import run as run_claude
@@ -16,6 +17,7 @@ from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import (
+    ProxyGuard,
     ensure_proxy,
     require_healthy_proxy,
     resolve_launch_port,
@@ -25,6 +27,7 @@ from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_ki
 from cyt.proxy.bootstrap import RuntimeContext, prepare_runtime
 from cyt.proxy.setup import normalize_upstream_kind
 from cyt.skills.agents import launch_agent_env
+from cyt.tools.hook_setup import ensure_tools_hook_file_interactive
 
 
 def parse_launch_remainder(remainder: list[str]) -> tuple[AgentName, list[str]]:
@@ -177,6 +180,7 @@ def _run_launched_agent(
     endpoint: str,
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
+    use_proxy: bool = True,
 ) -> int:
     if agent == "claude":
         return run_claude(
@@ -185,6 +189,7 @@ def _run_launched_agent(
             endpoint=endpoint,
             agent_args=agent_args,
             auth_binding=auth_binding,
+            use_proxy=use_proxy,
         )
     return run_codex(
         config=runtime.config,
@@ -192,6 +197,7 @@ def _run_launched_agent(
         endpoint=endpoint,
         agent_args=agent_args,
         auth_binding=auth_binding,
+        use_proxy=use_proxy,
     )
 
 
@@ -217,6 +223,7 @@ def _launch_env_for_agent(
     runtime: RuntimeContext,
     endpoint: str,
     auth_binding: AgentAuthBinding | None,
+    use_proxy: bool,
 ) -> dict[str, str] | None:
     if agent == "claude":
         _, launch_env = build_claude_env(
@@ -224,6 +231,7 @@ def _launch_env_for_agent(
             port=runtime.port,
             endpoint=endpoint,
             auth_binding=auth_binding,
+            use_proxy=use_proxy,
         )
         return launch_env
     if auth_binding is not None:
@@ -241,6 +249,13 @@ def _run_launch_session(
 ) -> int:
     debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
 
+    config = runtime.config
+    if sys.stdin.isatty():
+        config = ensure_tools_hook_file_interactive(runtime.config_path, config)
+        runtime.config = config
+
+    needs_proxy = launch_needs_proxy(config)
+
     os.environ.update(launch_agent_env(agent))
     launch_before_env = dict(os.environ)
 
@@ -251,28 +266,30 @@ def _run_launch_session(
         launch_before_env=launch_before_env,
     )
 
-    proxy_extra_env = _proxy_spawn_extra_env(
-        credential_sources=runtime.credential_sources,
-        auth_binding=auth_binding,
-    )
-
-    proxy_guard = ensure_proxy(
-        base_port=runtime.port,
-        required_endpoint=endpoint,
-        config_path=runtime.config_path,
-        quiet=True,
-        agent=agent,
-        debug=debug,
-        debug_dry_run=debug_dry_run,
-        debug_strict=debug_strict,
-        extra_env=proxy_extra_env,
-    )
-    runtime.port = proxy_guard.port
-    require_healthy_proxy(
-        port=runtime.port,
-        debug=debug,
-        debug_dry_run=debug_dry_run,
-    )
+    if needs_proxy:
+        proxy_extra_env = _proxy_spawn_extra_env(
+            credential_sources=runtime.credential_sources,
+            auth_binding=auth_binding,
+        )
+        proxy_guard = ensure_proxy(
+            base_port=runtime.port,
+            required_endpoint=endpoint,
+            config_path=runtime.config_path,
+            quiet=True,
+            agent=agent,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+            debug_strict=debug_strict,
+            extra_env=proxy_extra_env,
+        )
+        runtime.port = proxy_guard.port
+        require_healthy_proxy(
+            port=runtime.port,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+        )
+    else:
+        proxy_guard = ProxyGuard(process=None, started_by_launch=False, port=runtime.port)
 
     print_runtime_env_report(
         quiet=False,
@@ -287,6 +304,7 @@ def _run_launch_session(
             runtime=runtime,
             endpoint=endpoint,
             auth_binding=auth_binding,
+            use_proxy=needs_proxy,
         ),
         config=runtime.config,
         config_path=runtime.config_path,
@@ -303,6 +321,7 @@ def _run_launch_session(
             endpoint=endpoint,
             agent_args=agent_args,
             auth_binding=auth_binding,
+            use_proxy=needs_proxy,
         )
     finally:
         proxy_guard.terminate_if_started()

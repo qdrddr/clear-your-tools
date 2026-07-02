@@ -33,7 +33,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SKILLS_ENDPOINTS = ("skills", "skills-hook", "skills-proxy")
+_TOOLS_HOOK_ENDPOINTS = ("tools-hook",)
 _SKILLS_ENDPOINTS_SQL = ", ".join(f"'{name}'" for name in _SKILLS_ENDPOINTS)
+_TOOLS_HOOK_ENDPOINTS_SQL = ", ".join(f"'{name}'" for name in _TOOLS_HOOK_ENDPOINTS)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS proxy_request (
@@ -314,7 +316,9 @@ class StatsDB:
             ),
         )
         for row in record.token_rows:
-            if row.tokens <= 0:
+            if row.tokens == 0:
+                continue
+            if row.tokens < 0 and not row.is_saved:
                 continue
             self._conn.execute(
                 """
@@ -331,6 +335,55 @@ class StatsDB:
                 ),
             )
         return model_id
+
+    def _insert_pruning_stage_requests(
+        self,
+        proxy_id: str,
+        pruning_stages: dict[str, StageTokenUsage],
+    ) -> None:
+        for stage in PRUNING_STAT_STAGES:
+            usage = pruning_stages.get(stage)
+            if usage is None:
+                continue
+            if usage.input_tokens == 0 and usage.output_tokens == 0:
+                if stage != "bm25" or not usage.model_name:
+                    continue
+            token_rows: list[TokenRecord] = []
+            if usage.input_tokens > 0:
+                token_rows.append(
+                    TokenRecord(
+                        type="input",
+                        tokens=usage.input_tokens,
+                        tokenizer_used=usage.usage_source,
+                    ),
+                )
+            if usage.output_tokens > 0:
+                token_rows.append(
+                    TokenRecord(
+                        type="output",
+                        tokens=usage.output_tokens,
+                        tokenizer_used=usage.usage_source,
+                    ),
+                )
+            if usage.reasoning_tokens and usage.reasoning_tokens > 0:
+                token_rows.append(
+                    TokenRecord(
+                        type="reasoning",
+                        tokens=usage.reasoning_tokens,
+                        tokenizer_used=usage.usage_source,
+                    ),
+                )
+            self._insert_model_request(
+                proxy_id,
+                ModelRequestRecord(
+                    stage=stage,
+                    model_name=usage.model_name,
+                    provider_dns_name=usage.provider_dns_name,
+                    provider=usage.provider,
+                    is_upstream=False,
+                    token_rows=token_rows,
+                ),
+            )
 
     def record_proxy_request(self, record: ProxyRequestRecord) -> str:
         proxy_id = new_uuid7()
@@ -395,49 +448,7 @@ class StatsDB:
             ),
         )
 
-        for stage in PRUNING_STAT_STAGES:
-            usage = record.pruning_stages.get(stage)
-            if usage is None:
-                continue
-            if usage.input_tokens == 0 and usage.output_tokens == 0:
-                if stage != "bm25" or not usage.model_name:
-                    continue
-            token_rows: list[TokenRecord] = []
-            if usage.input_tokens > 0:
-                token_rows.append(
-                    TokenRecord(
-                        type="input",
-                        tokens=usage.input_tokens,
-                        tokenizer_used=usage.usage_source,
-                    ),
-                )
-            if usage.output_tokens > 0:
-                token_rows.append(
-                    TokenRecord(
-                        type="output",
-                        tokens=usage.output_tokens,
-                        tokenizer_used=usage.usage_source,
-                    ),
-                )
-            if usage.reasoning_tokens and usage.reasoning_tokens > 0:
-                token_rows.append(
-                    TokenRecord(
-                        type="reasoning",
-                        tokens=usage.reasoning_tokens,
-                        tokenizer_used=usage.usage_source,
-                    ),
-                )
-            self._insert_model_request(
-                proxy_id,
-                ModelRequestRecord(
-                    stage=stage,
-                    model_name=usage.model_name,
-                    provider_dns_name=usage.provider_dns_name,
-                    provider=usage.provider,
-                    is_upstream=False,
-                    token_rows=token_rows,
-                ),
-            )
+        self._insert_pruning_stage_requests(proxy_id, record.pruning_stages)
 
         self._conn.commit()
         logger.debug("recorded proxy_request id=%s upstream_id=%s", proxy_id, upstream_id)
@@ -507,6 +518,101 @@ class StatsDB:
                 ],
             ),
         )
+        self._conn.commit()
+        return proxy_id
+
+    def record_tools_hook_injection(
+        self,
+        *,
+        query: str,
+        model_name: str,
+        tools_in: int,
+        tools_out: int,
+        prompt_tokens: int,
+        pruning_stages: dict[str, StageTokenUsage],
+        tools_final_md: str | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> str:
+        provider, provider_dns = lookup_model_provider(model_name, config)
+        proxy_id = new_uuid7()
+        ts_ms = int(time.time() * 1000)
+        tools_pruned = max(0, tools_in - tools_out)
+        self._conn.execute(
+            """
+            INSERT INTO proxy_request (
+                id, endpoint, tools_in, tool_count_in, tool_properties_count_in,
+                tools_out, tool_count_out, tool_properties_count_out,
+                tools_pruned, tool_count_pruned, tool_properties_count_pruned,
+                ts_ms, prune_status, pipeline, query, error,
+                tools_accepted_json, tools_final_json, skills_in, has_error,
+                request_tokens, skills_final_md
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                proxy_id,
+                "tools-hook",
+                tools_in,
+                0,
+                0,
+                tools_out,
+                0,
+                0,
+                tools_pruned,
+                0,
+                0,
+                ts_ms,
+                "applied",
+                json.dumps(["bm25"]),
+                query,
+                None,
+                None,
+                tools_final_md,
+                0,
+                0,
+                prompt_tokens,
+                None,
+            ),
+        )
+
+        upstream_rows: list[TokenRecord] = []
+        if tools_pruned > 0:
+            upstream_rows.append(
+                TokenRecord(type="input", tokens=tools_pruned, is_saved=True),
+            )
+        if prompt_tokens > 0:
+            upstream_rows.append(
+                TokenRecord(type="input", tokens=-prompt_tokens, is_saved=True),
+            )
+        if upstream_rows:
+            self._insert_model_request(
+                proxy_id,
+                ModelRequestRecord(
+                    stage="upstream",
+                    model_name=model_name,
+                    provider_dns_name=provider_dns,
+                    provider=provider,
+                    is_upstream=True,
+                    token_rows=upstream_rows,
+                ),
+            )
+
+        self._insert_model_request(
+            proxy_id,
+            ModelRequestRecord(
+                stage="tools",
+                model_name=model_name,
+                provider_dns_name=provider_dns,
+                provider=provider,
+                is_upstream=False,
+                token_rows=[
+                    TokenRecord(type="input", tokens=tools_in, is_saved=False),
+                    TokenRecord(type="output", tokens=tools_out, is_saved=False),
+                ],
+            ),
+        )
+
+        self._insert_pruning_stage_requests(proxy_id, pruning_stages)
+
         self._conn.commit()
         return proxy_id
 

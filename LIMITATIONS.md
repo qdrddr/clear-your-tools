@@ -3,6 +3,12 @@
 This implementation requires running as a reverse proxy with supported agents such as Claude Code,
 and others like Codex, OpenCode, etc (not tested yet). It could be used with Copilot only with the BYOK.
 
+**Hook path (`pruning.tools.inject_via: hook`):** tool definitions can be pruned and injected via
+`cyt hook --stdin` without a reverse proxy when skills also use hook injection (or skills are
+disabled). This injects pruned tool context into the agent turn; it does not replace native MCP tool
+registration in the agent runtime. Live MCP catalog loading requires the optional `mcp` extra
+(`fastmcp`).
+
 Cursor, or VSCode/Copilot for example, does not support reverse proxying and only supports forward proxies.
 In that configuration, requests remain end-to-end encrypted, so the proxy cannot inspect, manipulate,
 or prune the request payload.

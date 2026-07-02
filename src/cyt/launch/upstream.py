@@ -351,3 +351,21 @@ def ensure_upstream_for_runtime(
         build_upstream_overlay(url=url, kind=kind, endpoint=endpoint),
     )
     return endpoint
+
+
+def direct_upstream_base_url(config: dict[str, Any], endpoint: str) -> str:
+    """Return the direct upstream base URL when launch skips the reverse proxy."""
+    from cyt.launch.upstream_credentials import upstream_for_endpoint
+    from cyt.proxy.setup import normalize_upstream_url
+
+    entry = upstream_for_endpoint(config, endpoint)
+    if entry is not None:
+        url = entry.get("url")
+        if isinstance(url, str) and url.strip():
+            return normalize_upstream_url(url)
+    if endpoint in UPSTREAM_URL_DEFAULTS:
+        return UPSTREAM_URL_DEFAULTS[endpoint]
+    kind = entry.get("kind") if isinstance(entry, dict) else None
+    if isinstance(kind, str) and kind in UPSTREAM_URL_DEFAULTS:
+        return UPSTREAM_URL_DEFAULTS[kind]
+    return UPSTREAM_URL_DEFAULTS["anthropic"]

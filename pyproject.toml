@@ -43,8 +43,11 @@ proxy = [
 pruners = [
     "litellm==1.83.14",
 ]
+mcp = [
+    "fastmcp>=3.4",
+]
 all = [
-    "clear-your-tools[proxy,pruners]",
+    "clear-your-tools[proxy,pruners,mcp]",
 ]
 
 [project.scripts]
@@ -195,6 +198,7 @@ module = [
     "yaml.*",
     "pandas.*",
     "litellm.*",
+    "fastmcp.*",
     "google.*",
     "uuid_extensions.*",
     "cyt_indexer.*",

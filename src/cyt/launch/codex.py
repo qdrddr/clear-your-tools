@@ -241,11 +241,13 @@ def run(
     endpoint: str,
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
+    use_proxy: bool = True,
 ) -> int:
     """Exec Codex with optional config.toml provider wiring."""
     validate_agent_args(agent_args)
     env_key = codex_env_key_name(config)
-    ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
+    if use_proxy:
+        ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
     codex = find_codex()
     env = build_codex_env(auth_binding=auth_binding)
     try:
