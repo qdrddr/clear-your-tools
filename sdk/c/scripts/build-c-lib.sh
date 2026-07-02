@@ -169,10 +169,10 @@ build_one() {
 	info "rustup target add ${triplet} (if needed)"
 	rustup target add "$triplet" >/dev/null 2>&1 || true
 
-	info "rtk cargo build -p cyt-indexer --no-default-features --features ffi --target ${triplet} (${prof})"
+	info "cargo build -p cyt-indexer --no-default-features --features ffi --target ${triplet} (${prof})"
 	(
 		cd "${REPO_ROOT}" || die "cd failed"
-		rtk cargo build -p cyt-indexer --no-default-features --features ffi \
+		cargo build -p cyt-indexer --no-default-features --features ffi \
 			--target "$triplet" "${release_flag[@]}"
 	)
 
@@ -240,7 +240,6 @@ _cyt_build_c_lib_main() {
 	done
 
 	require_cmd cargo
-	require_cmd rtk
 	require_cmd rustup
 	[[ -f "${REPO_ROOT}/Cargo.toml" ]] || die "not repo root: ${REPO_ROOT}"
 	[[ -f "${CRATE_DIR}/Cargo.toml" ]] || die "missing cyt-indexer crate"
