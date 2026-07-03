@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,6 +28,46 @@ def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
     payload = json.loads(pidfile_path.read_text(encoding="utf-8"))
     assert payload["reused"] is True
     assert payload["pid"] is None
+
+
+def test_spawn_hook_server_passes_resolved_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-token")
+    with patch("cyt.hook.daemon.subprocess.Popen") as popen:
+        popen.return_value = MagicMock()
+        hook_daemon._spawn_hook_server(
+            port=8834,
+            config_path=None,
+            verbose=False,
+            extra_env={"OPENROUTER_API_KEY": "or-token"},
+        )
+
+    _, kwargs = popen.call_args
+    assert kwargs["env"]["OPENROUTER_API_KEY"] == "or-token"
+    assert kwargs["env"]["CYT_SKIP_KEYRING"] == "1"
+
+
+def test_resolve_spawn_credentials_exports_pipeline_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-token")
+
+    def fake_ensure(
+        config: dict,  # noqa: ARG001
+        *,
+        credential_sources: dict[str, str],
+    ) -> None:
+        credential_sources["OPENROUTER_API_KEY"] = "keyring"
+
+    with patch(
+        "cyt.hook.daemon.ensure_proxy_pipeline_credentials",
+        side_effect=fake_ensure,
+    ) as ensure:
+        extra = hook_daemon._resolve_spawn_credentials({})
+
+    ensure.assert_called_once()
+    assert extra == {"OPENROUTER_API_KEY": "or-token"}
 
 
 def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:

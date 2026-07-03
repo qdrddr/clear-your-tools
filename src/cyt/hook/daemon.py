@@ -28,7 +28,7 @@ from cyt.launch.proxy_guard import (
     find_available_port,
     is_port_in_use,
 )
-from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV
+from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, ensure_proxy_pipeline_credentials
 
 HookDaemonOutcome = Literal["reused", "spawned", "already_running"]
 
@@ -79,11 +79,28 @@ def _resolve_daemon_mode(config: dict[str, Any]) -> str:
     return "full_proxy" if launch_needs_proxy(config) else "hooks_only"
 
 
+def _spawn_extra_env(credential_sources: dict[str, str]) -> dict[str, str] | None:
+    extra = {
+        name: value
+        for name in credential_sources
+        if (value := os.environ.get(name))
+    }
+    return extra or None
+
+
+def _resolve_spawn_credentials(config: dict[str, Any]) -> dict[str, str] | None:
+    """Resolve pruning pipeline keys (shell → .env → keyring) for a spawned proxy child."""
+    credential_sources: dict[str, str] = {}
+    ensure_proxy_pipeline_credentials(config, credential_sources=credential_sources)
+    return _spawn_extra_env(credential_sources)
+
+
 def _spawn_hook_server(
     *,
     port: int,
     config_path: Path | None,
     verbose: bool,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.Popen[bytes]:
     cmd = [
         sys.executable,
@@ -99,6 +116,8 @@ def _spawn_hook_server(
         cmd.extend(["--config", str(config_path)])
     child_env = os.environ.copy()
     child_env[CYT_SKIP_KEYRING_ENV] = "1"
+    if extra_env:
+        child_env.update(extra_env)
     _log(verbose, f"hook daemon: spawning {' '.join(cmd)}")
     return subprocess.Popen(
         cmd,
@@ -178,6 +197,7 @@ def daemon_start(
         )
 
     spawn_port = _find_spawn_port(base_port)
+    extra_env = _resolve_spawn_credentials(config)
     if foreground:
         from cyt.config import proxy_http2_settings
         from cyt.proxy.bootstrap import prepare_runtime
@@ -218,7 +238,12 @@ def daemon_start(
         )
         raise SystemExit(0)
 
-    process = _spawn_hook_server(port=spawn_port, config_path=config_path, verbose=verbose)
+    process = _spawn_hook_server(
+        port=spawn_port,
+        config_path=config_path,
+        verbose=verbose,
+        extra_env=extra_env,
+    )
     if not _wait_for_hook_server(spawn_port, process=process):
         process.terminate()
         raise SystemExit(
