@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from cyt_client.port import resolve_hook_url
+from cyt_client.transcript import enrich_hook_payload
 from cyt_client.transport import parse_error_body, post_hook_inject
 
 
@@ -25,7 +26,7 @@ def _fallback_stdin_hook(payload_bytes: bytes) -> int:
 
 
 def main() -> None:
-    payload_bytes = sys.stdin.buffer.read()
+    payload_bytes = enrich_hook_payload(sys.stdin.buffer.read())
     if not payload_bytes.strip():
         return
 

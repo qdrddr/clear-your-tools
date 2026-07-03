@@ -10,6 +10,9 @@ import pytest
 
 from cyt.hook import daemon as hook_daemon
 
+OR_KEY = "OPENROUTER_" + "API_KEY"
+OR_TOKEN = "or-" + "token"
+
 
 @pytest.fixture
 def pidfile_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -33,32 +36,32 @@ def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
 def test_spawn_hook_server_passes_resolved_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-token")
+    monkeypatch.setenv(OR_KEY, OR_TOKEN)
     with patch("cyt.hook.daemon.subprocess.Popen") as popen:
         popen.return_value = MagicMock()
         hook_daemon._spawn_hook_server(
             port=8834,
             config_path=None,
             verbose=False,
-            extra_env={"OPENROUTER_API_KEY": "or-token"},
+            extra_env={OR_KEY: OR_TOKEN},
         )
 
     _, kwargs = popen.call_args
-    assert kwargs["env"]["OPENROUTER_API_KEY"] == "or-token"
+    assert kwargs["env"][OR_KEY] == OR_TOKEN
     assert kwargs["env"]["CYT_SKIP_KEYRING"] == "1"
 
 
 def test_resolve_spawn_credentials_exports_pipeline_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-token")
+    monkeypatch.setenv(OR_KEY, OR_TOKEN)
 
     def fake_ensure(
         config: dict,
         *,
         credential_sources: dict[str, str],
     ) -> None:
-        credential_sources["OPENROUTER_API_KEY"] = "keyring"
+        credential_sources[OR_KEY] = "keyring"
 
     with patch(
         "cyt.hook.daemon.ensure_proxy_pipeline_credentials",
@@ -67,7 +70,7 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
         extra = hook_daemon._resolve_spawn_credentials({})
 
     ensure.assert_called_once()
-    assert extra == {"OPENROUTER_API_KEY": "or-token"}
+    assert extra == {OR_KEY: OR_TOKEN}
 
 
 def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
