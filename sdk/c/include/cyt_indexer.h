@@ -190,6 +190,59 @@ int cyt_bm25_search_skill_chunks(const char *entries_json,
                                  char **out);
 
 /*
+ Hash tool catalog content for cache keying.
+
+ # Safety
+
+ `tools_json` and `policy_fingerprint` must be valid null-terminated UTF-8 C strings.
+ */
+int cyt_tools_catalog_content_hash(const char *tools_json,
+                                   const char *policy_fingerprint,
+                                   char **out);
+
+/*
+ Ensure decomposed tool catalog from Anthropic tool dicts.
+
+ # Safety
+
+ All string pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_ensure_tool_catalog(const char *tools_json,
+                            const char *policy_fingerprint,
+                            const char *tools_root,
+                            const char *policy,
+                            char **out);
+
+/*
+ Ensure decomposed tool catalog from prepared entries and enums.
+
+ # Safety
+
+ All string pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_ensure_tool_catalog_from_entries(const char *entries_json,
+                                         const char *enums_json,
+                                         const char *policy_fingerprint,
+                                         const char *tools_root,
+                                         const char *policy,
+                                         char **out);
+
+/*
+ Ensure page index (+ BM25 chunks when pipeline is bm25) for skill sources.
+
+ # Safety
+
+ All string pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_ensure_skills_registry(const char *source_paths_json,
+                               const char *catalog_root,
+                               const char *pageindex_config_json,
+                               const char *pipeline,
+                               const char *index_params_hash,
+                               const char *policy,
+                               char **out);
+
+/*
  Count tools in a catalog dict JSON.
 
  # Safety
@@ -392,6 +445,53 @@ int cyt_skills_builder_to_skills_dict(const struct CYT_CytSkillsBuilder *builder
 
 int cyt_reconstruct_options_default(char **out);
 
+int cyt_build_page_index_only(const char *skill_dirs_json, const char *config_json, char **out);
+
+int cyt_build_chunk_variant(const char *entry_dir,
+                            const char *doc_id,
+                            const char *pipeline,
+                            const char *params_hash,
+                            const char *config_json,
+                            char **out);
+
+int cyt_page_index_valid(const char *entry_dir, const char *content_sha256, int *out);
+
+int cyt_chunk_variant_valid(const char *entry_dir,
+                            const char *doc_id,
+                            const char *pipeline,
+                            const char *params_hash,
+                            int *out);
+
+int cyt_repair_skill_variant_chunks(const char *entry_dir,
+                                    const char *doc_id,
+                                    const char *pipeline,
+                                    const char *params_hash,
+                                    const char *config_json);
+
+int cyt_load_skills_index_from_entry(const char *entry_dir,
+                                     const char *doc_id,
+                                     const char *chunk_dir,
+                                     char **out);
+
+int cyt_load_merged_skill_document_json(const char *entry_dir,
+                                        const char *doc_id,
+                                        const char *chunk_dir,
+                                        char **out);
+
+int cyt_finalize_skill_document_json(const char *entry_dir,
+                                     const char *doc_id,
+                                     const char *content_sha256,
+                                     const char *pipeline,
+                                     const char *index_params_json,
+                                     const char *built_at,
+                                     const char *source_path,
+                                     char **out);
+
+int cyt_update_skill_document_source_path(const char *entry_dir,
+                                          const char *doc_id,
+                                          const char *source_path,
+                                          char **out);
+
 int cyt_configure_path_constants(const char *md_ext,
                                  const char *json_ext,
                                  const char *decomposed_prefix,
@@ -506,6 +606,17 @@ int cyt_tool_id_had_empty_original_root_properties(const char *catalog_index_jso
                                                    const char *tool_id,
                                                    int *out);
 
+/*
+ Classify optional chunks for many catalog items in one pass.
+
+ Returns JSON `{"system":[bool,...],"mcp":[bool,...]}`.
+
+ # Safety
+
+ `items_json` must be a JSON array; `out` must be non-null.
+ */
+int cyt_classify_optional_chunks_batch(const char *items_json, char **out);
+
 int cyt_decomposed_catalog_new(struct CYT_CytDecomposedCatalog **out);
 
 void cyt_decomposed_catalog_free(struct CYT_CytDecomposedCatalog *catalog);
@@ -601,6 +712,17 @@ long cyt_count_json_tokens(const char *json);
  When non-null, `config_json` must be a valid null-terminated UTF-8 C string.
  */
 int cyt_configure_tokenizer_defaults(const char *config_json);
+
+/*
+ Count tokens for multiple UTF-8 strings.
+
+ `texts_json` must be a JSON array of strings. Writes a JSON array of counts to `out`.
+
+ # Safety
+
+ When non-null, `texts_json` must be valid UTF-8 JSON; `out` must be non-null.
+ */
+int cyt_count_tokens_batch(const char *texts_json, char **out);
 
 #ifdef __cplusplus
 }  // extern "C"

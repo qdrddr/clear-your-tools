@@ -12,6 +12,12 @@ fn count_json_tokens_py(obj: Bound<'_, PyAny>) -> PyResult<usize> {
     tiktoken::count_json_tokens(&value).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
 }
 
+#[pyfunction(name = "count_tokens_batch")]
+fn count_tokens_batch_py(texts: Vec<String>) -> PyResult<Vec<usize>> {
+    let boxed: Vec<Box<str>> = texts.into_iter().map(String::into_boxed_str).collect();
+    let refs: Vec<&str> = boxed.iter().map(std::convert::AsRef::as_ref).collect();
+    tiktoken::count_tokens_batch(&refs).map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)
+}
 #[pyfunction(name = "configure_tokenizer_defaults")]
 #[pyo3(signature = (encoding=None, allowed_special=None))]
 fn configure_tokenizer_defaults_py(encoding: Option<String>, allowed_special: Option<String>) {
@@ -30,6 +36,7 @@ fn configure_tokenizer_defaults_py(encoding: Option<String>, allowed_special: Op
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_tokens_py, m)?)?;
+    m.add_function(wrap_pyfunction!(count_tokens_batch_py, m)?)?;
     m.add_function(wrap_pyfunction!(count_json_tokens_py, m)?)?;
     m.add_function(wrap_pyfunction!(configure_tokenizer_defaults_py, m)?)?;
     Ok(())

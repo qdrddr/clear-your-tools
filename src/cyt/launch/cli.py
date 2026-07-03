@@ -225,6 +225,9 @@ def _launch_env_for_agent(
     auth_binding: AgentAuthBinding | None,
     use_proxy: bool,
 ) -> dict[str, str] | None:
+    from cyt.hook.port import hook_url_for_port
+
+    launch_env: dict[str, str] | None
     if agent == "claude":
         _, launch_env = build_claude_env(
             config=runtime.config,
@@ -233,10 +236,16 @@ def _launch_env_for_agent(
             auth_binding=auth_binding,
             use_proxy=use_proxy,
         )
-        return launch_env
-    if auth_binding is not None:
-        return {auth_binding.agent_env_var: auth_binding.source}
-    return None
+    elif auth_binding is not None:
+        launch_env = {auth_binding.agent_env_var: auth_binding.source}
+    else:
+        launch_env = None
+
+    hook_env = {"CYT_HOOK_URL": hook_url_for_port(runtime.port)}
+    if launch_env is None:
+        return hook_env
+    launch_env.update(hook_env)
+    return launch_env
 
 
 def _run_launch_session(
@@ -253,6 +262,10 @@ def _run_launch_session(
     if sys.stdin.isatty():
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
         runtime.config = config
+
+    from cyt.cache import warm_caches
+
+    warm_caches(config)
 
     needs_proxy = launch_needs_proxy(config)
 

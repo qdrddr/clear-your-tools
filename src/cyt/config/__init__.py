@@ -97,7 +97,12 @@ DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
 DEFAULT_BM25_SCORE_SKILLS: float = 0.5
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
-DEFAULT_SKILLS_INJECT_VIA: str = "proxy"
+DEFAULT_CACHE_ENABLED: bool = True
+DEFAULT_CACHE_BM25_DIR: str = DEFAULT_BM25_INDEX_DIR
+DEFAULT_CACHE_SKILLS_DIR: str = DEFAULT_SKILLS_CATALOG_DIR
+DEFAULT_CACHE_TOOLS_DIR: str = "~/.config/cyt/tools"
+DEFAULT_INJECT_VIA: str = "proxy"
+DEFAULT_SKILLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.45
 DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
 DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
@@ -107,7 +112,7 @@ DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
 DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
 DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
-DEFAULT_TOOLS_INJECT_VIA: str = "proxy"
+DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "client"
 DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE: str = "~/.config/cyt/mcp.json"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
@@ -148,8 +153,8 @@ _DEFAULTS: dict[str, Any] = {
         },
     },
     "pruning": {
+        "inject_via": DEFAULT_INJECT_VIA,
         "tools": {
-            "inject_via": DEFAULT_TOOLS_INJECT_VIA,
             "hook": {
                 "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
                 "mcp_client_file": DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE,
@@ -211,7 +216,6 @@ _DEFAULTS: dict[str, Any] = {
     },
     "skills": {
         "enabled": True,
-        "inject_via": DEFAULT_SKILLS_INJECT_VIA,
         "pipeline": DEFAULT_SKILLS_PIPELINE,
         "directories": [
             "~/.claude/skills",
@@ -868,6 +872,11 @@ def _bm25_index_dir_resolved(
     merged: dict[str, Any],
     user: dict[str, Any],
 ) -> str:
+    cache = merged.get("cache")
+    if isinstance(cache, dict) and cache.get("enabled", DEFAULT_CACHE_ENABLED):
+        bm25_dir = cache.get("bm25_dir")
+        if bm25_dir is not None:
+            return str(bm25_dir)
     index_dir = _resolve_user_then_merged(
         merged,
         user,
@@ -978,13 +987,29 @@ def _tools_hook_settings(config: dict[str, Any]) -> dict[str, Any]:
     return hook if isinstance(hook, dict) else {}
 
 
-def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
+def inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
+    """Unified injection path for skills and tools (hook or proxy)."""
     cfg = config or load_config()
-    value = _tools(_merged_config(cfg)).get("inject_via", DEFAULT_TOOLS_INJECT_VIA)
-    mode = str(value).strip().lower()
-    if mode == "hook":
-        return "hook"
-    return "proxy"
+    merged = _merged_config(cfg)
+    pruning = merged.get("pruning")
+    if isinstance(pruning, dict) and "inject_via" in pruning:
+        mode = str(pruning["inject_via"]).strip().lower()
+        return "hook" if mode == "hook" else "proxy"
+    tools_cfg = _tools(merged)
+    if "inject_via" in tools_cfg:
+        mode = str(tools_cfg["inject_via"]).strip().lower()
+        return "hook" if mode == "hook" else "proxy"
+    skills_cfg = _skills_settings(merged)
+    mode = str(skills_cfg.get("inject_via", DEFAULT_INJECT_VIA)).strip().lower()
+    return "hook" if mode == "hook" else "proxy"
+
+
+def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
+    return inject_via(config)
+
+
+def skills_inject_via(config: dict[str, Any] | None = None) -> str:
+    return inject_via(config)
 
 
 def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSource:
@@ -1033,25 +1058,12 @@ def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
 
 def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
-    if tools_inject_via(cfg) == "proxy":
-        return True
-    if skills_enabled(cfg) and skills_inject_via(cfg) == "proxy":
-        return True
-    return False
+    return inject_via(cfg) == "proxy"
 
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return bool(_skills_settings(_merged_config(cfg)).get("enabled", True))
-
-
-def skills_inject_via(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get("inject_via", DEFAULT_SKILLS_INJECT_VIA)
-    mode = str(value).strip().lower()
-    if mode == "proxy":
-        return "proxy"
-    return "hook"
 
 
 def skills_pipeline(config: dict[str, Any] | None = None) -> str:
@@ -1077,6 +1089,37 @@ def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:
     cfg = config or load_config()
     path = _skills_settings(_merged_config(cfg)).get("catalog_dir", DEFAULT_SKILLS_CATALOG_DIR)
     return str(Path(str(path)).expanduser())
+
+
+def _cache_settings(config: dict[str, Any]) -> dict[str, Any]:
+    cache = _merged_config(config).get("cache")
+    return cache if isinstance(cache, dict) else {}
+
+
+def cache_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return bool(_cache_settings(cfg).get("enabled", DEFAULT_CACHE_ENABLED))
+
+
+def cache_bm25_dir(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    cache = _cache_settings(cfg)
+    path = cache.get("bm25_dir", DEFAULT_CACHE_BM25_DIR)
+    return Path(str(path)).expanduser()
+
+
+def cache_skills_dir(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    cache = _cache_settings(cfg)
+    path = cache.get("skills_dir", DEFAULT_CACHE_SKILLS_DIR)
+    return Path(str(path)).expanduser()
+
+
+def cache_tools_dir(config: dict[str, Any] | None = None) -> Path:
+    cfg = config or load_config()
+    cache = _cache_settings(cfg)
+    path = cache.get("tools_dir", DEFAULT_CACHE_TOOLS_DIR)
+    return Path(str(path)).expanduser()
 
 
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:

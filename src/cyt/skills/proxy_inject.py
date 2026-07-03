@@ -188,6 +188,7 @@ def finish_deferred_skills_anthropic(
         matches=matches,
         prune_result=prune_result,
         pruner_settings=pruner_settings,
+        deferred=deferred,
     )
 
 
@@ -214,6 +215,7 @@ def finish_deferred_skills_openai(
         matches=matches,
         prune_result=prune_result,
         pruner_settings=pruner_settings,
+        deferred=deferred,
     )
 
 
@@ -230,14 +232,19 @@ def resolve_skills_for_query(
     max_tokens: int | None = None,
     upstream_kind: str | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    entries: list[Any] | None = None,
+    skip_frontmatter_gate: bool = False,
 ) -> list[MatchedSkill]:
-    entries = build_registry(config, upstream_kind=upstream_kind)
+    resolved_entries = (
+        entries if entries is not None else build_registry(config, upstream_kind=upstream_kind)
+    )
     return search_skills(
         query,
-        entries,
+        resolved_entries,
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,
+        skip_frontmatter_gate=skip_frontmatter_gate,
     )
 
 
@@ -250,6 +257,7 @@ def inject_skills_for_proxy_request(
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    deferred: DeferredSkillsContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if not skills_inject_via_proxy(config, kind):
         return body, SkillsProxyInjectMeta()
@@ -292,12 +300,17 @@ def inject_skills_for_proxy_request(
 
     skill_matches = matches
     if skill_matches is None:
+        reuse_entries = (
+            deferred is not None and deferred.skills_allowed and bool(deferred.skill_entries)
+        )
         skill_matches = resolve_skills_for_query(
             resolved_query,
             config,
             max_tokens=budget.effective_max,
             upstream_kind=kind,
             pruner_settings=pruner_settings,
+            entries=(deferred.skill_entries if reuse_entries and deferred is not None else None),
+            skip_frontmatter_gate=reuse_entries,
         )
     else:
         from cyt.skills.select import select_skills_within_budget

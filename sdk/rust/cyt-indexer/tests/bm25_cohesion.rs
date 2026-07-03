@@ -100,7 +100,7 @@ fn chunks_created_for_skill_build() -> Result<(), String> {
     )
     .map_err(|err| err.to_string())?;
     let index = build_skills_index(&[PathBuf::from(&skills)], &PageIndexConfig::default())?;
-    assert!(index.files.keys().any(|k| k.contains("/chunks/")));
+    assert!(index.files.keys().any(|k| k.starts_with("chunks/")));
     let _ = fs::remove_dir_all(&tmp);
     Ok(())
 }

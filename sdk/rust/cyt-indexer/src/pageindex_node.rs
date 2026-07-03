@@ -1,13 +1,19 @@
 use crate::bm25_cohesion::{Bm25CohesionChunker, Bm25CohesionConfig};
+use crate::pageindex::document_json::{
+    finalize_document_json, load_merged_document_json, update_document_source_path,
+};
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillDocument, SkillsIndex, build_skills_index,
+    PageIndexConfig, ReconstructOptions, SkillDocument, SkillDocumentExtras, SkillsIndex,
+    build_chunk_variant, build_page_index_only, build_skills_index, chunk_variant_valid,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
-    get_line_content_from_spec, md_to_tree, parse_node_ids, reconstruct_skill_markdown,
+    get_line_content_from_spec, md_to_tree, page_index_valid, parse_node_ids,
+    reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
     spec_refs::OwnedSpecRefs, write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
-    load_skills_index_from_dir, skills_index_from_decomposed_dir, write_skills_index,
+    load_skills_index_from_dir, load_skills_index_from_entry, skills_index_from_decomposed_dir,
+    write_skills_index,
 };
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -134,6 +140,195 @@ pub fn skills_index_from_decomposed_dir_napi(dir: String) -> Result<HashMap<Stri
     let index = skills_index_from_decomposed_dir(PathBuf::from(dir.as_ref()).as_path())
         .map_err(Error::from_reason)?;
     Ok(skills_index_to_napi(&index))
+}
+
+/// # Errors
+///
+/// Returns an error when chunk repair fails.
+#[napi(js_name = "repairSkillChunks")]
+pub fn repair_skill_chunks_napi(
+    entry_dir: String,
+    doc_id: String,
+    config: Option<PageIndexConfigNapi>,
+) -> Result<()> {
+    let cfg = page_index_config_from_napi(config);
+    let doc_id = doc_id.into_boxed_str();
+    repair_skill_chunks(PathBuf::from(entry_dir).as_path(), doc_id.as_ref(), &cfg)
+        .map_err(Error::from_reason)
+}
+
+/// # Errors
+///
+/// Returns an error when page index construction fails.
+#[napi(js_name = "buildPageIndexOnly")]
+pub fn build_page_index_only_napi(
+    skill_dirs: Vec<String>,
+    config: Option<PageIndexConfigNapi>,
+) -> Result<HashMap<String, Value>> {
+    let cfg = page_index_config_from_napi(config);
+    let dirs: Vec<PathBuf> = skill_dirs.into_iter().map(PathBuf::from).collect();
+    let index = build_page_index_only(&dirs, &cfg).map_err(Error::from_reason)?;
+    Ok(skills_index_to_napi(&index))
+}
+
+/// # Errors
+///
+/// Returns an error when the chunk variant cannot be built.
+#[napi(js_name = "buildChunkVariant")]
+pub fn build_chunk_variant_napi(
+    entry_dir: String,
+    doc_id: String,
+    pipeline: String,
+    params_hash: String,
+    config: Option<PageIndexConfigNapi>,
+) -> Result<HashMap<String, Value>> {
+    let cfg = page_index_config_from_napi(config);
+    let doc_id = doc_id.into_boxed_str();
+    let pipeline = pipeline.into_boxed_str();
+    let params_hash = params_hash.into_boxed_str();
+    let index = build_chunk_variant(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        pipeline.as_ref(),
+        params_hash.as_ref(),
+        &cfg,
+    )
+    .map_err(Error::from_reason)?;
+    Ok(skills_index_to_napi(&index))
+}
+
+#[napi(js_name = "pageIndexValid")]
+#[must_use]
+pub fn page_index_valid_napi(entry_dir: String, content_sha256: String) -> bool {
+    let content_sha256 = content_sha256.into_boxed_str();
+    page_index_valid(PathBuf::from(entry_dir).as_path(), content_sha256.as_ref())
+}
+
+#[napi(js_name = "chunkVariantValid")]
+#[must_use]
+pub fn chunk_variant_valid_napi(
+    entry_dir: String,
+    doc_id: String,
+    pipeline: String,
+    params_hash: String,
+) -> bool {
+    let doc_id = doc_id.into_boxed_str();
+    let pipeline = pipeline.into_boxed_str();
+    let params_hash = params_hash.into_boxed_str();
+    chunk_variant_valid(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        pipeline.as_ref(),
+        params_hash.as_ref(),
+    )
+}
+
+/// # Errors
+///
+/// Returns an error when variant chunk repair fails.
+#[napi(js_name = "repairSkillVariantChunks")]
+pub fn repair_skill_variant_chunks_napi(
+    entry_dir: String,
+    doc_id: String,
+    pipeline: String,
+    params_hash: String,
+    config: Option<PageIndexConfigNapi>,
+) -> Result<()> {
+    let cfg = page_index_config_from_napi(config);
+    let doc_id = doc_id.into_boxed_str();
+    let pipeline = pipeline.into_boxed_str();
+    let params_hash = params_hash.into_boxed_str();
+    repair_skill_variant_chunks(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        pipeline.as_ref(),
+        params_hash.as_ref(),
+        &cfg,
+    )
+    .map_err(Error::from_reason)
+}
+
+/// # Errors
+///
+/// Returns an error when the skills index cannot be loaded from disk.
+#[napi(js_name = "loadSkillsIndexFromEntry")]
+pub fn load_skills_index_from_entry_napi(
+    entry_dir: String,
+    doc_id: String,
+    chunk_dir: Option<String>,
+) -> Result<HashMap<String, Value>> {
+    let doc_id = doc_id.into_boxed_str();
+    let chunk_path = chunk_dir.map(PathBuf::from);
+    let index = load_skills_index_from_entry(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        chunk_path.as_deref(),
+    )
+    .map_err(Error::from_reason)?;
+    Ok(skills_index_to_napi(&index))
+}
+
+/// # Errors
+///
+/// Returns an error when the merged document JSON cannot be loaded.
+#[napi(js_name = "loadMergedSkillDocumentJson")]
+pub fn load_merged_skill_document_json_napi(
+    entry_dir: String,
+    doc_id: String,
+    chunk_dir: Option<String>,
+) -> Result<Value> {
+    let doc_id = doc_id.into_boxed_str();
+    let chunk_path = chunk_dir.map(PathBuf::from);
+    load_merged_document_json(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        chunk_path.as_deref(),
+    )
+    .map_err(Error::from_reason)
+}
+
+/// # Errors
+///
+/// Returns an error when document finalization fails.
+#[napi(js_name = "finalizeSkillDocumentJson")]
+pub fn finalize_skill_document_json_napi(
+    entry_dir: String,
+    doc_id: String,
+    content_sha256: String,
+    pipeline: String,
+    index_params: Value,
+    built_at: String,
+    source_path: String,
+) -> Result<Value> {
+    let doc_id = doc_id.into_boxed_str();
+    let extras = SkillDocumentExtras {
+        content_sha256,
+        pipeline,
+        index_params,
+        built_at,
+        source_path,
+    };
+    finalize_document_json(PathBuf::from(entry_dir).as_path(), doc_id.as_ref(), &extras)
+        .map_err(Error::from_reason)
+}
+
+/// # Errors
+///
+/// Returns an error when the document source path cannot be updated.
+#[napi(js_name = "updateSkillDocumentSourcePath")]
+pub fn update_skill_document_source_path_napi(
+    entry_dir: String,
+    doc_id: String,
+    source_path: String,
+) -> Result<Value> {
+    let doc_id = doc_id.into_boxed_str();
+    let source_path = source_path.into_boxed_str();
+    update_document_source_path(
+        PathBuf::from(entry_dir).as_path(),
+        doc_id.as_ref(),
+        source_path.as_ref(),
+    )
+    .map_err(Error::from_reason)
 }
 
 /// # Errors

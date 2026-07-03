@@ -381,7 +381,7 @@ checksum = "01334b89b69ff726750c5ce5073fc8bd860e99aa9a8fc5ca11b04730e3aee97a"
 
 [[package]]
 name = "cyt-indexer"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "cbindgen",
  "chunk",
@@ -392,6 +392,7 @@ dependencies = [
  "napi-derive",
  "pyo3",
  "rust-stemmers",
+ "serde",
  "serde_json",
  "sha2",
  "tantivy",

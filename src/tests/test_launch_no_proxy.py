@@ -7,36 +7,36 @@ from unittest.mock import MagicMock, patch
 from cyt.config import launch_needs_proxy
 
 
-def test_launch_needs_proxy_when_tools_proxy() -> None:
+def test_launch_needs_proxy_when_inject_via_proxy() -> None:
+    config = {
+        "pruning": {"inject_via": "proxy"},
+        "skills": {"enabled": True},
+    }
+    assert launch_needs_proxy(config) is True
+
+
+def test_launch_skips_proxy_when_inject_via_hook() -> None:
+    config = {
+        "pruning": {"inject_via": "hook"},
+        "skills": {"enabled": True},
+    }
+    assert launch_needs_proxy(config) is False
+
+
+def test_launch_skips_proxy_when_skills_disabled_and_hook_mode() -> None:
+    config = {
+        "pruning": {"inject_via": "hook"},
+        "skills": {"enabled": False},
+    }
+    assert launch_needs_proxy(config) is False
+
+
+def test_launch_needs_proxy_legacy_tools_inject_via_proxy() -> None:
     config = {
         "pruning": {"tools": {"inject_via": "proxy"}},
-        "skills": {"enabled": True, "inject_via": "hook"},
+        "skills": {"enabled": True},
     }
     assert launch_needs_proxy(config) is True
-
-
-def test_launch_needs_proxy_when_skills_proxy() -> None:
-    config = {
-        "pruning": {"tools": {"inject_via": "hook"}},
-        "skills": {"enabled": True, "inject_via": "proxy"},
-    }
-    assert launch_needs_proxy(config) is True
-
-
-def test_launch_skips_proxy_when_both_hook() -> None:
-    config = {
-        "pruning": {"tools": {"inject_via": "hook"}},
-        "skills": {"enabled": True, "inject_via": "hook"},
-    }
-    assert launch_needs_proxy(config) is False
-
-
-def test_launch_skips_proxy_when_skills_disabled_and_tools_hook() -> None:
-    config = {
-        "pruning": {"tools": {"inject_via": "hook"}},
-        "skills": {"enabled": False, "inject_via": "proxy"},
-    }
-    assert launch_needs_proxy(config) is False
 
 
 def test_run_launch_session_skips_proxy_when_not_needed() -> None:
@@ -44,8 +44,8 @@ def test_run_launch_session_skips_proxy_when_not_needed() -> None:
 
     runtime = MagicMock()
     runtime.config = {
-        "pruning": {"tools": {"inject_via": "hook"}},
-        "skills": {"enabled": True, "inject_via": "hook"},
+        "pruning": {"inject_via": "hook"},
+        "skills": {"enabled": True},
     }
     runtime.config_path = MagicMock()
     runtime.port = 8787

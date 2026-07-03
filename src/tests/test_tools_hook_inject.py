@@ -1,4 +1,4 @@
-"""Tests for tools hook injection via cyt hook --stdin."""
+"""Tests for tools hook injection via the hook handler."""
 
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ def _tools_hook_config(root: Path, definitions: Path) -> dict[str, Any]:
     return {
         "skills": {"enabled": False},
         "pruning": {
+            "inject_via": "hook",
             "tools": {
-                "inject_via": "hook",
                 "hook": {
                     "tools_from": "definitions",
                     "mcp_definitions_file": str(definitions),
@@ -93,7 +93,6 @@ def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> di
     return {
         "skills": {
             "enabled": True,
-            "inject_via": "hook",
             "pipeline": "bm25",
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
@@ -104,8 +103,8 @@ def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> di
             },
         },
         "pruning": {
+            "inject_via": "hook",
             "tools": {
-                "inject_via": "hook",
                 "hook": {
                     "tools_from": "definitions",
                     "mcp_definitions_file": str(definitions),
@@ -146,7 +145,11 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
         patch.object(skills_cli, "handle_user_prompt_tools", side_effect=slow_tools),
     ):
         started = time.perf_counter()
-        outcome, _details = skills_cli._handle_user_prompt(payload, config)
+        outcome, _details, _context = skills_cli._handle_user_prompt(
+            payload,
+            config,
+            emit_stdout=False,
+        )
         elapsed = time.perf_counter() - started
 
     assert overlap.is_set()

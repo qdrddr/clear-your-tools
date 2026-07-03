@@ -38,7 +38,6 @@ def _skills_config(root: Path) -> dict:
     return {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -56,7 +55,10 @@ def _skills_config(root: Path) -> dict:
             "pageindex": {"enable_bm25_chunking": True},
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_via": "proxy",
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
     }
 
 
@@ -259,7 +261,7 @@ def test_inject_skills_skipped_when_inject_via_hook(monkeypatch: pytest.MonkeyPa
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
-        config["skills"]["inject_via"] = "hook"
+        config["pruning"]["inject_via"] = "hook"
         body = {
             "messages": [
                 {"role": "system", "content": "sys"},

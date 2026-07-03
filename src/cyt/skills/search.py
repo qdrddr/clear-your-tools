@@ -223,18 +223,25 @@ def search_skills_with_trace(
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    skip_frontmatter_gate: bool = False,
 ) -> tuple[list[MatchedSkill], SkillsSearchTrace]:
     """Return matched skills plus frontmatter gate and search scoring diagnostics."""
     from cyt.skills.bm25 import frontmatter_gate_trace
+    from cyt.skills.diagnostics import FrontmatterGateRow
 
     configured = skills_pipeline(config).strip().lower()
-    frontmatter_rows, frontmatter_limit = frontmatter_gate_trace(query, entries, config=config)
-    eligible = [
-        entry
-        for entry in entries
-        if (entry.entry_dir, entry.doc_id)
-        not in {(row.entry_dir, row.doc_id) for row in frontmatter_rows if not row.passed}
-    ]
+    if skip_frontmatter_gate:
+        eligible = list(entries)
+        frontmatter_rows: list[FrontmatterGateRow] = []
+        frontmatter_limit = 0.0
+    else:
+        frontmatter_rows, frontmatter_limit = frontmatter_gate_trace(query, entries, config=config)
+        eligible = [
+            entry
+            for entry in entries
+            if (entry.entry_dir, entry.doc_id)
+            not in {(row.entry_dir, row.doc_id) for row in frontmatter_rows if not row.passed}
+        ]
     if not eligible:
         return [], SkillsSearchTrace(
             frontmatter_limit=frontmatter_limit,
@@ -290,6 +297,7 @@ def search_skills_with_pipeline(
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    skip_frontmatter_gate: bool = False,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun]:
     """Return matched skills and the configured vs executed search pipeline."""
     matches, trace = search_skills_with_trace(
@@ -298,6 +306,7 @@ def search_skills_with_pipeline(
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,
+        skip_frontmatter_gate=skip_frontmatter_gate,
     )
     return matches, trace.pipeline_run
 
@@ -309,6 +318,7 @@ def search_skills(
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    skip_frontmatter_gate: bool = False,
 ) -> list[MatchedSkill]:
     """Return matched skill reconstructions sorted by score (highest first)."""
     matches, _pipeline_run = search_skills_with_pipeline(
@@ -317,5 +327,6 @@ def search_skills(
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,
+        skip_frontmatter_gate=skip_frontmatter_gate,
     )
     return matches

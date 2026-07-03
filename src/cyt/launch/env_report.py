@@ -33,10 +33,13 @@ def _proxy_summary_lines(
     endpoint: str | None,
     agent: AgentName | None = None,
 ) -> list[str]:
+    from cyt.hook.port import hook_url_for_port
+
     lines = [f"  port: {port}"]
     if agent is not None:
         lines.append(f"  agent: {agent}")
     lines.append(f"  health: http://localhost:{port}/health")
+    lines.append(f"  hook: {hook_url_for_port(port)}")
     if endpoint is not None:
         lines.append(f"  endpoint: http://localhost:{port}/{endpoint}")
     return lines

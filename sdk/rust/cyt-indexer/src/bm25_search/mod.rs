@@ -11,4 +11,6 @@ pub use catalog::{
 pub use config::{Bm25SearchConfig, configure, expand_index_dir, snapshot};
 pub use normalize::{NormalizeMode, exp_similarity, min_max_normalize, normalize_scores};
 pub use skills::{bm25_frontmatter_gate, bm25_search_skill_chunks};
-pub use tantivy_score::{score_corpus, score_query_against_doc, term_frequencies};
+pub use tantivy_score::{
+    score_corpus, score_corpus_cached, score_query_against_doc, term_frequencies,
+};

@@ -26,7 +26,6 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
     return {
         "skills": {
             "enabled": True,
-            "inject_via": "hook",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -37,7 +36,10 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
                 "inject_cap_multiplier_of_request_tokens": 5.0,
             },
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
         "stats": {"database": {"path": str(root / "stats.db")}},
     }
 

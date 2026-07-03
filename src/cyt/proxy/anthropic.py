@@ -27,7 +27,6 @@ from cyt.config import (
 from cyt.indexer.build import (
     CatalogIndex,
     anthropic_tools_to_catalog_entries,
-    build_catalog_index,
     catalog_tool_count,
 )
 from cyt.indexer.retrieve import retrieve_tools
@@ -439,9 +438,17 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
-    index = build_catalog_index(entries, enums)
-    build_catalog = index.to_catalog_dict()
+    from cyt.tools.catalog_cache import ensure_tool_catalog_cached
+
+    cached = ensure_tool_catalog_cached(
+        entries,
+        enums,
+        resolved_config,
+        ctx=ctx,
+    )
+    build_catalog = cached.catalog
     data = build_catalog
+    index = cached.index
     tool_properties_count_in = _count_optional_property_chunks(data)
     pipeline = effective_pruning_pipeline(
         resolved_config,

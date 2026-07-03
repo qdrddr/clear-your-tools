@@ -8,16 +8,22 @@ use crate::ffi::json_util::{
     c_str_to_str, json_array_or_empty, parse_json_cstr, run_ffi, write_json_out,
     write_string_result,
 };
+use crate::pageindex::document_json::{
+    finalize_document_json, load_merged_document_json, update_document_source_path,
+};
 use crate::pageindex::spec_refs::OwnedSpecRefs;
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillDocument, SkillsIndex, build_skills_index,
+    PageIndexConfig, ReconstructOptions, SkillDocument, SkillDocumentExtras, SkillsIndex,
+    build_chunk_variant, build_page_index_only, build_skills_index, chunk_variant_valid,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
-    get_line_content_from_spec, md_to_tree, parse_chunk_ids, parse_node_ids,
-    reconstruct_skill_markdown, repair_skill_chunks, write_reconstructed_skill,
+    get_line_content_from_spec, md_to_tree, page_index_valid, parse_chunk_ids, parse_node_ids,
+    reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
+    write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
-    load_skills_index_from_dir, skills_index_from_decomposed_dir, write_skills_index,
+    load_skills_index_from_dir, load_skills_index_from_entry, skills_index_from_decomposed_dir,
+    write_skills_index,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -673,6 +679,253 @@ pub unsafe extern "C" fn cyt_reconstruct_options_default(out: *mut *mut c_char) 
             return Err(CYT_ERR_NULL_PTR);
         }
         unsafe { write_json_out(&json!({ "keep_all_headers": false }), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_build_page_index_only(
+    skill_dirs_json: *const c_char,
+    config_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let dirs_val = parse_json_cstr(skill_dirs_json, "skill_dirs_json")?;
+        let dirs: Vec<PathBuf> = dirs_val
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(PathBuf::from))
+            .collect();
+        let cfg = page_index_config_from_json(config_json)?;
+        let index = build_page_index_only(&dirs, &cfg).map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
+        unsafe { write_json_out(&skills_index_to_json(&index), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_build_chunk_variant(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    pipeline: *const c_char,
+    params_hash: *const c_char,
+    config_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let pipe = c_str_to_str(pipeline, "pipeline")?;
+        let hash = c_str_to_str(params_hash, "params_hash")?;
+        let cfg = page_index_config_from_json(config_json)?;
+        let index = build_chunk_variant(PathBuf::from(entry).as_path(), doc, pipe, hash, &cfg)
+            .map_err(|e| {
+                set_error(&e);
+                CYT_ERR_INVALID_ARG
+            })?;
+        unsafe { write_json_out(&skills_index_to_json(&index), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_page_index_valid(
+    entry_dir: *const c_char,
+    content_sha256: *const c_char,
+    out: *mut c_int,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let hash = c_str_to_str(content_sha256, "content_sha256")?;
+        unsafe {
+            *out = i32::from(page_index_valid(PathBuf::from(entry).as_path(), hash));
+        }
+        clear_error();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_chunk_variant_valid(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    pipeline: *const c_char,
+    params_hash: *const c_char,
+    out: *mut c_int,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let pipe = c_str_to_str(pipeline, "pipeline")?;
+        let hash = c_str_to_str(params_hash, "params_hash")?;
+        unsafe {
+            *out = i32::from(chunk_variant_valid(
+                PathBuf::from(entry).as_path(),
+                doc,
+                pipe,
+                hash,
+            ));
+        }
+        clear_error();
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_repair_skill_variant_chunks(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    pipeline: *const c_char,
+    params_hash: *const c_char,
+    config_json: *const c_char,
+) -> c_int {
+    run_ffi(|| {
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let pipe = c_str_to_str(pipeline, "pipeline")?;
+        let hash = c_str_to_str(params_hash, "params_hash")?;
+        let cfg = page_index_config_from_json(config_json)?;
+        repair_skill_variant_chunks(PathBuf::from(entry).as_path(), doc, pipe, hash, &cfg)
+            .map_err(|e| {
+                set_error(&e);
+                CYT_ERR_IO
+            })?;
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_load_skills_index_from_entry(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    chunk_dir: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let chunk_path = if chunk_dir.is_null() {
+            None
+        } else {
+            Some(PathBuf::from(c_str_to_str(chunk_dir, "chunk_dir")?))
+        };
+        let index = load_skills_index_from_entry(
+            PathBuf::from(entry).as_path(),
+            doc,
+            chunk_path.as_deref(),
+        )
+        .map_err(|e| {
+            set_error(&e);
+            CYT_ERR_IO
+        })?;
+        unsafe { write_json_out(&skills_index_to_json(&index), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_load_merged_skill_document_json(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    chunk_dir: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let chunk_path = if chunk_dir.is_null() {
+            None
+        } else {
+            Some(PathBuf::from(c_str_to_str(chunk_dir, "chunk_dir")?))
+        };
+        let value =
+            load_merged_document_json(PathBuf::from(entry).as_path(), doc, chunk_path.as_deref())
+                .map_err(|e| {
+                set_error(&e);
+                CYT_ERR_IO
+            })?;
+        unsafe { write_json_out(&value, out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_finalize_skill_document_json(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    content_sha256: *const c_char,
+    pipeline: *const c_char,
+    index_params_json: *const c_char,
+    built_at: *const c_char,
+    source_path: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let extras = SkillDocumentExtras {
+            content_sha256: c_str_to_str(content_sha256, "content_sha256")?.to_string(),
+            pipeline: c_str_to_str(pipeline, "pipeline")?.to_string(),
+            index_params: parse_json_cstr(index_params_json, "index_params_json")?,
+            built_at: c_str_to_str(built_at, "built_at")?.to_string(),
+            source_path: c_str_to_str(source_path, "source_path")?.to_string(),
+        };
+        let value =
+            finalize_document_json(PathBuf::from(entry).as_path(), doc, &extras).map_err(|e| {
+                set_error(&e);
+                CYT_ERR_IO
+            })?;
+        unsafe { write_json_out(&value, out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_update_skill_document_source_path(
+    entry_dir: *const c_char,
+    doc_id: *const c_char,
+    source_path: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entry = c_str_to_str(entry_dir, "entry_dir")?;
+        let doc = c_str_to_str(doc_id, "doc_id")?;
+        let path = c_str_to_str(source_path, "source_path")?;
+        let value = update_document_source_path(PathBuf::from(entry).as_path(), doc, path)
+            .map_err(|e| {
+                set_error(&e);
+                CYT_ERR_IO
+            })?;
+        unsafe { write_json_out(&value, out)? };
         Ok(())
     })
 }

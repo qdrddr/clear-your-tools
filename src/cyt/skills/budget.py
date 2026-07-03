@@ -310,7 +310,7 @@ def format_skills_budget_report(
         "",
         "settings:",
         f"  skills.enabled: {enabled}",
-        f"  skills.inject_via: {active}  (active path)",
+        f"  pruning.inject_via: {active}  (active path)",
         f"  max_tokens_per_request: {max_tokens}",
         f"  bm25_node_fallback_threshold: {skills_bm25_node_fallback_threshold(config)}",
         "",

@@ -6,6 +6,7 @@
 
 mod bm25;
 mod bm25_search;
+mod cache;
 mod catalog;
 mod catalog_io;
 mod documents;
@@ -29,8 +30,16 @@ pub use bm25_search::{
     cyt_bm25_catalog_fingerprint, cyt_bm25_frontmatter_gate, cyt_bm25_score_catalog,
     cyt_bm25_search_skill_chunks, cyt_configure_bm25_defaults,
 };
+pub use cache::{
+    cyt_ensure_skills_registry, cyt_ensure_tool_catalog, cyt_ensure_tool_catalog_from_entries,
+    cyt_tools_catalog_content_hash,
+};
 pub use catalog::{cyt_build_catalog_index, cyt_catalog_tool_count};
-pub use tokens::{cyt_configure_tokenizer_defaults, cyt_count_json_tokens, cyt_count_tokens};
+pub use policies::cyt_classify_optional_chunks_batch;
+pub use tokens::{
+    cyt_configure_tokenizer_defaults, cyt_count_json_tokens, cyt_count_tokens,
+    cyt_count_tokens_batch,
+};
 
 // Re-export opaque handle types for cbindgen.
 pub use catalog_io::CytCatalogBuilder;

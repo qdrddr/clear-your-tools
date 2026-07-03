@@ -58,6 +58,7 @@ async def test_health_endpoint_includes_cyt_name() -> None:
         "endpoints": ["anthropic"],
         "debug": False,
         "debug_dry_run": False,
+        "hook": True,
     }
 
 
@@ -83,6 +84,7 @@ async def test_health_endpoint_includes_launch_agent_and_all_endpoints() -> None
         "agent": "claude",
         "debug": False,
         "debug_dry_run": False,
+        "hook": True,
     }
 
 

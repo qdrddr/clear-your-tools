@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.6.5"
+version = "0.6.6"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -18,7 +18,7 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "cyt-indexer-sdk==0.6.5",
+    "cyt-indexer-sdk==0.6.6",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
@@ -52,6 +52,7 @@ all = [
 
 [project.scripts]
 cyt = "cyt.proxy.cli_impl:main"
+cyt-client = "cyt_client.cli:main"
 cyt-rerank = "cyt.pruners.rerank:main"
 cyt-llm-prune = "cyt.pruners.llm:main"
 cyt-bm25-prune = "cyt.pruners.bm25:main"
@@ -61,7 +62,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cyt"]
+packages = ["src/cyt", "src/cyt_client"]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -229,6 +230,7 @@ filterwarnings = [
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
 ]
 addopts = "-q"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src/cyt"]

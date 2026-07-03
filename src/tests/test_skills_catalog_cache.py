@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from cyt.config import skills_index_params_fingerprint
+from cyt.launch.upstream import AgentName
 from cyt.skills.catalog import (
     SkillEntryRef,
     _shorten_home_path,
     build_registry,
+    clear_registry_cache,
     content_sha256_for_file,
     doc_id_from_path,
 )
@@ -76,3 +81,46 @@ def test_build_registry_complete_and_dedup() -> None:
         assert doc["path"] == _shorten_home_path(str(skill_path))
         assert doc["path"].endswith("create-hook.md")
         assert entry.disk_backed is True
+
+
+def test_build_registry_process_cache_reuses_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        _write_skill(
+            skills_dir / "create-hook.md",
+            "# Create Hook\n\nIntro\n\n## Usage\n\nRun hooks for agent sessions.\n",
+        )
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "bm25",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+        }
+        clear_registry_cache()
+        calls: list[int] = []
+
+        from cyt.skills import catalog as catalog_mod
+
+        original_build = catalog_mod._build_registry_uncached
+
+        def counting_build(
+            cfg: dict[str, Any],
+            *,
+            agent: AgentName | None = None,
+            upstream_kind: str | None = None,
+        ) -> list[SkillEntryRef]:
+            calls.append(1)
+            return original_build(cfg, agent=agent, upstream_kind=upstream_kind)
+
+        monkeypatch.setattr(catalog_mod, "_build_registry_uncached", counting_build)
+        first = build_registry(config)
+        second = build_registry(config)
+        assert len(first) == 1
+        assert first[0].doc_id == second[0].doc_id
+        assert calls == [1]
+        clear_registry_cache()

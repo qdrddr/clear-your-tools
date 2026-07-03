@@ -9,6 +9,7 @@ import sys
 from cyt_indexer.tokens import (
     count_json_tokens,
     count_tokens,
+    count_tokens_batch,
     truncate_description,
 )
 
@@ -18,6 +19,7 @@ __all__ = [
     "compact_json",
     "count_json_tokens",
     "count_tokens",
+    "count_tokens_batch",
     "log_token_usage",
     "truncate_description",
 ]

@@ -1,7 +1,7 @@
 //! Tiktoken token counting FFI exports.
 
 use crate::ffi::error::{CYT_ERR_INVALID_ARG, clear_error, set_error};
-use crate::ffi::json_util::{c_str_to_str, ffi_guard, parse_json_cstr, run_ffi};
+use crate::ffi::json_util::{c_str_to_str, ffi_guard, parse_json_cstr, run_ffi, write_json_out};
 use crate::tiktoken::{self, AllowedSpecial};
 use std::os::raw::{c_char, c_int, c_long};
 
@@ -84,6 +84,41 @@ pub unsafe extern "C" fn cyt_configure_tokenizer_defaults(config_json: *const c_
             }
         }
         tiktoken::configure(cfg);
+        Ok(())
+    })
+}
+
+/// Count tokens for multiple UTF-8 strings.
+///
+/// `texts_json` must be a JSON array of strings. Writes a JSON array of counts to `out`.
+///
+/// # Safety
+///
+/// When non-null, `texts_json` must be valid UTF-8 JSON; `out` must be non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_count_tokens_batch(
+    texts_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(crate::ffi::error::CYT_ERR_NULL_PTR);
+        }
+        let val = parse_json_cstr(texts_json, "texts_json")?;
+        let arr = val.as_array().cloned().unwrap_or_default();
+        let texts: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let counts = tiktoken::count_tokens_batch(&refs).map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
+        let json_counts: Vec<serde_json::Value> =
+            counts.into_iter().map(|n| serde_json::json!(n)).collect();
+        unsafe { write_json_out(&serde_json::Value::Array(json_counts), out)? };
         Ok(())
     })
 }

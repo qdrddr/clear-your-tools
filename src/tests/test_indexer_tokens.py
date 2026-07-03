@@ -6,7 +6,13 @@ from typing import cast
 import pytest
 
 from cyt.indexer.build import ToolSchemaSource, prepare_tool_entry, truncate_description
-from cyt.indexer.tokens import compact_json, count_json_tokens, count_tokens, log_token_usage
+from cyt.indexer.tokens import (
+    compact_json,
+    count_json_tokens,
+    count_tokens,
+    count_tokens_batch,
+    log_token_usage,
+)
 from cyt.pruners.rerank import count_rerank_request_tokens, rerank_bulk_base_tokens
 
 
@@ -25,6 +31,12 @@ def test_count_tokens_is_positive() -> None:
     text = "hello world"
     assert count_tokens(text) >= 1
     assert count_tokens(text) == count_tokens(text)
+
+
+def test_count_tokens_batch_matches_individual() -> None:
+    texts = ["hello world", "café token count", ""]
+    batch = count_tokens_batch(texts)
+    assert batch == [count_tokens(text) for text in texts]
 
 
 def test_count_json_tokens_matches_compact_serialization() -> None:

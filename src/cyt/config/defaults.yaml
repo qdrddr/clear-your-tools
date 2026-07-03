@@ -142,8 +142,8 @@ models:
     stopwords: en
 
 pruning:
+  inject_via: proxy # hook | proxy — applies to skills and tools injection
   tools:
-    inject_via: proxy # hook | proxy
     hook:
       tools_from: client # client | definitions
       mcp_client_file: ~/.config/cyt/mcp.json
@@ -206,6 +206,12 @@ network:
         - anthropic
         - openai
 
+cache:
+  enabled: true
+  bm25_dir: ~/.config/cyt/bm25
+  skills_dir: ~/.config/cyt/skills
+  tools_dir: ~/.config/cyt/tools
+
 stats:
   enabled: true
   store_full_tools: false
@@ -217,7 +223,6 @@ stats:
 skills:
   enabled: true
   frontmatter_upper_limit: 0.45
-  inject_via: proxy # hook | proxy
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills
   # pageindex:

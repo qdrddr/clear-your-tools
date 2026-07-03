@@ -2,18 +2,28 @@
 
 import {
   SkillsBuilderNative,
+  buildChunkVariantNative,
+  buildPageIndexOnlyNative,
   buildSkillsIndexNative,
+  chunkVariantValidNative,
+  finalizeSkillDocumentJsonNative,
   getSkillContentRetrieveResultNative,
   getSkillDocumentNative,
   getSkillLineContentFromSpecNative,
   getSkillLineContentNative,
   getSkillStructureNative,
+  loadMergedSkillDocumentJsonNative,
   loadSkillsIndexFromDirNative,
+  loadSkillsIndexFromEntryNative,
   mdToTreeNative,
+  pageIndexValidNative,
   parseSkillChunkIdsNative,
   parseSkillNodeIdsNative,
   reconstructSkillMarkdownNative,
+  repairSkillChunksNative,
+  repairSkillVariantChunksNative,
   skillsIndexFromDecomposedDirNative,
+  updateSkillDocumentSourcePathNative,
   writeReconstructedSkillNative,
   writeSkillsIndexNative,
   type ReconstructOptionsNapi,
@@ -329,6 +339,129 @@ export function parseSkillNodeIds(spec: string): number[] {
 
 export function parseSkillChunkIds(spec: string): number[] {
   return parseSkillChunkIdsNative(spec);
+}
+
+export function repairSkillChunks(
+  entryDir: string,
+  docId: string,
+  config?: PageIndexConfigInput,
+): void {
+  repairSkillChunksNative(entryDir, docId, resolveNativeConfig(config));
+}
+
+export function buildPageIndexOnly(
+  skillDirs: string[],
+  config?: PageIndexConfigInput,
+): SkillsIndexDict {
+  return buildPageIndexOnlyNative(
+    skillDirs,
+    resolveNativeConfig(config),
+  ) as SkillsIndexDict;
+}
+
+export function buildChunkVariant(
+  entryDir: string,
+  docId: string,
+  pipeline: string,
+  paramsHash: string,
+  config?: PageIndexConfigInput,
+): SkillsIndexDict {
+  return buildChunkVariantNative(
+    entryDir,
+    docId,
+    pipeline,
+    paramsHash,
+    resolveNativeConfig(config),
+  ) as SkillsIndexDict;
+}
+
+export function pageIndexValid(
+  entryDir: string,
+  contentSha256: string,
+): boolean {
+  return pageIndexValidNative(entryDir, contentSha256);
+}
+
+export function chunkVariantValid(
+  entryDir: string,
+  docId: string,
+  pipeline: string,
+  paramsHash: string,
+): boolean {
+  return chunkVariantValidNative(entryDir, docId, pipeline, paramsHash);
+}
+
+export function repairSkillVariantChunks(
+  entryDir: string,
+  docId: string,
+  pipeline: string,
+  paramsHash: string,
+  config?: PageIndexConfigInput,
+): void {
+  repairSkillVariantChunksNative(
+    entryDir,
+    docId,
+    pipeline,
+    paramsHash,
+    resolveNativeConfig(config),
+  );
+}
+
+export function loadSkillsIndexFromEntry(
+  entryDir: string,
+  docId: string,
+  chunkDir?: string,
+): SkillsIndexDict {
+  return loadSkillsIndexFromEntryNative(
+    entryDir,
+    docId,
+    chunkDir,
+  ) as SkillsIndexDict;
+}
+
+export function loadMergedSkillDocumentJson(
+  entryDir: string,
+  docId: string,
+  chunkDir?: string,
+): Record<string, unknown> {
+  return loadMergedSkillDocumentJsonNative(entryDir, docId, chunkDir) as Record<
+    string,
+    unknown
+  >;
+}
+
+export function finalizeSkillDocumentJson(
+  entryDir: string,
+  docId: string,
+  options: {
+    contentSha256: string;
+    pipeline: string;
+    indexParams: Record<string, unknown>;
+    builtAt: string;
+    sourcePath: string;
+  },
+): Record<string, unknown> {
+  return finalizeSkillDocumentJsonNative(
+    entryDir,
+    docId,
+    options.contentSha256,
+    options.pipeline,
+    options.indexParams,
+    options.builtAt,
+    options.sourcePath,
+  ) as Record<string, unknown>;
+}
+
+export function updateSkillDocumentSourcePath(
+  entryDir: string,
+  docId: string,
+  sourcePath: string,
+): Record<string, unknown> {
+  return updateSkillDocumentSourcePathNative(
+    entryDir,
+    docId,
+    sourcePath,
+  ) as Record<string, unknown>;
 }
 
 export class SkillsBuilder {

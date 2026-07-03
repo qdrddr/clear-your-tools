@@ -1,4 +1,4 @@
-"""Tests for `cyt hook --stdin` handler."""
+"""Tests for the hook handler (``cyt.skills.cli --stdin``)."""
 
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
     return {
         "skills": {
             "enabled": True,
-            "inject_via": "hook",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -41,7 +40,10 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
                 "inject_cap_multiplier_of_request_tokens": 5.0,
             },
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
         "stats": {"database": {"path": str(root / "stats.db")}},
     }
 
@@ -164,7 +166,21 @@ def test_session_start_is_ignored_without_output(monkeypatch: pytest.MonkeyPatch
         monkeypatch.chdir(root)
 
         config = {"skills": {"enabled": True}}
-        with patch("cyt.skills.cli.load_config", return_value=config):
+        from cyt.hook.daemon import HookDaemonStartResult
+
+        with (
+            patch("cyt.skills.cli.load_config", return_value=config),
+            patch(
+                "cyt.hook.daemon.daemon_start",
+                return_value=HookDaemonStartResult(
+                    outcome="reused",
+                    port=8834,
+                    hook_url="http://127.0.0.1:8834/hook/inject",
+                    pid=None,
+                    reused=True,
+                ),
+            ),
+        ):
             skills_cli.run(debug=True)
 
         assert stdout.getvalue() == ""
@@ -503,7 +519,6 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
         config = {
             "skills": {
                 "enabled": False,
-                "inject_via": "hook",
                 "pipeline": "bm25",
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
@@ -515,7 +530,10 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
                     "inject_cap_multiplier_of_request_tokens": 5.0,
                 },
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+            "pruning": {
+                "inject_via": "hook",
+                "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+            },
             "stats": {"database": {"path": str(root / "stats.db")}},
         }
 
@@ -918,7 +936,7 @@ def test_hook_resolves_skills_key_from_keyring(
 
 
 def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`cyt hook --stdin` runs the hook handler."""
+    """Development ``cyt.skills.cli --stdin`` runs the hook handler."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
@@ -939,14 +957,12 @@ def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
         stdout = StringIO()
         monkeypatch.setattr("sys.stdout", stdout)
-        monkeypatch.setattr("sys.argv", ["cyt", "hook", "--stdin"])
+        monkeypatch.setattr("sys.argv", ["cyt.skills.cli", "--stdin"])
 
         config = _skills_config(root, skills_dir, catalog_dir)
         with patch("cyt.skills.cli.load_config", return_value=config):
             with patch("cyt.config.stats_db_path", return_value=str(root / "stats.db")):
-                from cyt.proxy.cli_impl import main
-
-                main()
+                skills_cli.main()
 
         output = json.loads(stdout.getvalue())
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"

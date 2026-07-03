@@ -25,7 +25,13 @@ from cyt_indexer.bm25_search import (
     bm25_search_skill_chunks,
     configure_bm25_defaults,
 )
-from cyt_indexer.tokens import count_json_tokens, count_tokens, configure_tokenizer_defaults
+from cyt_indexer.cache import (
+    ensure_skills_registry,
+    ensure_tool_catalog,
+    ensure_tool_catalog_from_entries,
+    tools_catalog_content_hash,
+)
+from cyt_indexer.tokens import count_json_tokens, count_tokens, count_tokens_batch, configure_tokenizer_defaults
 from cyt_indexer.bm25_cohesion import (
     Bm25CohesionConfig,
     chunk as bm25_cohesion_chunk,
@@ -83,6 +89,11 @@ __all__ = [
     "configure_tokenizer_defaults",
     "count_json_tokens",
     "count_tokens",
+    "count_tokens_batch",
+    "ensure_skills_registry",
+    "ensure_tool_catalog",
+    "ensure_tool_catalog_from_entries",
+    "tools_catalog_content_hash",
     "bm25_cohesion_chunk",
     "default_bm25_cohesion_config",
     "build_catalog_index",

@@ -6,9 +6,7 @@ import argparse
 import json
 import logging
 import math
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from cyt_indexer.bm25_search import bm25_catalog_fingerprint, bm25_score_catalog
 
@@ -17,23 +15,18 @@ from cyt.config import (
     DEFAULT_BM25_PRUNE_ENUMS,
     DEFAULT_BM25_SCORE_TOOL,
     DEFAULT_BM25_SCORE_TOOL_ENUM,
-    bm25_index_dir,
     bm25_prune_enums,
     bm25_score_tool,
     bm25_score_tool_enum,
-    bm25_stem_language,
-    bm25_stopwords,
     load_config,
 )
 from cyt.pruners.catalog_common import (
     finalize_catalog_result,
     load_pruner_catalog_input,
     prepare_catalog_for_scoring,
-    prepare_indexed_documents,
     prune_catalog_lists,
     resolve_policy_context,
 )
-from cyt.pruners.documents import extract_json_catalog_document, extract_md_catalog_document
 from cyt.pruners.policies import (
     MCPToolPolicy,
     PolicyContext,
@@ -47,7 +40,6 @@ BM25_SCORE: float = DEFAULT_BM25_SCORE_TOOL
 BM25_ENUM_SCORE: float = DEFAULT_BM25_SCORE_TOOL_ENUM
 BM25_ENUMS: bool = DEFAULT_BM25_PRUNE_ENUMS
 BM25_STATS_ID: str = "bm25"
-_MANIFEST_NAME = "manifest.json"
 
 
 def bm25_stage_usage() -> StageTokenUsage:
@@ -97,31 +89,13 @@ def catalog_fingerprint(
     return bm25_catalog_fingerprint(data)
 
 
-def _touch_index_manifest(data: dict[str, Any], *, config: dict[str, Any]) -> Path | None:
-    fingerprint = catalog_fingerprint(data, config=config)
-    index_dir = bm25_index_dir(config) / fingerprint
-    index_dir.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "fingerprint": fingerprint,
-        "stem_language": bm25_stem_language(config),
-        "stopwords": bm25_stopwords(config),
-        "created_at": datetime.now(tz=UTC).isoformat(),
-    }
-    (index_dir / _MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    return index_dir
-
-
 def build_or_load_index(
     data: dict[str, Any],
     *,
     config: dict[str, Any] | None = None,
 ) -> Bm25Index | None:
-    """Ensure catalog fingerprint manifest exists; return compatibility handle."""
-    cfg = config or load_config()
-    has_docs = bool(data.get("json")) or bool(data.get("md"))
-    if not has_docs:
-        return None
-    _touch_index_manifest(data, config=cfg)
+    """Return compatibility handle; Tantivy persistence is handled in Rust scoring."""
+    del data, config
     return Bm25Index()
 
 
@@ -205,14 +179,8 @@ def bm25_catalog_dict(
 
     build_or_load_index(data, config=cfg)
 
-    if isinstance(data.get("json"), list):
-        prepare_indexed_documents(data["json"], extract_json_catalog_document)
-    if prune_enums and isinstance(data.get("md"), list):
-        prepare_indexed_documents(data["md"], extract_md_catalog_document)
-
-    working = cast(dict[str, Any], json.loads(json.dumps(data)))
     scored = bm25_score_catalog(
-        working,
+        data,
         query,
         prune_json_threshold=score_tool if prune else None,
         prune_md_threshold=score_tool_enum if prune and prune_enums else None,

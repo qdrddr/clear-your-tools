@@ -106,6 +106,8 @@ export const toolIdHadEmptyOriginalRootPropertiesNative =
   native.toolIdHadEmptyOriginalRootProperties;
 export const isDirectRootOptionalPropertyChunkNative =
   native.isDirectRootOptionalPropertyChunk;
+export const classifyOptionalChunksBatchNative =
+  native.classifyOptionalChunksBatch;
 
 // Catalog I/O
 export const writeCatalogIndexNative = native.writeCatalogIndex;
@@ -124,6 +126,18 @@ export const writeSkillsIndexNative = native.writeSkillsIndexNapi;
 export const loadSkillsIndexFromDirNative = native.loadSkillsIndexFromDirNapi;
 export const skillsIndexFromDecomposedDirNative =
   native.skillsIndexFromDecomposedDirNapi;
+export const repairSkillChunksNative = native.repairSkillChunks;
+export const buildPageIndexOnlyNative = native.buildPageIndexOnly;
+export const buildChunkVariantNative = native.buildChunkVariant;
+export const pageIndexValidNative = native.pageIndexValid;
+export const chunkVariantValidNative = native.chunkVariantValid;
+export const repairSkillVariantChunksNative = native.repairSkillVariantChunks;
+export const loadSkillsIndexFromEntryNative = native.loadSkillsIndexFromEntry;
+export const loadMergedSkillDocumentJsonNative =
+  native.loadMergedSkillDocumentJson;
+export const finalizeSkillDocumentJsonNative = native.finalizeSkillDocumentJson;
+export const updateSkillDocumentSourcePathNative =
+  native.updateSkillDocumentSourcePath;
 export const mdToTreeNative = native.mdToTreeNapi;
 export const getSkillDocumentNative = native.getSkillDocumentNapi;
 export const getSkillStructureNative = native.getSkillStructureNapi;
@@ -142,9 +156,17 @@ export const bm25CohesionChunkNative = native.bm25CohesionChunkNapi;
 
 // Tokens
 export const countTokensNative = native.countTokens;
+export const countTokensBatchNative = native.countTokensBatch;
 export const countJsonTokensNative = native.countJsonTokens;
 export const configureTokenizerDefaultsNative =
   native.configureTokenizerDefaults;
+
+// Cache
+export const toolsCatalogContentHashNative = native.toolsCatalogContentHash;
+export const ensureToolCatalogNative = native.ensureToolCatalog;
+export const ensureToolCatalogFromEntriesNative =
+  native.ensureToolCatalogFromEntries;
+export const ensureSkillsRegistryNative = native.ensureSkillsRegistry;
 
 // BM25 search
 export const configureBm25DefaultsNative = native.configureBm25Defaults;

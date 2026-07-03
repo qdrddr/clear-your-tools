@@ -29,7 +29,7 @@ def _reconstruct_matches_from_items(
 ) -> list[MatchedSkill]:
     from cyt_indexer import reconstruct_skill_markdown
 
-    from cyt.indexer.tokens import count_tokens
+    from cyt.indexer.tokens import count_tokens_batch
     from cyt.skills.frontmatter import skill_name_from_frontmatter
     from cyt.skills.search import _frontmatter_by_doc
 
@@ -47,7 +47,8 @@ def _reconstruct_matches_from_items(
         return []
 
     frontmatter_by_doc = _frontmatter_by_doc(entries)
-    matched: list[MatchedSkill] = []
+    markdowns: list[str] = []
+    doc_keys: list[tuple[str, str, str, str | None, float]] = []
     for (entry_dir, doc_id), (entry, rows) in by_doc.items():
         top_score = max(row.score for row in rows)
         file_path = rows[0].file_path
@@ -70,6 +71,16 @@ def _reconstruct_matches_from_items(
         markdown = str(result.get("markdown", "")).strip()
         if not markdown:
             continue
+        markdowns.append(markdown)
+        doc_keys.append((doc_id, file_path, markdown, name, top_score))
+
+    token_counts = count_tokens_batch(markdowns)
+    matched: list[MatchedSkill] = []
+    for (doc_id, file_path, markdown, name, top_score), token_count in zip(
+        doc_keys,
+        token_counts,
+        strict=True,
+    ):
         matched.append(
             MatchedSkill(
                 doc_id=doc_id,
@@ -77,7 +88,7 @@ def _reconstruct_matches_from_items(
                 markdown=markdown,
                 name=name,
                 score=top_score,
-                token_count=count_tokens(markdown),
+                token_count=token_count,
             ),
         )
 

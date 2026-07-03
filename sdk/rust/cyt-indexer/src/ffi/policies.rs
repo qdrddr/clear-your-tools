@@ -771,3 +771,36 @@ pub unsafe extern "C" fn cyt_tool_id_had_empty_original_root_properties(
         Ok(())
     })
 }
+
+/// Classify optional chunks for many catalog items in one pass.
+///
+/// Returns JSON `{"system":[bool,...],"mcp":[bool,...]}`.
+///
+/// # Safety
+///
+/// `items_json` must be a JSON array; `out` must be non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_classify_optional_chunks_batch(
+    items_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let val = unsafe { parse_json_cstr(items_json, "items_json")? };
+        let arr = json_array_or_empty(&val);
+        let (system, mcp) = policies::classify_optional_chunks_batch(&arr);
+        unsafe {
+            write_json_out(
+                &json!({
+                    "system": system,
+                    "mcp": mcp,
+                }),
+                out,
+            )?;
+        };
+        Ok(())
+    })
+}

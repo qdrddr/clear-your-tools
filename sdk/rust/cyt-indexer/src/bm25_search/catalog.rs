@@ -126,7 +126,9 @@ pub fn score_catalog_in_place(
     }
 
     let corpus: Vec<&str> = docs.iter().map(|d| d.text.as_str()).collect();
-    let raw = tantivy_score::score_corpus(query, &corpus)?;
+    let cfg = super::config::snapshot();
+    let fp = catalog_fingerprint(&docs, &cfg.stem_language, &cfg.stopwords);
+    let raw = tantivy_score::score_corpus_cached(query, &corpus, &fp)?;
 
     let mut by_list: std::collections::HashMap<&str, Vec<(usize, f64)>> =
         std::collections::HashMap::new();

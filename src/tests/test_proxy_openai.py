@@ -556,14 +556,16 @@ def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Pat
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "hook",
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
     }
     body = {
         "model": "gpt-test",

@@ -402,6 +402,15 @@ pub fn is_mcp_optional_chunk(item: &Value) -> bool {
     is_non_system_chunk(item) && is_decomposed_optional_property_chunk(item)
 }
 
+/// Classify optional chunks for many catalog items in one pass.
+#[must_use]
+pub fn classify_optional_chunks_batch(items: &[Value]) -> (Vec<bool>, Vec<bool>) {
+    (
+        items.iter().map(is_system_optional_chunk).collect(),
+        items.iter().map(is_mcp_optional_chunk).collect(),
+    )
+}
+
 #[must_use]
 pub fn needs_partition(ctx: &PolicyContext) -> bool {
     scoring_policy(ctx.system_policy) == ToolPolicy::PruneOptional

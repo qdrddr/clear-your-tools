@@ -3,11 +3,16 @@
 import {
   configureTokenizerDefaultsNative,
   countJsonTokensNative,
+  countTokensBatchNative,
   countTokensNative,
 } from "./native.js";
 
 export function countTokens(text: string): number {
   return countTokensNative(text);
+}
+
+export function countTokensBatch(texts: string[]): number[] {
+  return countTokensBatchNative(texts);
 }
 
 export function countJsonTokens(value: unknown): number {

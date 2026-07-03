@@ -992,6 +992,7 @@ def build_setup_overlay(
     endpoints: list[str],
     stats_db_path: str,
     skills: dict[str, Any] | None = None,
+    inject_via: str = SKILLS_INJECT_VIA_DEFAULT,
 ) -> dict[str, Any]:
     """Build the user config overlay dict from wizard selections."""
     llm_remote: list[dict[str, Any]] = []
@@ -1018,6 +1019,7 @@ def build_setup_overlay(
         pipelines["llm"] = {"model_nick": str(llm_pruner_model["nick"])}
 
     pruning: dict[str, Any] = {
+        "inject_via": inject_via,
         "tools": {
             "sequence": pipeline,
             "policy": policy,
@@ -1534,11 +1536,21 @@ def _default_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
     return list(DEFAULT_SKILLS_DIRECTORIES)
 
 
-def _default_skills_inject_via(skills_cfg: dict[str, Any]) -> str:
-    raw = str(skills_cfg.get("inject_via", SKILLS_INJECT_VIA_DEFAULT)).strip().lower()
-    if raw in SKILLS_INJECT_VIA_CHOICES:
-        return raw
-    return SKILLS_INJECT_VIA_DEFAULT
+def _default_inject_via(existing: dict[str, Any]) -> str:
+    from cyt.config import inject_via as resolve_inject_via
+
+    mode = resolve_inject_via(existing)
+    return mode if mode in SKILLS_INJECT_VIA_CHOICES else SKILLS_INJECT_VIA_DEFAULT
+
+
+def _prompt_inject_via(existing: dict[str, Any]) -> str:
+    print("\n--- Injection path ---")
+    default = _default_inject_via(existing)
+    return _prompt_choice(
+        "Inject skills and tools via (hook | proxy)",
+        list(SKILLS_INJECT_VIA_CHOICES),
+        default_index=SKILLS_INJECT_VIA_CHOICES.index(default),
+    )
 
 
 def _prompt_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
@@ -1583,17 +1595,10 @@ def _prompt_skills(
         default_index=default_index,
     )
     selected_index = SKILLS_PIPELINE_LABELS.index(selected_label)
-    inject_via_default = _default_skills_inject_via(skills_cfg)
-    inject_via = _prompt_choice(
-        "Skills inject via (hook | proxy)",
-        list(SKILLS_INJECT_VIA_CHOICES),
-        default_index=SKILLS_INJECT_VIA_CHOICES.index(inject_via_default),
-    )
     directories = _prompt_skills_directories(skills_cfg)
     return {
         "enabled": True,
         "pipeline": SKILLS_PIPELINE_CHOICES[selected_index],
-        "inject_via": inject_via,
         "directories": directories,
     }
 
@@ -1956,6 +1961,8 @@ def run_setup(config_path: Path) -> None:
         DEFAULT_MCP_TOOL_POLICY,
     )
 
+    inject_mode = _prompt_inject_via(existing)
+
     skills_overlay = _prompt_skills(existing, tool_pipeline=pipeline)
     reranker_model, llm_pruner_model = _prompt_skills_pruner_models(
         skills_overlay,
@@ -1967,7 +1974,11 @@ def run_setup(config_path: Path) -> None:
 
     from cyt.tools.hook_setup import prompt_tools_hook_config
 
-    tools_overlay = prompt_tools_hook_config(existing, context="setup")
+    tools_overlay = prompt_tools_hook_config(
+        existing,
+        context="setup",
+        inject_mode=inject_mode,
+    )
 
     stats_db = _prompt("Stats database path", DEFAULT_STATS_DB_PATH)
 
@@ -1983,8 +1994,9 @@ def run_setup(config_path: Path) -> None:
         endpoints=endpoints,
         stats_db_path=stats_db,
         skills=skills_overlay,
+        inject_via=inject_mode,
     )
-    overlay["pruning"]["tools"].update(tools_overlay)
+    overlay["pruning"]["tools"].update(tools_overlay.get("tools", {}))
 
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):

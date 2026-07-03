@@ -44,3 +44,19 @@ pub fn configure_tokenizer_defaults_napi(
     }
     tiktoken::configure(cfg);
 }
+
+/// Count tokens for multiple strings in one native call.
+///
+/// # Errors
+///
+/// Returns an error when tokenization fails for any input.
+#[napi(js_name = "countTokensBatch")]
+pub fn count_tokens_batch_napi(texts: Vec<String>) -> Result<Vec<u32>> {
+    let boxed: Vec<Box<str>> = texts.into_iter().map(String::into_boxed_str).collect();
+    let refs: Vec<&str> = boxed.iter().map(std::convert::AsRef::as_ref).collect();
+    let counts = tiktoken::count_tokens_batch(&refs).map_err(Error::from_reason)?;
+    counts
+        .into_iter()
+        .map(|n| u32::try_from(n).map_err(|_| Error::from_reason("token count overflow")))
+        .collect()
+}

@@ -18,14 +18,16 @@ from cyt_indexer import (
     chunk_variant_valid,
     finalize_skill_document_json,
     load_merged_skill_document_json,
-    page_index_valid,
     repair_skill_variant_chunks,
     update_skill_document_source_path,
     write_skills_index,
 )
+from cyt_indexer.cache import ensure_skills_registry
 from cyt_indexer.pageindex import page_index_config_without_chunking
 
+from cyt.cache.policy import cache_policy_for_config
 from cyt.config import (
+    cache_skills_dir,
     load_config,
     skills_catalog_dir,
     skills_directories,
@@ -42,6 +44,36 @@ _NODES_DIR = "nodes"
 _CHUNKS_DIR = "chunks"
 _PAGE_INDEX_FILE = "page_index.json"
 _BM25_PIPELINE = "bm25"
+
+_REGISTRY_CACHE: dict[tuple[Any, ...], list[SkillEntryRef]] = {}
+
+
+def clear_registry_cache() -> None:
+    """Drop the in-process skills registry cache (tests and config reload)."""
+    _REGISTRY_CACHE.clear()
+
+
+def _registry_cache_key(
+    cfg: dict[str, Any],
+    *,
+    agent: AgentName | None,
+    upstream_kind: str | None,
+) -> tuple[Any, ...]:
+    expanded_dirs = skills_directories(cfg)
+    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    sources: list[tuple[str, int, int]] = []
+    for source_path in _walk_skill_md_files(expanded_dirs):
+        if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
+            continue
+        stat = source_path.stat()
+        sources.append((str(source_path.resolve()), stat.st_mtime_ns, stat.st_size))
+    return (
+        str(cache_skills_dir(cfg)),
+        skills_pipeline(cfg),
+        skills_index_params_fingerprint(cfg),
+        active_agent,
+        tuple(sorted(sources)),
+    )
 
 
 @dataclass(frozen=True)
@@ -387,6 +419,92 @@ def load_entry_skills_index(entry: SkillEntryRef) -> dict[str, Any]:
     return load_skills_index_from_entry(entry.entry_dir, entry.doc_id, chunk_dir)
 
 
+def _registry_catalog_root(cfg: dict[str, Any]) -> Path:
+    cache = cfg.get("cache")
+    if isinstance(cache, dict) and "skills_dir" in cache:
+        return cache_skills_dir(cfg)
+    return Path(skills_catalog_dir(cfg))
+
+
+def _entry_from_rust_ref(
+    ref: dict[str, Any],
+    source_path: Path,
+    *,
+    pipeline: str,
+    index_params: dict[str, Any],
+    index_params_hash: str,
+    pageindex_config: dict[str, Any] | None,
+) -> SkillEntryRef:
+    content_hash = str(ref["content_sha256"])
+    doc_id = str(ref["doc_id"])
+    entry_dir = Path(str(ref["entry_dir"])).expanduser()
+    nodes_dir = _nodes_dir(entry_dir)
+    bm25_chunk_dir = _chunk_variant_dir(entry_dir, _BM25_PIPELINE, index_params_hash)
+    chunk_dir = (
+        _chunk_variant_dir(entry_dir, pipeline, index_params_hash)
+        if _pipeline_materializes_chunks(pipeline)
+        else bm25_chunk_dir
+    )
+    disk_backed = bool(ref.get("disk_backed"))
+    memory_index: dict[str, Any] | None = None
+    document: dict[str, Any]
+
+    if disk_backed:
+        for variant_pipeline in _chunk_variants_for_startup(pipeline):
+            if variant_pipeline == _BM25_PIPELINE:
+                continue
+            _ensure_chunk_variant(
+                entry_dir,
+                doc_id,
+                variant_pipeline,
+                index_params_hash,
+                pageindex_config=pageindex_config,
+            )
+
+        merge_chunk_dir = chunk_dir if _pipeline_materializes_chunks(pipeline) else None
+        document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
+        if document.get("content_sha256") != content_hash:
+            document = _augment_document_json(
+                entry_dir,
+                doc_id,
+                content_hash=content_hash,
+                pipeline=pipeline,
+                index_params=index_params,
+                source_path=str(source_path),
+            )
+    else:
+        logger.debug("skills catalog not writable; using in-memory index for %s", source_path)
+        document, memory_index = _build_page_index_memory(
+            source_path,
+            pageindex_config=pageindex_config,
+            pipeline=pipeline,
+        )
+
+    canonical_path = _shorten_home_path(str(source_path))
+    if disk_backed and document.get("path") != canonical_path:
+        document = update_skill_document_source_path(
+            str(entry_dir),
+            doc_id,
+            str(source_path),
+        )
+
+    return SkillEntryRef(
+        source_path=str(source_path),
+        doc_id=doc_id,
+        content_sha256=content_hash,
+        cache_key=content_hash,
+        entry_dir=str(entry_dir),
+        nodes_dir=str(nodes_dir),
+        chunk_dir=str(chunk_dir),
+        bm25_chunk_dir=str(bm25_chunk_dir),
+        pipeline=pipeline,
+        index_params_hash=index_params_hash,
+        disk_backed=disk_backed,
+        document=document,
+        memory_index=memory_index,
+    )
+
+
 def build_registry(
     config: dict[str, Any] | None = None,
     *,
@@ -395,17 +513,39 @@ def build_registry(
 ) -> list[SkillEntryRef]:
     """Scan configured skill directories and return in-memory entry metadata."""
     cfg = config or load_config()
+    cache_key = _registry_cache_key(cfg, agent=agent, upstream_kind=upstream_kind)
+    cached = _REGISTRY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    entries = _build_registry_uncached(
+        cfg,
+        agent=agent,
+        upstream_kind=upstream_kind,
+    )
+    _REGISTRY_CACHE[cache_key] = entries
+    return entries
+
+
+def _build_registry_uncached(
+    cfg: dict[str, Any],
+    *,
+    agent: AgentName | None = None,
+    upstream_kind: str | None = None,
+) -> list[SkillEntryRef]:
+    """Build skills registry without the process-level cache."""
     expanded_dirs = skills_directories(cfg)
     active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
 
-    catalog_root = Path(skills_catalog_dir(cfg))
+    catalog_root = _registry_catalog_root(cfg)
     pipeline = skills_pipeline(cfg)
     index_params = _index_params(cfg)
     pageindex_config = skills_pageindex_config(cfg)
     index_params_hash = skills_index_params_fingerprint(cfg)
 
     seen_content: set[str] = set()
-    entries: list[SkillEntryRef] = []
+    source_paths: list[str] = []
+    source_by_hash: dict[str, Path] = {}
 
     for source_path in _walk_skill_md_files(expanded_dirs):
         if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
@@ -414,75 +554,31 @@ def build_registry(
         if content_hash in seen_content:
             continue
         seen_content.add(content_hash)
+        source_paths.append(str(source_path))
+        source_by_hash[content_hash] = source_path
 
-        entry_dir = catalog_root / "entries" / content_hash
-        doc_id = doc_id_from_path(source_path)
-        nodes_dir = _nodes_dir(entry_dir)
-        bm25_chunk_dir = _chunk_variant_dir(entry_dir, _BM25_PIPELINE, index_params_hash)
-        chunk_dir = (
-            _chunk_variant_dir(entry_dir, pipeline, index_params_hash)
-            if _pipeline_materializes_chunks(pipeline)
-            else bm25_chunk_dir
-        )
-        disk_backed = _catalog_writable(entry_dir)
-        memory_index: dict[str, Any] | None = None
-        document: dict[str, Any]
+    rust_refs = ensure_skills_registry(
+        source_paths,
+        str(catalog_root),
+        pageindex_config,
+        pipeline,
+        index_params_hash,
+        policy=cache_policy_for_config(cfg),
+    )
 
-        if disk_backed:
-            if not page_index_valid(str(entry_dir), content_hash):
-                document = _build_page_index_disk(
-                    source_path,
-                    entry_dir,
-                    pageindex_config=pageindex_config,
-                    content_hash=content_hash,
-                    pipeline=pipeline,
-                    index_params=index_params,
-                )
-            else:
-                document = _load_document_json(entry_dir, doc_id)
-
-            for variant_pipeline in _chunk_variants_for_startup(pipeline):
-                _ensure_chunk_variant(
-                    entry_dir,
-                    doc_id,
-                    variant_pipeline,
-                    index_params_hash,
-                    pageindex_config=pageindex_config,
-                )
-
-            merge_chunk_dir = chunk_dir if _pipeline_materializes_chunks(pipeline) else None
-            document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
-        else:
-            logger.debug("skills catalog not writable; using in-memory index for %s", source_path)
-            document, memory_index = _build_page_index_memory(
-                source_path,
-                pageindex_config=pageindex_config,
-                pipeline=pipeline,
-            )
-
-        canonical_path = _shorten_home_path(str(source_path))
-        if disk_backed and document.get("path") != canonical_path:
-            document = update_skill_document_source_path(
-                str(entry_dir),
-                doc_id,
-                str(source_path),
-            )
-
+    entries: list[SkillEntryRef] = []
+    for ref in rust_refs:
+        content_hash = str(ref["content_sha256"])
+        if content_hash not in source_by_hash:
+            continue
         entries.append(
-            SkillEntryRef(
-                source_path=str(source_path),
-                doc_id=doc_id,
-                content_sha256=content_hash,
-                cache_key=content_hash,
-                entry_dir=str(entry_dir),
-                nodes_dir=str(nodes_dir),
-                chunk_dir=str(chunk_dir),
-                bm25_chunk_dir=str(bm25_chunk_dir),
+            _entry_from_rust_ref(
+                ref,
+                source_by_hash[content_hash],
                 pipeline=pipeline,
+                index_params=index_params,
                 index_params_hash=index_params_hash,
-                disk_backed=disk_backed,
-                document=document,
-                memory_index=memory_index,
+                pageindex_config=pageindex_config,
             ),
         )
 

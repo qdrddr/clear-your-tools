@@ -16,7 +16,6 @@ from cyt.skills.budget import (
 def _config(**overrides: str | int | float | bool) -> dict:
     skills: dict[str, str | int | float | bool | dict[str, float]] = {
         "enabled": True,
-        "inject_via": "proxy",
         "max_tokens_per_request": 20_000,
         "bm25_node_fallback_threshold": 50,
         "hook": {
@@ -31,7 +30,8 @@ def _config(**overrides: str | int | float | bool) -> dict:
         },
     }
     skills.update(overrides)
-    return {"skills": skills}
+    inject_via = str(skills.pop("inject_via", "proxy"))
+    return {"skills": skills, "pruning": {"inject_via": inject_via}}
 
 
 def test_inject_via_gate() -> None:

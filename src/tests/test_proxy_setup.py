@@ -1298,13 +1298,12 @@ class TestPromptUpstreams:
 
 class TestPromptSkills:
     def test_enable_and_select_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "2", "1", ""])
+        responses = iter(["y", "2", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({})
         assert skills == {
             "enabled": True,
             "pipeline": "rerank",
-            "inject_via": "proxy",
             "directories": [
                 "~/.claude/skills",
                 ".claude/skills",
@@ -1314,24 +1313,24 @@ class TestPromptSkills:
         }
 
     def test_defaults_to_bm25_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "", "1", ""])
+        responses = iter(["y", "", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({})
         assert skills["pipeline"] == "bm25"
-        assert skills["inject_via"] == "proxy"
+        assert "inject_via" not in skills
 
     def test_defaults_to_tool_pruning_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "", "1", ""])
+        responses = iter(["y", "", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({}, tool_pipeline=["rerank"])
         assert skills["pipeline"] == "rerank"
-        assert skills["inject_via"] == "proxy"
+        assert "inject_via" not in skills
 
     def test_prefers_existing_pipeline_over_tool_pruning(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        responses = iter(["y", "", "1", ""])
+        responses = iter(["y", "", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills(
             {"skills": {"enabled": True, "pipeline": "llm"}},
@@ -1446,8 +1445,8 @@ class TestRunSetupKeyring:
                 "",  # minimum_tools default
                 "",  # system policy default
                 "",  # mcp policy default
+                "",  # inject_via default (proxy)
                 "n",  # skills disabled
-                "",  # tools inject_via default (proxy)
                 "",  # stats db default
             ],
         )

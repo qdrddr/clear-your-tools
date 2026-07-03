@@ -386,17 +386,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     hook_parser = subparsers.add_parser(
         "hook",
-        help="Install agent hooks (wizard), uninstall, or handle hook events with --stdin",
-    )
-    hook_parser.add_argument(
-        "--stdin",
-        action="store_true",
-        help="Read hook JSON from stdin (session tracking and skill injection)",
+        help="Install agent hooks (wizard), uninstall, or run hook diagnostics with --prompt/--test",
     )
     hook_parser.add_argument(
         "--uninstall",
         action="store_true",
         help="Remove CYT hooks from ~/.claude/settings.json and ~/.codex/hooks.json",
+    )
+    hook_parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run hook daemon in foreground (alias for cyt hook daemon start --foreground)",
     )
     hook_parser.add_argument(
         "--config",
@@ -405,6 +405,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
     _add_hook_handler_args(hook_parser)
+    hook_sub = hook_parser.add_subparsers(dest="hook_command", required=False)
+    daemon_parser = hook_sub.add_parser("daemon", help="Hook HTTP daemon lifecycle")
+    daemon_sub = daemon_parser.add_subparsers(dest="daemon_command", required=True)
+    daemon_start = daemon_sub.add_parser(
+        "start",
+        help="Ensure hook server is running (reuse-first)",
+    )
+    daemon_start.add_argument("--config", type=Path, default=None)
+    daemon_start.add_argument("--verbose", action="store_true")
+    daemon_start.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Block in foreground instead of spawning a background process",
+    )
+    daemon_stop = daemon_sub.add_parser("stop", help="Stop a daemon process started by CYT")
+    daemon_stop.add_argument("--config", type=Path, default=None)
+    daemon_stop.add_argument("--verbose", action="store_true")
+    daemon_status = daemon_sub.add_parser("status", help="Print hook daemon status")
+    daemon_status.add_argument("--config", type=Path, default=None)
+
+    subparsers.add_parser(
+        "client",
+        help="Thin hook HTTP client (same as cyt-client)",
+    )
 
     skills_parser = subparsers.add_parser("skills", help="Skills utilities")
     skills_sub = skills_parser.add_subparsers(dest="skills_command", required=False)
@@ -571,9 +595,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
 
 def _hook_invokes_handler(args: argparse.Namespace) -> bool:
     return bool(
-        getattr(args, "stdin", False)
-        or getattr(args, "prompt", None) is not None
-        or getattr(args, "test", False),
+        getattr(args, "prompt", None) is not None or getattr(args, "test", False),
     )
 
 
@@ -582,6 +604,35 @@ def _run_hook_command(args: argparse.Namespace) -> None:
         from cyt.skills.hook_setup import run_hook_uninstall
 
         run_hook_uninstall()
+        return
+    if getattr(args, "hook_command", None) == "daemon":
+        from cyt.hook.daemon import daemon_start, daemon_status, daemon_stop
+
+        daemon_cmd = getattr(args, "daemon_command", None)
+        verbose = bool(getattr(args, "verbose", False))
+        config_path = getattr(args, "config", None)
+        if daemon_cmd == "start":
+            daemon_start(
+                config_path=config_path,
+                verbose=verbose or bool(getattr(args, "foreground", False)),
+                foreground=bool(getattr(args, "foreground", False)),
+            )
+            return
+        if daemon_cmd == "stop":
+            daemon_stop(verbose=verbose)
+            return
+        if daemon_cmd == "status":
+            daemon_status(config_path=config_path)
+            return
+        raise SystemExit(f"unknown hook daemon command: {daemon_cmd}")
+    if getattr(args, "serve", False):
+        from cyt.hook.daemon import daemon_start
+
+        daemon_start(
+            config_path=getattr(args, "config", None),
+            verbose=True,
+            foreground=True,
+        )
         return
     if _hook_invokes_handler(args):
         from cyt.skills.cli import run as run_skills
@@ -623,6 +674,12 @@ def _main_impl() -> None:
 
     if args.command == "hook":
         _run_hook_command(args)
+        return
+
+    if args.command == "client":
+        from cyt_client.cli import main as run_client
+
+        run_client()
         return
 
     if args.command == "skills":

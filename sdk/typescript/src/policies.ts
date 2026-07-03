@@ -18,6 +18,7 @@ import {
   isDescriptionPolicyNative,
   isDirectRootOptionalPropertyChunkNative,
   isMcpOptionalChunkNative,
+  classifyOptionalChunksBatchNative,
   isMcpRootChunkNative,
   isNonSystemChunkNative,
   isNonSystemToolIdNative,
@@ -152,6 +153,13 @@ export function isSystemOptionalChunk(item: JsonRecord): boolean {
 
 export function isMcpOptionalChunk(item: JsonRecord): boolean {
   return isMcpOptionalChunkNative(item);
+}
+
+export function classifyOptionalChunksBatch(items: JsonRecord[]): {
+  system: boolean[];
+  mcp: boolean[];
+} {
+  return classifyOptionalChunksBatchNative(items);
 }
 
 export function needsPartition(ctx: PolicyContext): boolean {

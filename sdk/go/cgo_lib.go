@@ -1276,3 +1276,246 @@ func cgoReconstructOptionsDefault() (string, error) {
 	}
 	return takeJSON(&out)
 }
+
+func cgoCountTokensBatch(textsJSON string) (string, error) {
+	cTexts := cString(textsJSON)
+	defer freeCString(cTexts)
+	var out *C.char
+	if C.cyt_count_tokens_batch(cTexts, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoClassifyOptionalChunksBatch(itemsJSON string) (string, error) {
+	cItems := cString(itemsJSON)
+	defer freeCString(cItems)
+	var out *C.char
+	if C.cyt_classify_optional_chunks_batch(cItems, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoToolsCatalogContentHash(toolsJSON, policyFingerprint string) (string, error) {
+	cTools := cString(toolsJSON)
+	defer freeCString(cTools)
+	cFP := cString(policyFingerprint)
+	defer freeCString(cFP)
+	var out *C.char
+	if C.cyt_tools_catalog_content_hash(cTools, cFP, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoEnsureToolCatalog(toolsJSON, policyFingerprint, toolsRoot, policy string) (string, error) {
+	cTools := cString(toolsJSON)
+	defer freeCString(cTools)
+	cFP := cString(policyFingerprint)
+	defer freeCString(cFP)
+	cRoot := cString(toolsRoot)
+	defer freeCString(cRoot)
+	var cPolicy *C.char
+	if policy != "" {
+		cPolicy = cString(policy)
+		defer freeCString(cPolicy)
+	}
+	var out *C.char
+	if C.cyt_ensure_tool_catalog(cTools, cFP, cRoot, cPolicy, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoEnsureToolCatalogFromEntries(entriesJSON, enumsJSON, policyFingerprint, toolsRoot, policy string) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	cEnums := cString(enumsJSON)
+	defer freeCString(cEnums)
+	cFP := cString(policyFingerprint)
+	defer freeCString(cFP)
+	cRoot := cString(toolsRoot)
+	defer freeCString(cRoot)
+	var cPolicy *C.char
+	if policy != "" {
+		cPolicy = cString(policy)
+		defer freeCString(cPolicy)
+	}
+	var out *C.char
+	if C.cyt_ensure_tool_catalog_from_entries(cEntries, cEnums, cFP, cRoot, cPolicy, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoEnsureSkillsRegistry(sourcePathsJSON, catalogRoot, pageindexConfigJSON, pipeline, indexParamsHash, policy string) (string, error) {
+	cPaths := cString(sourcePathsJSON)
+	defer freeCString(cPaths)
+	cRoot := cString(catalogRoot)
+	defer freeCString(cRoot)
+	var cCfg *C.char
+	if pageindexConfigJSON != "" {
+		cCfg = cString(pageindexConfigJSON)
+		defer freeCString(cCfg)
+	}
+	cPipeline := cString(pipeline)
+	defer freeCString(cPipeline)
+	cHash := cString(indexParamsHash)
+	defer freeCString(cHash)
+	var cPolicy *C.char
+	if policy != "" {
+		cPolicy = cString(policy)
+		defer freeCString(cPolicy)
+	}
+	var out *C.char
+	if C.cyt_ensure_skills_registry(cPaths, cRoot, cCfg, cPipeline, cHash, cPolicy, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBuildPageIndexOnly(skillDirsJSON, configJSON string) (string, error) {
+	cDirs := cString(skillDirsJSON)
+	defer freeCString(cDirs)
+	cCfg := cString(configJSON)
+	defer freeCString(cCfg)
+	var out *C.char
+	if C.cyt_build_page_index_only(cDirs, cCfg, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBuildChunkVariant(entryDir, docID, pipeline, paramsHash, configJSON string) (string, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	cPipeline := cString(pipeline)
+	defer freeCString(cPipeline)
+	cHash := cString(paramsHash)
+	defer freeCString(cHash)
+	cCfg := cString(configJSON)
+	defer freeCString(cCfg)
+	var out *C.char
+	if C.cyt_build_chunk_variant(cEntry, cDoc, cPipeline, cHash, cCfg, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPageIndexValid(entryDir, contentSHA256 string) (bool, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cHash := cString(contentSHA256)
+	defer freeCString(cHash)
+	var out C.int
+	if C.cyt_page_index_valid(cEntry, cHash, &out) != ok {
+		return false, lastError()
+	}
+	return out != 0, nil
+}
+
+func cgoChunkVariantValid(entryDir, docID, pipeline, paramsHash string) (bool, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	cPipeline := cString(pipeline)
+	defer freeCString(cPipeline)
+	cHash := cString(paramsHash)
+	defer freeCString(cHash)
+	var out C.int
+	if C.cyt_chunk_variant_valid(cEntry, cDoc, cPipeline, cHash, &out) != ok {
+		return false, lastError()
+	}
+	return out != 0, nil
+}
+
+func cgoRepairSkillVariantChunks(entryDir, docID, pipeline, paramsHash, configJSON string) error {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	cPipeline := cString(pipeline)
+	defer freeCString(cPipeline)
+	cHash := cString(paramsHash)
+	defer freeCString(cHash)
+	cCfg := cString(configJSON)
+	defer freeCString(cCfg)
+	if C.cyt_repair_skill_variant_chunks(cEntry, cDoc, cPipeline, cHash, cCfg) != ok {
+		return lastError()
+	}
+	return nil
+}
+
+func cgoLoadSkillsIndexFromEntry(entryDir, docID, chunkDir string) (string, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	var cChunk *C.char
+	if chunkDir != "" {
+		cChunk = cString(chunkDir)
+		defer freeCString(cChunk)
+	}
+	var out *C.char
+	if C.cyt_load_skills_index_from_entry(cEntry, cDoc, cChunk, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoLoadMergedSkillDocumentJSON(entryDir, docID, chunkDir string) (string, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	var cChunk *C.char
+	if chunkDir != "" {
+		cChunk = cString(chunkDir)
+		defer freeCString(cChunk)
+	}
+	var out *C.char
+	if C.cyt_load_merged_skill_document_json(cEntry, cDoc, cChunk, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoFinalizeSkillDocumentJSON(entryDir, docID, contentSHA256, pipeline, indexParamsJSON, builtAt, sourcePath string) (string, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	cHash := cString(contentSHA256)
+	defer freeCString(cHash)
+	cPipeline := cString(pipeline)
+	defer freeCString(cPipeline)
+	cParams := cString(indexParamsJSON)
+	defer freeCString(cParams)
+	cBuilt := cString(builtAt)
+	defer freeCString(cBuilt)
+	cPath := cString(sourcePath)
+	defer freeCString(cPath)
+	var out *C.char
+	if C.cyt_finalize_skill_document_json(cEntry, cDoc, cHash, cPipeline, cParams, cBuilt, cPath, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoUpdateSkillDocumentSourcePath(entryDir, docID, sourcePath string) (string, error) {
+	cEntry := cString(entryDir)
+	defer freeCString(cEntry)
+	cDoc := cString(docID)
+	defer freeCString(cDoc)
+	cPath := cString(sourcePath)
+	defer freeCString(cPath)
+	var out *C.char
+	if C.cyt_update_skill_document_source_path(cEntry, cDoc, cPath, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}

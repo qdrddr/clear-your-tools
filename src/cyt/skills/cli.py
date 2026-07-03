@@ -1,4 +1,4 @@
-"""`cyt hook --stdin` agent hook entry point."""
+"""Hook handler entry point (HTTP server and development CLI)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -69,13 +70,13 @@ _CLI_OUTCOME_HINTS: dict[str, str] = {
     ),
     "user_prompt_empty_injection": "matched chunks produced empty injection text",
     "user_prompt_missing_prompt": "missing or empty prompt",
-    "skipped_inject_via_proxy": "skills.inject_via is proxy; hook injection skipped",
+    "skipped_inject_via_proxy": "inject_via is proxy; hook injection skipped",
     "skipped_budget_zero": "skills injection budget is zero for this request",
     "skipped_disabled": "skills.enabled is false",
 }
 
 
-def _ensure_hook_credentials(config: dict[str, Any]) -> None:
+def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | None = None) -> None:
     """Load pruner API keys before remote skills/tools search."""
     names: list[str] = []
     if skills_enabled(config):
@@ -87,7 +88,8 @@ def _ensure_hook_credentials(config: dict[str, Any]) -> None:
         return
     from cyt.launch.secrets import ensure_named_credentials
 
-    ensure_named_credentials(names, allow_prompt=sys.stdin.isatty())
+    prompt = allow_prompt if allow_prompt is not None else sys.stdin.isatty()
+    ensure_named_credentials(names, allow_prompt=prompt)
 
 
 def _ensure_skills_credentials(config: dict[str, Any]) -> None:
@@ -184,10 +186,18 @@ def _resolve_model(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) -> None:
+@dataclass(frozen=True)
+class HookRunResult:
+    stdout_text: str
+    outcome: str
+    details: dict[str, Any] | None = None
+
+
+def format_hook_stdout(text: str, payload: dict[str, Any], *, plain: bool = False) -> str:
+    if not text:
+        return ""
     if plain:
-        print(text)
-        return
+        return text
     event_name = hook_event_name(payload)
     if event_name:
         output = {
@@ -196,15 +206,23 @@ def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) 
                 "additionalContext": text,
             },
         }
-        print(json.dumps(output), flush=True)
-        return
-    if text:
-        print(text, flush=True)
+        return json.dumps(output)
+    return text
+
+
+def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) -> None:
+    formatted = format_hook_stdout(text, payload, plain=plain)
+    if formatted:
+        print(formatted, flush=True)
 
 
 def _handle_session_start(_payload: dict[str, Any], _config: dict[str, Any]) -> str:
-    """Back-compat: SessionStart hooks are ignored (no session cache)."""
-    return "session_start_ignored"
+    from cyt.hook.daemon import daemon_start
+
+    result = daemon_start(verbose=False)
+    if result.reused:
+        return "session_start_daemon_reused"
+    return "session_start_daemon_started"
 
 
 def _search_skills_for_user_prompt(
@@ -420,7 +438,8 @@ def _handle_user_prompt(
     *,
     plain_output: bool = False,
     debug: bool = False,
-) -> tuple[str, dict[str, Any]]:
+    emit_stdout: bool = True,
+) -> tuple[str, dict[str, Any], str]:
     skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
     tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
 
@@ -435,12 +454,13 @@ def _handle_user_prompt(
 
     combined = _combine_injection_parts(parts)
     if combined:
-        _emit_injection(combined, payload, plain=plain_output)
-        return "user_prompt_injected", details
+        if emit_stdout:
+            _emit_injection(combined, payload, plain=plain_output)
+        return "user_prompt_injected", details, combined
 
     if outcomes:
-        return outcomes[-1], details
-    return "skipped_inject_via_proxy", details
+        return outcomes[-1], details, ""
+    return "skipped_inject_via_proxy", details, ""
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:
@@ -481,7 +501,7 @@ def _exit_if_hook_disabled(
         return False
     print(
         "cyt hook: skills.enabled is false and tools hook injection is disabled; "
-        "hook produced no injection. Enable skills or set pruning.tools.inject_via: hook",
+        "hook produced no injection. Enable skills or set pruning.inject_via: hook",
         file=sys.stderr,
     )
     return True
@@ -495,9 +515,11 @@ def _dispatch_hook_event(
     *,
     cli_prompt: bool,
     debug: bool,
-) -> tuple[str, dict[str, Any] | None]:
+    emit_stdout: bool = True,
+) -> tuple[str, dict[str, Any] | None, str]:
     outcome = "empty_stdin" if not raw_stdin.strip() else "noop"
     details: dict[str, Any] | None = None
+    injection_text = ""
 
     if event_name in _SESSION_EVENTS:
         outcome = _handle_session_start(payload, config)
@@ -512,18 +534,46 @@ def _dispatch_hook_event(
         if not skills_allowed and not tools_allowed:
             outcome = "skipped_inject_via_proxy"
         else:
-            outcome, details = _handle_user_prompt(
+            outcome, details, injection_text = _handle_user_prompt(
                 payload,
                 config,
                 plain_output=cli_prompt,
                 debug=debug,
+                emit_stdout=emit_stdout,
             )
     elif event_name is not None:
         outcome = "unhandled_event"
     elif raw_stdin.strip():
         outcome = "missing_hook_event_name"
 
-    return outcome, details
+    return outcome, details, injection_text
+
+
+def run_hook_payload(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    plain_output: bool = False,
+    debug: bool = False,
+    io_guarded: bool = False,
+) -> HookRunResult:
+    """Run hook logic for *payload* and return formatted stdout without printing."""
+    del io_guarded  # callers configure quiet mode; search paths honor plain_output
+    configure_hook_quiet()
+    _ensure_hook_credentials(config, allow_prompt=False)
+    raw_stdin = json.dumps(payload)
+    event_name = hook_event_name(payload)
+    outcome, details, injection_text = _dispatch_hook_event(
+        event_name,
+        payload,
+        config,
+        raw_stdin,
+        cli_prompt=plain_output,
+        debug=debug,
+        emit_stdout=False,
+    )
+    stdout_text = format_hook_stdout(injection_text, payload, plain=plain_output)
+    return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
 
 
 def run(
@@ -563,13 +613,14 @@ def run(
     _ensure_hook_credentials(config)
 
     event_name = hook_event_name(payload)
-    outcome, details = _dispatch_hook_event(
+    outcome, details, _injection_text = _dispatch_hook_event(
         event_name,
         payload,
         config,
         raw_stdin,
         cli_prompt=cli_prompt,
         debug=debug,
+        emit_stdout=True,
     )
 
     if cli_prompt and outcome != "user_prompt_injected":
@@ -606,7 +657,7 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="CYT hook handler (development entry point; prefer `cyt hook`)",
+        description="CYT hook handler (development entry point; agents use cyt-client)",
     )
     parser.add_argument(
         "--stdin",

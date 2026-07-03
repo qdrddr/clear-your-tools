@@ -1,4 +1,4 @@
-"""Tests for proxy pass-through when tools.inject_via is hook."""
+"""Tests for proxy pass-through when pruning.inject_via is hook."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _tool(name: str) -> dict[str, Any]:
 
 def test_filter_tools_passes_through_when_hook_mode_without_for_hook() -> None:
     tools = [_tool("mcp__a__one"), _tool("mcp__a__two")]
-    config = {"pruning": {"tools": {"inject_via": "hook"}}}
+    config = {"pruning": {"inject_via": "hook"}}
     result = filter_tools_for_query(tools, "find files", config=config)
     assert result.status == "pass_through"
     assert result.tools == tools
@@ -27,8 +27,8 @@ def test_filter_tools_prunes_when_hook_mode_with_for_hook() -> None:
     tools = [_tool("mcp__a__one"), _tool("mcp__a__two")]
     config = {
         "pruning": {
+            "inject_via": "hook",
             "tools": {
-                "inject_via": "hook",
                 "sequence": ["bm25"],
             },
         },

@@ -10,6 +10,7 @@ pub mod analyzer;
 pub mod bm25_cohesion;
 pub mod bm25_search;
 pub mod build;
+pub mod cache;
 pub mod catalog_builder;
 pub mod catalog_io;
 pub mod documents;
@@ -42,7 +43,8 @@ pub use bm25_search::{
     bm25_search_skill_chunks, catalog_fingerprint, collect_catalog_documents,
     configure as configure_bm25_search, exp_similarity, index_path_for_catalog, min_max_normalize,
     normalize_scores, score_catalog_dict, score_catalog_in_place, score_corpus,
-    score_query_against_doc, snapshot as bm25_search_snapshot, term_frequencies,
+    score_corpus_cached, score_query_against_doc, snapshot as bm25_search_snapshot,
+    term_frequencies,
 };
 pub use build::{
     CatalogIndex, build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,

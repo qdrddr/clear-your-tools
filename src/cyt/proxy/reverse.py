@@ -1214,10 +1214,12 @@ def create_app(
         )
 
     @asynccontextmanager
-    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
         client = httpx.AsyncClient(timeout=None, http2=use_http2_upstream)
-        _app.state.http_client = client
-        _app.state.pruner_settings = pruner_settings
+        app.state.http_client = client
+        app.state.pruner_settings = pruner_settings
+        if config is not None:
+            app.state.cyt_config = config
         try:
             yield
         finally:
@@ -1227,6 +1229,7 @@ def create_app(
         payload: dict[str, Any] = {
             "name": "cyt",
             "status": "ok",
+            "hook": True,
             "endpoints": health_endpoint_names(routes),
             "debug": debug,
             "debug_dry_run": debug_terminate,
@@ -1234,6 +1237,8 @@ def create_app(
         if launch_agent is not None:
             payload["agent"] = launch_agent
         return JSONResponse(payload)
+
+    from cyt.hook.http_server import hook_inject
 
     async def proxy(request: Request) -> Response:
         return await _proxy_request(
@@ -1255,6 +1260,7 @@ def create_app(
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
+            Route("/hook/inject", hook_inject, methods=["POST"]),
             Route("/{path:path}", proxy, methods=METHODS),
         ],
         lifespan=lifespan,

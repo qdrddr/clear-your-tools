@@ -107,6 +107,16 @@ def is_mcp_optional_chunk(item: dict[str, Any]) -> bool:
     return _native.is_mcp_optional_chunk(item)
 
 
+def classify_optional_chunks_batch(
+    items: list[dict[str, Any]],
+) -> tuple[list[bool], list[bool]]:
+    """Return (system_optional, mcp_optional) flags for catalog items in one native call."""
+    result = _native.classify_optional_chunks_batch(items)
+    system = result.get("system", [])
+    mcp = result.get("mcp", [])
+    return [bool(x) for x in system], [bool(x) for x in mcp]
+
+
 def needs_partition(ctx: PolicyContext) -> bool:
     return _native.needs_partition(ctx)
 

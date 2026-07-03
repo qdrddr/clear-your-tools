@@ -412,6 +412,20 @@ pub fn is_mcp_optional_chunk(item: Value) -> bool {
     policies::is_mcp_optional_chunk(&item)
 }
 
+#[napi(object)]
+pub struct ClassifyOptionalChunksBatchResult {
+    pub system: Vec<bool>,
+    pub mcp: Vec<bool>,
+}
+
+#[napi(js_name = "classifyOptionalChunksBatch")]
+#[must_use]
+pub fn classify_optional_chunks_batch_napi(items: Vec<Value>) -> ClassifyOptionalChunksBatchResult {
+    let items = items.into_boxed_slice();
+    let (system, mcp) = policies::classify_optional_chunks_batch(&items);
+    ClassifyOptionalChunksBatchResult { system, mcp }
+}
+
 #[napi]
 #[must_use]
 pub fn stash_system_tools(tools: Vec<Value>) -> Vec<Value> {

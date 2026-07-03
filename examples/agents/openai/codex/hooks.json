@@ -1,12 +1,23 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cyt hook daemon start",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "cyt hook --stdin",
-            "timeout": 60
+            "command": "cyt-client",
+            "timeout": 30
           }
         ]
       }

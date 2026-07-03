@@ -204,6 +204,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_mcp_root_chunk_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_system_optional_chunk_py, m)?)?;
     m.add_function(wrap_pyfunction!(is_mcp_optional_chunk_py, m)?)?;
+    m.add_function(wrap_pyfunction!(classify_optional_chunks_batch_py, m)?)?;
     m.add_function(wrap_pyfunction!(stash_system_tools_py, m)?)?;
     m.add_function(wrap_pyfunction!(restore_system_tools_py, m)?)?;
     m.add_function(wrap_pyfunction!(stash_mcp_tools_py, m)?)?;
@@ -527,6 +528,16 @@ fn is_system_optional_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
 #[pyfunction(name = "is_mcp_optional_chunk")]
 fn is_mcp_optional_chunk_py(item: Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(policies::is_mcp_optional_chunk(&super::py_to_value(item)?))
+}
+
+#[pyfunction(name = "classify_optional_chunks_batch")]
+fn classify_optional_chunks_batch_py(
+    py: Python<'_>,
+    items: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let arr = py_list_values(items)?;
+    let (system, mcp) = policies::classify_optional_chunks_batch(&arr);
+    super::value_to_py(py, &serde_json::json!({"system": system, "mcp": mcp}))
 }
 
 #[pyfunction(name = "stash_system_tools")]
