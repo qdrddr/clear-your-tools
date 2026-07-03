@@ -84,3 +84,15 @@ def test_run_hook_payload_does_not_print(capsys: pytest.CaptureFixture[str]) -> 
     assert captured.out == ""
     assert result.stdout_text == ""
     assert result.outcome == "session_start_daemon_reused"
+
+
+def test_run_hook_payload_disables_transcript_file_read_by_default() -> None:
+    config: dict[str, Any] = {
+        "skills": {"enabled": False},
+        "pruning": {"inject_via": "proxy"},
+    }
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    with patch("cyt.skills.cli._dispatch_hook_event") as dispatch:
+        dispatch.return_value = ("skipped_inject_via_proxy", {}, "")
+        run_hook_payload(payload, config)
+        assert dispatch.call_args.kwargs["allow_transcript_file_read"] is False

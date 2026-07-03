@@ -1,0 +1,22 @@
+[
+  {
+    "type": "turn_context",
+    "payload": {
+      "model": "gpt-5.4-mini",
+      "collaboration_mode": {
+        "settings": {
+          "model": "gpt-5.4-mini"
+        }
+      }
+    }
+  },
+  {
+    "type": "response_item",
+    "payload": {
+      "type": "message",
+      "role": "assistant",
+      "content": [{"type": "output_text", "text": "Codex assistant reply."}],
+      "phase": "final_answer"
+    }
+  }
+]

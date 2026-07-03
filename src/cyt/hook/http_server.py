@@ -55,4 +55,5 @@ async def _run_hook_in_thread(payload: dict[str, Any], config: dict[str, Any]) -
         plain_output=False,
         debug=False,
         io_guarded=True,
+        allow_transcript_file_read=False,
     )

@@ -50,9 +50,9 @@ from cyt.skills.search import (
 from cyt.skills.stats import record_skills_injection
 from cyt.skills.trace import print_skills_search_trace, trace_to_debug_details
 from cyt.skills.transcript import (
-    model_from_transcript,
+    hook_transcript_debug_details,
+    resolve_model,
     skills_search_query_from_hook_payload,
-    transcript_path_from_payload,
 )
 from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.hook import handle_user_prompt_tools
@@ -175,17 +175,6 @@ def _read_hook_payload() -> tuple[str, dict[str, Any]]:
     return raw, {}
 
 
-def _resolve_model(payload: dict[str, Any]) -> str | None:
-    """Codex/CLI: payload.model; Claude Code: transcript_path jsonl message.model."""
-    direct = model_from_payload(payload)
-    if direct:
-        return direct
-    path = transcript_path_from_payload(payload)
-    if path:
-        return model_from_transcript(path)
-    return None
-
-
 @dataclass(frozen=True)
 class HookRunResult:
     stdout_text: str
@@ -287,8 +276,12 @@ def _handle_user_prompt_skills(
     plain_output: bool = False,
     debug: bool = False,
     io_guarded: bool = False,
+    allow_transcript_file_read: bool = True,
 ) -> tuple[str, dict[str, Any], str]:
-    query = skills_search_query_from_hook_payload(payload)
+    query = skills_search_query_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
     if not query:
         return "user_prompt_missing_prompt", {}, ""
 
@@ -305,7 +298,7 @@ def _handle_user_prompt_skills(
         return "skipped_budget_zero", {"request_tokens": request_tokens}, ""
 
     prompt = prompt_from_payload(payload) or query
-    model = _resolve_model(payload) or "hook"
+    model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
 
     matches, pipeline_run, search_trace = _search_skills_for_user_prompt(
         query,
@@ -366,6 +359,7 @@ def _run_user_prompt_injection(
     debug: bool,
     skills_allowed: bool,
     tools_allowed: bool,
+    allow_transcript_file_read: bool,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     """Run skills/tools hook injection; parallelize when both are enabled."""
     parts: list[str] = []
@@ -385,6 +379,7 @@ def _run_user_prompt_injection(
                     plain_output=plain_output,
                     debug=debug,
                     io_guarded=io_guarded,
+                    allow_transcript_file_read=allow_transcript_file_read,
                 )
                 tools_future = executor.submit(
                     handle_user_prompt_tools,
@@ -393,6 +388,7 @@ def _run_user_prompt_injection(
                     plain_output=plain_output,
                     debug=debug,
                     io_guarded=io_guarded,
+                    allow_transcript_file_read=allow_transcript_file_read,
                 )
                 skills_outcome, skills_details, skills_text = skills_future.result()
                 tools_outcome, tools_details, tools_text = tools_future.result()
@@ -411,6 +407,7 @@ def _run_user_prompt_injection(
             config,
             plain_output=plain_output,
             debug=debug,
+            allow_transcript_file_read=allow_transcript_file_read,
         )
         outcomes.append(skills_outcome)
         details.update(skills_details)
@@ -423,6 +420,7 @@ def _run_user_prompt_injection(
             config,
             plain_output=plain_output,
             debug=debug,
+            allow_transcript_file_read=allow_transcript_file_read,
         )
         outcomes.append(tools_outcome)
         details.update(tools_details)
@@ -439,6 +437,7 @@ def _handle_user_prompt(
     plain_output: bool = False,
     debug: bool = False,
     emit_stdout: bool = True,
+    allow_transcript_file_read: bool = True,
 ) -> tuple[str, dict[str, Any], str]:
     skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
     tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
@@ -450,7 +449,16 @@ def _handle_user_prompt(
         debug=debug,
         skills_allowed=skills_allowed,
         tools_allowed=tools_allowed,
+        allow_transcript_file_read=allow_transcript_file_read,
     )
+
+    if debug:
+        details.update(
+            hook_transcript_debug_details(
+                payload,
+                allow_file_read=allow_transcript_file_read,
+            ),
+        )
 
     combined = _combine_injection_parts(parts)
     if combined:
@@ -516,6 +524,7 @@ def _dispatch_hook_event(
     cli_prompt: bool,
     debug: bool,
     emit_stdout: bool = True,
+    allow_transcript_file_read: bool = True,
 ) -> tuple[str, dict[str, Any] | None, str]:
     outcome = "empty_stdin" if not raw_stdin.strip() else "noop"
     details: dict[str, Any] | None = None
@@ -540,6 +549,7 @@ def _dispatch_hook_event(
                 plain_output=cli_prompt,
                 debug=debug,
                 emit_stdout=emit_stdout,
+                allow_transcript_file_read=allow_transcript_file_read,
             )
     elif event_name is not None:
         outcome = "unhandled_event"
@@ -556,6 +566,7 @@ def run_hook_payload(
     plain_output: bool = False,
     debug: bool = False,
     io_guarded: bool = False,
+    allow_transcript_file_read: bool = False,
 ) -> HookRunResult:
     """Run hook logic for *payload* and return formatted stdout without printing."""
     del io_guarded  # callers configure quiet mode; search paths honor plain_output
@@ -571,6 +582,7 @@ def run_hook_payload(
         cli_prompt=plain_output,
         debug=debug,
         emit_stdout=False,
+        allow_transcript_file_read=allow_transcript_file_read,
     )
     stdout_text = format_hook_stdout(injection_text, payload, plain=plain_output)
     return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
@@ -621,6 +633,7 @@ def run(
         cli_prompt=cli_prompt,
         debug=debug,
         emit_stdout=True,
+        allow_transcript_file_read=True,
     )
 
     if cli_prompt and outcome != "user_prompt_injected":

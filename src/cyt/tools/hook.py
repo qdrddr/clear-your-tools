@@ -10,12 +10,11 @@ from cyt.config import tools_hook_file_missing
 from cyt.indexer.tokens import count_json_tokens
 from cyt.proxy.anthropic import PruneResult
 from cyt.skills.budget import count_hook_request_tokens
-from cyt.skills.hook_payload import model_from_payload, prompt_from_payload
+from cyt.skills.hook_payload import prompt_from_payload
 from cyt.skills.hook_quiet import hook_safe_stdout
 from cyt.skills.transcript import (
-    model_from_transcript,
+    resolve_model,
     skills_search_query_from_hook_payload,
-    transcript_path_from_payload,
 )
 from cyt.tools.budget import (
     resolve_tools_inject_budget,
@@ -37,6 +36,7 @@ def handle_user_prompt_tools(
     plain_output: bool = False,
     debug: bool = False,
     io_guarded: bool = False,
+    allow_transcript_file_read: bool = True,
 ) -> tuple[str, dict[str, Any], str]:
     """Return (outcome, details, injection_text)."""
     if not tools_inject_allowed(config, "hook", cli_prompt=plain_output):
@@ -45,7 +45,10 @@ def handle_user_prompt_tools(
     if tools_hook_file_missing(config):
         return "skipped_missing_tools_catalog", {}, ""
 
-    query = skills_search_query_from_hook_payload(payload)
+    query = skills_search_query_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
     if not query:
         return "user_prompt_missing_prompt", {}, ""
 
@@ -60,7 +63,7 @@ def handle_user_prompt_tools(
     if budget_max <= 0:
         return "skipped_budget_zero", {"request_tokens": request_tokens}, ""
 
-    model = _resolve_model(payload) or "hook"
+    model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
     pruned, result, catalog = _prune_hook_tool_catalog(query, config, io_guarded=io_guarded)
     if catalog is None:
         return "skipped_missing_tools_catalog", {}, ""
@@ -156,11 +159,3 @@ def _prune_hook_tool_catalog(
             )
         result = prune_tools_for_query(catalog, query, config=config)
     return result.tools or [], result, catalog
-
-
-def _resolve_model(payload: dict[str, Any]) -> str | None:
-    if model := model_from_payload(payload):
-        return model
-    if path := transcript_path_from_payload(payload):
-        return model_from_transcript(path)
-    return None

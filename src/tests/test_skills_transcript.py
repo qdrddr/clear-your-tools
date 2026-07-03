@@ -5,12 +5,28 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import cast
+from unittest.mock import patch
 
+import pytest
+
+from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
 from cyt.skills.transcript import (
+    infer_transcript_agent,
+    last_assistant_from_payload,
     last_assistant_from_transcript,
     model_from_transcript,
+    resolve_model,
     skills_search_query_from_hook_payload,
+    transcript_records_from_payload,
+    transcript_source_from_payload,
 )
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "transcripts"
+
+
+def _load_fixture(name: str) -> list[object]:
+    return cast(list[object], json.loads((_FIXTURES / name).read_text(encoding="utf-8")))
 
 
 def test_last_assistant_from_claude_transcript() -> None:
@@ -295,3 +311,112 @@ def test_skills_search_query_with_transcript_path() -> None:
             transcript_path=str(transcript),
         )
         assert query == "User_Asks: continue; Assistant_Says: codex reply"
+
+
+def test_infer_transcript_agent_from_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(CYT_LAUNCH_AGENT_ENV, raising=False)
+    assert infer_transcript_agent("/Users/you/.codex/sessions/rollout.jsonl") == "codex"
+    assert infer_transcript_agent("/Users/you/.claude/projects/foo/session.jsonl") == "claude"
+    assert infer_transcript_agent("/tmp/session.jsonl") is None
+
+
+def test_infer_transcript_agent_falls_back_to_launch_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
+    assert infer_transcript_agent("/tmp/session.jsonl") == "codex"
+    assert infer_transcript_agent(None) == "codex"
+
+
+def test_transcript_records_prefers_cyt_transcript() -> None:
+    records = _load_fixture("claude_assistant.json")
+    payload = {
+        "transcript_path": "/tmp/missing.jsonl",
+        "cyt_transcript": records,
+    }
+    assert transcript_records_from_payload(payload, allow_file_read=True) == records
+    assert transcript_source_from_payload(payload, allow_file_read=True) == "inline"
+
+
+def test_http_mode_does_not_read_transcript_file() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        transcript = Path(tmp) / "session.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "from file"}],
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        payload = {
+            "prompt": "next",
+            "transcript_path": str(transcript),
+        }
+        with patch.object(Path, "read_text", side_effect=AssertionError("file read not allowed")):
+            assert transcript_records_from_payload(payload, allow_file_read=False) is None
+            assert last_assistant_from_payload(payload, allow_file_read=False) is None
+            assert resolve_model(payload, allow_file_read=False) is None
+            query = skills_search_query_from_hook_payload(payload, allow_file_read=False)
+            assert query == "User_Asks: next"
+
+
+def test_http_mode_uses_inline_cyt_transcript_without_file_read() -> None:
+    records = _load_fixture("claude_assistant.json")
+    payload = {
+        "prompt": "next",
+        "transcript_path": "/tmp/unused.jsonl",
+        "cyt_transcript": records,
+    }
+    with patch.object(Path, "read_text", side_effect=AssertionError("file read not allowed")):
+        assert (
+            last_assistant_from_payload(payload, allow_file_read=False) == "Claude assistant reply."
+        )
+        assert resolve_model(payload, allow_file_read=False) == "claude-sonnet-4"
+        query = skills_search_query_from_hook_payload(payload, allow_file_read=False)
+        assert query == "User_Asks: next; Assistant_Says: Claude assistant reply."
+
+
+def test_stdin_mode_reads_transcript_file_when_inline_missing() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        transcript = Path(tmp) / "session.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "model": "claude-haiku-4",
+                        "content": [{"type": "text", "text": "from file"}],
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        payload = {"prompt": "next", "transcript_path": str(transcript)}
+        assert last_assistant_from_payload(payload, allow_file_read=True) == "from file"
+        assert resolve_model(payload, allow_file_read=True) == "claude-haiku-4"
+        assert transcript_source_from_payload(payload, allow_file_read=True) == "file"
+
+
+def test_resolve_model_codex_turn_context_from_fixture() -> None:
+    records = _load_fixture("codex_session.json")
+    payload = {
+        "transcript_path": "/Users/you/.codex/sessions/rollout.jsonl",
+        "cyt_transcript": records,
+    }
+    assert resolve_model(payload, allow_file_read=False) == "gpt-5.4-mini"
+    assert last_assistant_from_payload(payload, allow_file_read=False) == "Codex assistant reply."
+
+
+def test_resolve_model_payload_beats_transcript() -> None:
+    records = _load_fixture("claude_assistant.json")
+    payload = {
+        "model": "payload-model",
+        "cyt_transcript": records,
+    }
+    assert resolve_model(payload, allow_file_read=False) == "payload-model"
