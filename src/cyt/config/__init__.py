@@ -1122,6 +1122,13 @@ def cache_tools_dir(config: dict[str, Any] | None = None) -> Path:
     return Path(str(path)).expanduser()
 
 
+def cache_memory_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return the ``cache.memory`` block for Rust in-memory cache tuning."""
+    cache = _cache_settings(config or load_config())
+    memory = cache.get("memory")
+    return dict(memory) if isinstance(memory, dict) else {}
+
+
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
     cfg = config or load_config()
     value = _skills_settings(_merged_config(cfg)).get(

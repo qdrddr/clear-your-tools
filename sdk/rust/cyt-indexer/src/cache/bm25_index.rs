@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tantivy::schema::{STORED, Schema, TEXT};
 use tantivy::{Index, IndexReader, IndexWriter, doc};
 
+use super::hot::{get_tantivy_handle, store_tantivy_handle};
 use super::lock::BuildLock;
 use super::manifest::CacheStatus;
 use super::{CachePolicy, CacheResult, disk_available};
@@ -116,6 +117,14 @@ pub fn build_or_open_bm25_index(
         });
     }
 
+    if let Some(handle) = get_tantivy_handle(fingerprint) {
+        return Ok(CacheResult {
+            data: handle.clone(),
+            disk_backed: handle.disk_backed,
+            cache_status: handle.cache_status,
+        });
+    }
+
     let root = cache_root(fingerprint);
     let tantivy_dir = root.join(TANTIVY_DIR);
     let cfg = bm25_config_snapshot();
@@ -126,6 +135,7 @@ pub fn build_or_open_bm25_index(
         && let Ok(index) = open_disk_index(&tantivy_dir, cfg.mmap)
     {
         let handle = from_index(index, true, CacheStatus::Hit)?;
+        store_tantivy_handle(fingerprint, handle.clone());
         return Ok(CacheResult {
             data: handle,
             disk_backed: true,
@@ -138,6 +148,7 @@ pub fn build_or_open_bm25_index(
             && let Ok(index) = open_disk_index(&tantivy_dir, cfg.mmap)
         {
             let handle = from_index(index, true, CacheStatus::Hit)?;
+            store_tantivy_handle(fingerprint, handle.clone());
             return Ok(CacheResult {
                 data: handle,
                 disk_backed: true,
@@ -146,6 +157,7 @@ pub fn build_or_open_bm25_index(
         }
         let index = build_disk_index(corpus, &tantivy_dir)?;
         let handle = from_index(index, true, CacheStatus::Miss)?;
+        store_tantivy_handle(fingerprint, handle.clone());
         return Ok(CacheResult {
             data: handle,
             disk_backed: true,
@@ -155,6 +167,7 @@ pub fn build_or_open_bm25_index(
 
     let index = build_ram_index(corpus)?;
     let handle = from_index(index, false, CacheStatus::MemoryFallback)?;
+    store_tantivy_handle(fingerprint, handle.clone());
     Ok(CacheResult {
         data: handle,
         disk_backed: false,

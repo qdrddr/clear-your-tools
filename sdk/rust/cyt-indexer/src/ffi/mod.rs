@@ -27,12 +27,13 @@ pub use error::{
 pub use memory::{cyt_free_string, cyt_get_version};
 
 pub use bm25_search::{
-    cyt_bm25_catalog_fingerprint, cyt_bm25_frontmatter_gate, cyt_bm25_score_catalog,
-    cyt_bm25_search_skill_chunks, cyt_configure_bm25_defaults,
+    cyt_batch_reconstruct_skill_matches, cyt_bm25_catalog_fingerprint, cyt_bm25_frontmatter_gate,
+    cyt_bm25_score_catalog, cyt_bm25_search_skill_chunks, cyt_configure_bm25_defaults,
+    cyt_exp_similarity, cyt_greedy_select_skill_items,
 };
 pub use cache::{
-    cyt_ensure_skills_registry, cyt_ensure_tool_catalog, cyt_ensure_tool_catalog_from_entries,
-    cyt_tools_catalog_content_hash,
+    cyt_configure_memory_cache, cyt_ensure_skills_registry, cyt_ensure_tool_catalog,
+    cyt_ensure_tool_catalog_from_entries, cyt_tools_catalog_content_hash,
 };
 pub use catalog::{cyt_build_catalog_index, cyt_catalog_tool_count};
 pub use policies::cyt_classify_optional_chunks_batch;

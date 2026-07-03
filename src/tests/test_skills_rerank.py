@@ -79,7 +79,7 @@ def test_reconstruct_skills_from_reranked_items_uses_node_specs() -> None:
         survivor["score"] = "0.50000000000000000000"
 
         with patch(
-            "cyt.skills.rerank.reconstruct_skill_markdown",
+            "cyt.skills.reconstruct.reconstruct_skill_markdown",
         ) as reconstruct_mock:
             reconstruct_mock.return_value = {"markdown": "# Hook\n\nBody"}
             matches = reconstruct_skills_from_reranked_items(

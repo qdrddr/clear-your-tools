@@ -9,10 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from cyt_indexer import reconstruct_skill_markdown
-
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.indexer.tokens import count_tokens
 from cyt.pruners.llm import (
     SELECTOR_NO_MATCH_INSTRUCTION,
     SELECTOR_SYSTEM_PROMPT,
@@ -27,15 +24,11 @@ from cyt.skills.catalog import (
     SkillEntryRef,
     _iter_content_node_ids,
     _shorten_home_path,
-    load_entry_skills_index,
 )
 from cyt.skills.diagnostics import SearchItemRow
-from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import load_node_body, skill_name
-from cyt.skills.search import (
-    MatchedSkill,
-    _frontmatter_by_doc,
-)
+from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
+from cyt.skills.search import MatchedSkill
 
 logger = logging.getLogger(__name__)
 
@@ -153,52 +146,27 @@ def reconstruct_skills_from_llm_ids(
     config: dict[str, Any] | None = None,
 ) -> list[MatchedSkill]:
     """Map surviving selector ids to node_id_specs and rebuild MatchedSkill list."""
-    by_doc: dict[tuple[str, str], list[int]] = {}
-    file_path_by_doc: dict[tuple[str, str], str] = {}
+    del config
+    survivors: list[dict[str, Any]] = []
     for selector_id in selected_ids:
         meta = metadata.get(selector_id)
         if meta is None:
             continue
-        key = (meta.entry_dir, meta.doc_id)
-        by_doc.setdefault(key, []).append(meta.node_id)
-        file_path_by_doc[key] = meta.file_path
-
-    if not by_doc:
-        return []
-
-    frontmatter_by_doc = _frontmatter_by_doc(entries)
-    entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
-    matched: list[MatchedSkill] = []
-    for (entry_dir, doc_id), node_ids in by_doc.items():
-        entry = entry_by_key.get((entry_dir, doc_id))
-        if entry is None:
-            continue
-        index = load_entry_skills_index(entry)
-        node_specs = [str(node_id) for node_id in sorted(set(node_ids))]
-        result = reconstruct_skill_markdown(
-            index,
-            doc_id,
-            node_id_specs=node_specs,
+        survivors.append(
+            {
+                "entry_dir": meta.entry_dir,
+                "doc_id": meta.doc_id,
+                "node_id": meta.node_id,
+                "file_path": meta.file_path,
+                "score": 1.0,
+            },
         )
-        markdown = str(result.get("markdown", "")).strip()
-        if not markdown:
-            continue
-        file_path = file_path_by_doc.get((entry_dir, doc_id), "")
-        frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
-        name = skill_name_from_frontmatter(frontmatter)
-        token_count = count_tokens(markdown)
-        matched.append(
-            MatchedSkill(
-                doc_id=doc_id,
-                file_path=file_path,
-                markdown=markdown,
-                name=name,
-                score=1.0,
-                token_count=token_count,
-            ),
-        )
-
-    return matched
+    return reconstruct_matches_from_survivor_dicts(
+        survivors,
+        entries,
+        item_kind="node",
+        id_field="node_id",
+    )
 
 
 def llm_skill_nodes(

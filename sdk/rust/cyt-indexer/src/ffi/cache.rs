@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::cache::{
-    CachePolicy, CacheStatus, ensure_skills_registry, ensure_tool_catalog,
+    CachePolicy, CacheStatus, configure_memory_cache, ensure_skills_registry, ensure_tool_catalog,
     ensure_tool_catalog_from_entries, tools_content_hash,
 };
 use crate::ffi::error::CYT_ERR_NULL_PTR;
@@ -213,10 +213,32 @@ pub unsafe extern "C" fn cyt_ensure_skills_registry(
                     "bm25_chunk_dir": entry.bm25_chunk_dir.as_ref().map(|p| p.display().to_string()),
                     "disk_backed": entry.disk_backed,
                     "cache_status": cache_status_str(entry.cache_status),
+                    "source_path": entry.source_path,
+                    "nodes_dir": entry.nodes_dir.as_ref().map(|p| p.display().to_string()),
+                    "document": entry.document,
+                    "lazy_pending": entry.lazy_pending,
                 })
             })
             .collect();
         unsafe { write_json_out(&Value::Array(list), out)? };
+        Ok(())
+    })
+}
+
+/// Apply in-memory cache tuning from a JSON object (`cache.memory` block).
+///
+/// # Safety
+///
+/// `config_json` must be a valid null-terminated UTF-8 C string when non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_configure_memory_cache(config_json: *const c_char) -> c_int {
+    run_ffi(|| {
+        let val = if config_json.is_null() {
+            json!({})
+        } else {
+            parse_json_cstr(config_json, "config_json")?
+        };
+        configure_memory_cache(&val);
         Ok(())
     })
 }

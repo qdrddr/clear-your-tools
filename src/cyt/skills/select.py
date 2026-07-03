@@ -2,98 +2,21 @@
 
 from __future__ import annotations
 
-from cyt.skills.catalog import SkillEntryRef, _shorten_home_path, load_entry_skills_index
+from typing import Any
+
+from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import BudgetItemRow, SearchItemRow
-from cyt.skills.search import MatchedSkill
+from cyt.skills.reconstruct import (
+    EntryIndexCache,
+    entry_for_row,
+    reconstruct_doc_match,
+    reconstruct_matches_from_items,
+)
+from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
 
 
 def _item_key(row: SearchItemRow) -> tuple[str, str]:
     return (row.file_path, row.item_id)
-
-
-def _entry_for_row(row: SearchItemRow, entries: list[SkillEntryRef]) -> SkillEntryRef | None:
-    for entry in entries:
-        if entry.doc_id == row.doc_id and _shorten_home_path(entry.source_path) == row.file_path:
-            return entry
-    for entry in entries:
-        if entry.doc_id == row.doc_id:
-            return entry
-    return None
-
-
-def _reconstruct_matches_from_items(
-    items: list[SearchItemRow],
-    entries: list[SkillEntryRef],
-    *,
-    item_kind: str,
-) -> list[MatchedSkill]:
-    from cyt_indexer import reconstruct_skill_markdown
-
-    from cyt.indexer.tokens import count_tokens_batch
-    from cyt.skills.frontmatter import skill_name_from_frontmatter
-    from cyt.skills.search import _frontmatter_by_doc
-
-    by_doc: dict[tuple[str, str], tuple[SkillEntryRef, list[SearchItemRow]]] = {}
-    for row in items:
-        entry = _entry_for_row(row, entries)
-        if entry is None:
-            continue
-        key = (entry.entry_dir, entry.doc_id)
-        if key not in by_doc:
-            by_doc[key] = (entry, [])
-        by_doc[key][1].append(row)
-
-    if not by_doc:
-        return []
-
-    frontmatter_by_doc = _frontmatter_by_doc(entries)
-    markdowns: list[str] = []
-    doc_keys: list[tuple[str, str, str, str | None, float]] = []
-    for (entry_dir, doc_id), (entry, rows) in by_doc.items():
-        top_score = max(row.score for row in rows)
-        file_path = rows[0].file_path
-        frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
-        name = skill_name_from_frontmatter(frontmatter)
-        id_specs = sorted({row.item_id for row in rows}, key=lambda item_id: int(item_id))
-        index = load_entry_skills_index(entry)
-        if item_kind == "chunk":
-            result = reconstruct_skill_markdown(
-                index,
-                doc_id,
-                chunk_id_specs=id_specs,
-            )
-        else:
-            result = reconstruct_skill_markdown(
-                index,
-                doc_id,
-                node_id_specs=id_specs,
-            )
-        markdown = str(result.get("markdown", "")).strip()
-        if not markdown:
-            continue
-        markdowns.append(markdown)
-        doc_keys.append((doc_id, file_path, markdown, name, top_score))
-
-    token_counts = count_tokens_batch(markdowns)
-    matched: list[MatchedSkill] = []
-    for (doc_id, file_path, markdown, name, top_score), token_count in zip(
-        doc_keys,
-        token_counts,
-        strict=True,
-    ):
-        matched.append(
-            MatchedSkill(
-                doc_id=doc_id,
-                file_path=file_path,
-                markdown=markdown,
-                name=name,
-                score=top_score,
-                token_count=token_count,
-            ),
-        )
-
-    matched.sort(key=lambda item: item.score, reverse=True)
-    return matched
 
 
 def _wrapped_injection_tokens(matches: list[MatchedSkill]) -> int:
@@ -118,6 +41,84 @@ def _dedupe_survivors(rows: list[SearchItemRow]) -> list[SearchItemRow]:
     )
 
 
+def _survivor_payload(
+    row: SearchItemRow,
+    entry: SkillEntryRef,
+    *,
+    item_kind: str,
+) -> dict[str, str | float | bool | None]:
+    raw = entry.document.get("frontmatter")
+    frontmatter = raw if isinstance(raw, str) else None
+    return {
+        "entry_dir": entry.entry_dir,
+        "doc_id": entry.doc_id,
+        "file_path": row.file_path,
+        "item_id": row.item_id,
+        "item_kind": item_kind,
+        "score": row.score,
+        "passed": row.passed,
+        "bm25_chunk_dir": entry.bm25_chunk_dir,
+        "frontmatter": frontmatter,
+    }
+
+
+def _match_from_native(item: dict[str, Any]) -> MatchedSkill:
+    return MatchedSkill(
+        doc_id=str(item.get("doc_id", "")),
+        file_path=str(item.get("file_path", "")),
+        markdown=str(item.get("markdown", "")),
+        name=item.get("name") if item.get("name") is not None else None,
+        score=float(item.get("score", 0)),
+        token_count=int(item.get("token_count", 0)),
+    )
+
+
+def _greedy_select_items_native(
+    survivors: list[SearchItemRow],
+    entries: list[SkillEntryRef],
+    *,
+    item_kind: str,
+    max_tokens: int,
+) -> tuple[list[SearchItemRow], list[MatchedSkill], dict[tuple[str, str], int]] | None:
+    from cyt_indexer.bm25_search import greedy_select_skill_items
+
+    payload: list[dict[str, str | float | bool | None]] = []
+    for row in survivors:
+        entry = entry_for_row(row, entries)
+        if entry is None:
+            continue
+        payload.append(_survivor_payload(row, entry, item_kind=item_kind))
+    if not payload:
+        return None
+
+    try:
+        result = greedy_select_skill_items(
+            payload,
+            item_kind=item_kind,
+            max_tokens=max_tokens,
+        )
+    except Exception:
+        return None
+
+    selected_keys = {
+        (str(item.get("file_path", "")), str(item.get("item_id", "")))
+        for item in result.get("selected", [])
+        if isinstance(item, dict)
+    }
+    trial_tokens: dict[tuple[str, str], int] = {}
+    for item in result.get("budget_trace", []):
+        if not isinstance(item, dict):
+            continue
+        key = (str(item.get("file_path", "")), str(item.get("item_id", "")))
+        trial_tokens[key] = int(item.get("tokens", 0))
+
+    selected = [row for row in survivors if _item_key(row) in selected_keys]
+    matches = [
+        _match_from_native(item) for item in result.get("matches", []) if isinstance(item, dict)
+    ]
+    return selected, matches, trial_tokens
+
+
 def _greedy_select_items(
     survivors: list[SearchItemRow],
     entries: list[SkillEntryRef],
@@ -130,15 +131,46 @@ def _greedy_select_items(
     best_matches: list[MatchedSkill] = []
     trial_tokens: dict[tuple[str, str], int] = {}
 
+    index_cache = EntryIndexCache()
+    frontmatter_by_doc = _frontmatter_by_doc(entries)
+    rows_by_doc: dict[tuple[str, str], list[SearchItemRow]] = {}
+    match_by_doc: dict[tuple[str, str], MatchedSkill | None] = {}
+
     for row in ordered:
-        trial = [*selected, row]
-        matches = _reconstruct_matches_from_items(trial, entries, item_kind=item_kind)
-        tokens = _wrapped_injection_tokens(matches)
+        entry = entry_for_row(row, entries)
         key = _item_key(row)
+        if entry is None:
+            trial_tokens[key] = _wrapped_injection_tokens(best_matches) if best_matches else 0
+            continue
+
+        doc_key = (entry.entry_dir, entry.doc_id)
+        trial_doc_rows = [*rows_by_doc.get(doc_key, []), row]
+        top_score = max(item.score for item in trial_doc_rows)
+        file_path = trial_doc_rows[0].file_path
+        id_specs = sorted(
+            {item.item_id for item in trial_doc_rows},
+            key=lambda item_id: int(item_id),
+        )
+        trial_doc_match = reconstruct_doc_match(
+            entry,
+            id_specs=id_specs,
+            item_kind=item_kind,
+            file_path=file_path,
+            top_score=top_score,
+            frontmatter=frontmatter_by_doc.get(doc_key),
+            index_cache=index_cache,
+        )
+        trial_match_by_doc = dict(match_by_doc)
+        trial_match_by_doc[doc_key] = trial_doc_match
+        trial_matches = [m for m in trial_match_by_doc.values() if m is not None]
+        trial_matches.sort(key=lambda item: item.score, reverse=True)
+        tokens = _wrapped_injection_tokens(trial_matches)
         trial_tokens[key] = tokens
         if tokens <= max_tokens:
-            selected = trial
-            best_matches = matches
+            selected = [*selected, row]
+            rows_by_doc[doc_key] = trial_doc_rows
+            match_by_doc = trial_match_by_doc
+            best_matches = trial_matches
 
     return selected, best_matches, trial_tokens
 
@@ -240,12 +272,21 @@ def select_items_with_budget_trace(
             item_kind=item_kind,
         )
 
-    selected, matches, trial_tokens = _greedy_select_items(
+    native_result = _greedy_select_items_native(
         survivors,
         entries,
         item_kind=item_kind,
         max_tokens=max_tokens,
     )
+    if native_result is not None:
+        selected, matches, trial_tokens = native_result
+    else:
+        selected, matches, trial_tokens = _greedy_select_items(
+            survivors,
+            entries,
+            item_kind=item_kind,
+            max_tokens=max_tokens,
+        )
     return matches, budget_rows_for_item_survivors(
         survivors=survivors,
         selected=selected,
@@ -295,3 +336,11 @@ def select_skills_within_budget(
         return []
 
     return _greedy_select_skills(candidates, max_tokens)
+
+
+__all__ = [
+    "reconstruct_matches_from_items",
+    "select_items_with_budget_trace",
+    "select_skills_with_budget_trace",
+    "select_skills_within_budget",
+]

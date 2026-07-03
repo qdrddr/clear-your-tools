@@ -146,3 +146,24 @@ print(json.dumps(bm25_cohesion_chunk(text, Bm25CohesionConfig(chunk_size=2048)))
 	}
 	assertJSONEqual(t, got, want)
 }
+
+func TestParityExpSimilarity(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer import exp_similarity
+print(json.dumps(exp_similarity(2.5)))
+`)
+
+	gotBytes, err := json.Marshal(ExpSimilarity(2.5))
+	if err != nil {
+		t.Fatalf("marshal got: %v", err)
+	}
+	assertJSONEqual(t, string(gotBytes), want)
+}

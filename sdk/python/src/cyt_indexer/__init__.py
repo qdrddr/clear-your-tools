@@ -19,11 +19,14 @@ from cyt_indexer.retrieve import (
     retrieve_tools,
 )
 from cyt_indexer.bm25_search import (
+    batch_reconstruct_skill_matches,
     bm25_catalog_fingerprint,
     bm25_frontmatter_gate,
     bm25_score_catalog,
     bm25_search_skill_chunks,
     configure_bm25_defaults,
+    exp_similarity,
+    greedy_select_skill_items,
 )
 from cyt_indexer.cache import (
     ensure_skills_registry,
@@ -85,7 +88,10 @@ __all__ = [
     "bm25_frontmatter_gate",
     "bm25_score_catalog",
     "bm25_search_skill_chunks",
+    "batch_reconstruct_skill_matches",
     "configure_bm25_defaults",
+    "exp_similarity",
+    "greedy_select_skill_items",
     "configure_tokenizer_defaults",
     "count_json_tokens",
     "count_tokens",

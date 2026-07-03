@@ -167,6 +167,7 @@ export const ensureToolCatalogNative = native.ensureToolCatalog;
 export const ensureToolCatalogFromEntriesNative =
   native.ensureToolCatalogFromEntries;
 export const ensureSkillsRegistryNative = native.ensureSkillsRegistry;
+export const configureMemoryCacheNative = native.configureMemoryCache;
 
 // BM25 search
 export const configureBm25DefaultsNative = native.configureBm25Defaults;
@@ -174,6 +175,10 @@ export const bm25CatalogFingerprintNative = native.bm25CatalogFingerprint;
 export const bm25ScoreCatalogNative = native.bm25ScoreCatalog;
 export const bm25FrontmatterGateNative = native.bm25FrontmatterGate;
 export const bm25SearchSkillChunksNative = native.bm25SearchSkillChunks;
+export const expSimilarityNative = native.expSimilarity;
+export const batchReconstructSkillMatchesNative =
+  native.batchReconstructSkillMatches;
+export const greedySelectSkillItemsNative = native.greedySelectSkillItems;
 
 export type {
   PolicyOptions,

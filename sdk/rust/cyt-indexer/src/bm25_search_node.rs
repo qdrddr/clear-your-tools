@@ -1,8 +1,9 @@
 // N-API bindings for Tantivy BM25 catalog search (included from `node.rs`).
 
 use crate::bm25_search::{
-    self, bm25_frontmatter_gate, bm25_search_skill_chunks, collect_catalog_documents,
-    score_catalog_in_place, ScoreCatalogOptions,
+    self, batch_reconstruct_skill_matches, bm25_frontmatter_gate, bm25_search_skill_chunks,
+    collect_catalog_documents, exp_similarity, greedy_select_skill_items, score_catalog_in_place,
+    ScoreCatalogOptions,
 };
 use serde_json::json;
 
@@ -156,4 +157,37 @@ pub fn bm25_search_skill_chunks_napi(
         &excluded_set,
     )
     .map_err(Error::from_reason)
+}
+
+/// # Errors
+///
+/// Returns an error when reconstruction fails.
+#[napi(js_name = "batchReconstructSkillMatches")]
+pub fn batch_reconstruct_skill_matches_napi(groups: Value) -> Result<Value> {
+    let groups = Box::new(groups);
+    let arr = groups.as_array().cloned().unwrap_or_default();
+    let matches = batch_reconstruct_skill_matches(&arr).map_err(Error::from_reason)?;
+    Ok(json!(matches))
+}
+
+/// # Errors
+///
+/// Returns an error when greedy selection fails.
+#[napi(js_name = "greedySelectSkillItems")]
+pub fn greedy_select_skill_items_napi(
+    survivors: Value,
+    item_kind: String,
+    max_tokens: i64,
+) -> Result<Value> {
+    let survivors = Box::new(survivors);
+    let item_kind = item_kind.into_boxed_str();
+    let arr = survivors.as_array().cloned().unwrap_or_default();
+    greedy_select_skill_items(&arr, item_kind.as_ref(), max_tokens).map_err(Error::from_reason)
+}
+
+/// Map a raw BM25 score to absolute similarity in `[0, 1]`.
+#[must_use]
+#[napi(js_name = "expSimilarity")]
+pub fn exp_similarity_napi(raw: f64) -> f64 {
+    exp_similarity(raw)
 }

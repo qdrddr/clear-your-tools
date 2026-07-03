@@ -1,8 +1,9 @@
 //! Tantivy BM25 catalog search FFI exports.
 
 use crate::bm25_search::{
-    self, ScoreCatalogOptions, bm25_frontmatter_gate, bm25_search_skill_chunks,
-    collect_catalog_documents, score_catalog_in_place,
+    self, ScoreCatalogOptions, batch_reconstruct_skill_matches, bm25_frontmatter_gate,
+    bm25_search_skill_chunks, collect_catalog_documents, exp_similarity, greedy_select_skill_items,
+    score_catalog_in_place,
 };
 use crate::ffi::error::{CYT_ERR_INVALID_ARG, CYT_ERR_NULL_PTR, set_error};
 use crate::ffi::json_util::{
@@ -215,4 +216,65 @@ pub unsafe extern "C" fn cyt_bm25_search_skill_chunks(
         unsafe { write_json_out(&result, out)? };
         Ok(())
     })
+}
+
+/// Reconstruct multiple skill doc groups in one native call.
+///
+/// # Safety
+///
+/// `groups_json` must be a valid null-terminated UTF-8 C string; `out` must be non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_batch_reconstruct_skill_matches(
+    groups_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let groups_val = unsafe { parse_json_cstr(groups_json, "groups_json")? };
+        let arr = json_array_or_empty(&groups_val);
+        let matches = batch_reconstruct_skill_matches(&arr).map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
+        unsafe { write_json_out(&json!(matches), out)? };
+        Ok(())
+    })
+}
+
+/// Greedy budget selection over skill search survivors.
+///
+/// # Safety
+///
+/// `survivors_json` and `item_kind` must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_greedy_select_skill_items(
+    survivors_json: *const c_char,
+    item_kind: *const c_char,
+    max_tokens: i64,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let survivors_val = unsafe { parse_json_cstr(survivors_json, "survivors_json")? };
+        let kind = unsafe { c_str_to_str(item_kind, "item_kind")? };
+        let arr = json_array_or_empty(&survivors_val);
+        let result = greedy_select_skill_items(&arr, kind, max_tokens).map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
+        unsafe { write_json_out(&result, out)? };
+        Ok(())
+    })
+}
+
+/// Map a raw BM25 score to absolute similarity in `[0, 1]`.
+#[unsafe(no_mangle)]
+pub extern "C" fn cyt_exp_similarity(raw: f64) -> f64 {
+    exp_similarity(raw)
 }

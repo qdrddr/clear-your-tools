@@ -211,6 +211,15 @@ cache:
   bm25_dir: ~/.config/cyt/bm25
   skills_dir: ~/.config/cyt/skills
   tools_dir: ~/.config/cyt/tools
+  memory:
+    lazy_registry: false
+    async_disk_writes: true
+    lru:
+      chunk_bodies: 512
+      merged_documents: 128
+      skills_index: 64
+      tantivy_indexes: 32
+      tool_catalogs: 128
 
 stats:
   enabled: true

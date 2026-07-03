@@ -7,10 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from cyt.skills.bm25 import (
-    bm25_skill_chunks,
-    reconstruct_skills_from_bm25_items,
-)
+from cyt.skills.bm25 import bm25_skill_chunks
 from cyt.skills.catalog import build_registry
 from cyt.skills.transcript import skills_search_query_from_hook_payload
 
@@ -52,34 +49,7 @@ def test_bm25_skill_chunks_returns_matches() -> None:
         assert matches[0].name == "create-hook"
 
 
-def test_reconstruct_skills_from_bm25_items_uses_chunk_specs() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        config = _skills_config(root)
-        entries = build_registry(config)
-        survivor = {
-            "id": "2",
-            "doc_id": entries[0].doc_id,
-            "entry_dir": entries[0].entry_dir,
-            "file_path": "create-hook.md",
-            "score": 0.42,
-        }
-
-        with patch(
-            "cyt.skills.bm25.reconstruct_skill_markdown",
-            return_value={"markdown": "# Create Hook\n\nBody\n"},
-        ) as reconstruct_mock:
-            matches = reconstruct_skills_from_bm25_items([survivor], entries, config=config)
-
-        reconstruct_mock.assert_called_once()
-        call_kwargs = reconstruct_mock.call_args.kwargs
-        assert call_kwargs["chunk_id_specs"] == ["2"]
-        assert call_kwargs.get("node_id_specs") is None
-        assert matches
-        assert matches[0].name == "create-hook"
-
-
-def test_reconstruct_skills_omits_preamble_when_chunk_one_not_selected() -> None:
+def test_reconstruct_omits_preamble_when_chunk_one_not_selected() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
@@ -99,7 +69,14 @@ def test_reconstruct_skills_omits_preamble_when_chunk_one_not_selected() -> None
                 "score": 0.9,
             },
         ]
-        matches = reconstruct_skills_from_bm25_items(survivors, entries, config=config)
+        from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
+
+        matches = reconstruct_matches_from_survivor_dicts(
+            survivors,
+            entries,
+            item_kind="chunk",
+            id_field="id",
+        )
         assert matches
         assert "Intro line" not in matches[0].markdown
         assert "Body text" in matches[0].markdown

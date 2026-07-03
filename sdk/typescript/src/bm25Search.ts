@@ -5,7 +5,10 @@ import {
   bm25FrontmatterGateNative,
   bm25ScoreCatalogNative,
   bm25SearchSkillChunksNative,
+  batchReconstructSkillMatchesNative,
   configureBm25DefaultsNative,
+  expSimilarityNative,
+  greedySelectSkillItemsNative,
 } from "./native.js";
 import type { JsonRecord } from "./types.js";
 
@@ -87,4 +90,26 @@ export function bm25SearchSkillChunks(
     threshold,
     excluded,
   ) as Bm25SearchSkillChunksResult;
+}
+
+export function expSimilarity(raw: number): number {
+  return expSimilarityNative(raw);
+}
+
+export function batchReconstructSkillMatches(
+  groups: JsonRecord[],
+): JsonRecord[] {
+  return batchReconstructSkillMatchesNative(groups) as JsonRecord[];
+}
+
+export function greedySelectSkillItems(
+  survivors: JsonRecord[],
+  itemKind = "node",
+  maxTokens = 0,
+): JsonRecord {
+  return greedySelectSkillItemsNative(
+    survivors,
+    itemKind,
+    maxTokens,
+  ) as JsonRecord;
 }

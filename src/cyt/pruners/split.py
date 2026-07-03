@@ -1,7 +1,7 @@
 import sys
 from collections.abc import Callable
 
-from cyt.indexer.tokens import count_tokens
+from cyt.indexer.tokens import count_tokens, count_tokens_batch
 
 
 def split_into_bulks[T](
@@ -11,14 +11,17 @@ def split_into_bulks[T](
     max_tokens: int = 32000,
 ) -> list[list[T]]:
     """Generic splitter that returns list of lists (bulks of items)."""
+    if not items:
+        return []
+
+    texts = [transform_fn(item) for item in items]
+    token_counts = count_tokens_batch(texts)
+
     bulks = []
     current_bulk: list[T] = []
     current_tokens = base_tokens
 
-    for item in items:
-        text = transform_fn(item)
-        item_tokens = count_tokens(text)
-
+    for item, _text, item_tokens in zip(items, texts, token_counts, strict=True):
         # If a single item is too big to fit in any bulk, we skip it or handle it.
         # For now, we skip but warn if it exceeds the absolute limit.
         if base_tokens + item_tokens > max_tokens:

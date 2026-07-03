@@ -1,6 +1,7 @@
 /** Rust-backed disk/memory cache for skills and tool catalogs. */
 
 import {
+  configureMemoryCacheNative,
   ensureSkillsRegistryNative,
   ensureToolCatalogFromEntriesNative,
   ensureToolCatalogNative,
@@ -25,6 +26,10 @@ export interface SkillEntryRef {
   bm25_chunk_dir: string | null;
   disk_backed: boolean;
   cache_status: "hit" | "miss" | "memory_fallback";
+  source_path: string;
+  nodes_dir: string | null;
+  document: Record<string, unknown>;
+  lazy_pending?: boolean;
 }
 
 export function toolsCatalogContentHash(
@@ -80,4 +85,8 @@ export function ensureSkillsRegistry(
     indexParamsHash,
     policy,
   ) as SkillEntryRef[];
+}
+
+export function configureMemoryCache(config: Record<string, unknown>): void {
+  configureMemoryCacheNative(config);
 }

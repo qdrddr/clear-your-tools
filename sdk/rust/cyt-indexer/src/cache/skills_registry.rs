@@ -3,16 +3,23 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::pageindex::cache_layout::nodes_dir;
 use crate::pageindex::cache_layout::skill_entry_dir;
 use crate::pageindex::{
-    PageIndexConfig, SkillDocumentExtras, SkillsIndex, build_chunk_variant, build_page_index_only,
-    chunk_variant_valid, page_index_valid, write_page_index_entry,
+    PageIndexConfig, SkillDocument, SkillDocumentExtras, SkillsIndex, build_chunk_variant,
+    build_page_index_only, chunk_variant_valid, load_merged_document_json, page_index_valid,
+    write_page_index_entry,
 };
-use crate::skills_io::write_skills_index;
+use crate::skills_io::refresh_skills_index_cache;
 
+use super::config::memory_cache_config;
+use super::disk_writer::maybe_enqueue_skills_index;
+use super::hot::{get_merged_document, store_merged_document, store_skills_index};
 use super::manifest::CacheStatus;
+use super::materialize::stub_document_from_source;
 use super::{CachePolicy, disk_available, expand_tilde};
 
 #[derive(Debug, Clone)]
@@ -23,6 +30,11 @@ pub struct SkillEntryRef {
     pub bm25_chunk_dir: Option<PathBuf>,
     pub disk_backed: bool,
     pub cache_status: CacheStatus,
+    pub source_path: String,
+    pub nodes_dir: Option<PathBuf>,
+    pub document: Option<Value>,
+    /// True when lazy registry deferred full page/chunk indexing.
+    pub lazy_pending: bool,
 }
 
 fn file_content_hash(path: &Path) -> Result<String, String> {
@@ -64,9 +76,162 @@ fn build_page_index_for_source(
     result
 }
 
+fn persist_skills_index(entry_dir: &Path, doc_id: &str, index: &SkillsIndex) {
+    store_skills_index(entry_dir, doc_id, None, index.clone());
+    maybe_enqueue_skills_index(entry_dir.to_path_buf(), index.clone());
+}
+
+fn ensure_bm25_chunk_variant(
+    entry_dir: &Path,
+    doc_id: &str,
+    bm25_chunk_dir: Option<&Path>,
+    index_params_hash: &str,
+    pageindex_config: &PageIndexConfig,
+) -> Result<(), String> {
+    if bm25_chunk_dir.is_none() {
+        return Ok(());
+    }
+    if chunk_variant_valid(entry_dir, "bm25", index_params_hash, doc_id) {
+        return Ok(());
+    }
+    build_chunk_variant(
+        entry_dir,
+        doc_id,
+        "bm25",
+        index_params_hash,
+        pageindex_config,
+    )?;
+    refresh_skills_index_cache(entry_dir, doc_id, bm25_chunk_dir);
+    Ok(())
+}
+
+fn load_document_cached(
+    entry_dir: &Path,
+    doc_id: &str,
+    bm25_chunk_dir: Option<&Path>,
+) -> Result<Value, String> {
+    if let Some(doc) = get_merged_document(entry_dir, bm25_chunk_dir) {
+        return Ok(doc);
+    }
+    let document = load_merged_document_json(entry_dir, doc_id, bm25_chunk_dir)?;
+    Ok(store_merged_document(entry_dir, bm25_chunk_dir, document))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ensure_one_skill_entry(
+    source: &Path,
+    catalog_root: &Path,
+    pageindex_config: &PageIndexConfig,
+    _pipeline: &str,
+    index_params_hash: &str,
+    _policy: CachePolicy,
+    disk_ok: bool,
+    materialize_bm25: bool,
+    lazy_registry: bool,
+) -> Result<SkillEntryRef, String> {
+    let content_sha256 = file_content_hash(source)?;
+    let doc_id = doc_id_from_path(source);
+    let entry_dir = skill_entry_dir(catalog_root, &content_sha256);
+    let bm25_chunk_dir = if materialize_bm25 {
+        Some(
+            entry_dir
+                .join("chunks")
+                .join("bm25")
+                .join(index_params_hash),
+        )
+    } else {
+        None
+    };
+
+    let mut disk_backed = false;
+    let mut cache_status = CacheStatus::MemoryFallback;
+    let mut lazy_pending = false;
+    let document;
+
+    if disk_ok && page_index_valid(&entry_dir, &content_sha256) {
+        cache_status = CacheStatus::Hit;
+        disk_backed = true;
+        document = Some(load_document_cached(
+            &entry_dir,
+            &doc_id,
+            bm25_chunk_dir.as_deref(),
+        )?);
+        if materialize_bm25 && !chunk_variant_valid(&entry_dir, "bm25", index_params_hash, &doc_id)
+        {
+            ensure_bm25_chunk_variant(
+                &entry_dir,
+                &doc_id,
+                bm25_chunk_dir.as_deref(),
+                index_params_hash,
+                pageindex_config,
+            )?;
+            cache_status = CacheStatus::Miss;
+        }
+    } else if lazy_registry {
+        lazy_pending = true;
+        document = Some(stub_document_from_source(source, &doc_id, &content_sha256)?);
+    } else {
+        let index = build_page_index_for_source(source, pageindex_config)?;
+
+        if disk_ok {
+            let extras = SkillDocumentExtras {
+                content_sha256: content_sha256.clone(),
+                pipeline: String::new(),
+                index_params: serde_json::Value::Null,
+                built_at: String::new(),
+                source_path: source.display().to_string(),
+            };
+            write_page_index_entry(&index, &entry_dir, &doc_id, Some(&extras))?;
+            persist_skills_index(&entry_dir, &doc_id, &index);
+            disk_backed = true;
+            cache_status = CacheStatus::Miss;
+
+            if materialize_bm25 {
+                ensure_bm25_chunk_variant(
+                    &entry_dir,
+                    &doc_id,
+                    bm25_chunk_dir.as_deref(),
+                    index_params_hash,
+                    pageindex_config,
+                )?;
+            }
+            document = Some(load_document_cached(
+                &entry_dir,
+                &doc_id,
+                bm25_chunk_dir.as_deref(),
+            )?);
+        } else {
+            document = index.documents.get(&doc_id).map(SkillDocument::to_json);
+            if let Some(ref doc) = document {
+                let _ = store_merged_document(&entry_dir, bm25_chunk_dir.as_deref(), doc.clone());
+            }
+        }
+    }
+
+    let nodes_dir_path = if disk_backed {
+        Some(nodes_dir(&entry_dir))
+    } else {
+        None
+    };
+
+    Ok(SkillEntryRef {
+        entry_dir,
+        doc_id,
+        content_sha256,
+        bm25_chunk_dir,
+        disk_backed,
+        cache_status,
+        source_path: source.display().to_string(),
+        nodes_dir: nodes_dir_path,
+        document,
+        lazy_pending,
+    })
+}
+
 /// Ensure page index + optional BM25 chunk variant for each source skill file.
 ///
-/// Page index and BM25 chunks are built in Rust; rerank/LLM chunk variants remain in Python.
+/// When ``memory_cache_config().lazy_registry`` is true, entries without a disk hit
+/// return frontmatter-only stubs and defer full indexing to first BM25 use.
 ///
 /// # Errors
 ///
@@ -82,69 +247,24 @@ pub fn ensure_skills_registry(
     let root = expand_tilde(catalog_root);
     let disk_ok = policy != CachePolicy::ForceMemory && disk_available(&root);
     let materialize_bm25 = pipeline.trim().eq_ignore_ascii_case("bm25");
+    let lazy_registry = memory_cache_config().lazy_registry;
     let mut refs = Vec::new();
 
     for source in source_paths {
         if !source.is_file() {
             continue;
         }
-        let content_sha256 = file_content_hash(source)?;
-        let doc_id = doc_id_from_path(source);
-        let entry_dir = skill_entry_dir(&root, &content_sha256);
-        let mut disk_backed = false;
-        let mut cache_status = CacheStatus::MemoryFallback;
-
-        if disk_ok {
-            if page_index_valid(&entry_dir, &content_sha256) {
-                cache_status = CacheStatus::Hit;
-            } else {
-                let index = build_page_index_for_source(source, pageindex_config)?;
-                write_skills_index(&index, &entry_dir)?;
-                let extras = SkillDocumentExtras {
-                    content_sha256: content_sha256.clone(),
-                    pipeline: String::new(),
-                    index_params: serde_json::Value::Null,
-                    built_at: String::new(),
-                    source_path: source.display().to_string(),
-                };
-                write_page_index_entry(&index, &entry_dir, &doc_id, Some(&extras))?;
-                cache_status = CacheStatus::Miss;
-            }
-            disk_backed = true;
-
-            if materialize_bm25
-                && !chunk_variant_valid(&entry_dir, "bm25", index_params_hash, &doc_id)
-            {
-                build_chunk_variant(
-                    &entry_dir,
-                    &doc_id,
-                    "bm25",
-                    index_params_hash,
-                    pageindex_config,
-                )?;
-                cache_status = CacheStatus::Miss;
-            }
-        }
-
-        let bm25_chunk_dir = if materialize_bm25 {
-            Some(
-                entry_dir
-                    .join("chunks")
-                    .join("bm25")
-                    .join(index_params_hash),
-            )
-        } else {
-            None
-        };
-
-        refs.push(SkillEntryRef {
-            entry_dir,
-            doc_id,
-            content_sha256,
-            bm25_chunk_dir,
-            disk_backed,
-            cache_status,
-        });
+        refs.push(ensure_one_skill_entry(
+            source,
+            &root,
+            pageindex_config,
+            pipeline,
+            index_params_hash,
+            policy,
+            disk_ok,
+            materialize_bm25,
+            lazy_registry,
+        )?);
     }
 
     Ok(refs)

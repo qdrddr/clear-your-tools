@@ -59,7 +59,10 @@ export {
   bm25FrontmatterGate,
   bm25ScoreCatalog,
   bm25SearchSkillChunks,
+  batchReconstructSkillMatches,
   configureBm25Defaults,
+  expSimilarity,
+  greedySelectSkillItems,
   type Bm25FrontmatterGateResult,
   type Bm25ScoreCatalogOptions,
   type Bm25SearchSkillChunksResult,
@@ -71,6 +74,7 @@ export {
   countTokensBatch,
 } from "./tokens.js";
 export {
+  configureMemoryCache,
   ensureSkillsRegistry,
   ensureToolCatalog,
   ensureToolCatalogFromEntries,

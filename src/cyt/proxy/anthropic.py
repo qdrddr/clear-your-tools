@@ -37,10 +37,10 @@ from cyt.pruners.policies import (
     PolicyContext,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
+    classify_optional_chunks_batch,
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
-    is_decomposed_optional_property_chunk,
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
@@ -585,10 +585,12 @@ def _count_optional_property_chunks(data: dict[str, Any]) -> int:
     json_items = data.get("json")
     if not isinstance(json_items, list):
         return 0
+    dict_items = [item for item in json_items if isinstance(item, dict)]
+    if not dict_items:
+        return 0
+    system_flags, mcp_flags = classify_optional_chunks_batch(dict_items)
     return sum(
-        1
-        for item in json_items
-        if isinstance(item, dict) and is_decomposed_optional_property_chunk(item)
+        1 for sys_opt, mcp_opt in zip(system_flags, mcp_flags, strict=True) if sys_opt or mcp_opt
     )
 
 

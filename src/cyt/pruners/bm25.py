@@ -101,9 +101,14 @@ def build_or_load_index(
 
 def normalize_bm25_similarity(raw: float) -> float:
     """Map a raw BM25 score to absolute similarity in [0, 1]."""
-    if raw <= 0.0:
-        return 0.0
-    return float(1.0 - math.exp(-raw))
+    try:
+        from cyt_indexer.bm25_search import exp_similarity
+
+        return float(exp_similarity(raw))
+    except ImportError:
+        if raw <= 0.0:
+            return 0.0
+        return float(1.0 - math.exp(-raw))
 
 
 def normalize_bm25_similarity_array(scores: list[float]) -> list[float]:
@@ -188,9 +193,6 @@ def bm25_catalog_dict(
     )
     data["json"] = scored.get("json", data.get("json"))
     data["md"] = scored.get("md", data.get("md"))
-
-    if prune:
-        data = prune_bm25_catalog(data, config=cfg)
 
     return finalize_catalog_result(data, pinned, merge_pinned=merge_pinned), bm25_stage_usage()
 

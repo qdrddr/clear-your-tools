@@ -14,6 +14,8 @@ use crate::catalog_io::write_catalog_index;
 use crate::paths::{collect_enums, decomposed_prefix, json_ext};
 use crate::tool_entries::anthropic_tools_to_catalog_entries;
 
+use super::disk_writer::maybe_enqueue_tool_catalog;
+use super::hot::{get_tool_catalog, store_tool_catalog};
 use super::lock::BuildLock;
 use super::manifest::CacheStatus;
 use super::{CachePolicy, CacheResult, disk_available, expand_tilde};
@@ -95,7 +97,8 @@ fn cache_files_only(index: &CatalogIndex) -> HashMap<String, String> {
         .collect()
 }
 
-fn write_tool_cache(entry_dir: &Path, index: &CatalogIndex) -> Result<(), String> {
+/// Write decomposed tool files synchronously (also used by the disk writer thread).
+pub fn write_tool_cache_sync(entry_dir: &Path, index: &CatalogIndex) -> Result<(), String> {
     let files = cache_files_only(index);
     write_catalog_index(
         &CatalogIndex {
@@ -201,11 +204,20 @@ fn ensure_single_tool_cached(
     let root = expand_tilde(tools_root);
     let entry_dir = root.join("entries").join(&content_hash);
 
+    if let Some(cached) = get_tool_catalog(&content_hash) {
+        return Ok(SingleToolCacheOutcome {
+            index: cached,
+            disk_backed: true,
+            cache_status: CacheStatus::Hit,
+        });
+    }
+
     let try_disk = policy != CachePolicy::ForceMemory && disk_available(&entry_dir);
     if try_disk
         && tool_cache_valid(&entry_dir, &tool_id)
         && let Ok(index) = load_index_from_entry_dir(&entry_dir, entry)
     {
+        store_tool_catalog(&content_hash, index.clone());
         return Ok(SingleToolCacheOutcome {
             index,
             disk_backed: true,
@@ -217,6 +229,7 @@ fn ensure_single_tool_cached(
         if tool_cache_valid(&entry_dir, &tool_id)
             && let Ok(index) = load_index_from_entry_dir(&entry_dir, entry)
         {
+            store_tool_catalog(&content_hash, index.clone());
             return Ok(SingleToolCacheOutcome {
                 index,
                 disk_backed: true,
@@ -224,7 +237,8 @@ fn ensure_single_tool_cached(
             });
         }
         let index = build_index_for_entry(entry);
-        write_tool_cache(&entry_dir, &index)?;
+        store_tool_catalog(&content_hash, index.clone());
+        maybe_enqueue_tool_catalog(entry_dir.clone(), index.clone());
         return Ok(SingleToolCacheOutcome {
             index,
             disk_backed: true,
@@ -232,8 +246,10 @@ fn ensure_single_tool_cached(
         });
     }
 
+    let index = build_index_for_entry(entry);
+    store_tool_catalog(&content_hash, index.clone());
     Ok(SingleToolCacheOutcome {
-        index: build_index_for_entry(entry),
+        index,
         disk_backed: false,
         cache_status: CacheStatus::MemoryFallback,
     })

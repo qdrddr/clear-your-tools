@@ -142,7 +142,23 @@ pub fn ensure_skills_registry_napi(
                 "bm25_chunk_dir": entry.bm25_chunk_dir.as_ref().map(|p| p.display().to_string()),
                 "disk_backed": entry.disk_backed,
                 "cache_status": cache_status_str(entry.cache_status),
+                "source_path": entry.source_path,
+                "nodes_dir": entry.nodes_dir.as_ref().map(|p| p.display().to_string()),
+                "document": entry.document,
+                "lazy_pending": entry.lazy_pending,
             })
         })
         .collect())
+}
+
+/// Apply in-memory cache tuning from a config object.
+///
+/// # Errors
+///
+/// Returns an error when the config object cannot be parsed.
+#[napi(js_name = "configureMemoryCache")]
+#[allow(clippy::needless_pass_by_value)]
+pub fn configure_memory_cache_napi(config: Value) -> Result<()> {
+    crate::cache::configure_memory_cache(&config);
+    Ok(())
 }

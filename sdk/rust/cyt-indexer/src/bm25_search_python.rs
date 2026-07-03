@@ -1,6 +1,7 @@
 use crate::bm25_search::{
-    self, ScoreCatalogOptions, bm25_frontmatter_gate, bm25_search_skill_chunks,
-    collect_catalog_documents, score_catalog_in_place,
+    self, ScoreCatalogOptions, batch_reconstruct_skill_matches, bm25_frontmatter_gate,
+    bm25_search_skill_chunks, collect_catalog_documents, exp_similarity, greedy_select_skill_items,
+    score_catalog_in_place,
 };
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -136,11 +137,46 @@ fn bm25_search_skill_chunks_py(
     value_to_py(py, &result)
 }
 
+#[pyfunction(name = "exp_similarity")]
+fn exp_similarity_py(raw: f64) -> f64 {
+    exp_similarity(raw)
+}
+
+#[pyfunction(name = "batch_reconstruct_skill_matches")]
+fn batch_reconstruct_skill_matches_py(
+    py: Python<'_>,
+    groups: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let groups_val = py_to_value(groups)?;
+    let arr = groups_val.as_array().cloned().unwrap_or_default();
+    let matches = batch_reconstruct_skill_matches(&arr)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &serde_json::json!(matches))
+}
+
+#[pyfunction(name = "greedy_select_skill_items")]
+#[pyo3(signature = (survivors, item_kind="node", max_tokens=0))]
+fn greedy_select_skill_items_py(
+    py: Python<'_>,
+    survivors: Bound<'_, PyAny>,
+    item_kind: &str,
+    max_tokens: i64,
+) -> PyResult<Py<PyAny>> {
+    let survivors_val = py_to_value(survivors)?;
+    let arr = survivors_val.as_array().cloned().unwrap_or_default();
+    let result = greedy_select_skill_items(&arr, item_kind, max_tokens)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &result)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(configure_bm25_defaults_py, m)?)?;
     m.add_function(wrap_pyfunction!(bm25_catalog_fingerprint_py, m)?)?;
     m.add_function(wrap_pyfunction!(bm25_score_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(bm25_frontmatter_gate_py, m)?)?;
     m.add_function(wrap_pyfunction!(bm25_search_skill_chunks_py, m)?)?;
+    m.add_function(wrap_pyfunction!(exp_similarity_py, m)?)?;
+    m.add_function(wrap_pyfunction!(batch_reconstruct_skill_matches_py, m)?)?;
+    m.add_function(wrap_pyfunction!(greedy_select_skill_items_py, m)?)?;
     Ok(())
 }

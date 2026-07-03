@@ -35,3 +35,18 @@ func Bm25FrontmatterGate(entriesJSON, query string, upperLimit float64) (string,
 func Bm25SearchSkillChunks(entriesJSON, query string, threshold float64, excludedJSON string) (string, error) {
 	return cgoBm25SearchSkillChunks(entriesJSON, query, threshold, excludedJSON)
 }
+
+// ExpSimilarity maps a raw BM25 score to absolute similarity in [0, 1].
+func ExpSimilarity(raw float64) float64 {
+	return cgoExpSimilarity(raw)
+}
+
+// BatchReconstructSkillMatches reconstructs multiple skill doc groups in one native call.
+func BatchReconstructSkillMatches(groupsJSON string) (string, error) {
+	return cgoBatchReconstructSkillMatches(groupsJSON)
+}
+
+// GreedySelectSkillItems performs greedy budget selection over skill search survivors.
+func GreedySelectSkillItems(survivorsJSON, itemKind string, maxTokens int64) (string, error) {
+	return cgoGreedySelectSkillItems(survivorsJSON, itemKind, maxTokens)
+}

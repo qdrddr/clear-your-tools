@@ -63,3 +63,8 @@ def ensure_skills_registry(
         policy,
     )
     return [dict(ref) for ref in refs]
+
+
+def configure_memory_cache(config: dict[str, Any]) -> None:
+    """Apply in-memory cache tuning (lazy registry, LRU sizes, async disk writes)."""
+    _native.configure_memory_cache(config)

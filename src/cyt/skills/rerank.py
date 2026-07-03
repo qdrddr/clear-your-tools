@@ -5,12 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cyt_indexer import reconstruct_skill_markdown
-
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import rerank_score_skills, reranker_minimum_tools
 from cyt.indexer.build import catalog_tool_count
-from cyt.indexer.tokens import count_tokens
 from cyt.pruners.documents import (
     extract_json_catalog_document,
     extract_md_catalog_document,
@@ -25,11 +22,11 @@ from cyt.pruners.rerank import (
     rerank_pruning_settings,
     rerank_unified_item_lists,
 )
-from cyt.skills.catalog import SkillEntryRef, load_entry_skills_index
+from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import SearchItemRow
-from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.nodes import build_skill_node_items
-from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
+from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
+from cyt.skills.search import MatchedSkill
 
 logger = logging.getLogger(__name__)
 
@@ -41,53 +38,13 @@ def reconstruct_skills_from_reranked_items(
     config: dict[str, Any] | None = None,
 ) -> list[MatchedSkill]:
     """Group surviving node items by doc and rebuild MatchedSkill list."""
-    by_doc: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for item in survivors:
-        entry_dir = str(item.get("entry_dir", ""))
-        doc_id = str(item.get("doc_id", ""))
-        if not entry_dir or not doc_id:
-            continue
-        by_doc.setdefault((entry_dir, doc_id), []).append(item)
-
-    if not by_doc:
-        return []
-
-    frontmatter_by_doc = _frontmatter_by_doc(entries)
-    entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
-    matched: list[MatchedSkill] = []
-    for (entry_dir, doc_id), items in by_doc.items():
-        entry = entry_by_key.get((entry_dir, doc_id))
-        if entry is None:
-            continue
-        items.sort(key=lambda row: float(row.get("score", 0)), reverse=True)
-        top_score = float(items[0].get("score", 0))
-        file_path = str(items[0].get("file_path", ""))
-        node_ids = [int(item["node_id"]) for item in items if item.get("node_id") is not None]
-        index = load_entry_skills_index(entry)
-        node_specs = [str(node_id) for node_id in sorted(set(node_ids))]
-        result = reconstruct_skill_markdown(
-            index,
-            doc_id,
-            node_id_specs=node_specs,
-        )
-        markdown = str(result.get("markdown", "")).strip()
-        if not markdown:
-            continue
-        frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
-        name = skill_name_from_frontmatter(frontmatter)
-        token_count = count_tokens(markdown)
-        matched.append(
-            MatchedSkill(
-                doc_id=doc_id,
-                file_path=file_path,
-                markdown=markdown,
-                name=name,
-                score=top_score,
-                token_count=token_count,
-            ),
-        )
-
-    return matched
+    del config
+    return reconstruct_matches_from_survivor_dicts(
+        survivors,
+        entries,
+        item_kind="node",
+        id_field="node_id",
+    )
 
 
 def rerank_skill_nodes(

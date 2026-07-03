@@ -190,6 +190,32 @@ int cyt_bm25_search_skill_chunks(const char *entries_json,
                                  char **out);
 
 /*
+ Reconstruct multiple skill doc groups in one native call.
+
+ # Safety
+
+ `groups_json` must be a valid null-terminated UTF-8 C string; `out` must be non-null.
+ */
+int cyt_batch_reconstruct_skill_matches(const char *groups_json, char **out);
+
+/*
+ Greedy budget selection over skill search survivors.
+
+ # Safety
+
+ `survivors_json` and `item_kind` must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_greedy_select_skill_items(const char *survivors_json,
+                                  const char *item_kind,
+                                  int64_t max_tokens,
+                                  char **out);
+
+/*
+ Map a raw BM25 score to absolute similarity in `[0, 1]`.
+ */
+double cyt_exp_similarity(double raw);
+
+/*
  Hash tool catalog content for cache keying.
 
  # Safety
@@ -241,6 +267,15 @@ int cyt_ensure_skills_registry(const char *source_paths_json,
                                const char *index_params_hash,
                                const char *policy,
                                char **out);
+
+/*
+ Apply in-memory cache tuning from a JSON object (`cache.memory` block).
+
+ # Safety
+
+ `config_json` must be a valid null-terminated UTF-8 C string when non-null.
+ */
+int cyt_configure_memory_cache(const char *config_json);
 
 /*
  Count tools in a catalog dict JSON.

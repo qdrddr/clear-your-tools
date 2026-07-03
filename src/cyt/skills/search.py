@@ -61,9 +61,9 @@ def eligible_skills_after_gate(
 
 
 def _skill_node_count(entries: list[SkillEntryRef]) -> int:
-    from cyt.skills.nodes import build_skill_node_items
+    from cyt.skills.nodes import count_content_nodes
 
-    return len(build_skill_node_items(entries))
+    return count_content_nodes(entries)
 
 
 def _should_use_bm25_fallback(entries: list[SkillEntryRef], config: dict[str, Any] | None) -> bool:

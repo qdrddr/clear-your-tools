@@ -9,13 +9,19 @@ from cyt_indexer._native import bm25_frontmatter_gate as _bm25_frontmatter_gate_
 from cyt_indexer._native import bm25_score_catalog as _bm25_score_catalog_native
 from cyt_indexer._native import bm25_search_skill_chunks as _bm25_search_skill_chunks_native
 from cyt_indexer._native import configure_bm25_defaults as _configure_bm25_defaults_native
+from cyt_indexer._native import exp_similarity as _exp_similarity_native
+from cyt_indexer._native import batch_reconstruct_skill_matches as _batch_reconstruct_native
+from cyt_indexer._native import greedy_select_skill_items as _greedy_select_native
 
 __all__ = [
     "bm25_catalog_fingerprint",
     "bm25_frontmatter_gate",
     "bm25_score_catalog",
     "bm25_search_skill_chunks",
+    "batch_reconstruct_skill_matches",
     "configure_bm25_defaults",
+    "exp_similarity",
+    "greedy_select_skill_items",
 ]
 
 
@@ -91,3 +97,27 @@ def bm25_search_skill_chunks(
         excluded=excluded,
     )
     return dict(result) if isinstance(result, dict) else result
+
+
+def exp_similarity(raw: float) -> float:
+    """Map a raw BM25 score to absolute similarity in [0, 1]."""
+    return float(_exp_similarity_native(raw))
+
+
+def batch_reconstruct_skill_matches(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reconstruct multiple skill doc groups in one native call."""
+    result = _batch_reconstruct_native(groups)
+    if isinstance(result, list):
+        return [dict(item) if isinstance(item, dict) else item for item in result]
+    return []
+
+
+def greedy_select_skill_items(
+    survivors: list[dict[str, Any]],
+    *,
+    item_kind: str = "node",
+    max_tokens: int = 0,
+) -> dict[str, Any]:
+    """Greedy budget selection over skill search survivors in native core."""
+    result = _greedy_select_native(survivors, item_kind, int(max_tokens))
+    return dict(result) if isinstance(result, dict) else {}

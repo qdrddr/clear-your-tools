@@ -280,6 +280,32 @@ func cgoBm25SearchSkillChunks(entriesJSON, query string, threshold float64, excl
 	return takeJSON(&out)
 }
 
+func cgoExpSimilarity(raw float64) float64 {
+	return float64(C.cyt_exp_similarity(C.double(raw)))
+}
+
+func cgoBatchReconstructSkillMatches(groupsJSON string) (string, error) {
+	cGroups := cString(groupsJSON)
+	defer freeCString(cGroups)
+	var out *C.char
+	if C.cyt_batch_reconstruct_skill_matches(cGroups, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoGreedySelectSkillItems(survivorsJSON, itemKind string, maxTokens int64) (string, error) {
+	cSurvivors := cString(survivorsJSON)
+	defer freeCString(cSurvivors)
+	cKind := cString(itemKind)
+	defer freeCString(cKind)
+	var out *C.char
+	if C.cyt_greedy_select_skill_items(cSurvivors, cKind, C.int64_t(maxTokens), &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoWriteCatalogIndex(indexJSON, outputDir string, prune bool) error {
 	cIndex := cString(indexJSON)
 	defer freeCString(cIndex)

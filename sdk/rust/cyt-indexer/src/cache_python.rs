@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 use crate::cache::{
-    CachePolicy, CacheStatus, ensure_skills_registry, ensure_tool_catalog,
+    CachePolicy, CacheStatus, configure_memory_cache, ensure_skills_registry, ensure_tool_catalog,
     ensure_tool_catalog_from_entries, tools_content_hash,
 };
 use crate::pageindex::PageIndexConfig;
@@ -114,6 +114,15 @@ fn ensure_skills_registry_py(
         )?;
         dict.set_item("disk_backed", entry.disk_backed)?;
         dict.set_item("cache_status", cache_status_str(entry.cache_status))?;
+        dict.set_item("source_path", entry.source_path)?;
+        dict.set_item(
+            "nodes_dir",
+            entry.nodes_dir.as_ref().map(|p| p.display().to_string()),
+        )?;
+        if let Some(document) = &entry.document {
+            dict.set_item("document", value_to_py(py, document)?)?;
+        }
+        dict.set_item("lazy_pending", entry.lazy_pending)?;
         list.append(dict)?;
     }
     Ok(list.into())
@@ -157,10 +166,17 @@ fn ensure_tool_catalog_from_entries_py(
     Ok(dict.into())
 }
 
+#[pyfunction(name = "configure_memory_cache")]
+fn configure_memory_cache_py(config: Bound<'_, PyAny>) -> PyResult<()> {
+    configure_memory_cache(&py_to_value(config)?);
+    Ok(())
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tools_catalog_content_hash_py, m)?)?;
     m.add_function(wrap_pyfunction!(ensure_tool_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(ensure_tool_catalog_from_entries_py, m)?)?;
     m.add_function(wrap_pyfunction!(ensure_skills_registry_py, m)?)?;
+    m.add_function(wrap_pyfunction!(configure_memory_cache_py, m)?)?;
     Ok(())
 }

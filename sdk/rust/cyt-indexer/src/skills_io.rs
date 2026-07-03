@@ -94,6 +94,19 @@ pub fn load_skills_index_from_entry(
     doc_id: &str,
     chunk_variant: Option<&Path>,
 ) -> Result<SkillsIndex, String> {
+    if let Some(cached) = crate::cache::get_skills_index(entry_dir, doc_id, chunk_variant) {
+        return Ok(cached);
+    }
+    let index = load_skills_index_from_entry_impl(entry_dir, doc_id, chunk_variant)?;
+    crate::cache::store_skills_index(entry_dir, doc_id, chunk_variant, index.clone());
+    Ok(index)
+}
+
+fn load_skills_index_from_entry_impl(
+    entry_dir: &Path,
+    doc_id: &str,
+    chunk_variant: Option<&Path>,
+) -> Result<SkillsIndex, String> {
     let mut index = SkillsIndex::default();
     load_entry_files_into_index(entry_dir, chunk_variant, &mut index)?;
 
@@ -121,6 +134,13 @@ pub fn load_skills_index_from_entry(
         ));
     }
     Ok(index)
+}
+
+/// Reload a skills index from disk and refresh the hot cache entry.
+pub fn refresh_skills_index_cache(entry_dir: &Path, doc_id: &str, chunk_variant: Option<&Path>) {
+    if let Ok(index) = load_skills_index_from_entry_impl(entry_dir, doc_id, chunk_variant) {
+        crate::cache::store_skills_index(entry_dir, doc_id, chunk_variant, index);
+    }
 }
 
 /// Load a skills index from an entry directory (page index + optional default chunk overlay).

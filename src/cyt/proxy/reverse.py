@@ -1220,6 +1220,9 @@ def create_app(
         app.state.pruner_settings = pruner_settings
         if config is not None:
             app.state.cyt_config = config
+            from cyt.cache import warm_caches
+
+            warm_caches(config)
         try:
             yield
         finally:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -13,9 +14,12 @@ from urllib.request import urlopen
 LOCAL_HOST = "127.0.0.1"
 DEFAULT_PORT = 8834
 HEALTH_TIMEOUT_SECONDS = 1.5
+HEALTH_TTL_SECONDS = 30.0
 HOOK_INJECT_PATH = "/hook/inject"
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
 HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
+
+_last_live_hook_url: tuple[str, float] | None = None
 
 
 def hook_url_for_port(port: int) -> str:
@@ -95,10 +99,21 @@ def find_hook_server_port(*, max_attempts: int = 100) -> int | None:
 
 
 def _hook_url_is_live(url: str) -> bool:
+    global _last_live_hook_url
+    now = time.monotonic()
+    if (
+        _last_live_hook_url is not None
+        and _last_live_hook_url[0] == url
+        and now - _last_live_hook_url[1] < HEALTH_TTL_SECONDS
+    ):
+        return True
     port = _port_from_hook_url(url)
     if port is None:
         return False
-    return is_hook_server(fetch_cyt_health(port))
+    live = is_hook_server(fetch_cyt_health(port))
+    if live:
+        _last_live_hook_url = (url, now)
+    return live
 
 
 def resolve_hook_url() -> str | None:

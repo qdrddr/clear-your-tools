@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import SearchItemRow
+from cyt.skills.reconstruct import EntryIndexCache
 from cyt.skills.search import MatchedSkill
 from cyt.skills.select import (
     select_items_with_budget_trace,
@@ -121,37 +122,37 @@ def test_item_budget_pools_nodes_across_skills_by_score() -> None:
     ]
     entries = [_entry("a"), _entry("b")]
 
-    def fake_reconstruct(
-        items: list[SearchItemRow],
-        _entries: list[SkillEntryRef],
+    def fake_reconstruct_doc_match(
+        entry: SkillEntryRef,
         *,
+        id_specs: list[str],
         item_kind: str,
-    ) -> list[MatchedSkill]:
-        by_doc: dict[str, list[SearchItemRow]] = {}
-        for row in items:
-            by_doc.setdefault(row.doc_id, []).append(row)
-        matches = []
-        for doc_id, rows in by_doc.items():
-            matches.append(
-                MatchedSkill(
-                    doc_id=doc_id,
-                    file_path=f"/tmp/{doc_id}.md",
-                    markdown="body",
-                    name=doc_id,
-                    score=max(row.score for row in rows),
-                    token_count=len(rows),
-                ),
-            )
-        matches.sort(key=lambda item: item.score, reverse=True)
-        return matches
+        file_path: str,
+        top_score: float,
+        frontmatter: str | None,
+        index_cache: EntryIndexCache | None = None,
+    ) -> MatchedSkill:
+        del item_kind, frontmatter, index_cache
+        return MatchedSkill(
+            doc_id=entry.doc_id,
+            file_path=file_path,
+            markdown="body",
+            name=entry.doc_id,
+            score=top_score,
+            token_count=len(id_specs),
+        )
 
     def fake_wrapped_tokens(matches: list[MatchedSkill]) -> int:
         return sum(match.token_count for match in matches) * 50
 
     with (
         patch(
-            "cyt.skills.select._reconstruct_matches_from_items",
-            side_effect=fake_reconstruct,
+            "cyt.skills.select._greedy_select_items_native",
+            return_value=None,
+        ),
+        patch(
+            "cyt.skills.select.reconstruct_doc_match",
+            side_effect=fake_reconstruct_doc_match,
         ),
         patch(
             "cyt.skills.select._wrapped_injection_tokens",
@@ -183,37 +184,37 @@ def test_item_budget_stops_when_next_node_would_exceed_budget() -> None:
     ]
     entries = [_entry("a"), _entry("b")]
 
-    def fake_reconstruct(
-        items: list[SearchItemRow],
-        _entries: list[SkillEntryRef],
+    def fake_reconstruct_doc_match(
+        entry: SkillEntryRef,
         *,
+        id_specs: list[str],
         item_kind: str,
-    ) -> list[MatchedSkill]:
-        by_doc: dict[str, list[SearchItemRow]] = {}
-        for row in items:
-            by_doc.setdefault(row.doc_id, []).append(row)
-        matches = []
-        for doc_id, rows in by_doc.items():
-            matches.append(
-                MatchedSkill(
-                    doc_id=doc_id,
-                    file_path=f"/tmp/{doc_id}.md",
-                    markdown="body",
-                    name=doc_id,
-                    score=max(row.score for row in rows),
-                    token_count=1,
-                ),
-            )
-        matches.sort(key=lambda item: item.score, reverse=True)
-        return matches
+        file_path: str,
+        top_score: float,
+        frontmatter: str | None,
+        index_cache: EntryIndexCache | None = None,
+    ) -> MatchedSkill:
+        del id_specs, item_kind, frontmatter, index_cache
+        return MatchedSkill(
+            doc_id=entry.doc_id,
+            file_path=file_path,
+            markdown="body",
+            name=entry.doc_id,
+            score=top_score,
+            token_count=1,
+        )
 
     def fake_wrapped_tokens(matches: list[MatchedSkill]) -> int:
         return len(matches) * 100
 
     with (
         patch(
-            "cyt.skills.select._reconstruct_matches_from_items",
-            side_effect=fake_reconstruct,
+            "cyt.skills.select._greedy_select_items_native",
+            return_value=None,
+        ),
+        patch(
+            "cyt.skills.select.reconstruct_doc_match",
+            side_effect=fake_reconstruct_doc_match,
         ),
         patch(
             "cyt.skills.select._wrapped_injection_tokens",

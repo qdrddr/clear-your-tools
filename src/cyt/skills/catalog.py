@@ -20,7 +20,6 @@ from cyt_indexer import (
     load_merged_skill_document_json,
     repair_skill_variant_chunks,
     update_skill_document_source_path,
-    write_skills_index,
 )
 from cyt_indexer.cache import ensure_skills_registry
 from cyt_indexer.pageindex import page_index_config_without_chunking
@@ -292,49 +291,6 @@ def _shorten_home_path(path: str) -> str:
         return expanded.as_posix()
 
 
-def _write_skill_marker(entry_dir: Path, source_path: Path) -> None:
-    skill_name = _skill_name_from_source(source_path)
-    marker = _skill_marker_path(entry_dir, skill_name)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text("", encoding="utf-8")
-
-
-def _build_page_index_disk(
-    source_path: Path,
-    entry_dir: Path,
-    *,
-    pageindex_config: dict[str, Any] | None,
-    content_hash: str,
-    pipeline: str,
-    index_params: dict[str, Any],
-) -> dict[str, Any]:
-    entry_dir.mkdir(parents=True, exist_ok=True)
-    doc_id = doc_id_from_path(source_path)
-    nodes_only_config = page_index_config_without_chunking().to_dict()
-    if pageindex_config:
-        nodes_only_config.update(
-            {k: v for k, v in pageindex_config.items() if k != "enable_bm25_chunking"},
-        )
-        nodes_only_config["enable_bm25_chunking"] = False
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        dest = tmp_path / source_path.name
-        shutil.copy2(source_path, dest)
-        index = build_page_index_only([str(tmp_path)], config=nodes_only_config)
-        write_skills_index(index, str(entry_dir))
-
-    _write_skill_marker(entry_dir, source_path)
-    return _augment_document_json(
-        entry_dir,
-        doc_id,
-        content_hash=content_hash,
-        pipeline=pipeline,
-        index_params=index_params,
-        source_path=str(source_path),
-    )
-
-
 def _build_page_index_memory(
     source_path: Path,
     *,
@@ -462,16 +418,20 @@ def _entry_from_rust_ref(
             )
 
         merge_chunk_dir = chunk_dir if _pipeline_materializes_chunks(pipeline) else None
-        document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
-        if document.get("content_sha256") != content_hash:
-            document = _augment_document_json(
-                entry_dir,
-                doc_id,
-                content_hash=content_hash,
-                pipeline=pipeline,
-                index_params=index_params,
-                source_path=str(source_path),
-            )
+        rust_document = ref.get("document")
+        if isinstance(rust_document, dict) and rust_document.get("content_sha256") == content_hash:
+            document = rust_document
+        else:
+            document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
+            if document.get("content_sha256") != content_hash:
+                document = _augment_document_json(
+                    entry_dir,
+                    doc_id,
+                    content_hash=content_hash,
+                    pipeline=pipeline,
+                    index_params=index_params,
+                    source_path=str(source_path),
+                )
     else:
         logger.debug("skills catalog not writable; using in-memory index for %s", source_path)
         document, memory_index = _build_page_index_memory(

@@ -81,7 +81,7 @@ def test_reconstruct_skills_from_llm_ids_uses_node_specs() -> None:
         meta = metadata[selector_id]
 
         with patch(
-            "cyt.skills.llm.reconstruct_skill_markdown",
+            "cyt.skills.reconstruct.reconstruct_skill_markdown",
         ) as reconstruct_mock:
             reconstruct_mock.return_value = {"markdown": "# Hook\n\nBody"}
             matches = reconstruct_skills_from_llm_ids(

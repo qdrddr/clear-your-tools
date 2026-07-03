@@ -1,16 +1,31 @@
 //! Shared cache module root.
 
 mod bm25_index;
+mod config;
+mod disk_writer;
+mod hot;
 mod lock;
+mod lru;
 mod manifest;
+mod materialize;
 mod skills_registry;
 mod tools_catalog;
 
 #[cfg(test)]
 mod fallback_tests;
 
+#[cfg(test)]
+mod memory_tests;
+
 pub use bm25_index::{Bm25IndexHandle, build_or_open_bm25_index};
+pub use config::{MemoryCacheConfig, configure_memory_cache, memory_cache_config};
+pub use hot::{
+    get_merged_document, get_skills_index, get_tantivy_handle, get_tool_catalog, read_chunk_body,
+    reset_hot_caches, store_merged_document, store_skills_index, store_tantivy_handle,
+    store_tool_catalog,
+};
 pub use manifest::CacheStatus;
+pub use materialize::{ensure_entry_materialized, materialize_skill_entry};
 pub use skills_registry::{SkillEntryRef, ensure_skills_registry};
 pub use tools_catalog::{
     ToolCatalogHandle, ensure_tool_catalog, ensure_tool_catalog_from_entries,

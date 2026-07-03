@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from cyt.skills.bm25 import _strip_frontmatter
+from cyt_indexer import get_skill_line_content
+
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
 from cyt.skills.frontmatter import skill_name_from_frontmatter
+
+
+def count_content_nodes(entries: list[SkillEntryRef]) -> int:
+    """Count content nodes across entries using structure metadata only (no disk I/O)."""
+    total = 0
+    for entry in entries:
+        structure = entry.document.get("structure")
+        if structure:
+            total += len(_iter_content_node_ids(structure))
+    return total
 
 
 def skill_name(entry: SkillEntryRef) -> str | None:
@@ -17,17 +27,18 @@ def skill_name(entry: SkillEntryRef) -> str | None:
 
 
 def load_node_body(entry: SkillEntryRef, node_id: int) -> str:
-    if not entry.disk_backed and entry.memory_index is not None:
-        files = entry.memory_index.get("files")
-        if isinstance(files, dict):
-            rel = f"nodes/n{node_id}.md"
-            raw = files.get(rel)
-            if isinstance(raw, str):
-                return _strip_frontmatter(raw).strip()
-    node_path = Path(entry.nodes_dir) / f"n{node_id}.md"
-    if not node_path.is_file():
+    index = entry.memory_index if not entry.disk_backed else None
+    if index is None and entry.disk_backed:
+        from cyt.skills.catalog import load_entry_skills_index
+
+        index = load_entry_skills_index(entry)
+    if index is None:
         return ""
-    return _strip_frontmatter(node_path.read_text(encoding="utf-8")).strip()
+    rows = get_skill_line_content(index, entry.doc_id, node_id_specs=[str(node_id)])
+    if not rows:
+        return ""
+    content = rows[0].get("content") if isinstance(rows[0], dict) else None
+    return str(content).strip() if content is not None else ""
 
 
 def build_skill_node_items(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
