@@ -80,11 +80,7 @@ def _resolve_daemon_mode(config: dict[str, Any]) -> str:
 
 
 def _spawn_extra_env(credential_sources: dict[str, str]) -> dict[str, str] | None:
-    extra = {
-        name: value
-        for name in credential_sources
-        if (value := os.environ.get(name))
-    }
+    extra = {name: value for name in credential_sources if (value := os.environ.get(name))}
     return extra or None
 
 

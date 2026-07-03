@@ -54,7 +54,7 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-token")
 
     def fake_ensure(
-        config: dict,  # noqa: ARG001
+        config: dict,
         *,
         credential_sources: dict[str, str],
     ) -> None:
