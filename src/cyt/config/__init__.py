@@ -1097,9 +1097,28 @@ def skills_pipeline_uses_rerank(config: dict[str, Any] | None = None) -> bool:
     return skills_pipeline(config).strip().lower() == "rerank"
 
 
-def skills_pipeline_uses_deferred_proxy_inject(config: dict[str, Any] | None = None) -> bool:
+def skills_pipeline_uses_combined_remote_prune(config: dict[str, Any] | None = None) -> bool:
     pipeline = skills_pipeline(config).strip().lower()
     return pipeline in ("llm", "rerank")
+
+
+def skills_pipeline_uses_deferred_proxy_inject(config: dict[str, Any] | None = None) -> bool:
+    return skills_pipeline_uses_combined_remote_prune(config)
+
+
+def effective_skills_pipeline(
+    config: dict[str, Any],
+    eligible_count: int,
+) -> str:
+    """Resolve configured skills pipeline, substituting bm25 when remote stages cannot run."""
+    configured = skills_pipeline(config).strip().lower()
+    if configured == "bm25":
+        return "bm25"
+    if eligible_count < skills_bm25_node_fallback_threshold(config):
+        return "bm25"
+    if configured in ("rerank", "llm"):
+        return configured
+    return "bm25"
 
 
 def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:

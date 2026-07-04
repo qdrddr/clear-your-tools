@@ -121,40 +121,65 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
     active = {"count": 0}
     lock = threading.Lock()
 
-    def slow_skills(*_args: object, **_kwargs: object) -> tuple[str, dict[str, Any], str]:
+    def slow_tools(*_args: object, **_kwargs: object) -> PruneResult:
         with lock:
             active["count"] += 1
             if active["count"] == 2:
                 overlap.set()
-        time.sleep(0.15)
-        return "user_prompt_skills_injected", {}, "<agent-skills>skills</agent-skills>"
+        time.sleep(0.12)
+        return PruneResult(
+            tools=[{"name": "mcp__x__tool"}],
+            status="applied",
+            query="parallel injection",
+            tools_in=1,
+            mcp_tools_in=1,
+            tools_out=1,
+            error=None,
+        )
 
-    def slow_tools(*_args: object, **_kwargs: object) -> tuple[str, dict[str, Any], str]:
+    def slow_skills(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
         with lock:
             active["count"] += 1
             if active["count"] == 2:
                 overlap.set()
-        time.sleep(0.15)
-        return "user_prompt_tools_injected", {}, "<agent-tools>tools</agent-tools>"
+        time.sleep(0.12)
+        return [{"skill": "one"}]
 
     payload = _hook_payload("parallel injection")
     config = _combined_hook_config(Path("/tmp"), Path("/tmp/definitions.json"), Path("/tmp/skills"))
 
     with (
-        patch.object(skills_cli, "_handle_user_prompt_skills", side_effect=slow_skills),
-        patch.object(skills_cli, "handle_user_prompt_tools", side_effect=slow_tools),
+        patch("cyt.config.tools_hook_file_missing", return_value=False),
+        patch("cyt.pruning.coordinator.filter_tools_for_query", side_effect=slow_tools),
+        patch("cyt.pruning.coordinator._run_skills_search", side_effect=slow_skills),
+        patch(
+            "cyt.pruning.hook_bridge.load_tool_catalog",
+            return_value=[{"name": "mcp__x__tool", "description": "tool"}],
+        ),
+        patch(
+            "cyt.pruning.hook_bridge.eligible_skills_after_gate",
+            return_value=[{"path": "skill.md"}],
+        ),
+        patch("cyt.config.effective_pruning_pipeline", return_value=["bm25"]),
+        patch("cyt.config.effective_skills_pipeline", return_value="bm25"),
+        patch(
+            "cyt.skills.cli.format_agent_skills",
+            return_value="<agent-skills>skills</agent-skills>",
+        ),
+        patch("cyt.skills.cli.format_agent_tools", return_value="<agent-tools>tools</agent-tools>"),
     ):
         started = time.perf_counter()
         outcome, _details, _context = skills_cli._handle_user_prompt(
             payload,
             config,
             emit_stdout=False,
+            io_guarded=True,
         )
         elapsed = time.perf_counter() - started
 
     assert overlap.is_set()
     assert outcome == "user_prompt_injected"
-    assert elapsed < 0.28
+    assert elapsed < 0.22
 
 
 def test_hook_skips_silently_when_catalog_missing() -> None:

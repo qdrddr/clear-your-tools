@@ -6,7 +6,6 @@ import contextlib
 import json
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +20,7 @@ from cyt.config import (
     skills_pipeline,
     tools_inject_via,
 )
+from cyt.proxy.anthropic import PruneResult
 from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
     count_hook_request_tokens,
@@ -54,10 +54,22 @@ from cyt.skills.transcript import (
     resolve_model,
     skills_search_query_from_hook_payload,
 )
-from cyt.tools.budget import tools_inject_allowed
-from cyt.tools.hook import handle_user_prompt_tools
+from cyt.tools.budget import (
+    resolve_tools_inject_budget,
+    tools_budget_precheck,
+    tools_inject_allowed,
+)
+from cyt.tools.hook import finish_tools_hook_injection_from_coordinator, handle_user_prompt_tools
+from cyt.tools.inject import format_agent_tools
 
 logger = logging.getLogger(__name__)
+
+
+def _tools_hook_file_missing(config: dict[str, Any]) -> bool:
+    from cyt.config import tools_hook_file_missing
+
+    return tools_hook_file_missing(config)
+
 
 _SESSION_EVENTS = frozenset({"SessionStart"})
 _PROMPT_EVENTS = frozenset({"UserPromptSubmit"})
@@ -351,6 +363,181 @@ def _combine_injection_parts(parts: list[str]) -> str:
     return "\n\n".join(part for part in parts if part.strip())
 
 
+def _append_coordinated_skills_injection(
+    *,
+    skill_matches: list[MatchedSkill] | None,
+    prompt: str,
+    model: str,
+    request_tokens: int,
+    config: dict[str, Any],
+    debug: bool,
+    parts: list[str],
+    outcomes: list[str],
+    details: dict[str, Any],
+) -> None:
+    if skill_matches is None:
+        return
+    injected_skills = format_agent_skills(skill_matches)
+    if injected_skills:
+        skills_in = injection_token_count(injected_skills)
+        if skills_in > 0:
+            record_skills_injection(
+                query=prompt,
+                model_name=model,
+                skills_in=skills_in,
+                request_tokens=request_tokens,
+                inject_path="hook",
+                skills_final_md=injected_skills if debug else None,
+                config=config,
+            )
+        parts.append(injected_skills)
+        outcomes.append("user_prompt_skills_injected")
+        details["resolved_model"] = model
+        if debug:
+            details["injected_skills"] = injected_skills
+        return
+    outcomes.append("user_prompt_no_matches")
+
+
+def _append_coordinated_tools_injection(
+    *,
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    query: str,
+    model: str,
+    prune_result: PruneResult,
+    catalog: list[dict[str, Any]],
+    request_tokens: int,
+    budget_debug: dict[str, int],
+    debug: bool,
+    parts: list[str],
+    outcomes: list[str],
+    details: dict[str, Any],
+) -> None:
+    pruned = prune_result.tools or []
+    if not pruned:
+        outcomes.append("user_prompt_no_tool_matches")
+        details["resolved_model"] = model
+        details["prune_status"] = prune_result.status
+        return
+    injected_tools = format_agent_tools(pruned)
+    if not injected_tools:
+        outcomes.append("user_prompt_empty_tool_injection")
+        return
+    tools_outcome, tools_details, _ = finish_tools_hook_injection_from_coordinator(
+        payload=payload,
+        config=config,
+        query=query,
+        model=model,
+        result=prune_result,
+        catalog=catalog,
+        injected=injected_tools,
+        request_tokens=request_tokens,
+        budget_debug=budget_debug,
+        debug=debug,
+    )
+    parts.append(injected_tools)
+    outcomes.append(tools_outcome)
+    details.update(tools_details)
+
+
+def _run_coordinated_user_prompt_injection(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    debug: bool,
+    skills_allowed: bool,
+    tools_allowed: bool,
+    allow_transcript_file_read: bool,
+    stdio_guarded: bool,
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    from cyt.pruning.hook_bridge import run_hook_coordinated_prune
+    from cyt.skills.hook_quiet import hook_quiet_stderr
+
+    query = skills_search_query_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
+    if not query:
+        return [], ["user_prompt_missing_prompt"], {}
+
+    if _tools_hook_file_missing(config):
+        tools_allowed = False
+    elif not tools_budget_precheck(config):
+        tools_allowed = False
+
+    if not skills_budget_precheck(config):
+        skills_allowed = False
+
+    request_tokens = count_hook_request_tokens(payload)
+    budget = resolve_inject_budget(
+        config,
+        "hook",
+        total_request_tokens=request_tokens,
+    )
+    if skills_allowed and budget.effective_max <= 0:
+        skills_allowed = False
+    budget_max, budget_debug = resolve_tools_inject_budget(
+        config,
+        total_request_tokens=request_tokens,
+    )
+    if tools_allowed and budget_max <= 0:
+        tools_allowed = False
+
+    if not skills_allowed and not tools_allowed:
+        return [], ["skipped_budget_zero"], {"request_tokens": request_tokens}
+
+    prompt = prompt_from_payload(payload) or query
+    model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
+
+    stdout_guard = hook_safe_stdout(active=stdio_guarded)
+    stderr_guard = hook_quiet_stderr(active=stdio_guarded)
+    with stdout_guard, stderr_guard:
+        prune_result, skill_matches, catalog = run_hook_coordinated_prune(
+            query,
+            config,
+            skills_allowed=skills_allowed,
+            tools_allowed=tools_allowed,
+            skills_max_tokens=budget.effective_max if skills_allowed else None,
+            io_guarded=stdio_guarded,
+        )
+
+        parts: list[str] = []
+        outcomes: list[str] = []
+        details: dict[str, Any] = {}
+
+        if skills_allowed:
+            _append_coordinated_skills_injection(
+                skill_matches=skill_matches,
+                prompt=prompt,
+                model=model,
+                request_tokens=request_tokens,
+                config=config,
+                debug=debug,
+                parts=parts,
+                outcomes=outcomes,
+                details=details,
+            )
+
+        if tools_allowed and prune_result is not None and catalog is not None:
+            _append_coordinated_tools_injection(
+                payload=payload,
+                config=config,
+                query=query,
+                model=model,
+                prune_result=prune_result,
+                catalog=catalog,
+                request_tokens=request_tokens,
+                budget_debug=budget_debug,
+                debug=debug,
+                parts=parts,
+                outcomes=outcomes,
+                details=details,
+            )
+
+        return parts, outcomes, details
+
+
 def _run_user_prompt_injection(
     payload: dict[str, Any],
     config: dict[str, Any],
@@ -362,63 +549,26 @@ def _run_user_prompt_injection(
     allow_transcript_file_read: bool,
     io_guarded: bool = False,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
-    """Run skills/tools hook injection; parallelize when both are enabled."""
+    """Run skills/tools hook injection via the shared coordinator when both are enabled."""
     parts: list[str] = []
     details: dict[str, Any] = {}
     outcomes: list[str] = []
 
-    if skills_allowed and tools_allowed:
-        suppress_stdio = not plain_output
-        stdout_guard = hook_safe_stdout(active=suppress_stdio or io_guarded)
-        stderr_guard = hook_quiet_stderr(active=suppress_stdio or io_guarded)
-        with stdout_guard, stderr_guard:
-            if io_guarded:
-                skills_outcome, skills_details, skills_text = _handle_user_prompt_skills(
-                    payload,
-                    config,
-                    plain_output=plain_output,
-                    debug=debug,
-                    io_guarded=io_guarded,
-                    allow_transcript_file_read=allow_transcript_file_read,
-                )
-                tools_outcome, tools_details, tools_text = handle_user_prompt_tools(
-                    payload,
-                    config,
-                    plain_output=plain_output,
-                    debug=debug,
-                    io_guarded=io_guarded,
-                    allow_transcript_file_read=allow_transcript_file_read,
-                )
-            else:
-                with ThreadPoolExecutor(max_workers=2, thread_name_prefix="cyt-hook") as executor:
-                    skills_future = executor.submit(
-                        _handle_user_prompt_skills,
-                        payload,
-                        config,
-                        plain_output=plain_output,
-                        debug=debug,
-                        io_guarded=io_guarded,
-                        allow_transcript_file_read=allow_transcript_file_read,
-                    )
-                    tools_future = executor.submit(
-                        handle_user_prompt_tools,
-                        payload,
-                        config,
-                        plain_output=plain_output,
-                        debug=debug,
-                        io_guarded=io_guarded,
-                        allow_transcript_file_read=allow_transcript_file_read,
-                    )
-                    skills_outcome, skills_details, skills_text = skills_future.result()
-                    tools_outcome, tools_details, tools_text = tools_future.result()
-        outcomes.extend((skills_outcome, tools_outcome))
-        details.update(skills_details)
-        details.update(tools_details)
-        if skills_text:
-            parts.append(skills_text)
-        if tools_text:
-            parts.append(tools_text)
-        return parts, outcomes, details
+    if (
+        skills_allowed
+        and tools_allowed
+        and not plain_output
+        and not _tools_hook_file_missing(config)
+    ):
+        return _run_coordinated_user_prompt_injection(
+            payload,
+            config,
+            debug=debug,
+            skills_allowed=skills_allowed,
+            tools_allowed=tools_allowed,
+            allow_transcript_file_read=allow_transcript_file_read,
+            stdio_guarded=True,
+        )
 
     if skills_allowed:
         skills_outcome, skills_details, skills_text = _handle_user_prompt_skills(

@@ -8,7 +8,6 @@ from typing import Any, cast
 
 from cyt.config import (
     inject_into_user_message,
-    skills_pipeline_uses_deferred_proxy_inject,
 )
 from cyt.proxy.anthropic import (
     PruneResult,
@@ -68,7 +67,9 @@ def prepare_deferred_skills_context(
     kind: str,
     body: dict[str, Any] | None = None,
 ) -> DeferredSkillsContext | None:
-    if config is None or not should_defer_skills_inject(config):
+    from cyt.config import skills_enabled
+
+    if config is None or not skills_enabled(config):
         return None
     if not skills_inject_via_proxy(config, kind):
         return None
@@ -163,7 +164,7 @@ def finish_deferred_skills_openai(
 def should_defer_skills_inject(config: dict[str, Any]) -> bool:
     from cyt.config import skills_enabled
 
-    return skills_enabled(config) and skills_pipeline_uses_deferred_proxy_inject(config)
+    return skills_enabled(config) and skills_inject_via_proxy(config, "anthropic")
 
 
 def resolve_skills_for_query(

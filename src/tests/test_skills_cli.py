@@ -45,6 +45,10 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             "tools": {
                 "sequence": ["bm25"],
                 "pipelines": {"bm25": {"score_skills": 0.0}},
+                "hook": {
+                    "tools_from": "definitions",
+                    "mcp_definitions_file": str(root / "missing-tools.json"),
+                },
             },
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
@@ -593,7 +597,10 @@ def test_user_prompt_uses_transcript_query_before_search_skills(
             *,
             config: dict,
             max_tokens: int | None = None,
+            pruner_settings: object | None = None,
+            skip_frontmatter_gate: bool = False,
         ) -> list:
+            del pruner_settings, skip_frontmatter_gate
             captured["query"] = query
             from cyt.skills.search import search_skills as real_search
 
@@ -663,7 +670,10 @@ def test_user_prompt_uses_transcript_query_for_all_pipelines(
             *,
             config: dict,
             max_tokens: int | None = None,
+            pruner_settings: object | None = None,
+            skip_frontmatter_gate: bool = False,
         ) -> list:
+            del config, pruner_settings, skip_frontmatter_gate
             captured["query"] = query
             _ = max_tokens
             return []

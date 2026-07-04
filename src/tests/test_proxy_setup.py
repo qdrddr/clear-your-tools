@@ -20,7 +20,6 @@ from cyt.proxy.setup_wizard import (
     _prompt_custom_model,
     _prompt_key_var_name,
     _prompt_skills,
-    _prompt_skills_pruner_models,
     _prompt_upstreams,
     apply_upstream_cli_to_config,
     build_setup_overlay,
@@ -1297,10 +1296,13 @@ class TestPromptUpstreams:
 
 
 class TestPromptSkills:
-    def test_enable_and_select_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "2", ""])
+    def test_enable_and_derive_pipeline_from_tool_pruning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        skills = _prompt_skills({})
+        skills = _prompt_skills({}, tool_pipeline=["rerank"])
         assert skills == {
             "enabled": True,
             "pipeline": "rerank",
@@ -1312,77 +1314,34 @@ class TestPromptSkills:
             ],
         }
 
-    def test_defaults_to_bm25_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "", ""])
+    def test_defaults_to_bm25_pipeline_without_tool_pipeline(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({})
         assert skills["pipeline"] == "bm25"
         assert "inject_via" not in skills
 
     def test_defaults_to_tool_pruning_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["y", "", ""])
+        responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills({}, tool_pipeline=["rerank"])
         assert skills["pipeline"] == "rerank"
         assert "inject_via" not in skills
 
-    def test_prefers_existing_pipeline_over_tool_pruning(
+    def test_tool_pipeline_overrides_existing_skills_pipeline(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        responses = iter(["y", "", ""])
+        responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         skills = _prompt_skills(
             {"skills": {"enabled": True, "pipeline": "llm"}},
             tool_pipeline=["rerank"],
         )
-        assert skills["pipeline"] == "llm"
-
-
-class TestPromptSkillsPrunerModels:
-    def test_prompts_rerank_when_skills_need_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        selected = {
-            "nick": "rerank-qwen3-8b",
-            "provider": "deepinfra",
-            "name": "Qwen/Qwen3-Reranker-8B",
-        }
-
-        def fake_select(*_args: object, **_kwargs: object) -> dict[str, Any]:
-            return selected
-
-        monkeypatch.setattr("cyt.proxy.setup_wizard._select_model_from_catalog", fake_select)
-        rerank, llm = _prompt_skills_pruner_models(
-            {"enabled": True, "pipeline": "rerank"},
-            {},
-            reranker_model=None,
-            llm_pruner_model=None,
-            max_pruner_input_cost=None,
-        )
-        assert rerank == selected
-        assert llm is None
-
-    def test_skips_when_tool_pruning_already_configured_model(self) -> None:
-        existing = {
-            "pruning": {
-                "tools": {
-                    "pipelines": {"rerank": {"model_nick": "rerank-qwen3-8b"}},
-                },
-            },
-            "models": {
-                "rerankers": {
-                    "remote": [_RERANK_MODEL],
-                },
-            },
-        }
-        rerank, llm = _prompt_skills_pruner_models(
-            {"enabled": True, "pipeline": "rerank"},
-            existing,
-            reranker_model=None,
-            llm_pruner_model=None,
-            max_pruner_input_cost=None,
-        )
-        assert rerank is None
-        assert llm is None
+        assert skills["pipeline"] == "rerank"
 
 
 class TestPipelineLabels:

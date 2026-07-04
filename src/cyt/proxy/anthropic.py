@@ -1339,9 +1339,6 @@ def transform_anthropic_request(
         body=original,
     )
     skill_out = deferred.skill_out if deferred is not None else {}
-    skill_entries_for_prune = (
-        deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
-    )
 
     if not tools:
         original, skills_meta = finish_deferred_skills_anthropic(
@@ -1377,16 +1374,37 @@ def transform_anthropic_request(
         return original, _anthropic_skipped_no_query_prune_result(tools), skills_meta
 
     assert query is not None
-    result = filter_tools_for_query(
-        tools,
-        query,
-        pruning_pipeline,
-        capture_decomposed_catalog=capture_decomposed_catalog,
-        skill_entries=skill_entries_for_prune or None,
-        skill_llm_out=skill_out if deferred is not None else None,
-        config=config,
-        pruner_settings=pruner_settings,
+    from cyt.pruning.coordinator import ToolSource, coordinate_skills_tools_prune
+
+    skill_entries = (
+        deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
+    coordinated = coordinate_skills_tools_prune(
+        query,
+        config or load_config(),
+        [ToolSource("root", tools)],
+        skill_entries=skill_entries,
+        upstream_kind="anthropic",
+        capture_decomposed_catalog=capture_decomposed_catalog,
+        pruner_settings=pruner_settings,
+        skills_allowed=bool(deferred is not None and deferred.skills_allowed),
+        tools_allowed=True,
+        tools_pipeline_override=pruning_pipeline,
+        skill_out=skill_out if deferred is not None else None,
+    )
+    result = coordinated.prune_results.get("root")
+    if result is None:
+        result = PruneResult(
+            tools=None,
+            status="skipped",
+            query=query,
+            tools_in=len(tools),
+            mcp_tools_in=sum(1 for t in tools if t.get("name")),
+            tools_out=None,
+            error="no tool prune result",
+        )
+    if coordinated.skill_matches is not None:
+        skill_out["matches"] = coordinated.skill_matches
     return _anthropic_finish_transform(
         original,
         result,

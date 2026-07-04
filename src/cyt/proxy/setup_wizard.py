@@ -33,11 +33,6 @@ from cyt.config import (
 
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 SKILLS_PIPELINE_CHOICES: tuple[str, ...] = ("bm25", "rerank", "llm")
-SKILLS_PIPELINE_LABELS: tuple[str, ...] = (
-    "bm25 (no API key, local)",
-    "rerank (smarter)",
-    "llm (more $$, smartest)",
-)
 SKILLS_PIPELINE_DEFAULT = "bm25"
 SKILLS_INJECT_VIA_CHOICES: tuple[str, ...] = ("proxy", "hook")
 SKILLS_INJECT_VIA_DEFAULT = "proxy"
@@ -1415,13 +1410,13 @@ def _prompt_pipeline(
     recommended_index: int = 0,
     minimum_tools: int = DEFAULT_MIN_TOOLS_PRUNING,
 ) -> list[str]:
-    print("\n--- Tool pruning pipelines ---")
+    print("\n--- Pruning pipeline ---")
     pipeline_labels = _pipeline_choice_labels(
         recommended_index,
         minimum_tools=minimum_tools,
     )
     choice = _prompt_choice(
-        "Select pruning method",
+        "Select pruning pipeline",
         pipeline_labels,
         default_index=recommended_index,
     )
@@ -1578,90 +1573,20 @@ def _prompt_skills(
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:
         return {"enabled": False}
-    configured_pipeline = skills_cfg.get("pipeline")
-    if isinstance(configured_pipeline, str) and configured_pipeline.strip():
-        pipeline = str(configured_pipeline).strip()
-    elif tool_pipeline:
+    if tool_pipeline:
         pipeline = skills_pipeline_default_from_tool_pipeline(tool_pipeline)
     else:
-        pipeline = SKILLS_PIPELINE_DEFAULT
-    try:
-        default_index = SKILLS_PIPELINE_CHOICES.index(pipeline)
-    except ValueError:
-        default_index = SKILLS_PIPELINE_CHOICES.index(SKILLS_PIPELINE_DEFAULT)
-    selected_label = _prompt_choice(
-        "Skills pruner pipeline",
-        list(SKILLS_PIPELINE_LABELS),
-        default_index=default_index,
-    )
-    selected_index = SKILLS_PIPELINE_LABELS.index(selected_label)
+        configured_pipeline = skills_cfg.get("pipeline")
+        if isinstance(configured_pipeline, str) and configured_pipeline.strip():
+            pipeline = str(configured_pipeline).strip()
+        else:
+            pipeline = SKILLS_PIPELINE_DEFAULT
     directories = _prompt_skills_directories(skills_cfg)
     return {
         "enabled": True,
-        "pipeline": SKILLS_PIPELINE_CHOICES[selected_index],
+        "pipeline": pipeline,
         "directories": directories,
     }
-
-
-def _pruning_stage_model_configured(
-    config: dict[str, Any],
-    stage: Literal["rerank", "llm"],
-) -> bool:
-    """True when *stage* has a pipeline model nick and matching remote catalog row."""
-    from cyt.config import pruning_stage_model_nick
-
-    nick = pruning_stage_model_nick(config, stage, user_config=config)
-    if not nick:
-        return False
-    model_kind = "rerankers" if stage == "rerank" else "llm"
-    models = config.get("models")
-    if not isinstance(models, dict):
-        return False
-    section = models.get(model_kind, {})
-    if not isinstance(section, dict):
-        return False
-    remote = section.get("remote", [])
-    if not isinstance(remote, list):
-        return False
-    return any(isinstance(entry, dict) and entry.get("nick") == nick for entry in remote)
-
-
-def _prompt_skills_pruner_models(
-    skills_overlay: dict[str, Any],
-    existing: dict[str, Any],
-    *,
-    reranker_model: dict[str, Any] | None,
-    llm_pruner_model: dict[str, Any] | None,
-    max_pruner_input_cost: float | None,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Prompt for skills rerank/llm models when needed and not already configured."""
-    if not skills_overlay.get("enabled"):
-        return reranker_model, llm_pruner_model
-
-    skills_pipeline = str(skills_overlay.get("pipeline", ""))
-    if skills_pipeline == "rerank" and reranker_model is None:
-        if not _pruning_stage_model_configured(existing, "rerank"):
-            print("\n--- Reranker (skills injection) model ---")
-            reranker_model = _select_model_from_catalog(
-                "rerankers",
-                label="reranker model",
-                prompt_key_var=True,
-                max_input_cost_per_token=max_pruner_input_cost,
-                prompt_custom_base_url=True,
-                config=existing,
-            )
-    if skills_pipeline == "llm" and llm_pruner_model is None:
-        if not _pruning_stage_model_configured(existing, "llm"):
-            print("\n--- LLM pruner (skills injection) model ---")
-            llm_pruner_model = _select_model_from_catalog(
-                "llm",
-                label="LLM pruner model",
-                prompt_key_var=True,
-                max_input_cost_per_token=max_pruner_input_cost,
-                prompt_custom_base_url=True,
-                config=existing,
-            )
-    return reranker_model, llm_pruner_model
 
 
 def _upsert_provider_metadata(
@@ -1931,7 +1856,7 @@ def run_setup(config_path: Path) -> None:
     llm_pruner_model: dict[str, Any] | None = None
 
     if "rerank" in pipeline:
-        print("\n--- Reranker (weak pruning) model ---")
+        print("\n--- Reranker model ---")
         reranker_model = _select_model_from_catalog(
             "rerankers",
             label="reranker model",
@@ -1941,7 +1866,7 @@ def run_setup(config_path: Path) -> None:
             config=existing,
         )
     if "llm" in pipeline:
-        print("\n--- LLM pruner (weak pruning) model ---")
+        print("\n--- LLM pruner model ---")
         llm_pruner_model = _select_model_from_catalog(
             "llm",
             label="LLM pruner model",
@@ -1964,13 +1889,6 @@ def run_setup(config_path: Path) -> None:
     inject_mode = _prompt_inject_via(existing)
 
     skills_overlay = _prompt_skills(existing, tool_pipeline=pipeline)
-    reranker_model, llm_pruner_model = _prompt_skills_pruner_models(
-        skills_overlay,
-        existing,
-        reranker_model=reranker_model,
-        llm_pruner_model=llm_pruner_model,
-        max_pruner_input_cost=max_pruner_input_cost,
-    )
 
     from cyt.tools.hook_setup import prompt_tools_hook_config
 

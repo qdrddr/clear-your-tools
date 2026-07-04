@@ -89,7 +89,7 @@ def test_transform_openai_request_search_query_includes_assistant_reply() -> Non
     )
 
     with patch(
-        "cyt.proxy.openai_responses.filter_tools_for_query",
+        "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
         transform_openai_request(body)
@@ -229,7 +229,7 @@ def test_transform_openai_request_preserves_tool_search_when_pruning() -> None:
     )
 
     with patch(
-        "cyt.proxy.openai_responses.filter_tools_for_query",
+        "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
         out, meta, _ = transform_openai_request(body)
@@ -282,7 +282,7 @@ def test_transform_openai_request_only_changes_tools() -> None:
         error=None,
     )
 
-    with patch("cyt.proxy.openai_responses.filter_tools_for_query", return_value=prune_result):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, meta, _ = transform_openai_request(body)
 
     assert out["tools"][0]["strict"] is False
@@ -316,7 +316,7 @@ def test_transform_openai_request_passthrough_when_no_prune() -> None:
         tools_out=None,
         error="api error",
     )
-    with patch("cyt.proxy.openai_responses.filter_tools_for_query", return_value=failed):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=failed):
         out, meta, _ = transform_openai_request(body)
     assert out == body
     assert meta is not None
@@ -421,7 +421,7 @@ def test_transform_openai_request_prunes_tool_search_output_in_input() -> None:
     )
 
     with patch(
-        "cyt.proxy.openai_responses.filter_tools_for_query",
+        "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
         out, meta, _ = transform_openai_request(body)
@@ -496,7 +496,7 @@ def test_transform_openai_request_prunes_root_and_tool_search_output_separately(
     )
 
     with patch(
-        "cyt.proxy.openai_responses.filter_tools_for_query",
+        "cyt.pruning.coordinator.filter_tools_for_query",
         side_effect=[root_prune, input_prune],
     ) as mock_filter:
         out, meta, _ = transform_openai_request(body)
@@ -619,7 +619,7 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
         error=None,
     )
     with patch(
-        "cyt.proxy.openai_responses.filter_tools_for_query",
+        "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ):
         out, _, skills_meta = transform_openai_request(body, config=config)
@@ -672,6 +672,7 @@ def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Pat
 
 def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output() -> None:
     from cyt.proxy.openai_responses import _openai_prune_request_tools
+    from cyt.pruning.coordinator import CoordinateResult
     from cyt.skills.proxy_inject import DeferredSkillsContext
 
     deferred = DeferredSkillsContext(
@@ -697,9 +698,9 @@ def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output()
     }
 
     with patch(
-        "cyt.proxy.openai_responses._prune_openai_tools_array",
-        return_value=(None, None, []),
-    ) as mock_prune:
+        "cyt.pruning.coordinator.coordinate_skills_tools_prune",
+        return_value=CoordinateResult(),
+    ) as mock_coord:
         _openai_prune_request_tools(
             body,
             "find grep",
@@ -709,6 +710,6 @@ def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output()
             {},
         )
 
-    mock_prune.assert_called_once()
-    assert mock_prune.call_args.kwargs["skill_entries"] == deferred.skill_entries
-    assert mock_prune.call_args.kwargs["skill_llm_out"] is deferred.skill_out
+    mock_coord.assert_called_once()
+    assert mock_coord.call_args.kwargs["skill_entries"] == deferred.skill_entries
+    assert mock_coord.call_args.kwargs["skill_out"] is deferred.skill_out

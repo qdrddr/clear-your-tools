@@ -161,6 +161,39 @@ def _rerank_single_bulk(
         return usage, False, bulk_exc
 
 
+def _collect_rerank_bulk_results(
+    bulks: list[list[tuple[int, str]]],
+    *,
+    run_bulk: Callable[[list[tuple[int, str]]], tuple[StageTokenUsage, bool, Exception | None]],
+) -> tuple[StageTokenUsage, bool, list[Exception]]:
+    from cyt.pruning.parallel import run_parallel
+
+    total_usage = empty_usage()
+    bulk_errors: list[Exception] = []
+    any_success = False
+
+    if len(bulks) <= 1:
+        for bulk in bulks:
+            bulk_usage, success, bulk_exc = run_bulk(bulk)
+            total_usage = total_usage.merge(bulk_usage)
+            if success:
+                any_success = True
+            elif bulk_exc is not None:
+                bulk_errors.append(bulk_exc)
+        return total_usage, any_success, bulk_errors
+
+    work = {str(index): (lambda bulk=bulk: run_bulk(bulk)) for index, bulk in enumerate(bulks)}
+    parallel_results = run_parallel(work)
+    for index in range(len(bulks)):
+        bulk_usage, success, bulk_exc = parallel_results[str(index)]
+        total_usage = total_usage.merge(bulk_usage)
+        if success:
+            any_success = True
+        elif bulk_exc is not None:
+            bulk_errors.append(bulk_exc)
+    return total_usage, any_success, bulk_errors
+
+
 def _rerank_prepared_bulks(
     indexed_docs: list[tuple[int, str]],
     *,
@@ -177,20 +210,15 @@ def _rerank_prepared_bulks(
         base_tokens=base_tokens,
     )
 
-    bulk_errors: list[Exception] = []
-    any_success = False
-    for bulk in bulks:
-        bulk_usage, success, bulk_exc = _rerank_single_bulk(
+    def _run_bulk(bulk: list[tuple[int, str]]) -> tuple[StageTokenUsage, bool, Exception | None]:
+        return _rerank_single_bulk(
             bulk,
             query=query,
             settings=settings,
             items=items,
         )
-        total_usage = total_usage.merge(bulk_usage)
-        if success:
-            any_success = True
-        elif bulk_exc is not None:
-            bulk_errors.append(bulk_exc)
+
+    total_usage, any_success, bulk_errors = _collect_rerank_bulk_results(bulks, run_bulk=_run_bulk)
 
     if not any_success and bulk_errors:
         raise RuntimeError(

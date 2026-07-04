@@ -203,7 +203,7 @@ def test_transform_anthropic_request_only_changes_tools() -> None:
         decomposed={"build_index": 5, "rerank": 4, "llm": 2},
     )
 
-    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, meta, _ = transform_anthropic_request(body)
 
     assert out["tools"] == pruned_tools
@@ -258,7 +258,7 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
         tools_out=None,
         error="api error",
     )
-    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=failed):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=failed):
         out, meta, _ = transform_anthropic_request(body)
     assert out == body
     assert meta is not None
@@ -357,7 +357,7 @@ def test_transform_anthropic_request_inject_into_user_message(
         tools_out=2,
         error=None,
     )
-    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, _, skills_meta = transform_anthropic_request(body, config=config)
 
     assert skills_meta is not None
@@ -394,7 +394,7 @@ def test_transform_anthropic_request_inject_into_user_message_tool_result_only()
         tools_out=1,
         error=None,
     )
-    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, _, _ = transform_anthropic_request(body, config=config)
 
     assert out["tools"] == []

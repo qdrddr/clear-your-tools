@@ -23,6 +23,7 @@ from cyt.proxy.anthropic import (
 from cyt.proxy.pruning_debug import merge_decomposed_catalog_snapshots
 from cyt.pruners.policies import policy_context_from_config, request_pass_through
 from cyt.pruners.remote import PrunerSettingsCache
+from cyt.pruning.coordinator import CoordinateResult, ToolSource
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,44 @@ def _combine_prune_results(
     )
 
 
+def _finalize_openai_prune_result(
+    tools: list[dict[str, Any]],
+    result: PruneResult,
+    *,
+    user_message_inject: bool,
+) -> tuple[list[dict[str, Any]] | None, PruneResult, list[dict[str, Any]]]:
+    if result.status != "applied" or result.tools is None:
+        if result.status == "failed":
+            logger.warning("tool pruning failed: %s", result.error)
+        if result.status != "pass_through":
+            return None, result, []
+        return tools, result, []
+
+    if user_message_inject:
+        from cyt.proxy.user_message_inject import (
+            mcp_tools_from_pruned_named,
+            openai_tools_keep_system_only,
+        )
+
+        mcp_for_inject = mcp_tools_from_pruned_named(result.tools)
+        final_tools = openai_tools_keep_system_only(tools, result.tools)
+    else:
+        mcp_for_inject = []
+        final_tools = _merge_pruned_openai_tools(tools, result.tools)
+
+    result.tools = final_tools
+    result.tools_final = copy.deepcopy(final_tools)
+    result.tools_accepted = copy.deepcopy(tools)
+    result.tools_in = len(tools)
+    result.tools_out = len(final_tools)
+    tokens_in = count_json_tokens(tools)
+    tokens_out = count_json_tokens(final_tools)
+    result.tokens_in = tokens_in
+    result.tokens_out = tokens_out
+    result.tokens_saved = tokens_in - tokens_out
+    return final_tools, result, mcp_for_inject
+
+
 def _prune_openai_tools_array(
     tools: list[dict[str, Any]],
     query: str | None,
@@ -333,29 +372,11 @@ def _prune_openai_tools_array(
             return None, result, []
         return tools, result, []
 
-    if user_message_inject:
-        from cyt.proxy.user_message_inject import (
-            mcp_tools_from_pruned_named,
-            openai_tools_keep_system_only,
-        )
-
-        mcp_for_inject = mcp_tools_from_pruned_named(result.tools)
-        final_tools = openai_tools_keep_system_only(tools, result.tools)
-    else:
-        mcp_for_inject = []
-        final_tools = _merge_pruned_openai_tools(tools, result.tools)
-
-    result.tools = final_tools
-    result.tools_final = copy.deepcopy(final_tools)
-    result.tools_accepted = copy.deepcopy(tools)
-    result.tools_in = len(tools)
-    result.tools_out = len(final_tools)
-    tokens_in = count_json_tokens(tools)
-    tokens_out = count_json_tokens(final_tools)
-    result.tokens_in = tokens_in
-    result.tokens_out = tokens_out
-    result.tokens_saved = tokens_in - tokens_out
-    return final_tools, result, mcp_for_inject
+    return _finalize_openai_prune_result(
+        tools,
+        result,
+        user_message_inject=user_message_inject,
+    )
 
 
 def _openai_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> PruneResult:
@@ -370,6 +391,152 @@ def _openai_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> PruneR
     )
 
 
+def _openai_collect_source_specs(
+    original: dict[str, Any],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    source_specs: list[tuple[str, list[dict[str, Any]]]] = []
+    root_tools = original.get("tools") or []
+    if root_tools:
+        source_specs.append(("root", root_tools))
+    for index, item in enumerate(original.get("input") or []):
+        if not isinstance(item, dict) or item.get("type") != "tool_search_output":
+            continue
+        item_tools = item.get("tools") or []
+        if item_tools:
+            source_specs.append((f"tool_search_output:{index}", item_tools))
+    return source_specs
+
+
+def _openai_write_pruned_tools(
+    original: dict[str, Any],
+    source_id: str,
+    final_tools: list[dict[str, Any]],
+) -> None:
+    if source_id == "root":
+        original["tools"] = final_tools
+        return
+    index = int(source_id.rsplit(":", 1)[-1])
+    input_items = original.get("input") or []
+    if 0 <= index < len(input_items):
+        item = input_items[index]
+        if isinstance(item, dict):
+            item["tools"] = final_tools
+
+
+def _openai_prune_early_sources(
+    source_specs: list[tuple[str, list[dict[str, Any]]]],
+    query: str | None,
+    pruning_pipeline: list[str] | None,
+    *,
+    capture_decomposed_catalog: bool,
+    config: dict[str, Any] | None,
+    pruner_settings: PrunerSettingsCache | None,
+    user_message_inject: bool,
+) -> tuple[PruneResult | None, list[dict[str, Any]]]:
+    result: PruneResult | None = None
+    mcp_for_inject: list[dict[str, Any]] = []
+    for _source_id, tools in source_specs:
+        stage_result: PruneResult | None
+        if not query:
+            stage_result = _openai_skipped_no_query_prune_result(tools)
+        elif request_pass_through(tools, policy_context_from_config()):
+            _final, stage_result, mcp_batch = _prune_openai_tools_array(
+                tools,
+                query,
+                pruning_pipeline,
+                capture_decomposed_catalog,
+                config=config,
+                pruner_settings=pruner_settings,
+                user_message_inject=user_message_inject,
+            )
+            mcp_for_inject.extend(mcp_batch)
+        else:
+            continue
+        result = _combine_prune_results(result, stage_result)
+    return result, mcp_for_inject
+
+
+def _openai_partition_tool_sources(
+    source_specs: list[tuple[str, list[dict[str, Any]]]],
+) -> tuple[list[ToolSource], list[tuple[str, list[dict[str, Any]]]]]:
+    tool_sources: list[ToolSource] = []
+    passthrough_specs: list[tuple[str, list[dict[str, Any]]]] = []
+    for source_id, tools in source_specs:
+        if request_pass_through(tools, policy_context_from_config()):
+            passthrough_specs.append((source_id, tools))
+            continue
+        named_tools = _flatten_openai_tools_for_pruning(tools)
+        if not named_tools:
+            continue
+        tool_sources.append(
+            ToolSource(
+                source_id,
+                named_tools,
+                merged_to_api_tools=_merged_tools_to_openai,
+            ),
+        )
+    return tool_sources, passthrough_specs
+
+
+def _openai_apply_passthrough_sources(
+    original: dict[str, Any],
+    passthrough_specs: list[tuple[str, list[dict[str, Any]]]],
+    query: str,
+    pruning_pipeline: list[str] | None,
+    *,
+    capture_decomposed_catalog: bool,
+    config: dict[str, Any] | None,
+    pruner_settings: PrunerSettingsCache | None,
+    user_message_inject: bool,
+    result: PruneResult | None,
+    mcp_for_inject: list[dict[str, Any]],
+) -> PruneResult | None:
+    for source_id, tools in passthrough_specs:
+        final_tools, stage_result, mcp_batch = _prune_openai_tools_array(
+            tools,
+            query,
+            pruning_pipeline,
+            capture_decomposed_catalog,
+            config=config,
+            pruner_settings=pruner_settings,
+            user_message_inject=user_message_inject,
+        )
+        mcp_for_inject.extend(mcp_batch)
+        if final_tools is not None and stage_result is not None:
+            if stage_result.status == "applied" or user_message_inject:
+                _openai_write_pruned_tools(original, source_id, final_tools)
+        result = _combine_prune_results(result, stage_result)
+    return result
+
+
+def _openai_apply_coordinated_sources(
+    original: dict[str, Any],
+    tool_sources: list[ToolSource],
+    source_specs: list[tuple[str, list[dict[str, Any]]]],
+    coordinated: CoordinateResult,
+    *,
+    user_message_inject: bool,
+    result: PruneResult | None,
+    mcp_for_inject: list[dict[str, Any]],
+) -> PruneResult | None:
+    for source in tool_sources:
+        source_prune_result = coordinated.prune_results.get(source.source_id)
+        if source_prune_result is None:
+            continue
+        original_tools = next(tools for sid, tools in source_specs if sid == source.source_id)
+        final_tools, stage_result, mcp_batch = _finalize_openai_prune_result(
+            original_tools,
+            source_prune_result,
+            user_message_inject=user_message_inject,
+        )
+        mcp_for_inject.extend(mcp_batch)
+        if final_tools is not None and stage_result is not None:
+            if stage_result.status == "applied" or user_message_inject:
+                _openai_write_pruned_tools(original, source.source_id, final_tools)
+        result = _combine_prune_results(result, stage_result)
+    return result
+
+
 def _openai_prune_request_tools(
     original: dict[str, Any],
     query: str | None,
@@ -379,58 +546,73 @@ def _openai_prune_request_tools(
     config: dict[str, Any] | None,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[PruneResult | None, list[dict[str, Any]]]:
-    from cyt.config import inject_into_user_message
+    from cyt.config import inject_into_user_message, load_config
+    from cyt.pruning.coordinator import coordinate_skills_tools_prune
 
     result: PruneResult | None = None
     mcp_for_inject: list[dict[str, Any]] = []
     user_message_inject = inject_into_user_message(config)
+    resolved_config = config or load_config()
     skill_entries = (
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
     skill_out = deferred.skill_out if deferred is not None else {}
 
-    tools = original.get("tools") or []
-    if tools:
-        final_tools, pass_result, mcp_batch = _prune_openai_tools_array(
-            tools,
+    source_specs = _openai_collect_source_specs(original)
+
+    if not source_specs or not query:
+        return _openai_prune_early_sources(
+            source_specs,
             query,
             pruning_pipeline,
-            capture_decomposed_catalog,
-            skill_entries=skill_entries or None,
-            skill_llm_out=skill_out if deferred is not None else None,
+            capture_decomposed_catalog=capture_decomposed_catalog,
             config=config,
             pruner_settings=pruner_settings,
             user_message_inject=user_message_inject,
         )
-        mcp_for_inject.extend(mcp_batch)
-        if final_tools is not None and pass_result is not None:
-            if pass_result.status == "applied" or user_message_inject:
-                original["tools"] = final_tools
-        result = _combine_prune_results(result, pass_result)
 
-    for item in original.get("input") or []:
-        if not isinstance(item, dict) or item.get("type") != "tool_search_output":
-            continue
-        item_tools = item.get("tools") or []
-        if not item_tools:
-            continue
-        final_tools, pass_result, mcp_batch = _prune_openai_tools_array(
-            item_tools,
-            query,
-            pruning_pipeline,
-            capture_decomposed_catalog,
-            skill_entries=skill_entries or None,
-            skill_llm_out=skill_out if deferred is not None else None,
-            config=config,
-            pruner_settings=pruner_settings,
-            user_message_inject=user_message_inject,
-        )
-        mcp_for_inject.extend(mcp_batch)
-        if final_tools is not None and pass_result is not None:
-            if pass_result.status == "applied" or user_message_inject:
-                item["tools"] = final_tools
-        result = _combine_prune_results(result, pass_result)
+    tool_sources, passthrough_specs = _openai_partition_tool_sources(source_specs)
+    result = _openai_apply_passthrough_sources(
+        original,
+        passthrough_specs,
+        query,
+        pruning_pipeline,
+        capture_decomposed_catalog=capture_decomposed_catalog,
+        config=config,
+        pruner_settings=pruner_settings,
+        user_message_inject=user_message_inject,
+        result=result,
+        mcp_for_inject=mcp_for_inject,
+    )
 
+    if not tool_sources:
+        return result, mcp_for_inject
+
+    coordinated = coordinate_skills_tools_prune(
+        query,
+        resolved_config,
+        tool_sources,
+        skill_entries=skill_entries,
+        upstream_kind="openai",
+        capture_decomposed_catalog=capture_decomposed_catalog,
+        pruner_settings=pruner_settings,
+        skills_allowed=bool(deferred is not None and deferred.skills_allowed),
+        tools_allowed=True,
+        tools_pipeline_override=pruning_pipeline,
+        skill_out=skill_out if deferred is not None else None,
+    )
+    if coordinated.skill_matches is not None and deferred is not None:
+        skill_out["matches"] = coordinated.skill_matches
+
+    result = _openai_apply_coordinated_sources(
+        original,
+        tool_sources,
+        source_specs,
+        coordinated,
+        user_message_inject=user_message_inject,
+        result=result,
+        mcp_for_inject=mcp_for_inject,
+    )
     return result, mcp_for_inject
 
 

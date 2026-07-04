@@ -134,6 +134,33 @@ def _finish_tools_hook_injection(
     return "user_prompt_tools_injected", details, injected
 
 
+def finish_tools_hook_injection_from_coordinator(
+    *,
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    query: str,
+    model: str,
+    result: PruneResult,
+    catalog: list[dict[str, Any]],
+    injected: str,
+    request_tokens: int,
+    budget_debug: dict[str, int],
+    debug: bool,
+) -> tuple[str, dict[str, Any], str]:
+    return _finish_tools_hook_injection(
+        payload=payload,
+        config=config,
+        query=query,
+        model=model,
+        result=result,
+        catalog=catalog,
+        injected=injected,
+        request_tokens=request_tokens,
+        budget_debug=budget_debug,
+        debug=debug,
+    )
+
+
 def _prune_hook_tool_catalog(
     query: str,
     config: dict[str, Any],

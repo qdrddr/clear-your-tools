@@ -416,7 +416,7 @@ def llm_select_ids(
     selected_ids: set[int] = set()
     total_usage = empty_usage()
 
-    for bulk_text in bulks:
+    def _run_bulk(bulk_text: str) -> tuple[set[int], StageTokenUsage]:
         bulk_tokens = count_llm_request_tokens(query, bulk_text, system_prompt=system_prompt)
         logger.info("llm request tokens: %d", bulk_tokens)
         parsed_response, bulk_usage = call_llm(
@@ -435,8 +435,25 @@ def llm_select_ids(
                 provider_dns_name=bulk_usage.provider_dns_name,
                 provider=bulk_usage.provider,
             )
-        total_usage = total_usage.merge(bulk_usage)
-        selected_ids.update(parsed_response.ids)
+        return set(parsed_response.ids), bulk_usage
+
+    if len(bulks) <= 1:
+        for bulk_text in bulks:
+            bulk_ids, bulk_usage = _run_bulk(bulk_text)
+            total_usage = total_usage.merge(bulk_usage)
+            selected_ids.update(bulk_ids)
+    else:
+        from cyt.pruning.parallel import run_parallel
+
+        work = {
+            str(index): (lambda bulk_text=bulk_text: _run_bulk(bulk_text))
+            for index, bulk_text in enumerate(bulks)
+        }
+        parallel_results = run_parallel(work)
+        for index in range(len(bulks)):
+            bulk_ids, bulk_usage = parallel_results[str(index)]
+            total_usage = total_usage.merge(bulk_usage)
+            selected_ids.update(bulk_ids)
 
     if total_usage.input_tokens or total_usage.output_tokens:
         log_token_usage(
