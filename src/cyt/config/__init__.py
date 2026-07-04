@@ -102,6 +102,7 @@ DEFAULT_CACHE_BM25_DIR: str = DEFAULT_BM25_INDEX_DIR
 DEFAULT_CACHE_SKILLS_DIR: str = DEFAULT_SKILLS_CATALOG_DIR
 DEFAULT_CACHE_TOOLS_DIR: str = "~/.config/cyt/tools"
 DEFAULT_INJECT_VIA: str = "proxy"
+DEFAULT_INJECT_INTO_USER_MESSAGE: bool = True
 DEFAULT_SKILLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.45
 DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
@@ -154,6 +155,7 @@ _DEFAULTS: dict[str, Any] = {
     },
     "pruning": {
         "inject_via": DEFAULT_INJECT_VIA,
+        "inject_into_user_message": DEFAULT_INJECT_INTO_USER_MESSAGE,
         "tools": {
             "hook": {
                 "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
@@ -1010,6 +1012,21 @@ def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
 
 def skills_inject_via(config: dict[str, Any] | None = None) -> str:
     return inject_via(config)
+
+
+def inject_into_user_message(config: dict[str, Any] | None = None) -> bool:
+    """When true (proxy only), inject pruned MCP tools and skills into the latest user turn."""
+    if inject_via(config) != "proxy":
+        return False
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    pruning = merged.get("pruning")
+    if not isinstance(pruning, dict):
+        return DEFAULT_INJECT_INTO_USER_MESSAGE
+    value = pruning.get("inject_into_user_message", DEFAULT_INJECT_INTO_USER_MESSAGE)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSource:

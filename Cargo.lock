@@ -381,7 +381,7 @@ checksum = "01334b89b69ff726750c5ce5073fc8bd860e99aa9a8fc5ca11b04730e3aee97a"
 
 [[package]]
 name = "cyt-indexer"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "cbindgen",
  "chunk",
@@ -391,6 +391,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "pyo3",
+ "pythonize",
  "rust-stemmers",
  "serde",
  "serde_json",
@@ -1092,6 +1093,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pythonize"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ec376e1216e0c929a74964ce2020012a1a39f32d80e78aa688721219ea7fb89"
+dependencies = [
+ "pyo3",
+ "serde",
 ]
 
 [[package]]

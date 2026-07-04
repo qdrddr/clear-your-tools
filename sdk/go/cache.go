@@ -20,3 +20,8 @@ func EnsureToolCatalogFromEntries(entriesJSON, enumsJSON, policyFingerprint, too
 func EnsureSkillsRegistry(sourcePathsJSON, catalogRoot, pageindexConfigJSON, pipeline, indexParamsHash, policy string) (string, error) {
 	return cgoEnsureSkillsRegistry(sourcePathsJSON, catalogRoot, pageindexConfigJSON, pipeline, indexParamsHash, policy)
 }
+
+// ConfigureMemoryCache applies in-memory cache tuning (lazy registry, LRU sizes, async disk writes).
+func ConfigureMemoryCache(configJSON string) error {
+	return cgoConfigureMemoryCache(configJSON)
+}

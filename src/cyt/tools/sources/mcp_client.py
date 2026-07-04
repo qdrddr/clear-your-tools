@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
+
+McpServerStatus = Literal["ok", "failed", "skipped"]
+
+
+@dataclass(frozen=True)
+class McpServerFetchResult:
+    server_name: str
+    status: McpServerStatus
+    tools: tuple[dict[str, Any], ...]
+    error: str | None = None
+
 
 _CLAUDE_MCP_FALLBACK = Path("~/.claude/claude.json")
 _CACHE_TTL_SECONDS = 60.0
@@ -32,34 +44,62 @@ def load_mcp_client_tools(
     claude_fallback: bool = True,
 ) -> list[dict[str, Any]]:
     """List tools from MCP servers configured in *config_path*."""
+    tools, _results = fetch_mcp_client_tools(
+        config_path,
+        claude_fallback=claude_fallback,
+        use_cache=True,
+    )
+    return tools
+
+
+def fetch_mcp_client_tools(
+    config_path: Path,
+    *,
+    claude_fallback: bool = True,
+    use_cache: bool = False,
+) -> tuple[list[dict[str, Any]], list[McpServerFetchResult]]:
+    """List tools from MCP servers and return per-server fetch results."""
     resolved = config_path.expanduser()
     mtime_ns = resolved.stat().st_mtime_ns if resolved.is_file() else 0
     key = _CacheKey(str(resolved), mtime_ns, "client")
     now = time.monotonic()
-    cached = _cache.get(key)
-    if cached is not None and now - cached[0] < _CACHE_TTL_SECONDS:
-        return cached[1]
+    if use_cache:
+        cached = _cache.get(key)
+        if cached is not None and now - cached[0] < _CACHE_TTL_SECONDS:
+            return cached[1], []
 
     servers = _load_mcp_servers(resolved, claude_fallback=claude_fallback)
-    tools = _list_tools_from_servers(servers)
-    _cache[key] = (now, tools)
-    return tools
+    results = _fetch_tools_from_servers(servers)
+    tools = [tool for result in results for tool in result.tools]
+    if use_cache:
+        _cache[key] = (now, tools)
+    return tools, results
+
+
+def _read_mcp_servers(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.debug("invalid MCP client JSON in %s", path, exc_info=True)
+        return {}
+    servers = data.get("mcpServers")
+    if isinstance(servers, dict):
+        return servers
+    return {}
 
 
 def _load_mcp_servers(path: Path, *, claude_fallback: bool) -> dict[str, Any]:
-    if path.is_file():
-        data = json.loads(path.read_text(encoding="utf-8"))
-        servers = data.get("mcpServers")
-        if isinstance(servers, dict):
-            return servers
+    servers = _read_mcp_servers(path)
+    if servers:
+        return servers
 
     if claude_fallback:
-        fallback = _CLAUDE_MCP_FALLBACK.expanduser()
-        if fallback.is_file():
-            data = json.loads(fallback.read_text(encoding="utf-8"))
-            servers = data.get("mcpServers")
-            if isinstance(servers, dict):
-                return servers
+        return _read_mcp_servers(_CLAUDE_MCP_FALLBACK.expanduser())
     return {}
 
 
@@ -77,32 +117,99 @@ def _fastmcp_client_cls() -> type[Any]:
     return client_cls
 
 
-def _list_tools_from_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
+def _fetch_tools_from_servers(servers: dict[str, Any]) -> list[McpServerFetchResult]:
+    if not servers:
+        return []
+
     client_cls = _fastmcp_client_cls()
-    tools: list[dict[str, Any]] = []
+    return asyncio.run(_fetch_tools_from_servers_async(client_cls, servers))
+
+
+async def _fetch_tools_from_servers_async(
+    client_cls: type[Any],
+    servers: dict[str, Any],
+) -> list[McpServerFetchResult]:
+    results: list[McpServerFetchResult] = []
     for server_name, server_cfg in servers.items():
         if not isinstance(server_cfg, dict):
+            results.append(
+                McpServerFetchResult(
+                    server_name=str(server_name),
+                    status="skipped",
+                    tools=(),
+                    error="server entry is not an object",
+                ),
+            )
+            continue
+        if not _server_has_transport(server_cfg):
+            results.append(
+                McpServerFetchResult(
+                    server_name=str(server_name),
+                    status="skipped",
+                    tools=(),
+                    error="missing url or command",
+                ),
+            )
             continue
         try:
-            server_tools = _list_server_tools(client_cls, server_name, server_cfg)
-        except Exception:
-            logger.debug("failed to list tools for MCP server %s", server_name, exc_info=True)
+            server_tools = await _list_server_tools_async(
+                client_cls,
+                str(server_name),
+                server_cfg,
+            )
+        except Exception as exc:
+            logger.debug(
+                "failed to list tools for MCP server %s",
+                server_name,
+                exc_info=True,
+            )
+            results.append(
+                McpServerFetchResult(
+                    server_name=str(server_name),
+                    status="failed",
+                    tools=(),
+                    error=str(exc),
+                ),
+            )
             continue
-        tools.extend(server_tools)
+        results.append(
+            McpServerFetchResult(
+                server_name=str(server_name),
+                status="ok",
+                tools=tuple(server_tools),
+            ),
+        )
+    return results
+
+
+def _list_tools_from_servers(servers: dict[str, Any]) -> list[dict[str, Any]]:
+    results = _fetch_tools_from_servers(servers)
+    tools: list[dict[str, Any]] = []
+    for result in results:
+        if result.status == "ok":
+            tools.extend(result.tools)
     return tools
 
 
-def _list_server_tools(
-    client_cls: type,
+def _fastmcp_client_config(server_name: str, server_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Wrap one server entry in the MCP config shape FastMCP expects."""
+    return {"mcpServers": {server_name: server_cfg}}
+
+
+def _server_has_transport(server_cfg: dict[str, Any]) -> bool:
+    if server_cfg.get("url"):
+        return True
+    return bool(server_cfg.get("command"))
+
+
+async def _list_server_tools_async(
+    client_cls: type[Any],
     server_name: str,
     server_cfg: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    transport = _server_transport(server_cfg)
-    if transport is None:
-        return []
-
-    with client_cls(transport) as client:
-        listed = client.list_tools()
+    client = client_cls(_fastmcp_client_config(server_name, server_cfg))
+    async with client as connected:
+        listed = await connected.list_tools()
 
     normalized: list[dict[str, Any]] = []
     for tool in listed:
@@ -129,22 +236,3 @@ def _list_server_tools(
             entry["input_schema"] = input_schema
         normalized.append(entry)
     return normalized
-
-
-def _server_transport(server_cfg: dict[str, Any]) -> dict[str, Any] | str | None:
-    if url := server_cfg.get("url"):
-        return str(url)
-    command = server_cfg.get("command")
-    if not command:
-        return None
-    args = server_cfg.get("args") or []
-    if not isinstance(args, list):
-        args = []
-    transport: dict[str, Any] = {
-        "command": str(command),
-        "args": [str(arg) for arg in args],
-    }
-    env = server_cfg.get("env")
-    if isinstance(env, dict) and env:
-        transport["env"] = {str(k): str(v) for k, v in env.items()}
-    return transport

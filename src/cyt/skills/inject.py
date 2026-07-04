@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
+from cyt.common.paths import shorten_home_path
 from cyt.indexer.tokens import count_tokens
 from cyt.skills.frontmatter import injection_markdown_body
 from cyt.skills.search import MatchedSkill
@@ -14,22 +12,6 @@ _INTRO = (
     "The entire skill could be retrieved with the file path, though in most cases it likely "
     "excessive."
 )
-
-
-def shorten_home_path(path: str) -> str:
-    expanded = Path(path).expanduser()
-    home = Path.home()
-    try:
-        rel = expanded.relative_to(home)
-        return f"~/{rel.as_posix()}"
-    except ValueError:
-        text = str(expanded)
-        home_env = os.environ.get("HOME")
-        if home_env and text.startswith(home_env.rstrip("/") + "/"):
-            home_prefix = home_env.rstrip("/")
-            path_start = len(home_prefix) + 1
-            return "~/" + text[path_start:]
-        return text
 
 
 def _skill_open_tag(path: str, name: str | None) -> str:
@@ -51,5 +33,7 @@ def format_agent_skills(matches: list[MatchedSkill]) -> str:
     return "\n".join(lines)
 
 
-def injection_token_count(text: str) -> int:
-    return count_tokens(text)
+def injection_token_count(matches: list[MatchedSkill] | str) -> int:
+    if isinstance(matches, str):
+        return count_tokens(matches)
+    return count_tokens(format_agent_skills(matches))

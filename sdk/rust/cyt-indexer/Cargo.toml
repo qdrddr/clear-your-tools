@@ -1,6 +1,6 @@
 [package]
 name = "cyt-indexer"
-version = "0.6.6"
+version = "0.6.7"
 edition = "2024"
 authors = ["Damien Berezenko"]
 description = "Tool schema decomposition and catalog indexing for MCP tool gating"
@@ -17,7 +17,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [features]
 default = ["cli"]
 cli = []
-python = ["pyo3"]
+python = ["pyo3", "pythonize"]
 node = ["napi", "napi-derive"]
 ffi = []
 
@@ -28,6 +28,7 @@ chunk = { version = "0.10", default-features = false }
 rust-stemmers = "1.2"
 clap = { version = "4", features = ["derive"] }
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py312"], optional = true }
+pythonize = { version = "0.29", optional = true }
 napi = { version = "3", features = ["napi4", "serde-json"], optional = true }
 napi-derive = { version = "3", optional = true, features = ["type-def"] }
 tiktoken-rs = "0.12"
@@ -47,4 +48,14 @@ required-features = ["cli"]
 [[test]]
 name = "ffi_smoke"
 path = "tests/ffi_smoke.rs"
+required-features = ["ffi"]
+
+[[test]]
+name = "ffi_policies"
+path = "tests/ffi_policies.rs"
+required-features = ["ffi"]
+
+[[test]]
+name = "ffi_pipeline"
+path = "tests/ffi_pipeline.rs"
 required-features = ["ffi"]

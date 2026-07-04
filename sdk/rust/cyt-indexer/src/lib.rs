@@ -17,6 +17,7 @@ pub mod documents;
 pub mod json_util;
 pub mod pageindex;
 pub mod paths;
+pub mod pipeline;
 pub mod policies;
 pub mod retrieve;
 pub mod runtime_config;
@@ -30,6 +31,9 @@ pub mod python;
 
 #[cfg(feature = "node")]
 pub mod node;
+
+#[cfg(feature = "ffi")]
+pub mod bindings;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
@@ -56,9 +60,9 @@ pub use documents::{
     extract_md_catalog_document,
 };
 pub use pageindex::{
-    MdIndexResult, PageIndexConfig, RETRIEVE_DIR, ReconstructOptions, ReconstructResult,
-    SkillDocument, SkillDocumentExtras, SkillsIndex, build_skills_index,
-    finalize_document_json as finalize_skill_document_json,
+    EntryMetadata, MdIndexResult, PageIndexConfig, RETRIEVE_DIR, ReconstructOptions,
+    ReconstructResult, SkillDocument, SkillsIndex, build_page_index_for_file, build_skills_index,
+    finalize_entry_metadata as finalize_skill_document_json,
     get_content_retrieve_result as get_skill_content_retrieve_result,
     get_document as get_skill_document, get_document_structure as get_skill_structure,
     get_line_content as get_skill_line_content,
@@ -66,26 +70,32 @@ pub use pageindex::{
     load_merged_document_json as load_merged_skill_document_json, md_to_tree,
     parse_chunk_ids as parse_skill_chunk_ids, parse_line_nums as parse_skill_line_nums,
     parse_node_ids as parse_skill_node_ids, reconstruct_skill_markdown, repair_skill_chunks,
-    retrieve_output_rel_path, update_document_source_path, write_reconstructed_skill,
+    retrieve_output_rel_path, update_document_source_path, write_entry_metadata,
+    write_reconstructed_skill,
 };
 pub use paths::{
     PathConfig, collect_enums, configure as configure_paths, get_root_tool_key,
     is_catalog_decomposed_path, skills_decomposed_prefix, snapshot as path_snapshot,
     to_decomposed_key, to_skills_decomposed_key, tool_id_from_decomposed_rel,
 };
+pub use pipeline::{
+    PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions, build_skill_node_catalog,
+    classify_and_count_catalog, prune_catalog_bm25_and_retrieve, search_skills_and_select,
+};
 pub use policies::{
     PolicyContext, ToolPolicy, anthropic_tool_is_mcp, anthropic_tool_is_system,
-    append_description_reinstate_entries, apply_per_tool_overrides, catalog_needs_partition,
-    catalog_needs_pruned_recompose, chunk_tool_id, direct_root_optional_chunks_for_tool,
-    drop_recomposed_tools_with_empty_properties, effective_policy, entries_for_policy,
-    filter_recompose_json_entries, full_pass_through, is_decomposed_optional_property_chunk,
-    is_decomposed_tool_root_chunk, is_description_policy, is_direct_root_optional_property_chunk,
-    is_mcp_optional_chunk, is_mcp_root_chunk, is_non_system_chunk, is_non_system_tool_id,
-    is_system_chunk, is_system_optional_chunk, is_system_root_chunk, is_system_tool_id,
-    merge_catalog, merge_tools_preserving_order, mitigate_empty_optional_properties,
-    needs_description_reinstate, needs_empty_optional_mitigation, needs_partition,
-    needs_pruned_recompose, optional_chunks_for_tool, optional_leaf_survived_rerank,
-    parse_tool_policy, parse_tool_policy_pair, partition_catalog, per_tool_policies_from_value,
+    append_description_reinstate_entries, apply_per_tool_overrides, batch_tool_pass_through,
+    catalog_needs_partition, catalog_needs_pruned_recompose, chunk_tool_id,
+    direct_root_optional_chunks_for_tool, drop_recomposed_tools_with_empty_properties,
+    effective_policy, entries_for_policy, filter_recompose_json_entries, full_pass_through,
+    is_decomposed_optional_property_chunk, is_decomposed_tool_root_chunk, is_description_policy,
+    is_direct_root_optional_property_chunk, is_mcp_optional_chunk, is_mcp_root_chunk,
+    is_non_system_chunk, is_non_system_tool_id, is_system_chunk, is_system_optional_chunk,
+    is_system_root_chunk, is_system_tool_id, merge_catalog, merge_tools_preserving_order,
+    mitigate_empty_optional_properties, needs_description_reinstate,
+    needs_empty_optional_mitigation, needs_partition, needs_pruned_recompose,
+    optional_chunks_for_tool, optional_leaf_survived_rerank, parse_tool_policy,
+    parse_tool_policy_pair, partition_catalog, per_tool_policies_from_value,
     policy_context_from_values, request_pass_through, restore_mcp_tools, restore_system_tools,
     root_chunk_properties_empty, root_tool_id_from_chunk, scoring_policy, split_anthropic_tools,
     stash_mcp_tools, stash_system_tools, system_required_enum_values, system_tools_pass_through,

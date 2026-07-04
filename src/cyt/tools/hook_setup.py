@@ -16,7 +16,7 @@ from cyt.config import (
     save_user_config,
     tools_hook_file_missing,
 )
-from cyt.proxy.setup import _prompt, _prompt_choice, _prompt_yes_no
+from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no
 
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
@@ -29,13 +29,30 @@ def build_tools_hook_config_overlay(
     mcp_client_file: str,
     mcp_definitions_file: str,
 ) -> dict[str, Any]:
+    """Return a ``pruning.tools`` overlay fragment (``hook`` settings only)."""
     return {
-        "tools": {
-            "hook": {
-                "tools_from": tools_from,
-                "mcp_client_file": mcp_client_file,
-                "mcp_definitions_file": mcp_definitions_file,
-            },
+        "hook": {
+            "tools_from": tools_from,
+            "mcp_client_file": mcp_client_file,
+            "mcp_definitions_file": mcp_definitions_file,
+        },
+    }
+
+
+def build_pruning_tools_hook_save_overlay(
+    *,
+    tools_from: str,
+    mcp_client_file: str,
+    mcp_definitions_file: str,
+) -> dict[str, Any]:
+    """Return a full user-config overlay for ``pruning.tools.hook``."""
+    return {
+        "pruning": {
+            "tools": build_tools_hook_config_overlay(
+                tools_from=tools_from,
+                mcp_client_file=mcp_client_file,
+                mcp_definitions_file=mcp_definitions_file,
+            ),
         },
     }
 
@@ -123,7 +140,9 @@ def ensure_tools_hook_file_interactive(
     ):
         return config
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")
-    overlay: dict[str, Any] = {"pruning": {"inject_via": "hook", **tools_overlay}}
+    overlay: dict[str, Any] = {
+        "pruning": {"inject_via": "hook", "tools": tools_overlay},
+    }
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         return load_config(config_path)
     return config

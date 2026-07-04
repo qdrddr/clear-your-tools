@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::bm25_cohesion::Bm25CohesionConfig;
 
@@ -78,6 +78,17 @@ impl PageIndexConfig {
     #[must_use]
     pub fn one_chunk_per_node() -> Self {
         Self::without_bm25_chunking()
+    }
+
+    /// Serialize page-index settings stored in chunk variant metadata.
+    #[must_use]
+    pub fn to_index_params_value(&self) -> Value {
+        json!({
+            "if_add_node_id": self.if_add_node_id,
+            "if_add_node_text": self.if_add_node_text,
+            "enable_bm25_chunking": self.enable_bm25_chunking,
+            "bm25_cohesion": self.bm25_cohesion.to_value(),
+        })
     }
 }
 

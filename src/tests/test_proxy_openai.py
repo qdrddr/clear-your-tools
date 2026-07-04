@@ -529,7 +529,10 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_into_user_message": False,
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {
@@ -542,6 +545,96 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
     developers = [item for item in out["input"] if item.get("role") == "developer"]
     assert len(developers) == 1
     assert "<agent-skills>" in developers[0]["content"][0]["text"]
+
+
+def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "proxy",
+            "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+            "proxy": {"request_budget_fraction": 10.0},
+        },
+        "pruning": {
+            "inject_into_user_message": True,
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
+        "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [
+            _user_message("earlier"),
+            _user_message("configure agent hooks for sessions"),
+        ],
+        "tools": [
+            {"type": "tool_search", "query": "x"},
+            {
+                "type": "function",
+                "name": "Read",
+                "description": "Read",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "type": "function",
+                "name": "mcp__a__grep",
+                "description": "Grep",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+    }
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "Read",
+            "description": "Read",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "type": "function",
+            "name": "mcp__a__grep",
+            "description": "Grep pruned",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+    prune_result = PruneResult(
+        tools=pruned_named,
+        status="applied",
+        query="User_Asks: configure agent hooks for sessions",
+        tools_in=2,
+        mcp_tools_in=1,
+        tools_out=2,
+        error=None,
+    )
+    with patch(
+        "cyt.proxy.openai_responses.filter_tools_for_query",
+        return_value=prune_result,
+    ):
+        out, _, skills_meta = transform_openai_request(body, config=config)
+
+    assert skills_meta is not None
+    assert skills_meta.skills_in > 0
+    developers = [item for item in out["input"] if item.get("role") == "developer"]
+    assert developers == []
+    last_user = out["input"][-1]
+    combined = "\n".join(block["text"] for block in last_user["content"])
+    assert "<agent-skills>" in combined
+    assert "<agent-tools>" in combined
+    tool_names = [t.get("name") for t in out["tools"] if isinstance(t, dict) and t.get("name")]
+    assert tool_names == ["Read"]
+    assert out["tools"][0]["type"] == "tool_search"
 
 
 def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Path) -> None:
@@ -605,7 +698,7 @@ def test_openai_prune_request_tools_passes_skill_entries_to_tool_search_output()
 
     with patch(
         "cyt.proxy.openai_responses._prune_openai_tools_array",
-        return_value=(None, None),
+        return_value=(None, None, []),
     ) as mock_prune:
         _openai_prune_request_tools(
             body,

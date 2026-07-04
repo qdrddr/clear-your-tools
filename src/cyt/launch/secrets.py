@@ -13,7 +13,7 @@ from typing import Any
 from cyt.config import load_proxy_env, required_proxy_env_var_names
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.upstream import AgentName
-from cyt.proxy.setup import parse_env_file
+from cyt.proxy.setup_wizard import parse_env_file
 from cyt.pruners.remote import PrunerSettingsCache
 
 KEYRING_SERVICE = "cyt"  # macOS Keychain service name for the Python keyring backend
@@ -491,7 +491,7 @@ def ensure_wizard_credentials(
     env_fallback_path: Path | None = None,
 ) -> dict[str, str]:
     """Ensure *names* exist; persist prompted values to *env_fallback_path* when keyring fails."""
-    from cyt.proxy.setup import write_env_file
+    from cyt.proxy.setup_wizard import write_env_file
 
     if env_fallback_path is None:
         env_fallback_path = _user_env_path()

@@ -9,11 +9,11 @@ use crate::ffi::json_util::{
     write_string_result,
 };
 use crate::pageindex::document_json::{
-    finalize_document_json, load_merged_document_json, update_document_source_path,
+    finalize_entry_metadata, load_merged_document_json, update_document_source_path,
 };
 use crate::pageindex::spec_refs::OwnedSpecRefs;
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillDocument, SkillDocumentExtras, SkillsIndex,
+    EntryMetadata, PageIndexConfig, ReconstructOptions, SkillDocument, SkillsIndex,
     build_chunk_variant, build_page_index_only, build_skills_index, chunk_variant_valid,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
     get_line_content_from_spec, md_to_tree, page_index_valid, parse_chunk_ids, parse_node_ids,
@@ -889,15 +889,15 @@ pub unsafe extern "C" fn cyt_finalize_skill_document_json(
         }
         let entry = c_str_to_str(entry_dir, "entry_dir")?;
         let doc = c_str_to_str(doc_id, "doc_id")?;
-        let extras = SkillDocumentExtras {
-            content_sha256: c_str_to_str(content_sha256, "content_sha256")?.to_string(),
+        let _ = doc;
+        let metadata = EntryMetadata {
+            source_path: c_str_to_str(source_path, "source_path")?.to_string(),
             pipeline: c_str_to_str(pipeline, "pipeline")?.to_string(),
             index_params: parse_json_cstr(index_params_json, "index_params_json")?,
-            built_at: c_str_to_str(built_at, "built_at")?.to_string(),
-            source_path: c_str_to_str(source_path, "source_path")?.to_string(),
         };
+        let _ = (content_sha256, built_at);
         let value =
-            finalize_document_json(PathBuf::from(entry).as_path(), doc, &extras).map_err(|e| {
+            finalize_entry_metadata(PathBuf::from(entry).as_path(), &metadata).map_err(|e| {
                 set_error(&e);
                 CYT_ERR_IO
             })?;

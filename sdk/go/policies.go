@@ -15,6 +15,11 @@ func EffectivePolicy(ctxJSON, toolID string) (string, error) {
 	return cgoEffectivePolicy(ctxJSON, toolID)
 }
 
+// BatchToolPassThrough returns pass-through flags for tool ids (JSON bool array).
+func BatchToolPassThrough(ctxJSON, toolIDsJSON string) (string, error) {
+	return cgoBatchToolPassThrough(ctxJSON, toolIDsJSON)
+}
+
 // PartitionCatalog partitions catalog data by policy context.
 func PartitionCatalog(dataJSON, ctxJSON string) (string, error) {
 	return cgoPartitionCatalog(dataJSON, ctxJSON)

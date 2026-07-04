@@ -19,14 +19,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import httpx
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, Response
+
     from cyt.proxy.anthropic import PruneResult
     from cyt.proxy.stats import ProxyRequestRecord, StatsDB
-
-import httpx
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
 
 from cyt.config import (
     debug_log_max_body_bytes,
@@ -44,7 +43,7 @@ from cyt.proxy.pruning_debug import (
 from cyt.proxy.pruning_debug import (
     format_removed_chunks_lines as _format_removed_chunks_lines,
 )
-from cyt.proxy.setup import normalize_upstream_kind, upstream_entry_endpoint
+from cyt.proxy.setup_wizard import normalize_upstream_kind, upstream_entry_endpoint
 from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
@@ -385,6 +384,8 @@ async def upstream_reachable(
     headers: dict[str, str],
 ) -> bool:
     """Return True when upstream responds (connection errors => False)."""
+    import httpx
+
     url = upstream_base.rstrip("/") or upstream_base
     try:
         async with client.stream("HEAD", url, headers=headers):
@@ -403,6 +404,8 @@ async def _handle_startup_probe(
 ) -> Response | None:
     if not is_startup_probe(request.method, path_suffix):
         return None
+    from starlette.responses import Response
+
     client: httpx.AsyncClient = request.app.state.http_client
     headers = prepare_forward_headers(
         request.headers,
@@ -563,23 +566,6 @@ async def transform_request_body(
             input_tools = _input_tools_from_payload(payload)
         if kind == "anthropic":
             from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
-            from cyt.skills.proxy_inject import _agent_debug_log
-
-            # #region agent log
-            _in_msgs = payload.get("messages") or []
-            await asyncio.to_thread(
-                _agent_debug_log,
-                hypothesis_id="E",
-                location="reverse.py:transform_request_body:before",
-                message="anthropic request before transform",
-                data={
-                    "has_top_level_system": payload.get("system") is not None,
-                    "messages0_role": _in_msgs[0].get("role") if _in_msgs else None,
-                    "tools_len": len(payload.get("tools") or []),
-                    "model": payload.get("model"),
-                },
-            )
-            # #endregion
 
             transformed, pruning, skills_meta = await asyncio.to_thread(
                 transform_anthropic_request,
@@ -589,22 +575,6 @@ async def transform_request_body(
                 config=config,
                 pruner_settings=pruner_settings,
             )
-
-            # #region agent log
-            _out_msgs = transformed.get("messages") or []
-            await asyncio.to_thread(
-                _agent_debug_log,
-                hypothesis_id="A,E",
-                location="reverse.py:transform_request_body:after",
-                message="anthropic request after transform",
-                data={
-                    "has_top_level_system": transformed.get("system") is not None,
-                    "messages0_role": _out_msgs[0].get("role") if _out_msgs else None,
-                    "skills_in": getattr(skills_meta, "skills_in", 0) if skills_meta else 0,
-                    "prune_status": getattr(pruning, "status", None) if pruning else None,
-                },
-            )
-            # #endregion
         else:
             from cyt.proxy.openai_responses import transform_openai_request
 
@@ -1013,6 +983,8 @@ async def _debug_terminate_response(
     body: bytes,
     debug_trace: DebugTrace | None = None,
 ) -> JSONResponse:
+    from starlette.responses import JSONResponse
+
     if debug_trace is not None:
         debug_trace.log(
             hypothesis_id="A",
@@ -1061,6 +1033,8 @@ async def _proxy_request(
     config: dict[str, Any] | None,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> Response:
+    from starlette.responses import Response
+
     _log_proxy_request_entry(debug_trace, request)
     match = resolve_upstream(request.url.path, routes)
     if match is None:
@@ -1207,6 +1181,11 @@ def create_app(
     http2_upstream: bool = False,
     launch_agent: str | None = None,
 ) -> Starlette:
+    import httpx
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
     use_http2_upstream = http2_upstream and http2_package_available()
     if http2_upstream and not use_http2_upstream:
         logger.warning(

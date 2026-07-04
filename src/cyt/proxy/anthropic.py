@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import re
-import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 if TYPE_CHECKING:
@@ -35,9 +31,9 @@ from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
 from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (
     PolicyContext,
+    batch_tool_pass_through,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
-    classify_optional_chunks_batch,
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
@@ -48,47 +44,16 @@ from cyt.pruners.policies import (
     partition_catalog,
     policy_context_from_config,
     request_pass_through,
-    tool_pass_through,
     tools_for_catalog,
 )
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
+from cyt_core.types.prune import PruneResult
 
 logger = logging.getLogger(__name__)
 
 # Initial LLM pruning attempt plus two retries before BM25 fallback.
 LLM_STAGE_MAX_ATTEMPTS = 3
-
-_DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
-)
-
-
-def _debug_prune_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "47c99d",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
-
 
 SYSTEM_REMINDER_PREFIX = "<system-reminder>"
 
@@ -104,60 +69,7 @@ _ERROR_QUERY_PATTERNS = (
 )
 
 
-@dataclass
-class PruneResult:
-    tools: list[dict[str, Any]] | None
-    status: str
-    query: str | None
-    tools_in: int
-    mcp_tools_in: int
-    tools_out: int | None
-    error: str | None
-    tokens_in: int | None = None
-    tokens_out: int | None = None
-    tokens_saved: int | None = None
-    tool_properties_count_in: int | None = None
-    tool_properties_count_out: int | None = None
-    tools_accepted: list[dict[str, Any]] | None = None
-    tools_final: list[dict[str, Any]] | None = None
-    pruning_model_tokens: dict[str, int] = field(default_factory=dict)
-    pruning_token_usage: dict[str, StageTokenUsage] = field(default_factory=dict)
-    decomposed: dict[str, int] = field(default_factory=dict)
-    decomposed_breakdown: dict[str, dict[str, int]] = field(default_factory=dict)
-    decomposed_catalog: dict[str, dict[str, Any]] | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {
-            "status": self.status,
-            "query": self.query,
-            "tools_in": self.tools_in,
-            "mcp_tools_in": self.mcp_tools_in,
-            "tools_out": self.tools_out,
-            "tokens_in": self.tokens_in,
-            "tokens_out": self.tokens_out,
-            "tokens_saved": self.tokens_saved,
-            "tool_properties_count_in": self.tool_properties_count_in,
-            "tool_properties_count_out": self.tool_properties_count_out,
-            "error": self.error,
-            "decomposed": self.decomposed,
-        }
-        if self.decomposed_breakdown:
-            out["decomposed_breakdown"] = self.decomposed_breakdown
-        if self.pruning_model_tokens:
-            out["pruning_model_tokens"] = self.pruning_model_tokens
-        if self.pruning_token_usage:
-            out["pruning_token_usage"] = {
-                stage: {
-                    "input_tokens": usage.input_tokens,
-                    "output_tokens": usage.output_tokens,
-                    "reasoning_tokens": usage.reasoning_tokens,
-                    "usage_source": usage.usage_source,
-                }
-                for stage, usage in self.pruning_token_usage.items()
-            }
-        if self.decomposed_catalog is not None:
-            out["decomposed_catalog"] = self.decomposed_catalog
-        return out
+logger = logging.getLogger(__name__)
 
 
 def _is_junk_text(text: str) -> bool:
@@ -455,39 +367,62 @@ def _run_catalog_pruning(
         catalog_tool_count(data),
         configured_pipeline=configured_pipeline,
     )
-    # #region agent log
-    _debug_prune_log(
-        hypothesis_id="B",
-        location="anthropic.py:_run_catalog_pruning:pipeline",
-        message="effective pruning pipeline",
-        data={
-            "configured_pipeline": configured_pipeline,
-            "effective_pipeline": pipeline,
-            "catalog_tool_count": catalog_tool_count(data),
-            "skill_entry_count": len(skill_entries or []),
-        },
-    )
-    # #endregion
     terminal_stage = pipeline[-1] if pipeline else None
     reinstate_ctx = output_ctx or output_policy_context_from_config(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    # #region agent log
-    _debug_prune_log(
-        hypothesis_id="A",
-        location="anthropic.py:_run_catalog_pruning:policies",
-        message="resolved pruning policies",
-        data={
-            "terminal_stage": terminal_stage,
-            "pipeline": pipeline,
-            "system_policy": reinstate_ctx.system_policy,
-            "mcp_policy": reinstate_ctx.mcp_policy,
-            "scoring_system": (ctx or reinstate_ctx).system_policy,
-            "scoring_mcp": (ctx or reinstate_ctx).mcp_policy,
-        },
-    )
-    # #endregion
+    if pipeline == ["bm25"] and skill_entries is None:
+        from cyt_indexer.pipeline import prune_catalog_bm25_and_retrieve
+
+        from cyt.common.bm25_constants import configure_sdk_bm25_defaults
+        from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
+        from cyt.pruners.bm25 import bm25_stage_usage
+
+        configure_sdk_bm25_defaults(resolved_config)
+        composite = prune_catalog_bm25_and_retrieve(
+            data,
+            build_catalog,
+            {"tools": index.tools, "files": index.files},
+            query,
+            ctx,
+            reinstate_ctx,
+            options={
+                "score_tool": bm25_score_tool(resolved_config),
+                "score_tool_enum": bm25_score_tool_enum(resolved_config),
+                "prune_enums": bm25_prune_enums(resolved_config),
+                "pipeline": pipeline,
+            },
+        )
+        merged = composite.get("tools", [])
+        if not isinstance(merged, list):
+            merged = []
+        decomposed = {str(k): int(v) for k, v in dict(composite.get("decomposed", {})).items()}
+        decomposed_breakdown = {
+            str(stage): {str(k): int(v) for k, v in dict(counts).items()}
+            for stage, counts in dict(composite.get("decomposed_breakdown", {})).items()
+        }
+        tool_properties_count_in = int(
+            composite.get("optional_chunk_count_in", tool_properties_count_in),
+        )
+        tool_properties_count_out = int(composite.get("optional_chunk_count_out", 0))
+        pruning_token_usage = {"bm25": bm25_stage_usage()}
+        decomposed_catalog = (
+            {"build_index": _snapshot_catalog(build_catalog), "bm25": _snapshot_catalog(data)}
+            if capture_decomposed_catalog
+            else None
+        )
+        pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
+        return (
+            merged,
+            decomposed,
+            decomposed_breakdown,
+            decomposed_catalog,
+            pruning_token_usage,
+            pruning_model_tokens,
+            tool_properties_count_in,
+            tool_properties_count_out,
+        )
     (
         data,
         decomposed,
@@ -527,29 +462,6 @@ def _run_catalog_pruning(
         apply_decomposed_score_filter=False,
         ctx=reinstate_ctx,
     )
-    # #region agent log
-    _debug_prune_log(
-        hypothesis_id="C",
-        location="anthropic.py:_run_catalog_pruning:retrieve",
-        message="tool descriptions after retrieve",
-        data={
-            tool.get("name", ""): {
-                "tool_description_len": len(str(tool.get("description") or "")),
-                "required_prop_desc": {
-                    prop: "description" in spec
-                    for prop, spec in (
-                        (tool.get("inputSchema") or tool.get("input_schema") or {})
-                        .get("properties", {})
-                        .items()
-                    )
-                    if isinstance(spec, dict)
-                },
-            }
-            for tool in merged
-            if isinstance(tool, dict)
-        },
-    )
-    # #endregion
     merged = drop_recomposed_tools_with_empty_properties(merged, index, reinstate_ctx)
     return (
         merged,
@@ -582,16 +494,10 @@ def _breakdown_entry(data: dict[str, Any]) -> dict[str, int]:
 
 
 def _count_optional_property_chunks(data: dict[str, Any]) -> int:
-    json_items = data.get("json")
-    if not isinstance(json_items, list):
-        return 0
-    dict_items = [item for item in json_items if isinstance(item, dict)]
-    if not dict_items:
-        return 0
-    system_flags, mcp_flags = classify_optional_chunks_batch(dict_items)
-    return sum(
-        1 for sys_opt, mcp_opt in zip(system_flags, mcp_flags, strict=True) if sys_opt or mcp_opt
-    )
+    from cyt_indexer.pipeline import classify_and_count_catalog
+
+    result = classify_and_count_catalog(data)
+    return int(result.get("optional_chunk_count", 0))
 
 
 def _pruning_tokens_summary(usage_map: dict[str, StageTokenUsage]) -> dict[str, int]:
@@ -712,20 +618,6 @@ def _run_llm_stage(
             and catalog_count >= llm_min
             and not skill_matches_resolved
         )
-        # #region agent log
-        _debug_prune_log(
-            hypothesis_id="A,D",
-            location="anthropic.py:_run_llm_stage",
-            message="llm stage branch",
-            data={
-                "use_combined": use_combined,
-                "skill_entry_count": len(skill_entries),
-                "catalog_tool_count": catalog_count,
-                "llm_minimum_tools": llm_min,
-                "skill_matches_resolved": skill_matches_resolved,
-            },
-        )
-        # #endregion
         if use_combined:
             data, skill_matches, llm_usage = llm_prune_tools_and_skills(
                 data,
@@ -1166,12 +1058,19 @@ def filter_tools_for_query(
 
     tokens_in = count_json_tokens(original_tools)
 
+    named_tools = [
+        (tool, str(tool.get("name", "")))
+        for tool in original_tools
+        if isinstance(tool, dict) and str(tool.get("name", ""))
+    ]
+    pass_through_flags = batch_tool_pass_through(
+        [name for _, name in named_tools],
+        output_policy_ctx,
+    )
     stashed_by_name: dict[str, dict[str, Any]] = {
         name: copy.deepcopy(tool)
-        for tool in original_tools
-        if isinstance(tool, dict)
-        and (name := str(tool.get("name", "")))
-        and tool_pass_through(name, output_policy_ctx)
+        for (tool, name), passes in zip(named_tools, pass_through_flags, strict=True)
+        if passes
     }
 
     catalog_source = tools_for_catalog(original_tools, output_policy_ctx)
@@ -1344,7 +1243,17 @@ def _anthropic_finish_transform(
     query: str | None,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
+    from cyt.config import inject_into_user_message
+    from cyt.proxy.user_message_inject import (
+        already_has_user_turn_injection,
+        append_injection_to_body,
+        split_tools_for_root_and_inject,
+    )
     from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
+    from cyt.tools.inject import format_agent_tools
+
+    user_message_inject = inject_into_user_message(config)
+    deferred_tools_text = ""
 
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -1362,7 +1271,17 @@ def _anthropic_finish_transform(
             )
             return original, result, skills_meta
 
-    if result.tools is not None:
+        if user_message_inject:
+            source_tools = original.get("tools") or []
+            if isinstance(source_tools, list) and source_tools:
+                mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
+                original["tools"] = system_tools
+                deferred_tools_text = format_agent_tools(mcp_tools)
+    elif user_message_inject:
+        mcp_tools, system_tools = split_tools_for_root_and_inject(result.tools)
+        original["tools"] = system_tools
+        deferred_tools_text = format_agent_tools(mcp_tools)
+    elif result.tools is not None:
         original["tools"] = result.tools
 
     original, skills_meta = finish_deferred_skills_anthropic(
@@ -1375,6 +1294,14 @@ def _anthropic_finish_transform(
         prune_result=result,
         pruner_settings=pruner_settings,
     )
+
+    if (
+        user_message_inject
+        and deferred_tools_text
+        and not already_has_user_turn_injection(original, "anthropic", tag="<agent-tools>")
+    ):
+        original = append_injection_to_body(original, deferred_tools_text, kind="anthropic")
+
     return original, result, skills_meta
 
 

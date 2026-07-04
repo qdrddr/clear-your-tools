@@ -20,7 +20,7 @@ from cyt.config import (
     skills_enabled,
 )
 from cyt.launch.upstream import AgentName
-from cyt.proxy.setup import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
+from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
@@ -679,7 +679,7 @@ def _save_tools_hook_wizard_config(
     tools_overlay = prompt_tools_hook_config(config, context="hook")
     if save_user_config(
         resolved_config_path,
-        {"pruning": {"inject_via": "hook", **tools_overlay}},
+        {"pruning": {"inject_via": "hook", "tools": tools_overlay}},
         apply_bundled_sections=False,
     ):
         print(f"Saved tools hook settings to {resolved_config_path}")

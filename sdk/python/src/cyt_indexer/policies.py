@@ -55,6 +55,10 @@ def tool_pass_through(tool_id: str, ctx: PolicyContext) -> bool:
     return _native.tool_pass_through(ctx, tool_id)
 
 
+def batch_tool_pass_through(tool_ids: list[str], ctx: PolicyContext) -> list[bool]:
+    return list(_native.batch_tool_pass_through(ctx, tool_ids))
+
+
 def root_tool_id_from_chunk(item: dict[str, Any]) -> str:
     return _native.root_tool_id_from_chunk(item)
 

@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::pageindex::{PageIndexConfig, SkillsIndex, build_skills_index};
+use crate::pageindex::{
+    PageIndexConfig, SkillsIndex, build_page_index_for_file, build_skills_index,
+};
 use crate::skills_io::write_skills_index;
 
 pub struct SkillsBuilder {
@@ -30,6 +32,23 @@ impl SkillsBuilder {
         config: &PageIndexConfig,
     ) -> Result<&SkillsIndex, String> {
         let index = build_skills_index(skill_dirs, config)?;
+        self.index = Some(index);
+        self.index
+            .as_ref()
+            .ok_or_else(|| "internal error: skills index not stored".to_string())
+    }
+
+    /// Build a skills index from a single markdown file in place.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file is missing or cannot be read.
+    pub fn build_from_file(
+        &mut self,
+        source: &std::path::Path,
+        config: &PageIndexConfig,
+    ) -> Result<&SkillsIndex, String> {
+        let index = build_page_index_for_file(source, config)?;
         self.index = Some(index);
         self.index
             .as_ref()

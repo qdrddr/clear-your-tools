@@ -2,8 +2,6 @@ import argparse
 import json
 import logging
 import sys
-import time
-from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from litellm import completion, responses
@@ -33,37 +31,6 @@ from cyt.pruners.remote import (
 )
 
 logger = logging.getLogger(__name__)
-
-_DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
-)
-
-
-def _debug_llm_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "47c99d",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
-
 
 T = TypeVar("T")
 
@@ -384,28 +351,7 @@ def call_llm(
         request_kwargs.update(_selector_completion_extras(settings))
         response = completion(**request_kwargs)
 
-    content_val, content_source = _structured_selector_content(response)
-    message = (
-        getattr(response.choices[0], "message", None)
-        if getattr(response, "choices", None)
-        else None
-    )
-    # #region agent log
-    _debug_llm_log(
-        hypothesis_id="A",
-        location="pruners/llm.py:call_llm",
-        message="llm selector response content",
-        data={
-            "model": settings.model_name,
-            "content_source": content_source,
-            "content_len": len(content_val) if content_val else 0,
-            "has_reasoning_content": bool(_message_field(message, "reasoning_content")),
-            "finish_reason": getattr(response.choices[0], "finish_reason", None)
-            if getattr(response, "choices", None)
-            else None,
-        },
-    )
-    # #endregion
+    content_val, _ = _structured_selector_content(response)
 
     usage = _usage_from_litellm_response(response, content_val or "", settings=settings)
     if usage.usage_source == TIKTOKEN_CL100K:

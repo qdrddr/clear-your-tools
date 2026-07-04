@@ -73,7 +73,7 @@ fn bm25_score_catalog_py(
         prune_enums,
         ..ScoreCatalogOptions::default()
     };
-    score_catalog_in_place(&mut value, query, &options)
+    py.detach(|| score_catalog_in_place(&mut value, query, &options))
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &value)
 }
@@ -132,7 +132,8 @@ fn bm25_search_skill_chunks_py(
             }
         }
     }
-    let result = bm25_search_skill_chunks(&arr, query, threshold, &excluded_set)
+    let result = py
+        .detach(|| bm25_search_skill_chunks(&arr, query, threshold, &excluded_set))
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &result)
 }
@@ -164,7 +165,8 @@ fn greedy_select_skill_items_py(
 ) -> PyResult<Py<PyAny>> {
     let survivors_val = py_to_value(survivors)?;
     let arr = survivors_val.as_array().cloned().unwrap_or_default();
-    let result = greedy_select_skill_items(&arr, item_kind, max_tokens)
+    let result = py
+        .detach(|| greedy_select_skill_items(&arr, item_kind, max_tokens))
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &result)
 }

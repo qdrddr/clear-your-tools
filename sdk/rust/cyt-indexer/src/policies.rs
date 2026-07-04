@@ -311,6 +311,14 @@ pub fn tool_pass_through(ctx: &PolicyContext, tool_id: &str) -> bool {
 }
 
 #[must_use]
+pub fn batch_tool_pass_through(ctx: &PolicyContext, tool_ids: &[&str]) -> Vec<bool> {
+    tool_ids
+        .iter()
+        .map(|id| tool_pass_through(ctx, id))
+        .collect()
+}
+
+#[must_use]
 pub fn root_tool_id_from_chunk(item: &Value) -> String {
     let Some(obj) = item_object(item) else {
         return chunk_tool_id(item);

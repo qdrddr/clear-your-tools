@@ -7,10 +7,11 @@ from typing import Any
 
 from cyt_indexer.bm25_search import bm25_frontmatter_gate, bm25_search_skill_chunks
 
+from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import bm25_score_skills, skills_frontmatter_upper_limit
 from cyt.pruners.bm25 import bm25_stage_usage
-from cyt.skills.catalog import SkillEntryRef, _shorten_home_path
+from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import FrontmatterGateRow, SearchItemRow
 from cyt.skills.frontmatter import frontmatter_search_text
 from cyt.skills.search import MatchedSkill
@@ -27,7 +28,7 @@ def _entries_payload(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
             {
                 "entry_dir": entry.entry_dir,
                 "doc_id": entry.doc_id,
-                "source_path": _shorten_home_path(entry.source_path),
+                "source_path": shorten_home_path(entry.source_path),
                 "frontmatter": frontmatter_search_text(frontmatter) or None,
                 "cache_key": entry.cache_key,
                 "bm25_chunk_dir": entry.bm25_chunk_dir,
@@ -68,7 +69,7 @@ def frontmatter_gate_trace(
                     entry_dir=entry_dir,
                     doc_id=doc_id,
                     file_path=next(
-                        (_shorten_home_path(e.source_path) for e in entries if e.doc_id == doc_id),
+                        (shorten_home_path(e.source_path) for e in entries if e.doc_id == doc_id),
                         doc_id,
                     ),
                     score=normalized_score,
@@ -85,7 +86,7 @@ def frontmatter_gate_trace(
             FrontmatterGateRow(
                 entry_dir=entry.entry_dir,
                 doc_id=entry.doc_id,
-                file_path=_shorten_home_path(entry.source_path),
+                file_path=shorten_home_path(entry.source_path),
                 score=None,
                 raw_score=None,
                 passed=True,

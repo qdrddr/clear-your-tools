@@ -143,6 +143,7 @@ models:
 
 pruning:
   inject_via: proxy # hook | proxy — applies to skills and tools injection
+  inject_into_user_message: true # proxy only: inject pruned MCP tools + skills into latest user turn
   tools:
     hook:
       tools_from: client # client | definitions

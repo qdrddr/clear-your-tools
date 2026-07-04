@@ -79,9 +79,17 @@ def test_reconstruct_skills_from_reranked_items_uses_node_specs() -> None:
         survivor["score"] = "0.50000000000000000000"
 
         with patch(
-            "cyt.skills.reconstruct.reconstruct_skill_markdown",
+            "cyt.skills.reconstruct.batch_reconstruct_skill_matches",
         ) as reconstruct_mock:
-            reconstruct_mock.return_value = {"markdown": "# Hook\n\nBody"}
+            reconstruct_mock.return_value = [
+                {
+                    "doc_id": survivor["doc_id"],
+                    "file_path": survivor["file_path"],
+                    "markdown": "# Hook\n\nBody",
+                    "name": "create-hook",
+                    "score": float(survivor["score"]),
+                },
+            ]
             matches = reconstruct_skills_from_reranked_items(
                 [survivor],
                 entries,
@@ -89,9 +97,9 @@ def test_reconstruct_skills_from_reranked_items_uses_node_specs() -> None:
             )
 
         reconstruct_mock.assert_called_once()
-        call_kwargs = reconstruct_mock.call_args.kwargs
-        assert call_kwargs["node_id_specs"] == [str(survivor["node_id"])]
-        assert call_kwargs.get("chunk_id_specs") is None
+        call_args = reconstruct_mock.call_args.args[0]
+        assert call_args[0]["id_specs"] == [str(survivor["node_id"])]
+        assert call_args[0]["item_kind"] == "node"
         assert matches
         assert matches[0].name == "create-hook"
 

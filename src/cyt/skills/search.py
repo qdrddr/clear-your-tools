@@ -77,20 +77,62 @@ def _bm25_node_fallback_reason(entries: list[SkillEntryRef], config: dict[str, A
     return f"node count {node_count} below skills.bm25_node_fallback_threshold {threshold}"
 
 
+def _budget_rows_from_composite(result: dict[str, Any]) -> list[BudgetItemRow]:
+    rows: list[BudgetItemRow] = []
+    for item in result.get("budget_trace", []):
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            BudgetItemRow(
+                file_path=str(item.get("file_path", "")),
+                item_id=str(item.get("item_id", "")),
+                item_kind=str(item.get("item_kind", "chunk")),
+                score=float(item.get("score", 0)),
+                tokens=int(item.get("tokens", 0)),
+                passed=bool(item.get("passed", False)),
+            ),
+        )
+    return rows
+
+
 def _run_bm25_pipeline(
     query: str,
     eligible: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
-) -> tuple[list[MatchedSkill], list[SearchItemRow], float]:
-    from cyt.skills.bm25 import bm25_skill_chunks_with_trace
+    max_tokens: int | None = None,
+) -> tuple[list[MatchedSkill], list[SearchItemRow], float, list[BudgetItemRow]]:
+    from cyt_indexer.pipeline import search_skills_and_select
 
-    matches, search_rows, threshold, _usage = bm25_skill_chunks_with_trace(
-        query,
-        eligible,
-        config=config,
-    )
-    return matches, search_rows, threshold
+    from cyt.config import bm25_score_skills
+    from cyt.skills.bm25 import _entries_payload, _match_from_native
+
+    threshold = bm25_score_skills(config)
+    options: dict[str, Any] = {
+        "threshold": threshold,
+        "max_tokens": max_tokens or 0,
+        "item_kind": "chunk",
+    }
+    result = search_skills_and_select(_entries_payload(eligible), query, options=options)
+    search_rows: list[SearchItemRow] = []
+    for row in result.get("trace_rows", []):
+        if not isinstance(row, dict):
+            continue
+        search_rows.append(
+            SearchItemRow(
+                file_path=str(row.get("file_path", "")),
+                doc_id=str(row.get("doc_id", "")),
+                item_id=str(row.get("item_id", "")),
+                item_kind="chunk",
+                score=float(row.get("score", 0)),
+                passed=bool(row.get("passed", False)),
+            ),
+        )
+    matches = [
+        _match_from_native(item) for item in result.get("matches", []) if isinstance(item, dict)
+    ]
+    resolved_threshold = float(result.get("threshold", threshold))
+    return matches, search_rows, resolved_threshold, _budget_rows_from_composite(result)
 
 
 def _llm_settings_from_pruner_cache(
@@ -107,16 +149,25 @@ def _run_search_pipeline_with_trace(
     *,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
-) -> tuple[list[MatchedSkill], SkillsPipelineRun, str, float | None, list[SearchItemRow]]:
+    max_tokens: int | None = None,
+) -> tuple[
+    list[MatchedSkill],
+    SkillsPipelineRun,
+    str,
+    float | None,
+    list[SearchItemRow],
+    list[BudgetItemRow],
+]:
     configured = skills_pipeline(config).strip().lower()
 
     if _should_use_bm25_fallback(eligible, config):
         reason = _bm25_node_fallback_reason(eligible, config)
         logger.debug("skills search falling back to BM25 (%s)", reason)
-        matches, search_rows, threshold = _run_bm25_pipeline(
+        matches, search_rows, threshold, budget_rows = _run_bm25_pipeline(
             query,
             eligible,
             config=config,
+            max_tokens=max_tokens,
         )
         return (
             matches,
@@ -124,6 +175,7 @@ def _run_search_pipeline_with_trace(
             "chunk",
             threshold,
             search_rows,
+            budget_rows,
         )
 
     if skills_pipeline_uses_rerank(config):
@@ -141,14 +193,16 @@ def _run_search_pipeline_with_trace(
                 "node",
                 threshold,
                 search_rows,
+                [],
             )
         except Exception as exc:
             reason = f"rerank failed: {exc}"
             logger.warning("rerank skills search failed, falling back to BM25: %s", exc)
-            matches, search_rows, threshold = _run_bm25_pipeline(
+            matches, search_rows, threshold, budget_rows = _run_bm25_pipeline(
                 query,
                 eligible,
                 config=config,
+                max_tokens=max_tokens,
             )
             return (
                 matches,
@@ -156,6 +210,7 @@ def _run_search_pipeline_with_trace(
                 "chunk",
                 threshold,
                 search_rows,
+                budget_rows,
             )
 
     if skills_pipeline_uses_llm(config):
@@ -175,14 +230,16 @@ def _run_search_pipeline_with_trace(
                 "node",
                 None,
                 search_rows,
+                [],
             )
         except Exception as exc:
             reason = f"llm failed: {exc}"
             logger.warning("llm skills search failed, falling back to BM25: %s", exc)
-            matches, search_rows, threshold = _run_bm25_pipeline(
+            matches, search_rows, threshold, budget_rows = _run_bm25_pipeline(
                 query,
                 eligible,
                 config=config,
+                max_tokens=max_tokens,
             )
             return (
                 matches,
@@ -190,14 +247,23 @@ def _run_search_pipeline_with_trace(
                 "chunk",
                 threshold,
                 search_rows,
+                budget_rows,
             )
 
-    matches, search_rows, threshold = _run_bm25_pipeline(
+    matches, search_rows, threshold, budget_rows = _run_bm25_pipeline(
         query,
         eligible,
         config=config,
+        max_tokens=max_tokens,
     )
-    return matches, SkillsPipelineRun(configured, "bm25"), "chunk", threshold, search_rows
+    return (
+        matches,
+        SkillsPipelineRun(configured, "bm25"),
+        "chunk",
+        threshold,
+        search_rows,
+        budget_rows,
+    )
 
 
 def _run_search_pipeline(
@@ -207,7 +273,7 @@ def _run_search_pipeline(
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun]:
-    matches, pipeline_run, _kind, _threshold, _rows = _run_search_pipeline_with_trace(
+    matches, pipeline_run, _kind, _threshold, _rows, _budget = _run_search_pipeline_with_trace(
         query,
         eligible,
         config=config,
@@ -257,24 +323,30 @@ def search_skills_with_trace(
             matches=[],
         )
 
-    candidates, pipeline_run, item_kind, threshold, search_rows = _run_search_pipeline_with_trace(
-        query,
-        eligible,
-        config=config,
-        pruner_settings=pruner_settings,
+    candidates, pipeline_run, item_kind, threshold, search_rows, bm25_budget_rows = (
+        _run_search_pipeline_with_trace(
+            query,
+            eligible,
+            config=config,
+            pruner_settings=pruner_settings,
+            max_tokens=max_tokens,
+        )
     )
     pre_budget_matches = tuple(candidates)
     budget_rows: list[BudgetItemRow] = []
     if max_tokens is not None and max_tokens > 0:
-        from cyt.skills.select import select_skills_with_budget_trace
+        if pipeline_run.executed == "bm25":
+            budget_rows = bm25_budget_rows
+        else:
+            from cyt.skills.select import select_skills_with_budget_trace
 
-        candidates, budget_rows = select_skills_with_budget_trace(
-            candidates,
-            max_tokens,
-            search_rows=search_rows,
-            entries=eligible,
-            item_kind=item_kind,
-        )
+            candidates, budget_rows = select_skills_with_budget_trace(
+                candidates,
+                max_tokens,
+                search_rows=search_rows,
+                entries=eligible,
+                item_kind=item_kind,
+            )
 
     return candidates, SkillsSearchTrace(
         frontmatter_limit=frontmatter_limit,

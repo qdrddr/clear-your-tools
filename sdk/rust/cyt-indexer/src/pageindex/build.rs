@@ -5,8 +5,8 @@ use super::cache_layout::{chunk_variant_dir, page_index_path};
 use super::config::PageIndexConfig;
 use super::decompose::{attach_chunks_to_structure, decompose_chunk_variant, decompose_page_index};
 use super::document_json::{
-    SkillDocumentExtras, load_merged_document_from_entry, page_index_files_complete,
-    read_document_json, write_page_index_files,
+    ChunkVariantMetadata, EntryMetadata, entry_hash_matches, load_merged_document_from_entry,
+    page_index_files_complete, read_document_json, write_entry_metadata, write_page_index_files,
 };
 use super::index::md_to_tree;
 use super::parse::{extract_node_text_content, extract_nodes_from_markdown, extract_skill_prefix};
@@ -38,6 +38,46 @@ pub fn build_page_index_only(
     config: &PageIndexConfig,
 ) -> Result<SkillsIndex, String> {
     build_skills_index_with_options(skill_dirs, config, false, None, None)
+}
+
+/// Build a page-index-only skills index from a single markdown file in place.
+///
+/// # Errors
+///
+/// Returns an error when the file is missing or cannot be read.
+pub fn build_page_index_for_file(
+    source: &Path,
+    config: &PageIndexConfig,
+) -> Result<SkillsIndex, String> {
+    let mut index = SkillsIndex::default();
+    let doc_id = doc_id_from_source_path(source);
+    index_skill_md_file(source, &doc_id, config, &mut index, false, None, None)?;
+    Ok(index)
+}
+
+/// Build a full skills index (with chunk variants) from a single markdown file.
+///
+/// # Errors
+///
+/// Returns an error when the file is missing or cannot be read.
+pub fn build_skills_index_for_file(
+    source: &Path,
+    config: &PageIndexConfig,
+    pipeline: &str,
+    params_hash: &str,
+) -> Result<SkillsIndex, String> {
+    let mut index = SkillsIndex::default();
+    let doc_id = doc_id_from_source_path(source);
+    index_skill_md_file(
+        source,
+        &doc_id,
+        config,
+        &mut index,
+        true,
+        Some(pipeline),
+        Some(params_hash),
+    )?;
+    Ok(index)
 }
 
 /// Build or rebuild a chunk variant from existing node files under `entry_dir`.
@@ -73,7 +113,17 @@ pub fn build_chunk_variant(
     let mut updated = doc;
     updated.structure = structure.clone();
     index.documents.insert(doc_id.to_string(), updated);
-    decompose_chunk_variant(&mut index, &structure, pipeline, params_hash);
+    let chunk_metadata = ChunkVariantMetadata {
+        pipeline: pipeline.to_string(),
+        index_params: config.to_index_params_value(),
+    };
+    decompose_chunk_variant(
+        &mut index,
+        &structure,
+        pipeline,
+        params_hash,
+        &chunk_metadata,
+    );
     crate::skills_io::write_chunk_variant_files(&index, entry_dir, pipeline, params_hash)?;
     Ok(index)
 }
@@ -160,52 +210,95 @@ fn walk_skill_md_files(
         if index.documents.contains_key(&doc_id) {
             continue;
         }
-
-        let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let prefix = extract_skill_prefix(&content);
-        let source_path = super::document_json::shorten_home_path(path.to_string_lossy().as_ref())?;
-        let result = md_to_tree(&content, &source_path, config);
-        let preamble = prefix.preamble.clone();
-        let mut flat_for_decompose = build_flat_structure(
-            &content,
-            prefix.frontmatter.as_deref(),
-            prefix.frontmatter_line_num,
-            preamble.as_deref(),
-            prefix.preamble_line_num,
+        index_skill_md_file(
+            path.as_path(),
+            &doc_id,
             config,
-        );
-        if include_chunks {
-            let pipeline = chunk_pipeline.unwrap_or("bm25");
-            let params_hash = chunk_params_hash.unwrap_or("default");
-            attach_chunks_to_structure(
-                &mut flat_for_decompose,
-                config,
-                index,
-                &doc_id,
-                pipeline,
-                params_hash,
-            )?;
-        }
-        let doc = build_skill_document(
-            doc_id.clone(),
-            &source_path,
-            &MdIndexResult {
-                doc_name: result.doc_name,
-                line_count: result.line_count,
-                structure: flat_for_decompose.clone(),
-            },
-            config,
-            prefix.frontmatter,
-            preamble,
-        );
-        decompose_page_index(index, &doc, &flat_for_decompose);
-        if include_chunks {
-            let pipeline = chunk_pipeline.unwrap_or("bm25");
-            let params_hash = chunk_params_hash.unwrap_or("default");
-            decompose_chunk_variant(index, &doc.structure, pipeline, params_hash);
-        }
-        index.documents.insert(doc_id, doc);
+            index,
+            include_chunks,
+            chunk_pipeline,
+            chunk_params_hash,
+        )?;
     }
+    Ok(())
+}
+
+fn doc_id_from_source_path(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("skill")
+        .to_string()
+        .replace('/', "__")
+        .to_lowercase()
+}
+
+fn index_skill_md_file(
+    path: &Path,
+    doc_id: &str,
+    config: &PageIndexConfig,
+    index: &mut SkillsIndex,
+    include_chunks: bool,
+    chunk_pipeline: Option<&str>,
+    chunk_params_hash: Option<&str>,
+) -> Result<(), String> {
+    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let prefix = extract_skill_prefix(&content);
+    let source_path = super::document_json::shorten_home_path(path.to_string_lossy().as_ref())?;
+    if index.documents.contains_key(doc_id) {
+        return Ok(());
+    }
+
+    let result = md_to_tree(&content, &source_path, config);
+    let preamble = prefix.preamble.clone();
+    let mut flat_for_decompose = build_flat_structure(
+        &content,
+        prefix.frontmatter.as_deref(),
+        prefix.frontmatter_line_num,
+        preamble.as_deref(),
+        prefix.preamble_line_num,
+        config,
+    );
+    if include_chunks {
+        let pipeline = chunk_pipeline.unwrap_or("bm25");
+        let params_hash = chunk_params_hash.unwrap_or("default");
+        attach_chunks_to_structure(
+            &mut flat_for_decompose,
+            config,
+            index,
+            doc_id,
+            pipeline,
+            params_hash,
+        )?;
+    }
+    let doc = build_skill_document(
+        doc_id.to_string(),
+        &source_path,
+        &MdIndexResult {
+            doc_name: result.doc_name,
+            line_count: result.line_count,
+            structure: flat_for_decompose.clone(),
+        },
+        config,
+        prefix.frontmatter,
+        preamble,
+    );
+    decompose_page_index(index, &doc, &flat_for_decompose);
+    if include_chunks {
+        let pipeline = chunk_pipeline.unwrap_or("bm25");
+        let params_hash = chunk_params_hash.unwrap_or("default");
+        let chunk_metadata = ChunkVariantMetadata {
+            pipeline: pipeline.to_string(),
+            index_params: config.to_index_params_value(),
+        };
+        decompose_chunk_variant(
+            index,
+            &doc.structure,
+            pipeline,
+            params_hash,
+            &chunk_metadata,
+        );
+    }
+    index.documents.insert(doc_id.to_string(), doc);
     Ok(())
 }
 
@@ -239,20 +332,26 @@ pub fn write_page_index_entry(
     index: &SkillsIndex,
     entry_dir: &Path,
     doc_id: &str,
-    extras: Option<&SkillDocumentExtras>,
+    metadata: Option<&EntryMetadata>,
 ) -> Result<(), String> {
     let doc = index
         .documents
         .get(doc_id)
         .ok_or_else(|| format!("skill document not found: {doc_id}"))?;
-    write_page_index_files(entry_dir, doc, extras)?;
+    write_page_index_files(entry_dir, doc)?;
+    if let Some(metadata) = metadata {
+        write_entry_metadata(entry_dir, metadata)?;
+    }
     crate::skills_io::write_node_files_from_index(index, entry_dir)?;
     Ok(())
 }
 
-/// Return whether the on-disk page index is complete for `content_sha256`.
+/// Return whether the on-disk page index is complete for the entry hash.
 #[must_use]
 pub fn page_index_valid(entry_dir: &Path, content_sha256: &str) -> bool {
+    if !entry_hash_matches(entry_dir, content_sha256) {
+        return false;
+    }
     let page_path = page_index_path(entry_dir);
     if !page_path.is_file() {
         return false;
@@ -260,13 +359,6 @@ pub fn page_index_valid(entry_dir: &Path, content_sha256: &str) -> bool {
     let Ok(page) = read_document_json(&page_path) else {
         return false;
     };
-    let stored_hash = page
-        .get("content_sha256")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if !content_sha256.is_empty() && stored_hash != content_sha256 {
-        return false;
-    }
     let Some(structure) = page.get("structure") else {
         return false;
     };
@@ -345,6 +437,28 @@ mod tests {
             &PageIndexConfig::default(),
         )?;
         assert!(index.files.keys().all(|k| !k.starts_with("chunks/")));
+
+        let _ = fs::remove_dir_all(&skills_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn build_page_index_for_file_indexes_in_place() -> Result<(), String> {
+        let home = home_dir()?;
+        let skills_dir =
+            PathBuf::from(&home).join(format!(".cyt-skills-single-{}", std::process::id()));
+        fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
+        let skill_path = skills_dir.join("create-hook.md");
+        fs::write(&skill_path, "# Create Hook\n\nBody").map_err(|e| e.to_string())?;
+        fs::write(skills_dir.join("other.md"), "# Other\n\nMore").map_err(|e| e.to_string())?;
+
+        let index = build_page_index_for_file(&skill_path, &PageIndexConfig::default())?;
+        assert_eq!(index.documents.len(), 1);
+        let doc = index
+            .documents
+            .get("create-hook")
+            .ok_or_else(|| "missing create-hook document".to_string())?;
+        assert!(doc.path.ends_with("create-hook.md"));
 
         let _ = fs::remove_dir_all(&skills_dir);
         Ok(())

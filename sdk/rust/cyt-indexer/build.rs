@@ -8,10 +8,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let config = cbindgen::Config::from_file("cbindgen.toml")?;
         cbindgen::Builder::new()
             .with_crate(&crate_dir)
+            .with_src("src/bindings/cbindgen_stubs.rs")
             .with_config(config)
             .generate()?
             .write_to_file(&output_file);
         println!("cargo:rerun-if-changed=src/ffi/");
+        println!("cargo:rerun-if-changed=src/bindings/");
         println!("cargo:rerun-if-changed=cbindgen.toml");
     }
     Ok(())

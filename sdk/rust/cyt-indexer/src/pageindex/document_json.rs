@@ -4,19 +4,24 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use super::cache_layout::{
-    PAGE_INDEX_FILE, chunk_index_path, chunk_md_path, chunk_variant_dir, node_md_path, nodes_dir,
-    page_index_path,
+    PAGE_INDEX_FILE, chunk_index_path, chunk_md_path, chunk_variant_dir, entry_content_hash,
+    metadata_path, node_md_path, nodes_dir, page_index_path,
 };
 use super::types::SkillDocument;
 
-/// Cache metadata stored alongside page-index fields in `page_index.json`.
+/// Entry-level cache metadata stored in `metadata.json`.
 #[derive(Debug, Clone)]
-pub struct SkillDocumentExtras {
-    pub content_sha256: String,
+pub struct EntryMetadata {
+    pub source_path: String,
     pub pipeline: String,
     pub index_params: Value,
-    pub built_at: String,
-    pub source_path: String,
+}
+
+/// Chunk-variant metadata stored alongside structure in `chunk_index.json`.
+#[derive(Debug, Clone)]
+pub struct ChunkVariantMetadata {
+    pub pipeline: String,
+    pub index_params: Value,
 }
 
 /// Parsed merged on-disk skill index fields used by BM25 and catalog loaders.
@@ -28,7 +33,7 @@ pub struct SkillDocumentOnDisk {
     pub frontmatter: Option<String>,
 }
 
-/// Store paths under `$HOME` as `~/...` in `page_index.json`.
+/// Store paths under `$HOME` as `~/...` in on-disk JSON.
 ///
 /// # Errors
 ///
@@ -94,12 +99,9 @@ pub fn strip_chunks_from_structure(structure: &Value) -> Value {
     }
 }
 
-/// Build `page_index.json`: document metadata plus node-only structure.
+/// Build `page_index.json`: document fields plus node-only structure.
 #[must_use]
-pub fn build_page_index_json_value(
-    doc: &SkillDocument,
-    extras: Option<&SkillDocumentExtras>,
-) -> Value {
+pub fn build_page_index_json_value(doc: &SkillDocument) -> Value {
     let mut value = doc.to_json();
     if let Some(obj) = value.as_object_mut()
         && let Some(structure) = obj.get("structure")
@@ -109,38 +111,36 @@ pub fn build_page_index_json_value(
             strip_chunks_from_structure(structure),
         );
     }
-    if let Some(extras) = extras {
-        merge_document_extras(&mut value, extras);
-    }
     value
 }
 
-/// Build `chunk_index.json`: full structure with nodes and chunk refs.
+/// Build `metadata.json` for one catalog entry.
 #[must_use]
-pub fn build_chunk_index_json_value(structure: &Value) -> Value {
-    json!({ "structure": structure })
+pub fn build_entry_metadata_value(metadata: &EntryMetadata) -> Value {
+    let mut obj = Map::new();
+    if let Ok(path) = shorten_home_path(&metadata.source_path) {
+        obj.insert("source_path".to_string(), Value::String(path));
+    }
+    if !metadata.pipeline.is_empty() {
+        obj.insert(
+            "pipeline".to_string(),
+            Value::String(metadata.pipeline.clone()),
+        );
+    }
+    if !metadata.index_params.is_null() {
+        obj.insert("index_params".to_string(), metadata.index_params.clone());
+    }
+    Value::Object(obj)
 }
 
-pub fn merge_document_extras(value: &mut Value, extras: &SkillDocumentExtras) {
-    let Some(obj) = value.as_object_mut() else {
-        return;
-    };
-    obj.insert(
-        "content_sha256".to_string(),
-        Value::String(extras.content_sha256.clone()),
-    );
-    obj.insert(
-        "pipeline".to_string(),
-        Value::String(extras.pipeline.clone()),
-    );
-    obj.insert("index_params".to_string(), extras.index_params.clone());
-    obj.insert(
-        "built_at".to_string(),
-        Value::String(extras.built_at.clone()),
-    );
-    if let Ok(path) = shorten_home_path(&extras.source_path) {
-        obj.insert("path".to_string(), Value::String(path));
-    }
+/// Build `chunk_index.json`: variant metadata plus full structure with chunk refs.
+#[must_use]
+pub fn build_chunk_index_json_value(structure: &Value, metadata: &ChunkVariantMetadata) -> Value {
+    json!({
+        "pipeline": metadata.pipeline,
+        "index_params": metadata.index_params,
+        "structure": structure,
+    })
 }
 
 /// Serialize index JSON with stable pretty formatting and trailing newline.
@@ -174,6 +174,39 @@ pub fn write_document_json(path: &Path, value: &Value) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     fs::write(path, serialize_document_json(value)?).map_err(|e| e.to_string())
+}
+
+/// Read entry metadata from `metadata.json` when present.
+#[must_use]
+pub fn read_entry_metadata(entry_dir: &Path) -> Option<EntryMetadata> {
+    let path = metadata_path(entry_dir);
+    let value = read_document_json(&path).ok()?;
+    let obj = value.as_object()?;
+    Some(EntryMetadata {
+        source_path: obj
+            .get("source_path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        pipeline: obj
+            .get("pipeline")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        index_params: obj.get("index_params").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// Write `metadata.json` under `entry_dir`.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be written.
+pub fn write_entry_metadata(entry_dir: &Path, metadata: &EntryMetadata) -> Result<(), String> {
+    write_document_json(
+        &metadata_path(entry_dir),
+        &build_entry_metadata_value(metadata),
+    )
 }
 
 /// Merge node metadata from `nodes/page_index.json` with chunk structure from a variant dir.
@@ -224,14 +257,10 @@ pub fn load_merged_document_json(
 /// # Errors
 ///
 /// Returns an error when the page index file cannot be written.
-pub fn write_page_index_files(
-    entry_dir: &Path,
-    doc: &SkillDocument,
-    extras: Option<&SkillDocumentExtras>,
-) -> Result<(), String> {
+pub fn write_page_index_files(entry_dir: &Path, doc: &SkillDocument) -> Result<(), String> {
     write_document_json(
         &page_index_path(entry_dir),
-        &build_page_index_json_value(doc, extras),
+        &build_page_index_json_value(doc),
     )
 }
 
@@ -245,11 +274,12 @@ pub fn write_chunk_variant_index(
     pipeline: &str,
     params_hash: &str,
     structure: &Value,
+    metadata: &ChunkVariantMetadata,
 ) -> Result<(), String> {
     let variant_dir = chunk_variant_dir(entry_dir, pipeline, params_hash);
     write_document_json(
         &chunk_index_path(&variant_dir),
-        &build_chunk_index_json_value(structure),
+        &build_chunk_index_json_value(structure, metadata),
     )
 }
 
@@ -273,43 +303,45 @@ pub fn parse_document_on_disk(value: &Value) -> Option<SkillDocumentOnDisk> {
     })
 }
 
-/// Merge cache metadata into an existing `nodes/page_index.json`.
+/// Write or update `metadata.json` for one catalog entry.
 ///
 /// # Errors
 ///
-/// Returns an error when `page_index.json` cannot be read or written.
-pub fn finalize_document_json(
+/// Returns an error when metadata cannot be written.
+pub fn finalize_entry_metadata(
     entry_dir: &Path,
-    _doc_id: &str,
-    extras: &SkillDocumentExtras,
+    metadata: &EntryMetadata,
 ) -> Result<Value, String> {
-    let page_path = page_index_path(entry_dir);
-    let mut value =
-        read_document_json(&page_path).map_err(|e| format!("page_index.json not readable: {e}"))?;
-    merge_document_extras(&mut value, extras);
-    write_document_json(&page_path, &value)?;
+    write_entry_metadata(entry_dir, metadata)?;
     load_merged_document_from_entry(entry_dir, None)
 }
 
-/// Update only the canonical source path in `nodes/page_index.json`.
+/// Update canonical source paths in `metadata.json` and `page_index.json`.
 ///
 /// # Errors
 ///
-/// Returns an error when `page_index.json` cannot be read or written.
+/// Returns an error when on-disk files cannot be read or written.
 pub fn update_document_source_path(
     entry_dir: &Path,
     _doc_id: &str,
     source_path: &str,
 ) -> Result<Value, String> {
-    let page_path = page_index_path(entry_dir);
-    let mut value =
-        read_document_json(&page_path).map_err(|e| format!("page_index.json not readable: {e}"))?;
     let canonical_path = shorten_home_path(source_path)?;
-    value
-        .as_object_mut()
+    let page_path = page_index_path(entry_dir);
+    let mut page =
+        read_document_json(&page_path).map_err(|e| format!("page_index.json not readable: {e}"))?;
+    page.as_object_mut()
         .ok_or_else(|| "page_index.json is not an object".to_string())?
         .insert("path".to_string(), Value::String(canonical_path));
-    write_document_json(&page_path, &value)?;
+    write_document_json(&page_path, &page)?;
+
+    let mut metadata = read_entry_metadata(entry_dir).unwrap_or(EntryMetadata {
+        source_path: String::new(),
+        pipeline: String::new(),
+        index_params: Value::Null,
+    });
+    metadata.source_path = source_path.to_string();
+    write_entry_metadata(entry_dir, &metadata)?;
     load_merged_document_from_entry(entry_dir, None)
 }
 
@@ -323,8 +355,9 @@ pub fn write_chunk_index_structure(
     pipeline: &str,
     params_hash: &str,
     structure: &Value,
+    metadata: &ChunkVariantMetadata,
 ) -> Result<(), String> {
-    write_chunk_variant_index(entry_dir, pipeline, params_hash, structure)
+    write_chunk_variant_index(entry_dir, pipeline, params_hash, structure, metadata)
 }
 
 /// Check that all node markdown files referenced in page structure exist.
@@ -356,6 +389,15 @@ pub fn chunk_variant_files_complete(
         }
     }
     true
+}
+
+/// Return whether `entry_dir` matches the expected content hash directory name.
+#[must_use]
+pub fn entry_hash_matches(entry_dir: &Path, content_sha256: &str) -> bool {
+    if content_sha256.is_empty() {
+        return true;
+    }
+    entry_content_hash(entry_dir).as_deref() == Some(content_sha256)
 }
 
 fn iter_node_ids(structure: &Value) -> Vec<u32> {
@@ -459,22 +501,33 @@ mod tests {
             Some("name: demo".to_string()),
             None,
         );
-        let extras = SkillDocumentExtras {
-            content_sha256: "abc".to_string(),
+        let metadata = EntryMetadata {
+            source_path: "/tmp/skills/skill.md".to_string(),
             pipeline: "bm25".to_string(),
             index_params: json!({"enable_bm25_chunking": true}),
-            built_at: "2026-01-01T00:00:00+00:00".to_string(),
-            source_path: "/tmp/skills/skill.md".to_string(),
         };
-        write_page_index_files(&entry_dir, &doc, Some(&extras))?;
-        write_chunk_variant_index(&entry_dir, "bm25", "hash1", &structure)?;
+        write_page_index_files(&entry_dir, &doc)?;
+        write_entry_metadata(&entry_dir, &metadata)?;
+        write_chunk_variant_index(
+            &entry_dir,
+            "bm25",
+            "hash1",
+            &structure,
+            &ChunkVariantMetadata {
+                pipeline: "bm25".to_string(),
+                index_params: metadata.index_params,
+            },
+        )?;
 
         let page = read_document_json(&page_index_path(&entry_dir))?;
         assert!(page.pointer("/structure/0/chunks").is_none());
+        assert!(page.get("content_sha256").is_none());
+        assert!(page.get("built_at").is_none());
 
         let variant = chunk_variant_dir(&entry_dir, "bm25", "hash1");
         let chunk_index = read_document_json(&chunk_index_path(&variant))?;
         assert!(chunk_index.pointer("/structure/0/chunks").is_some());
+        assert_eq!(chunk_index["pipeline"], "bm25");
 
         let merged = load_merged_document_from_entry(&entry_dir, Some(&variant))?;
         let parsed = parse_document_on_disk(&merged).ok_or("parseable merged document")?;

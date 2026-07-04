@@ -49,6 +49,7 @@ prefix = "CYT_"
 [parse]
 parse_deps = false
 clean = true
+include = ["src/bindings/cbindgen_stubs.rs"]
 
 [enum]
 rename_variants = "None"

@@ -670,6 +670,89 @@ func cgoEffectivePolicy(ctxJSON, toolID string) (string, error) {
 	return takeJSON(&out)
 }
 
+func cgoBatchToolPassThrough(ctxJSON, toolIDsJSON string) (string, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	cIDs := cString(toolIDsJSON)
+	defer freeCString(cIDs)
+	var out *C.char
+	if C.cyt_batch_tool_pass_through(cCtx, cIDs, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPruneCatalogBm25AndRetrieve(
+	catalogJSON, buildCatalogJSON, catalogIndexJSON, query, scoringCtxJSON, outputCtxJSON, optionsJSON string,
+) (string, error) {
+	cCatalog := cString(catalogJSON)
+	defer freeCString(cCatalog)
+	cBuild := cString(buildCatalogJSON)
+	defer freeCString(cBuild)
+	cIndex := cString(catalogIndexJSON)
+	defer freeCString(cIndex)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	cScoring := cString(scoringCtxJSON)
+	defer freeCString(cScoring)
+	cOutput := cString(outputCtxJSON)
+	defer freeCString(cOutput)
+	var cOptions *C.char
+	if optionsJSON != "" {
+		cOptions = cString(optionsJSON)
+		defer freeCString(cOptions)
+	}
+	var out *C.char
+	if C.cyt_prune_catalog_bm25_and_retrieve(
+		cCatalog, cBuild, cIndex, cQuery, cScoring, cOutput, cOptions, &out,
+	) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoClassifyAndCountCatalog(catalogJSON, toolsJSON string) (string, error) {
+	cCatalog := cString(catalogJSON)
+	defer freeCString(cCatalog)
+	var cTools *C.char
+	if toolsJSON != "" {
+		cTools = cString(toolsJSON)
+		defer freeCString(cTools)
+	}
+	var out *C.char
+	if C.cyt_classify_and_count_catalog(cCatalog, cTools, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoSearchSkillsAndSelect(entriesJSON, query, optionsJSON string) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	var cOptions *C.char
+	if optionsJSON != "" {
+		cOptions = cString(optionsJSON)
+		defer freeCString(cOptions)
+	}
+	var out *C.char
+	if C.cyt_search_skills_and_select(cEntries, cQuery, cOptions, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoBuildSkillNodeCatalog(entriesJSON string) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	var out *C.char
+	if C.cyt_build_skill_node_catalog(cEntries, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoPartitionCatalog(dataJSON, ctxJSON string) (string, error) {
 	cData := cString(dataJSON)
 	defer freeCString(cData)
@@ -1541,6 +1624,242 @@ func cgoUpdateSkillDocumentSourcePath(entryDir, docID, sourcePath string) (strin
 	defer freeCString(cPath)
 	var out *C.char
 	if C.cyt_update_skill_document_source_path(cEntry, cDoc, cPath, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoConfigureMemoryCache(configJSON string) error {
+	cCfg := cString(configJSON)
+	defer freeCString(cCfg)
+	if C.cyt_configure_memory_cache(cCfg) != ok {
+		return lastError()
+	}
+	return nil
+}
+
+func cgoConfigurePathConstants(mdExt, jsonExt, decomposedPrefix, decomposedRoot, catalogPrefix, defaultCatalogDir string, builderMemoryOnly, writeCatalogPrune bool) error {
+	cMd := cString(mdExt)
+	defer freeCString(cMd)
+	cJSON := cString(jsonExt)
+	defer freeCString(cJSON)
+	cPrefix := cString(decomposedPrefix)
+	defer freeCString(cPrefix)
+	cRoot := cString(decomposedRoot)
+	defer freeCString(cRoot)
+	cCatalog := cString(catalogPrefix)
+	defer freeCString(cCatalog)
+	cDefault := cString(defaultCatalogDir)
+	defer freeCString(cDefault)
+	memOnly := C.int(0)
+	if builderMemoryOnly {
+		memOnly = 1
+	}
+	writePrune := C.int(0)
+	if writeCatalogPrune {
+		writePrune = 1
+	}
+	if C.cyt_configure_path_constants(cMd, cJSON, cPrefix, cRoot, cCatalog, cDefault, memOnly, writePrune) != ok {
+		return lastError()
+	}
+	return nil
+}
+
+func cgoPathMdExt() (string, error) {
+	var out *C.char
+	if C.cyt_path_md_ext(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathJsonExt() (string, error) {
+	var out *C.char
+	if C.cyt_path_json_ext(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathDecomposedPrefix() (string, error) {
+	var out *C.char
+	if C.cyt_path_decomposed_prefix(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathDecomposedRoot() (string, error) {
+	var out *C.char
+	if C.cyt_path_decomposed_root(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathCatalogPrefix() (string, error) {
+	var out *C.char
+	if C.cyt_path_catalog_prefix(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathDefaultCatalogDir() (string, error) {
+	var out *C.char
+	if C.cyt_path_default_catalog_dir(&out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoPathBuilderMemoryOnly() (bool, error) {
+	return fmtBoolQuery("PathBuilderMemoryOnly", C.cyt_path_builder_memory_only())
+}
+
+func cgoPathWriteCatalogPrune() (bool, error) {
+	return fmtBoolQuery("PathWriteCatalogPrune", C.cyt_path_write_catalog_prune())
+}
+
+func cgoToolPassThrough(ctxJSON, toolID string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	cTool := cString(toolID)
+	defer freeCString(cTool)
+	return fmtBoolQuery("ToolPassThrough", C.cyt_tool_pass_through(cCtx, cTool))
+}
+
+func cgoFullPassThrough(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("FullPassThrough", C.cyt_full_pass_through(cCtx))
+}
+
+func cgoNeedsPartition(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("NeedsPartition", C.cyt_needs_partition(cCtx))
+}
+
+func cgoNeedsPrunedRecompose(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("NeedsPrunedRecompose", C.cyt_needs_pruned_recompose(cCtx))
+}
+
+func cgoSystemToolsPassThrough(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("SystemToolsPassThrough", C.cyt_system_tools_pass_through(cCtx))
+}
+
+func cgoMcpToolsPassThrough(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("McpToolsPassThrough", C.cyt_mcp_tools_pass_through(cCtx))
+}
+
+func cgoNeedsDescriptionReinstate(ctxJSON string) (bool, error) {
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	return fmtBoolQuery("NeedsDescriptionReinstate", C.cyt_needs_description_reinstate(cCtx))
+}
+
+func cgoIsSystemChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsSystemChunk", C.cyt_is_system_chunk(cItem))
+}
+
+func cgoIsNonSystemChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsNonSystemChunk", C.cyt_is_non_system_chunk(cItem))
+}
+
+func cgoIsDecomposedToolRootChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsDecomposedToolRootChunk", C.cyt_is_decomposed_tool_root_chunk(cItem))
+}
+
+func cgoIsDecomposedOptionalPropertyChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsDecomposedOptionalPropertyChunk", C.cyt_is_decomposed_optional_property_chunk(cItem))
+}
+
+func cgoIsSystemRootChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsSystemRootChunk", C.cyt_is_system_root_chunk(cItem))
+}
+
+func cgoIsMcpRootChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsMcpRootChunk", C.cyt_is_mcp_root_chunk(cItem))
+}
+
+func cgoIsSystemOptionalChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsSystemOptionalChunk", C.cyt_is_system_optional_chunk(cItem))
+}
+
+func cgoIsMcpOptionalChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsMcpOptionalChunk", C.cyt_is_mcp_optional_chunk(cItem))
+}
+
+func cgoIsDirectRootOptionalPropertyChunk(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("IsDirectRootOptionalPropertyChunk", C.cyt_is_direct_root_optional_property_chunk(cItem))
+}
+
+func cgoRootChunkPropertiesEmpty(itemJSON string) (bool, error) {
+	cItem := cString(itemJSON)
+	defer freeCString(cItem)
+	return fmtBoolQuery("RootChunkPropertiesEmpty", C.cyt_root_chunk_properties_empty(cItem))
+}
+
+func cgoStashSystemTools(toolsJSON string) (string, error) {
+	cInput := cString(toolsJSON)
+	defer freeCString(cInput)
+	var out *C.char
+	if C.cyt_stash_system_tools(cInput, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoRestoreSystemTools(stashJSON string) (string, error) {
+	cInput := cString(stashJSON)
+	defer freeCString(cInput)
+	var out *C.char
+	if C.cyt_restore_system_tools(cInput, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoStashMcpTools(toolsJSON string) (string, error) {
+	cInput := cString(toolsJSON)
+	defer freeCString(cInput)
+	var out *C.char
+	if C.cyt_stash_mcp_tools(cInput, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoRestoreMcpTools(stashJSON string) (string, error) {
+	cInput := cString(stashJSON)
+	defer freeCString(cInput)
+	var out *C.char
+	if C.cyt_restore_mcp_tools(cInput, &out) != ok {
 		return "", lastError()
 	}
 	return takeJSON(&out)

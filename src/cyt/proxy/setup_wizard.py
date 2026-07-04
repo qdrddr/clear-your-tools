@@ -1996,7 +1996,7 @@ def run_setup(config_path: Path) -> None:
         skills=skills_overlay,
         inject_via=inject_mode,
     )
-    overlay["pruning"]["tools"].update(tools_overlay.get("tools", {}))
+    overlay["pruning"]["tools"].update(tools_overlay)
 
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):

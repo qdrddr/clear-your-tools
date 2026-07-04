@@ -444,10 +444,8 @@ export function finalizeSkillDocumentJson(
   return finalizeSkillDocumentJsonNative(
     entryDir,
     docId,
-    options.contentSha256,
     options.pipeline,
     options.indexParams,
-    options.builtAt,
     options.sourcePath,
   ) as Record<string, unknown>;
 }

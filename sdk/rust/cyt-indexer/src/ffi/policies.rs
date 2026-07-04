@@ -153,6 +153,29 @@ pub unsafe extern "C" fn cyt_effective_policy(
 bool_ctx_tool_fn!(cyt_tool_pass_through, tool_pass_through);
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_batch_tool_pass_through(
+    ctx_json: *const c_char,
+    tool_ids_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let ctx = parse_ctx_json(ctx_json)?;
+        let arr = json_array_or_empty(&unsafe { parse_json_cstr(tool_ids_json, "tool_ids_json")? });
+        let ids: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+        let results: Vec<Value> = policies::batch_tool_pass_through(&ctx, &ids)
+            .into_iter()
+            .map(Value::Bool)
+            .collect();
+        unsafe { write_json_out(&Value::Array(results), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn cyt_partition_catalog(
     data_json: *const c_char,
     ctx_json: *const c_char,

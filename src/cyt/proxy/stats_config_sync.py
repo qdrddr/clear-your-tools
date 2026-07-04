@@ -18,7 +18,7 @@ from cyt.config import (
     provider_registry,
     save_user_config,
 )
-from cyt.proxy.setup import (
+from cyt.proxy.setup_wizard import (
     _extract_hostname,
     build_models_config_section,
     derive_second_level_domain_from_hostname,

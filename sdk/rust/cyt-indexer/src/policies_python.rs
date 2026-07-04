@@ -166,6 +166,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policy_context_from_values_py, m)?)?;
     m.add_function(wrap_pyfunction!(effective_policy_py, m)?)?;
     m.add_function(wrap_pyfunction!(tool_pass_through_py, m)?)?;
+    m.add_function(wrap_pyfunction!(batch_tool_pass_through_py, m)?)?;
     m.add_function(wrap_pyfunction!(partition_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(merge_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_needs_partition_py, m)?)?;
@@ -274,6 +275,23 @@ fn tool_pass_through_py(ctx: &Bound<'_, PyAny>, tool_id: &str) -> PyResult<bool>
     Ok(policies::tool_pass_through(&ctx, tool_id))
 }
 
+#[pyfunction(name = "batch_tool_pass_through")]
+fn batch_tool_pass_through_py(
+    py: Python<'_>,
+    ctx: &Bound<'_, PyAny>,
+    tool_ids: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let ctx = ctx_from_py_any(ctx)?;
+    let val = super::py_to_value(tool_ids)?;
+    let arr = val.as_array().cloned().unwrap_or_default();
+    let ids: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+    let results: Vec<Value> = policies::batch_tool_pass_through(&ctx, &ids)
+        .into_iter()
+        .map(Value::Bool)
+        .collect();
+    super::value_to_py(py, &Value::Array(results))
+}
+
 #[pyfunction(name = "partition_catalog")]
 fn partition_catalog_py(
     py: Python<'_>,
@@ -282,7 +300,7 @@ fn partition_catalog_py(
 ) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
     let data_val = super::py_to_value(data)?;
     let ctx = ctx_from_py_any(ctx)?;
-    let (proc, pinned) = policies::partition_catalog(&data_val, &ctx);
+    let (proc, pinned) = py.detach(|| policies::partition_catalog(&data_val, &ctx));
     Ok((
         super::value_to_py(py, &proc)?,
         super::value_to_py(py, &pinned)?,

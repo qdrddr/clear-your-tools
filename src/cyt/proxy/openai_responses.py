@@ -260,40 +260,60 @@ def _prune_openai_tools_array(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
-) -> tuple[list[dict[str, Any]] | None, PruneResult | None]:
-    """Prune one OpenAI ``tools`` array (flat or namespace) and return updated tools."""
+    user_message_inject: bool = False,
+) -> tuple[list[dict[str, Any]] | None, PruneResult | None, list[dict[str, Any]]]:
+    """Prune one OpenAI ``tools`` array and return updated tools plus MCP defs for user inject."""
     if not tools:
-        return None, None
+        return None, None, []
 
     if request_pass_through(tools, policy_context_from_config()):
         tokens_in = count_json_tokens(tools)
-        return tools, PruneResult(
-            tools=None,
-            status="pass_through",
-            query=query,
-            tools_in=len(tools),
-            mcp_tools_in=_mcp_tools_in(tools),
-            tools_out=len(tools),
-            error=None,
-            tokens_in=tokens_in,
-            tokens_out=tokens_in,
-            tokens_saved=0,
+        mcp_for_inject: list[dict[str, Any]] = []
+        final_tools: list[dict[str, Any]] | None = tools
+        if user_message_inject:
+            from cyt.proxy.user_message_inject import (
+                mcp_tools_from_pruned_named,
+                openai_tools_keep_system_only,
+            )
+
+            flat = _flatten_openai_tools_for_pruning(tools)
+            mcp_for_inject = mcp_tools_from_pruned_named(flat)
+            final_tools = openai_tools_keep_system_only(tools, flat)
+        return (
+            final_tools,
+            PruneResult(
+                tools=None,
+                status="pass_through",
+                query=query,
+                tools_in=len(tools),
+                mcp_tools_in=_mcp_tools_in(tools),
+                tools_out=len(final_tools or tools),
+                error=None,
+                tokens_in=tokens_in,
+                tokens_out=tokens_in,
+                tokens_saved=0,
+            ),
+            mcp_for_inject,
         )
 
     if not query:
-        return None, PruneResult(
-            tools=None,
-            status="skipped",
-            query=None,
-            tools_in=len(tools),
-            mcp_tools_in=_mcp_tools_in(tools),
-            tools_out=None,
-            error="no user query extracted",
+        return (
+            None,
+            PruneResult(
+                tools=None,
+                status="skipped",
+                query=None,
+                tools_in=len(tools),
+                mcp_tools_in=_mcp_tools_in(tools),
+                tools_out=None,
+                error="no user query extracted",
+            ),
+            [],
         )
 
     named_tools = _flatten_openai_tools_for_pruning(tools)
     if not named_tools:
-        return None, None
+        return None, None, []
 
     result = filter_tools_for_query(
         named_tools,
@@ -310,10 +330,21 @@ def _prune_openai_tools_array(
         if result.status == "failed":
             logger.warning("tool pruning failed: %s", result.error)
         if result.status != "pass_through":
-            return None, result
-        return tools, result
+            return None, result, []
+        return tools, result, []
 
-    final_tools = _merge_pruned_openai_tools(tools, result.tools)
+    if user_message_inject:
+        from cyt.proxy.user_message_inject import (
+            mcp_tools_from_pruned_named,
+            openai_tools_keep_system_only,
+        )
+
+        mcp_for_inject = mcp_tools_from_pruned_named(result.tools)
+        final_tools = openai_tools_keep_system_only(tools, result.tools)
+    else:
+        mcp_for_inject = []
+        final_tools = _merge_pruned_openai_tools(tools, result.tools)
+
     result.tools = final_tools
     result.tools_final = copy.deepcopy(final_tools)
     result.tools_accepted = copy.deepcopy(tools)
@@ -324,7 +355,7 @@ def _prune_openai_tools_array(
     result.tokens_in = tokens_in
     result.tokens_out = tokens_out
     result.tokens_saved = tokens_in - tokens_out
-    return final_tools, result
+    return final_tools, result, mcp_for_inject
 
 
 def _openai_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> PruneResult:
@@ -347,8 +378,12 @@ def _openai_prune_request_tools(
     deferred: DeferredSkillsContext | None,
     config: dict[str, Any] | None,
     pruner_settings: PrunerSettingsCache | None = None,
-) -> PruneResult | None:
+) -> tuple[PruneResult | None, list[dict[str, Any]]]:
+    from cyt.config import inject_into_user_message
+
     result: PruneResult | None = None
+    mcp_for_inject: list[dict[str, Any]] = []
+    user_message_inject = inject_into_user_message(config)
     skill_entries = (
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
@@ -356,7 +391,7 @@ def _openai_prune_request_tools(
 
     tools = original.get("tools") or []
     if tools:
-        final_tools, pass_result = _prune_openai_tools_array(
+        final_tools, pass_result, mcp_batch = _prune_openai_tools_array(
             tools,
             query,
             pruning_pipeline,
@@ -365,9 +400,12 @@ def _openai_prune_request_tools(
             skill_llm_out=skill_out if deferred is not None else None,
             config=config,
             pruner_settings=pruner_settings,
+            user_message_inject=user_message_inject,
         )
-        if final_tools is not None and pass_result is not None and pass_result.status == "applied":
-            original["tools"] = final_tools
+        mcp_for_inject.extend(mcp_batch)
+        if final_tools is not None and pass_result is not None:
+            if pass_result.status == "applied" or user_message_inject:
+                original["tools"] = final_tools
         result = _combine_prune_results(result, pass_result)
 
     for item in original.get("input") or []:
@@ -376,7 +414,7 @@ def _openai_prune_request_tools(
         item_tools = item.get("tools") or []
         if not item_tools:
             continue
-        final_tools, pass_result = _prune_openai_tools_array(
+        final_tools, pass_result, mcp_batch = _prune_openai_tools_array(
             item_tools,
             query,
             pruning_pipeline,
@@ -385,12 +423,15 @@ def _openai_prune_request_tools(
             skill_llm_out=skill_out if deferred is not None else None,
             config=config,
             pruner_settings=pruner_settings,
+            user_message_inject=user_message_inject,
         )
-        if final_tools is not None and pass_result is not None and pass_result.status == "applied":
-            item["tools"] = final_tools
+        mcp_for_inject.extend(mcp_batch)
+        if final_tools is not None and pass_result is not None:
+            if pass_result.status == "applied" or user_message_inject:
+                item["tools"] = final_tools
         result = _combine_prune_results(result, pass_result)
 
-    return result
+    return result, mcp_for_inject
 
 
 def transform_openai_request(
@@ -460,6 +501,7 @@ def transform_openai_request(
         config,
         pruner_settings=pruner_settings,
     )
+    prune_result, mcp_for_inject = result
     original, skills_meta = finish_deferred_skills_openai(
         original,
         skills_meta,
@@ -467,7 +509,24 @@ def transform_openai_request(
         config,
         matches=skill_out.get("matches"),
         query=query,
-        prune_result=result,
+        prune_result=prune_result,
         pruner_settings=pruner_settings,
     )
-    return original, result, skills_meta
+
+    from cyt.config import inject_into_user_message
+    from cyt.proxy.user_message_inject import (
+        already_has_user_turn_injection,
+        append_injection_to_body,
+    )
+    from cyt.tools.inject import format_agent_tools
+
+    if inject_into_user_message(config) and mcp_for_inject:
+        tools_text = format_agent_tools(mcp_for_inject)
+        if tools_text and not already_has_user_turn_injection(
+            original,
+            "openai",
+            tag="<agent-tools>",
+        ):
+            original = append_injection_to_body(original, tools_text, kind="openai")
+
+    return original, prune_result, skills_meta

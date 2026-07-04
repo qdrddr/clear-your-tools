@@ -23,7 +23,7 @@ from cyt.launch.upstream import (
     infer_upstream_kind_from_url,
     list_upstreams,
 )
-from cyt.proxy.setup import (
+from cyt.proxy.setup_wizard import (
     _extract_hostname,
     _prompt_key_var_name,
     _prompt_required,

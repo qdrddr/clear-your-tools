@@ -6,7 +6,8 @@ from typing import Any
 
 from cyt_indexer import get_skill_line_content
 
-from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, _shorten_home_path
+from cyt.common.paths import shorten_home_path
+from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 
 
@@ -41,19 +42,42 @@ def load_node_body(entry: SkillEntryRef, node_id: int) -> str:
     return str(content).strip() if content is not None else ""
 
 
+def _entries_payload_for_nodes(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for entry in entries:
+        payload.append(
+            {
+                "entry_dir": entry.entry_dir,
+                "doc_id": entry.doc_id,
+                "source_path": shorten_home_path(entry.source_path),
+                "document": entry.document,
+                "bm25_chunk_dir": entry.bm25_chunk_dir,
+            },
+        )
+    return payload
+
+
 def build_skill_node_items(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
     """Build rerankable items from cached content nodes (never chunks)."""
-    items: list[dict[str, Any]] = []
+    try:
+        from cyt_indexer.pipeline import build_skill_node_catalog
+
+        items = build_skill_node_catalog(_entries_payload_for_nodes(entries))
+        if items:
+            return items
+    except Exception:
+        pass
+    fallback_items: list[dict[str, Any]] = []
     for entry in entries:
         structure = entry.document.get("structure")
         if not structure:
             continue
-        file_path = _shorten_home_path(entry.source_path)
+        file_path = shorten_home_path(entry.source_path)
         for node_id in _iter_content_node_ids(structure):
             body = load_node_body(entry, node_id)
             if not body:
                 continue
-            items.append(
+            fallback_items.append(
                 {
                     "entry_dir": entry.entry_dir,
                     "doc_id": entry.doc_id,
@@ -63,4 +87,4 @@ def build_skill_node_items(entries: list[SkillEntryRef]) -> list[dict[str, Any]]
                     "score": 0.0,
                 },
             )
-    return items
+    return fallback_items

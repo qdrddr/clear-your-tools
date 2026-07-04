@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use crate::pageindex::cache_layout::nodes_dir;
 use crate::pageindex::cache_layout::skill_entry_dir;
 use crate::pageindex::{
-    PageIndexConfig, SkillDocument, SkillDocumentExtras, SkillsIndex, build_chunk_variant,
-    build_page_index_only, chunk_variant_valid, load_merged_document_json, page_index_valid,
+    EntryMetadata, PageIndexConfig, SkillDocument, SkillsIndex, build_chunk_variant,
+    build_page_index_for_file, chunk_variant_valid, load_merged_document_json, page_index_valid,
     write_page_index_entry,
 };
 use crate::skills_io::refresh_skills_index_cache;
@@ -51,29 +51,6 @@ fn doc_id_from_path(path: &Path) -> String {
         .to_string()
         .replace('/', "__")
         .to_lowercase()
-}
-
-fn build_page_index_for_source(
-    source: &Path,
-    pageindex_config: &PageIndexConfig,
-) -> Result<SkillsIndex, String> {
-    let file_name = source
-        .file_name()
-        .ok_or_else(|| "skill source path has no file name".to_string())?;
-    let tmp = std::env::temp_dir().join(format!(
-        "cyt-skill-{}-{}",
-        std::process::id(),
-        file_name.to_string_lossy()
-    ));
-    if tmp.exists() {
-        let _ = fs::remove_dir_all(&tmp);
-    }
-    fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
-    let dest = tmp.join(file_name);
-    fs::copy(source, &dest).map_err(|e| e.to_string())?;
-    let result = build_page_index_only(std::slice::from_ref(&tmp), pageindex_config);
-    let _ = fs::remove_dir_all(&tmp);
-    result
 }
 
 fn persist_skills_index(entry_dir: &Path, doc_id: &str, index: &SkillsIndex) {
@@ -169,19 +146,17 @@ fn ensure_one_skill_entry(
         }
     } else if lazy_registry {
         lazy_pending = true;
-        document = Some(stub_document_from_source(source, &doc_id, &content_sha256)?);
+        document = Some(stub_document_from_source(source, &doc_id)?);
     } else {
-        let index = build_page_index_for_source(source, pageindex_config)?;
+        let index = build_page_index_for_file(source, pageindex_config)?;
 
         if disk_ok {
-            let extras = SkillDocumentExtras {
-                content_sha256: content_sha256.clone(),
+            let metadata = EntryMetadata {
+                source_path: source.display().to_string(),
                 pipeline: String::new(),
                 index_params: serde_json::Value::Null,
-                built_at: String::new(),
-                source_path: source.display().to_string(),
             };
-            write_page_index_entry(&index, &entry_dir, &doc_id, Some(&extras))?;
+            write_page_index_entry(&index, &entry_dir, &doc_id, Some(&metadata))?;
             persist_skills_index(&entry_dir, &doc_id, &index);
             disk_backed = true;
             cache_status = CacheStatus::Miss;

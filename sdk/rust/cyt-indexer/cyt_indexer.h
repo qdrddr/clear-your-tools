@@ -120,6 +120,60 @@ typedef struct CYT_CytSkillsBuilder CYT_CytSkillsBuilder;
 extern "C" {
 #endif // __cplusplus
 
+int cyt_full_pass_through(const char *ctx_json);
+
+int cyt_needs_description_reinstate(const char *ctx_json);
+
+int cyt_needs_partition(const char *ctx_json);
+
+int cyt_needs_pruned_recompose(const char *ctx_json);
+
+int cyt_system_tools_pass_through(const char *ctx_json);
+
+int cyt_mcp_tools_pass_through(const char *ctx_json);
+
+int cyt_tool_pass_through(const char *ctx_json, const char *tool_id);
+
+int cyt_is_decomposed_tool_root_chunk(const char *item_json);
+
+int cyt_is_decomposed_optional_property_chunk(const char *item_json);
+
+int cyt_is_system_chunk(const char *item_json);
+
+int cyt_is_non_system_chunk(const char *item_json);
+
+int cyt_is_system_root_chunk(const char *item_json);
+
+int cyt_is_mcp_root_chunk(const char *item_json);
+
+int cyt_is_system_optional_chunk(const char *item_json);
+
+int cyt_is_mcp_optional_chunk(const char *item_json);
+
+int cyt_is_direct_root_optional_property_chunk(const char *item_json);
+
+int cyt_root_chunk_properties_empty(const char *item_json);
+
+int cyt_stash_system_tools(const char *input_json, char **out);
+
+int cyt_restore_system_tools(const char *input_json, char **out);
+
+int cyt_stash_mcp_tools(const char *input_json, char **out);
+
+int cyt_restore_mcp_tools(const char *input_json, char **out);
+
+int cyt_path_md_ext(char **out);
+
+int cyt_path_json_ext(char **out);
+
+int cyt_path_decomposed_prefix(char **out);
+
+int cyt_path_decomposed_root(char **out);
+
+int cyt_path_catalog_prefix(char **out);
+
+int cyt_path_default_catalog_dir(char **out);
+
 /*
  Return default BM25 cohesion config as JSON.
  */
@@ -548,11 +602,61 @@ int cyt_path_builder_memory_only(void);
 
 int cyt_path_write_catalog_prune(void);
 
+/*
+ Prune a tool catalog with BM25 scoring and retrieve upstream tools.
+
+ # Safety
+
+ All JSON pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_prune_catalog_bm25_and_retrieve(const char *catalog_json,
+                                        const char *build_catalog_json,
+                                        const char *catalog_index_json,
+                                        const char *query,
+                                        const char *scoring_ctx_json,
+                                        const char *output_ctx_json,
+                                        const char *options_json,
+                                        char **out);
+
+/*
+ Classify optional catalog chunks and optionally count tool JSON tokens.
+
+ # Safety
+
+ `catalog_json` must be a valid null-terminated UTF-8 C string; `tools_json` may be null;
+ `out` must be non-null.
+ */
+int cyt_classify_and_count_catalog(const char *catalog_json, const char *tools_json, char **out);
+
+/*
+ BM25 skill search with optional frontmatter gate and greedy budget selection.
+
+ # Safety
+
+ `entries_json`, `query`, and `options_json` must be valid null-terminated UTF-8 C strings
+ (`options_json` may be null); `out` must be non-null.
+ */
+int cyt_search_skills_and_select(const char *entries_json,
+                                 const char *query,
+                                 const char *options_json,
+                                 char **out);
+
+/*
+ Build rerankable node bodies from cached skill entries.
+
+ # Safety
+
+ `entries_json` must be a valid null-terminated UTF-8 C string; `out` must be non-null.
+ */
+int cyt_build_skill_node_catalog(const char *entries_json, char **out);
+
 int cyt_tool_policies(char **out);
 
 int cyt_policy_context_from_values(const char *config_json, char **out);
 
 int cyt_effective_policy(const char *ctx_json, const char *tool_id, char **out);
+
+int cyt_batch_tool_pass_through(const char *ctx_json, const char *tool_ids_json, char **out);
 
 int cyt_partition_catalog(const char *data_json, const char *ctx_json, char **out);
 

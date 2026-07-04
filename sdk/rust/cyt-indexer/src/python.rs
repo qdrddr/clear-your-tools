@@ -16,6 +16,9 @@ mod tokens_python;
 #[path = "cache_python.rs"]
 mod cache_python;
 
+#[path = "pipeline_python.rs"]
+mod pipeline_python;
+
 use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
 use crate::paths::{self, PathConfig, collect_enums};
 use crate::policies::policy_context_from_values;
@@ -33,22 +36,17 @@ use crate::tool_entries::{
 use policies_python::ctx_from_py_any;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
+use pythonize::{depythonize, pythonize};
 use serde_json::Value;
 use std::path::PathBuf;
 
 pub(crate) fn value_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
-    let json_str = serde_json::to_string(value)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-    let json_mod = py.import("json")?;
-    Ok(json_mod.call_method1("loads", (json_str,))?.into())
+    Ok(pythonize(py, value)?.into())
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn py_to_value(obj: Bound<'_, PyAny>) -> PyResult<Value> {
-    let json_mod = obj.py().import("json")?;
-    let dumped = json_mod.call_method1("dumps", (obj,))?;
-    let s: String = dumped.extract()?;
-    serde_json::from_str(&s)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    Ok(depythonize(&obj)?)
 }
 
 #[pyfunction(name = "catalog_tool_count")]
@@ -66,7 +64,7 @@ fn build_catalog_index_py(
     let enums_val = py_to_value(all_enums)?;
     let tools_arr = tools_val.as_array().cloned().unwrap_or_default();
     let enums_arr = enums_val.as_array().cloned().unwrap_or_default();
-    let index = build_catalog_index(&tools_arr, &enums_arr);
+    let index = py.detach(|| build_catalog_index(&tools_arr, &enums_arr));
 
     let dict = PyDict::new(py);
     dict.set_item("tools", value_to_py(py, &Value::Array(index.tools))?)?;
@@ -468,16 +466,13 @@ fn retrieve_tools_py(
     let preserve_set = preserve_values;
     let process_groups =
         build_process_groups_options(&policy_ctx, &build_catalog, &store, preserve_set);
-    let result = retrieve_tools_from_catalog(
-        &policy_ctx,
-        &data_val,
-        &build_catalog,
-        &mut store,
-        &RetrieveOptions {
-            apply_decomposed_score_filter,
-            process_groups,
-        },
-    );
+    let opts = RetrieveOptions {
+        apply_decomposed_score_filter,
+        process_groups,
+    };
+    let result = py.detach(|| {
+        retrieve_tools_from_catalog(&policy_ctx, &data_val, &build_catalog, &mut store, &opts)
+    });
     value_to_py(py, &Value::Array(result))
 }
 
@@ -566,5 +561,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     bm25_search_python::register(m)?;
     tokens_python::register(m)?;
     cache_python::register(m)?;
+    pipeline_python::register(m)?;
     Ok(())
 }

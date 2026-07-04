@@ -5,6 +5,6 @@ from __future__ import annotations
 
 def configure_sdk_tokenizer_defaults() -> None:
     """Push app tokenizer defaults into cyt-indexer (Rust core)."""
-    from cyt_indexer.tokens import configure_tokenizer_defaults
+    from cyt_core.bootstrap import configure_sdk_tokenizer_defaults as _configure
 
-    configure_tokenizer_defaults(encoding="cl100k_base", allowed_special="all")
+    _configure()

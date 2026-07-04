@@ -8,6 +8,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -104,30 +105,57 @@ def _configure_connection(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=TRUNCATE")
 
 
+def _table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(str(row[1]) == column for row in rows)
+
+
+def _proxy_request_table_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'proxy_request' LIMIT 1",
+    ).fetchone()
+    return row is not None
+
+
+def _add_proxy_request_column(conn: sqlite3.Connection, column: str, ddl: str) -> bool:
+    if _table_has_column(conn, "proxy_request", column):
+        return False
+    try:
+        conn.execute(ddl)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+    return True
+
+
 def _ensure_proxy_request_columns(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("PRAGMA table_info(proxy_request)").fetchall()
-    columns = {str(row[1]) for row in rows}
+    if not _proxy_request_table_exists(conn):
+        return
     changed = False
-    if "skills_in" not in columns:
-        conn.execute(
-            "ALTER TABLE proxy_request ADD COLUMN skills_in INTEGER NOT NULL DEFAULT 0",
-        )
+    if _add_proxy_request_column(
+        conn,
+        "skills_in",
+        "ALTER TABLE proxy_request ADD COLUMN skills_in INTEGER NOT NULL DEFAULT 0",
+    ):
         changed = True
-    if "has_error" not in columns:
-        conn.execute(
-            "ALTER TABLE proxy_request ADD COLUMN has_error INTEGER NOT NULL DEFAULT 0",
-        )
+    if _add_proxy_request_column(
+        conn,
+        "has_error",
+        "ALTER TABLE proxy_request ADD COLUMN has_error INTEGER NOT NULL DEFAULT 0",
+    ):
         conn.execute("UPDATE proxy_request SET has_error = 1 WHERE error IS NOT NULL")
         changed = True
-    if "request_tokens" not in columns:
-        conn.execute(
-            "ALTER TABLE proxy_request ADD COLUMN request_tokens INTEGER NOT NULL DEFAULT 0",
-        )
+    if _add_proxy_request_column(
+        conn,
+        "request_tokens",
+        "ALTER TABLE proxy_request ADD COLUMN request_tokens INTEGER NOT NULL DEFAULT 0",
+    ):
         changed = True
-    if "skills_final_md" not in columns:
-        conn.execute(
-            "ALTER TABLE proxy_request ADD COLUMN skills_final_md TEXT",
-        )
+    if _add_proxy_request_column(
+        conn,
+        "skills_final_md",
+        "ALTER TABLE proxy_request ADD COLUMN skills_final_md TEXT",
+    ):
         changed = True
     if changed:
         conn.commit()
@@ -255,6 +283,8 @@ class ProxyRequestRecord:
 
 
 class StatsDB:
+    _open_lock = threading.Lock()
+
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
@@ -274,8 +304,9 @@ class StatsDB:
     def open(cls, path: str) -> StatsDB:
         """Open existing DB or initialize a new one if the file is missing."""
         db_path = expand_db_path(path)
-        if not Path(db_path).exists():
-            return cls.init(path)
+        with cls._open_lock:
+            if not Path(db_path).exists():
+                return cls.init(path)
         conn = _connect(db_path)
         _ensure_proxy_request_columns(conn)
         return cls(conn)
@@ -284,8 +315,9 @@ class StatsDB:
     def open_for_query(cls, path: str) -> StatsDB | None:
         """Open DB for read-only queries; return None when the file does not exist."""
         db_path = expand_db_path(path)
-        if not Path(db_path).exists():
-            return None
+        with cls._open_lock:
+            if not Path(db_path).exists():
+                return None
         conn = _connect(db_path)
         _ensure_proxy_request_columns(conn)
         return cls(conn)

@@ -101,7 +101,6 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
-          CYT_SKIP_PARITY: "1"
         run: go test -v ./...
 
       - name: Verify cyt-native-ensure bootstrap
@@ -110,7 +109,6 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
-          CYT_SKIP_PARITY: "1"
         run: |
           go run ./cmd/cyt-native-ensure -force
           go test -count=1 ./...

@@ -16,15 +16,10 @@ def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
         hook_setup,
         "prompt_tools_hook_config",
         lambda existing, *, context: {
-            "pruning": {
-                "inject_via": "proxy",
-                "tools": {
-                    "hook": {
-                        "tools_from": "client",
-                        "mcp_client_file": "~/.config/cyt/mcp.json",
-                        "mcp_definitions_file": "~/.config/cyt/mcp-definitions.json",
-                    },
-                },
+            "hook": {
+                "tools_from": "client",
+                "mcp_client_file": "~/.config/cyt/mcp.json",
+                "mcp_definitions_file": "~/.config/cyt/mcp-definitions.json",
             },
         },
     )

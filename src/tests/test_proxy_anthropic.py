@@ -285,7 +285,10 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_into_user_message": False,
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {
@@ -299,6 +302,106 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
     assert skills_meta is not None
     assert skills_meta.skills_in > 0
     assert "<agent-skills>" in out["messages"][0]["content"]
+
+
+def test_transform_anthropic_request_inject_into_user_message(
+    tmp_path: Path,
+) -> None:
+    skills_dir = tmp_path / "skills"
+    catalog_dir = tmp_path / "catalog"
+    skills_dir.mkdir()
+    (skills_dir / "create-hook.md").write_text(
+        "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
+        "# Create Hook\n\nAgent hooks for sessions.\n",
+        encoding="utf-8",
+    )
+    config = {
+        "skills": {
+            "enabled": True,
+            "inject_via": "proxy",
+            "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
+            "directories": [str(skills_dir)],
+            "max_tokens_per_request": 4000,
+            "pageindex": {"enable_bm25_chunking": True},
+            "proxy": {"request_budget_fraction": 10.0},
+        },
+        "pruning": {
+            "inject_into_user_message": True,
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
+        "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+    }
+    body = {
+        "model": "claude-test",
+        "system": [{"type": "text", "text": "# MCP Server Instructions"}],
+        "messages": [
+            {"role": "user", "content": "earlier task"},
+            {"role": "user", "content": "configure agent hooks for sessions"},
+        ],
+        "tools": [
+            {"name": "Read", "description": "Read", "input_schema": {"type": "object"}},
+            {"name": "mcp__a__grep", "description": "Grep", "input_schema": {"type": "object"}},
+        ],
+    }
+    pruned_tools = [
+        {"name": "Read", "description": "Read", "input_schema": {"type": "object"}},
+        {"name": "mcp__a__grep", "description": "Grep pruned", "input_schema": {"type": "object"}},
+    ]
+    prune_result = PruneResult(
+        tools=pruned_tools,
+        status="applied",
+        query="User_Asks: configure agent hooks for sessions",
+        tools_in=2,
+        mcp_tools_in=1,
+        tools_out=2,
+        error=None,
+    )
+    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
+        out, _, skills_meta = transform_anthropic_request(body, config=config)
+
+    assert skills_meta is not None
+    assert skills_meta.skills_in > 0
+    assert len(out["tools"]) == 1
+    assert out["tools"][0]["name"] == "Read"
+    user_text = out["messages"][-1]["content"]
+    assert "<agent-skills>" in user_text
+    assert "<agent-tools>" in user_text
+    assert "# MCP Server Instructions" in out["system"][0]["text"]
+    assert "<agent-skills>" not in out["system"][0]["text"]
+
+
+def test_transform_anthropic_request_inject_into_user_message_tool_result_only() -> None:
+    config = {"pruning": {"inject_into_user_message": True, "inject_via": "proxy"}}
+    body = {
+        "model": "claude-test",
+        "messages": [
+            {"role": "user", "content": "find files on disk"},
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
+            },
+        ],
+        "tools": [{"name": "mcp__a__grep", "input_schema": {}}],
+    }
+    pruned_tools = [{"name": "mcp__a__grep", "description": "Grep", "input_schema": {}}]
+    prune_result = PruneResult(
+        tools=pruned_tools,
+        status="applied",
+        query="User_Asks: find files",
+        tools_in=1,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+    with patch("cyt.proxy.anthropic.filter_tools_for_query", return_value=prune_result):
+        out, _, _ = transform_anthropic_request(body, config=config)
+
+    assert out["tools"] == []
+    last_user = out["messages"][-1]
+    assert last_user["role"] == "user"
+    assert last_user["content"][-1]["type"] == "text"
+    assert "<agent-tools>" in last_user["content"][-1]["text"]
 
 
 def test_snapshot_catalog_omits_tools() -> None:
@@ -388,7 +491,10 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
-        "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "pruning": {
+            "inject_into_user_message": False,
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
     }
     body = {

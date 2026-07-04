@@ -15,6 +15,7 @@ mod json_util;
 mod memory;
 mod pageindex;
 mod paths;
+mod pipeline;
 mod policies;
 mod retrieve;
 mod runtime;
@@ -36,6 +37,10 @@ pub use cache::{
     cyt_ensure_tool_catalog_from_entries, cyt_tools_catalog_content_hash,
 };
 pub use catalog::{cyt_build_catalog_index, cyt_catalog_tool_count};
+pub use pipeline::{
+    cyt_build_skill_node_catalog, cyt_classify_and_count_catalog,
+    cyt_prune_catalog_bm25_and_retrieve, cyt_search_skills_and_select,
+};
 pub use policies::cyt_classify_optional_chunks_batch;
 pub use tokens::{
     cyt_configure_tokenizer_defaults, cyt_count_json_tokens, cyt_count_tokens,

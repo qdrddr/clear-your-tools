@@ -1,9 +1,9 @@
 use crate::bm25_cohesion::{Bm25CohesionChunker, Bm25CohesionConfig};
 use crate::pageindex::document_json::{
-    finalize_document_json, load_merged_document_json, update_document_source_path,
+    finalize_entry_metadata, load_merged_document_json, update_document_source_path,
 };
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillDocument, SkillDocumentExtras, SkillsIndex,
+    EntryMetadata, PageIndexConfig, ReconstructOptions, SkillDocument, SkillsIndex,
     build_chunk_variant, build_page_index_only, build_skills_index, chunk_variant_valid,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
     get_line_content_from_spec, md_to_tree, page_index_valid, parse_node_ids,
@@ -289,26 +289,23 @@ pub fn load_merged_skill_document_json_napi(
 
 /// # Errors
 ///
-/// Returns an error when document finalization fails.
+/// Returns an error when entry metadata cannot be written.
+#[allow(clippy::needless_pass_by_value)]
 #[napi(js_name = "finalizeSkillDocumentJson")]
 pub fn finalize_skill_document_json_napi(
     entry_dir: String,
     doc_id: String,
-    content_sha256: String,
     pipeline: String,
     index_params: Value,
-    built_at: String,
     source_path: String,
 ) -> Result<Value> {
-    let doc_id = doc_id.into_boxed_str();
-    let extras = SkillDocumentExtras {
-        content_sha256,
+    let _ = doc_id;
+    let metadata = EntryMetadata {
+        source_path,
         pipeline,
         index_params,
-        built_at,
-        source_path,
     };
-    finalize_document_json(PathBuf::from(entry_dir).as_path(), doc_id.as_ref(), &extras)
+    finalize_entry_metadata(PathBuf::from(entry_dir).as_path(), &metadata)
         .map_err(Error::from_reason)
 }
 
@@ -570,6 +567,23 @@ impl SkillsBuilderNapi {
         let index = self
             .inner
             .build_from_dirs(&dirs, &cfg)
+            .map_err(Error::from_reason)?;
+        Ok(skills_index_to_napi(index))
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when the skill file is missing or cannot be read.
+    #[napi]
+    pub fn build_from_file(
+        &mut self,
+        source_path: String,
+        config: Option<PageIndexConfigNapi>,
+    ) -> Result<HashMap<String, Value>> {
+        let cfg = page_index_config_from_napi(config);
+        let index = self
+            .inner
+            .build_from_file(PathBuf::from(source_path).as_path(), &cfg)
             .map_err(Error::from_reason)?;
         Ok(skills_index_to_napi(index))
     }

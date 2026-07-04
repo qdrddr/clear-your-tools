@@ -22,7 +22,7 @@ from cyt.config import (
     stats_db_path,
     stats_rollup_on_query,
 )
-from cyt.proxy.setup import normalize_upstream_kind
+from cyt.proxy.setup_wizard import normalize_upstream_kind
 from cyt.proxy.transport import INTERRUPTED_EXIT_CODE, run_async_cli
 from cyt.pruners.remote import PrunerSettingsCache
 
@@ -146,7 +146,7 @@ def _print_stats_results(
 
 
 def _maybe_run_add_costs_wizard(args: argparse.Namespace, user_config_path: Path) -> None:
-    from cyt.proxy.setup import (
+    from cyt.proxy.setup_wizard import (
         STATS_ADD_COSTS_HINT,
         has_models_missing_costs,
         run_add_costs_wizard,
@@ -446,6 +446,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Config path (default: ~/.config/cyt/config.yaml)",
     )
 
+    from cyt.tools.mcp_cli import add_mcp_parser
+
+    add_mcp_parser(subparsers)
+
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
@@ -554,7 +558,7 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
     )
 
     if runtime.upstream_endpoint is not None and launch_agent is None:
-        from cyt.proxy.setup import print_proxy_urls
+        from cyt.proxy.setup_wizard import print_proxy_urls
 
         print_proxy_urls(runtime.port, [runtime.upstream_endpoint])
 
@@ -656,43 +660,58 @@ def main() -> None:
         raise SystemExit(INTERRUPTED_EXIT_CODE) from None
 
 
-def _main_impl() -> None:
-    parser = _build_parser()
-    args = parser.parse_args()
-
+def _dispatch_cli_command(args: argparse.Namespace) -> bool:
+    """Run a named subcommand. Returns True when handled."""
     if args.command == "stats":
         _ensure_stats_defaults(args)
         config = load_config(getattr(args, "config", None))
         _run_stats_cli(args, config)
-        return
+        return True
 
     if args.command == "setup":
-        from cyt.proxy.setup import run_setup
+        from cyt.proxy.setup_wizard import run_setup
 
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
-        return
+        return True
 
     if args.command == "hook":
         _run_hook_command(args)
-        return
+        return True
 
     if args.command == "client":
         from cyt_client.cli import main as run_client
 
         run_client()
-        return
+        return True
 
     if args.command == "skills":
         handler = getattr(args, "skills_handler", None)
         if handler is None:
             raise SystemExit("usage: cyt skills budget [--config PATH]")
         handler(args)
-        return
+        return True
 
     if args.command == "launch":
         from cyt.launch.cli import run as run_launch
 
         run_launch(args)
+        return True
+
+    if args.command == "mcp":
+        handler = getattr(args, "mcp_handler", None)
+        if handler is None:
+            raise SystemExit("usage: cyt mcp save [--file PATH] [--config PATH]")
+        handler(args)
+        return True
+
+    return False
+
+
+def _main_impl() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    if _dispatch_cli_command(args):
         return
 
     if args.command is None:

@@ -14,8 +14,8 @@ use super::hot::{
 use super::manifest::CacheStatus;
 use super::{CachePolicy, SkillEntryRef, disk_available};
 use crate::pageindex::{
-    PageIndexConfig, SkillDocument, SkillDocumentExtras, build_chunk_variant, chunk_variant_valid,
-    load_merged_document_json, page_index_valid, write_page_index_entry,
+    EntryMetadata, PageIndexConfig, SkillDocument, build_chunk_variant, build_page_index_for_file,
+    chunk_variant_valid, load_merged_document_json, page_index_valid, write_page_index_entry,
 };
 use crate::skills_io::refresh_skills_index_cache;
 
@@ -30,11 +30,7 @@ pub fn extract_frontmatter_from_markdown(raw: &str) -> Option<String> {
 }
 
 /// Minimal document JSON for lazy registry entries (frontmatter only, no structure).
-pub fn stub_document_from_source(
-    source: &Path,
-    doc_id: &str,
-    content_sha256: &str,
-) -> Result<Value, String> {
+pub fn stub_document_from_source(source: &Path, doc_id: &str) -> Result<Value, String> {
     let raw = fs::read_to_string(source).map_err(|e| e.to_string())?;
     let frontmatter = extract_frontmatter_from_markdown(&raw);
     Ok(json!({
@@ -45,33 +41,7 @@ pub fn stub_document_from_source(
         "line_count": 0,
         "structure": [],
         "frontmatter": frontmatter,
-        "content_sha256": content_sha256,
     }))
-}
-
-fn build_page_index_for_source(
-    source: &Path,
-    pageindex_config: &PageIndexConfig,
-) -> Result<crate::pageindex::SkillsIndex, String> {
-    use crate::pageindex::build_page_index_only;
-
-    let file_name = source
-        .file_name()
-        .ok_or_else(|| "skill source path has no file name".to_string())?;
-    let tmp = std::env::temp_dir().join(format!(
-        "cyt-skill-{}-{}",
-        std::process::id(),
-        file_name.to_string_lossy()
-    ));
-    if tmp.exists() {
-        let _ = fs::remove_dir_all(&tmp);
-    }
-    fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
-    let dest = tmp.join(file_name);
-    fs::copy(source, &dest).map_err(|e| e.to_string())?;
-    let result = build_page_index_only(std::slice::from_ref(&tmp), pageindex_config);
-    let _ = fs::remove_dir_all(&tmp);
-    result
 }
 
 /// Ensure a skill entry is indexed in memory (and optionally on disk).
@@ -136,7 +106,7 @@ pub fn materialize_skill_entry(
         ));
     }
 
-    let index = build_page_index_for_source(source, pageindex_config)?;
+    let index = build_page_index_for_file(source, pageindex_config)?;
 
     let disk_ok = policy != CachePolicy::ForceMemory && disk_available(entry_dir);
     let (disk_backed, cache_status) = if disk_ok {
@@ -147,14 +117,12 @@ pub fn materialize_skill_entry(
     };
 
     if disk_ok {
-        let extras = SkillDocumentExtras {
-            content_sha256: content_sha256.to_string(),
+        let metadata = EntryMetadata {
+            source_path: source.display().to_string(),
             pipeline: String::new(),
             index_params: serde_json::Value::Null,
-            built_at: String::new(),
-            source_path: source.display().to_string(),
         };
-        write_page_index_entry(&index, entry_dir, doc_id, Some(&extras))?;
+        write_page_index_entry(&index, entry_dir, doc_id, Some(&metadata))?;
     }
 
     if materialize_bm25 && !chunk_variant_valid(entry_dir, "bm25", index_params_hash, doc_id) {
@@ -172,10 +140,7 @@ pub fn materialize_skill_entry(
         load_merged_document_json(entry_dir, doc_id, bm25_chunk_dir.as_deref())?
     } else {
         index.documents.get(doc_id).map_or_else(
-            || {
-                stub_document_from_source(source, doc_id, content_sha256)
-                    .unwrap_or_else(|_| json!({}))
-            },
+            || stub_document_from_source(source, doc_id).unwrap_or_else(|_| json!({})),
             SkillDocument::to_json,
         )
     };

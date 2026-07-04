@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import copy
-import json
-import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, cast
 
 from cyt.config import (
+    inject_into_user_message,
     skills_pipeline_uses_deferred_proxy_inject,
 )
 from cyt.proxy.anthropic import (
@@ -20,41 +18,14 @@ from cyt.proxy.anthropic import (
     format_search_query,
 )
 from cyt.proxy.openai_responses import clean_input, extract_user_query_from_input
+from cyt.proxy.user_message_inject import (
+    already_has_user_turn_injection,
+    append_injection_to_body,
+)
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.catalog import build_registry
-from cyt.skills.inject import format_agent_skills, injection_token_count
+from cyt.skills.inject import format_agent_skills
 from cyt.skills.search import MatchedSkill, search_skills
-
-_DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-47c99d.log",
-)
-
-
-def _agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "47c99d",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    # #endregion
-
 
 _PROXY_KINDS = frozenset({"anthropic", "openai"})
 
@@ -104,28 +75,12 @@ def prepare_deferred_skills_context(
 
     ctx = DeferredSkillsContext()
     if not query:
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="C",
-            location="proxy_inject.py:prepare_deferred_skills_context",
-            message="deferred skills skipped: no query",
-            data={"kind": kind},
-        )
-        # #endregion
         return ctx
 
     from cyt.skills.budget import proxy_pre_pruner_budget_allows, resolve_inject_budget
 
     budget_allows = body is None or proxy_pre_pruner_budget_allows(config, body, kind=kind)
     if not budget_allows:
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="C",
-            location="proxy_inject.py:prepare_deferred_skills_context",
-            message="deferred skills skipped: budget precheck failed",
-            data={"kind": kind},
-        )
-        # #endregion
         return ctx
 
     ctx.skills_allowed = True
@@ -148,20 +103,6 @@ def prepare_deferred_skills_context(
         build_registry(config, upstream_kind=kind),
         config=config,
     )
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="C,D",
-        location="proxy_inject.py:prepare_deferred_skills_context",
-        message="deferred skills context ready",
-        data={
-            "kind": kind,
-            "skills_allowed": ctx.skills_allowed,
-            "skill_entry_count": len(ctx.skill_entries),
-            "pre_pruner_effective_max": ctx.pre_pruner_effective_max,
-            "query_len": len(query),
-        },
-    )
-    # #endregion
     return ctx
 
 
@@ -317,7 +258,12 @@ def inject_skills_for_proxy_request(
 
         skill_matches = select_skills_within_budget(skill_matches, budget.effective_max)
 
-    body_out, meta = inject_fn(original, skill_matches, query=resolved_query)
+    body_out, meta = inject_fn(
+        original,
+        skill_matches,
+        query=resolved_query,
+        config=config,
+    )
     meta.request_tokens = stats_request_tokens
     return body_out, meta
 
@@ -333,7 +279,9 @@ def skills_text_from_matches(matches: list[MatchedSkill]) -> tuple[str, int]:
     injected = format_agent_skills(matches)
     if not injected:
         return "", 0
-    return injected, injection_token_count(injected)
+    from cyt.indexer.tokens import count_tokens
+
+    return injected, count_tokens(injected)
 
 
 def _message_content_text(content: object) -> str:
@@ -437,14 +385,6 @@ def anthropic_append_skills_to_system_messages(
     updated = copy.deepcopy(messages)
     system = anthropic_find_system_message(updated)
     if system is None:
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="A",
-            location="proxy_inject.py:anthropic_append_skills_to_system_messages",
-            message="inserting role=system into messages[0]",
-            data={"messages_len": len(updated), "text_len": len(text)},
-        )
-        # #endregion
         updated.insert(0, {"role": "system", "content": text})
         return updated
     anthropic_append_text_to_system_content(system, text)
@@ -515,6 +455,7 @@ def inject_skills_matches_into_anthropic_body(
     matches: list[MatchedSkill],
     *,
     query: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     meta = SkillsProxyInjectMeta(query=query)
     if not matches:
@@ -524,52 +465,22 @@ def inject_skills_matches_into_anthropic_body(
     messages = original.get("messages") or []
     if not isinstance(messages, list):
         return original, meta
-    if already_has_agent_skills_in_anthropic(original):
+
+    use_user_turn = config is not None and inject_into_user_message(config)
+    if use_user_turn:
+        if already_has_user_turn_injection(original, "anthropic", tag="<agent-skills>"):
+            return original, meta
+    elif already_has_agent_skills_in_anthropic(original):
         return original, meta
 
     text, skills_in = skills_text_from_matches(matches)
     if skills_in <= 0:
         return original, meta
 
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="A,B,C",
-        location="proxy_inject.py:inject_skills_matches_into_anthropic_body:before",
-        message="anthropic skills inject before",
-        data={
-            "has_top_level_system": original.get("system") is not None,
-            "top_level_system_type": type(original.get("system")).__name__
-            if original.get("system") is not None
-            else None,
-            "messages_len": len(messages),
-            "messages0_role": messages[0].get("role") if messages else None,
-            "match_count": len(matches),
-            "skills_in": skills_in,
-            "tools_len": len(original.get("tools") or []),
-        },
-    )
-    # #endregion
-
-    original = anthropic_append_skills_to_body(original, text)
-
-    out_messages = original.get("messages") or []
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="A,D",
-        location="proxy_inject.py:inject_skills_matches_into_anthropic_body:after",
-        message="anthropic skills inject after",
-        data={
-            "has_top_level_system": original.get("system") is not None,
-            "messages0_role": out_messages[0].get("role") if out_messages else None,
-            "top_level_has_agent_skills": "<agent-skills>"
-            in _anthropic_system_value_text(original.get("system")),
-            "messages0_has_agent_skills": "<agent-skills>"
-            in str(out_messages[0].get("content", ""))
-            if out_messages
-            else False,
-        },
-    )
-    # #endregion
+    if use_user_turn:
+        original = append_injection_to_body(original, text, kind="anthropic")
+    else:
+        original = anthropic_append_skills_to_body(original, text)
 
     meta.skills_in = skills_in
     meta.skills_final_md = text
@@ -582,6 +493,7 @@ def inject_skills_matches_into_openai_body(
     matches: list[MatchedSkill],
     *,
     query: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     meta = SkillsProxyInjectMeta(query=query)
     if not matches:
@@ -591,14 +503,22 @@ def inject_skills_matches_into_openai_body(
     input_items = original.get("input") or []
     if not isinstance(input_items, list):
         return original, meta
-    if already_has_agent_skills(input_items):
+
+    use_user_turn = config is not None and inject_into_user_message(config)
+    if use_user_turn:
+        if already_has_user_turn_injection(original, "openai", tag="<agent-skills>"):
+            return original, meta
+    elif already_has_agent_skills(input_items):
         return original, meta
 
     text, skills_in = skills_text_from_matches(matches)
     if skills_in <= 0:
         return original, meta
 
-    original["input"] = openai_insert_skills_developer_message(input_items, text)
+    if use_user_turn:
+        original = append_injection_to_body(original, text, kind="openai")
+    else:
+        original["input"] = openai_insert_skills_developer_message(input_items, text)
     meta.skills_in = skills_in
     meta.skills_final_md = text
     meta.deferred_matches = matches

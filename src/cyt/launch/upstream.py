@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
+from cyt.common.agents import AgentName
 from cyt.config import (
     UPSTREAM_URL_DEFAULTS,
     load_config,
@@ -13,7 +14,7 @@ from cyt.config import (
     resolve_config_path,
     save_user_config,
 )
-from cyt.proxy.setup import (
+from cyt.proxy.setup_wizard import (
     UPSTREAM_KIND_ALIASES,
     apply_upstream_cli_to_config,
     derive_upstream_name_from_url,
@@ -24,8 +25,6 @@ from cyt.proxy.setup import (
     prompt_with_default,
     upstream_entry_endpoint,
 )
-
-AgentName = Literal["claude", "codex"]
 
 _AGENT_DEFAULT_URLS: dict[AgentName, tuple[str, str]] = {
     "claude": ("https://api.anthropic.com", "anthropic"),
@@ -356,7 +355,7 @@ def ensure_upstream_for_runtime(
 def direct_upstream_base_url(config: dict[str, Any], endpoint: str) -> str:
     """Return the direct upstream base URL when launch skips the reverse proxy."""
     from cyt.launch.upstream_credentials import upstream_for_endpoint
-    from cyt.proxy.setup import normalize_upstream_url
+    from cyt.proxy.setup_wizard import normalize_upstream_url
 
     entry = upstream_for_endpoint(config, endpoint)
     if entry is not None:

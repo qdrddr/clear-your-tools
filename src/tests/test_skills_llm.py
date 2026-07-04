@@ -81,9 +81,17 @@ def test_reconstruct_skills_from_llm_ids_uses_node_specs() -> None:
         meta = metadata[selector_id]
 
         with patch(
-            "cyt.skills.reconstruct.reconstruct_skill_markdown",
+            "cyt.skills.reconstruct.batch_reconstruct_skill_matches",
         ) as reconstruct_mock:
-            reconstruct_mock.return_value = {"markdown": "# Hook\n\nBody"}
+            reconstruct_mock.return_value = [
+                {
+                    "doc_id": meta.doc_id,
+                    "file_path": meta.file_path,
+                    "markdown": "# Hook\n\nBody",
+                    "name": "create-hook",
+                    "score": 1.0,
+                },
+            ]
             matches = reconstruct_skills_from_llm_ids(
                 metadata,
                 {selector_id},
@@ -92,9 +100,9 @@ def test_reconstruct_skills_from_llm_ids_uses_node_specs() -> None:
             )
 
         reconstruct_mock.assert_called_once()
-        call_kwargs = reconstruct_mock.call_args.kwargs
-        assert call_kwargs["node_id_specs"] == [str(meta.node_id)]
-        assert call_kwargs.get("chunk_id_specs") is None
+        call_args = reconstruct_mock.call_args.args[0]
+        assert call_args[0]["id_specs"] == [str(meta.node_id)]
+        assert call_args[0]["item_kind"] == "node"
         assert matches
         assert matches[0].name == "create-hook"
 

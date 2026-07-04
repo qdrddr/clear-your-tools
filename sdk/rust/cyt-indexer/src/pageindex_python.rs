@@ -1,6 +1,7 @@
 use crate::pageindex::{
-    PageIndexConfig, ReconstructOptions, SkillDocumentExtras, SkillsIndex, build_chunk_variant,
-    build_page_index_only, build_skills_index, chunk_variant_valid, finalize_document_json,
+    EntryMetadata, PageIndexConfig, ReconstructOptions, SkillsIndex, build_chunk_variant,
+    build_page_index_for_file, build_page_index_only, build_skills_index,
+    build_skills_index_for_file, chunk_variant_valid, finalize_entry_metadata,
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
     get_line_content_from_spec, load_merged_document_json, md_to_tree, page_index_valid,
     parse_node_ids, reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
@@ -200,27 +201,58 @@ fn load_merged_skill_document_json_py(
     value_to_py(py, &value)
 }
 
+#[pyfunction(name = "build_page_index_for_file")]
+fn build_page_index_for_file_py(
+    py: Python<'_>,
+    source_path: String,
+    config: Option<Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let cfg = page_index_config_from_py(config)?;
+    let index = build_page_index_for_file(PathBuf::from(source_path).as_path(), &cfg)
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    skills_index_to_py(py, &index)
+}
+
+#[pyfunction(name = "build_skills_index_for_file")]
+#[pyo3(signature = (source_path, *, config=None, pipeline="bm25", params_hash="default"))]
+fn build_skills_index_for_file_py(
+    py: Python<'_>,
+    source_path: String,
+    config: Option<Bound<'_, PyAny>>,
+    pipeline: &str,
+    params_hash: &str,
+) -> PyResult<Py<PyAny>> {
+    let cfg = page_index_config_from_py(config)?;
+    let index = build_skills_index_for_file(
+        PathBuf::from(source_path).as_path(),
+        &cfg,
+        pipeline,
+        params_hash,
+    )
+    .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    skills_index_to_py(py, &index)
+}
+
 #[pyfunction(name = "finalize_skill_document_json")]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (entry_dir, doc_id, *, content_sha256, pipeline, index_params, built_at, source_path))]
+#[pyo3(signature = (entry_dir, doc_id, *, pipeline, index_params, source_path, content_sha256=None, built_at=None))]
 fn finalize_skill_document_json_py(
     py: Python<'_>,
     entry_dir: String,
     doc_id: &str,
-    content_sha256: &str,
     pipeline: &str,
     index_params: Bound<'_, PyAny>,
-    built_at: &str,
     source_path: &str,
+    content_sha256: Option<&str>,
+    built_at: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
-    let extras = SkillDocumentExtras {
-        content_sha256: content_sha256.to_string(),
+    let _ = (doc_id, content_sha256, built_at);
+    let metadata = EntryMetadata {
+        source_path: source_path.to_string(),
         pipeline: pipeline.to_string(),
         index_params: py_to_value(index_params)?,
-        built_at: built_at.to_string(),
-        source_path: source_path.to_string(),
     };
-    let value = finalize_document_json(PathBuf::from(entry_dir).as_path(), doc_id, &extras)
+    let value = finalize_entry_metadata(PathBuf::from(entry_dir).as_path(), &metadata)
         .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
     value_to_py(py, &value)
 }
@@ -539,6 +571,20 @@ impl PySkillsBuilder {
         skills_index_to_py(py, index)
     }
 
+    fn build_from_file(
+        &mut self,
+        py: Python<'_>,
+        source_path: String,
+        config: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        let cfg = page_index_config_from_py(config)?;
+        let index = self
+            .inner
+            .build_from_file(PathBuf::from(source_path).as_path(), &cfg)
+            .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+        skills_index_to_py(py, index)
+    }
+
     fn write_catalog(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let index = self
             .inner
@@ -572,6 +618,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(repair_skill_chunks_py, m)?)?;
     m.add_function(wrap_pyfunction!(repair_skill_variant_chunks_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_page_index_only_py, m)?)?;
+    m.add_function(wrap_pyfunction!(build_page_index_for_file_py, m)?)?;
+    m.add_function(wrap_pyfunction!(build_skills_index_for_file_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_chunk_variant_py, m)?)?;
     m.add_function(wrap_pyfunction!(page_index_valid_py, m)?)?;
     m.add_function(wrap_pyfunction!(chunk_variant_valid_py, m)?)?;

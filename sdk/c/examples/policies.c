@@ -46,6 +46,23 @@ int main(void) {
     cyt_example_free(partitioned);
     cyt_example_free(ctx);
 
+    const char *tool_ids = "[\"Agent\",\"grep\"]";
+    char *batch_out = NULL;
+    const char *pass_ctx = "{\"system_policy\":\"always_include\",\"mcp_"
+                           "policy\":\"always_include\"}";
+    if (!cyt_example_ok(
+            cyt_batch_tool_pass_through(pass_ctx, tool_ids, &batch_out),
+            "cyt_batch_tool_pass_through")) {
+        return 1;
+    }
+    char *batch_flags = cyt_example_take(&batch_out);
+    if (batch_flags == NULL || strstr(batch_flags, "true") == NULL) {
+        fprintf(stderr, "unexpected batch_tool_pass_through JSON\n");
+        cyt_example_free(batch_flags);
+        return 1;
+    }
+    cyt_example_free(batch_flags);
+
     if (cyt_is_description_policy("prune_optional_descriptions") != 1) {
         fprintf(stderr, "cyt_is_description_policy failed\n");
         return 1;

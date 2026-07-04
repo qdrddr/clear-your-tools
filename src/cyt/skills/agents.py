@@ -20,7 +20,7 @@ def agent_from_upstream_kind(upstream_kind: str | None) -> AgentName | None:
     """Map a proxy upstream kind (``anthropic``/``openai`` or aliases) to a launch agent."""
     if upstream_kind is None or not str(upstream_kind).strip():
         return None
-    from cyt.proxy.setup import normalize_upstream_kind
+    from cyt.proxy.setup_wizard import normalize_upstream_kind
 
     try:
         normalized = normalize_upstream_kind(str(upstream_kind))

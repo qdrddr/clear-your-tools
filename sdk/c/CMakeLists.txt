@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cyt-indexer-c VERSION 0.6.6 LANGUAGES C)
+project(cyt-indexer-c VERSION 0.6.7 LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -123,12 +123,14 @@ if(CYT_BUILD_EXAMPLES)
     cyt_add_example(cyt_example_error_handling examples/error_handling.c)
     cyt_add_example(cyt_example_retrieve examples/retrieve.c)
     cyt_add_example(cyt_example_policies examples/policies.c)
+    cyt_add_example(cyt_example_pipeline examples/pipeline.c)
     cyt_add_example(cyt_example_skills examples/skills.c)
 
     add_test(NAME cyt_basic COMMAND cyt_example_basic)
     add_test(NAME cyt_error_handling COMMAND cyt_example_error_handling)
     add_test(NAME cyt_retrieve COMMAND cyt_example_retrieve)
     add_test(NAME cyt_policies COMMAND cyt_example_policies)
+    add_test(NAME cyt_pipeline COMMAND cyt_example_pipeline)
     add_test(NAME cyt_skills COMMAND cyt_example_skills)
 endif()
 

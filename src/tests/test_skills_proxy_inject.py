@@ -57,6 +57,7 @@ def _skills_config(root: Path) -> dict:
         "stats": {"database": {"path": str(root / "stats.db")}},
         "pruning": {
             "inject_via": "proxy",
+            "inject_into_user_message": False,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
     }
@@ -150,6 +151,58 @@ def test_inject_skills_into_anthropic_body_appends_to_top_level_system() -> None
         system_text = out["system"][0]["text"] + out["system"][1]["text"]
         assert "# MCP Server Instructions" in system_text
         assert "<agent-skills>" in system_text
+
+
+def test_inject_skills_into_anthropic_body_appends_to_user_message() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        config["pruning"]["inject_into_user_message"] = True
+        body = {
+            "model": "claude-test",
+            "system": [{"type": "text", "text": "# MCP Server Instructions"}],
+            "messages": [
+                {"role": "user", "content": "configure agent hooks for sessions"},
+            ],
+        }
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="anthropic",
+            prune_result=_sample_prune_result(),
+        )
+        assert meta.skills_in > 0
+        assert "<agent-skills>" in out["messages"][0]["content"]
+        assert "<agent-skills>" not in out["system"][0]["text"]
+
+
+def test_inject_skills_into_openai_body_appends_to_user_message() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        config["pruning"]["inject_into_user_message"] = True
+        body = {
+            "model": "gpt-test",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "configure agent hooks"}],
+                },
+            ],
+        }
+        out, meta = inject_skills_for_proxy_request(
+            body,
+            config,
+            kind="openai",
+            prune_result=_sample_prune_result(),
+        )
+        assert meta.skills_in > 0
+        user = out["input"][0]
+        assert user["role"] == "user"
+        assert "<agent-skills>" in user["content"][-1]["text"]
+        developers = [item for item in out["input"] if item.get("role") == "developer"]
+        assert developers == []
 
 
 def test_inject_skills_into_anthropic_body_appends_to_system() -> None:

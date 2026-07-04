@@ -53,13 +53,16 @@ fn ensure_tool_catalog_py(
     policy: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
     let tools_val = py_to_value(tools)?;
-    let result = ensure_tool_catalog(
-        &tools_val,
-        policy_fingerprint,
-        PathBuf::from(tools_root).as_path(),
-        cache_policy_from_str(policy),
-    )
-    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+    let result = py
+        .detach(|| {
+            ensure_tool_catalog(
+                &tools_val,
+                policy_fingerprint,
+                PathBuf::from(tools_root).as_path(),
+                cache_policy_from_str(policy),
+            )
+        })
+        .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
     let handle = &result.data;
     let dict = PyDict::new(py);
     dict.set_item("catalog", value_to_py(py, &handle.catalog)?)?;

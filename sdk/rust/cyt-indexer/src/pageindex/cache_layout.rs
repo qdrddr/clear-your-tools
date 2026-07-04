@@ -4,6 +4,7 @@ pub const NODES_DIR: &str = "nodes";
 pub const CHUNKS_DIR: &str = "chunks";
 pub const PAGE_INDEX_FILE: &str = "page_index.json";
 pub const CHUNK_INDEX_FILE: &str = "chunk_index.json";
+pub const METADATA_FILE: &str = "metadata.json";
 
 /// Catalog entry root: `{catalog_root}/entries/{content_hash}/`.
 #[must_use]
@@ -19,6 +20,20 @@ pub fn nodes_dir(entry_dir: &Path) -> PathBuf {
 #[must_use]
 pub fn page_index_path(entry_dir: &Path) -> PathBuf {
     nodes_dir(entry_dir).join(PAGE_INDEX_FILE)
+}
+
+#[must_use]
+pub fn metadata_path(entry_dir: &Path) -> PathBuf {
+    entry_dir.join(METADATA_FILE)
+}
+
+/// Content hash from `entries/{hash}/` directory name.
+#[must_use]
+pub fn entry_content_hash(entry_dir: &Path) -> Option<String> {
+    entry_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_string)
 }
 
 #[must_use]

@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::token_counter::{TokenCounter, TokenCounterKind, token_counter_for_kind};
 use super::types::{IncludeDelimMode, WindowMode};
@@ -147,6 +147,45 @@ impl Bm25CohesionConfig {
             merge_partial_fields(&mut cfg, Some(nested));
         }
         cfg
+    }
+
+    /// Serialize cohesion settings for chunk variant metadata.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        json!({
+            "window_mode": match self.window_mode {
+                WindowMode::Sentence => "sentence",
+                WindowMode::Word => "word",
+            },
+            "threshold": self.threshold,
+            "merge_threshold": self.merge_threshold,
+            "chunk_size": self.chunk_size,
+            "token_counter": match self.token_counter {
+                TokenCounterKind::Tiktoken => "tiktoken",
+                TokenCounterKind::Character => "character",
+                TokenCounterKind::Approximate => "approximate",
+            },
+            "similarity_window": self.similarity_window,
+            "next_unit_size": self.next_unit_size,
+            "skip_window": self.skip_window,
+            "min_units_per_chunk": self.min_units_per_chunk,
+            "minimum_words": self.minimum_words,
+            "minimum_sentences": self.minimum_sentences,
+            "min_characters_per_sentence": self.min_characters_per_sentence,
+            "min_characters_per_word": self.min_characters_per_word,
+            "delimiters": self.delimiters,
+            "include_delim": match self.include_delim {
+                IncludeDelimMode::Prev => "prev",
+                IncludeDelimMode::Next => "next",
+            },
+            "use_stopwords": self.use_stopwords,
+            "filter_window": self.filter_window,
+            "filter_polyorder": self.filter_polyorder,
+            "filter_tolerance": self.filter_tolerance,
+            "stem_language": match self.stem_language {
+                StemLanguage::English => "english",
+            },
+        })
     }
 }
 

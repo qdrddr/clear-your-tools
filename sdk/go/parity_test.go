@@ -167,3 +167,98 @@ print(json.dumps(exp_similarity(2.5)))
 	}
 	assertJSONEqual(t, string(gotBytes), want)
 }
+
+func TestParityBatchToolPassThrough(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import policy_context_from_values, batch_tool_pass_through
+cfg = {"pruning": {"tools": {"policy": {"system_tool": "always_include", "mcp_tool": "always_include"}}}}
+ctx = policy_context_from_values(cfg)
+print(json.dumps(batch_tool_pass_through(ctx, ["Agent", "grep"])))
+`)
+
+	ctx := `{"system_policy":"always_include","mcp_policy":"always_include"}`
+	got, err := BatchToolPassThrough(ctx, `["Agent","grep"]`)
+	if err != nil {
+		t.Fatalf("BatchToolPassThrough: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}
+
+func TestParityToolPassThrough(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import policy_context_from_values, tool_pass_through
+cfg = {"pruning": {"tools": {"policy": {"system_tool": "always_include", "mcp_tool": "always_include"}}}}
+ctx = policy_context_from_values(cfg)
+print(json.dumps(tool_pass_through(ctx, "Agent")))
+`)
+
+	ctx := `{"system_policy":"always_include","mcp_policy":"always_include"}`
+	got, err := ToolPassThrough(ctx, "Agent")
+	if err != nil {
+		t.Fatalf("ToolPassThrough: %v", err)
+	}
+	gotBytes, _ := json.Marshal(got)
+	assertJSONEqual(t, string(gotBytes), want)
+}
+
+func TestParityClassifyOptionalChunksBatch(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import classify_optional_chunks_batch
+items = [{"file_path": "schemas/decomposed/mcp__test__read.json"}]
+print(json.dumps(classify_optional_chunks_batch(items)))
+`)
+
+	items := `[{"file_path":"schemas/decomposed/mcp__test__read.json"}]`
+	got, err := ClassifyOptionalChunksBatch(items)
+	if err != nil {
+		t.Fatalf("ClassifyOptionalChunksBatch: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}
+
+func TestParityClassifyAndCountCatalog(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import classify_and_count_catalog
+catalog = {"json": [{"file_path": "schemas/decomposed/mcp__test__read.json", "content": "Read files"}], "md": []}
+print(json.dumps(classify_and_count_catalog(catalog, None)))
+`)
+
+	catalog := `{"json":[{"file_path":"schemas/decomposed/mcp__test__read.json","content":"Read files"}],"md":[]}`
+	got, err := ClassifyAndCountCatalog(catalog, "")
+	if err != nil {
+		t.Fatalf("ClassifyAndCountCatalog: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}

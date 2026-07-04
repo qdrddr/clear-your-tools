@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "0.6.6"
+version = "0.6.7"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -18,7 +18,7 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "cyt-indexer-sdk==0.6.6",
+    "cyt-indexer-sdk==0.6.7",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
@@ -62,7 +62,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cyt", "src/cyt_client"]
+packages = ["src/cyt", "src/cyt_core", "src/cyt_client"]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -76,6 +76,7 @@ exclude = [
 [tool.hatch.build.targets.wheel.force-include]
 "src/cyt/config/defaults.yaml" = "cyt/config/defaults.yaml"
 "src/cyt/py.typed" = "cyt/py.typed"
+"src/cyt_core/py.typed" = "cyt_core/py.typed"
 
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities
@@ -225,6 +226,8 @@ filterwarnings = [
     "error",
     # Ignore ResourceWarnings from unclosed sockets/event loops
     "ignore::ResourceWarning",
+    # cyt deprecation shim auto-bootstraps on import during migration
+    "ignore:Importing cyt runs bootstrap:DeprecationWarning",
     # Ignore warnings from external dependencies
     "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",

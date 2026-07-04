@@ -15,7 +15,7 @@ from cyt.config import (
 )
 from cyt.launch.secrets import ensure_proxy_pipeline_credentials, ensure_runtime_credentials
 from cyt.launch.upstream import AgentName, ensure_upstream_for_runtime, list_upstreams
-from cyt.proxy.setup import upstream_entry_endpoint
+from cyt.proxy.setup_wizard import upstream_entry_endpoint
 from cyt.pruners.remote import PrunerSettingsCache
 
 _BM25_FALLBACK_MESSAGE = (

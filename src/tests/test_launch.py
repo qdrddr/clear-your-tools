@@ -49,7 +49,7 @@ from cyt.launch.upstream import (
     select_upstream_endpoint,
 )
 from cyt.proxy.bootstrap import prepare_runtime
-from cyt.proxy.setup import apply_upstream_cli_to_config
+from cyt.proxy.setup_wizard import apply_upstream_cli_to_config
 from tests.test_credential_helpers import install_test_pre_dotenv, isolate_credential_env_paths
 
 

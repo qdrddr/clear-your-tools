@@ -5,9 +5,7 @@ use crate::bm25_cohesion::{Bm25CohesionChunker, CohesionChunk};
 use super::cache_layout::{chunk_index_rel, chunk_md_rel, page_index_rel};
 use super::chunk_id::next_chunk_id;
 use super::config::PageIndexConfig;
-use super::document_json::{
-    build_chunk_index_json_value, build_page_index_json_value, serialize_document_json,
-};
+use super::document_json::{build_page_index_json_value, serialize_document_json};
 use super::node_id::node_id_from_value;
 use super::tree::structure_to_list;
 use super::types::{SkillDocument, SkillsIndex, node_md_rel};
@@ -108,8 +106,7 @@ pub(crate) fn insert_chunks_on_node(
 
 /// Write node-only page index and node markdown files into the index file map.
 pub fn decompose_page_index(index: &mut SkillsIndex, doc: &SkillDocument, flat_structure: &Value) {
-    let page_json =
-        serialize_document_json(&build_page_index_json_value(doc, None)).unwrap_or_default();
+    let page_json = serialize_document_json(&build_page_index_json_value(doc)).unwrap_or_default();
     index.files.insert(page_index_rel().to_string(), page_json);
 
     write_node_markdown_files(index, doc, flat_structure);
@@ -121,9 +118,12 @@ pub fn decompose_chunk_variant(
     structure: &Value,
     pipeline: &str,
     params_hash: &str,
+    metadata: &super::document_json::ChunkVariantMetadata,
 ) {
-    let chunk_json =
-        serialize_document_json(&build_chunk_index_json_value(structure)).unwrap_or_default();
+    let chunk_json = serialize_document_json(&super::document_json::build_chunk_index_json_value(
+        structure, metadata,
+    ))
+    .unwrap_or_default();
     index
         .files
         .insert(chunk_index_rel(pipeline, params_hash), chunk_json);
@@ -136,8 +136,11 @@ pub fn decompose_document(
     config: &PageIndexConfig,
 ) {
     decompose_page_index(index, doc, flat_structure);
-    decompose_chunk_variant(index, &doc.structure, "bm25", "legacy");
-    let _ = config;
+    let chunk_metadata = super::document_json::ChunkVariantMetadata {
+        pipeline: "bm25".to_string(),
+        index_params: config.to_index_params_value(),
+    };
+    decompose_chunk_variant(index, &doc.structure, "bm25", "legacy", &chunk_metadata);
 }
 
 fn write_node_markdown_files(index: &mut SkillsIndex, doc: &SkillDocument, flat_structure: &Value) {

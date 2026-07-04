@@ -14,7 +14,7 @@ from cyt.config import (
     merge_model_entry,
     save_user_config,
 )
-from cyt.proxy.setup import (
+from cyt.proxy.setup_wizard import (
     _catalog_entries,
     _catalog_merge_config,
     _prompt_custom_model,
@@ -1350,7 +1350,7 @@ class TestPromptSkillsPrunerModels:
         def fake_select(*_args: object, **_kwargs: object) -> dict[str, Any]:
             return selected
 
-        monkeypatch.setattr("cyt.proxy.setup._select_model_from_catalog", fake_select)
+        monkeypatch.setattr("cyt.proxy.setup_wizard._select_model_from_catalog", fake_select)
         rerank, llm = _prompt_skills_pruner_models(
             {"enabled": True, "pipeline": "rerank"},
             {},
@@ -1387,7 +1387,7 @@ class TestPromptSkillsPrunerModels:
 
 class TestPipelineLabels:
     def test_bm25_label_uses_minimum_tools(self) -> None:
-        from cyt.proxy.setup import _pipeline_choice_labels, _pipeline_from_display_label
+        from cyt.proxy.setup_wizard import _pipeline_choice_labels, _pipeline_from_display_label
 
         labels = _pipeline_choice_labels(0, minimum_tools=42)
         assert labels[3] == "bm25 (no API key, local; Defaults to when below 42 tools)"
@@ -1452,12 +1452,12 @@ class TestRunSetupKeyring:
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         monkeypatch.setattr("cyt.launch.secrets.keyring_backend_available", lambda: True)
-        monkeypatch.setattr("cyt.proxy.setup.save_user_config", lambda *_a, **_k: False)
+        monkeypatch.setattr("cyt.proxy.setup_wizard.save_user_config", lambda *_a, **_k: False)
         monkeypatch.setattr(
-            "cyt.proxy.setup._prompt_primary_model_input_cost",
+            "cyt.proxy.setup_wizard._prompt_primary_model_input_cost",
             lambda: {"pricing": {"input_cost_per_token": 3e-06}},
         )
-        monkeypatch.setattr("cyt.proxy.setup._prompt_pipeline", lambda **_k: ["bm25"])
+        monkeypatch.setattr("cyt.proxy.setup_wizard._prompt_pipeline", lambda **_k: ["bm25"])
         run_setup(config_path)
         out = capsys.readouterr().out
         assert "OS keyring is available" in out

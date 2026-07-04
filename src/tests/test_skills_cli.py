@@ -42,7 +42,10 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
         },
         "pruning": {
             "inject_via": "hook",
-            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+            "tools": {
+                "sequence": ["bm25"],
+                "pipelines": {"bm25": {"score_skills": 0.0}},
+            },
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
     }

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::cache_layout::{chunk_md_rel, chunk_variant_dir, node_md_rel};
 use super::config::PageIndexConfig;
-use super::document_json::write_chunk_index_structure;
+use super::document_json::{ChunkVariantMetadata, write_chunk_index_structure};
 use super::node_id::node_id_from_value;
 use super::retrieve::strip_decomposed_frontmatter;
 use super::tree::structure_to_list;
@@ -173,7 +173,16 @@ pub fn repair_skill_variant_chunks(
         return Ok(());
     }
 
-    write_chunk_index_structure(entry_dir, pipeline, params_hash, &structure)?;
+    write_chunk_index_structure(
+        entry_dir,
+        pipeline,
+        params_hash,
+        &structure,
+        &ChunkVariantMetadata {
+            pipeline: pipeline.to_string(),
+            index_params: config.to_index_params_value(),
+        },
+    )?;
 
     let mut updated = doc;
     updated.structure = structure;

@@ -19,3 +19,48 @@ func ToolIDFromDecomposedRel(relPath string) (string, error) {
 func GetRootToolKey(filePath string) (string, error) {
 	return cgoGetRootToolKey(filePath)
 }
+
+// ConfigurePathConstants overrides native path configuration constants.
+func ConfigurePathConstants(mdExt, jsonExt, decomposedPrefix, decomposedRoot, catalogPrefix, defaultCatalogDir string, builderMemoryOnly, writeCatalogPrune bool) error {
+	return cgoConfigurePathConstants(mdExt, jsonExt, decomposedPrefix, decomposedRoot, catalogPrefix, defaultCatalogDir, builderMemoryOnly, writeCatalogPrune)
+}
+
+// PathMdExt returns the configured markdown file extension.
+func PathMdExt() (string, error) {
+	return cgoPathMdExt()
+}
+
+// PathJsonExt returns the configured JSON file extension.
+func PathJsonExt() (string, error) {
+	return cgoPathJsonExt()
+}
+
+// PathDecomposedPrefix returns the decomposed catalog path prefix.
+func PathDecomposedPrefix() (string, error) {
+	return cgoPathDecomposedPrefix()
+}
+
+// PathDecomposedRoot returns the decomposed catalog root directory.
+func PathDecomposedRoot() (string, error) {
+	return cgoPathDecomposedRoot()
+}
+
+// PathCatalogPrefix returns the catalog path prefix.
+func PathCatalogPrefix() (string, error) {
+	return cgoPathCatalogPrefix()
+}
+
+// PathDefaultCatalogDir returns the default catalog directory.
+func PathDefaultCatalogDir() (string, error) {
+	return cgoPathDefaultCatalogDir()
+}
+
+// PathBuilderMemoryOnly reports whether the catalog builder defaults to memory-only mode.
+func PathBuilderMemoryOnly() (bool, error) {
+	return cgoPathBuilderMemoryOnly()
+}
+
+// PathWriteCatalogPrune reports whether catalog writes include prune metadata.
+func PathWriteCatalogPrune() (bool, error) {
+	return cgoPathWriteCatalogPrune()
+}

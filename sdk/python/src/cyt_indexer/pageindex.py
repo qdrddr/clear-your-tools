@@ -9,6 +9,8 @@ from cyt_indexer.bm25_cohesion import Bm25CohesionConfig, default_bm25_cohesion_
 from cyt_indexer.bm25_cohesion import cohesion_config_dict as _cohesion_config_dict
 from cyt_indexer._native import ReconstructOptions as _ReconstructOptions
 from cyt_indexer._native import build_chunk_variant as _build_chunk_variant
+from cyt_indexer._native import build_skills_index_for_file as _build_skills_index_for_file
+from cyt_indexer._native import build_page_index_for_file as _build_page_index_for_file
 from cyt_indexer._native import build_page_index_only as _build_page_index_only
 from cyt_indexer._native import chunk_variant_valid as _chunk_variant_valid
 from cyt_indexer._native import page_index_valid as _page_index_valid
@@ -173,6 +175,26 @@ def load_merged_skill_document_json(
     return _load_merged_skill_document_json(entry_dir, doc_id, chunk_dir)
 
 
+def build_page_index_for_file(
+    source_path: str,
+    *,
+    config: PageIndexConfigInput | None = None,
+) -> dict[str, Any]:
+    cfg = _config_dict(config)
+    return _build_page_index_for_file(source_path, cfg)
+
+
+def build_skills_index_for_file(
+    source_path: str,
+    *,
+    config: PageIndexConfigInput | None = None,
+    pipeline: str = "bm25",
+    params_hash: str = "default",
+) -> dict[str, Any]:
+    cfg = _config_dict(config)
+    return _build_skills_index_for_file(source_path, cfg, pipeline, params_hash)
+
+
 def build_page_index_only(
     skill_dirs: list[str],
     *,
@@ -231,19 +253,15 @@ def finalize_skill_document_json(
     entry_dir: str,
     doc_id: str,
     *,
-    content_sha256: str,
     pipeline: str,
     index_params: dict[str, Any],
-    built_at: str,
     source_path: str,
 ) -> dict[str, Any]:
     return _finalize_skill_document_json(
         entry_dir,
         doc_id,
-        content_sha256=content_sha256,
         pipeline=pipeline,
         index_params=index_params,
-        built_at=built_at,
         source_path=source_path,
     )
 
@@ -378,6 +396,15 @@ class SkillsBuilder:
     ) -> dict[str, Any]:
         cfg = _config_dict(config)
         return self._inner.build_from_dirs(skill_dirs, cfg)
+
+    def build_from_file(
+        self,
+        source_path: str,
+        *,
+        config: PageIndexConfigInput | None = None,
+    ) -> dict[str, Any]:
+        cfg = _config_dict(config)
+        return self._inner.build_from_file(source_path, cfg)
 
     def write_catalog(self) -> dict[str, Any]:
         return self._inner.write_catalog()

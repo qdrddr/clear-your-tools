@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer import reconstruct_skill_markdown
+from cyt_indexer import batch_reconstruct_skill_matches, reconstruct_skill_markdown
 
+from cyt.common.paths import shorten_home_path
 from cyt.indexer.tokens import count_tokens_batch
-from cyt.skills.catalog import SkillEntryRef, _shorten_home_path, load_entry_skills_index
+from cyt.skills.catalog import SkillEntryRef, load_entry_skills_index
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
@@ -30,7 +31,7 @@ class EntryIndexCache:
 
 def entry_for_row(row: SearchItemRow, entries: list[SkillEntryRef]) -> SkillEntryRef | None:
     for entry in entries:
-        if entry.doc_id == row.doc_id and _shorten_home_path(entry.source_path) == row.file_path:
+        if entry.doc_id == row.doc_id and shorten_home_path(entry.source_path) == row.file_path:
             return entry
     for entry in entries:
         if entry.doc_id == row.doc_id:
@@ -77,6 +78,48 @@ def reconstruct_doc_match(
     )
 
 
+def _matched_skills_from_batch(
+    batch_results: list[dict[str, Any]],
+) -> list[MatchedSkill]:
+    pending: list[tuple[MatchedSkill, str]] = []
+    for item in batch_results:
+        markdown = str(item.get("markdown", "")).strip()
+        if not markdown:
+            continue
+        name = item.get("name")
+        pending.append(
+            (
+                MatchedSkill(
+                    doc_id=str(item.get("doc_id", "")),
+                    file_path=str(item.get("file_path", "")),
+                    markdown=markdown,
+                    name=name if isinstance(name, str) else None,
+                    score=float(item.get("score", 0)),
+                    token_count=0,
+                ),
+                markdown,
+            ),
+        )
+    if not pending:
+        return []
+
+    token_counts = count_tokens_batch([markdown for _, markdown in pending])
+    matched: list[MatchedSkill] = []
+    for (match, _), token_count in zip(pending, token_counts, strict=True):
+        matched.append(
+            MatchedSkill(
+                doc_id=match.doc_id,
+                file_path=match.file_path,
+                markdown=match.markdown,
+                name=match.name,
+                score=match.score,
+                token_count=token_count,
+            ),
+        )
+    matched.sort(key=lambda item: item.score, reverse=True)
+    return matched
+
+
 def reconstruct_matches_from_items(
     items: list[SearchItemRow],
     entries: list[SkillEntryRef],
@@ -98,44 +141,27 @@ def reconstruct_matches_from_items(
     if not by_doc:
         return []
 
-    cache = index_cache or EntryIndexCache()
     frontmatter_by_doc = _frontmatter_by_doc(entries)
-    pending: list[tuple[MatchedSkill, str]] = []
+    groups: list[dict[str, Any]] = []
     for (entry_dir, doc_id), (entry, rows) in by_doc.items():
         top_score = max(row.score for row in rows)
         file_path = rows[0].file_path
         frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
         id_specs = sorted({row.item_id for row in rows}, key=lambda item_id: int(item_id))
-        match = reconstruct_doc_match(
-            entry,
-            id_specs=id_specs,
-            item_kind=item_kind,
-            file_path=file_path,
-            top_score=top_score,
-            frontmatter=frontmatter,
-            index_cache=cache,
+        groups.append(
+            {
+                "entry_dir": entry.entry_dir,
+                "doc_id": entry.doc_id,
+                "bm25_chunk_dir": entry.bm25_chunk_dir,
+                "item_kind": item_kind,
+                "file_path": file_path,
+                "score": top_score,
+                "frontmatter": frontmatter,
+                "id_specs": id_specs,
+            },
         )
-        if match is not None:
-            pending.append((match, match.markdown))
 
-    if not pending:
-        return []
-
-    token_counts = count_tokens_batch([markdown for _, markdown in pending])
-    matched: list[MatchedSkill] = []
-    for (match, _), token_count in zip(pending, token_counts, strict=True):
-        matched.append(
-            MatchedSkill(
-                doc_id=match.doc_id,
-                file_path=match.file_path,
-                markdown=match.markdown,
-                name=match.name,
-                score=match.score,
-                token_count=token_count,
-            ),
-        )
-    matched.sort(key=lambda item: item.score, reverse=True)
-    return matched
+    return _matched_skills_from_batch(batch_reconstruct_skill_matches(groups))
 
 
 def reconstruct_matches_from_survivor_dicts(
@@ -147,6 +173,7 @@ def reconstruct_matches_from_survivor_dicts(
     index_cache: EntryIndexCache | None = None,
 ) -> list[MatchedSkill]:
     """Group survivor dicts by doc and rebuild MatchedSkill list."""
+    del index_cache  # batch path loads indexes in Rust
     by_doc: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in survivors:
         entry_dir = str(item.get("entry_dir", ""))
@@ -158,10 +185,9 @@ def reconstruct_matches_from_survivor_dicts(
     if not by_doc:
         return []
 
-    cache = index_cache or EntryIndexCache()
     frontmatter_by_doc = _frontmatter_by_doc(entries)
     entry_by_key = {(entry.entry_dir, entry.doc_id): entry for entry in entries}
-    pending: list[tuple[MatchedSkill, str]] = []
+    groups: list[dict[str, Any]] = []
 
     for (entry_dir, doc_id), items in by_doc.items():
         entry = entry_by_key.get((entry_dir, doc_id))
@@ -175,33 +201,17 @@ def reconstruct_matches_from_survivor_dicts(
             key=lambda item_id: int(item_id),
         )
         frontmatter = frontmatter_by_doc.get((entry_dir, doc_id))
-        match = reconstruct_doc_match(
-            entry,
-            id_specs=id_specs,
-            item_kind=item_kind,
-            file_path=file_path,
-            top_score=top_score,
-            frontmatter=frontmatter,
-            index_cache=cache,
+        groups.append(
+            {
+                "entry_dir": entry.entry_dir,
+                "doc_id": entry.doc_id,
+                "bm25_chunk_dir": entry.bm25_chunk_dir,
+                "item_kind": item_kind,
+                "file_path": file_path,
+                "score": top_score,
+                "frontmatter": frontmatter,
+                "id_specs": id_specs,
+            },
         )
-        if match is not None:
-            pending.append((match, match.markdown))
 
-    if not pending:
-        return []
-
-    token_counts = count_tokens_batch([markdown for _, markdown in pending])
-    matched: list[MatchedSkill] = []
-    for (match, _), token_count in zip(pending, token_counts, strict=True):
-        matched.append(
-            MatchedSkill(
-                doc_id=match.doc_id,
-                file_path=match.file_path,
-                markdown=match.markdown,
-                name=match.name,
-                score=match.score,
-                token_count=token_count,
-            ),
-        )
-    matched.sort(key=lambda item: item.score, reverse=True)
-    return matched
+    return _matched_skills_from_batch(batch_reconstruct_skill_matches(groups))

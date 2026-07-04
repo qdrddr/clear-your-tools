@@ -25,7 +25,7 @@ from cyt.launch.proxy_guard import (
 from cyt.launch.quiet import configure_launch_quiet
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import RuntimeContext, prepare_runtime
-from cyt.proxy.setup import normalize_upstream_kind
+from cyt.proxy.setup_wizard import normalize_upstream_kind
 from cyt.skills.agents import launch_agent_env
 from cyt.tools.hook_setup import ensure_tools_hook_file_interactive
 

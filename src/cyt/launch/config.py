@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
+from cyt.common.agents import AgentName
 from cyt.config import _config_with_bundled_defaults, required_proxy_env_var_names
-
-AgentName = Literal["claude", "codex"]
 
 _DEFAULT_CODEX_ENV_KEY = "CODEX_OPENAI_API_KEY"
 

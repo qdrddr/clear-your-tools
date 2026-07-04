@@ -468,6 +468,30 @@ skills hook injection). The reverse proxy does not mutate request `tools` arrays
   files are skipped silently at hook time (configure paths with `cyt hook`, `cyt setup`, or optional
   `cyt launch` repair prompt).
 
+### Proxy injection placement (`pruning.inject_into_user_message`)
+
+When `pruning.inject_via` is `proxy`, you can control **where** pruned MCP tools and matched skills
+land in the upstream HTTP body. Claude Code uses the `/anthropic` endpoint; Codex uses `/openai`
+(OpenAI Responses API). Both agents share this flag.
+
+| Key | Values | Default |
+| --- | ------ | ------- |
+| `pruning.inject_into_user_message` | `true` \| `false` | `true` |
+
+- **`false`**: pruned tools replace the root `tools` array; skills inject into the system message
+  (Claude Code) or a developer message before the last user turn (Codex).
+- **`true` (default)**: system tools stay in root `tools`; pruned **MCP** tools are removed from `tools` and
+  injected as `<agent-tools>…</agent-tools>` into the **latest user message**. Skills inject as
+  `<agent-skills>…</agent-skills>` into that same user turn (not system/developer). Tool pruning
+  still uses the normal BM25/rerank/LLM query extraction — only the injection anchor moves to the
+  last user turn to preserve provider prompt-cache prefixes. Ignored when `inject_via: hook`.
+
+```yaml
+pruning:
+  inject_via: proxy
+  inject_into_user_message: true
+```
+
 Live MCP listing requires the optional dependency:
 
 ```bash
