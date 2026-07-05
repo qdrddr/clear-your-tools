@@ -7,11 +7,54 @@ This package links the shared C library (`libcyt_indexer` / `cyt_indexer.dll`) g
 
 ## Prerequisites
 
-- Rust toolchain (`cargo`, `rustup`)
 - C11 compiler (GCC, Clang, or MSVC)
 - CMake 3.16+ (recommended)
+- Rust toolchain (`cargo`, `rustup`) — only when [building from source](#build-from-source)
 
-## Build the shared library
+## Prebuilt binaries (GitHub Release)
+
+Precompiled `libcyt_indexer` libraries for Linux, macOS, and Windows (x86_64 and ARM64) are attached to
+each [GitHub Release](https://github.com/qdrddr/clear-your-tools/releases).
+
+<details>
+<summary><strong>Assets are at</strong></summary>
+
+`https://github.com/qdrddr/clear-your-tools/releases/download/v0.6.9/`
+
+Example (macOS ARM64):
+
+```bash
+VERSION=v0.6.9
+TRIPLET=aarch64-apple-darwin
+curl -LO "https://github.com/qdrddr/clear-your-tools/releases/download/${VERSION}/cyt-indexer-ffi-${TRIPLET}.tar.gz"
+mkdir -p cyt-ffi && tar -xzf "cyt-indexer-ffi-${TRIPLET}.tar.gz" -C cyt-ffi
+gcc -std=c11 -o myapp main.c -I cyt-ffi -L cyt-ffi -lcyt_indexer
+```
+
+| Rust triplet | Archive |
+| --- | --- |
+| `x86_64-unknown-linux-gnu` | `cyt-indexer-ffi-x86_64-unknown-linux-gnu.tar.gz` |
+| `aarch64-unknown-linux-gnu` | `cyt-indexer-ffi-aarch64-unknown-linux-gnu.tar.gz` |
+| `x86_64-apple-darwin` | `cyt-indexer-ffi-x86_64-apple-darwin.tar.gz` |
+| `aarch64-apple-darwin` | `cyt-indexer-ffi-aarch64-apple-darwin.tar.gz` |
+| `x86_64-pc-windows-msvc` | `cyt-indexer-ffi-x86_64-pc-windows-msvc.tar.gz` |
+| `aarch64-pc-windows-msvc` | `cyt-indexer-ffi-aarch64-pc-windows-msvc.tar.gz` |
+
+Each archive contains:
+
+| File | Purpose |
+| --- | --- |
+| `libcyt_indexer.so` / `.dylib` / `cyt_indexer.dll` | Shared library |
+| `libcyt_indexer.a` / `cyt_indexer.lib` | Static library |
+| `cyt_indexer.h` | C header (also published standalone on the release) |
+| `cyt_indexer.dll.lib` | Windows import library (when applicable) |
+
+Verify with `SHA256SUMS` on the release page. On macOS, set `DYLD_LIBRARY_PATH` to the extract directory
+when running, or copy the dylib beside your binary.
+
+</details>
+
+## Build from source
 
 From the repository root:
 
@@ -64,6 +107,8 @@ target_link_libraries(myapp PRIVATE CYT::cyt_indexer)
 ```
 
 ## Manual link
+
+Use a [prebuilt release archive](#prebuilt-binaries-github-release) or build locally:
 
 ```bash
 TRIPLET=aarch64-apple-darwin   # match your host or target

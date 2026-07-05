@@ -52,6 +52,7 @@ import {
   toolIdHadEmptyOriginalRootPropertiesNative,
   toolIdHasEmptyDecomposedRootNative,
   toolPassThroughNative,
+  batchToolPassThroughNative,
   toolPoliciesNative,
   toolsForCatalogNative,
   PolicyContextNative,
@@ -98,6 +99,13 @@ export function effectivePolicy(
 
 export function toolPassThrough(toolId: string, ctx: PolicyContext): boolean {
   return toolPassThroughNative(ctx, toolId);
+}
+
+export function batchToolPassThrough(
+  toolIds: string[],
+  ctx: PolicyContext,
+): boolean[] {
+  return batchToolPassThroughNative(ctx, toolIds);
 }
 
 export function rootToolIdFromChunk(item: JsonRecord): string {

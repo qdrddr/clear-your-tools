@@ -47,6 +47,7 @@ export const PolicyContextNative = native.PolicyContext;
 export const policyContextFromValuesNative = native.policyContextFromValues;
 export const effectivePolicyNative = native.effectivePolicy;
 export const toolPassThroughNative = native.toolPassThrough;
+export const batchToolPassThroughNative = native.batchToolPassThrough;
 export const partitionCatalogNative = native.partitionCatalog;
 export const mergeCatalogNative = native.mergeCatalog;
 export const catalogNeedsPartitionNative = native.catalogNeedsPartition;
@@ -179,6 +180,13 @@ export const expSimilarityNative = native.expSimilarity;
 export const batchReconstructSkillMatchesNative =
   native.batchReconstructSkillMatches;
 export const greedySelectSkillItemsNative = native.greedySelectSkillItems;
+
+// Pipeline
+export const pruneCatalogBm25AndRetrieveNative =
+  native.pruneCatalogBm25AndRetrieve;
+export const classifyAndCountCatalogNative = native.classifyAndCountCatalog;
+export const searchSkillsAndSelectNative = native.searchSkillsAndSelect;
+export const buildSkillNodeCatalogNative = native.buildSkillNodeCatalog;
 
 export type {
   PolicyOptions,

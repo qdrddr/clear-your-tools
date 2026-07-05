@@ -134,6 +134,19 @@ pub fn tool_pass_through(ctx: &PolicyContextNapi, tool_id: String) -> bool {
     policies::tool_pass_through(ctx_from_napi(ctx), tool_id.as_ref())
 }
 
+#[napi(js_name = "batchToolPassThrough")]
+#[must_use]
+pub fn batch_tool_pass_through_napi(
+    ctx: &PolicyContextNapi,
+    tool_ids: Vec<String>,
+) -> Vec<bool> {
+    let ctx = ctx_from_napi(ctx);
+    tool_ids
+        .into_iter()
+        .map(|id| policies::tool_pass_through(ctx, id.as_str()))
+        .collect()
+}
+
 /// # Errors
 /// Does not fail; returns empty partitions for invalid catalog shapes.
 #[napi]

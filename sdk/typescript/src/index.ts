@@ -120,6 +120,14 @@ export {
   type ReconstructOptions,
   type SkillsIndexDict,
 } from "./pageindex.js";
+export {
+  pruneCatalogBm25AndRetrieve,
+  classifyAndCountCatalog,
+  searchSkillsAndSelect,
+  buildSkillNodeCatalog,
+  type PruneBm25Options,
+  type SearchSkillsOptions,
+} from "./pipeline.js";
 
 // Full policy surface (mirrors cyt_indexer.policies).
 export * from "./policies.js";

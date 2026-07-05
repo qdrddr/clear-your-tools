@@ -76,6 +76,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install uv (parity reference)
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Sync Python SDK (parity reference)
+        run: uv sync --all-extras --group dev --group test --locked
+
       - name: Install dependencies
         working-directory: sdk/typescript
         run: npm ci

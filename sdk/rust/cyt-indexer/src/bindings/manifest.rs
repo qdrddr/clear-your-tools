@@ -201,6 +201,15 @@ const fn export(name: &'static str, category: &'static str) -> FfiExport {
     FfiExport { name, category }
 }
 
+/// N-API-only exports (Node/TypeScript SDK). Not part of the C FFI surface; listed for parity checks.
+pub const NAPI_EXPORTS: &[&str] = &[
+    "batchToolPassThrough",
+    "pruneCatalogBm25AndRetrieve",
+    "classifyAndCountCatalog",
+    "searchSkillsAndSelect",
+    "buildSkillNodeCatalog",
+];
+
 /// Macro-generated symbols documented via cbindgen stubs (not visible to cbindgen in macro expansion).
 pub const CBINDGEN_STUB_SYMBOLS: &[&str] = &[
     "cyt_full_pass_through",

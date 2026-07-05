@@ -40,3 +40,24 @@ const full = loadCatalog(".catalog");
 const surviving = /* survivors.json */;
 const removed = removedChunks(full, surviving);
 ```
+
+### Pipeline composites
+
+```typescript
+import {
+  batchToolPassThrough,
+  buildSkillNodeCatalog,
+  classifyAndCountCatalog,
+  PolicyContext,
+  pruneCatalogBm25AndRetrieve,
+  searchSkillsAndSelect,
+} from "cyt-indexer-sdk";
+
+const ctx = new PolicyContext("always_include", "always_include");
+const flags = batchToolPassThrough(["Agent", "grep"], ctx);
+
+const counts = classifyAndCountCatalog(catalogData);
+const nodes = buildSkillNodeCatalog([]);
+```
+
+Composite APIs mirror the Python `cyt_indexer.pipeline` module and Go `cytindexer` pipeline helpers.

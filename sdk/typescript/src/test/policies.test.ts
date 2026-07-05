@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   PolicyContext,
+  batchToolPassThrough,
   isDescriptionPolicy,
   needsDescriptionReinstate,
   scoringPolicy,
@@ -48,4 +49,10 @@ test("needsDescriptionReinstate reflects context policies", () => {
   const perTool = new PolicyContext("prune_optional", "prune_all");
   perTool.perTool = { Agent: "prune_optional_descriptions" };
   assert.equal(needsDescriptionReinstate(perTool), true);
+});
+
+test("batchToolPassThrough returns flags for each tool id", () => {
+  const ctx = new PolicyContext("always_include", "always_include");
+  const flags = batchToolPassThrough(["Agent", "grep"], ctx);
+  assert.deepEqual(flags, [true, true]);
 });

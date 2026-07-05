@@ -480,4 +480,5 @@ pub fn collect_enums(schema: Value) -> Vec<Value> {
 include!("policies_node.rs");
 include!("tokens_node.rs");
 include!("bm25_search_node.rs");
+include!("pipeline_node.rs");
 include!("cache_node.rs");
