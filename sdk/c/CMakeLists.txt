@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cyt-indexer-c VERSION 0.6.7 LANGUAGES C)
+project(cyt-indexer-c VERSION 0.6.8 LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

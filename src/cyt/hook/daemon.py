@@ -285,42 +285,104 @@ def _process_matches_cyt_proxy(pid: int) -> bool:
     return "cyt.proxy.cli" in text and " proxy " in text
 
 
-def daemon_stop(*, verbose: bool = False) -> None:
-    """Stop a hook daemon process we spawned, or clear a reuse pidfile."""
-    pidfile = read_hook_daemon_pidfile()
-    if pidfile is None:
-        _log(verbose, "hook daemon: no daemon recorded")
-        return
+def _find_listen_pid(port: int) -> int | None:
+    """Return PID listening on ``LOCAL_HOST:port``, or ``None``."""
+    commands = (
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+        ["lsof", "-t", "-i", f":{port}"],
+    )
+    for cmd in commands:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except OSError:
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.strip().splitlines():
+            candidate = line.strip()
+            if candidate.isdigit():
+                return int(candidate)
+    return None
 
-    reused = bool(pidfile.get("reused"))
-    pid_value = pidfile.get("pid")
-    if reused or pid_value is None:
-        _log(verbose, "hook daemon: reused external server, nothing to stop")
-        _remove_pidfile()
-        return
 
-    pid = int(pid_value)
-    if not _pid_alive(pid):
-        _log(verbose, f"hook daemon: pid {pid} not running")
-        _remove_pidfile()
-        return
-
-    if not _process_matches_cyt_proxy(pid):
-        _log(verbose, f"hook daemon: pid {pid} is not a cyt proxy; leaving process alone")
-        _remove_pidfile()
-        return
-
+def _terminate_pid(pid: int) -> None:
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         if not _pid_alive(pid):
-            break
+            return
         time.sleep(0.1)
-    else:
-        os.kill(pid, signal.SIGKILL)
+    os.kill(pid, signal.SIGKILL)
+
+
+def _stop_hook_server_on_port(port: int, *, verbose: bool) -> bool:
+    """Stop a CYT hook server listening on *port* when one is present."""
+    health = fetch_cyt_health(port)
+    if not is_hook_server(health):
+        return False
+
+    pid = _find_listen_pid(port)
+    if pid is None:
+        _log(verbose, f"hook daemon: hook server on port {port} but no listener pid found")
+        return False
+    if not _process_matches_cyt_proxy(pid):
+        _log(
+            verbose,
+            f"hook daemon: port {port} listener pid {pid} is not a cyt proxy; leaving process alone",
+        )
+        return False
+
+    _terminate_pid(pid)
+    _log(verbose, f"hook daemon: stopped pid={pid} port={port}")
+    return True
+
+
+def _resolve_stop_port(
+    pidfile: dict[str, Any] | None,
+    *,
+    config_path: Path | None,
+) -> int | None:
+    if pidfile is not None:
+        port_value = pidfile.get("port")
+        if isinstance(port_value, int):
+            return port_value
+
+    config = load_config(config_path)
+    base_port = resolve_reverse_port(config, None)
+    return _find_reusable_hook_port(base_port)
+
+
+def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> None:
+    """Stop a hook daemon process and clear pidfile state."""
+    pidfile = read_hook_daemon_pidfile()
+    target_port = _resolve_stop_port(pidfile, config_path=config_path)
+    target_pid: int | None = None
+    if pidfile is not None and not pidfile.get("reused"):
+        pid_value = pidfile.get("pid")
+        if pid_value is not None:
+            target_pid = int(pid_value)
+
+    stopped = False
+    if target_pid is not None:
+        if _pid_alive(target_pid) and _process_matches_cyt_proxy(target_pid):
+            _terminate_pid(target_pid)
+            stopped = True
+            _log(verbose, f"hook daemon: stopped pid={target_pid}")
+        elif not _pid_alive(target_pid):
+            _log(verbose, f"hook daemon: pid {target_pid} not running")
+        else:
+            _log(
+                verbose,
+                f"hook daemon: pid {target_pid} is not a cyt proxy; leaving process alone",
+            )
+
+    if not stopped and target_port is not None:
+        stopped = _stop_hook_server_on_port(target_port, verbose=verbose)
+
+    if not stopped:
+        _log(verbose, "hook daemon: no daemon recorded")
 
     _remove_pidfile()
-    _log(verbose, f"hook daemon: stopped pid={pid}")
 
 
 def daemon_status(*, config_path: Path | None = None) -> None:

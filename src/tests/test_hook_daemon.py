@@ -85,15 +85,27 @@ def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    hook_daemon.daemon_stop(verbose=False)
+    with patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True):
+        hook_daemon.daemon_stop(verbose=False)
     assert not pidfile_path.exists()
 
 
-def test_daemon_stop_does_not_kill_reused_external_server(pidfile_path: Path) -> None:
+def test_daemon_stop_kills_reused_hook_server_on_port(pidfile_path: Path) -> None:
     pidfile_path.write_text(
         json.dumps({"pid": None, "reused": True, "port": 8834}),
         encoding="utf-8",
     )
-    with patch("os.kill") as kill:
+    with patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop:
         hook_daemon.daemon_stop(verbose=True)
-        kill.assert_not_called()
+        stop.assert_called_once_with(8834, verbose=True)
+    assert not pidfile_path.exists()
+
+
+def test_daemon_stop_without_pidfile_scans_config_port() -> None:
+    with (
+        patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=None),
+        patch("cyt.hook.daemon._resolve_stop_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop,
+    ):
+        hook_daemon.daemon_stop(verbose=True)
+        stop.assert_called_once_with(8834, verbose=True)

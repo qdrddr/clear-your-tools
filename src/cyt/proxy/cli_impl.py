@@ -623,7 +623,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
             )
             return
         if daemon_cmd == "stop":
-            daemon_stop(verbose=verbose)
+            daemon_stop(verbose=verbose, config_path=config_path)
             return
         if daemon_cmd == "status":
             daemon_status(config_path=config_path)
