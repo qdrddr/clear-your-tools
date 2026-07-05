@@ -1,4 +1,4 @@
-//! Serialize cache config mutations in unit tests (global MEMORY_CACHE_CONFIG).
+//! Serialize cache config mutations in unit tests (global `MEMORY_CACHE_CONFIG`).
 
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
@@ -20,10 +20,7 @@ impl CacheConfigTestGuard {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = memory_cache_config();
         configure_memory_cache(patch);
-        Self {
-            _lock: lock,
-            prev,
-        }
+        Self { _lock: lock, prev }
     }
 }
 

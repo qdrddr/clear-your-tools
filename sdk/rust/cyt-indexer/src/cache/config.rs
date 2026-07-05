@@ -109,7 +109,7 @@ pub fn memory_cache_config() -> MemoryCacheConfig {
         .clone()
 }
 
-pub(crate) fn set_memory_cache_config(cfg: MemoryCacheConfig) {
+pub fn set_memory_cache_config(cfg: MemoryCacheConfig) {
     if let Ok(mut guard) = MEMORY_CACHE_CONFIG.write() {
         *guard = cfg;
     }
