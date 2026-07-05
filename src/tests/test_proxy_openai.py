@@ -638,7 +638,7 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
     last_user = out["input"][-1]
     combined = "\n".join(block["text"] for block in last_user["content"])
     assert "<agent-skills>" in combined
-    assert "<agent-tools>" in combined
+    assert "<agent-tools" in combined
     tool_names = [t.get("name") for t in out["tools"] if isinstance(t, dict) and t.get("name")]
     assert tool_names == ["Read"]
     assert out["tools"][0]["type"] == "tool_search"
@@ -712,7 +712,7 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
     assert tso["tools"] == []
     last_user = out["input"][0]
     combined = "\n".join(block["text"] for block in last_user["content"])
-    assert "<agent-tools>" in combined
+    assert "<agent-tools" in combined
     assert "mcp__context7__codegraph_explore" in combined
     assert [t.get("name") for t in out["tools"] if t.get("type") == "function"] == [
         "tool_0",
@@ -754,7 +754,7 @@ def test_transform_openai_request_inject_tool_search_output_pass_through() -> No
     tso = out["input"][1]
     assert tso["tools"] == []
     combined = "\n".join(block["text"] for block in out["input"][0]["content"])
-    assert "<agent-tools>" in combined
+    assert "<agent-tools" in combined
     assert "mcp__context7__grep" in combined
     assert [t.get("name") for t in out["tools"]] == ["Read"]
 

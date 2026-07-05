@@ -6,6 +6,7 @@ import copy
 from typing import Any, Literal, cast
 
 from cyt.pruners.policies import anthropic_tool_is_mcp, split_anthropic_tools
+from cyt.tools.inject import ensure_agent_tools_starts_on_new_line
 
 ProxyKind = Literal["anthropic", "openai"]
 
@@ -13,8 +14,21 @@ _AGENT_SKILLS_TAG = "<agent-skills>"
 _AGENT_TOOLS_TAG = "<agent-tools>"
 
 
+def _injection_marker_in_text(text: str, marker: str) -> bool:
+    if marker == _AGENT_TOOLS_TAG:
+        return "<agent-tools" in text
+    return marker in text
+
+
 def combine_injection_parts(parts: list[str]) -> str:
-    return "\n\n".join(part for part in parts if part.strip())
+    kept: list[str] = []
+    for part in parts:
+        if not part.strip():
+            continue
+        if kept:
+            part = ensure_agent_tools_starts_on_new_line(part, after=kept[-1])
+        kept.append(part)
+    return "\n\n".join(kept)
 
 
 def split_tools_for_root_and_inject(
@@ -99,7 +113,7 @@ def already_has_user_turn_injection(
         if not isinstance(message, dict):
             return False
         text = _anthropic_user_turn_text(message)
-        return any(marker in text for marker in tags)
+        return any(_injection_marker_in_text(text, marker) for marker in tags)
 
     input_items = body.get("input") or []
     if not isinstance(input_items, list):
@@ -111,11 +125,12 @@ def already_has_user_turn_injection(
     if not isinstance(message, dict):
         return False
     text = _openai_user_turn_text(message)
-    return any(marker in text for marker in tags)
+    return any(_injection_marker_in_text(text, marker) for marker in tags)
 
 
 def _append_text_to_string_content(existing: str, text: str) -> str:
     if existing:
+        text = ensure_agent_tools_starts_on_new_line(text, after=existing)
         return existing + "\n\n" + text
     return text
 

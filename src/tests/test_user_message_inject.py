@@ -27,6 +27,12 @@ def test_combine_injection_parts_skips_empty() -> None:
     assert combine_injection_parts(["skills", "", "tools"]) == "skills\n\ntools"
 
 
+def test_combine_injection_parts_puts_agent_tools_on_new_line() -> None:
+    tools = "\n<agent-tools description='demo'>\n</agent-tools>"
+    combined = combine_injection_parts(["skills chunk", tools.lstrip("\n")])
+    assert combined.startswith("skills chunk\n\n\n<agent-tools")
+
+
 def test_split_tools_for_root_and_inject() -> None:
     tools = [_tool("Read"), _tool("mcp__srv__grep")]
     mcp, system = split_tools_for_root_and_inject(tools)

@@ -507,6 +507,38 @@ class TestEnvReport:
         )
         assert capsys.readouterr().err == ""
 
+    def test_debug_shows_injection_path(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        print_runtime_env_report(
+            quiet=False,
+            credential_sources={},
+            port=8834,
+            endpoint="anthropic",
+            upstream_url=None,
+            include_agent_recipe=False,
+            config={"pruning": {"inject_via": "proxy"}},
+            debug=True,
+        )
+        err = capsys.readouterr().err
+        assert "Debug:" in err
+        assert "  injection path: proxy  (pruning.inject_via)" in err
+        assert "anthropic-proxy.log" in err
+
+        print_runtime_env_report(
+            quiet=False,
+            credential_sources={},
+            port=8834,
+            endpoint="anthropic",
+            upstream_url=None,
+            include_agent_recipe=False,
+            config={"pruning": {"inject_via": "hook"}},
+            debug=True,
+        )
+        err = capsys.readouterr().err
+        assert "  injection path: hook  (pruning.inject_via)" in err
+
     def test_proxy_recipe_omits_agent_auth_token(
         self,
         capsys: pytest.CaptureFixture[str],

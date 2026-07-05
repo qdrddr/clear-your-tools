@@ -21,6 +21,7 @@ from cyt.config import (
     tools_inject_via,
 )
 from cyt.proxy.anthropic import PruneResult
+from cyt.proxy.user_message_inject import combine_injection_parts
 from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
     count_hook_request_tokens,
@@ -365,10 +366,6 @@ def _handle_user_prompt_skills(
     )
 
 
-def _combine_injection_parts(parts: list[str]) -> str:
-    return "\n\n".join(part for part in parts if part.strip())
-
-
 def _append_coordinated_skills_injection(
     *,
     skill_matches: list[MatchedSkill] | None,
@@ -638,7 +635,7 @@ def _handle_user_prompt(
             ),
         )
 
-    combined = _combine_injection_parts(parts)
+    combined = combine_injection_parts(parts)
     if combined:
         if emit_stdout:
             _emit_injection(combined, payload, plain=plain_output)

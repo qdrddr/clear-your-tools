@@ -1316,6 +1316,8 @@ async def serve_reverse_async(
             session_id=session_id,
             run_id=session_id,
         )
+        from cyt.config import inject_via
+
         debug_trace.log(
             hypothesis_id="A",
             location="reverse.py:serve_reverse_async:startup",
@@ -1323,6 +1325,7 @@ async def serve_reverse_async(
             data={
                 "host": host,
                 "port": port,
+                "inject_via": inject_via(config),
                 "http2_serve": http2_serve,
                 "http2_upstream": http2_upstream,
                 "ssl_keyfile": ssl_keyfile,

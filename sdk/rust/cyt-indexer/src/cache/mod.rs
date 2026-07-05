@@ -17,6 +17,9 @@ mod fallback_tests;
 #[cfg(test)]
 mod memory_tests;
 
+#[cfg(test)]
+mod test_guard;
+
 pub use bm25_index::{Bm25IndexHandle, build_or_open_bm25_index};
 pub use config::{MemoryCacheConfig, configure_memory_cache, memory_cache_config};
 pub use hot::{

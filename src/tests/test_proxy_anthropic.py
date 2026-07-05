@@ -373,7 +373,7 @@ def test_transform_anthropic_request_inject_into_user_message(
     assert out["tools"][0]["name"] == "Read"
     user_text = out["messages"][-1]["content"]
     assert "<agent-skills>" in user_text
-    assert "<agent-tools>" in user_text
+    assert "<agent-tools" in user_text
     assert "# MCP Server Instructions" in out["system"][0]["text"]
     assert "<agent-skills>" not in out["system"][0]["text"]
 
@@ -410,7 +410,7 @@ def test_transform_anthropic_request_inject_keeps_all_original_system_tools() ->
 
     assert [t["name"] for t in out["tools"]] == ["Read", "Write"]
     user_text = out["messages"][-1]["content"]
-    assert "<agent-tools>" in user_text
+    assert "<agent-tools" in user_text
     assert "mcp__ctx7__query-docs" in user_text
     assert "Docs pruned" in user_text
 
@@ -445,7 +445,7 @@ def test_transform_anthropic_request_inject_into_user_message_tool_result_only()
     last_user = out["messages"][-1]
     assert last_user["role"] == "user"
     assert last_user["content"][-1]["type"] == "text"
-    assert "<agent-tools>" in last_user["content"][-1]["text"]
+    assert "<agent-tools" in last_user["content"][-1]["text"]
 
 
 def test_snapshot_catalog_omits_tools() -> None:

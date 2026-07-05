@@ -3,45 +3,17 @@
 #![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
 
 use serde_json::json;
 
-use crate::cache::config::{configure_memory_cache, memory_cache_config};
+use crate::cache::test_guard::CacheConfigTestGuard;
 use crate::cache::{
     CachePolicy, CacheStatus, build_or_open_bm25_index, disk_available,
     ensure_tool_catalog_from_entries, tool_definition_content_hash,
 };
 
-static DISK_CACHE_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-struct DiskCacheTestGuard {
-    _lock: std::sync::MutexGuard<'static, ()>,
-    prev_async_disk: bool,
-}
-
-impl DiskCacheTestGuard {
-    fn new() -> Self {
-        let lock = DISK_CACHE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let prev_async_disk = memory_cache_config().async_disk_writes;
-        configure_memory_cache(&json!({ "async_disk_writes": false }));
-        Self {
-            _lock: lock,
-            prev_async_disk,
-        }
-    }
-}
-
-impl Drop for DiskCacheTestGuard {
-    fn drop(&mut self) {
-        configure_memory_cache(&json!({ "async_disk_writes": self.prev_async_disk }));
-    }
-}
-
-fn disk_cache_test_guard() -> DiskCacheTestGuard {
-    DiskCacheTestGuard::new()
+fn disk_cache_test_guard() -> CacheConfigTestGuard {
+    CacheConfigTestGuard::with_patch(&json!({ "async_disk_writes": false }))
 }
 
 fn sample_tool_entry(name: &str) -> serde_json::Value {

@@ -109,13 +109,17 @@ pub fn memory_cache_config() -> MemoryCacheConfig {
         .clone()
 }
 
+pub(crate) fn set_memory_cache_config(cfg: MemoryCacheConfig) {
+    if let Ok(mut guard) = MEMORY_CACHE_CONFIG.write() {
+        *guard = cfg;
+    }
+}
+
 /// Apply JSON config from Python (`cache.memory` block).
 pub fn configure_memory_cache(value: &Value) {
     let mut cfg = MemoryCacheConfig::from_env();
     cfg.apply_json(value);
-    if let Ok(mut guard) = MEMORY_CACHE_CONFIG.write() {
-        *guard = cfg;
-    }
+    set_memory_cache_config(cfg);
 }
 
 #[cfg(test)]

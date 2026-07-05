@@ -148,6 +148,15 @@ def _codex_recipe_lines(
     ]
 
 
+def _injection_path_lines(config: dict[str, Any]) -> list[str]:
+    from cyt.config import inject_via
+
+    mode = inject_via(config)
+    return [
+        f"  injection path: {mode}  (pruning.inject_via)",
+    ]
+
+
 def _debug_log_lines(*, endpoint: str, debug_log_dir: Path) -> list[str]:
     return [
         "# Debug request snapshots (append-only JSON arrays):",
@@ -266,14 +275,16 @@ def print_runtime_env_report(
         ),
     )
 
-    if (debug or debug_dry_run) and endpoint is not None and config is not None:
-        _print_section(
-            "Debug logs:",
-            _debug_log_lines(
-                endpoint=endpoint,
-                debug_log_dir=reverse_debug_log_dir(config).resolve(),
-            ),
-        )
+    if (debug or debug_dry_run) and config is not None:
+        debug_lines = _injection_path_lines(config)
+        if endpoint is not None:
+            debug_lines.extend(
+                _debug_log_lines(
+                    endpoint=endpoint,
+                    debug_log_dir=reverse_debug_log_dir(config).resolve(),
+                ),
+            )
+        _print_section("Debug:", debug_lines)
 
     if not include_agent_recipe or agent is None or endpoint is None:
         return

@@ -4,10 +4,10 @@
 
 use std::path::PathBuf;
 
-use crate::cache::config::{configure_memory_cache, memory_cache_config};
 use crate::cache::hot::{hot_cache_len, read_chunk_body, store_merged_document};
 use crate::cache::lru::LruCache;
 use crate::cache::materialize::extract_frontmatter_from_markdown;
+use crate::cache::test_guard::CacheConfigTestGuard;
 use crate::cache::{CachePolicy, ensure_skills_registry};
 use crate::pageindex::PageIndexConfig;
 use serde_json::json;
@@ -42,7 +42,7 @@ fn chunk_body_cache_hits_on_second_read() {
 
 #[test]
 fn lazy_registry_defers_full_index() {
-    configure_memory_cache(&json!({ "lazy_registry": true }));
+    let _guard = CacheConfigTestGuard::with_patch(&json!({ "lazy_registry": true }));
     let tmp = std::env::temp_dir().join(format!("cyt-lazy-reg-{}", std::process::id()));
     let skills = tmp.join("skills");
     let catalog = tmp.join("catalog");
@@ -67,7 +67,6 @@ fn lazy_registry_defers_full_index() {
     assert!(refs[0].lazy_pending);
     assert!(!refs[0].entry_dir.join("nodes/page_index.json").exists());
     let _ = std::fs::remove_dir_all(&tmp);
-    configure_memory_cache(&json!({ "lazy_registry": memory_cache_config().lazy_registry }));
 }
 
 #[test]
