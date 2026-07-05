@@ -72,7 +72,9 @@ def parse_agent_name(raw: str) -> AgentName:
         return "claude"
     if agent == "codex":
         return "codex"
-    raise ValueError(f"Unknown agent {raw!r}; expected claude or codex")
+    if agent == "cursor":
+        return "cursor"
+    raise ValueError(f"Unknown agent {raw!r}; expected claude, codex, or cursor")
 
 
 def infer_upstream_kind_from_agent(agent: AgentName) -> str:

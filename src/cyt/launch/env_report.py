@@ -271,7 +271,7 @@ def print_runtime_env_report(
             "Debug logs:",
             _debug_log_lines(
                 endpoint=endpoint,
-                debug_log_dir=reverse_debug_log_dir(config),
+                debug_log_dir=reverse_debug_log_dir(config).resolve(),
             ),
         )
 

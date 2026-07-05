@@ -378,6 +378,43 @@ def test_transform_anthropic_request_inject_into_user_message(
     assert "<agent-skills>" not in out["system"][0]["text"]
 
 
+def test_transform_anthropic_request_inject_keeps_all_original_system_tools() -> None:
+    config = {"pruning": {"inject_into_user_message": True, "inject_via": "proxy"}}
+    body = {
+        "model": "claude-test",
+        "messages": [{"role": "user", "content": "use context7 docs"}],
+        "tools": [
+            {"name": "Read", "description": "Read", "input_schema": {"type": "object"}},
+            {"name": "Write", "description": "Write", "input_schema": {"type": "object"}},
+            {"name": "mcp__ctx7__query-docs", "description": "Docs", "input_schema": {}},
+        ],
+    }
+    pruned_tools = [
+        {
+            "name": "mcp__ctx7__query-docs",
+            "description": "Docs pruned",
+            "input_schema": {"type": "object", "properties": {"libraryId": {"type": "string"}}},
+        },
+    ]
+    prune_result = PruneResult(
+        tools=pruned_tools,
+        status="applied",
+        query="User_Asks: use context7 docs",
+        tools_in=3,
+        mcp_tools_in=1,
+        tools_out=1,
+        error=None,
+    )
+    with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
+        out, _, _ = transform_anthropic_request(body, config=config)
+
+    assert [t["name"] for t in out["tools"]] == ["Read", "Write"]
+    user_text = out["messages"][-1]["content"]
+    assert "<agent-tools>" in user_text
+    assert "mcp__ctx7__query-docs" in user_text
+    assert "Docs pruned" in user_text
+
+
 def test_transform_anthropic_request_inject_into_user_message_tool_result_only() -> None:
     config = {"pruning": {"inject_into_user_message": True, "inject_via": "proxy"}}
     body = {

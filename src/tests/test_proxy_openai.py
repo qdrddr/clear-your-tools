@@ -644,6 +644,121 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
     assert out["tools"][0]["type"] == "tool_search"
 
 
+def test_transform_openai_request_inject_tool_search_output() -> None:
+    """Codex puts MCP in input[].tool_search_output; inject should move them to user turn."""
+    config = {
+        "pruning": {
+            "inject_into_user_message": True,
+            "inject_via": "proxy",
+            "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
+    }
+    tool_search_output = {
+        "type": "tool_search_output",
+        "status": "completed",
+        "tools": [
+            _tool_search_output_namespace("codegraph_explore"),
+            _tool_search_output_namespace("ctx_knowledge", "ctx_graph"),
+        ],
+    }
+    root_tools = [
+        {
+            "type": "tool_search",
+            "description": "Search deferred tools",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+        },
+        *[
+            {
+                "type": "function",
+                "name": f"tool_{index}",
+                "description": "system",
+                "parameters": {"type": "object", "properties": {}},
+            }
+            for index in range(3)
+        ],
+    ]
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("explore agents.ts with codegraph"), tool_search_output],
+        "tools": root_tools,
+    }
+    pruned_named = [
+        {
+            "type": "function",
+            "name": "mcp__context7__codegraph_explore",
+            "description": "pruned explore",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+        },
+    ]
+    prune_result = PruneResult(
+        tools=pruned_named,
+        status="applied",
+        query="explore agents.ts with codegraph",
+        tools_in=3,
+        mcp_tools_in=3,
+        tools_out=1,
+        error=None,
+    )
+    with patch(
+        "cyt.pruning.coordinator.filter_tools_for_query",
+        return_value=prune_result,
+    ):
+        out, meta, _ = transform_openai_request(body, config=config)
+
+    assert meta is not None
+    assert meta.status == "applied"
+    tso = out["input"][1]
+    assert tso["type"] == "tool_search_output"
+    assert tso["tools"] == []
+    last_user = out["input"][0]
+    combined = "\n".join(block["text"] for block in last_user["content"])
+    assert "<agent-tools>" in combined
+    assert "mcp__context7__codegraph_explore" in combined
+    assert [t.get("name") for t in out["tools"] if t.get("type") == "function"] == [
+        "tool_0",
+        "tool_1",
+        "tool_2",
+    ]
+
+
+def test_transform_openai_request_inject_tool_search_output_pass_through() -> None:
+    """Pass-through pruning must still split MCP out for user-message inject."""
+    config = {
+        "pruning": {
+            "inject_into_user_message": True,
+            "inject_via": "proxy",
+        },
+    }
+    tool_search_output = {
+        "type": "tool_search_output",
+        "status": "completed",
+        "tools": [_tool_search_output_namespace("grep")],
+    }
+    body = {
+        "model": "gpt-test",
+        "input": [_user_message("grep for TODO"), tool_search_output],
+        "tools": [
+            {
+                "type": "function",
+                "name": "Read",
+                "description": "Read",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        ],
+    }
+    with patch("cyt.proxy.openai_responses.request_pass_through", return_value=True):
+        out, meta, _ = transform_openai_request(body, config=config)
+
+    assert meta is not None
+    assert meta.status == "pass_through"
+    tso = out["input"][1]
+    assert tso["tools"] == []
+    combined = "\n".join(block["text"] for block in out["input"][0]["content"])
+    assert "<agent-tools>" in combined
+    assert "mcp__context7__grep" in combined
+    assert [t.get("name") for t in out["tools"]] == ["Read"]
+
+
 def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Path) -> None:
     skills_dir = tmp_path / "skills"
     catalog_dir = tmp_path / "catalog"

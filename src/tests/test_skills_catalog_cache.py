@@ -120,9 +120,15 @@ def test_build_registry_process_cache_reuses_entries(monkeypatch: pytest.MonkeyP
             *,
             agent: AgentName | None = None,
             upstream_kind: str | None = None,
+            client_skills: list[dict[str, str]] | None = None,
         ) -> list[SkillEntryRef]:
             calls.append(1)
-            return original_build(cfg, agent=agent, upstream_kind=upstream_kind)
+            return original_build(
+                cfg,
+                agent=agent,
+                upstream_kind=upstream_kind,
+                client_skills=client_skills,
+            )
 
         monkeypatch.setattr(catalog_mod, "_build_registry_uncached", counting_build)
         first = build_registry(config)

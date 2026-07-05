@@ -1,10 +1,12 @@
-"""Read hook transcript files for cyt-client (stdlib only)."""
+"""Enrich hook payloads for cyt-client (stdlib only)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
+
+from cyt_client.skills import attach_client_skills
 
 
 def _transcript_path_from_data(data: dict[str, Any]) -> str | None:
@@ -46,7 +48,7 @@ def _load_transcript(path: Path) -> list[Any]:
 
 
 def enrich_hook_payload(payload_bytes: bytes) -> bytes:
-    """Attach ``cyt_transcript`` when ``transcript_path`` points at a readable file."""
+    """Attach ``cyt_transcript`` and ``cyt_skills`` for the hook HTTP server."""
     if not payload_bytes.strip():
         return payload_bytes
     try:
@@ -56,13 +58,17 @@ def enrich_hook_payload(payload_bytes: bytes) -> bytes:
     if not isinstance(data, dict):
         return payload_bytes
 
+    changed = False
     transcript_path = _transcript_path_from_data(data)
-    if transcript_path is None:
-        return payload_bytes
+    if transcript_path is not None:
+        path = Path(transcript_path)
+        if path.is_file():
+            data["cyt_transcript"] = _load_transcript(path)
+            changed = True
 
-    path = Path(transcript_path)
-    if not path.is_file():
-        return payload_bytes
+    attach_client_skills(data)
+    changed = True
 
-    data["cyt_transcript"] = _load_transcript(path)
+    if not changed:
+        return payload_bytes
     return json.dumps(data, separators=(",", ":")).encode()

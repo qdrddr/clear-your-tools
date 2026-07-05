@@ -25,6 +25,16 @@ def split_tools_for_root_and_inject(
     return mcp_tools, system_tools
 
 
+def anthropic_tools_for_user_message_inject(
+    original_tools: list[dict[str, Any]],
+    pruned_tools: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (pruned_mcp_for_inject, original_system_for_root)."""
+    mcp_tools, _ = split_tools_for_root_and_inject(pruned_tools)
+    _, system_tools = split_tools_for_root_and_inject(original_tools)
+    return mcp_tools, system_tools
+
+
 def _message_content_text(content: object) -> str:
     if isinstance(content, str):
         return content

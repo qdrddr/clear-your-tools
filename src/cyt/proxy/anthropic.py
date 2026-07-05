@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import re
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -69,45 +67,6 @@ _ERROR_QUERY_PATTERNS = (
     re.compile(r"malformed and could not be parsed", re.IGNORECASE),
     re.compile(r"please retry\.?$", re.IGNORECASE),
 )
-
-
-logger = logging.getLogger(__name__)
-
-_DEBUG_LOG_PATH = (
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools"
-    "/.cursor/debug-a85f04.log"
-)
-
-
-def _agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # #region agent log
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as fh:
-            fh.write(
-                json.dumps(
-                    {
-                        "sessionId": "a85f04",
-                        "runId": run_id,
-                        "hypothesisId": hypothesis_id,
-                        "location": location,
-                        "message": message,
-                        "data": data,
-                        "timestamp": int(time.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n",
-            )
-    except OSError:
-        pass
-    # #endregion
 
 
 def _is_junk_text(text: str) -> bool:
@@ -405,33 +364,12 @@ def _run_catalog_pruning(
         catalog_tool_count(data),
         configured_pipeline=configured_pipeline,
     )
-    # #region agent log
-    _agent_debug_log(
-        hypothesis_id="H2",
-        location="anthropic.py:_run_catalog_pruning",
-        message="resolved pruning pipeline",
-        data={
-            "configured_pipeline": configured_pipeline,
-            "effective_pipeline": pipeline,
-            "catalog_tool_count": catalog_tool_count(data),
-            "skill_entries_present": skill_entries is not None,
-        },
-    )
-    # #endregion
     terminal_stage = pipeline[-1] if pipeline else None
     reinstate_ctx = output_ctx or output_policy_context_from_config(
         resolved_config,
         terminal_stage=terminal_stage,
     )
     if pipeline == ["bm25"] and skill_entries is None:
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="H2",
-            location="anthropic.py:_run_catalog_pruning",
-            message="bm25-only fast path",
-            data={"catalog_tool_count": catalog_tool_count(data)},
-        )
-        # #endregion
         from cyt_indexer.pipeline import prune_catalog_bm25_and_retrieve
 
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
@@ -677,19 +615,6 @@ def _run_llm_stage(
             and catalog_count >= llm_min
             and not skill_matches_resolved
         )
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="H3",
-            location="anthropic.py:_run_llm_stage",
-            message="llm stage branch",
-            data={
-                "use_combined": use_combined,
-                "catalog_count": catalog_count,
-                "llm_min": llm_min,
-                "skill_matches_resolved": skill_matches_resolved,
-            },
-        )
-        # #endregion
         if use_combined:
             data, skill_matches, llm_usage = llm_prune_tools_and_skills(
                 data,
@@ -820,28 +745,8 @@ def _run_pipeline_stage(
                     trim_before_llm=stage_index > 0
                     and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
                 )
-                # #region agent log
-                _agent_debug_log(
-                    hypothesis_id="H3",
-                    location="anthropic.py:_run_pipeline_stage",
-                    message="llm stage succeeded",
-                    data={"attempt": attempt, "stage_index": stage_index},
-                )
-                # #endregion
                 return updated, None, None
             except Exception as exc:
-                # #region agent log
-                _agent_debug_log(
-                    hypothesis_id="H3",
-                    location="anthropic.py:_run_pipeline_stage",
-                    message="llm stage failed",
-                    data={
-                        "attempt": attempt,
-                        "error": str(exc),
-                        "will_fallback_to_bm25": attempt >= LLM_STAGE_MAX_ATTEMPTS,
-                    },
-                )
-                # #endregion
                 if attempt < LLM_STAGE_MAX_ATTEMPTS:
                     logger.warning(
                         "llm pruning failed (attempt %d/%d), retrying: %s",
@@ -1338,6 +1243,7 @@ def _anthropic_finish_transform(
     from cyt.config import inject_into_user_message
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
+        anthropic_tools_for_user_message_inject,
         append_injection_to_body,
         split_tools_for_root_and_inject,
     )
@@ -1346,26 +1252,6 @@ def _anthropic_finish_transform(
 
     user_message_inject = inject_into_user_message(config)
     deferred_tools_text = ""
-
-    # #region agent log
-    source_tools = original.get("tools") or []
-    source_names = [
-        str(t.get("name", "")) for t in source_tools if isinstance(t, dict) and t.get("name")
-    ]
-    _agent_debug_log(
-        hypothesis_id="H4-H5",
-        location="anthropic.py:_anthropic_finish_transform:entry",
-        message="finish transform entry",
-        data={
-            "result_status": result.status,
-            "user_message_inject": user_message_inject,
-            "source_tool_count": len(source_tools) if isinstance(source_tools, list) else 0,
-            "source_system_count": sum(1 for n in source_names if n and not n.startswith("mcp__")),
-            "source_mcp_count": sum(1 for n in source_names if n.startswith("mcp__")),
-            "result_tool_count": len(result.tools) if isinstance(result.tools, list) else None,
-        },
-    )
-    # #endregion
 
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -1389,33 +1275,17 @@ def _anthropic_finish_transform(
                 mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
                 original["tools"] = system_tools
                 deferred_tools_text = format_agent_tools(mcp_tools)
-                # #region agent log
-                _agent_debug_log(
-                    hypothesis_id="H4",
-                    location="anthropic.py:_anthropic_finish_transform:pass_through",
-                    message="pass_through inject split",
-                    data={
-                        "system_tools_out": len(system_tools),
-                        "mcp_tools_inject": len(mcp_tools),
-                    },
-                )
-                # #endregion
     elif user_message_inject:
-        mcp_tools, system_tools = split_tools_for_root_and_inject(result.tools)
-        original["tools"] = system_tools
-        deferred_tools_text = format_agent_tools(mcp_tools)
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="H5",
-            location="anthropic.py:_anthropic_finish_transform:applied",
-            message="applied inject split",
-            data={
-                "system_tools_out": len(system_tools),
-                "mcp_tools_inject": len(mcp_tools),
-                "mcp_tool_names_sample": [t.get("name") for t in mcp_tools[:5]],
-            },
-        )
-        # #endregion
+        source_tools = original.get("tools") or []
+        pruned_tools = result.tools if isinstance(result.tools, list) else []
+        mcp_tools = []
+        if isinstance(source_tools, list) and source_tools and pruned_tools:
+            mcp_tools, system_tools = anthropic_tools_for_user_message_inject(
+                source_tools,
+                pruned_tools,
+            )
+            original["tools"] = system_tools
+            deferred_tools_text = format_agent_tools(mcp_tools)
     elif result.tools is not None:
         original["tools"] = result.tools
 
@@ -1487,23 +1357,16 @@ def transform_anthropic_request(
         return original, None, skills_meta
 
     if request_pass_through(tools, policy_context_from_config()):
-        # #region agent log
-        _agent_debug_log(
-            hypothesis_id="H1",
-            location="anthropic.py:transform_anthropic_request",
-            message="early request_pass_through return",
-            data={"tool_count": len(tools), "inject_skipped": True},
-        )
-        # #endregion
-        original, skills_meta = finish_deferred_skills_anthropic(
+        return _anthropic_finish_transform(
             original,
+            _anthropic_pass_through_prune_result(tools),
             skills_meta,
             deferred,
             config,
-            query=query,
+            skill_out,
+            query,
             pruner_settings=pruner_settings,
         )
-        return original, _anthropic_pass_through_prune_result(tools), skills_meta
 
     if not user_query:
         logger.warning("no user query extracted; forwarding original tools")

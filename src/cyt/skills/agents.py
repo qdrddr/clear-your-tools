@@ -59,6 +59,8 @@ def _normalize_agent_dir_name(name: str) -> AgentName | None:
         return "claude"
     if normalized == "codex":
         return "codex"
+    if normalized == "cursor":
+        return "cursor"
     return None
 
 

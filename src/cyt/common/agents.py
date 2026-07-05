@@ -4,6 +4,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-AgentName = Literal["claude", "codex"]
+AgentName = Literal["claude", "codex", "cursor"]
 
 __all__ = ["AgentName"]

@@ -40,6 +40,25 @@ async def hook_inject(request: Request) -> Response:
         logger.exception("hook inject failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
 
+    # #region agent log
+    from cyt.config import inject_into_user_message, inject_via
+    from cyt.proxy.agent_debug_log import agent_debug_log
+
+    agent_debug_log(
+        location="hook/http_server.py:hook_inject",
+        message="hook HTTP inject completed",
+        hypothesis_id="B",
+        data={
+            "outcome": result.outcome,
+            "stdout_len": len(result.stdout_text or ""),
+            "inject_via": inject_via(config),
+            "inject_into_user_message": inject_into_user_message(config),
+            "has_cyt_config_state": getattr(request.app.state, "cyt_config", None) is not None,
+            "hook_event": payload.get("hook_event_name"),
+        },
+    )
+    # #endregion
+
     if not result.stdout_text:
         return PlainTextResponse("", status_code=200)
     return PlainTextResponse(result.stdout_text, status_code=200)

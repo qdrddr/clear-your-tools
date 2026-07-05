@@ -51,14 +51,34 @@ def clear_registry_cache() -> None:
     _REGISTRY_CACHE.clear()
 
 
+def _client_skills_cache_fingerprint(skills: list[dict[str, str]]) -> tuple[tuple[str, str], ...]:
+    rows: list[tuple[str, str]] = []
+    for skill in skills:
+        path = skill["path"]
+        content_hash = hashlib.sha256(skill["content"].encode("utf-8")).hexdigest()
+        rows.append((path, content_hash))
+    return tuple(sorted(rows))
+
+
 def _registry_cache_key(
     cfg: dict[str, Any],
     *,
     agent: AgentName | None,
     upstream_kind: str | None,
+    client_skills: list[dict[str, str]] | None = None,
 ) -> tuple[Any, ...]:
-    expanded_dirs = skills_directories(cfg)
     active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    if client_skills is not None:
+        return (
+            str(cache_skills_dir(cfg)),
+            skills_pipeline(cfg),
+            skills_index_params_fingerprint(cfg),
+            active_agent,
+            "client",
+            _client_skills_cache_fingerprint(client_skills),
+        )
+
+    expanded_dirs = skills_directories(cfg)
     sources: list[tuple[str, int, int]] = []
     for source_path in _walk_skill_md_files(expanded_dirs):
         if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
@@ -70,6 +90,7 @@ def _registry_cache_key(
         skills_pipeline(cfg),
         skills_index_params_fingerprint(cfg),
         active_agent,
+        "config",
         tuple(sorted(sources)),
     )
 
@@ -471,10 +492,16 @@ def build_registry(
     *,
     agent: AgentName | None = None,
     upstream_kind: str | None = None,
+    client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
-    """Scan configured skill directories and return in-memory entry metadata."""
+    """Scan skill sources and return in-memory entry metadata."""
     cfg = config or load_config()
-    cache_key = _registry_cache_key(cfg, agent=agent, upstream_kind=upstream_kind)
+    cache_key = _registry_cache_key(
+        cfg,
+        agent=agent,
+        upstream_kind=upstream_kind,
+        client_skills=client_skills,
+    )
     cached = _REGISTRY_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -483,8 +510,89 @@ def build_registry(
         cfg,
         agent=agent,
         upstream_kind=upstream_kind,
+        client_skills=client_skills,
     )
     _REGISTRY_CACHE[cache_key] = entries
+    return entries
+
+
+def _stage_client_skill_content(
+    staging_root: Path,
+    *,
+    content_hash: str,
+    original_path: Path,
+    content: str,
+) -> Path:
+    entry_dir = staging_root / content_hash[:32]
+    entry_dir.mkdir(parents=True, exist_ok=True)
+    staged_path = entry_dir / original_path.name
+    if not staged_path.exists() or staged_path.read_text(encoding="utf-8") != content:
+        staged_path.write_text(content, encoding="utf-8")
+    return staged_path
+
+
+def _build_registry_from_client_skills(
+    cfg: dict[str, Any],
+    client_skills: list[dict[str, str]],
+    *,
+    agent: AgentName | None = None,
+    upstream_kind: str | None = None,
+) -> list[SkillEntryRef]:
+    """Build a skills registry from cyt-client payload content instead of config dirs."""
+    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    catalog_root = _registry_catalog_root(cfg)
+    staging_root = catalog_root / "client_staging"
+    pipeline = skills_pipeline(cfg)
+    index_params = _index_params(cfg)
+    pageindex_config = skills_pageindex_config(cfg)
+    index_params_hash = skills_index_params_fingerprint(cfg)
+
+    seen_content: set[str] = set()
+    staged_paths: list[str] = []
+    original_by_hash: dict[str, Path] = {}
+
+    for skill in client_skills:
+        original_path = Path(skill["path"]).expanduser()
+        if is_excluded_agent_system_skill(original_path, active_agent=active_agent):
+            continue
+        content = skill["content"]
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if content_hash in seen_content:
+            continue
+        seen_content.add(content_hash)
+        staged_path = _stage_client_skill_content(
+            staging_root,
+            content_hash=content_hash,
+            original_path=original_path,
+            content=content,
+        )
+        staged_paths.append(str(staged_path))
+        original_by_hash[content_hash] = original_path
+
+    rust_refs = ensure_skills_registry(
+        staged_paths,
+        str(catalog_root),
+        pageindex_config,
+        pipeline,
+        index_params_hash,
+        policy=cache_policy_for_config(cfg),
+    )
+
+    entries: list[SkillEntryRef] = []
+    for ref in rust_refs:
+        content_hash = str(ref["content_sha256"])
+        if content_hash not in original_by_hash:
+            continue
+        entries.append(
+            _entry_from_rust_ref(
+                ref,
+                original_by_hash[content_hash],
+                pipeline=pipeline,
+                index_params=index_params,
+                index_params_hash=index_params_hash,
+                pageindex_config=pageindex_config,
+            ),
+        )
     return entries
 
 
@@ -493,8 +601,17 @@ def _build_registry_uncached(
     *,
     agent: AgentName | None = None,
     upstream_kind: str | None = None,
+    client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
     """Build skills registry without the process-level cache."""
+    if client_skills is not None:
+        return _build_registry_from_client_skills(
+            cfg,
+            client_skills,
+            agent=agent,
+            upstream_kind=upstream_kind,
+        )
+
     expanded_dirs = skills_directories(cfg)
     active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
 

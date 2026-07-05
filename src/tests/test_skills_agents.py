@@ -26,10 +26,12 @@ def _write_skill(path: Path, body: str = "# Skill\n\nBody.\n") -> None:
 def test_agent_system_skill_owner_detects_claude_and_codex_paths() -> None:
     claude_path = Path("/tmp/home/.claude/skills/.system/create-rule/SKILL.md")
     codex_path = Path("/project/.codex/skills/.system/autofix/SKILL.md")
+    cursor_path = Path("/project/.cursor/skills/.system/demo/SKILL.md")
     user_path = Path("/tmp/home/.codex/skills/autofix/SKILL.md")
 
     assert agent_system_skill_owner(claude_path) == "claude"
     assert agent_system_skill_owner(codex_path) == "codex"
+    assert agent_system_skill_owner(cursor_path) == "cursor"
     assert agent_system_skill_owner(user_path) is None
 
 

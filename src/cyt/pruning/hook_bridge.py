@@ -7,7 +7,7 @@ from typing import Any
 
 from cyt.proxy.anthropic import PruneResult
 from cyt.pruning.coordinator import ToolSource, coordinate_skills_tools_prune
-from cyt.skills.catalog import build_registry
+from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.hook_quiet import hook_safe_stdout
 from cyt.skills.search import MatchedSkill, eligible_skills_after_gate
 from cyt.tools.registry import load_tool_catalog
@@ -17,6 +17,7 @@ def run_hook_coordinated_prune(
     query: str,
     config: dict[str, Any],
     *,
+    payload: dict[str, Any] | None = None,
     skills_allowed: bool,
     tools_allowed: bool,
     skills_max_tokens: int | None = None,
@@ -42,7 +43,7 @@ def run_hook_coordinated_prune(
     if skills_allowed:
         skill_entries = eligible_skills_after_gate(
             query,
-            build_registry(config),
+            build_registry_for_hook_payload(config, payload),
             config=config,
         )
 

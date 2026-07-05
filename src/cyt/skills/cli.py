@@ -28,7 +28,7 @@ from cyt.skills.budget import (
     skills_budget_precheck,
     skills_inject_allowed,
 )
-from cyt.skills.catalog import build_registry
+from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.debug_log import write_skills_hook_debug_log
 from cyt.skills.diagnostics import SkillsSearchTrace
 from cyt.skills.hook_payload import (
@@ -234,12 +234,17 @@ def _search_skills_for_user_prompt(
     plain_output: bool,
     debug: bool,
     io_guarded: bool = False,
+    payload: dict[str, Any] | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun | None, SkillsSearchTrace | None]:
     configure_hook_quiet()
     stdout_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_safe_stdout()
     stderr_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
-        entries = build_registry(config, agent=resolve_skills_agent())
+        entries = build_registry_for_hook_payload(
+            config,
+            payload,
+            agent=resolve_skills_agent(),
+        )
         if plain_output:
             matches, search_trace = search_skills_with_trace(
                 query,
@@ -319,6 +324,7 @@ def _handle_user_prompt_skills(
         plain_output=plain_output,
         debug=debug,
         io_guarded=io_guarded,
+        payload=payload,
     )
     if not matches:
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
@@ -496,6 +502,7 @@ def _run_coordinated_user_prompt_injection(
         prune_result, skill_matches, catalog = run_hook_coordinated_prune(
             query,
             config,
+            payload=payload,
             skills_allowed=skills_allowed,
             tools_allowed=tools_allowed,
             skills_max_tokens=budget.effective_max if skills_allowed else None,
@@ -635,11 +642,37 @@ def _handle_user_prompt(
     if combined:
         if emit_stdout:
             _emit_injection(combined, payload, plain=plain_output)
-        return "user_prompt_injected", details, combined
+        outcome = "user_prompt_injected"
+    elif outcomes:
+        outcome = outcomes[-1]
+    else:
+        outcome = "skipped_inject_via_proxy"
 
+    # #region agent log
+    from cyt.config import inject_into_user_message, inject_via
+    from cyt.proxy.agent_debug_log import agent_debug_log
+
+    agent_debug_log(
+        location="skills/cli.py:_handle_user_prompt",
+        message="hook user prompt dispatch",
+        hypothesis_id="B",
+        data={
+            "outcome": outcome,
+            "skills_allowed": skills_allowed,
+            "tools_allowed": tools_allowed,
+            "inject_via": inject_via(config),
+            "inject_into_user_message": inject_into_user_message(config),
+            "combined_len": len(combined),
+            "outcomes": outcomes,
+        },
+    )
+    # #endregion
+
+    if combined:
+        return outcome, details, combined
     if outcomes:
-        return outcomes[-1], details, ""
-    return "skipped_inject_via_proxy", details, ""
+        return outcome, details, ""
+    return outcome, details, ""
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:

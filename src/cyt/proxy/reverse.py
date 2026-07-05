@@ -897,6 +897,23 @@ async def _process_buffered_proxy_body(
 ]:
     debug_request_seq: int | None = None
     if debug:
+        # #region agent log
+        from cyt.config import inject_into_user_message, inject_via, resolve_config_path
+        from cyt.proxy.agent_debug_log import agent_debug_log
+
+        agent_debug_log(
+            location="reverse.py:_process_buffered_proxy_body",
+            message="proxy request config snapshot",
+            hypothesis_id="A",
+            data={
+                "endpoint": endpoint_name,
+                "inject_via": inject_via(config),
+                "inject_into_user_message": inject_into_user_message(config),
+                "config_path": str(resolve_config_path()),
+                "has_config_arg": config is not None,
+            },
+        )
+        # #endregion
         debug_request_seq = _next_debug_request_seq()
         await _save_debug_original_request(
             request=request,
