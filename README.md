@@ -226,6 +226,34 @@ Rust library and CLI (`build` / `retrieve`)
 [![crates.io downloads][rust-downloads-shield]][rust-link]
     </td>
   </tr>
+  <tr>
+    <td valign="top">
+
+**`libcyt_indexer`** ([sdk/c][c-link])
+    </td>
+    <td valign="top">
+
+C library via CMake / `build-c-lib.sh`
+    </td>
+    <td valign="top">
+
+[![GitHub sdk/c][c-version-shield]][c-link]
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+
+**`sdk/go`** ([pkg.go.dev][go-link])
+    </td>
+    <td valign="top">
+
+Go SDK via cgo (`import cytindexer`)
+    </td>
+    <td valign="top">
+
+[![pkg.go.dev sdk/go][go-version-shield]][go-link]
+    </td>
+  </tr>
 </table>
 <!-- markdownlint-disable MD013 -->
 </details>
@@ -560,6 +588,10 @@ See [`LICENSE`](LICENSE).
 [rust-version-shield]: https://img.shields.io/crates/v/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-link]: https://crates.io/crates/cyt-indexer
+[c-version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=sdk%2Fc&color=555&logoColor=white
+[c-link]: https://github.com/qdrddr/clear-your-tools/tree/main/sdk/c
+[go-version-shield]: https://pkg.go.dev/badge/github.com/qdrddr/clear-your-tools/sdk/go
+[go-link]: https://pkg.go.dev/github.com/qdrddr/clear-your-tools/sdk/go
 [shell-shield]: https://img.shields.io/badge/-Shell-4EAA25?logo=gnu-bash&logoColor=white
 [python-tech-shield]: https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white
 [typescript-shield]: https://img.shields.io/badge/-TypeScript-3178C6?logo=typescript&logoColor=white
