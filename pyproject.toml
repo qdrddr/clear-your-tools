@@ -71,6 +71,8 @@ exclude = [
   "/src/nogo",
   "/src/old",
   "/anthropic.log.1",
+  "/examples/go-git-smoke/.staging",
+  "/examples/go-git-smoke/cyt-go-git-smoke",
 ]
 
 [tool.hatch.build.targets.wheel.force-include]

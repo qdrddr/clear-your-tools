@@ -9,10 +9,12 @@ from typing import Any
 import yaml
 
 from cyt.common.token_usage import StageTokenUsage
+from cyt.proxy.model_names import is_syncable_model_name
 from cyt.proxy.stats import ProxyRequestRecord, StatsDB
 from cyt.proxy.stats_config_sync import (
     ModelIdentity,
     _base_nick,
+    _is_configurable_model_identity,
     build_model_entry,
     build_models_overlay,
     collect_used_nicks,
@@ -22,6 +24,7 @@ from cyt.proxy.stats_config_sync import (
     make_unique_nick,
     sync_models_from_stats_db,
 )
+from cyt.tools.stats import record_tools_hook_injection
 
 
 def _write_config(path: Path, data: dict) -> None:
@@ -338,6 +341,139 @@ def test_sync_appends_only_missing_models() -> None:
         assert len(nicks) == len(set(nicks))
 
         assert sync_models_from_stats_db(db_path, config_path) == []
+
+
+def test_is_configurable_model_identity_skips_hook_sentinel() -> None:
+    assert not _is_configurable_model_identity(
+        ModelIdentity("upstream", "hook", None, None),
+    )
+    assert not _is_configurable_model_identity(
+        ModelIdentity("upstream", "hook", None, ""),
+    )
+    assert not _is_configurable_model_identity(
+        ModelIdentity("upstream", "hook", "hook.local", "hook"),
+    )
+    assert not is_syncable_model_name("hook")
+    assert _is_configurable_model_identity(
+        ModelIdentity("upstream", "claude-sonnet-4-6", None, None),
+    )
+
+
+def test_config_has_model_identity_matches_name_when_provider_unknown() -> None:
+    config: dict[str, Any] = {
+        "models": {
+            "llm": {
+                "remote": [
+                    {
+                        "name": "claude-sonnet-4.5",
+                        "nick": "claude-sonnet-4-5",
+                        "provider_nick": "anthropic",
+                    },
+                ],
+            },
+        },
+    }
+    remote = config["models"]["llm"]["remote"]
+    assert config_has_model_identity_record(
+        remote,
+        ModelIdentity("upstream", "claude-sonnet-4.5", None, None),
+        config=config,
+    )
+
+
+def test_sync_skips_hook_sentinel_without_provider() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        db_path = str(tmp_path / "stats.db")
+        config_path = tmp_path / "config.yaml"
+
+        _write_config(config_path, {"models": {"llm": {"remote": []}}})
+
+        record_tools_hook_injection(
+            query="configure agent hooks",
+            model_name="hook",
+            tools_in=100,
+            tools_out=40,
+            prompt_tokens=10,
+            config={"stats": {"database": {"path": db_path}}},
+        )
+
+        assert sync_models_from_stats_db(db_path, config_path) == []
+        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert loaded["models"]["llm"]["remote"] == []
+
+
+def test_sync_skips_hook_sentinel_with_provider() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        db_path = str(tmp_path / "stats.db")
+        config_path = tmp_path / "config.yaml"
+
+        _write_config(config_path, {"models": {"llm": {"remote": []}}})
+
+        db = StatsDB.init(db_path)
+        try:
+            db.record_tools_hook_injection(
+                query="configure agent hooks",
+                model_name="hook",
+                tools_in=100,
+                tools_out=40,
+                prompt_tokens=10,
+                pruning_stages={},
+                config={},
+            )
+            db._conn.execute(
+                """
+                UPDATE model_request
+                SET provider = 'hook', provider_dns_name = 'hook.local'
+                WHERE model_name = 'hook'
+                """,
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        assert sync_models_from_stats_db(db_path, config_path) == []
+        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert loaded["models"]["llm"]["remote"] == []
+
+
+def test_sync_skips_claude_sonnet_when_configured_without_provider_metadata() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        db_path = str(tmp_path / "stats.db")
+        config_path = tmp_path / "config.yaml"
+
+        _write_config(
+            config_path,
+            {
+                "models": {
+                    "llm": {
+                        "remote": [
+                            {
+                                "name": "claude-sonnet-4.5",
+                                "nick": "claude-sonnet-4-5",
+                                "provider_nick": "anthropic",
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+
+        record_tools_hook_injection(
+            query="read files",
+            model_name="claude-sonnet-4.5",
+            tools_in=100,
+            tools_out=40,
+            prompt_tokens=10,
+            config={"stats": {"database": {"path": db_path}}},
+        )
+
+        assert sync_models_from_stats_db(db_path, config_path) == []
+        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert len(loaded["models"]["llm"]["remote"]) == 1
+        assert loaded["models"]["llm"]["remote"][0]["nick"] == "claude-sonnet-4-5"
 
 
 def test_identities_missing_from_config_dedupes_stage() -> None:

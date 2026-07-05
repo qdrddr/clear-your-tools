@@ -18,6 +18,7 @@ from cyt.config import (
     provider_registry,
     save_user_config,
 )
+from cyt.proxy.model_names import is_syncable_model_name
 from cyt.proxy.setup_wizard import (
     _extract_hostname,
     build_models_config_section,
@@ -69,6 +70,11 @@ def _empty_to_none(value: str | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _is_configurable_model_identity(identity: ModelIdentity) -> bool:
+    """Return False for sentinel stats identities that are not real LLM models."""
+    return is_syncable_model_name(identity.model_name)
 
 
 def _model_names_match(left: str | None, right: str | None) -> bool:
@@ -126,6 +132,10 @@ def _entry_matches_model_identity(
 
     provider_dns_name = _empty_to_none(provider_dns_name)
     provider = _empty_to_none(provider)
+    if not provider_dns_name and not provider:
+        # Hook/tool stats often omit provider metadata; match any same-named entry.
+        return True
+
     identity_provider_nick = _resolve_identity_provider_nick(
         config,
         provider=provider,
@@ -274,6 +284,8 @@ def identities_missing_from_config(
     missing: list[tuple[str, ModelIdentity]] = []
     seen: set[tuple[str, str, str | None]] = set()
     for identity in identities:
+        if not _is_configurable_model_identity(identity):
+            continue
         kind = _STAGE_TO_MODEL_KIND.get(identity.stage)
         if kind is None:
             continue

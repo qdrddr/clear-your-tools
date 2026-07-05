@@ -16,6 +16,13 @@ from cyt.proxy.anthropic import (
     transform_anthropic_request,
 )
 
+_TOOL_PRUNE_CONFIG = {
+    "pruning": {
+        "inject_via": "proxy",
+        "inject_into_user_message": False,
+    },
+}
+
 
 def test_clean_messages_drops_system_reminder_and_redacted_thinking() -> None:
     messages = [
@@ -204,7 +211,7 @@ def test_transform_anthropic_request_only_changes_tools() -> None:
     )
 
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
-        out, meta, _ = transform_anthropic_request(body)
+        out, meta, _ = transform_anthropic_request(body, config=_TOOL_PRUNE_CONFIG)
 
     assert out["tools"] == pruned_tools
     assert out["messages"] == body["messages"]
@@ -259,7 +266,7 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
         error="api error",
     )
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=failed):
-        out, meta, _ = transform_anthropic_request(body)
+        out, meta, _ = transform_anthropic_request(body, config=_TOOL_PRUNE_CONFIG)
     assert out == body
     assert meta is not None
     assert meta.status == "failed"

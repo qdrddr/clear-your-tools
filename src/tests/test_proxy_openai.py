@@ -18,6 +18,13 @@ from cyt.proxy.openai_responses import (
     transform_openai_request,
 )
 
+_TOOL_PRUNE_CONFIG = {
+    "pruning": {
+        "inject_via": "proxy",
+        "inject_into_user_message": False,
+    },
+}
+
 
 def _user_message(*texts: str) -> dict:
     return {
@@ -92,7 +99,7 @@ def test_transform_openai_request_search_query_includes_assistant_reply() -> Non
         "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
-        transform_openai_request(body)
+        transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
 
     assert mock_filter.call_args.args[1] == format_search_query("say hi!", "hi!")
 
@@ -232,7 +239,7 @@ def test_transform_openai_request_preserves_tool_search_when_pruning() -> None:
         "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
-        out, meta, _ = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
 
     mock_filter.assert_called_once()
     assert mock_filter.call_args.args[0] == [body["tools"][0]]
@@ -283,7 +290,7 @@ def test_transform_openai_request_only_changes_tools() -> None:
     )
 
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
-        out, meta, _ = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
 
     assert out["tools"][0]["strict"] is False
     assert out["tools"][0]["parameters"] == pruned_tools[0]["parameters"]
@@ -317,7 +324,7 @@ def test_transform_openai_request_passthrough_when_no_prune() -> None:
         error="api error",
     )
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=failed):
-        out, meta, _ = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
     assert out == body
     assert meta is not None
     assert meta.status == "failed"
@@ -424,7 +431,7 @@ def test_transform_openai_request_prunes_tool_search_output_in_input() -> None:
         "cyt.pruning.coordinator.filter_tools_for_query",
         return_value=prune_result,
     ) as mock_filter:
-        out, meta, _ = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
 
     mock_filter.assert_called_once()
     flat_tools = mock_filter.call_args.args[0]
@@ -499,7 +506,7 @@ def test_transform_openai_request_prunes_root_and_tool_search_output_separately(
         "cyt.pruning.coordinator.filter_tools_for_query",
         side_effect=[root_prune, input_prune],
     ) as mock_filter:
-        out, meta, _ = transform_openai_request(body)
+        out, meta, _ = transform_openai_request(body, config=_TOOL_PRUNE_CONFIG)
 
     assert mock_filter.call_count == 2
     assert out["tools"][0]["description"] == "A pruned"

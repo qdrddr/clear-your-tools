@@ -30,6 +30,7 @@ from cyt.config import (
     provider_registry,
     save_user_config,
 )
+from cyt.proxy.model_names import is_syncable_model_name
 
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 SKILLS_PIPELINE_CHOICES: tuple[str, ...] = ("bm25", "rerank", "llm")
@@ -156,7 +157,11 @@ def iter_models_missing_costs(
         if not isinstance(remote, list):
             continue
         for entry in remote:
-            if isinstance(entry, dict) and model_missing_cost_fields(entry):
+            if not isinstance(entry, dict):
+                continue
+            if not is_syncable_model_name(str(entry.get("name", ""))):
+                continue
+            if model_missing_cost_fields(entry):
                 result.append((kind, entry))
     return result
 
@@ -182,7 +187,11 @@ def iter_incomplete_remote_models(
         if not isinstance(remote, list):
             continue
         for entry in remote:
-            if isinstance(entry, dict) and model_missing_metadata_fields(entry, config=config):
+            if not isinstance(entry, dict):
+                continue
+            if not is_syncable_model_name(str(entry.get("name", ""))):
+                continue
+            if model_missing_metadata_fields(entry, config=config):
                 result.append((kind, entry))
     return result
 
