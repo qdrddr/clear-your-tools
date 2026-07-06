@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from cyt.launch.config import codex_env_key_name
 CODEX_CONFIG_PATH = Path.home() / ".codex" / "config.toml"
 CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
 PROVIDER_NAME = "cyt"
+CYT_FALLBACK_PROVIDER = "openai"
 MANAGED_START = "# cyt-launch-managed-start"
 MANAGED_END = "# cyt-launch-managed-end"
 
@@ -120,6 +122,91 @@ def read_codex_config() -> str:
     return ""
 
 
+def read_config_model_provider() -> str | None:
+    """Return root ``model_provider`` from ``~/.codex/config.toml``, if set."""
+    text = read_codex_config()
+    if not text.strip():
+        return None
+    try:
+        payload = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        for line in text.splitlines():
+            match = _MODEL_PROVIDER_LINE.match(line.strip())
+            if match is not None:
+                parsed = match.group(0).split("=", maxsplit=1)[-1].strip().strip('"').strip("'")
+                return parsed or None
+        return None
+    raw = payload.get("model_provider")
+    if raw is None:
+        return None
+    text_value = str(raw).strip()
+    return text_value or None
+
+
+def hook_mode_codex_launch_args() -> list[str]:
+    """CLI overrides for hook-mode launch when config still selects the cyt provider."""
+    if read_config_model_provider() != PROVIDER_NAME:
+        return []
+    return ["-c", f'model_provider="{CYT_FALLBACK_PROVIDER}"']
+
+
+def resolve_switch_provider_name(*, config: dict[str, Any], endpoint: str) -> str:
+    """Return the Codex ``model_provider`` name for direct upstream routing."""
+    from cyt.launch.upstream_credentials import upstream_for_endpoint
+
+    upstream = upstream_for_endpoint(config, endpoint)
+    if upstream is not None:
+        raw = upstream.get("provider_nick")
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+        kind = upstream.get("kind")
+        if isinstance(kind, str) and kind.strip():
+            return kind.strip()
+    return endpoint
+
+
+def build_switch_provider_codex_args(
+    *,
+    config: dict[str, Any],
+    endpoint: str,
+    env_key: str,
+) -> list[str]:
+    """Build ``-c`` overrides that route Codex directly to the configured upstream."""
+    from cyt.launch.upstream import direct_upstream_base_url
+
+    provider = resolve_switch_provider_name(config=config, endpoint=endpoint)
+    base_url = f"{direct_upstream_base_url(config, endpoint).rstrip('/')}/v1"
+    return [
+        "-c",
+        f'model_provider="{provider}"',
+        "-c",
+        f'model_providers.{provider}.base_url="{base_url}"',
+        "-c",
+        f'model_providers.{provider}.wire_api="responses"',
+        "-c",
+        f'model_providers.{provider}.env_key="{env_key}"',
+    ]
+
+
+def codex_launch_args(
+    *,
+    config: dict[str, Any],
+    endpoint: str,
+    env_key: str,
+    use_proxy: bool,
+    switch_provider: bool,
+) -> list[str]:
+    if use_proxy:
+        return []
+    if switch_provider:
+        return build_switch_provider_codex_args(
+            config=config,
+            endpoint=endpoint,
+            env_key=env_key,
+        )
+    return hook_mode_codex_launch_args()
+
+
 def write_codex_config(text: str) -> None:
     CODEX_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CODEX_CONFIG_PATH.write_text(text, encoding="utf-8")
@@ -169,8 +256,10 @@ def restore_provider(*, env_key: str) -> None:
     del env_key
 
 
-def validate_agent_args(agent_args: list[str]) -> None:
+def validate_agent_args(agent_args: list[str], *, use_proxy: bool = True) -> None:
     """Reject passthrough args that override managed provider settings."""
+    if not use_proxy:
+        return
     index = 0
     while index < len(agent_args):
         arg = agent_args[index]
@@ -242,16 +331,25 @@ def run(
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
     use_proxy: bool = True,
+    switch_provider: bool = False,
 ) -> int:
     """Exec Codex with optional config.toml provider wiring."""
-    validate_agent_args(agent_args)
+    validate_agent_args(agent_args, use_proxy=use_proxy)
     env_key = codex_env_key_name(config)
     if use_proxy:
         ensure_provider_configured(port=port, endpoint=endpoint, env_key=env_key)
+    launch_args = codex_launch_args(
+        config=config,
+        endpoint=endpoint,
+        env_key=env_key,
+        use_proxy=use_proxy,
+        switch_provider=switch_provider,
+    )
     codex = find_codex()
-    env = build_codex_env(auth_binding=auth_binding)
+    inject_auth = use_proxy or switch_provider
+    env = build_codex_env(auth_binding=auth_binding if inject_auth else None)
     try:
-        result = subprocess.run([codex, *agent_args], env=env, check=False)
+        result = subprocess.run([codex, *agent_args, *launch_args], env=env, check=False)
     except KeyboardInterrupt:
         return 130
     return int(result.returncode)

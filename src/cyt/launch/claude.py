@@ -26,6 +26,12 @@ _CLAUDE_OAUTH_ENV_VARS = (
     "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
 )
 
+# Hook mode launches Claude with default upstream routing; strip CYT proxy wiring.
+_HOOK_MODE_UNSET_ENV_VARS = (
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+)
+
 
 def find_claude() -> str:
     """Locate the Claude Code CLI binary."""
@@ -46,17 +52,24 @@ def build_claude_env(
     endpoint: str,
     auth_binding: AgentAuthBinding | None = None,
     use_proxy: bool = True,
+    switch_provider: bool = False,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Build process env for Claude Code; return (env, reportable non-secrets)."""
     from cyt.launch.upstream import direct_upstream_base_url
 
     env = dict(os.environ)
+    reportable: dict[str, str] = {}
+    if not use_proxy and not switch_provider:
+        for name in _HOOK_MODE_UNSET_ENV_VARS:
+            env.pop(name, None)
+        return env, reportable
+
     if use_proxy:
         base_url = f"http://localhost:{port}/{endpoint}"
     else:
         base_url = direct_upstream_base_url(config, endpoint)
     env["ANTHROPIC_BASE_URL"] = base_url
-    reportable: dict[str, str] = {"ANTHROPIC_BASE_URL": base_url}
+    reportable["ANTHROPIC_BASE_URL"] = base_url
 
     upstream = upstream_for_endpoint(config, endpoint)
     if upstream is not None and not is_canonical_upstream(upstream):
@@ -97,6 +110,7 @@ def run(
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
     use_proxy: bool = True,
+    switch_provider: bool = False,
 ) -> int:
     """Exec Claude Code with proxy or direct upstream env wiring."""
     claude = find_claude()
@@ -106,6 +120,7 @@ def run(
         endpoint=endpoint,
         auth_binding=auth_binding,
         use_proxy=use_proxy,
+        switch_provider=switch_provider,
     )
     try:
         result = subprocess.run([claude, *agent_args], env=env, check=False)

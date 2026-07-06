@@ -137,6 +137,22 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
         help="With --debug-dry-run, return 502 when pruning did not apply",
     )
     launch_parser.add_argument(
+        "--switch-provider",
+        action="store_true",
+        help=(
+            "In hook injection mode, route the agent directly to the configured upstream "
+            "(sets ANTHROPIC_* for Claude or Codex -c provider overrides)"
+        ),
+    )
+    launch_parser.add_argument(
+        "--proxy",
+        action="store_true",
+        help=(
+            "In hook injection mode, start the reverse proxy and route the agent through it "
+            "(use with --debug to capture request logs; cannot combine with --switch-provider)"
+        ),
+    )
+    launch_parser.add_argument(
         "remainder",
         nargs=argparse.REMAINDER,
         help="Use `-- claude|codex [agent args...]`",
@@ -151,6 +167,14 @@ def _validate_upstream_kind_args(args: argparse.Namespace) -> None:
         raise SystemExit("--upstream-kind requires --upstream")
     if upstream_name is not None and upstream_url is None:
         raise SystemExit("--upstream-name requires --upstream")
+
+
+def _launch_switch_provider(args: argparse.Namespace) -> bool:
+    return getattr(args, "switch_provider", False) is True
+
+
+def _launch_force_proxy(args: argparse.Namespace) -> bool:
+    return getattr(args, "proxy", False) is True
 
 
 def _launch_debug_flags(args: argparse.Namespace) -> tuple[bool, bool, bool]:
@@ -189,6 +213,7 @@ def _run_launched_agent(
     agent_args: list[str],
     auth_binding: AgentAuthBinding | None = None,
     use_proxy: bool = True,
+    switch_provider: bool = False,
 ) -> int:
     if agent == "claude":
         return run_claude(
@@ -198,6 +223,7 @@ def _run_launched_agent(
             agent_args=agent_args,
             auth_binding=auth_binding,
             use_proxy=use_proxy,
+            switch_provider=switch_provider,
         )
     return run_codex(
         config=runtime.config,
@@ -206,6 +232,7 @@ def _run_launched_agent(
         agent_args=agent_args,
         auth_binding=auth_binding,
         use_proxy=use_proxy,
+        switch_provider=switch_provider,
     )
 
 
@@ -232,28 +259,38 @@ def _launch_env_for_agent(
     endpoint: str,
     auth_binding: AgentAuthBinding | None,
     use_proxy: bool,
+    switch_provider: bool,
 ) -> dict[str, str] | None:
     from cyt.hook.port import hook_url_for_port
 
-    launch_env: dict[str, str] | None
-    if agent == "claude":
+    launch_env: dict[str, str] | None = None
+    if agent == "claude" and (use_proxy or switch_provider):
         _, launch_env = build_claude_env(
             config=runtime.config,
             port=runtime.port,
             endpoint=endpoint,
             auth_binding=auth_binding,
             use_proxy=use_proxy,
+            switch_provider=switch_provider,
         )
-    elif auth_binding is not None:
+    elif agent == "codex" and (use_proxy or switch_provider) and auth_binding is not None:
         launch_env = {auth_binding.agent_env_var: auth_binding.source}
-    else:
-        launch_env = None
 
     hook_env = {"CYT_HOOK_URL": hook_url_for_port(runtime.port)}
     if launch_env is None:
         return hook_env
     launch_env.update(hook_env)
     return launch_env
+
+
+def _ensure_hook_server(
+    *,
+    runtime: RuntimeContext,
+) -> None:
+    from cyt.hook.daemon import daemon_start
+
+    result = daemon_start(config_path=runtime.config_path, verbose=False)
+    runtime.port = result.port
 
 
 def _run_launch_session(
@@ -265,6 +302,8 @@ def _run_launch_session(
     endpoint: str,
 ) -> int:
     debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+    switch_provider = _launch_switch_provider(args)
+    force_proxy = _launch_force_proxy(args)
 
     config = runtime.config
     if sys.stdin.isatty():
@@ -290,19 +329,30 @@ def _run_launch_session(
 
     warm_caches(config)
 
-    needs_proxy = launch_needs_proxy(config)
+    inject_via_hook = not launch_needs_proxy(config)
+    if switch_provider and not inject_via_hook:
+        raise SystemExit("--switch-provider is only supported when pruning.inject_via is hook.")
+    if force_proxy and switch_provider:
+        raise SystemExit("Pass either --proxy or --switch-provider, not both.")
+    if force_proxy and not inject_via_hook:
+        raise SystemExit("--proxy is only supported when pruning.inject_via is hook.")
+
+    use_proxy = launch_needs_proxy(config) or force_proxy
+    hook_mode = inject_via_hook and not force_proxy
 
     os.environ.update(launch_agent_env(agent))
     launch_before_env = dict(os.environ)
 
-    runtime, auth_binding = _ensure_launch_agent_auth(
-        runtime,
-        agent=agent,
-        endpoint=endpoint,
-        launch_before_env=launch_before_env,
-    )
+    auth_binding: AgentAuthBinding | None = None
+    if use_proxy or switch_provider:
+        runtime, auth_binding = _ensure_launch_agent_auth(
+            runtime,
+            agent=agent,
+            endpoint=endpoint,
+            launch_before_env=launch_before_env,
+        )
 
-    if needs_proxy:
+    if use_proxy:
         proxy_extra_env = _proxy_spawn_extra_env(
             credential_sources=runtime.credential_sources,
             auth_binding=auth_binding,
@@ -326,6 +376,7 @@ def _run_launch_session(
         )
     else:
         proxy_guard = ProxyGuard(process=None, started_by_launch=False, port=runtime.port)
+        _ensure_hook_server(runtime=runtime)
 
     print_runtime_env_report(
         quiet=False,
@@ -340,7 +391,8 @@ def _run_launch_session(
             runtime=runtime,
             endpoint=endpoint,
             auth_binding=auth_binding,
-            use_proxy=needs_proxy,
+            use_proxy=use_proxy,
+            switch_provider=switch_provider,
         ),
         config=runtime.config,
         config_path=runtime.config_path,
@@ -348,6 +400,8 @@ def _run_launch_session(
         debug=debug,
         debug_dry_run=debug_dry_run,
         debug_strict=debug_strict,
+        hook_mode=hook_mode,
+        switch_provider=switch_provider,
     )
 
     try:
@@ -357,7 +411,8 @@ def _run_launch_session(
             endpoint=endpoint,
             agent_args=agent_args,
             auth_binding=auth_binding,
-            use_proxy=needs_proxy,
+            use_proxy=use_proxy,
+            switch_provider=switch_provider,
         )
     finally:
         proxy_guard.terminate_if_started()
