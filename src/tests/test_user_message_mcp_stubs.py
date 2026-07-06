@@ -72,11 +72,12 @@ def test_openai_mcp_namespace_stub_preserves_structure() -> None:
     stub = openai_mcp_namespace_stub(namespace)
     assert stub["type"] == "namespace"
     assert stub["name"] == "mcp__lean_ctx"
-    assert "description" not in stub
+    assert stub["description"] == "Use lean-ctx MCP tools"
     assert stub["tools"] == [
         {
             "type": "function",
             "name": "ctx_edit",
+            "description": "Edit a file",
             "strict": False,
             "defer_loading": True,
             "parameters": {"type": "object", "properties": {}},
@@ -117,9 +118,12 @@ def test_openai_append_mcp_stubs_flat_and_namespace() -> None:
     out = openai_append_mcp_stubs(system_only, original)
     assert out[0]["name"] == "Read"
     assert out[1]["name"] == "mcp__a__grep"
+    assert out[1]["description"] == "Grep"
     assert out[1]["parameters"] == {"type": "object", "properties": {}}
     assert out[2]["type"] == "namespace"
+    assert out[2]["description"] == "Context7"
     assert out[2]["tools"][0]["name"] == "query_docs"
+    assert out[2]["tools"][0]["description"] == "Query docs"
 
 
 def test_transform_anthropic_inject_keeps_mcp_stubs_not_inject_via_hook() -> None:

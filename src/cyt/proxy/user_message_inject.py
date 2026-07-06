@@ -52,6 +52,11 @@ def anthropic_tools_for_user_message_inject(
 _MINIMAL_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 
+def _openai_tool_description(tool: dict[str, Any]) -> str:
+    """Original tool description for Codex MCP stubs (required by Responses API)."""
+    return str(tool.get("description", "") or "")
+
+
 def _openai_tool_pass_through(tool: dict[str, Any]) -> bool:
     return isinstance(tool, dict) and not str(tool.get("name", ""))
 
@@ -82,6 +87,7 @@ def _openai_mcp_function_child_stub(child: dict[str, Any]) -> dict[str, Any]:
     stub: dict[str, Any] = {
         "type": "function",
         "name": str(child.get("name", "")),
+        "description": _openai_tool_description(child),
         "strict": child.get("strict", False),
         "parameters": dict(_MINIMAL_OBJECT_SCHEMA),
     }
@@ -100,6 +106,7 @@ def openai_mcp_namespace_stub(tool: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "namespace",
         "name": str(tool.get("name", "")),
+        "description": _openai_tool_description(tool),
         "tools": stub_children,
     }
 
@@ -108,6 +115,7 @@ def openai_mcp_flat_function_stub(tool: dict[str, Any]) -> dict[str, Any]:
     stub: dict[str, Any] = {
         "type": tool.get("type", "function"),
         "name": str(tool.get("name", "")),
+        "description": _openai_tool_description(tool),
         "strict": tool.get("strict", False),
         "parameters": dict(_MINIMAL_OBJECT_SCHEMA),
     }

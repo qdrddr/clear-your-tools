@@ -642,8 +642,10 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
     tool_names = [t.get("name") for t in out["tools"] if isinstance(t, dict) and t.get("name")]
     assert tool_names == ["Read", "mcp__a__grep"]
     mcp_stub = next(t for t in out["tools"] if t.get("name") == "mcp__a__grep")
-    assert "description" not in mcp_stub
+    assert mcp_stub["description"] == "Grep"
     assert out["tools"][0]["type"] == "tool_search"
+    assert "<tool name='mcp__a__grep'>" in combined
+    assert "description='Grep pruned'" not in combined
 
 
 def test_transform_openai_request_inject_tool_search_output() -> None:
@@ -713,12 +715,14 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
     assert tso["type"] == "tool_search_output"
     assert len(tso["tools"]) == 2
     assert all(tool.get("type") == "namespace" for tool in tso["tools"])
-    assert "description" not in tso["tools"][0]
+    assert tso["tools"][0]["description"] == "Context7 docs"
+    assert tso["tools"][0]["tools"][0]["description"] == "codegraph_explore tool"
     assert tso["tools"][0]["tools"][0]["parameters"] == {"type": "object", "properties": {}}
     last_user = out["input"][0]
     combined = "\n".join(block["text"] for block in last_user["content"])
     assert "<agent-tools" in combined
     assert "mcp__context7__codegraph_explore" in combined
+    assert "description='pruned explore'" not in combined
     assert [t.get("name") for t in out["tools"] if t.get("type") == "function"] == [
         "tool_0",
         "tool_1",
@@ -760,10 +764,12 @@ def test_transform_openai_request_inject_tool_search_output_pass_through() -> No
     assert len(tso["tools"]) == 1
     assert tso["tools"][0]["type"] == "namespace"
     assert tso["tools"][0]["name"] == "mcp__context7"
-    assert "description" not in tso["tools"][0]
+    assert tso["tools"][0]["description"] == "Context7 docs"
+    assert tso["tools"][0]["tools"][0]["description"] == "grep tool"
     combined = "\n".join(block["text"] for block in out["input"][0]["content"])
     assert "<agent-tools" in combined
     assert "mcp__context7__grep" in combined
+    assert "description='grep tool'" not in combined
     assert [t.get("name") for t in out["tools"]] == ["Read"]
 
 

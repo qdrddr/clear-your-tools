@@ -54,6 +54,23 @@ def test_format_agent_tools_escapes_apostrophe_in_description() -> None:
     assert "description='it&apos;s fine'" in text
 
 
+def test_format_agent_tools_omits_tool_description_when_requested() -> None:
+    tools = [
+        {
+            "name": "mcp__context7__resolve-library-id",
+            "description": "Resolve a library ID",
+            "parameters": {"type": "object", "properties": {"libraryId": {"type": "string"}}},
+        },
+    ]
+
+    text = format_agent_tools(tools, include_tool_description=False)
+
+    assert "descriptions are in root tools[] stubs" in text
+    assert "<tool name='mcp__context7__resolve-library-id'>" in text
+    assert "description='Resolve a library ID'" not in text
+    assert "'input_schema':{'type':'object'" in text
+
+
 def test_format_agent_tools_intro_in_description_avoids_pruned_suffix_on_user_text() -> None:
     """Pruned intro lives on the tag attribute, not as plain text after the user query."""
     tools = [

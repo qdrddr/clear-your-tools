@@ -715,7 +715,7 @@ def transform_openai_request(
 
     tools_injected = False
     if inject_into_user_message(config) and mcp_for_inject:
-        tools_text = format_agent_tools(mcp_for_inject)
+        tools_text = format_agent_tools(mcp_for_inject, include_tool_description=False)
         if tools_text and not already_has_user_turn_injection(
             original,
             "openai",
