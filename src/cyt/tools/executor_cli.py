@@ -104,7 +104,7 @@ def run_executor_save(args: argparse.Namespace) -> None:
     _resolve_executor_url(config_path, config)
     config = load_config(config_path)
 
-    tools = fetch_executor_tools(config, allow_prompt=True)
+    tools = fetch_executor_tools(config, allow_prompt=True, blocking=True)
     if not tools:
         raise SystemExit("No tools fetched from executor.")
 

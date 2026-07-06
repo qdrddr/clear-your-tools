@@ -281,6 +281,11 @@ def _run_launch_session(
             credential_sources=runtime.credential_sources,
         )
 
+    from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
+
+    if tools_hook_tools_from(config) == "executor" and inject_via(config) == "hook":
+        schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+
     from cyt.cache import warm_caches
 
     warm_caches(config)

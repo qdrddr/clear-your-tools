@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -31,13 +33,34 @@ class _ExecutorCacheKey:
     token_fingerprint: str
 
 
-_executor_cache: dict[_ExecutorCacheKey, tuple[float, list[dict[str, Any]]]] = {}
+@dataclass
+class _ExecutorCatalogState:
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    updated_at: float = 0.0
+    refresh_in_progress: bool = False
+
+
+_catalog_lock = threading.Lock()
+_catalog_states: dict[_ExecutorCacheKey, _ExecutorCatalogState] = {}
+
+
+def clear_executor_catalog_cache() -> None:
+    """Reset in-process executor catalog state (for tests)."""
+    with _catalog_lock:
+        _catalog_states.clear()
 
 
 def _token_fingerprint(token: str | None) -> str:
     if not token:
         return ""
     return str(hash(token))
+
+
+def _cache_key_for_config(config: dict[str, Any], token: str | None) -> _ExecutorCacheKey:
+    return _ExecutorCacheKey(
+        tools_hook_executor_url(config),
+        _token_fingerprint(token),
+    )
 
 
 def _auth_headers(token: str | None) -> dict[str, str]:
@@ -69,17 +92,43 @@ def _normalize_tool(
     return tool
 
 
+async def _fetch_list_async(
+    *,
+    base_url: str,
+    token: str | None,
+) -> list[tuple[str, str | None]]:
+    headers = _auth_headers(token)
+    timeout = httpx.Timeout(60.0, connect=10.0)
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
+        response = await client.get(f"{base_url}{_LIST_PATH}")
+        response.raise_for_status()
+        listed = response.json()
+    if not isinstance(listed, list):
+        raise ValueError("executor /api/tools response must be a JSON array")
+
+    summaries: list[tuple[str, str | None]] = []
+    for item in listed:
+        if not isinstance(item, dict):
+            continue
+        address = str(item.get("address") or "").strip()
+        if not address:
+            continue
+        description = item.get("description")
+        desc_text = str(description) if description is not None else None
+        summaries.append((address, desc_text))
+    return summaries
+
+
 async def _fetch_schema_async(
     client: httpx.AsyncClient,
     *,
-    base_url: str,
     address: str,
     semaphore: asyncio.Semaphore,
 ) -> dict[str, Any] | None:
     async with semaphore:
         try:
             response = await client.get(
-                f"{base_url}{_SCHEMA_PATH}",
+                _SCHEMA_PATH,
                 params={"address": address},
             )
             response.raise_for_status()
@@ -92,94 +141,202 @@ async def _fetch_schema_async(
         return None
     input_schema = payload.get("inputSchema") or payload.get("input_schema")
     description = payload.get("description")
-    return _normalize_tool(address, description if description is not None else None, input_schema)
+    if not isinstance(input_schema, dict):
+        input_schema = {}
+    desc_text = str(description) if description is not None else None
+    return _normalize_tool(address, desc_text, input_schema)
 
 
-async def _fetch_tools_async(
+async def _fetch_schemas_async(
+    *,
+    base_url: str,
+    token: str | None,
+    addresses: list[str],
+    descriptions: dict[str, str | None] | None = None,
+    concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
+) -> list[dict[str, Any]]:
+    if not addresses:
+        return []
+
+    headers = _auth_headers(token)
+    timeout = httpx.Timeout(60.0, connect=10.0)
+    descriptions = descriptions or {}
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout) as client:
+        tasks = [
+            _fetch_schema_async(client, address=address, semaphore=semaphore)
+            for address in addresses
+        ]
+        schemas = await asyncio.gather(*tasks)
+
+    tools: list[dict[str, Any]] = []
+    for address, schema_tool in zip(addresses, schemas, strict=True):
+        if schema_tool is not None:
+            tools.append(schema_tool)
+            continue
+        tools.append(_normalize_tool(address, descriptions.get(address), {}))
+    return tools
+
+
+async def _fetch_full_catalog_async(
     *,
     base_url: str,
     token: str | None,
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
 ) -> list[dict[str, Any]]:
-    headers = _auth_headers(token)
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        response = await client.get(f"{base_url}{_LIST_PATH}")
-        response.raise_for_status()
-        listed = response.json()
-        if not isinstance(listed, list):
-            raise ValueError("executor /api/tools response must be a JSON array")
-
-        summaries: list[tuple[str, str | None]] = []
-        for item in listed:
-            if not isinstance(item, dict):
-                continue
-            address = str(item.get("address") or "").strip()
-            if not address:
-                continue
-            description = item.get("description")
-            desc_text = str(description) if description is not None else None
-            summaries.append((address, desc_text))
-
-        semaphore = asyncio.Semaphore(max(1, concurrency))
-        tasks = [
-            _fetch_schema_async(
-                client,
-                base_url=base_url,
-                address=address,
-                semaphore=semaphore,
-            )
-            for address, _ in summaries
-        ]
-        schemas = await asyncio.gather(*tasks)
-
-    tools: list[dict[str, Any]] = []
-    for (address, description), schema_tool in zip(summaries, schemas, strict=True):
-        if schema_tool is not None:
-            tools.append(schema_tool)
-            continue
-        tools.append(_normalize_tool(address, description, {}))
-    return tools
+    summaries = await _fetch_list_async(base_url=base_url, token=token)
+    addresses = [address for address, _ in summaries]
+    descriptions = dict(summaries)
+    return await _fetch_schemas_async(
+        base_url=base_url,
+        token=token,
+        addresses=addresses,
+        descriptions=descriptions,
+        concurrency=concurrency,
+    )
 
 
-def fetch_executor_tools(
+def _get_state(key: _ExecutorCacheKey) -> _ExecutorCatalogState:
+    with _catalog_lock:
+        state = _catalog_states.get(key)
+        if state is None:
+            state = _ExecutorCatalogState()
+            _catalog_states[key] = state
+        return state
+
+
+def _snapshot_tools(state: _ExecutorCatalogState) -> list[dict[str, Any]]:
+    with _catalog_lock:
+        return copy.deepcopy(state.tools)
+
+
+def _catalog_is_stale(state: _ExecutorCatalogState, *, now: float) -> bool:
+    if not state.tools:
+        return True
+    return now - state.updated_at >= _CACHE_TTL_SECONDS
+
+
+def _run_background_refresh(
+    *,
+    config: dict[str, Any],
+    token: str | None,
+    cache_key: _ExecutorCacheKey,
+) -> None:
+    """Refresh list + every tool schema; swap only when the full catalog is ready."""
+    state = _get_state(cache_key)
+    try:
+        tools = asyncio.run(
+            _fetch_full_catalog_async(
+                base_url=cache_key.base_url,
+                token=token,
+            ),
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("executor background catalog refresh failed: %s", exc)
+        with _catalog_lock:
+            state.refresh_in_progress = False
+        return
+    except ValueError as exc:
+        logger.warning("executor background catalog refresh invalid: %s", exc)
+        with _catalog_lock:
+            state.refresh_in_progress = False
+        return
+
+    with _catalog_lock:
+        state.tools = tools
+        state.updated_at = time.monotonic()
+        state.refresh_in_progress = False
+    logger.debug("executor catalog refresh completed (%d tools)", len(tools))
+
+
+def schedule_executor_catalog_refresh(
     config: dict[str, Any] | None = None,
     *,
-    allow_prompt: bool = True,
-) -> list[dict[str, Any]]:
-    """Fetch the full executor tool catalog (list + per-tool schema)."""
+    allow_prompt: bool = False,
+    force: bool = False,
+) -> None:
+    """Start a background catalog refresh when stale; never blocks the caller."""
     cfg = config or load_config()
     base_url = tools_hook_executor_url(cfg)
     if not base_url:
-        return []
+        return
 
     token = _resolve_executor_token(cfg, allow_prompt=allow_prompt)
-    cache_key = _ExecutorCacheKey(base_url, _token_fingerprint(token))
+    cache_key = _cache_key_for_config(cfg, token)
+    state = _get_state(cache_key)
     now = time.monotonic()
-    cached = _executor_cache.get(cache_key)
-    if cached is not None and now - cached[0] < _CACHE_TTL_SECONDS:
-        return cached[1]
 
-    try:
-        tools = asyncio.run(_fetch_tools_async(base_url=base_url, token=token))
-    except httpx.HTTPError as exc:
-        logger.warning("executor tool list fetch failed: %s", exc)
-        return []
-    except ValueError as exc:
-        logger.warning("executor tool list response invalid: %s", exc)
-        return []
+    with _catalog_lock:
+        if state.refresh_in_progress:
+            return
+        if not force and state.tools and not _catalog_is_stale(state, now=now):
+            return
+        state.refresh_in_progress = True
 
-    _executor_cache[cache_key] = (now, tools)
-    return tools
+    thread = threading.Thread(
+        target=_run_background_refresh,
+        kwargs={"config": cfg, "token": token, "cache_key": cache_key},
+        name="cyt-executor-catalog-refresh",
+        daemon=True,
+    )
+    thread.start()
 
 
 def load_executor_tools(
     config: dict[str, Any] | None = None,
     *,
     allow_prompt: bool = True,
+    blocking: bool = False,
 ) -> list[dict[str, Any]] | None:
-    """Load executor tools; return None when executor_url is unset."""
+    """Return the executor catalog; non-blocking by default (stale-while-revalidate)."""
     cfg = config or load_config()
     if not tools_hook_executor_url(cfg):
         return None
-    return fetch_executor_tools(cfg, allow_prompt=allow_prompt)
+
+    if blocking:
+        return fetch_executor_tools(cfg, allow_prompt=allow_prompt, blocking=True)
+
+    token = _resolve_executor_token(cfg, allow_prompt=allow_prompt)
+    cache_key = _cache_key_for_config(cfg, token)
+    state = _get_state(cache_key)
+    schedule_executor_catalog_refresh(cfg, allow_prompt=False, force=False)
+    return _snapshot_tools(state)
+
+
+def fetch_executor_tools(
+    config: dict[str, Any] | None = None,
+    *,
+    allow_prompt: bool = True,
+    blocking: bool = False,
+) -> list[dict[str, Any]]:
+    """Fetch executor tools; use ``blocking=True`` for a synchronous full refresh."""
+    cfg = config or load_config()
+    base_url = tools_hook_executor_url(cfg)
+    if not base_url:
+        return []
+
+    token = _resolve_executor_token(cfg, allow_prompt=allow_prompt)
+    cache_key = _cache_key_for_config(cfg, token)
+    state = _get_state(cache_key)
+
+    if not blocking:
+        schedule_executor_catalog_refresh(cfg, allow_prompt=allow_prompt, force=False)
+        return _snapshot_tools(state)
+
+    try:
+        tools = asyncio.run(
+            _fetch_full_catalog_async(base_url=base_url, token=token),
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("executor tool catalog fetch failed: %s", exc)
+        stale = _snapshot_tools(state)
+        return stale if stale else []
+    except ValueError as exc:
+        logger.warning("executor tool catalog response invalid: %s", exc)
+        stale = _snapshot_tools(state)
+        return stale if stale else []
+
+    with _catalog_lock:
+        state.tools = tools
+        state.updated_at = time.monotonic()
+    return copy.deepcopy(tools)

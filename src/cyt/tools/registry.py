@@ -43,7 +43,7 @@ def load_tool_catalog(config: dict[str, Any] | None = None) -> list[dict[str, An
     if tools_hook_tools_from(cfg) == "definitions":
         path = resolved_tools_hook_file(cfg)
         return _load_definitions_cached(path)
-    return load_executor_tools(cfg, allow_prompt=False)
+    return load_executor_tools(cfg, allow_prompt=False, blocking=False)
 
 
 def _load_definitions_cached(path: Path) -> list[dict[str, Any]]:
