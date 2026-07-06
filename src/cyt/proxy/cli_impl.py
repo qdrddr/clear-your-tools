@@ -340,9 +340,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
 
-    from cyt.launch.cli import add_launch_parser
+    from cyt.launch.cli import add_agent_launch_shortcut_parsers, add_launch_parser
 
     add_launch_parser(subparsers)
+    add_agent_launch_shortcut_parsers(subparsers)
 
     stats_common = argparse.ArgumentParser(add_help=False)
     _add_stats_common_args(stats_common)
@@ -716,6 +717,25 @@ def main() -> None:
         raise SystemExit(INTERRUPTED_EXIT_CODE) from None
 
 
+def _dispatch_launch_command(args: argparse.Namespace) -> bool:
+    if args.command == "launch":
+        from cyt.launch.cli import run as run_launch
+
+        run_launch(args)
+        return True
+
+    from cyt.common.agents import LAUNCH_AGENTS
+
+    if args.command not in LAUNCH_AGENTS:
+        return False
+
+    from cyt.launch.cli import launch_args_from_shortcut
+    from cyt.launch.cli import run as run_launch
+
+    run_launch(launch_args_from_shortcut(args, args.command))
+    return True
+
+
 def _dispatch_cli_command(args: argparse.Namespace) -> bool:
     """Run a named subcommand. Returns True when handled."""
     if args.command == "stats":
@@ -747,10 +767,7 @@ def _dispatch_cli_command(args: argparse.Namespace) -> bool:
         handler(args)
         return True
 
-    if args.command == "launch":
-        from cyt.launch.cli import run as run_launch
-
-        run_launch(args)
+    if _dispatch_launch_command(args):
         return True
 
     if args.command == "executor":

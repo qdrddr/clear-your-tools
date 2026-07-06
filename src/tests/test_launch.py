@@ -303,7 +303,8 @@ class TestParseLaunchRemainder:
         assert "  claude" in message
         assert "  codex" in message
         assert "  cursor" in message
-        assert "Usage: cyt launch -- <agent>" in message
+        assert "cyt claude|codex|cursor" in message
+        assert "cyt launch -- <agent>" in message
 
 
 class TestRequiredLaunchEnvVars:
@@ -1516,3 +1517,43 @@ class TestLaunchRun:
         run_launch(args)
         text = codex_path.read_text(encoding="utf-8")
         assert MANAGED_START in text
+
+
+class TestAgentLaunchShortcuts:
+    def test_launch_args_from_shortcut(self) -> None:
+        from argparse import Namespace
+
+        from cyt.launch.cli import launch_args_from_shortcut
+
+        args = Namespace(command="claude", port=8834)
+        launch_args = launch_args_from_shortcut(args, "claude")
+        assert launch_args.command == "launch"
+        assert launch_args.remainder == ["--", "claude"]
+        assert launch_args.port == 8834
+
+    def test_claude_shortcut_cli_routing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from argparse import Namespace
+
+        monkeypatch.setattr("sys.argv", ["cyt", "claude", "--switch-provider"])
+        captured: dict[str, Namespace] = {}
+
+        def fake_run_launch(args: Namespace) -> None:
+            captured["args"] = args
+
+        monkeypatch.setattr("cyt.launch.cli.run", fake_run_launch)
+
+        from cyt.proxy.cli_impl import main
+
+        main()
+        args = captured["args"]
+        assert args.command == "launch"
+        assert args.remainder == ["--", "claude"]
+        assert args.switch_provider is True
+
+    def test_shortcut_rejects_agent_args(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("sys.argv", ["cyt", "claude", "--model", "haiku"])
+
+        from cyt.proxy.cli_impl import main
+
+        with pytest.raises(SystemExit):
+            main()

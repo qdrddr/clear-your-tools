@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from cyt.common.agents import launch_agent_usage_hint
+from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
     inject_via,
@@ -103,50 +103,46 @@ def add_shared_upstream_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
-    launch_parser = subparsers.add_parser(
-        "launch",
-        help="Launch Claude Code, Codex, or Cursor through CYT",
-    )
-    add_shared_upstream_args(launch_parser)
-    for action in launch_parser._actions:
+def add_launch_options(parser: argparse.ArgumentParser) -> None:
+    add_shared_upstream_args(parser)
+    for action in parser._actions:
         if action.dest == "port":
             action.help = (
                 f"Base reverse port for launch scan (default: configured proxy port, "
                 f"else {DEFAULT_REVERSE_PORT}; spawns on base port when free)"
             )
             break
-    launch_parser.add_argument(
+    parser.add_argument(
         "--endpoint",
         default=None,
         help="Reverse proxy endpoint name for this launch",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--configure",
         action="store_true",
         help="Write Codex provider config only (codex agent)",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--restore",
         action="store_true",
         help="Legacy no-op for codex (managed ~/.codex/config.toml is preserved)",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Log transformed requests to {endpoint}.log and forward to upstream",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--debug-dry-run",
         action="store_true",
         help="Dry-run: log transformed requests to {endpoint}.log without calling upstream",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--debug-strict",
         action="store_true",
         help="With --debug-dry-run, return 502 when pruning did not apply",
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--switch-provider",
         action="store_true",
         help=(
@@ -154,7 +150,7 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
             "(sets ANTHROPIC_* for Claude or Codex -c provider overrides)"
         ),
     )
-    launch_parser.add_argument(
+    parser.add_argument(
         "--proxy",
         action="store_true",
         help=(
@@ -162,11 +158,38 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
             "(use with --debug to capture request logs; cannot combine with --switch-provider)"
         ),
     )
+
+
+def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
+    launch_parser = subparsers.add_parser(
+        "launch",
+        help="Launch Claude Code, Codex, or Cursor through CYT",
+    )
+    add_launch_options(launch_parser)
     launch_parser.add_argument(
         "remainder",
         nargs=argparse.REMAINDER,
         help="Use `-- claude|codex|cursor [agent args...]`",
     )
+
+
+_AGENT_SHORTCUT_HELP: dict[AgentName, str] = {
+    "claude": "Launch Claude Code through CYT (shortcut for cyt launch -- claude)",
+    "codex": "Launch Codex through CYT (shortcut for cyt launch -- codex)",
+    "cursor": "Launch Cursor through CYT (shortcut for cyt launch -- cursor)",
+}
+
+
+def add_agent_launch_shortcut_parsers(subparsers: argparse._SubParsersAction) -> None:
+    for agent in LAUNCH_AGENTS:
+        parser = subparsers.add_parser(agent, help=_AGENT_SHORTCUT_HELP[agent])
+        add_launch_options(parser)
+
+
+def launch_args_from_shortcut(args: argparse.Namespace, agent: AgentName) -> argparse.Namespace:
+    args.command = "launch"
+    args.remainder = ["--", agent]
+    return args
 
 
 def _validate_upstream_kind_args(args: argparse.Namespace) -> None:

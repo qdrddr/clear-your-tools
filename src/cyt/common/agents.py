@@ -15,7 +15,9 @@ def launch_agent_usage_hint() -> str:
     lines = ["Acceptable agents:"]
     lines.extend(f"  {name}" for name in LAUNCH_AGENTS)
     lines.append("")
-    lines.append("Usage: cyt launch -- <agent> [agent args...]")
+    lines.append("Usage:")
+    lines.append("  cyt claude|codex|cursor [cyt options...]")
+    lines.append("  cyt launch -- <agent> [agent args...]")
     return "\n".join(lines)
 
 
