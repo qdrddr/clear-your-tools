@@ -1,0 +1,8 @@
+name: Environment1
+values:
+  - key: executor-token
+    value: ""
+  - key: base_url
+    value: ""
+  - key: current_tool_address
+    value: ""

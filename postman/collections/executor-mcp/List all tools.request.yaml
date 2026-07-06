@@ -1,0 +1,12 @@
+$kind: http-request
+name: List all tools
+url: "{{base_url}}/api/tools"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      pm.environment.set('current_tool_address', res[0].address);
+    language: text/javascript
+examples: .resources/List all tools.resources/examples
+order: 1783345546531

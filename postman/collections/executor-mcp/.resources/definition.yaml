@@ -1,0 +1,8 @@
+$kind: collection
+name: executor-mcp
+auth:
+  - id: 216f7ea7-2769-460d-ba52-bec091a1e5a4
+    type: bearer
+    name: Bearer Token
+    credentials:
+      token: "{{executor-token}}"

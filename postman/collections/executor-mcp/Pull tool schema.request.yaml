@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{base_url}}/api/tools/schema?address={{current_tool_address}}"
+method: GET
+queryParams:
+  address: "{{current_tool_address}}"
+examples: .resources/Pull tool schema.resources/examples
+order: 3105825577869115
