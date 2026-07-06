@@ -12,6 +12,8 @@
 # If prek-hook-groups.yaml is missing, all hooks run regardless of --group.
 # Examples:
 # Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
+# ./scripts/local-dev.sh all
+
 # ./scripts/prek-loop.sh --short --one-run --group py rust ts uni
 # ./scripts/prek-loop.sh --short --one-run --group rust go c uni
 

@@ -7,7 +7,7 @@
         "timeout": 60
       },
       {
-        "command": "CYT_LAUNCH_AGENT=cursor cyt hook daemon start",
+        "command": "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended",
         "timeout": 60
       }
     ],

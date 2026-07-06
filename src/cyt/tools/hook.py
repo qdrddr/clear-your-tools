@@ -121,6 +121,7 @@ def _finish_tools_hook_injection(
             pruning_stages=result.pruning_token_usage,
             tools_final_md=injected if debug else None,
             config=config,
+            prune_status=result.status,
         )
 
     details: dict[str, Any] = {

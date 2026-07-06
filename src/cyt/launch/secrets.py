@@ -414,6 +414,24 @@ def ensure_runtime_credentials(
     ensure_named_credentials(names, credential_sources=credential_sources)
 
 
+def resolve_hook_daemon_child_env(
+    config: dict[str, Any],
+    *,
+    allow_prompt: bool = False,
+) -> dict[str, str]:
+    """Resolve tool/skills pruner API keys for a hook daemon child process."""
+    names = required_proxy_env_var_names(config)
+    if not names:
+        return {}
+    credential_sources: dict[str, str] = {}
+    ensure_named_credentials(
+        names,
+        credential_sources=credential_sources,
+        allow_prompt=allow_prompt,
+    )
+    return {name: value for name in credential_sources if (value := os.environ.get(name))}
+
+
 def ensure_proxy_pipeline_credentials(
     config: dict[str, Any],
     *,

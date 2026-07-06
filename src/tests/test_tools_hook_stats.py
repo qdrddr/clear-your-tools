@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -47,5 +48,37 @@ def test_record_tools_hook_injection_writes_signed_tokens() -> None:
             ]
             assert ("upstream", "input", 380, 1) in upstream_saved
             assert ("upstream", "input", -25, 1) in upstream_saved
+        finally:
+            db.close()
+
+
+def test_record_tools_hook_injection_records_effective_pipeline() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "stats.db"
+        config = {"stats": {"database": {"path": str(db_path)}}}
+        from cyt.common.token_usage import StageTokenUsage
+        from cyt.pruners.bm25 import bm25_stage_usage
+
+        record_tools_hook_injection(
+            query="review auth flow",
+            model_name="composer-2.5-fast",
+            tools_in=900,
+            tools_out=200,
+            prompt_tokens=50,
+            pruning_stages={
+                "llm": StageTokenUsage(model_name="mercury-2"),
+                "bm25": bm25_stage_usage(),
+            },
+            prune_status="applied",
+            config=config,
+        )
+
+        db = StatsDB.open(str(db_path))
+        try:
+            row = db._conn.execute(
+                "SELECT prune_status, pipeline FROM proxy_request",
+            ).fetchone()
+            assert row[0] == "applied"
+            assert json.loads(row[1]) == ["bm25", "llm"]
         finally:
             db.close()

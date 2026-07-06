@@ -13,7 +13,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from cyt.config import launch_needs_proxy, load_config, resolve_reverse_port
+from cyt.config import (
+    launch_needs_proxy,
+    load_config,
+    required_proxy_env_var_names,
+    resolve_reverse_port,
+)
 from cyt.hook.port import (
     HOOK_DAEMON_PIDFILE,
     fetch_cyt_health,
@@ -28,7 +33,7 @@ from cyt.launch.proxy_guard import (
     find_available_port,
     is_port_in_use,
 )
-from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, ensure_proxy_pipeline_credentials
+from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, resolve_hook_daemon_child_env
 
 HookDaemonOutcome = Literal["reused", "spawned", "already_running"]
 
@@ -79,16 +84,15 @@ def _resolve_daemon_mode(config: dict[str, Any]) -> str:
     return "full_proxy" if launch_needs_proxy(config) else "hooks_only"
 
 
-def _spawn_extra_env(credential_sources: dict[str, str]) -> dict[str, str] | None:
-    extra = {name: value for name in credential_sources if (value := os.environ.get(name))}
-    return extra or None
+def _needs_credential_injection(config: dict[str, Any]) -> bool:
+    """True when the configured hook pipeline requires remote pruner API keys."""
+    return bool(required_proxy_env_var_names(config))
 
 
 def _resolve_spawn_credentials(config: dict[str, Any]) -> dict[str, str] | None:
     """Resolve pruning pipeline keys (shell → .env → keyring) for a spawned proxy child."""
-    credential_sources: dict[str, str] = {}
-    ensure_proxy_pipeline_credentials(config, credential_sources=credential_sources)
-    return _spawn_extra_env(credential_sources)
+    env = resolve_hook_daemon_child_env(config, allow_prompt=False)
+    return env or None
 
 
 def _spawn_hook_server(
@@ -172,8 +176,18 @@ def daemon_start(
     warm_caches(config)
     base_port = resolve_reverse_port(config, None)
     mode = _resolve_daemon_mode(config)
+    needs_creds = _needs_credential_injection(config)
+    extra_env = _resolve_spawn_credentials(config) if needs_creds else None
 
     reused_port = _find_reusable_hook_port(base_port)
+    if reused_port is not None and extra_env is not None:
+        _log(
+            verbose,
+            "hook daemon: restarting existing server to inject pruning credentials",
+        )
+        _stop_hook_server_on_port(reused_port, verbose=verbose)
+        reused_port = None
+
     if reused_port is not None:
         hook_url = hook_url_for_port(reused_port)
         _write_pidfile(
@@ -193,12 +207,13 @@ def daemon_start(
         )
 
     spawn_port = _find_spawn_port(base_port)
-    extra_env = _resolve_spawn_credentials(config)
     if foreground:
         from cyt.config import proxy_http2_settings
         from cyt.proxy.bootstrap import prepare_runtime
         from cyt.proxy.cli_impl import run_async_cli, run_reverse_server
 
+        if extra_env:
+            os.environ.update(extra_env)
         runtime = prepare_runtime(
             agent=None,
             config_path=config_path,

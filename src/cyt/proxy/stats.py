@@ -20,7 +20,12 @@ from urllib.parse import urlparse
 from uuid_extensions import uuid7str
 
 from cyt.common.pricing import StatsCosts
-from cyt.common.token_usage import PRUNING_STAT_STAGES, TIKTOKEN_CL100K, StageTokenUsage
+from cyt.common.token_usage import (
+    PRUNING_STAT_STAGES,
+    TIKTOKEN_CL100K,
+    StageTokenUsage,
+    effective_pruning_pipeline_from_stages,
+)
 from cyt.config import (
     merge_model_entry,
     provider_name_from_nick,
@@ -564,11 +569,18 @@ class StatsDB:
         pruning_stages: dict[str, StageTokenUsage],
         tools_final_md: str | None = None,
         config: dict[str, Any] | None = None,
+        prune_status: str = "applied",
+        pipeline: list[str] | None = None,
     ) -> str:
         provider, provider_dns = lookup_model_provider(model_name, config)
         proxy_id = new_uuid7()
         ts_ms = int(time.time() * 1000)
         tools_pruned = max(0, tools_in - tools_out)
+        effective_pipeline = (
+            pipeline
+            if pipeline is not None
+            else effective_pruning_pipeline_from_stages(pruning_stages)
+        )
         self._conn.execute(
             """
             INSERT INTO proxy_request (
@@ -593,8 +605,8 @@ class StatsDB:
                 0,
                 0,
                 ts_ms,
-                "applied",
-                json.dumps(["bm25"]),
+                prune_status,
+                json.dumps(effective_pipeline),
                 query,
                 None,
                 None,

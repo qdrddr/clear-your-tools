@@ -19,6 +19,8 @@ def record_tools_hook_injection(
     pruning_stages: dict[str, StageTokenUsage] | None = None,
     tools_final_md: str | None = None,
     config: dict[str, Any] | None = None,
+    prune_status: str = "applied",
+    pipeline: list[str] | None = None,
 ) -> str | None:
     """Persist a tools-hook injection event; returns proxy_request id or None."""
     if tools_out <= 0:
@@ -35,6 +37,8 @@ def record_tools_hook_injection(
             pruning_stages=pruning_stages or {},
             tools_final_md=tools_final_md,
             config=cfg,
+            prune_status=prune_status,
+            pipeline=pipeline,
         )
     finally:
         db.close()

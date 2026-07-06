@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import cyt.proxy.cli  # noqa: F401 — preload runtime imports used by daemon_start
 from cyt.hook import daemon as hook_daemon
 
 OR_KEY = "OPENROUTER_" + "API_KEY"
@@ -23,7 +24,14 @@ def pidfile_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
-    with patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834):
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+    ):
         result = hook_daemon.daemon_start(verbose=False)
 
     assert result.reused is True
@@ -31,6 +39,35 @@ def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
     payload = json.loads(pidfile_path.read_text(encoding="utf-8"))
     assert payload["reused"] is True
     assert payload["pid"] is None
+
+
+def test_daemon_start_restarts_reused_server_when_credentials_required(
+    pidfile_path: Path,
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch(
+            "cyt.hook.daemon._resolve_spawn_credentials",
+            return_value={OR_KEY: OR_TOKEN},
+        ),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop,
+        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+        patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
+    ):
+        spawn.return_value = MagicMock(pid=12345)
+        result = hook_daemon.daemon_start(verbose=False)
+
+    stop.assert_called_once_with(8834, verbose=False)
+    spawn.assert_called_once()
+    assert spawn.call_args.kwargs["extra_env"] == {OR_KEY: OR_TOKEN}
+    assert result.reused is False
+    assert result.port == 8835
 
 
 def test_spawn_hook_server_passes_resolved_credentials(
@@ -56,20 +93,21 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
 ) -> None:
     monkeypatch.setenv(OR_KEY, OR_TOKEN)
 
-    def fake_ensure(
+    def fake_resolve(
         config: dict,
         *,
-        credential_sources: dict[str, str],
-    ) -> None:
-        credential_sources[OR_KEY] = "keyring"
+        allow_prompt: bool = False,
+    ) -> dict[str, str]:
+        assert allow_prompt is False
+        return {OR_KEY: OR_TOKEN}
 
     with patch(
-        "cyt.hook.daemon.ensure_proxy_pipeline_credentials",
-        side_effect=fake_ensure,
-    ) as ensure:
+        "cyt.hook.daemon.resolve_hook_daemon_child_env",
+        side_effect=fake_resolve,
+    ) as resolve:
         extra = hook_daemon._resolve_spawn_credentials({})
 
-    ensure.assert_called_once()
+    resolve.assert_called_once()
     assert extra == {OR_KEY: OR_TOKEN}
 
 
