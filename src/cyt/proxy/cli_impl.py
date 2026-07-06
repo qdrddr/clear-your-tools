@@ -456,6 +456,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Block in foreground instead of spawning a background process",
     )
+    daemon_start.add_argument(
+        "--unattended",
+        action="store_true",
+        help="Hook mode: no prompts, no stdout; missing credential names go to stderr",
+    )
     daemon_stop = daemon_sub.add_parser("stop", help="Stop a daemon process started by CYT")
     daemon_stop.add_argument("--config", type=Path, default=None)
     daemon_stop.add_argument("--verbose", action="store_true")
@@ -657,6 +662,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
                 config_path=config_path,
                 verbose=verbose or bool(getattr(args, "foreground", False)),
                 foreground=bool(getattr(args, "foreground", False)),
+                unattended=bool(getattr(args, "unattended", False)),
             )
             return
         if daemon_cmd == "stop":

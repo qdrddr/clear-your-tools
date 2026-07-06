@@ -87,7 +87,7 @@ def test_cyt_hook_entry_sets_launch_agent_env_for_agent_specific_hooks() -> None
 
 def test_cyt_daemon_start_entry() -> None:
     entry = hook_setup.cyt_daemon_start_entry(agent="claude")
-    assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start"
+    assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
     assert entry["timeout"] == hook_setup.SESSION_START_TIMEOUT_SECONDS
 
 
@@ -424,7 +424,7 @@ def test_run_hook_setup_updates_duplicate_hooks(
     assert len(hooks) == 1
     assert hooks[0]["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=claude cyt hook daemon start"
+        "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
     )
 
 
@@ -472,10 +472,10 @@ def test_run_hook_setup_merges_existing_agent_configs(
         == "CYT_LAUNCH_AGENT=codex cyt-client"
     )
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=claude cyt hook daemon start"
+        "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
     )
     assert codex_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=codex cyt hook daemon start"
+        "CYT_LAUNCH_AGENT=codex cyt hook daemon start --unattended"
     )
 
 
@@ -704,7 +704,7 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     ]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
     assert entries["before_submit"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
-    assert entries["session_start"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start"
+    assert entries["session_start"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
 
 
 def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:
@@ -764,6 +764,6 @@ def test_run_hook_setup_installs_cursor_hooks(
     assert data["hooks"]["sessionStart"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
     assert (
         data["hooks"]["sessionStart"][1]["command"]
-        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start"
+        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
     )
     assert data["hooks"]["sessionEnd"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"

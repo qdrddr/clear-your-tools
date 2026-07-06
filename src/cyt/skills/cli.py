@@ -221,7 +221,7 @@ def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) 
 def _handle_session_start(_payload: dict[str, Any], _config: dict[str, Any]) -> str:
     from cyt.hook.daemon import daemon_start
 
-    result = daemon_start(verbose=False)
+    result = daemon_start(verbose=False, unattended=True)
     if result.reused:
         return "session_start_daemon_reused"
     return "session_start_daemon_started"

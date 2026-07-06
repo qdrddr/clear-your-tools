@@ -111,7 +111,7 @@ def _hook_recipe_lines(
     config_path: Path | None = None,
 ) -> list[str]:
     lines = ["# Manual hook-server recipe (reproduce this launch)"]
-    hook_cmd = "cyt hook daemon start"
+    hook_cmd = "cyt hook daemon start --unattended"
     if config_path is not None:
         hook_cmd += f" --config {config_path}"
     lines.append(hook_cmd)

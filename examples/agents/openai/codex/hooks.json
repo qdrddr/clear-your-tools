@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CYT_LAUNCH_AGENT=codex cyt hook daemon start",
+            "command": "CYT_LAUNCH_AGENT=codex cyt hook daemon start --unattended",
             "timeout": 60
           }
         ]

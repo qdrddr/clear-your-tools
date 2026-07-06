@@ -97,8 +97,10 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
         config: dict,
         *,
         allow_prompt: bool = False,
+        require_all: bool = True,
     ) -> dict[str, str]:
         assert allow_prompt is False
+        assert require_all is True
         return {OR_KEY: OR_TOKEN}
 
     with patch(
@@ -109,6 +111,72 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
 
     resolve.assert_called_once()
     assert extra == {OR_KEY: OR_TOKEN}
+
+
+def test_unattended_missing_credentials_reports_stderr_and_starts(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = {
+        "network": {"proxy": {"reverse": {"port": 8834}}},
+        "pruning": {"tools": {"sequence": ["llm"]}},
+    }
+    with (
+        patch("cyt.hook.daemon.load_config", return_value=config),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch(
+            "cyt.hook.daemon.required_proxy_env_var_names",
+            return_value=[OR_KEY],
+        ),
+        patch(
+            "cyt.hook.daemon._resolve_spawn_credentials",
+            return_value=None,
+        ) as resolve,
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+    ):
+        result = hook_daemon.daemon_start(verbose=True, unattended=True)
+
+    resolve.assert_called_once_with(
+        config,
+        allow_prompt=False,
+        require_all=False,
+    )
+    err = capsys.readouterr().err
+    assert OR_KEY in err
+    assert "remote pruning disabled" in err
+    assert result.reused is True
+    assert result.port == 8834
+
+
+def test_interactive_tty_passes_allow_prompt_to_credential_resolution(
+    pidfile_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(hook_daemon.sys.stdin, "isatty", lambda: True)
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch(
+            "cyt.hook.daemon._resolve_spawn_credentials",
+            return_value={OR_KEY: OR_TOKEN},
+        ) as resolve,
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True),
+        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+        patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
+    ):
+        spawn.return_value = MagicMock(pid=12345)
+        hook_daemon.daemon_start(verbose=False, unattended=False)
+
+    resolve.assert_called_once_with(
+        {"network": {"proxy": {"reverse": {"port": 8834}}}},
+        allow_prompt=True,
+        require_all=True,
+    )
 
 
 def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:

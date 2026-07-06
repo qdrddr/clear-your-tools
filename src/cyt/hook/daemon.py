@@ -89,9 +89,28 @@ def _needs_credential_injection(config: dict[str, Any]) -> bool:
     return bool(required_proxy_env_var_names(config))
 
 
-def _resolve_spawn_credentials(config: dict[str, Any]) -> dict[str, str] | None:
+def _report_missing_daemon_credentials(names: list[str]) -> None:
+    if not names:
+        return
+    joined = ", ".join(names)
+    print(
+        f"cyt hook daemon: missing {joined} (remote pruning disabled)",
+        file=sys.stderr,
+    )
+
+
+def _resolve_spawn_credentials(
+    config: dict[str, Any],
+    *,
+    allow_prompt: bool = False,
+    require_all: bool = True,
+) -> dict[str, str] | None:
     """Resolve pruning pipeline keys (shell → .env → keyring) for a spawned proxy child."""
-    env = resolve_hook_daemon_child_env(config, allow_prompt=False)
+    env = resolve_hook_daemon_child_env(
+        config,
+        allow_prompt=allow_prompt,
+        require_all=require_all,
+    )
     return env or None
 
 
@@ -168,8 +187,11 @@ def daemon_start(
     config_path: Path | None = None,
     verbose: bool = False,
     foreground: bool = False,
+    unattended: bool = False,
 ) -> HookDaemonStartResult:
     """Ensure a hook-capable CYT server is available (reuse-first)."""
+    if unattended:
+        verbose = False
     config = load_config(config_path)
     from cyt.cache import warm_caches
 
@@ -177,7 +199,23 @@ def daemon_start(
     base_port = resolve_reverse_port(config, None)
     mode = _resolve_daemon_mode(config)
     needs_creds = _needs_credential_injection(config)
-    extra_env = _resolve_spawn_credentials(config) if needs_creds else None
+    allow_prompt = not unattended and sys.stdin.isatty()
+    require_all = not unattended
+    extra_env: dict[str, str] | None = None
+    if needs_creds:
+        required_names = required_proxy_env_var_names(config)
+        extra_env = _resolve_spawn_credentials(
+            config,
+            allow_prompt=allow_prompt,
+            require_all=require_all,
+        )
+        if unattended:
+            missing = [
+                name
+                for name in required_names
+                if not extra_env or name not in extra_env
+            ]
+            _report_missing_daemon_credentials(missing)
 
     reused_port = _find_reusable_hook_port(base_port)
     if reused_port is not None and extra_env is not None:

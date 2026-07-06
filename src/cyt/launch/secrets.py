@@ -418,6 +418,7 @@ def resolve_hook_daemon_child_env(
     config: dict[str, Any],
     *,
     allow_prompt: bool = False,
+    require_all: bool = True,
 ) -> dict[str, str]:
     """Resolve tool/skills pruner API keys for a hook daemon child process."""
     names = required_proxy_env_var_names(config)
@@ -428,6 +429,7 @@ def resolve_hook_daemon_child_env(
         names,
         credential_sources=credential_sources,
         allow_prompt=allow_prompt,
+        require_all=require_all,
     )
     return {name: value for name in credential_sources if (value := os.environ.get(name))}
 
@@ -558,8 +560,13 @@ def ensure_named_credentials(
     *,
     credential_sources: dict[str, str] | None = None,
     allow_prompt: bool = True,
-) -> None:
-    """Ensure *names* are available using the standard credential resolution order."""
+    require_all: bool = True,
+) -> list[str]:
+    """Ensure *names* are available using the standard credential resolution order.
+
+    Returns unresolved variable names. Raises ``SystemExit`` when *require_all* is
+    true and any name remains missing after resolution.
+    """
     before = _snapshot_env()
     load_proxy_env()
     preload_keyring_credentials(names)
@@ -578,7 +585,7 @@ def ensure_named_credentials(
         else:
             missing.append(name)
 
-    if missing:
+    if missing and require_all:
         vars_block = "\n".join(f"\t{name}" for name in missing)
         env_locations = "\n".join(f"\t{p}" for p in (_cwd_env_path(), _user_env_path()))
         raise SystemExit(
@@ -586,3 +593,4 @@ def ensure_named_credentials(
             f"Export them in the shell or define them in\n{env_locations}\n"
             "Or run interactively to store them in the keyring.",
         )
+    return missing

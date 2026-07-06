@@ -40,7 +40,8 @@ SESSION_START_TIMEOUT_SECONDS = 60
 USER_PROMPT_TIMEOUT_SECONDS = 60
 CYT_HOOK_COMMAND_PREFIX = "cyt hook"
 CYT_CLIENT_COMMAND = "cyt-client"
-CYT_DAEMON_START_COMMAND = "cyt hook daemon start"
+CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
+CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
 HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
     "session_id": "sess-00000000-0000-4000-8000-000000000001",
     "turn_id": "turn-00000000-0000-4000-8000-000000000001",
@@ -316,7 +317,7 @@ def _is_cyt_hook_command(command: object) -> bool:
     normalized = command.strip()
     if normalized == CYT_CLIENT_COMMAND or normalized.endswith(f" {CYT_CLIENT_COMMAND}"):
         return True
-    if CYT_DAEMON_START_COMMAND in normalized:
+    if CYT_DAEMON_START_COMMAND in normalized or CYT_DAEMON_START_COMMAND_BASE in normalized:
         return True
     if normalized.startswith("cyt skills"):
         return True
