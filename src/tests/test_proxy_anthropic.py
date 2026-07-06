@@ -369,8 +369,10 @@ def test_transform_anthropic_request_inject_into_user_message(
 
     assert skills_meta is not None
     assert skills_meta.skills_in > 0
-    assert len(out["tools"]) == 1
+    assert len(out["tools"]) == 2
     assert out["tools"][0]["name"] == "Read"
+    assert out["tools"][1]["name"] == "mcp__a__grep"
+    assert "description" not in out["tools"][1]
     user_text = out["messages"][-1]["content"]
     assert "<agent-skills>" in user_text
     assert "<agent-tools" in user_text
@@ -408,7 +410,10 @@ def test_transform_anthropic_request_inject_keeps_all_original_system_tools() ->
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, _, _ = transform_anthropic_request(body, config=config)
 
-    assert [t["name"] for t in out["tools"]] == ["Read", "Write"]
+    assert [t["name"] for t in out["tools"]] == ["Read", "Write", "mcp__ctx7__query-docs"]
+    mcp_stub = out["tools"][2]
+    assert "description" not in mcp_stub
+    assert mcp_stub["input_schema"] == {"type": "object", "properties": {}}
     user_text = out["messages"][-1]["content"]
     assert "<agent-tools" in user_text
     assert "mcp__ctx7__query-docs" in user_text
@@ -441,7 +446,9 @@ def test_transform_anthropic_request_inject_into_user_message_tool_result_only()
     with patch("cyt.pruning.coordinator.filter_tools_for_query", return_value=prune_result):
         out, _, _ = transform_anthropic_request(body, config=config)
 
-    assert out["tools"] == []
+    assert len(out["tools"]) == 1
+    assert out["tools"][0]["name"] == "mcp__a__grep"
+    assert "description" not in out["tools"][0]
     last_user = out["messages"][-1]
     assert last_user["role"] == "user"
     assert last_user["content"][-1]["type"] == "text"

@@ -34,6 +34,7 @@ def _openai_split_for_user_inject(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     from cyt.proxy.user_message_inject import (
         mcp_tools_from_pruned_named,
+        openai_append_mcp_stubs,
         openai_tools_keep_system_only,
     )
 
@@ -41,6 +42,7 @@ def _openai_split_for_user_inject(
     named = pruned_named if pruned_named is not None else flat_original
     mcp_for_inject = mcp_tools_from_pruned_named(named)
     final_tools = openai_tools_keep_system_only(original_tools, named)
+    final_tools = openai_append_mcp_stubs(final_tools, original_tools)
     return final_tools, mcp_for_inject
 
 

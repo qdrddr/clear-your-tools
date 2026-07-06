@@ -1243,6 +1243,7 @@ def _anthropic_finish_transform(
     from cyt.config import inject_into_user_message
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
+        anthropic_root_tools_with_mcp_stubs,
         anthropic_tools_for_user_message_inject,
         append_injection_to_body,
         split_tools_for_root_and_inject,
@@ -1273,7 +1274,7 @@ def _anthropic_finish_transform(
             source_tools = original.get("tools") or []
             if isinstance(source_tools, list) and source_tools:
                 mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
-                original["tools"] = system_tools
+                original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
                 deferred_tools_text = format_agent_tools(mcp_tools)
     elif user_message_inject:
         source_tools = original.get("tools") or []
@@ -1284,7 +1285,7 @@ def _anthropic_finish_transform(
                 source_tools,
                 pruned_tools,
             )
-            original["tools"] = system_tools
+            original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
             deferred_tools_text = format_agent_tools(mcp_tools)
     elif result.tools is not None:
         original["tools"] = result.tools

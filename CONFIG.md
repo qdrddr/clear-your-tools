@@ -481,7 +481,9 @@ land in the upstream HTTP body. Claude Code uses the `/anthropic` endpoint; Code
 - **`false`**: pruned tools replace the root `tools` array; skills inject into the system message
   (Claude Code) or a developer message before the last user turn (Codex).
 - **`true` (default)**: system tools stay in root `tools`; pruned **MCP** tools are removed from `tools` and
-  injected as `<agent-tools>…</agent-tools>` into the **latest user message**. Skills inject as
+  injected as `<agent-tools>…</agent-tools>` into the **latest user message**. **Minimal MCP stubs** (name +
+  empty schema only) remain in `tools[]` so the agent can invoke native MCP `tool_use` calls; full pruned defs
+  live in the user-turn inject block. Skills inject as
   `<agent-skills>…</agent-skills>` into that same user turn (not system/developer). Tool pruning
   still uses the normal BM25/rerank/LLM query extraction — only the injection anchor moves to the
   last user turn to preserve provider prompt-cache prefixes. Ignored when `inject_via: hook`.

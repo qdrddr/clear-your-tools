@@ -49,6 +49,97 @@ def anthropic_tools_for_user_message_inject(
     return mcp_tools, system_tools
 
 
+_MINIMAL_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
+
+
+def _openai_tool_pass_through(tool: dict[str, Any]) -> bool:
+    return isinstance(tool, dict) and not str(tool.get("name", ""))
+
+
+def anthropic_mcp_tool_stub(tool: dict[str, Any]) -> dict[str, Any]:
+    """Bare MCP stub for Anthropic ``tools[]`` when defs inject into the user turn."""
+    name = str(tool.get("name", "")).strip()
+    schema_key = "input_schema" if "input_schema" in tool else "inputSchema"
+    if schema_key not in tool:
+        schema_key = "input_schema"
+    return {schema_key: dict(_MINIMAL_OBJECT_SCHEMA), "name": name}
+
+
+def anthropic_mcp_tool_stubs(original_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    mcp_tools, _ = split_tools_for_root_and_inject(original_tools)
+    return [anthropic_mcp_tool_stub(tool) for tool in mcp_tools]
+
+
+def anthropic_root_tools_with_mcp_stubs(
+    system_tools: list[dict[str, Any]],
+    original_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Append minimal callable MCP stubs after system tools (original MCP order)."""
+    return list(system_tools) + anthropic_mcp_tool_stubs(original_tools)
+
+
+def _openai_mcp_function_child_stub(child: dict[str, Any]) -> dict[str, Any]:
+    stub: dict[str, Any] = {
+        "type": "function",
+        "name": str(child.get("name", "")),
+        "strict": child.get("strict", False),
+        "parameters": dict(_MINIMAL_OBJECT_SCHEMA),
+    }
+    if "defer_loading" in child:
+        stub["defer_loading"] = child["defer_loading"]
+    return stub
+
+
+def openai_mcp_namespace_stub(tool: dict[str, Any]) -> dict[str, Any]:
+    children = tool.get("tools") or []
+    stub_children = [
+        _openai_mcp_function_child_stub(child)
+        for child in children
+        if isinstance(child, dict) and str(child.get("name", ""))
+    ]
+    return {
+        "type": "namespace",
+        "name": str(tool.get("name", "")),
+        "tools": stub_children,
+    }
+
+
+def openai_mcp_flat_function_stub(tool: dict[str, Any]) -> dict[str, Any]:
+    stub: dict[str, Any] = {
+        "type": tool.get("type", "function"),
+        "name": str(tool.get("name", "")),
+        "strict": tool.get("strict", False),
+        "parameters": dict(_MINIMAL_OBJECT_SCHEMA),
+    }
+    if "defer_loading" in tool:
+        stub["defer_loading"] = tool["defer_loading"]
+    return stub
+
+
+def openai_mcp_tool_stubs(original_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    stubs: list[dict[str, Any]] = []
+    for tool in original_tools:
+        if not isinstance(tool, dict) or _openai_tool_pass_through(tool):
+            continue
+        if tool.get("type") == "namespace":
+            namespace = str(tool.get("name", ""))
+            if anthropic_tool_is_mcp({"name": namespace}):
+                stubs.append(openai_mcp_namespace_stub(tool))
+            continue
+        name = str(tool.get("name", ""))
+        if name and anthropic_tool_is_mcp({"name": name}):
+            stubs.append(openai_mcp_flat_function_stub(tool))
+    return stubs
+
+
+def openai_append_mcp_stubs(
+    system_tools: list[dict[str, Any]],
+    original_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Append minimal MCP stubs after system tools (original MCP order/structure)."""
+    return list(system_tools) + openai_mcp_tool_stubs(original_tools)
+
+
 def _message_content_text(content: object) -> str:
     if isinstance(content, str):
         return content
@@ -212,10 +303,6 @@ def append_injection_to_body(body: dict[str, Any], text: str, *, kind: ProxyKind
     if kind == "anthropic":
         return anthropic_append_to_user_turn(body, text)
     return openai_append_to_user_turn(body, text)
-
-
-def _openai_tool_pass_through(tool: dict[str, Any]) -> bool:
-    return isinstance(tool, dict) and not str(tool.get("name", ""))
 
 
 def _openai_namespace_tool_name(namespace: str, tool_name: str) -> str:
