@@ -24,7 +24,7 @@ models:
       domain_match: ["api.deepinfra.com"]
       key_var_name: DEEPINFRA_API_KEY
       # base_url: https://api.deepinfra.com/v1
-    - provider_nick: openrouter
+    - provider_nick: openrouter-ai
       provider: openrouter
       key_var_name: OPENROUTER_API_KEY
       domain_match: ["openrouter.ai"]
@@ -33,28 +33,28 @@ models:
     remote:
       # Reference-only / duplicate catalog entries (enable in user config as needed):
       - name: openai/gpt-oss-120b
-        provider_nick: openrouter
+        provider_nick: openrouter-ai
         nick: gpt-oss-120b
         max_tokens: 128000
         pricing:
           input_cost_per_token: 1.5e-07
           output_cost_per_token: 6e-07
       - name: inception/mercury-2
-        provider_nick: openrouter
+        provider_nick: openrouter-ai
         nick: mercury-2
         max_tokens: 1280000
         pricing:
           input_cost_per_token: 2.5e-07
           output_cost_per_token: 7.5e-07
       - name: google/gemini-3-flash-preview
-        provider_nick: openrouter
+        provider_nick: openrouter-ai
         nick: gemini-3-flash
         max_tokens: 10000000
         pricing:
           input_cost_per_token: 0.5e-06
           output_cost_per_token: 3e-06
       - name: google/gemini-3.1-flash-lite
-        provider_nick: openrouter
+        provider_nick: openrouter-ai
         nick: gemini-3.1-flash-lite
         max_tokens: 10000000
         pricing:
@@ -95,6 +95,12 @@ models:
         pricing:
           input_cost_per_token: 3e-06
           output_cost_per_token: 15e-06
+      - name: claude-sonnet-5
+        nick: openrouter-ai-claude-sonnet-5
+        provider_nick: openrouter-ai
+        pricing:
+          input_cost_per_token: 3.0e-06
+          output_cost_per_token: 1.5e-05
       - name: gpt-5.4-nano
         provider_nick: openai
         nick: gpt-5.4-nano
@@ -202,7 +208,7 @@ network:
         - endpoint: openrouter
           kind: openrouter
           url: https://openrouter.ai/api
-          provider_nick: openrouter
+          provider_nick: openrouter-ai
       endpoints:
         - anthropic
         - openai
