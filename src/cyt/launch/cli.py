@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from cyt.common.agents import launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
     inject_via,
@@ -21,6 +22,13 @@ from cyt.launch.claude import run as run_claude
 from cyt.launch.codex import configure_provider, restore_provider
 from cyt.launch.codex import run as run_codex
 from cyt.launch.config import codex_env_key_name
+from cyt.launch.cursor import (
+    ensure_cursor_hooks_for_launch,
+    ensure_cursor_inject_via_hook,
+)
+from cyt.launch.cursor import (
+    run as run_cursor,
+)
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import (
@@ -39,13 +47,15 @@ from cyt.tools.hook_setup import ensure_tools_hook_file_interactive
 
 
 def parse_launch_remainder(remainder: list[str]) -> tuple[AgentName, list[str]]:
-    """Parse ``-- claude|codex [args...]``."""
+    """Parse ``-- claude|codex|cursor [args...]``."""
     if not remainder or remainder[0] != "--":
         raise SystemExit(
-            "cyt launch requires `--` followed by agent name (claude or codex).",
+            f"cyt launch requires `--` followed by an agent name.\n\n{launch_agent_usage_hint()}",
         )
     if len(remainder) < 2:
-        raise SystemExit("Missing agent name after `--`; expected claude or codex.")
+        raise SystemExit(
+            f"Missing agent name after `--`.\n\n{launch_agent_usage_hint()}",
+        )
     try:
         agent = parse_agent_name(remainder[1])
     except ValueError as exc:
@@ -96,7 +106,7 @@ def add_shared_upstream_args(parser: argparse.ArgumentParser) -> None:
 def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
     launch_parser = subparsers.add_parser(
         "launch",
-        help="Launch Claude Code or Codex through the CYT proxy",
+        help="Launch Claude Code, Codex, or Cursor through CYT",
     )
     add_shared_upstream_args(launch_parser)
     for action in launch_parser._actions:
@@ -155,7 +165,7 @@ def add_launch_parser(subparsers: argparse._SubParsersAction) -> None:
     launch_parser.add_argument(
         "remainder",
         nargs=argparse.REMAINDER,
-        help="Use `-- claude|codex [agent args...]`",
+        help="Use `-- claude|codex|cursor [agent args...]`",
     )
 
 
@@ -205,6 +215,21 @@ def _ensure_launch_agent_auth(
     return runtime, binding
 
 
+def _validate_cursor_launch_args(args: argparse.Namespace) -> None:
+    if (
+        args.upstream is not None
+        or args.upstream_kind is not None
+        or args.upstream_name is not None
+    ):
+        raise SystemExit("Cursor launch does not use CYT upstream routing; omit --upstream flags.")
+    if args.configure or args.restore:
+        raise SystemExit("--configure and --restore are not supported for cursor.")
+    if _launch_switch_provider(args) or _launch_force_proxy(args):
+        raise SystemExit(
+            "Cursor launch uses hook injection only; omit --proxy and --switch-provider.",
+        )
+
+
 def _run_launched_agent(
     *,
     agent: AgentName,
@@ -225,15 +250,17 @@ def _run_launched_agent(
             use_proxy=use_proxy,
             switch_provider=switch_provider,
         )
-    return run_codex(
-        config=runtime.config,
-        port=runtime.port,
-        endpoint=endpoint,
-        agent_args=agent_args,
-        auth_binding=auth_binding,
-        use_proxy=use_proxy,
-        switch_provider=switch_provider,
-    )
+    if agent == "codex":
+        return run_codex(
+            config=runtime.config,
+            port=runtime.port,
+            endpoint=endpoint,
+            agent_args=agent_args,
+            auth_binding=auth_binding,
+            use_proxy=use_proxy,
+            switch_provider=switch_provider,
+        )
+    return run_cursor(agent_args=agent_args)
 
 
 def _proxy_spawn_extra_env(
@@ -291,6 +318,76 @@ def _ensure_hook_server(
 
     result = daemon_start(config_path=runtime.config_path, verbose=False)
     runtime.port = result.port
+
+
+def _run_cursor_launch_session(
+    *,
+    args: argparse.Namespace,
+    agent_args: list[str],
+    runtime: RuntimeContext,
+) -> int:
+    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+    if debug or debug_dry_run or debug_strict:
+        raise SystemExit("Cursor launch does not support --debug flags.")
+
+    config = runtime.config
+    if sys.stdin.isatty():
+        config = ensure_tools_hook_file_interactive(runtime.config_path, config)
+        config = ensure_cursor_inject_via_hook(runtime.config_path, config)
+        ensure_cursor_hooks_for_launch()
+        runtime.config = config
+    elif inject_via(config) != "hook":
+        raise SystemExit(
+            "Cursor only supports hook injection (pruning.inject_via: hook). "
+            "Update your CYT config and retry.",
+        )
+    else:
+        ensure_cursor_hooks_for_launch(quiet=True)
+
+    if (
+        sys.stdin.isatty()
+        and inject_via(config) == "hook"
+        and tools_hook_tools_from(config) == "executor"
+    ):
+        ensure_named_credentials(
+            required_tools_hook_env_var_names(config),
+            credential_sources=runtime.credential_sources,
+        )
+
+    from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
+
+    if tools_hook_tools_from(config) == "executor" and inject_via(config) == "hook":
+        schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+
+    from cyt.cache import warm_caches
+
+    warm_caches(config)
+
+    os.environ.update(launch_agent_env("cursor"))
+    _ensure_hook_server(runtime=runtime)
+
+    from cyt.hook.port import hook_url_for_port
+
+    print_runtime_env_report(
+        quiet=False,
+        credential_sources=runtime.credential_sources,
+        port=runtime.port,
+        endpoint=None,
+        upstream_url=None,
+        include_agent_recipe=True,
+        agent="cursor",
+        launch_env={"CYT_HOOK_URL": hook_url_for_port(runtime.port)},
+        config=runtime.config,
+        config_path=runtime.config_path,
+        auth_binding=None,
+        debug=False,
+        debug_dry_run=False,
+        debug_strict=False,
+        hook_mode=True,
+        switch_provider=False,
+    )
+
+    return run_cursor(agent_args=agent_args)
 
 
 def _run_launch_session(
@@ -430,6 +527,9 @@ def run(args: argparse.Namespace) -> None:
         if agent != "codex":
             raise SystemExit("--configure and --restore are only supported for codex.")
 
+    if agent == "cursor":
+        _validate_cursor_launch_args(args)
+
     if args.restore:
         config = load_config(args.config)
         restore_provider(env_key=codex_env_key_name(config))
@@ -481,6 +581,15 @@ def run(args: argparse.Namespace) -> None:
             env_key=codex_env_key_name(runtime.config),
         )
         return
+
+    if agent == "cursor":
+        raise SystemExit(
+            _run_cursor_launch_session(
+                args=args,
+                agent_args=agent_args,
+                runtime=runtime,
+            ),
+        )
 
     raise SystemExit(
         _run_launch_session(

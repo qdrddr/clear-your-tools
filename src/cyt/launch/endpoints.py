@@ -22,6 +22,9 @@ def resolve_agent_endpoint(
     upstream_cli_endpoint: str | None,
 ) -> str:
     """Choose the reverse-proxy endpoint for this launch."""
+    if agent == "cursor":
+        return "cursor"
+
     if upstream_cli_endpoint is not None:
         return upstream_cli_endpoint
 

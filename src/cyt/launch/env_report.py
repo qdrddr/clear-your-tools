@@ -11,7 +11,7 @@ from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.upstream import AgentName, direct_upstream_base_url
 
-AgentRecipe = Literal["claude", "codex"]
+AgentRecipe = Literal["claude", "codex", "cursor"]
 
 
 def _print_section(title: str, lines: list[str]) -> None:
@@ -241,6 +241,15 @@ def _launch_env_source_lines(
     return lines
 
 
+def _cursor_recipe_lines() -> list[str]:
+    return [
+        "# Manual Cursor recipe",
+        "cursor .",
+        "# Pruned skills/tools inject via ~/.cursor/hooks.json + cyt-client rules file",
+        "# Requires pruning.inject_via: hook",
+    ]
+
+
 def _agent_recipe_lines(
     *,
     agent: AgentName,
@@ -272,6 +281,9 @@ def _agent_recipe_lines(
             switch_provider=switch_provider,
             config=config,
         )
+
+    if agent == "cursor":
+        return _cursor_recipe_lines()
 
     env_key = codex_env_key_name(config or {})
     return _codex_recipe_lines(

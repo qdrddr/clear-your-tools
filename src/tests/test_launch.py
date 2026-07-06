@@ -294,6 +294,17 @@ class TestParseLaunchRemainder:
         assert agent == "codex"
         assert args == ["-m", "gpt-5.4-mini"]
 
+    def test_unknown_agent_lists_acceptable_options(self) -> None:
+        with pytest.raises(SystemExit) as exc:
+            parse_launch_remainder(["--", "newagent"])
+        message = str(exc.value)
+        assert "Unknown agent 'newagent'" in message
+        assert "Acceptable agents:" in message
+        assert "  claude" in message
+        assert "  codex" in message
+        assert "  cursor" in message
+        assert "Usage: cyt launch -- <agent>" in message
+
 
 class TestRequiredLaunchEnvVars:
     def test_codex_does_not_require_codex_key_in_prepare_runtime(

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from cyt.common.agents import AgentName
+from cyt.common.agents import LAUNCH_AGENTS, AgentName, unknown_launch_agent_message
 from cyt.config import (
     UPSTREAM_URL_DEFAULTS,
     load_config,
@@ -26,12 +26,12 @@ from cyt.proxy.setup_wizard import (
     upstream_entry_endpoint,
 )
 
-_AGENT_DEFAULT_URLS: dict[AgentName, tuple[str, str]] = {
+_AGENT_DEFAULT_URLS: dict[Literal["claude", "codex"], tuple[str, str]] = {
     "claude": ("https://api.anthropic.com", "anthropic"),
     "codex": ("https://api.openai.com", "openai"),
 }
 
-_AGENT_KIND: dict[AgentName, str] = {
+_AGENT_KIND: dict[Literal["claude", "codex"], str] = {
     "claude": "anthropic",
     "codex": "openai",
 }
@@ -67,18 +67,17 @@ def infer_upstream_kind_from_url(url: str) -> str | None:
 
 def parse_agent_name(raw: str) -> AgentName:
     """Return a validated launch agent name."""
-    agent = raw.lower()
-    if agent == "claude":
-        return "claude"
-    if agent == "codex":
-        return "codex"
-    if agent == "cursor":
-        return "cursor"
-    raise ValueError(f"Unknown agent {raw!r}; expected claude, codex, or cursor")
+    lowered = raw.lower()
+    for name in LAUNCH_AGENTS:
+        if lowered == name:
+            return name
+    raise ValueError(unknown_launch_agent_message(raw))
 
 
 def infer_upstream_kind_from_agent(agent: AgentName) -> str:
     """Map launch agent name to upstream kind."""
+    if agent == "cursor":
+        raise ValueError("cursor has no upstream kind")
     return _AGENT_KIND[agent]
 
 
@@ -95,6 +94,8 @@ def resolve_upstream_kind(
         if inferred := infer_upstream_kind_from_url(url):
             return inferred
     if agent is not None:
+        if agent == "cursor":
+            return None
         return infer_upstream_kind_from_agent(agent)
     return None
 
@@ -203,6 +204,8 @@ def prompt_upstream_picker(
 
 def prompt_confirm_default_upstream(agent: AgentName) -> tuple[str, str, str]:
     """One-line confirm for launch when no compatible upstream is configured."""
+    if agent == "cursor":
+        raise ValueError("cursor has no default upstream")
     default_url, kind = _AGENT_DEFAULT_URLS[agent]
     raw = prompt_with_default(f"Add upstream for {agent}?", default_url)
     url = normalize_upstream_url(raw or default_url)
@@ -298,6 +301,9 @@ def ensure_upstream_for_runtime(
     upstream_name: str | None,
 ) -> str | None:
     """Resolve upstream configuration; return CLI-applied endpoint name if any."""
+    if agent == "cursor":
+        return None
+
     path = resolve_config_path(config_path)
     overlay = load_user_config_overlay(path)
 

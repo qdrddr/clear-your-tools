@@ -85,3 +85,13 @@ otherwise BM25 matching uses the prompt text alone.
 The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.
 
 Skill directories for Cursor: `.cursor/skills/` in the project and `~/.cursor/skills/` in the home directory.
+
+## Launch Cursor through CYT
+
+```bash
+cyt launch -- cursor .
+```
+
+This starts the hook daemon, ensures `~/.cursor/hooks.json` is wired, and opens Cursor.
+Cursor only supports hook injection — if `pruning.inject_via` is `proxy`, the launcher prompts to
+switch it to `hook` (default: yes).
