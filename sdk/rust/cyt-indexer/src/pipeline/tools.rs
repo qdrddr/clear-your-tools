@@ -8,9 +8,9 @@ use crate::bm25_search::{ScoreCatalogOptions, score_catalog_in_place};
 use crate::build::{CatalogIndex, catalog_tool_count};
 use crate::policies::{
     PolicyContext, catalog_needs_partition, catalog_needs_pruned_recompose,
-    classify_optional_chunks_batch, drop_recomposed_tools_with_empty_properties,
-    filter_recompose_json_entries, full_pass_through, merge_catalog,
-    mitigate_empty_optional_properties, partition_catalog,
+    classify_optional_chunks_batch, classify_optional_chunks_batch_with_ctx,
+    drop_recomposed_tools_with_empty_properties, filter_recompose_json_entries, full_pass_through,
+    merge_catalog, mitigate_empty_optional_properties, partition_catalog,
 };
 use crate::retrieve::{DecomposedCatalog, RetrieveOptions, retrieve_tools_from_catalog};
 use crate::runtime_config;
@@ -58,7 +58,7 @@ fn breakdown_entry(data: &Value) -> HashMap<String, usize> {
     HashMap::from([("json".into(), json_n), ("md".into(), md_n)])
 }
 
-fn count_optional_property_chunks(data: &Value) -> usize {
+fn count_optional_property_chunks(data: &Value, ctx: &PolicyContext) -> usize {
     let Some(items) = data.get("json").and_then(Value::as_array) else {
         return 0;
     };
@@ -70,7 +70,7 @@ fn count_optional_property_chunks(data: &Value) -> usize {
     if dict_items.is_empty() {
         return 0;
     }
-    let (system_flags, mcp_flags) = classify_optional_chunks_batch(&dict_items);
+    let (system_flags, mcp_flags) = classify_optional_chunks_batch_with_ctx(&dict_items, ctx);
     system_flags
         .iter()
         .zip(mcp_flags.iter())
@@ -250,7 +250,7 @@ pub fn prune_catalog_bm25_and_retrieve(
     output_ctx: &PolicyContext,
     options: &PruneBm25Options,
 ) -> Result<PruneRetrieveResult, String> {
-    let optional_chunk_count_in = count_optional_property_chunks(catalog_data);
+    let optional_chunk_count_in = count_optional_property_chunks(catalog_data, scoring_ctx);
 
     let build_breakdown = breakdown_entry(catalog_data);
     let build_total = build_breakdown.get("json").copied().unwrap_or(0)
@@ -323,7 +323,7 @@ pub fn prune_catalog_bm25_and_retrieve(
     );
     let tools = drop_recomposed_tools_with_empty_properties(output_ctx, &tools, catalog_index);
 
-    let optional_chunk_count_out = count_optional_property_chunks(&recompose_data);
+    let optional_chunk_count_out = count_optional_property_chunks(&recompose_data, scoring_ctx);
 
     let mut decomposed_breakdown = HashMap::new();
     decomposed_breakdown.insert("build_index".into(), build_breakdown);

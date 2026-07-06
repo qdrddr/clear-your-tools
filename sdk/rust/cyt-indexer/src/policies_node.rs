@@ -68,6 +68,21 @@ impl PolicyContextNapi {
         }
         self.inner.per_tool = per_tool;
     }
+
+    #[napi(getter)]
+    #[must_use]
+    pub fn tool_kind(&self) -> Option<String> {
+        self.inner
+            .tool_kind_override
+            .map(policies::ToolKind::as_str)
+            .map(str::to_string)
+    }
+
+    #[napi(setter)]
+    pub fn set_tool_kind(&mut self, value: Option<String>) {
+        self.inner.tool_kind_override =
+            value.and_then(|s| policies::parse_tool_kind(&s));
+    }
 }
 
 #[must_use]
@@ -82,13 +97,18 @@ pub fn ctx_from_js_object(ctx: PolicyContextJs) -> PolicyContext {
         .into_iter()
         .filter_map(|(k, v)| parse_tool_policy(&v).map(|p| (k, p)))
         .collect();
-    PolicyContext::with_overrides(
+    let mut policy_ctx = PolicyContext::with_overrides(
         ctx.system_policy
             .as_deref()
             .and_then(parse_tool_policy),
         ctx.mcp_policy.as_deref().and_then(parse_tool_policy),
         per_tool,
-    )
+    );
+    policy_ctx.tool_kind_override = ctx
+        .tool_kind
+        .as_deref()
+        .and_then(policies::parse_tool_kind);
+    policy_ctx
 }
 
 #[napi(object)]
@@ -96,6 +116,7 @@ pub struct PolicyContextJs {
     pub system_policy: Option<String>,
     pub mcp_policy: Option<String>,
     pub per_tool: Option<HashMap<String, String>>,
+    pub tool_kind: Option<String>,
 }
 
 #[must_use]

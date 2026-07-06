@@ -97,6 +97,7 @@ pub fn parse_policy_context(val: &Value) -> PolicyContext {
     if val.get("system_policy").is_some()
         || val.get("mcp_policy").is_some()
         || val.get("per_tool").is_some()
+        || val.get("tool_kind").is_some()
     {
         let system_policy = val
             .get("system_policy")
@@ -116,7 +117,15 @@ pub fn parse_policy_context(val: &Value) -> PolicyContext {
                 }
             }
         }
-        return PolicyContext::with_overrides(system_policy, mcp_policy, per_tool);
+        let mut ctx = PolicyContext::with_overrides(system_policy, mcp_policy, per_tool);
+        if let Some(kind) = val
+            .get("tool_kind")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse().ok())
+        {
+            ctx.tool_kind_override = Some(kind);
+        }
+        return ctx;
     }
     policy_context_from_values(val)
 }

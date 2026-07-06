@@ -852,6 +852,7 @@ def scoring_policy_context(ctx: PolicyContext) -> PolicyContext:
     scoring.system_policy = scoring_policy(ctx.system_policy)
     scoring.mcp_policy = scoring_policy(ctx.mcp_policy)
     scoring.per_tool = {tool_id: scoring_policy(policy) for tool_id, policy in ctx.per_tool.items()}
+    scoring.tool_kind = ctx.tool_kind
     return scoring
 
 

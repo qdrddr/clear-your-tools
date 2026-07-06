@@ -79,6 +79,8 @@ export type ToolPolicy =
   | "prune_all"
   | "prune_optional_descriptions"
   | "prune_all_descriptions";
+/** Batch override on native `PolicyContext.toolKind` (`"system"` | `"mcp"`). */
+export type ToolKind = "system" | "mcp";
 
 export { PolicyContextNative as PolicyContext };
 

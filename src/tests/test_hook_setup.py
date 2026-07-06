@@ -704,7 +704,10 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     ]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
     assert entries["before_submit"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
-    assert entries["session_start"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
+    assert (
+        entries["session_start"]["command"]
+        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
+    )
 
 
 def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:

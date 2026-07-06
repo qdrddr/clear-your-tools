@@ -32,6 +32,10 @@ ToolPolicy = Literal[
     "prune_optional_descriptions",
     "prune_all_descriptions",
 ]
+ToolKind = Literal["system", "mcp"]
+
+# ``PolicyContext.tool_kind`` — optional batch override for system vs MCP classification.
+# When unset, tool kind is inferred from the ``mcp__`` name prefix.
 
 
 def tool_policies() -> tuple[str, ...]:

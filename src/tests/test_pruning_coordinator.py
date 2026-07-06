@@ -157,6 +157,51 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
     assert "root" in result.prune_results
 
 
+def test_coordinated_hook_applies_executor_tool_kind() -> None:
+    from cyt_indexer.policies import PolicyContext
+
+    config: dict[str, Any] = {
+        "skills": {"enabled": True, "pipeline": "bm25"},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "hook": {"tools_from": "executor"},
+                "sequence": ["bm25"],
+            },
+        },
+    }
+    tools = [{"name": "tools.demo.org.default.search", "description": "search"}]
+    captured: list[PolicyContext] = []
+
+    def capture_run_catalog_pruning(*args: object, **kwargs: object) -> tuple:
+        captured.append(args[5])
+        captured.append(args[6])
+        raise RuntimeError("stop-after-context")
+
+    with (
+        patch("cyt.proxy.anthropic._run_catalog_pruning", side_effect=capture_run_catalog_pruning),
+        patch("cyt.pruning.coordinator._run_skills_search", return_value=[]),
+        patch("cyt.config.effective_pruning_pipeline", return_value=["bm25"]),
+        patch("cyt.config.effective_skills_pipeline", return_value="bm25"),
+    ):
+        try:
+            coordinate_skills_tools_prune(
+                "search",
+                config,
+                [ToolSource("root", tools)],
+                skill_entries=[{"path": "skill.md"}],
+                for_hook=True,
+                skills_allowed=True,
+                tools_allowed=True,
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "stop-after-context"
+
+    assert len(captured) == 2
+    assert captured[0].tool_kind == "mcp"
+    assert captured[1].tool_kind == "mcp"
+
+
 def test_rerank_multi_bulk_uses_parallel_runner() -> None:
     from cyt.common.token_usage import empty_usage
     from cyt.pruners import rerank as rerank_module

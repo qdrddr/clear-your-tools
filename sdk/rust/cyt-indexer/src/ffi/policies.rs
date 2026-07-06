@@ -25,15 +25,28 @@ fn hashset_to_json(set: HashSet<String>) -> Value {
 }
 
 fn policy_context_to_json(ctx: &PolicyContext) -> Value {
-    json!({
-        "system_policy": ctx.system_policy.as_str(),
-        "mcp_policy": ctx.mcp_policy.as_str(),
-        "per_tool": ctx
-            .per_tool
-            .iter()
-            .map(|(k, v)| (k.clone(), v.as_str()))
-            .collect::<HashMap<_, _>>(),
-    })
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "system_policy".into(),
+        Value::String(ctx.system_policy.as_str().to_string()),
+    );
+    obj.insert(
+        "mcp_policy".into(),
+        Value::String(ctx.mcp_policy.as_str().to_string()),
+    );
+    obj.insert(
+        "per_tool".into(),
+        Value::Object(
+            ctx.per_tool
+                .iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.as_str().to_string())))
+                .collect(),
+        ),
+    );
+    if let Some(kind) = ctx.tool_kind_override {
+        obj.insert("tool_kind".into(), Value::String(kind.as_str().to_string()));
+    }
+    Value::Object(obj)
 }
 
 macro_rules! bool_item_fn {

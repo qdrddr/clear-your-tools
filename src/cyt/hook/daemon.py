@@ -210,11 +210,7 @@ def daemon_start(
             require_all=require_all,
         )
         if unattended:
-            missing = [
-                name
-                for name in required_names
-                if not extra_env or name not in extra_env
-            ]
+            missing = [name for name in required_names if not extra_env or name not in extra_env]
             _report_missing_daemon_credentials(missing)
 
     reused_port = _find_reusable_hook_port(base_port)

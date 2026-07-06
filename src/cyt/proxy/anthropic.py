@@ -19,6 +19,7 @@ from cyt.config import (
     load_config,
     pruning_pipeline_from_config,
     tools_inject_via,
+    uses_executor_tool_catalog,
 )
 from cyt.indexer.build import (
     CatalogIndex,
@@ -48,6 +49,7 @@ from cyt.pruners.policies import (
 )
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
+from cyt.tools.policy_context import apply_executor_tool_kind
 from cyt_core.types.prune import PruneResult
 
 logger = logging.getLogger(__name__)
@@ -1025,6 +1027,9 @@ def filter_tools_for_query(
         config,
         terminal_stage=terminal_stage,
     )
+    if for_hook and uses_executor_tool_catalog(config):
+        apply_executor_tool_kind(policy_ctx, "mcp")
+        apply_executor_tool_kind(output_policy_ctx, "mcp")
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(

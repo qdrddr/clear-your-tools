@@ -119,11 +119,58 @@ pub fn needs_description_reinstate(ctx: &PolicyContext) -> bool {
     ctx.per_tool.values().any(|p| is_description_policy(*p))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolKind {
+    System,
+    Mcp,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ParseToolKindError;
+
+impl std::fmt::Display for ParseToolKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("unknown tool kind")
+    }
+}
+
+impl std::error::Error for ParseToolKindError {}
+
+impl FromStr for ToolKind {
+    type Err = ParseToolKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "system" => Ok(Self::System),
+            "mcp" => Ok(Self::Mcp),
+            _ => Err(ParseToolKindError),
+        }
+    }
+}
+
+#[must_use]
+pub fn parse_tool_kind(s: &str) -> Option<ToolKind> {
+    s.parse().ok()
+}
+
+impl ToolKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Mcp => "mcp",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PolicyContext {
     pub system_policy: ToolPolicy,
     pub mcp_policy: ToolPolicy,
     pub per_tool: HashMap<String, ToolPolicy>,
+    /// When set, all tools in this prune session use MCP or system classification
+    /// instead of inferring from the `mcp__` name prefix.
+    pub tool_kind_override: Option<ToolKind>,
 }
 
 impl PolicyContext {
@@ -136,6 +183,7 @@ impl PolicyContext {
             system_policy: parse_tool_policy(&system).unwrap_or(ToolPolicy::PruneOptional),
             mcp_policy: parse_tool_policy(&mcp).unwrap_or(ToolPolicy::PruneAll),
             per_tool: HashMap::new(),
+            tool_kind_override: None,
         }
     }
 
@@ -279,6 +327,22 @@ pub fn is_system_tool_id(tool_id: &str) -> bool {
     !is_non_system_tool_id(tool_id)
 }
 
+/// Classify a tool id using batch override when present, else `mcp__` prefix.
+#[must_use]
+pub fn tool_is_mcp(tool_id: &str, ctx: &PolicyContext) -> bool {
+    match ctx.tool_kind_override {
+        Some(ToolKind::Mcp) => true,
+        Some(ToolKind::System) => false,
+        None => is_non_system_tool_id(tool_id),
+    }
+}
+
+/// Classify a tool id using batch override when present, else `mcp__` prefix.
+#[must_use]
+pub fn tool_is_system(tool_id: &str, ctx: &PolicyContext) -> bool {
+    !tool_is_mcp(tool_id, ctx)
+}
+
 #[must_use]
 pub fn chunk_tool_id(item: &Value) -> String {
     let Some(obj) = item_object(item) else {
@@ -298,7 +362,7 @@ pub fn effective_policy(ctx: &PolicyContext, tool_id: &str) -> ToolPolicy {
     if let Some(p) = ctx.per_tool.get(tool_id) {
         return *p;
     }
-    if is_system_tool_id(tool_id) {
+    if tool_is_system(tool_id, ctx) {
         ctx.system_policy
     } else {
         ctx.mcp_policy
@@ -410,12 +474,46 @@ pub fn is_mcp_optional_chunk(item: &Value) -> bool {
     is_non_system_chunk(item) && is_decomposed_optional_property_chunk(item)
 }
 
+fn chunk_is_system_with_ctx(item: &Value, ctx: &PolicyContext) -> bool {
+    tool_is_system(&root_tool_id_from_chunk(item), ctx)
+}
+
+fn chunk_is_mcp_with_ctx(item: &Value, ctx: &PolicyContext) -> bool {
+    tool_is_mcp(&root_tool_id_from_chunk(item), ctx)
+}
+
+fn is_system_optional_chunk_with_ctx(item: &Value, ctx: &PolicyContext) -> bool {
+    chunk_is_system_with_ctx(item, ctx) && is_decomposed_optional_property_chunk(item)
+}
+
+fn is_mcp_optional_chunk_with_ctx(item: &Value, ctx: &PolicyContext) -> bool {
+    chunk_is_mcp_with_ctx(item, ctx) && is_decomposed_optional_property_chunk(item)
+}
+
 /// Classify optional chunks for many catalog items in one pass.
 #[must_use]
 pub fn classify_optional_chunks_batch(items: &[Value]) -> (Vec<bool>, Vec<bool>) {
     (
         items.iter().map(is_system_optional_chunk).collect(),
         items.iter().map(is_mcp_optional_chunk).collect(),
+    )
+}
+
+/// Classify optional chunks using [`PolicyContext`] tool-kind override when set.
+#[must_use]
+pub fn classify_optional_chunks_batch_with_ctx(
+    items: &[Value],
+    ctx: &PolicyContext,
+) -> (Vec<bool>, Vec<bool>) {
+    (
+        items
+            .iter()
+            .map(|item| is_system_optional_chunk_with_ctx(item, ctx))
+            .collect(),
+        items
+            .iter()
+            .map(|item| is_mcp_optional_chunk_with_ctx(item, ctx))
+            .collect(),
     )
 }
 
@@ -443,9 +541,9 @@ pub const fn needs_pruned_recompose(ctx: &PolicyContext) -> bool {
 
 #[must_use]
 pub fn chunk_policy(item: &Value, ctx: &PolicyContext) -> Option<ToolPolicy> {
-    if is_system_chunk(item) {
+    if chunk_is_system_with_ctx(item, ctx) {
         Some(ctx.system_policy)
-    } else if is_non_system_chunk(item) {
+    } else if chunk_is_mcp_with_ctx(item, ctx) {
         Some(ctx.mcp_policy)
     } else {
         None
@@ -572,9 +670,9 @@ fn partition_json_items(ctx: &PolicyContext, json_list: &[Value]) -> JsonPartiti
                 .entry(tool_id.clone())
                 .or_default()
                 .extend(enum_vals.iter().cloned());
-            if is_system_chunk(item) {
+            if chunk_is_system_with_ctx(item, ctx) {
                 system_required_enums.extend(enum_vals.iter().cloned());
-            } else if is_non_system_chunk(item) {
+            } else if chunk_is_mcp_with_ctx(item, ctx) {
                 mcp_required_enums.extend(enum_vals.iter().cloned());
             }
         } else {
@@ -1479,5 +1577,41 @@ mod tests {
         let ctx = policy_context_from_values(&config);
         assert_eq!(ctx.system_policy, ToolPolicy::PruneOptional);
         assert_eq!(ctx.mcp_policy, ToolPolicy::PruneAll);
+    }
+
+    #[test]
+    fn effective_policy_uses_prefix_without_tool_kind_override() {
+        let ctx = PolicyContext::new();
+        let tool_id = "tools.demo.org.search";
+        assert_eq!(effective_policy(&ctx, tool_id), ToolPolicy::PruneOptional);
+    }
+
+    #[test]
+    fn effective_policy_uses_mcp_policy_with_tool_kind_override() {
+        let mut ctx = PolicyContext::new();
+        ctx.tool_kind_override = Some(ToolKind::Mcp);
+        let tool_id = "tools.demo.org.search";
+        assert_eq!(effective_policy(&ctx, tool_id), ToolPolicy::PruneAll);
+    }
+
+    #[test]
+    fn should_pin_json_chunk_false_when_tool_kind_mcp() {
+        let mut ctx = PolicyContext::new();
+        ctx.tool_kind_override = Some(ToolKind::Mcp);
+        let item = json!({
+            "file_path": "schemas/decomposed/tools.demo.org.search.json",
+            "content": {"inputSchema": {"properties": {"q": {"type": "string"}}}}
+        });
+        assert!(!should_pin_json_chunk(&ctx, &item));
+    }
+
+    #[test]
+    fn should_pin_json_chunk_true_for_system_tool_without_override() {
+        let ctx = PolicyContext::new();
+        let item = json!({
+            "file_path": "schemas/decomposed/tools.demo.org.search.json",
+            "content": {"inputSchema": {"properties": {"q": {"type": "string"}}}}
+        });
+        assert!(should_pin_json_chunk(&ctx, &item));
     }
 }

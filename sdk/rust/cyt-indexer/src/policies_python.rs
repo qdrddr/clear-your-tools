@@ -90,6 +90,19 @@ impl PyPolicyContext {
         }
         Ok(())
     }
+
+    #[getter]
+    fn tool_kind(&self) -> Option<String> {
+        self.inner
+            .tool_kind_override
+            .map(policies::ToolKind::as_str)
+            .map(str::to_string)
+    }
+
+    #[setter]
+    fn set_tool_kind(&mut self, value: Option<&str>) {
+        self.inner.tool_kind_override = value.and_then(policies::parse_tool_kind);
+    }
 }
 
 pub fn ctx_from_py_any(obj: &Bound<'_, PyAny>) -> PyResult<PolicyContext> {
@@ -123,11 +136,15 @@ pub fn ctx_from_py(dict: &Bound<'_, PyDict>) -> PyResult<PolicyContext> {
             }
         }
     }
-    Ok(PolicyContext::with_overrides(
-        system_policy,
-        mcp_policy,
-        per_tool,
-    ))
+    let mut ctx = PolicyContext::with_overrides(system_policy, mcp_policy, per_tool);
+    if let Some(kind) = dict
+        .get_item("tool_kind")?
+        .and_then(|v| v.extract::<String>().ok())
+        .and_then(|s| policies::parse_tool_kind(&s))
+    {
+        ctx.tool_kind_override = Some(kind);
+    }
+    Ok(ctx)
 }
 
 fn llm_selected_paths_from_py(
