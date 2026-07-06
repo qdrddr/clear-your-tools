@@ -175,7 +175,14 @@ def prepare_catalog_selector_chunks(
 
 
 def _llm_user_message(query: str, chunks_text: str) -> str:
-    return f"User Query: {query}\n\nAvailable Chunks:\n\n{chunks_text}"
+    """User turn for the selector model: stable chunk prefix, query suffix (prompt-cache friendly)."""
+    return f"Available Chunks:\n\n{chunks_text}\n\nUser Query: {query}"
+
+
+def llm_selector_bulk_base_tokens(query: str, system_prompt: str) -> int:
+    """Token budget reserved per selector bulk (system + message frame, no chunk bodies)."""
+    frame = _llm_user_message(query, "")
+    return count_tokens(f"System: {system_prompt}\n{frame}")
 
 
 def count_llm_request_tokens(

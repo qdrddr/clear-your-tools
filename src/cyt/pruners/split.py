@@ -1,7 +1,7 @@
 import sys
 from collections.abc import Callable
 
-from cyt.indexer.tokens import count_tokens, count_tokens_batch
+from cyt.indexer.tokens import count_tokens_batch
 
 
 def split_into_bulks[T](
@@ -58,9 +58,10 @@ def split_chunks_into_bulks(
     Split formatted chunks into bulks that fit within max_tokens.
     Maintained for backward compatibility with llm.py.
     """
-    # Base tokens for every bulk (system prompt + query prefix)
-    base_text = f"System: {system_prompt}\nUser Query: {query}\n\nAvailable Chunks:\n\n"
-    base_tokens = count_tokens(base_text)
+    from cyt.pruners.llm import llm_selector_bulk_base_tokens
+
+    # Base tokens for every bulk (system prompt + chunk header + query suffix)
+    base_tokens = llm_selector_bulk_base_tokens(query, system_prompt)
 
     if base_tokens >= max_tokens:
         raise ValueError(

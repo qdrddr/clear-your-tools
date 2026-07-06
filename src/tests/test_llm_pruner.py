@@ -10,6 +10,7 @@ from cyt.common.token_usage import empty_usage
 from cyt.pruners.llm import (
     LlmPruningSettings,
     RelevantChunkIds,
+    _llm_user_message,
     call_llm,
     llm_select_ids,
     normalize_selector_ids,
@@ -25,6 +26,13 @@ def _settings(*, responses_api: bool) -> LlmPruningSettings:
         provider_dns="api.openai.com",
         responses_api=responses_api,
     )
+
+
+def test_llm_user_message_puts_query_after_chunks() -> None:
+    message = _llm_user_message("find tools", "<chunk id=1>\n{}\n</chunk>")
+    assert message.startswith("Available Chunks:\n\n")
+    assert message.endswith("User Query: find tools")
+    assert "<chunk id=1>" in message
 
 
 def test_call_llm_uses_custom_system_prompt() -> None:
@@ -101,7 +109,8 @@ def test_call_llm_uses_responses_api_when_enabled() -> None:
     completion_mock.assert_not_called()
     assert responses_mock.call_args.kwargs["text_format"].__name__ == "RelevantChunkIds"
     assert responses_mock.call_args.kwargs["instructions"]
-    assert responses_mock.call_args.kwargs["input"].startswith("User Query: find tools")
+    assert responses_mock.call_args.kwargs["input"].startswith("Available Chunks:")
+    assert responses_mock.call_args.kwargs["input"].endswith("User Query: find tools")
     assert parsed.ids == [7, 8]
     assert usage.input_tokens == 12
     assert usage.output_tokens == 4
