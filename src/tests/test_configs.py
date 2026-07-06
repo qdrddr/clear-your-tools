@@ -244,6 +244,35 @@ def test_required_pruning_env_var_names_bm25_only(
     assert configs.required_pruning_env_var_names(config) == []
 
 
+def test_required_tools_hook_env_var_names_executor_mode(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
+
+    assert configs.required_tools_hook_env_var_names(config) == ["EXECUTOR_TOKEN"]
+
+
+def test_required_tools_hook_env_var_names_definitions_mode(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = "definitions"
+
+    assert configs.required_tools_hook_env_var_names(config) == []
+
+
+def test_tools_hook_tools_from_accepts_legacy_client_alias(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["tools"]["hook"]["tools_from"] = "client"
+
+    assert configs.tools_hook_tools_from(config) == "executor"
+
+
 def test_format_proxy_env_help_lists_alternatives() -> None:
     message = configs.format_proxy_env_help(["DEEPINFRA_API_KEY", "OPENAI_API_KEY"])
 

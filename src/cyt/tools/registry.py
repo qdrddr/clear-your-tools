@@ -15,7 +15,7 @@ from cyt.config import (
     tools_hook_tools_from,
 )
 from cyt.tools.sources.definitions import load_definitions_file
-from cyt.tools.sources.mcp_client import load_mcp_client_tools
+from cyt.tools.sources.executor_http import load_executor_tools
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +40,10 @@ def load_tool_catalog(config: dict[str, Any] | None = None) -> list[dict[str, An
     if tools_hook_file_missing(cfg):
         return None
 
-    path = resolved_tools_hook_file(cfg)
     if tools_hook_tools_from(cfg) == "definitions":
+        path = resolved_tools_hook_file(cfg)
         return _load_definitions_cached(path)
-    try:
-        return load_mcp_client_tools(path, claude_fallback=True)
-    except ImportError:
-        logger.debug("fastmcp not installed; skipping MCP client tool catalog")
-        return None
+    return load_executor_tools(cfg, allow_prompt=False)
 
 
 def _load_definitions_cached(path: Path) -> list[dict[str, Any]]:

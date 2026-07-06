@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from cyt.common.agents import AgentName
-from cyt.config import _config_with_bundled_defaults, required_proxy_env_var_names
+from cyt.config import (
+    _config_with_bundled_defaults,
+    required_proxy_env_var_names,
+    required_tools_hook_env_var_names,
+)
 
 _DEFAULT_CODEX_ENV_KEY = "CODEX_OPENAI_API_KEY"
 
@@ -72,6 +76,9 @@ def required_launch_env_var_names(
     seen: set[str] = set()
 
     for name in required_proxy_env_var_names(merged):
+        _append_unique(required, seen, name)
+
+    for name in required_tools_hook_env_var_names(merged):
         _append_unique(required, seen, name)
 
     return required

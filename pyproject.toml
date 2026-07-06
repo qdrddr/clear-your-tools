@@ -43,11 +43,8 @@ proxy = [
 pruners = [
     "litellm==1.83.14",
 ]
-mcp = [
-    "fastmcp>=3.4",
-]
 all = [
-    "clear-your-tools[proxy,pruners,mcp]",
+    "clear-your-tools[proxy,pruners]",
 ]
 
 [project.scripts]
@@ -183,7 +180,7 @@ mypy_path = "src"
 pretty = true
 python_version = "3.13"
 no_implicit_optional = true
-exclude = ["^site/", "^nogo/", "^src/nogo/", "^docs/", "^src/catalog/", "^cocoindex-code/", "^fastmcp/"]
+exclude = ["^site/", "^nogo/", "^src/nogo/", "^docs/", "^src/catalog/", "^cocoindex-code/"]
 plugins = "pydantic.mypy"
 warn_return_any = true
 warn_unused_configs = true
@@ -202,7 +199,6 @@ module = [
     "yaml.*",
     "pandas.*",
     "litellm.*",
-    "fastmcp.*",
     "google.*",
     "uuid_extensions.*",
     "cyt_indexer.*",

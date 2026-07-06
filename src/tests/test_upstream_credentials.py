@@ -69,7 +69,7 @@ def _openrouter_upstream(*, linked: bool = True) -> dict[str, Any]:
         "url": "https://openrouter.ai/api",
     }
     if linked:
-        entry["provider_nick"] = "openrouter"
+        entry["provider_nick"] = "openrouter-ai"
     return entry
 
 
@@ -141,7 +141,7 @@ class TestDescribeUpstreamKeyVarResolution:
 
         assert resolution is not None
         assert resolution.key_var_name == "OPENROUTER_" + "API_KEY"
-        assert resolution.provider_nick == "openrouter"
+        assert resolution.provider_nick == "openrouter-ai"
         assert resolution.provider_nick_source == "from config.yaml upstream provider_nick"
 
     def test_unlinked_openrouter_is_unresolved(self, isolated_config_paths: dict) -> None:

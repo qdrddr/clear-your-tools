@@ -458,14 +458,15 @@ skills hook injection). The reverse proxy does not mutate request `tools` arrays
 | Key | Values | Default |
 | --- | ------ | ------- |
 | `pruning.tools.inject_via` | `proxy` \| `hook` | `proxy` |
-| `pruning.tools.hook.tools_from` | `client` \| `definitions` | `client` |
-| `pruning.tools.hook.mcp_client_file` | path | `~/.config/cyt/mcp.json` |
+| `pruning.tools.hook.tools_from` | `executor` \| `definitions` | `executor` |
+| `pruning.tools.hook.executor_url` | URL | `http://localhost:4789` |
+| `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
 | `pruning.tools.hook.mcp_definitions_file` | path | `~/.config/cyt/mcp-definitions.json` |
 
 - **`proxy`**: unchanged — CYT prunes tools in upstream HTTP bodies via the reverse proxy.
-- **`hook`**: load a catalog from the definitions file or live MCP servers (`tools_from: client`),
+- **`hook`**: load a catalog from the definitions file or live executor HTTP API (`tools_from: executor`),
   run the BM25/rerank/LLM pipeline, inject `<agent-tools>…</agent-tools>` context. Missing catalog
-  files are skipped silently at hook time (configure paths with `cyt hook`, `cyt setup`, or optional
+  files or an unset executor URL are skipped silently at hook time (configure with `cyt hook`, `cyt setup`, or optional
   `cyt launch` repair prompt).
 
 ### Proxy injection placement (`pruning.inject_into_user_message`)
@@ -495,11 +496,9 @@ pruning:
   inject_into_user_message: true
 ```
 
-Live MCP listing requires the optional dependency:
-
-```bash
-uv pip install 'clear-your-tools[mcp]'
-```
+Live executor catalog loading requires a running Executor MCP aggregator at
+`pruning.tools.hook.executor_url` and a Bearer token in `EXECUTOR_TOKEN` (or
+`pruning.tools.hook.executor_token_var`). Snapshot tools offline with `cyt executor save`.
 
 `cyt launch` skips the reverse proxy when **both** tools and skills use hook injection (or skills are
 disabled). Mixed mode (`skills.inject_via: proxy`, `tools.inject_via: hook`) still starts the proxy

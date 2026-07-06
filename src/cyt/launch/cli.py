@@ -7,7 +7,14 @@ import os
 import sys
 from pathlib import Path
 
-from cyt.config import DEFAULT_REVERSE_PORT, launch_needs_proxy, load_config
+from cyt.config import (
+    DEFAULT_REVERSE_PORT,
+    inject_via,
+    launch_needs_proxy,
+    load_config,
+    required_tools_hook_env_var_names,
+    tools_hook_tools_from,
+)
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.claude import build_claude_env
 from cyt.launch.claude import run as run_claude
@@ -23,6 +30,7 @@ from cyt.launch.proxy_guard import (
     resolve_launch_port,
 )
 from cyt.launch.quiet import configure_launch_quiet
+from cyt.launch.secrets import ensure_named_credentials
 from cyt.launch.upstream import AgentName, parse_agent_name, resolve_upstream_kind
 from cyt.proxy.bootstrap import RuntimeContext, prepare_runtime
 from cyt.proxy.setup_wizard import normalize_upstream_kind
@@ -262,6 +270,16 @@ def _run_launch_session(
     if sys.stdin.isatty():
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
         runtime.config = config
+
+    if (
+        sys.stdin.isatty()
+        and inject_via(config) == "hook"
+        and tools_hook_tools_from(config) == "executor"
+    ):
+        ensure_named_credentials(
+            required_tools_hook_env_var_names(config),
+            credential_sources=runtime.credential_sources,
+        )
 
     from cyt.cache import warm_caches
 

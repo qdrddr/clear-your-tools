@@ -7,4 +7,3 @@
 *.sh
 .env.example
 node_modules/
-fastmcp/

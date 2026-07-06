@@ -60,7 +60,7 @@ def _openrouter_upstream() -> dict[str, Any]:
         "endpoint": "openrouter",
         "kind": "anthropic",
         "url": "https://openrouter.ai/api",
-        "provider_nick": "openrouter",
+        "provider_nick": "openrouter-ai",
     }
 
 
@@ -167,7 +167,7 @@ class TestEnsureAgentUpstreamAuth:
                 "endpoint": "openrouter",
                 "kind": "openai",
                 "url": "https://openrouter.ai/api",
-                "provider_nick": "openrouter",
+                "provider_nick": "openrouter-ai",
             },
         ]
         monkeypatch.setenv(_openrouter_api_key_var(), _or_token())
@@ -201,7 +201,7 @@ class TestEnsureAgentUpstreamAuth:
                 "endpoint": "openrouter",
                 "kind": "openai",
                 "url": "https://openrouter.ai/api",
-                "provider_nick": "openrouter",
+                "provider_nick": "openrouter-ai",
             },
         ]
         monkeypatch.setenv(_codex_openai_api_key_var(), "codex-direct")
@@ -235,7 +235,7 @@ class TestEnsureAgentUpstreamAuth:
                 "endpoint": "openrouter",
                 "kind": "openai",
                 "url": "https://openrouter.ai/api",
-                "provider_nick": "openrouter",
+                "provider_nick": "openrouter-ai",
             },
         ]
         monkeypatch.delenv(_openrouter_api_key_var(), raising=False)
@@ -279,7 +279,7 @@ class TestEnsureAgentUpstreamAuth:
                 "endpoint": "openrouter",
                 "kind": "openai",
                 "url": "https://openrouter.ai/api",
-                "provider_nick": "openrouter",
+                "provider_nick": "openrouter-ai",
             },
         ]
         auth_path = tmp_path / "auth.json"

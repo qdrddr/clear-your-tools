@@ -187,7 +187,7 @@ network:
         - endpoint: openrouter
           kind: openrouter
           url: https://openrouter.ai/api
-          provider_nick: openrouter
+          provider_nick: openrouter-ai
       endpoints:
         - openrouter
 """.strip(),

@@ -81,7 +81,6 @@ AGENTS.md
 :memory:/
 lat.md/
 docs/
-fastmcp/
 .codegraph
 node_modules
 sdk/typescript/dist/
@@ -91,7 +90,6 @@ sdk/typescript/native.d.ts
 sdk/typescript/artifacts/
 sdk/typescript/npm/
 sdk/e2e/rust/target
-fastmcp
 src/catalog
 cocoindex-code
 # CocoIndex Code (ccc)

@@ -19,12 +19,18 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
 
     from cyt.indexer.build import anthropic_tools_to_catalog_entries
     from cyt.tools.catalog_cache import ensure_tool_catalog_cached
+    from cyt.tools.executor_adapter import (
+        prefix_tools_for_rust,
+        should_adapt_executor_tools_for_rust,
+    )
     from cyt.tools.registry import load_tool_catalog
 
     try:
         tools = load_tool_catalog(cfg)
         if not tools:
             return
+        if should_adapt_executor_tools_for_rust(cfg):
+            tools, _ = prefix_tools_for_rust(tools)
         entries, enums = anthropic_tools_to_catalog_entries(tools)
         ensure_tool_catalog_cached(entries, enums, cfg)
         logger.debug("warmed tools catalog cache (%d tools)", len(tools))

@@ -114,12 +114,13 @@ DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
 DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "client"
-DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE: str = "~/.config/cyt/mcp.json"
+DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "executor"
+DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
+DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
-ToolsHookSource = Literal["client", "definitions"]
+ToolsHookSource = Literal["executor", "definitions"]
 
 
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -159,7 +160,8 @@ _DEFAULTS: dict[str, Any] = {
         "tools": {
             "hook": {
                 "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
-                "mcp_client_file": DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE,
+                "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
+                "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
             },
             "policy": {
@@ -1038,16 +1040,32 @@ def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSour
     mode = str(value).strip().lower()
     if mode == "definitions":
         return "definitions"
-    return "client"
+    if mode in {"executor", "client"}:
+        return "executor"
+    return "executor"
 
 
-def tools_hook_mcp_client_file(config: dict[str, Any] | None = None) -> Path:
+def tools_hook_executor_url(config: dict[str, Any] | None = None) -> str:
     cfg = config or load_config()
-    path = _tools_hook_settings(_merged_config(cfg)).get(
-        "mcp_client_file",
-        DEFAULT_TOOLS_HOOK_MCP_CLIENT_FILE,
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "executor_url",
+        DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
     )
-    return Path(str(path)).expanduser()
+    return str(value).strip().rstrip("/")
+
+
+def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "executor_token_var",
+        DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR
+
+
+def tools_hook_executor_configured(config: dict[str, Any] | None = None) -> bool:
+    return bool(tools_hook_executor_url(config))
 
 
 def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:
@@ -1061,16 +1079,30 @@ def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Pat
 
 def resolved_tools_hook_file(config: dict[str, Any] | None = None) -> Path:
     cfg = config or load_config()
-    if tools_hook_tools_from(cfg) == "definitions":
-        return tools_hook_mcp_definitions_file(cfg)
-    return tools_hook_mcp_client_file(cfg)
+    return tools_hook_mcp_definitions_file(cfg)
 
 
 def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     if tools_inject_via(cfg) != "hook":
         return False
+    if tools_hook_tools_from(cfg) == "executor":
+        return not tools_hook_executor_configured(cfg)
     return not resolved_tools_hook_file(cfg).is_file()
+
+
+def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> list[str]:
+    cfg = config or load_config()
+    if tools_inject_via(cfg) != "hook":
+        return []
+    if tools_hook_tools_from(cfg) != "executor":
+        return []
+    return [tools_hook_executor_token_var(cfg)]
+
+
+def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return tools_inject_via(cfg) == "hook" and tools_hook_tools_from(cfg) == "executor"
 
 
 def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:

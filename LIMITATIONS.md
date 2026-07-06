@@ -6,8 +6,8 @@ and others like Codex, OpenCode, etc (not tested yet). It could be used with Cop
 **Hook path (`pruning.tools.inject_via: hook`):** tool definitions can be pruned and injected via
 `cyt hook --stdin` without a reverse proxy when skills also use hook injection (or skills are
 disabled). This injects pruned tool context into the agent turn; it does not replace native MCP tool
-registration in the agent runtime. Live MCP catalog loading requires the optional `mcp` extra
-(`fastmcp`).
+registration in the agent runtime. Live executor catalog loading requires a running Executor MCP
+aggregator and `EXECUTOR_TOKEN` (or `pruning.tools.hook.executor_token_var`).
 
 Cursor, or VSCode/Copilot for example, does not support reverse proxying and only supports forward proxies.
 In that configuration, requests remain end-to-end encrypted, so the proxy cannot inspect, manipulate,

@@ -119,6 +119,18 @@ def _entry_provider_nick(config: dict[str, Any], entry: dict[str, Any]) -> str:
     return ""
 
 
+def _model_nick_matches_provider_identity(
+    config: dict[str, Any],
+    *,
+    model_nick: str,
+    identity_provider_nick: str,
+) -> bool:
+    if model_nick.startswith(f"{identity_provider_nick}-"):
+        return True
+    identity_provider = provider_registry(config).get(identity_provider_nick, {}).get("provider")
+    return bool(identity_provider and model_nick.startswith(f"{identity_provider}-"))
+
+
 def _entry_matches_model_identity(
     entry: dict[str, Any],
     *,
@@ -154,7 +166,11 @@ def _entry_matches_model_identity(
         if identity_provider_nick and entry_provider_nick == identity_provider_nick:
             return True
         if identity_provider_nick and isinstance(model_nick := entry.get("nick"), str):
-            if model_nick.startswith(f"{identity_provider_nick}-"):
+            if _model_nick_matches_provider_identity(
+                config,
+                model_nick=model_nick,
+                identity_provider_nick=identity_provider_nick,
+            ):
                 return True
         return False
 

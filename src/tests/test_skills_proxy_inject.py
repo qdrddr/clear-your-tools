@@ -265,6 +265,10 @@ def test_inject_skills_skipped_when_pipeline_rerank(monkeypatch: pytest.MonkeyPa
         "cyt.skills.proxy_inject.search_skills",
         lambda *args, **kwargs: [],
     )
+    monkeypatch.setattr(
+        "cyt.skills.proxy_inject.build_registry",
+        lambda *args, **kwargs: [],
+    )
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
@@ -288,6 +292,10 @@ def test_inject_skills_skipped_when_pipeline_rerank(monkeypatch: pytest.MonkeyPa
 def test_inject_skills_skipped_when_pipeline_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "cyt.skills.proxy_inject.search_skills",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "cyt.skills.proxy_inject.build_registry",
         lambda *args, **kwargs: [],
     )
     with tempfile.TemporaryDirectory() as tmp:
