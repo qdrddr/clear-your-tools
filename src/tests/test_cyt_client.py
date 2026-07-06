@@ -56,27 +56,34 @@ def test_resolve_hook_url_ignores_stale_pidfile(monkeypatch: pytest.MonkeyPatch)
                 assert client_port.resolve_hook_url() is None
 
 
-def test_cli_falls_back_on_http_error(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_silent_on_http_error(capsys: pytest.CaptureFixture[str]) -> None:
     payload = (
         b'{"hook_event_name":"UserPromptSubmit","prompt":"hello","cwd":"/tmp/isolated-project"}'
     )
     with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
         with patch("cyt_client.cli.post_hook_inject", return_value=(502, b"bad gateway")):
-            with patch("cyt_client.cli._fallback_stdin_hook", return_value=0) as fallback:
-                from cyt_client.cli import main
+            from cyt_client.cli import main
 
-                with patch("sys.stdin.buffer.read", return_value=payload):
-                    with pytest.raises(SystemExit) as exc:
-                        main()
-                    assert exc.value.code == 0
-                sent = fallback.call_args.args[0]
-                enriched = json.loads(sent)
-                assert enriched["prompt"] == "hello"
-                assert "cyt_skills" in enriched
-                fallback.assert_called_once()
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
 
     captured = capsys.readouterr()
-    assert "falling back" in captured.err
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_cli_silent_on_connection_error(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = b'{"hook_event_name":"UserPromptSubmit","prompt":"hello"}'
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch("cyt_client.cli.post_hook_inject", side_effect=ConnectionError("refused")):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_cli_writes_response_body_to_stdout_only(capsys: pytest.CaptureFixture[str]) -> None:
@@ -141,24 +148,39 @@ def test_enrich_hook_payload_adapts_cursor_before_submit_prompt() -> None:
     assert "cyt_skills" in enriched
 
 
-def test_cli_falls_back_when_server_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_silent_when_server_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
     payload = (
         b'{"hook_event_name":"UserPromptSubmit","prompt":"hello","cwd":"/tmp/isolated-project"}'
     )
     with patch("cyt_client.cli.resolve_hook_url", return_value=None):
-        with patch("cyt_client.cli._fallback_stdin_hook", return_value=0) as fallback:
-            from cyt_client.cli import main
+        from cyt_client.cli import main
 
-            with patch("sys.stdin.buffer.read", return_value=payload):
-                with pytest.raises(SystemExit) as exc:
-                    main()
-                assert exc.value.code == 0
-            enriched = json.loads(fallback.call_args.args[0])
-            assert "cyt_skills" in enriched
-            fallback.assert_called_once()
+        with patch("sys.stdin.buffer.read", return_value=payload):
+            main()
 
     captured = capsys.readouterr()
-    assert "falling back" in captured.err
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_cli_silent_when_server_unavailable_for_cursor(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = json.dumps(
+        {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": ["/tmp/project"],
+        },
+    ).encode()
+    with patch("cyt_client.cli.resolve_hook_url", return_value=None):
+        from cyt_client.cli import main
+
+        with patch("sys.stdin.buffer.read", return_value=payload):
+            main()
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_format_hook_stdout_roundtrip() -> None:
