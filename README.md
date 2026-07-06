@@ -82,7 +82,7 @@ Examples of how to run these agents with the proxy can be found in the [`./examp
 
 Large MCP catalogs can add tens of thousands of tokens of tool-schema overhead on every turn.
 Clear Your Tools removes irrelevant tools and trims irrelevant optional parameters while always
-keeping required fields for tools that stay in the request.
+keeping required fields for tools that stay in the request. Theory on [how it works](https://medium.com/qdrddr/217cc30d8f48).
 
 ---
 
