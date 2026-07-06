@@ -18,6 +18,7 @@ from cyt_client.transcript import enrich_hook_payload
 def test_cyt_client_package_has_no_cyt_imports() -> None:
     for module_name in (
         "cyt_client.cli",
+        "cyt_client.cursor",
         "cyt_client.port",
         "cyt_client.skills",
         "cyt_client.transport",
@@ -93,6 +94,51 @@ def test_cli_writes_response_body_to_stdout_only(capsys: pytest.CaptureFixture[s
     captured = capsys.readouterr()
     assert captured.out == '{"hookSpecificOutput":{"additionalContext":"x"}}'
     assert captured.err == ""
+
+
+def test_cli_reformats_cursor_before_submit_prompt_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = {
+        "hook_event_name": "beforeSubmitPrompt",
+        "prompt": "hello",
+        "conversation_id": "conv-1",
+        "workspace_roots": ["/tmp/project"],
+    }
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch(
+            "cyt_client.cli.post_hook_inject",
+            return_value=(
+                200,
+                b'{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"skill text"}}',
+            ),
+        ):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                main()
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "continue": True,
+        "additional_context": "skill text",
+    }
+
+
+def test_enrich_hook_payload_adapts_cursor_before_submit_prompt() -> None:
+    raw = json.dumps(
+        {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": ["/tmp/project"],
+        },
+    ).encode()
+    enriched = json.loads(enrich_hook_payload(raw))
+    assert enriched["hook_event_name"] == "UserPromptSubmit"
+    assert enriched["cwd"] == "/tmp/project"
+    assert enriched["session_id"] == "conv-1"
+    assert "cyt_skills" in enriched
 
 
 def test_cli_falls_back_when_server_unavailable(capsys: pytest.CaptureFixture[str]) -> None:

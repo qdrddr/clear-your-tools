@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cyt hook daemon start",
+            "command": "CYT_LAUNCH_AGENT=claude cyt hook daemon start",
             "timeout": 60
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cyt-client",
+            "command": "CYT_LAUNCH_AGENT=claude cyt-client",
             "timeout": 30
           }
         ]

@@ -1,27 +1,37 @@
-#!/usr/bin/env python3
-"""Adapt Cursor hook stdin/stdout for cyt hook injection."""
+"""Adapt Cursor hook stdin/stdout for cyt-client (stdlib only)."""
 
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from typing import Any
 
+_CURSOR_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart"})
 _CURSOR_TO_CYT_EVENT = {
     "beforeSubmitPrompt": "UserPromptSubmit",
     "sessionStart": "SessionStart",
 }
 
 
-def _adapt_input(data: dict[str, Any]) -> dict[str, Any]:
-    event = data.get("hook_event_name") or data.get("hookEventName") or ""
-    if not isinstance(event, str):
-        event = ""
+def cursor_hook_event_name(payload: dict[str, Any]) -> str | None:
+    name = payload.get("hook_event_name") or payload.get("hookEventName")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
+
+
+def is_cursor_hook_payload(payload: dict[str, Any]) -> bool:
+    event = cursor_hook_event_name(payload)
+    return event in _CURSOR_EVENTS if event is not None else False
+
+
+def adapt_cursor_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Map Cursor hook fields to the cyt hook shape cyt-client already understands."""
+    event = cursor_hook_event_name(data)
+    if event not in _CURSOR_EVENTS:
+        return data
+
     adapted = dict(data)
-    cyt_event = _CURSOR_TO_CYT_EVENT.get(event.strip(), event.strip())
-    if cyt_event:
-        adapted["hook_event_name"] = cyt_event
+    adapted["hook_event_name"] = _CURSOR_TO_CYT_EVENT[event]
 
     if not adapted.get("cwd"):
         roots = adapted.get("workspace_roots")
@@ -38,7 +48,7 @@ def _adapt_input(data: dict[str, Any]) -> dict[str, Any]:
     return adapted
 
 
-def _cursor_output(cyt_stdout: str) -> str:
+def format_cursor_stdout(cyt_stdout: str) -> str:
     if not cyt_stdout.strip():
         return json.dumps({"continue": True})
 
@@ -59,36 +69,3 @@ def _cursor_output(cyt_stdout: str) -> str:
         return json.dumps({"continue": True, "additional_context": context})
 
     return json.dumps({"continue": True})
-
-
-def main() -> int:
-    raw = sys.stdin.read()
-    if not raw.strip():
-        print(json.dumps({"continue": True}))
-        return 0
-
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        print(json.dumps({"continue": True}))
-        return 0
-
-    if not isinstance(payload, dict):
-        print(json.dumps({"continue": True}))
-        return 0
-
-    adapted = _adapt_input(payload)
-    proc = subprocess.run(
-        [sys.executable, "-m", "cyt_client.cli"],
-        input=json.dumps(adapted).encode(),
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0 and proc.stderr:
-        sys.stderr.buffer.write(proc.stderr)
-    print(_cursor_output(proc.stdout.decode()))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -9,8 +9,8 @@
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "CYT_LAUNCH_AGENT=cursor ./hooks/cyt-skills.sh",
-        "timeout": 30
+        "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
+        "timeout": 60
       }
     ]
   }

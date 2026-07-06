@@ -312,7 +312,7 @@ If you prefer, you can use agent hooks instead; that path is separate from the p
 </details>
 
 ```bash
-cyt hook
+cyt hook all
 ```
 
 ### View pruning stats savings

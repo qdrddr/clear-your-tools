@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from cyt.config import (
     USER_ENV_PATH,
@@ -25,10 +25,15 @@ from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
 CODEX_HOOKS_PATH = Path("~/.codex/hooks.json")
+CURSOR_HOOKS_PATH = Path("~/.cursor/hooks.json")
 CLAUDE_SKILLS_DIR = Path("~/.claude/skills")
 CODEX_SKILLS_DIR = Path("~/.codex/skills")
+CURSOR_SKILLS_DIR = Path("~/.cursor/skills")
 HOOK_EVENT_NAME = "UserPromptSubmit"
 SESSION_START_EVENT = "SessionStart"
+CURSOR_BEFORE_SUBMIT_EVENT = "beforeSubmitPrompt"
+CURSOR_SESSION_START_EVENT = "sessionStart"
+HookAgentName = Literal["claude", "codex", "cursor"]
 HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60
 USER_PROMPT_TIMEOUT_SECONDS = 60
@@ -74,6 +79,35 @@ def _print_hook_stdin_test_example(*, debug: bool) -> None:
     print("  cyt hook --uninstall")
 
 
+def cursor_before_submit_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
+    return cyt_client_entry(agent=agent)
+
+
+def cursor_session_start_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
+    return cyt_daemon_start_entry(agent=agent)
+
+
+def normalize_cursor_hooks_section(hooks_section: object) -> dict[str, Any]:
+    """Return a Cursor-native hooks map (event name -> list of flat hook entries)."""
+    if not isinstance(hooks_section, dict):
+        return {}
+    section = cast(dict[str, Any], hooks_section)
+    normalized: dict[str, Any] = {}
+    for event_name, event_entries in section.items():
+        if not isinstance(event_name, str) or not isinstance(event_entries, list):
+            continue
+        kept: list[Any] = []
+        for entry in event_entries:
+            if not isinstance(entry, dict):
+                continue
+            command = entry.get("command")
+            if isinstance(command, str):
+                kept.append(copy.deepcopy(entry))
+        if kept:
+            normalized[event_name] = kept
+    return normalized
+
+
 def merge_skills_directory_lists(
     existing: list[str],
     new_dirs: list[str],
@@ -100,6 +134,7 @@ def default_hook_skills_directories(
     *,
     include_claude: bool,
     include_codex: bool,
+    include_cursor: bool = False,
 ) -> list[str]:
     raw = skills_cfg.get("directories")
     if isinstance(raw, list) and raw:
@@ -110,6 +145,8 @@ def default_hook_skills_directories(
         defaults.append(str(CLAUDE_SKILLS_DIR))
     if include_codex:
         defaults.append(str(CODEX_SKILLS_DIR))
+    if include_cursor:
+        defaults.append(str(CURSOR_SKILLS_DIR))
     return defaults
 
 
@@ -118,11 +155,13 @@ def _prompt_hook_skills_directories(
     *,
     include_claude: bool,
     include_codex: bool,
+    include_cursor: bool = False,
 ) -> list[str]:
     default_dirs = default_hook_skills_directories(
         skills_cfg,
         include_claude=include_claude,
         include_codex=include_codex,
+        include_cursor=include_cursor,
     )
     default_str = ", ".join(default_dirs)
     while True:
@@ -191,6 +230,7 @@ def _configure_hook_skills_directories(
     config_path: Path,
     include_claude: bool,
     include_codex: bool,
+    include_cursor: bool = False,
 ) -> None:
     user_overlay = load_user_config_overlay(config_path)
     skills_cfg = user_overlay.get("skills")
@@ -201,6 +241,7 @@ def _configure_hook_skills_directories(
         skills_cfg,
         include_claude=include_claude,
         include_codex=include_codex,
+        include_cursor=include_cursor,
     )
     _ensure_skill_directories_exist(directories)
     if _save_hook_skills_directories(config_path, directories, user_overlay=user_overlay):
@@ -250,6 +291,12 @@ def _is_cyt_hook_command(command: object) -> bool:
     if CYT_DAEMON_START_COMMAND in normalized:
         return True
     if normalized.startswith("cyt skills"):
+        return True
+    lowered = normalized.casefold()
+    # Legacy Cursor wrapper scripts from older cyt hook cursor installs.
+    if "cursor-hook-bridge" in lowered or "cyt-skills.sh" in lowered:
+        return True
+    if "daemon-start.sh" in lowered:
         return True
     # Agent hooks prefix the command with CYT_LAUNCH_AGENT=...
     return f" {normalized} ".casefold().find(f" {CYT_HOOK_COMMAND_PREFIX} ") >= 0
@@ -306,11 +353,95 @@ def _iter_hook_commands(hooks_section: dict[str, Any]) -> Iterator[object]:
             if not isinstance(wrapper, dict):
                 continue
             inner = wrapper.get("hooks")
-            if not isinstance(inner, list):
+            if isinstance(inner, list):
+                for hook in inner:
+                    if isinstance(hook, dict):
+                        yield hook.get("command")
                 continue
-            for hook in inner:
-                if isinstance(hook, dict):
-                    yield hook.get("command")
+            command = wrapper.get("command")
+            if command is not None:
+                yield command
+
+
+def _append_flat_hook_entry(
+    hooks_section: dict[str, Any],
+    entry: dict[str, Any],
+    *,
+    event_name: str,
+) -> dict[str, Any]:
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    entries = merged.setdefault(event_name, [])
+    if not isinstance(entries, list):
+        entries = []
+        merged[event_name] = entries
+    entries.append(copy.deepcopy(entry))
+    return merged
+
+
+def _collect_cyt_hook_commands_for_flat_event(
+    hooks_section: dict[str, Any],
+    event_name: str,
+) -> list[str]:
+    event_entries = hooks_section.get(event_name)
+    if not isinstance(event_entries, list):
+        return []
+    commands: list[str] = []
+    for entry in event_entries:
+        if not isinstance(entry, dict):
+            continue
+        command = entry.get("command")
+        if isinstance(command, str) and _is_cyt_hook_command(command):
+            commands.append(command)
+    return commands
+
+
+def upsert_cursor_hooks(
+    hooks_section: dict[str, Any],
+    *,
+    before_submit_entry: dict[str, Any],
+    session_start_entry: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    changed = False
+
+    for event_name, entry in (
+        (CURSOR_BEFORE_SUBMIT_EVENT, before_submit_entry),
+        (CURSOR_SESSION_START_EVENT, session_start_entry),
+    ):
+        existing = _collect_cyt_hook_commands_for_flat_event(merged, event_name)
+        if not _cyt_hook_needs_update(existing, entry):
+            continue
+        merged, _ = _remove_cyt_hooks_for_event(merged, event_name)
+        merged = _append_flat_hook_entry(merged, entry, event_name=event_name)
+        changed = True
+
+    return merged, changed
+
+
+def upsert_cursor_hooks_into_file(
+    path: Path,
+    *,
+    before_submit_entry: dict[str, Any],
+    session_start_entry: dict[str, Any],
+) -> bool:
+    existing = _load_json_object(path)
+    hooks_section = normalize_cursor_hooks_section(existing.get("hooks"))
+    merged_hooks, changed = upsert_cursor_hooks(
+        hooks_section,
+        before_submit_entry=before_submit_entry,
+        session_start_entry=session_start_entry,
+    )
+    if not changed:
+        return False
+
+    if merged_hooks:
+        existing["hooks"] = merged_hooks
+    else:
+        existing.pop("hooks", None)
+    if "version" not in existing:
+        existing["version"] = 1
+    _write_json_object(path, existing)
+    return True
 
 
 def cyt_hook_command_exists(hooks_section: object) -> bool:
@@ -449,6 +580,24 @@ def remove_cyt_hooks(hooks_section: dict[str, Any]) -> tuple[dict[str, Any], boo
     return merged, changed
 
 
+def _filter_wrapper_inner_hooks(
+    wrapper: dict[str, Any],
+    inner: list[Any],
+) -> tuple[dict[str, Any] | None, bool]:
+    filtered = [
+        hook
+        for hook in inner
+        if not (isinstance(hook, dict) and _is_cyt_hook_command(hook.get("command")))
+    ]
+    if not filtered:
+        return None, len(filtered) != len(inner)
+    if len(filtered) == len(inner):
+        return copy.deepcopy(wrapper), False
+    kept_wrapper = copy.deepcopy(wrapper)
+    kept_wrapper["hooks"] = filtered
+    return kept_wrapper, True
+
+
 def _remove_cyt_hooks_for_event(
     hooks_section: dict[str, Any],
     event_name: str,
@@ -466,23 +615,18 @@ def _remove_cyt_hooks_for_event(
             continue
 
         inner = wrapper.get("hooks")
-        if not isinstance(inner, list):
-            kept_wrappers.append(wrapper)
+        if isinstance(inner, list):
+            kept_wrapper, wrapper_changed = _filter_wrapper_inner_hooks(wrapper, inner)
+            changed = changed or wrapper_changed
+            if kept_wrapper is not None:
+                kept_wrappers.append(kept_wrapper)
             continue
 
-        filtered = [
-            hook
-            for hook in inner
-            if not (isinstance(hook, dict) and _is_cyt_hook_command(hook.get("command")))
-        ]
-        if len(filtered) != len(inner):
+        if _is_cyt_hook_command(wrapper.get("command")):
             changed = True
-        if not filtered:
             continue
 
-        kept_wrapper = copy.deepcopy(wrapper)
-        kept_wrapper["hooks"] = filtered
-        kept_wrappers.append(kept_wrapper)
+        kept_wrappers.append(copy.deepcopy(wrapper))
 
     if kept_wrappers != event_entries:
         changed = True
@@ -612,15 +756,41 @@ def upsert_all_hooks_into_file(
     return True
 
 
-def _agent_config_ready(path: Path) -> bool:
+def _agent_config_path(path: Path) -> Path:
+    return path.expanduser()
+
+
+def _hook_agent_ready(agent: HookAgentName, path: Path) -> bool:
+    if agent == "cursor":
+        return True
     resolved = path.expanduser()
     if resolved.is_file():
         return True
     return resolved.parent.is_dir()
 
 
-def _agent_config_path(path: Path) -> Path:
-    return path.expanduser()
+def _agent_config_ready(path: Path) -> bool:
+    """Back-compat helper for Claude/Codex paths."""
+    resolved = path.expanduser()
+    if resolved.is_file():
+        return True
+    return resolved.parent.is_dir()
+
+
+def _agent_hook_label(agent: HookAgentName) -> str:
+    return {
+        "claude": "Claude Code",
+        "codex": "Codex",
+        "cursor": "Cursor",
+    }[agent]
+
+
+def _agent_hook_path(agent: HookAgentName) -> Path:
+    return {
+        "claude": _agent_config_path(CLAUDE_SETTINGS_PATH),
+        "codex": _agent_config_path(CODEX_HOOKS_PATH),
+        "cursor": _agent_config_path(CURSOR_HOOKS_PATH),
+    }[agent]
 
 
 def _ensure_hook_credentials(config: dict[str, Any]) -> None:
@@ -657,7 +827,7 @@ def _ensure_hook_credentials(config: dict[str, Any]) -> None:
         vars_block = "\n".join(f"\t{name}" for name in missing_before)
         raise SystemExit(
             f"Required environment variable(s) not set:\n{vars_block}\n"
-            f"Run `cyt hook` interactively or define them in {USER_ENV_PATH}.",
+            f"Run `cyt hook all` interactively or define them in {USER_ENV_PATH}.",
         )
 
     sources = ensure_wizard_credentials(names, env_fallback_path=USER_ENV_PATH)
@@ -687,7 +857,7 @@ def _save_tools_hook_wizard_config(
     return config
 
 
-def _install_cyt_hooks_for_targets(
+def _install_nested_hooks_for_targets(
     targets: list[tuple[str, Path, AgentName]],
     *,
     debug: bool,
@@ -755,11 +925,160 @@ def _install_cyt_hooks_for_targets(
     return any_changed
 
 
-def run_hook_setup(*, config_path: Path | None = None) -> None:
+def _handle_existing_cursor_hooks(
+    label: str,
+    path: Path,
+    hooks_section: dict[str, Any],
+    *,
+    needs_update: bool,
+    before_submit_entry: dict[str, Any],
+    session_start_entry: dict[str, Any],
+) -> bool:
+    """Prompt for update/remove/skip when CYT hooks already exist; return whether file changed."""
+    action_choices = ("update", "remove", "skip")
+    default_action = "update" if needs_update else "skip"
+    action = _prompt_choice(
+        f"{label}: existing CYT hook — choose action (update | remove | skip)",
+        list(action_choices),
+        default_index=action_choices.index(default_action),
+    )
+    if action == "skip":
+        print(f"{label}: kept existing hook")
+        return False
+    if action == "remove":
+        merged_hooks, changed = remove_cyt_hooks(hooks_section)
+        if changed:
+            existing = _load_json_object(path)
+            if merged_hooks:
+                existing["hooks"] = merged_hooks
+            else:
+                existing.pop("hooks", None)
+            if "version" not in existing and (merged_hooks or existing):
+                existing["version"] = 1
+            _write_json_object(path, existing)
+            print(f"{label}: removed CYT hook from {path}")
+            return True
+        print(f"{label}: no CYT hook to remove in {path}")
+        return False
+
+    if upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=before_submit_entry,
+        session_start_entry=session_start_entry,
+    ):
+        print(f"{label}: updated CYT hooks in {path}")
+        return True
+    print(f"{label}: CYT hooks already match selected settings")
+    return False
+
+
+def _install_cursor_hooks_for_target(
+    label: str,
+    path: Path,
+    *,
+    debug: bool,
+) -> bool:
+    del debug
+    before_submit_entry = cursor_before_submit_entry(agent="cursor")
+    session_start_entry = cursor_session_start_entry(agent="cursor")
+    hooks_data = _load_json_object(path)
+    hooks_section = hooks_data.get("hooks")
+    if not isinstance(hooks_section, dict):
+        hooks_section = {}
+
+    existing_commands = _collect_cyt_hook_commands(hooks_section)
+    desired_commands = {
+        str(before_submit_entry.get("command")),
+        str(session_start_entry.get("command")),
+    }
+    needs_update = set(existing_commands) != desired_commands or len(existing_commands) != 2
+
+    if existing_commands:
+        print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
+        return _handle_existing_cursor_hooks(
+            label,
+            path,
+            hooks_section,
+            needs_update=needs_update,
+            before_submit_entry=before_submit_entry,
+            session_start_entry=session_start_entry,
+        )
+
+    if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
+        print(f"{label}: skipped")
+        return False
+    if upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=before_submit_entry,
+        session_start_entry=session_start_entry,
+    ):
+        print(f"{label}: added CYT hooks to {path}")
+        return True
+    print(f"{label}: CYT hooks already configured in {path}")
+    return False
+
+
+def _resolve_hook_setup_agents(
+    agents: list[HookAgentName] | None,
+) -> list[HookAgentName]:
+    if agents is None:
+        return ["claude", "codex", "cursor"]
+    return list(dict.fromkeys(agents))
+
+
+def _collect_hook_setup_targets(
+    selected_agents: list[HookAgentName],
+) -> tuple[
+    list[tuple[str, Path, AgentName]],
+    list[tuple[str, Path]],
+    bool,
+    bool,
+    bool,
+]:
+    nested_targets: list[tuple[str, Path, AgentName]] = []
+    cursor_targets: list[tuple[str, Path]] = []
+    include_claude = False
+    include_codex = False
+    include_cursor = False
+
+    for agent in selected_agents:
+        path = _agent_hook_path(agent)
+        label = _agent_hook_label(agent)
+        if not _hook_agent_ready(agent, path):
+            message = f"Skipping {label} ({path}): config file not found."
+            if len(selected_agents) == 1:
+                raise SystemExit(
+                    f"No agent config found for {label}; create {path} first.",
+                )
+            print(message)
+            continue
+
+        if agent == "cursor":
+            cursor_targets.append((label, path))
+            include_cursor = True
+        elif agent == "claude":
+            nested_targets.append((label, path, "claude"))
+            include_claude = True
+        else:
+            nested_targets.append((label, path, "codex"))
+            include_codex = True
+
+    return nested_targets, cursor_targets, include_claude, include_codex, include_cursor
+
+
+def run_hook_setup(
+    *,
+    config_path: Path | None = None,
+    agents: list[HookAgentName] | None = None,
+) -> None:
     """Install CYT agent hooks and ensure runtime credentials."""
+    selected_agents = _resolve_hook_setup_agents(agents)
     resolved_config_path = resolve_setup_config_path(config_path)
     config = load_config(config_path)
-    print("CYT hook setup\n")
+    if len(selected_agents) == 1:
+        print(f"CYT hook setup ({selected_agents[0]})\n")
+    else:
+        print("CYT hook setup\n")
 
     if not skills_enabled(config):
         print(
@@ -775,34 +1094,27 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
         config_path=config_path,
     )
 
-    include_claude = _agent_config_ready(CLAUDE_SETTINGS_PATH)
-    include_codex = _agent_config_ready(CODEX_HOOKS_PATH)
+    nested_targets, cursor_targets, include_claude, include_codex, include_cursor = (
+        _collect_hook_setup_targets(selected_agents)
+    )
 
-    targets: list[tuple[str, Path, AgentName]] = []
-    if include_claude:
-        targets.append(("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH), "claude"))
-    else:
-        print(f"Skipping Claude ({CLAUDE_SETTINGS_PATH}): config file not found.")
-
-    if include_codex:
-        targets.append(("Codex", _agent_config_path(CODEX_HOOKS_PATH), "codex"))
-    else:
-        print(f"Skipping Codex ({CODEX_HOOKS_PATH}): config file not found.")
-
-    if not targets:
-        raise SystemExit(
-            "No agent config files found; create ~/.claude/settings.json or ~/.codex/hooks.json first.",
-        )
+    if not nested_targets and not cursor_targets:
+        raise SystemExit("No agent config files found for the selected hook targets.")
 
     _configure_hook_skills_directories(
         config_path=resolved_config_path,
         include_claude=include_claude,
         include_codex=include_codex,
+        include_cursor=include_cursor,
     )
 
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
 
-    any_changed = _install_cyt_hooks_for_targets(targets, debug=debug)
+    any_changed = False
+    if nested_targets:
+        any_changed = _install_nested_hooks_for_targets(nested_targets, debug=debug) or any_changed
+    for label, path in cursor_targets:
+        any_changed = _install_cursor_hooks_for_target(label, path, debug=debug) or any_changed
 
     if any_changed:
         print("\nRestart your agent so hook changes take effect.")
@@ -813,17 +1125,18 @@ def run_hook_setup(*, config_path: Path | None = None) -> None:
 
 
 def run_hook_uninstall() -> None:
-    """Remove CYT agent hooks from Claude and Codex config files."""
+    """Remove CYT agent hooks from Claude, Codex, and Cursor config files."""
     print("CYT hook uninstall\n")
 
     targets = [
         ("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH)),
         ("Codex", _agent_config_path(CODEX_HOOKS_PATH)),
+        ("Cursor", _agent_config_path(CURSOR_HOOKS_PATH)),
     ]
 
     any_changed = False
     for label, path in targets:
-        if not _agent_config_ready(path):
+        if not path.is_file():
             print(f"{label}: skipped ({path} not found)")
             continue
         if uninstall_hooks_from_file(path):

@@ -417,7 +417,7 @@ def test_run_hook_setup_updates_duplicate_hooks(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup()
+        hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     hooks = claude_data["hooks"]["UserPromptSubmit"][0]["hooks"]
@@ -459,7 +459,7 @@ def test_run_hook_setup_merges_existing_agent_configs(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup()
+        hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
@@ -511,7 +511,7 @@ def test_run_hook_setup_skips_declined_agent_install(
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
-        hook_setup.run_hook_setup()
+        hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
@@ -535,7 +535,7 @@ def test_run_hook_setup_skips_missing_agent_configs(
 
     with pytest.raises(SystemExit, match="No agent config files found"):
         with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
-            hook_setup.run_hook_setup()
+            hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     captured = capsys.readouterr()
     assert "Skipping Claude" in captured.out
@@ -631,11 +631,16 @@ def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_hook_wizard_without_stdin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("sys.argv", ["cyt", "hook"])
-    called = {"run": False}
+    monkeypatch.setattr("sys.argv", ["cyt", "hook", "all"])
+    called: dict[str, bool | list[str] | None] = {"run": False, "agents": None}
 
-    def fake_run_hook_setup(*, config_path: Path | None = None) -> None:
+    def fake_run_hook_setup(
+        *,
+        config_path: Path | None = None,
+        agents: list[str] | None = None,
+    ) -> None:
         called["run"] = True
+        called["agents"] = agents
         assert config_path is None
 
     monkeypatch.setattr("cyt.skills.hook_setup.run_hook_setup", fake_run_hook_setup)
@@ -644,3 +649,112 @@ def test_hook_wizard_without_stdin(
 
     main()
     assert called["run"] is True
+    assert called["agents"] is None
+
+
+def test_hook_cursor_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["cyt", "hook", "cursor"])
+    called: dict[str, list[str] | None] = {"agents": None}
+
+    def fake_run_hook_setup(
+        *,
+        config_path: Path | None = None,
+        agents: list[str] | None = None,
+    ) -> None:
+        called["agents"] = agents
+        assert config_path is None
+
+    monkeypatch.setattr("cyt.skills.hook_setup.run_hook_setup", fake_run_hook_setup)
+
+    from cyt.proxy.cli_impl import main
+
+    main()
+    assert called["agents"] == ["cursor"]
+
+
+def test_bare_hook_requires_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["cyt", "hook"])
+
+    from cyt.proxy.cli_impl import main
+
+    with pytest.raises(SystemExit, match="usage: cyt hook"):
+        main()
+
+
+def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    before_submit = hook_setup.cursor_before_submit_entry(agent="cursor")
+    session_start = hook_setup.cursor_session_start_entry(agent="cursor")
+
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=before_submit,
+        session_start_entry=session_start,
+    )
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["version"] == 1
+    assert isinstance(data["hooks"], dict)
+    assert data["hooks"]["beforeSubmitPrompt"] == [before_submit]
+    assert data["hooks"]["sessionStart"] == [session_start]
+    assert before_submit["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
+    assert session_start["command"] == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start"
+
+
+def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:
+    normalized = hook_setup.normalize_cursor_hooks_section(
+        {
+            "beforeSubmitPrompt": [
+                {
+                    "hooks": [
+                        {"type": "command", "command": "CYT_LAUNCH_AGENT=claude cyt-client"},
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert normalized == {}
+
+
+def test_upsert_cursor_hooks_into_file_repairs_non_object_hooks(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    path.write_text(json.dumps({"version": 1, "hooks": []}) + "\n", encoding="utf-8")
+
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=hook_setup.cursor_before_submit_entry(agent="cursor"),
+        session_start_entry=hook_setup.cursor_session_start_entry(agent="cursor"),
+    )
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(data["hooks"], dict)
+    assert "beforeSubmitPrompt" in data["hooks"]
+
+
+def test_run_hook_setup_installs_cursor_hooks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor_path = tmp_path / "cursor" / "hooks.json"
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(
+        hook_setup,
+        "_configure_hook_skills_directories",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
+    _stub_tools_hook_wizard(monkeypatch)
+
+    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+        hook_setup.run_hook_setup(agents=["cursor"])
+
+    data = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
+    assert (
+        data["hooks"]["sessionStart"][0]["command"]
+        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start"
+    )

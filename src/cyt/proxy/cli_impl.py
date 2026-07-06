@@ -9,7 +9,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cyt import __version__
 from cyt.config import (
@@ -386,12 +386,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     hook_parser = subparsers.add_parser(
         "hook",
-        help="Install agent hooks (wizard), uninstall, or run hook diagnostics with --prompt/--test",
+        help="Install agent hooks (all, cursor, claude, codex), uninstall, or run hook diagnostics",
     )
     hook_parser.add_argument(
         "--uninstall",
         action="store_true",
-        help="Remove CYT hooks from ~/.claude/settings.json and ~/.codex/hooks.json",
+        help="Remove CYT hooks from ~/.claude/settings.json, ~/.codex/hooks.json, and ~/.cursor/hooks.json",
     )
     hook_parser.add_argument(
         "--serve",
@@ -406,6 +406,43 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_hook_handler_args(hook_parser)
     hook_sub = hook_parser.add_subparsers(dest="hook_command", required=False)
+    hook_all = hook_sub.add_parser("all", help="Install CYT hooks for all configured agents")
+    hook_all.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    hook_cursor = hook_sub.add_parser(
+        "cursor",
+        help="Install CYT hooks into ~/.cursor/hooks.json",
+    )
+    hook_cursor.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    hook_claude = hook_sub.add_parser(
+        "claude",
+        help="Install CYT hooks into ~/.claude/settings.json",
+    )
+    hook_claude.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    hook_codex = hook_sub.add_parser(
+        "codex",
+        help="Install CYT hooks into ~/.codex/hooks.json",
+    )
+    hook_codex.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
     daemon_parser = hook_sub.add_parser("daemon", help="Hook HTTP daemon lifecycle")
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command", required=True)
     daemon_start = daemon_sub.add_parser(
@@ -648,9 +685,22 @@ def _run_hook_command(args: argparse.Namespace) -> None:
             test=bool(getattr(args, "test", False)),
         )
         return
-    from cyt.skills.hook_setup import run_hook_setup
+    hook_cmd = getattr(args, "hook_command", None)
+    if hook_cmd in ("all", "cursor", "claude", "codex"):
+        from cyt.skills.hook_setup import HookAgentName, run_hook_setup
 
-    run_hook_setup(config_path=getattr(args, "config", None))
+        agents: list[HookAgentName] | None = (
+            None if hook_cmd == "all" else [cast(HookAgentName, hook_cmd)]
+        )
+        run_hook_setup(
+            config_path=getattr(args, "config", None),
+            agents=agents,
+        )
+        return
+    raise SystemExit(
+        "usage: cyt hook {all,cursor,claude,codex,daemon} ... "
+        "(or cyt hook --uninstall | --prompt TEXT | --test)",
+    )
 
 
 def main() -> None:

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cyt_client.cursor import adapt_cursor_payload
 from cyt_client.skills import attach_client_skills
 
 
@@ -58,7 +59,8 @@ def enrich_hook_payload(payload_bytes: bytes) -> bytes:
     if not isinstance(data, dict):
         return payload_bytes
 
-    changed = False
+    data = adapt_cursor_payload(data)
+    changed = True
     transcript_path = _transcript_path_from_data(data)
     if transcript_path is not None:
         path = Path(transcript_path)
