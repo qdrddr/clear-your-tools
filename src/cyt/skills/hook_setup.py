@@ -33,6 +33,7 @@ HOOK_EVENT_NAME = "UserPromptSubmit"
 SESSION_START_EVENT = "SessionStart"
 CURSOR_BEFORE_SUBMIT_EVENT = "beforeSubmitPrompt"
 CURSOR_SESSION_START_EVENT = "sessionStart"
+CURSOR_SESSION_END_EVENT = "sessionEnd"
 HookAgentName = Literal["claude", "codex", "cursor"]
 HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60
@@ -83,8 +84,35 @@ def cursor_before_submit_entry(*, agent: AgentName = "cursor") -> dict[str, Any]
     return cyt_client_entry(agent=agent)
 
 
+def cursor_session_start_cleanup_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
+    return cyt_client_entry(agent=agent)
+
+
 def cursor_session_start_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
     return cyt_daemon_start_entry(agent=agent)
+
+
+def cursor_session_end_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
+    return cyt_client_entry(agent=agent)
+
+
+def cursor_hook_entries(*, agent: AgentName = "cursor") -> dict[str, dict[str, Any]]:
+    return {
+        "before_submit": cursor_before_submit_entry(agent=agent),
+        "session_start_cleanup": cursor_session_start_cleanup_entry(agent=agent),
+        "session_start": cursor_session_start_entry(agent=agent),
+        "session_end": cursor_session_end_entry(agent=agent),
+    }
+
+
+def cursor_desired_hook_commands(*, agent: AgentName = "cursor") -> list[str]:
+    entries = cursor_hook_entries(agent=agent)
+    return [
+        str(entries["before_submit"].get("command")),
+        str(entries["session_start_cleanup"].get("command")),
+        str(entries["session_start"].get("command")),
+        str(entries["session_end"].get("command")),
+    ]
 
 
 def normalize_cursor_hooks_section(hooks_section: object) -> dict[str, Any]:
@@ -395,25 +423,48 @@ def _collect_cyt_hook_commands_for_flat_event(
     return commands
 
 
+def _flat_event_cyt_commands_match(
+    existing_commands: list[str],
+    desired_commands: list[str],
+) -> bool:
+    return existing_commands == desired_commands
+
+
+def _upsert_cursor_flat_event(
+    hooks_section: dict[str, Any],
+    event_name: str,
+    entries: list[dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    existing = _collect_cyt_hook_commands_for_flat_event(merged, event_name)
+    desired = [command for entry in entries if isinstance((command := entry.get("command")), str)]
+    if _flat_event_cyt_commands_match(existing, desired):
+        return merged, False
+
+    merged, _ = _remove_cyt_hooks_for_event(merged, event_name)
+    for entry in entries:
+        merged = _append_flat_hook_entry(merged, entry, event_name=event_name)
+    return merged, True
+
+
 def upsert_cursor_hooks(
     hooks_section: dict[str, Any],
     *,
     before_submit_entry: dict[str, Any],
+    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     merged = copy.deepcopy(hooks_section) if hooks_section else {}
     changed = False
 
-    for event_name, entry in (
-        (CURSOR_BEFORE_SUBMIT_EVENT, before_submit_entry),
-        (CURSOR_SESSION_START_EVENT, session_start_entry),
+    for event_name, entries in (
+        (CURSOR_BEFORE_SUBMIT_EVENT, [before_submit_entry]),
+        (CURSOR_SESSION_START_EVENT, [session_start_cleanup_entry, session_start_entry]),
+        (CURSOR_SESSION_END_EVENT, [session_end_entry]),
     ):
-        existing = _collect_cyt_hook_commands_for_flat_event(merged, event_name)
-        if not _cyt_hook_needs_update(existing, entry):
-            continue
-        merged, _ = _remove_cyt_hooks_for_event(merged, event_name)
-        merged = _append_flat_hook_entry(merged, entry, event_name=event_name)
-        changed = True
+        merged, event_changed = _upsert_cursor_flat_event(merged, event_name, entries)
+        changed = changed or event_changed
 
     return merged, changed
 
@@ -422,14 +473,18 @@ def upsert_cursor_hooks_into_file(
     path: Path,
     *,
     before_submit_entry: dict[str, Any],
+    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
 ) -> bool:
     existing = _load_json_object(path)
     hooks_section = normalize_cursor_hooks_section(existing.get("hooks"))
     merged_hooks, changed = upsert_cursor_hooks(
         hooks_section,
         before_submit_entry=before_submit_entry,
+        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
+        session_end_entry=session_end_entry,
     )
     if not changed:
         return False
@@ -932,7 +987,9 @@ def _handle_existing_cursor_hooks(
     *,
     needs_update: bool,
     before_submit_entry: dict[str, Any],
+    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
 ) -> bool:
     """Prompt for update/remove/skip when CYT hooks already exist; return whether file changed."""
     action_choices = ("update", "remove", "skip")
@@ -964,7 +1021,9 @@ def _handle_existing_cursor_hooks(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
+        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
+        session_end_entry=session_end_entry,
     ):
         print(f"{label}: updated CYT hooks in {path}")
         return True
@@ -979,19 +1038,21 @@ def _install_cursor_hooks_for_target(
     debug: bool,
 ) -> bool:
     del debug
-    before_submit_entry = cursor_before_submit_entry(agent="cursor")
-    session_start_entry = cursor_session_start_entry(agent="cursor")
+    entries = cursor_hook_entries(agent="cursor")
+    before_submit_entry = entries["before_submit"]
+    session_start_cleanup_entry = entries["session_start_cleanup"]
+    session_start_entry = entries["session_start"]
+    session_end_entry = entries["session_end"]
     hooks_data = _load_json_object(path)
     hooks_section = hooks_data.get("hooks")
     if not isinstance(hooks_section, dict):
         hooks_section = {}
 
     existing_commands = _collect_cyt_hook_commands(hooks_section)
-    desired_commands = {
-        str(before_submit_entry.get("command")),
-        str(session_start_entry.get("command")),
-    }
-    needs_update = set(existing_commands) != desired_commands or len(existing_commands) != 2
+    desired_commands = cursor_desired_hook_commands(agent="cursor")
+    needs_update = set(existing_commands) != set(desired_commands) or len(existing_commands) != len(
+        desired_commands,
+    )
 
     if existing_commands:
         print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
@@ -1001,7 +1062,9 @@ def _install_cursor_hooks_for_target(
             hooks_section,
             needs_update=needs_update,
             before_submit_entry=before_submit_entry,
+            session_start_cleanup_entry=session_start_cleanup_entry,
             session_start_entry=session_start_entry,
+            session_end_entry=session_end_entry,
         )
 
     if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
@@ -1010,7 +1073,9 @@ def _install_cursor_hooks_for_target(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
+        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
+        session_end_entry=session_end_entry,
     ):
         print(f"{label}: added CYT hooks to {path}")
         return True

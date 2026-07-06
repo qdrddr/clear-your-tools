@@ -37,8 +37,25 @@ cyt hook cursor
 
 [`hooks.json`](./hooks.json) wires:
 
-- **`sessionStart`** → `CYT_LAUNCH_AGENT=cursor cyt hook daemon start` (colocated hook HTTP server)
-- **`beforeSubmitPrompt`** → `CYT_LAUNCH_AGENT=cursor cyt-client` (same as Claude/Codex `UserPromptSubmit`)
+- **`sessionStart`** → `cyt-client` (delete stale rules file), then `cyt hook daemon start` (colocated hook HTTP server)
+- **`beforeSubmitPrompt`** → `CYT_LAUNCH_AGENT=cursor cyt-client` (prune + inject via rules file)
+- **`sessionEnd`** → `cyt-client` (delete rules file)
+
+## Rules-file injection (Cursor IDE)
+
+Cursor IDE does **not** deliver hook `additional_context` on `beforeSubmitPrompt` today. CYT works around this by
+writing pruned injection to `.cursor/rules/cyt-injection.mdc` with `alwaysApply: true` — the most reliable way to
+inject context into every prompt in Cursor IDE. It lacks per-prompt selectivity at the Cursor layer, but pruned
+`<agent-skills>` and `<agent-tools>` reach the model end-to-end because CYT rewrites the file on each prompt (and
+deletes it when nothing survives pruning).
+
+| Event | cyt-client behavior |
+| --- | --- |
+| `sessionStart` | Delete rules file (clear leftovers from prior session) — no HTTP |
+| `beforeSubmitPrompt` | POST `/hook/inject`, write rules file when content changed |
+| `sessionEnd` | Delete rules file — no HTTP |
+
+The rules file is auto-appended to `.gitignore` in git workspaces. Set `CYT_CURSOR_RULES_FILE=0` to disable rules-file sync.
 
 `cyt-client` adapts Cursor stdin/stdout automatically:
 
@@ -47,7 +64,7 @@ cyt hook cursor
 | `beforeSubmitPrompt` | `UserPromptSubmit` |
 | `workspace_roots[0]` | `cwd` |
 | `conversation_id` | `session_id` |
-| `hookSpecificOutput.additionalContext` | `additional_context` + `continue: true` |
+| `hookSpecificOutput.additionalContext` | `additional_context` + `continue: true` (ignored by Cursor IDE; use rules file) |
 
 Set `CYT_SKILLS_DEBUG=1` to log hook stdin under `~/.config/cyt/debug/skills/`.
 
@@ -62,7 +79,8 @@ echo '{"hook_event_name":"beforeSubmitPrompt","conversation_id":"test","prompt":
 
 - **`beforeSubmitPrompt`** (Cursor) — fires when the user sends a prompt. Cursor may include `model` on the payload;
 otherwise BM25 matching uses the prompt text alone.
-- **`sessionStart`** — starts the hook daemon; does not inject skills by itself.
+- **`sessionStart`** — deletes any stale rules file, then starts the hook daemon.
+- **`sessionEnd`** — deletes the rules file when the chat session closes.
 
 The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.
 

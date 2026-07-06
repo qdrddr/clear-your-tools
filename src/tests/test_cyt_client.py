@@ -20,6 +20,7 @@ def test_cyt_client_package_has_no_cyt_imports() -> None:
         "cyt_client.cli",
         "cyt_client.cursor",
         "cyt_client.port",
+        "cyt_client.rules_file",
         "cyt_client.skills",
         "cyt_client.transport",
         "cyt_client.transcript",
@@ -106,30 +107,45 @@ def test_cli_writes_response_body_to_stdout_only(capsys: pytest.CaptureFixture[s
 def test_cli_reformats_cursor_before_submit_prompt_output(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    payload = {
-        "hook_event_name": "beforeSubmitPrompt",
-        "prompt": "hello",
-        "conversation_id": "conv-1",
-        "workspace_roots": ["/tmp/project"],
-    }
-    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
         with patch(
-            "cyt_client.cli.post_hook_inject",
-            return_value=(
-                200,
-                b'{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"skill text"}}',
-            ),
+            "cyt_client.cli.resolve_hook_url",
+            return_value="http://127.0.0.1:8834/hook/inject",
         ):
-            from cyt_client.cli import main
+            inject_response = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": "<agent-skills>skill text</agent-skills>",
+                    },
+                },
+            ).encode()
+            with patch(
+                "cyt_client.cli.post_hook_inject",
+                return_value=(200, inject_response),
+            ):
+                from cyt_client.cli import main
 
-            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
-                main()
+                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                    main()
 
-    captured = capsys.readouterr()
-    assert json.loads(captured.out) == {
-        "continue": True,
-        "additional_context": "skill text",
-    }
+        captured = capsys.readouterr()
+        assert json.loads(captured.out) == {
+            "continue": True,
+            "additional_context": "<agent-skills>skill text</agent-skills>",
+        }
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        assert rules_path.is_file()
+        assert "alwaysApply: true" in rules_path.read_text(encoding="utf-8")
+        assert "<agent-skills>skill text</agent-skills>" in rules_path.read_text(encoding="utf-8")
 
 
 def test_enrich_hook_payload_adapts_cursor_before_submit_prompt() -> None:
@@ -163,7 +179,9 @@ def test_cli_silent_when_server_unavailable(capsys: pytest.CaptureFixture[str]) 
     assert captured.err == ""
 
 
-def test_cli_silent_when_server_unavailable_for_cursor(capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_cursor_returns_continue_when_server_unavailable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     payload = json.dumps(
         {
             "hook_event_name": "beforeSubmitPrompt",
@@ -179,7 +197,7 @@ def test_cli_silent_when_server_unavailable_for_cursor(capsys: pytest.CaptureFix
             main()
 
     captured = capsys.readouterr()
-    assert captured.out == ""
+    assert json.loads(captured.out) == {"continue": True}
     assert captured.err == ""
 
 
@@ -284,3 +302,106 @@ def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str])
                 assert isinstance(sent["cyt_skills"], list)
 
     capsys.readouterr()
+
+
+def test_build_rules_mdc_includes_always_apply() -> None:
+    from cyt_client.rules_file import build_rules_mdc
+
+    text = build_rules_mdc("<agent-skills>demo</agent-skills>")
+    assert "alwaysApply: true" in text
+    assert "<agent-skills>demo</agent-skills>" in text
+
+
+def test_sync_cursor_rules_file_skips_unchanged_content() -> None:
+    from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        injection = "<agent-tools>demo</agent-tools>"
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_rules_mdc(injection), encoding="utf-8")
+
+        assert sync_cursor_rules_file(workspace, injection) is False
+
+
+def test_sync_cursor_rules_file_deletes_on_empty_injection() -> None:
+    from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_rules_mdc("demo"), encoding="utf-8")
+
+        assert sync_cursor_rules_file(workspace, "") is True
+        assert not path.is_file()
+
+
+def test_delete_cursor_rules_file_noop_when_absent() -> None:
+    from cyt_client.rules_file import delete_cursor_rules_file
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert delete_cursor_rules_file(Path(tmp)) is False
+
+
+def test_ensure_gitignore_entry_is_idempotent() -> None:
+    from cyt_client.rules_file import GITIGNORE_ENTRY, ensure_gitignore_entry
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        (workspace / ".git").mkdir()
+        ensure_gitignore_entry(workspace)
+        ensure_gitignore_entry(workspace)
+        lines = (workspace / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert lines.count(GITIGNORE_ENTRY) == 1
+
+
+def test_cli_session_start_deletes_rules_file_without_http(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("stale", encoding="utf-8")
+        payload = json.dumps(
+            {
+                "hook_event_name": "sessionStart",
+                "workspace_roots": [str(workspace)],
+            },
+        ).encode()
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert not rules_path.is_file()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_cli_session_end_deletes_rules_file_without_http(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("stale", encoding="utf-8")
+        payload = json.dumps(
+            {
+                "hook_event_name": "sessionEnd",
+                "workspace_roots": [str(workspace)],
+            },
+        ).encode()
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert not rules_path.is_file()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
