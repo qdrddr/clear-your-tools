@@ -51,6 +51,10 @@ Your AI agent sees only the tools relevant to the current user task and intent.
         <img src="assets/codex.png" width="60" alt="Codex"/><br/>
         <b>Codex</b>
       </td>
+      <td align="center" width="240">
+        <img src="assets/cursor.png" width="60" alt="Cursor"/><br/>
+        <b>Cursor</b>
+      </td>
     </tr>
   </table>
 
@@ -58,7 +62,8 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 <!-- markdownlint-enable MD041 -->
 
 **Clear Your Tools** is a reverse proxy for coding agents such as
-[Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents).
+[Claude Code](https://github.com/anthropics/claude-code), [Codex CLI](https://github.com/asadani/tool-attention/tree/main/examples/agents),
+and [Cursor](https://cursor.com).
 
 **The problem:**
 

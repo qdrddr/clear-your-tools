@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "CYT_LAUNCH_AGENT=cursor cyt hook daemon start",
+        "timeout": 60
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "CYT_LAUNCH_AGENT=cursor ./hooks/cyt-skills.sh",
+        "timeout": 30
+      }
+    ]
+  }
+}
