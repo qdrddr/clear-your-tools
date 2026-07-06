@@ -73,7 +73,7 @@ jobs:
         run: sdk/e2e/scripts/wait-registry.sh crate
 
   build-wheels:
-    name: Build wheels (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }}${{ matrix.linux_archs && format(' {0}', matrix.linux_archs) || '' }})
+    name: Build wheels (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }}${{ matrix.linux_archs && format(' {0}', matrix.linux_archs) || '' }}${{ matrix.macos_archs && format(' {0}', matrix.macos_archs) || '' }})
     needs: [resolve-version, wait-for-crate]
     if: |
       (github.event_name == 'workflow_dispatch' ||
@@ -90,6 +90,9 @@ jobs:
           - os: ubuntu-24.04-arm
             linux_archs: aarch64
           - os: macos-latest
+            macos_archs: arm64
+          - os: macos-latest
+            macos_archs: universal2
           - os: windows-latest
             arch: AMD64
           - os: windows-11-arm
@@ -123,6 +126,7 @@ jobs:
           CIBW_BUILD_FRONTEND: build[uv]
           CIBW_PROJECT_REQUIRES_PYTHON: ">=3.13"
           CIBW_ARCHS_LINUX: ${{ matrix.linux_archs }}
+          CIBW_ARCHS_MACOS: ${{ matrix.macos_archs }}
           CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
           CIBW_BEFORE_BUILD_LINUX: rm -f src/cyt_indexer/_native*.so && pip install maturin
           CIBW_BEFORE_BUILD_MACOS: rm -f src/cyt_indexer/_native*.so && pip install maturin
@@ -133,7 +137,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.arch || matrix.linux_archs || 'default' }}
+          name: wheels-${{ matrix.os }}-${{ matrix.arch || matrix.linux_archs || matrix.macos_archs || 'default' }}
           path: wheelhouse/*.whl
 
   publish:
