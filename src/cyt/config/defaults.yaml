@@ -149,7 +149,6 @@ models:
 
 pruning:
   inject_via: proxy # hook | proxy — applies to skills and tools injection
-  inject_into_user_message: true # proxy only: inject pruned MCP tools + skills into latest user turn
   tools:
     hook:
       tools_from: executor # executor | definitions
@@ -190,6 +189,7 @@ pruning:
 network:
   proxy:
     reverse:
+      inject_into_user_message: true # inject pruned MCP tools + skills into latest user turn
       debug_log_dir: .debug
       debug_log_max_body_bytes: 1048576
       http2:

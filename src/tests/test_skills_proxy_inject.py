@@ -55,9 +55,15 @@ def _skills_config(root: Path) -> dict:
             "pageindex": {"enable_bm25_chunking": True},
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": False,
+                },
+            },
+        },
         "pruning": {
             "inject_via": "proxy",
-            "inject_into_user_message": False,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
     }
@@ -157,7 +163,7 @@ def test_inject_skills_into_anthropic_body_appends_to_user_message() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
-        config["pruning"]["inject_into_user_message"] = True
+        config["network"]["proxy"]["reverse"]["inject_into_user_message"] = True
         body = {
             "model": "claude-test",
             "system": [{"type": "text", "text": "# MCP Server Instructions"}],
@@ -180,7 +186,7 @@ def test_inject_skills_into_openai_body_appends_to_user_message() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
-        config["pruning"]["inject_into_user_message"] = True
+        config["network"]["proxy"]["reverse"]["inject_into_user_message"] = True
         body = {
             "model": "gpt-test",
             "input": [

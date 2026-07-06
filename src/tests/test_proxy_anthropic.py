@@ -19,7 +19,13 @@ from cyt.proxy.anthropic import (
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
         "inject_via": "proxy",
-        "inject_into_user_message": False,
+    },
+    "network": {
+        "proxy": {
+            "reverse": {
+                "inject_into_user_message": False,
+            },
+        },
     },
 }
 
@@ -292,8 +298,14 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": False,
+                },
+            },
+        },
         "pruning": {
-            "inject_into_user_message": False,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -333,8 +345,14 @@ def test_transform_anthropic_request_inject_into_user_message(
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": True,
+                },
+            },
+        },
         "pruning": {
-            "inject_into_user_message": True,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -381,7 +399,10 @@ def test_transform_anthropic_request_inject_into_user_message(
 
 
 def test_transform_anthropic_request_inject_keeps_all_original_system_tools() -> None:
-    config = {"pruning": {"inject_into_user_message": True, "inject_via": "proxy"}}
+    config = {
+        "pruning": {"inject_via": "proxy"},
+        "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
+    }
     body = {
         "model": "claude-test",
         "messages": [{"role": "user", "content": "use context7 docs"}],
@@ -421,7 +442,10 @@ def test_transform_anthropic_request_inject_keeps_all_original_system_tools() ->
 
 
 def test_transform_anthropic_request_inject_into_user_message_tool_result_only() -> None:
-    config = {"pruning": {"inject_into_user_message": True, "inject_via": "proxy"}}
+    config = {
+        "pruning": {"inject_via": "proxy"},
+        "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
+    }
     body = {
         "model": "claude-test",
         "messages": [
@@ -542,8 +566,14 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": False,
+                },
+            },
+        },
         "pruning": {
-            "inject_into_user_message": False,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},

@@ -21,7 +21,13 @@ from cyt.proxy.openai_responses import (
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
         "inject_via": "proxy",
-        "inject_into_user_message": False,
+    },
+    "network": {
+        "proxy": {
+            "reverse": {
+                "inject_into_user_message": False,
+            },
+        },
     },
 }
 
@@ -536,8 +542,14 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": False,
+                },
+            },
+        },
         "pruning": {
-            "inject_into_user_message": False,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -574,8 +586,14 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
             "pageindex": {"enable_bm25_chunking": True},
             "proxy": {"request_budget_fraction": 10.0},
         },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": True,
+                },
+            },
+        },
         "pruning": {
-            "inject_into_user_message": True,
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -652,9 +670,15 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
     """Codex puts MCP in input[].tool_search_output; inject should move them to user turn."""
     config = {
         "pruning": {
-            "inject_into_user_message": True,
             "inject_via": "proxy",
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
+        },
+        "network": {
+            "proxy": {
+                "reverse": {
+                    "inject_into_user_message": True,
+                },
+            },
         },
     }
     tool_search_output = {
@@ -733,10 +757,8 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
 def test_transform_openai_request_inject_tool_search_output_pass_through() -> None:
     """Pass-through pruning must still split MCP out for user-message inject."""
     config = {
-        "pruning": {
-            "inject_into_user_message": True,
-            "inject_via": "proxy",
-        },
+        "pruning": {"inject_via": "proxy"},
+        "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
     }
     tool_search_output = {
         "type": "tool_search_output",

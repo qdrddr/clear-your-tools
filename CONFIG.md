@@ -469,7 +469,7 @@ skills hook injection). The reverse proxy does not mutate request `tools` arrays
   files or an unset executor URL are skipped silently at hook time (configure with `cyt hook`, `cyt setup`, or optional
   `cyt launch` repair prompt).
 
-### Proxy injection placement (`pruning.inject_into_user_message`)
+### Proxy injection placement (`network.proxy.reverse.inject_into_user_message`)
 
 When `pruning.inject_via` is `proxy`, you can control **where** pruned MCP tools and matched skills
 land in the upstream HTTP body. Claude Code uses the `/anthropic` endpoint; Codex uses `/openai`
@@ -477,7 +477,7 @@ land in the upstream HTTP body. Claude Code uses the `/anthropic` endpoint; Code
 
 | Key | Values | Default |
 | --- | ------ | ------- |
-| `pruning.inject_into_user_message` | `true` \| `false` | `true` |
+| `network.proxy.reverse.inject_into_user_message` | `true` \| `false` | `true` |
 
 - **`false`**: pruned tools replace the root `tools` array; skills inject into the system message
   (Claude Code) or a developer message before the last user turn (Codex).
@@ -491,9 +491,10 @@ land in the upstream HTTP body. Claude Code uses the `/anthropic` endpoint; Code
   last user turn to preserve provider prompt-cache prefixes. Ignored when `inject_via: hook`.
 
 ```yaml
-pruning:
-  inject_via: proxy
-  inject_into_user_message: true
+network:
+  proxy:
+    reverse:
+      inject_into_user_message: true
 ```
 
 Live executor catalog loading requires a running Executor MCP aggregator at

@@ -156,7 +156,6 @@ _DEFAULTS: dict[str, Any] = {
     },
     "pruning": {
         "inject_via": DEFAULT_INJECT_VIA,
-        "inject_into_user_message": DEFAULT_INJECT_INTO_USER_MESSAGE,
         "tools": {
             "hook": {
                 "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
@@ -205,6 +204,7 @@ _DEFAULTS: dict[str, Any] = {
         "proxy": {
             "reverse": {
                 "port": DEFAULT_REVERSE_PORT,
+                "inject_into_user_message": DEFAULT_INJECT_INTO_USER_MESSAGE,
                 "debug_log_max_body_bytes": DEFAULT_DEBUG_LOG_MAX_BODY_BYTES,
                 "debug_log_dir": DEFAULT_DEBUG_LOG_DIR,
                 "http2": {
@@ -275,7 +275,7 @@ def _bundled_network_reverse_overlay(bundled: dict[str, Any]) -> dict[str, Any] 
     if not isinstance(reverse, dict):
         return None
     reverse_overlay: dict[str, Any] = {}
-    for key in ("debug_log_dir", "debug_log_max_body_bytes", "http2"):
+    for key in ("inject_into_user_message", "debug_log_dir", "debug_log_max_body_bytes", "http2"):
         if key in reverse:
             reverse_overlay[key] = copy.deepcopy(reverse[key])
     return reverse_overlay or None
@@ -1020,12 +1020,8 @@ def inject_into_user_message(config: dict[str, Any] | None = None) -> bool:
     """When true (proxy only), inject pruned MCP tools and skills into the latest user turn."""
     if inject_via(config) != "proxy":
         return False
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    pruning = merged.get("pruning")
-    if not isinstance(pruning, dict):
-        return DEFAULT_INJECT_INTO_USER_MESSAGE
-    value = pruning.get("inject_into_user_message", DEFAULT_INJECT_INTO_USER_MESSAGE)
+    reverse_cfg = reverse_proxy_cfg(_merged_config(config or load_config())["network"]["proxy"])
+    value = reverse_cfg.get("inject_into_user_message", DEFAULT_INJECT_INTO_USER_MESSAGE)
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
