@@ -7,6 +7,13 @@ import os
 import sys
 from pathlib import Path
 
+from cyt.agents._registry import get_agent
+from cyt.agents.claude.launch import build_claude_env
+from cyt.agents.codex.launch import configure_provider, restore_provider
+from cyt.agents.cursor.launch import (
+    ensure_cursor_hooks_for_launch,
+    ensure_cursor_inject_via_hook,
+)
 from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
@@ -17,18 +24,7 @@ from cyt.config import (
     tools_hook_tools_from,
 )
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
-from cyt.launch.claude import build_claude_env
-from cyt.launch.claude import run as run_claude
-from cyt.launch.codex import configure_provider, restore_provider
-from cyt.launch.codex import run as run_codex
 from cyt.launch.config import codex_env_key_name
-from cyt.launch.cursor import (
-    ensure_cursor_hooks_for_launch,
-    ensure_cursor_inject_via_hook,
-)
-from cyt.launch.cursor import (
-    run as run_cursor,
-)
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
 from cyt.launch.proxy_guard import (
@@ -263,27 +259,15 @@ def _run_launched_agent(
     use_proxy: bool = True,
     switch_provider: bool = False,
 ) -> int:
-    if agent == "claude":
-        return run_claude(
-            config=runtime.config,
-            port=runtime.port,
-            endpoint=endpoint,
-            agent_args=agent_args,
-            auth_binding=auth_binding,
-            use_proxy=use_proxy,
-            switch_provider=switch_provider,
-        )
-    if agent == "codex":
-        return run_codex(
-            config=runtime.config,
-            port=runtime.port,
-            endpoint=endpoint,
-            agent_args=agent_args,
-            auth_binding=auth_binding,
-            use_proxy=use_proxy,
-            switch_provider=switch_provider,
-        )
-    return run_cursor(agent_args=agent_args)
+    return get_agent(agent).launch.run(
+        config=runtime.config,
+        port=runtime.port,
+        endpoint=endpoint,
+        agent_args=agent_args,
+        auth_binding=auth_binding,
+        use_proxy=use_proxy,
+        switch_provider=switch_provider,
+    )
 
 
 def _proxy_spawn_extra_env(
@@ -410,7 +394,7 @@ def _run_cursor_launch_session(
         switch_provider=False,
     )
 
-    return run_cursor(agent_args=agent_args)
+    return get_agent("cursor").launch.run(agent_args=agent_args)
 
 
 def _run_launch_session(

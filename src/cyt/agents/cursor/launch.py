@@ -8,13 +8,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cyt.config import inject_via, load_config, save_user_config
-from cyt.proxy.setup_wizard import _prompt_yes_no
-from cyt.skills.hook_setup import (
+from cyt.agents.cursor.hook import (
     CURSOR_HOOKS_PATH,
     cursor_hook_entries,
     upsert_cursor_hooks_into_file,
 )
+from cyt.config import inject_via, load_config, save_user_config
+from cyt.proxy.setup_wizard import _prompt_yes_no
 
 _CURSOR_CANDIDATES = (
     Path("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
@@ -86,7 +86,17 @@ def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:
     return changed
 
 
-def run(*, agent_args: list[str]) -> int:
+def run(
+    *,
+    agent_args: list[str],
+    config: dict[str, Any] | None = None,
+    port: int | None = None,
+    endpoint: str | None = None,
+    auth_binding: object | None = None,
+    use_proxy: bool = True,
+    switch_provider: bool = False,
+) -> int:
+    del config, port, endpoint, auth_binding, use_proxy, switch_provider
     """Launch Cursor with optional CLI args (e.g. a workspace path)."""
     cursor = find_cursor()
     try:

@@ -292,7 +292,7 @@ class TestEnsureAgentUpstreamAuth:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_AUTH_PATH", auth_path)
         monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.delenv(_openrouter_api_key_var(), raising=False)
         monkeypatch.setattr(
@@ -391,7 +391,7 @@ class TestEnsureAgentUpstreamAuth:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_AUTH_PATH", auth_path)
         monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.delenv(_openai_api_key_var(), raising=False)
         monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: "keyring-" + "token")
@@ -422,7 +422,7 @@ class TestEnsureAgentUpstreamAuth:
             json.dumps({"auth_mode": "chatgpt", _openai_api_key_var(): None}),
             encoding="utf-8",
         )
-        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_AUTH_PATH", auth_path)
         monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.setenv(_openai_api_key_var(), _openai_token())
         sources: dict[str, str] = {}
@@ -452,7 +452,7 @@ class TestEnsureAgentUpstreamAuth:
             json.dumps({"auth_mode": "chatgpt", _openai_api_key_var(): ""}),
             encoding="utf-8",
         )
-        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_AUTH_PATH", auth_path)
         monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.delenv(_openai_api_key_var(), raising=False)
         monkeypatch.setattr(
@@ -490,7 +490,7 @@ class TestEnsureAgentUpstreamAuth:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr("cyt.launch.codex.CODEX_AUTH_PATH", auth_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_AUTH_PATH", auth_path)
         monkeypatch.delenv(_codex_openai_api_key_var(), raising=False)
         monkeypatch.setenv(_openai_api_key_var(), _openai_token())
         sources: dict[str, str] = {}

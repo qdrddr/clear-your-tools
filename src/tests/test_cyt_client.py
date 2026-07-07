@@ -148,7 +148,8 @@ def test_cli_reformats_cursor_before_submit_prompt_output(
         assert "<agent-skills>skill text</agent-skills>" in rules_path.read_text(encoding="utf-8")
 
 
-def test_enrich_hook_payload_adapts_cursor_before_submit_prompt() -> None:
+def test_enrich_hook_payload_adds_cyt_agent_and_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CYT_LAUNCH_AGENT", "cursor")
     raw = json.dumps(
         {
             "hook_event_name": "beforeSubmitPrompt",
@@ -158,9 +159,8 @@ def test_enrich_hook_payload_adapts_cursor_before_submit_prompt() -> None:
         },
     ).encode()
     enriched = json.loads(enrich_hook_payload(raw))
-    assert enriched["hook_event_name"] == "UserPromptSubmit"
-    assert enriched["cwd"] == "/tmp/project"
-    assert enriched["session_id"] == "conv-1"
+    assert enriched["hook_event_name"] == "beforeSubmitPrompt"
+    assert enriched["cyt_agent"] == "cursor"
     assert "cyt_skills" in enriched
 
 

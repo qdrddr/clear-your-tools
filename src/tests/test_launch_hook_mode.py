@@ -9,17 +9,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cyt.launch.agent_credentials import AgentAuthBinding
-from cyt.launch.claude import build_claude_env
-from cyt.launch.codex import (
+from cyt.agents.claude.launch import build_claude_env
+from cyt.agents.codex.launch import (
     PROVIDER_NAME,
     build_switch_provider_codex_args,
     hook_mode_codex_launch_args,
     read_config_model_provider,
 )
-from cyt.launch.codex import (
+from cyt.agents.codex.launch import (
     run as run_codex,
 )
+from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.env_report import print_runtime_env_report
 
 
@@ -91,7 +91,7 @@ class TestHookModeCodexArgs:
     ) -> None:
         codex_path = tmp_path / "config.toml"
         codex_path.write_text('model_provider = "cyt"\n', encoding="utf-8")
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         assert read_config_model_provider() == PROVIDER_NAME
         assert hook_mode_codex_launch_args() == ["-c", 'model_provider="openai"']
 
@@ -102,7 +102,7 @@ class TestHookModeCodexArgs:
     ) -> None:
         codex_path = tmp_path / "config.toml"
         codex_path.write_text('model_provider = "openai"\n', encoding="utf-8")
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         assert hook_mode_codex_launch_args() == []
 
     def test_switch_provider_uses_direct_upstream(self) -> None:
@@ -123,7 +123,7 @@ class TestHookModeCodexArgs:
     ) -> None:
         codex_path = tmp_path / "config.toml"
         codex_path.write_text('model_provider = "cyt"\n', encoding="utf-8")
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         captured: dict[str, list[str]] = {}
 
         def fake_run(
@@ -136,8 +136,8 @@ class TestHookModeCodexArgs:
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(args=cmd, returncode=0)
 
-        monkeypatch.setattr("cyt.launch.codex.subprocess.run", fake_run)
-        monkeypatch.setattr("cyt.launch.codex.find_codex", lambda: "codex")
+        monkeypatch.setattr("cyt.agents.codex.launch.subprocess.run", fake_run)
+        monkeypatch.setattr("cyt.agents.codex.launch.find_codex", lambda: "codex")
 
         result = run_codex(
             config=_config(),
@@ -181,8 +181,8 @@ class TestHookModeCodexArgs:
             captured["env"] = env
             return subprocess.CompletedProcess(args=[], returncode=0)
 
-        monkeypatch.setattr("cyt.launch.codex.subprocess.run", fake_run)
-        monkeypatch.setattr("cyt.launch.codex.find_codex", lambda: "codex")
+        monkeypatch.setattr("cyt.agents.codex.launch.subprocess.run", fake_run)
+        monkeypatch.setattr("cyt.agents.codex.launch.find_codex", lambda: "codex")
 
         run_codex(
             config=_config(),

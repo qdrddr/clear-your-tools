@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
-from cyt_client.cursor import adapt_cursor_payload
 from cyt_client.skills import attach_client_skills
+
+CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
+CYT_AGENT_FIELD = "cyt_agent"
 
 
 def _transcript_path_from_data(data: dict[str, Any]) -> str | None:
@@ -48,8 +51,14 @@ def _load_transcript(path: Path) -> list[Any]:
     return [text]
 
 
+def _attach_cyt_agent(data: dict[str, Any]) -> None:
+    env_value = os.environ.get(CYT_LAUNCH_AGENT_ENV, "").strip()
+    if env_value:
+        data[CYT_AGENT_FIELD] = env_value
+
+
 def enrich_hook_payload(payload_bytes: bytes) -> bytes:
-    """Attach ``cyt_transcript`` and ``cyt_skills`` for the hook HTTP server."""
+    """Attach ``cyt_agent``, ``cyt_transcript``, and ``cyt_skills`` for the hook server."""
     if not payload_bytes.strip():
         return payload_bytes
     try:
@@ -59,8 +68,10 @@ def enrich_hook_payload(payload_bytes: bytes) -> bytes:
     if not isinstance(data, dict):
         return payload_bytes
 
-    data = adapt_cursor_payload(data)
+    changed = False
+    _attach_cyt_agent(data)
     changed = True
+
     transcript_path = _transcript_path_from_data(data)
     if transcript_path is not None:
         path = Path(transcript_path)

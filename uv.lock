@@ -341,7 +341,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "clear-your-tools", extras = ["proxy", "pruners"], marker = "extra == 'all'" },
+    { name = "clear-your-tools", extras = ["agents", "proxy", "pruners"], marker = "extra == 'all'" },
+    { name = "clear-your-tools", extras = ["claude", "codex", "cursor"], marker = "extra == 'agents'" },
     { name = "cyt-indexer-sdk", editable = "sdk/python" },
     { name = "h2", marker = "extra == 'proxy'", specifier = "==4.3.0" },
     { name = "httpx", marker = "extra == 'proxy'", specifier = "==0.28.1" },
@@ -356,7 +357,7 @@ requires-dist = [
     { name = "uuid7", specifier = "==0.1.0" },
     { name = "uvicorn", marker = "extra == 'proxy'", specifier = "==0.48.0" },
 ]
-provides-extras = ["proxy", "pruners", "all"]
+provides-extras = ["claude", "codex", "cursor", "agents", "proxy", "pruners", "all"]
 
 [package.metadata.requires-dev]
 dev = [

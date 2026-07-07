@@ -165,7 +165,7 @@ def _codex_recipe_lines(
     config: dict[str, Any] | None = None,
 ) -> list[str]:
     if hook_mode and not switch_provider:
-        from cyt.launch.codex import hook_mode_codex_launch_args
+        from cyt.agents.codex.launch import hook_mode_codex_launch_args
 
         lines = ["# Manual Codex recipe"]
         launch_args = hook_mode_codex_launch_args()
@@ -179,7 +179,7 @@ def _codex_recipe_lines(
 
     source = auth_binding.source if auth_binding is not None else "resolved"
     if switch_provider and config is not None:
-        from cyt.launch.codex import build_switch_provider_codex_args
+        from cyt.agents.codex.launch import build_switch_provider_codex_args
 
         args = build_switch_provider_codex_args(
             config=config,

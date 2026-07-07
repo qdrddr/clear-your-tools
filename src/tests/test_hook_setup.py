@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt.skills import hook_setup
+from cyt.hook import setup_wizard as hook_setup
 
 
 def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -416,7 +416,7 @@ def test_run_hook_setup_updates_duplicate_hooks(
     monkeypatch.setattr(hook_setup, "_prompt_choice", lambda *_args, **_kwargs: "update")
     _stub_tools_hook_wizard(monkeypatch)
 
-    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+    with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
@@ -458,7 +458,7 @@ def test_run_hook_setup_merges_existing_agent_configs(
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
     _stub_tools_hook_wizard(monkeypatch)
 
-    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+    with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
@@ -510,7 +510,7 @@ def test_run_hook_setup_skips_declined_agent_install(
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
     _stub_tools_hook_wizard(monkeypatch)
 
-    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+    with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
@@ -534,7 +534,7 @@ def test_run_hook_setup_skips_missing_agent_configs(
     _stub_tools_hook_wizard(monkeypatch)
 
     with pytest.raises(SystemExit, match="No agent config files found"):
-        with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+        with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
             hook_setup.run_hook_setup(agents=["claude", "codex"])
 
     captured = capsys.readouterr()
@@ -620,7 +620,7 @@ def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_run_hook_uninstall() -> None:
         called["run"] = True
 
-    monkeypatch.setattr("cyt.skills.hook_setup.run_hook_uninstall", fake_run_hook_uninstall)
+    monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_uninstall", fake_run_hook_uninstall)
 
     from cyt.proxy.cli_impl import main
 
@@ -643,7 +643,7 @@ def test_hook_wizard_without_stdin(
         called["agents"] = agents
         assert config_path is None
 
-    monkeypatch.setattr("cyt.skills.hook_setup.run_hook_setup", fake_run_hook_setup)
+    monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_setup", fake_run_hook_setup)
 
     from cyt.proxy.cli_impl import main
 
@@ -664,7 +664,7 @@ def test_hook_cursor_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
         called["agents"] = agents
         assert config_path is None
 
-    monkeypatch.setattr("cyt.skills.hook_setup.run_hook_setup", fake_run_hook_setup)
+    monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_setup", fake_run_hook_setup)
 
     from cyt.proxy.cli_impl import main
 
@@ -759,7 +759,7 @@ def test_run_hook_setup_installs_cursor_hooks(
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
     _stub_tools_hook_wizard(monkeypatch)
 
-    with patch("cyt.skills.hook_setup.load_config", return_value={"skills": {"enabled": True}}):
+    with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup(agents=["cursor"])
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))

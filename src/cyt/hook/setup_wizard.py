@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from cyt.agents._types import AgentName
 from cyt.config import (
     USER_ENV_PATH,
     inject_via,
@@ -19,7 +20,6 @@ from cyt.config import (
     save_user_config,
     skills_enabled,
 )
-from cyt.launch.upstream import AgentName
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 

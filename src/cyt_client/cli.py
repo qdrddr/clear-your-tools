@@ -6,7 +6,6 @@ import json
 import sys
 
 from cyt_client.cursor import (
-    adapt_cursor_payload,
     format_cursor_continue,
     format_cursor_stdout,
     is_cursor_hook_payload,
@@ -45,15 +44,14 @@ def _write_hook_stdout(body: bytes, *, cursor_output: bool) -> None:
 
 
 def _handle_cursor_rules_cleanup(payload: dict) -> None:
-    workspace = workspace_root_from_payload(adapt_cursor_payload(payload))
+    workspace = workspace_root_from_payload(payload)
     if workspace is not None:
         delete_cursor_rules_file(workspace)
     print(format_cursor_continue(), flush=True)
 
 
 def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
-    adapted = adapt_cursor_payload(payload)
-    workspace = workspace_root_from_payload(adapted)
+    workspace = workspace_root_from_payload(payload)
     if workspace is None:
         print(format_cursor_continue(), flush=True)
         return

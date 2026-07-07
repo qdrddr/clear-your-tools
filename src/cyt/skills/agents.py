@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
-from cyt.launch.upstream import AgentName, parse_agent_name
+from cyt.agents._types import CYT_AGENT_FIELD, CYT_LAUNCH_AGENT_ENV, AgentName
+from cyt.launch.upstream import parse_agent_name
 
 SYSTEM_SKILLS_DIR_NAME = ".system"
-CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 
 _UPSTREAM_KIND_TO_AGENT: dict[str, AgentName] = {
     "anthropic": "claude",
@@ -17,7 +18,6 @@ _UPSTREAM_KIND_TO_AGENT: dict[str, AgentName] = {
 
 
 def agent_from_upstream_kind(upstream_kind: str | None) -> AgentName | None:
-    """Map a proxy upstream kind (``anthropic``/``openai`` or aliases) to a launch agent."""
     if upstream_kind is None or not str(upstream_kind).strip():
         return None
     from cyt.proxy.setup_wizard import normalize_upstream_kind
@@ -33,10 +33,18 @@ def resolve_skills_agent(
     *,
     agent: AgentName | None = None,
     upstream_kind: str | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> AgentName | None:
-    """Resolve the active launch agent for skills filtering."""
     if agent is not None:
         return agent
+
+    if payload is not None:
+        raw = payload.get(CYT_AGENT_FIELD)
+        if isinstance(raw, str) and raw.strip():
+            try:
+                return parse_agent_name(raw.strip())
+            except ValueError:
+                pass
 
     env_value = os.environ.get(CYT_LAUNCH_AGENT_ENV)
     if isinstance(env_value, str) and env_value.strip():
@@ -65,7 +73,6 @@ def _normalize_agent_dir_name(name: str) -> AgentName | None:
 
 
 def agent_system_skill_owner(source_path: Path | str) -> AgentName | None:
-    """Return the agent that owns a path under ``*/skills/.system``, if any."""
     resolved = Path(source_path).expanduser().resolve()
     parts = resolved.parts
     for index, part in enumerate(parts):
@@ -86,7 +93,6 @@ def is_excluded_agent_system_skill(
     *,
     active_agent: AgentName | None,
 ) -> bool:
-    """True when *source_path* is another agent's ``skills/.system`` skill."""
     if active_agent is None:
         return False
     owner = agent_system_skill_owner(source_path)
@@ -94,5 +100,4 @@ def is_excluded_agent_system_skill(
 
 
 def launch_agent_env(agent: AgentName) -> dict[str, str]:
-    """Environment overlay for a launched agent process or child proxy."""
     return {CYT_LAUNCH_AGENT_ENV: agent}

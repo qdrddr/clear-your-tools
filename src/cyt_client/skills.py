@@ -20,6 +20,14 @@ def _payload_cwd(data: dict[str, Any]) -> Path:
     raw = data.get("cwd")
     if isinstance(raw, str) and raw.strip():
         return Path(raw).expanduser()
+    roots = data.get("workspace_roots")
+    if isinstance(roots, list) and roots:
+        first = roots[0]
+        if isinstance(first, str) and first.strip():
+            return Path(first.strip()).expanduser()
+    nested = data.get("payload")
+    if isinstance(nested, dict):
+        return _payload_cwd(nested)
     return Path.cwd()
 
 

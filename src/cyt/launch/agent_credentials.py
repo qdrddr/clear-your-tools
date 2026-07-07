@@ -47,7 +47,7 @@ def agent_auth_env_var(agent: AgentName, config: dict[str, Any]) -> str:
 
 
 def _codex_auth_json_source() -> str:
-    from cyt.launch.codex import codex_auth_json_source
+    from cyt.agents.codex.launch import codex_auth_json_source
 
     return codex_auth_json_source()
 
@@ -136,7 +136,7 @@ def _resolve_codex_agent_token(
     token was copied from an upstream key and records where that key came from
     (shell, env file, ``auth.json``, keyring).
     """
-    from cyt.launch.codex import read_codex_auth_openai_api_key
+    from cyt.agents.codex.launch import read_codex_auth_openai_api_key
 
     if upstream_key_var:
         value, source = resolve_shell_or_file_credential(

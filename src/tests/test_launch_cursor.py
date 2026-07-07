@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
+from cyt.agents.cursor.launch import ensure_cursor_inject_via_hook
 from cyt.config import inject_via
 from cyt.launch.cli import parse_launch_remainder
-from cyt.launch.cursor import ensure_cursor_inject_via_hook
 from cyt.launch.upstream import ensure_upstream_for_runtime, resolve_upstream_kind
 
 
@@ -55,8 +55,8 @@ def test_ensure_cursor_inject_via_hook_prompts_and_saves(
     config_path.write_text("pruning:\n  inject_via: proxy\n", encoding="utf-8")
     from cyt.config import load_config
 
-    monkeypatch.setattr("cyt.launch.cursor.sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("cyt.launch.cursor._prompt_yes_no", lambda *_a, **_k: True)
+    monkeypatch.setattr("cyt.agents.cursor.launch.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("cyt.agents.cursor.launch._prompt_yes_no", lambda *_a, **_k: True)
 
     config = load_config(config_path)
     updated = ensure_cursor_inject_via_hook(config_path, config)
@@ -73,8 +73,8 @@ def test_ensure_cursor_inject_via_hook_exits_when_user_declines(
     config_path.write_text("pruning:\n  inject_via: proxy\n", encoding="utf-8")
     from cyt.config import load_config
 
-    monkeypatch.setattr("cyt.launch.cursor.sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("cyt.launch.cursor._prompt_yes_no", lambda *_a, **_k: False)
+    monkeypatch.setattr("cyt.agents.cursor.launch.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("cyt.agents.cursor.launch._prompt_yes_no", lambda *_a, **_k: False)
 
     with pytest.raises(SystemExit, match=r"requires pruning\.inject_via: hook"):
         ensure_cursor_inject_via_hook(config_path, load_config(config_path))
@@ -106,7 +106,7 @@ def test_run_cursor_launch_session_starts_hook_not_proxy() -> None:
         patch.object(launch_cli, "_ensure_hook_server") as ensure_hook,
         patch.object(launch_cli, "ensure_proxy") as ensure_proxy,
         patch.object(launch_cli, "print_runtime_env_report"),
-        patch.object(launch_cli, "run_cursor", return_value=0) as run_cursor,
+        patch("cyt.agents.cursor.launch.run", return_value=0) as run_cursor,
         patch.object(launch_cli, "warm_caches", create=True),
     ):
         mock_sys.stdin.isatty.return_value = False
@@ -120,4 +120,5 @@ def test_run_cursor_launch_session_starts_hook_not_proxy() -> None:
     assert code == 0
     ensure_proxy.assert_not_called()
     ensure_hook.assert_called_once()
-    run_cursor.assert_called_once_with(agent_args=["."])
+    run_cursor.assert_called_once()
+    assert run_cursor.call_args.kwargs.get("agent_args") == ["."]

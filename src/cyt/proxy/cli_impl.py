@@ -648,7 +648,7 @@ def _hook_invokes_handler(args: argparse.Namespace) -> bool:
 
 def _run_hook_command(args: argparse.Namespace) -> None:
     if getattr(args, "uninstall", False):
-        from cyt.skills.hook_setup import run_hook_uninstall
+        from cyt.hook.setup_wizard import run_hook_uninstall
 
         run_hook_uninstall()
         return
@@ -694,7 +694,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
         return
     hook_cmd = getattr(args, "hook_command", None)
     if hook_cmd in ("all", "cursor", "claude", "codex"):
-        from cyt.skills.hook_setup import HookAgentName, run_hook_setup
+        from cyt.hook.setup_wizard import HookAgentName, run_hook_setup
 
         agents: list[HookAgentName] | None = (
             None if hook_cmd == "all" else [cast(HookAgentName, hook_cmd)]

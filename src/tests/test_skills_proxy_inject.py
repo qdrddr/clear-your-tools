@@ -10,14 +10,18 @@ from unittest.mock import patch
 
 import pytest
 
+from cyt.agents.claude.skills_proxy import (
+    anthropic_append_skills_to_system_messages,
+    anthropic_append_text_to_system_content,
+)
+from cyt.agents.codex.skills_proxy import (
+    openai_insert_skills_developer_message,
+    openai_make_developer_message,
+)
 from cyt.proxy.anthropic import PruneResult
 from cyt.skills import cli as skills_cli
 from cyt.skills.proxy_inject import (
-    anthropic_append_skills_to_system_messages,
-    anthropic_append_text_to_system_content,
     inject_skills_for_proxy_request,
-    openai_insert_skills_developer_message,
-    openai_make_developer_message,
     prepare_deferred_skills_context,
 )
 

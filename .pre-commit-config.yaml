@@ -366,6 +366,26 @@ repos:
         pass_filenames: false
         language: system
         files: '^src/.*\.py$'
+      - id: check-cyt-client-imports
+        name: check-cyt-client-imports
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/check_cyt_client_imports.py',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/cyt_client/.*\.py|scripts/check_cyt_client_imports\.py)$
+      - id: check-agent-imports
+        name: check-agent-imports
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/check_agent_imports.py',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/cyt/agents/.*\.py|src/cyt/skills/.*\.py|src/cyt/proxy/reverse\.py|scripts/check_agent_imports\.py)$
       - id: pytest
         name: pytest
         entry: bash scripts/prek-hook.sh

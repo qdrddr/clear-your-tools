@@ -10,9 +10,9 @@ from typing import Any
 import pytest
 
 from cyt import config as configs
+from cyt.agents.claude.launch import build_claude_env
 from cyt.config import load_config
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
-from cyt.launch.claude import build_claude_env
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.launch.upstream_credentials import (
     describe_upstream_key_var_resolution,

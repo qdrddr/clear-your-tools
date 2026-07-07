@@ -13,10 +13,7 @@ import pytest
 import yaml
 
 import cyt.config as configs
-from cyt.launch.agent_credentials import AgentAuthBinding
-from cyt.launch.cli import _proxy_spawn_extra_env, parse_launch_remainder
-from cyt.launch.cli import run as run_launch
-from cyt.launch.codex import (
+from cyt.agents.codex.launch import (
     MANAGED_END,
     MANAGED_START,
     build_codex_env,
@@ -26,9 +23,12 @@ from cyt.launch.codex import (
     restore_provider,
     validate_agent_args,
 )
-from cyt.launch.codex import (
+from cyt.agents.codex.launch import (
     run as run_codex,
 )
+from cyt.launch.agent_credentials import AgentAuthBinding
+from cyt.launch.cli import _proxy_spawn_extra_env, parse_launch_remainder
+from cyt.launch.cli import run as run_launch
 from cyt.launch.config import required_launch_env_var_names
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
@@ -749,7 +749,7 @@ class TestCodexProvider:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         codex_path = tmp_path / "config.toml"
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         env_key = _codex_openai_api_key_var()
         configure_provider(port=8834, endpoint="openai", env_key=env_key)
         before = codex_path.read_text(encoding="utf-8")
@@ -770,7 +770,7 @@ class TestCodexProvider:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         codex_path = tmp_path / "config.toml"
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         env_key = _codex_openai_api_key_var()
         configure_provider(port=8834, endpoint="openai", env_key=env_key)
         before = codex_path.read_text(encoding="utf-8")
@@ -787,7 +787,7 @@ class TestCodexProvider:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         codex_path = tmp_path / "config.toml"
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         env_key = _codex_openai_api_key_var()
         configure_provider(port=8834, endpoint="openai", env_key=env_key)
         ensure_provider_configured(port=9999, endpoint="openai", env_key=env_key)
@@ -801,7 +801,7 @@ class TestCodexProvider:
         import tomllib
 
         codex_path = tmp_path / "config.toml"
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         codex_path.write_text(
             'model_provider = "custom_openai"\n\n[model_providers.custom_openai]\n'
             'base_url = "http://127.0.0.1:8834/openai/v1"\n',
@@ -855,10 +855,10 @@ class TestCodexProvider:
             captured["env"] = env
             return subprocess.CompletedProcess(args=[], returncode=0)
 
-        monkeypatch.setattr("cyt.launch.codex.subprocess.run", fake_run)
-        monkeypatch.setattr("cyt.launch.codex.find_codex", lambda: "codex")
+        monkeypatch.setattr("cyt.agents.codex.launch.subprocess.run", fake_run)
+        monkeypatch.setattr("cyt.agents.codex.launch.find_codex", lambda: "codex")
         monkeypatch.setattr(
-            "cyt.launch.codex.ensure_provider_configured",
+            "cyt.agents.codex.launch.ensure_provider_configured",
             lambda **_kwargs: None,
         )
 
@@ -1324,7 +1324,7 @@ class TestLaunchRun:
             lambda **kwargs: MagicMock(port=8835),
         )
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
-        monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
+        monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
             config=user_config,
@@ -1374,7 +1374,7 @@ class TestLaunchRun:
             lambda **kwargs: MagicMock(port=8835),
         )
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
-        monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
+        monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
             config=user_config,
@@ -1416,7 +1416,7 @@ class TestLaunchRun:
 
         monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
-        monkeypatch.setattr("cyt.launch.cli.run_claude", lambda **kwargs: 0)
+        monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
             config=user_config,
@@ -1466,7 +1466,7 @@ class TestLaunchRun:
 
         monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
-        monkeypatch.setattr("cyt.launch.cli.run_claude", fake_run_claude)
+        monkeypatch.setattr("cyt.agents.claude.launch.run", fake_run_claude)
 
         args = MagicMock(
             config=user_config,
@@ -1494,7 +1494,7 @@ class TestLaunchRun:
         tmp_path: Path,
     ) -> None:
         codex_path = tmp_path / "config.toml"
-        monkeypatch.setattr("cyt.launch.codex.CODEX_CONFIG_PATH", codex_path)
+        monkeypatch.setattr("cyt.agents.codex.launch.CODEX_CONFIG_PATH", codex_path)
         configure_provider(
             port=8834,
             endpoint="openai",

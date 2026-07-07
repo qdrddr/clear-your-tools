@@ -1,0 +1,3 @@
+{"role":"user","message":{"content":[{"type":"text","text":"Implement the plan."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I'll start by reading the codebase structure."},{"type":"tool_use","name":"Glob","input":{"glob_pattern":"**/*.py"}}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Here is the final answer with implementation details."}]}}

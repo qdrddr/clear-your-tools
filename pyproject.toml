@@ -33,6 +33,10 @@ Repository = "https://github.com/qdrddr/clear-your-tools"
 Issues = "https://github.com/qdrddr/clear-your-tools/issues"
 
 [project.optional-dependencies]
+claude = []
+codex = []
+cursor = []
+agents = ["clear-your-tools[claude,codex,cursor]"]
 proxy = [
     "httpx==0.28.1",
     "uvicorn==0.48.0",
@@ -44,7 +48,7 @@ pruners = [
     "litellm==1.83.14",
 ]
 all = [
-    "clear-your-tools[proxy,pruners]",
+    "clear-your-tools[agents,proxy,pruners]",
 ]
 
 [project.scripts]
