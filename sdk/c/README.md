@@ -142,7 +142,10 @@ Functions that take `ctx_json` accept a JSON object with:
 | `per_tool` | object | Per-tool overrides (`{"Agent": "always_include", ...}`) |
 | `tool_kind` | `"system"` \| `"mcp"` | Optional batch override: classify **all** tools as system or MCP instead of inferring from the `mcp__` name prefix |
 
-`tool_kind` is runtime-only (not loaded from YAML config). Use `"mcp"` for executor hook catalogs whose tool ids lack the `mcp__` prefix. Build a context with `cyt_policy_context_from_values` from config, then pass a separate `ctx_json` including `tool_kind` to `cyt_effective_policy`, `cyt_partition_catalog`, and other policy functions.
+`tool_kind` is runtime-only (not loaded from YAML config). Use `"mcp"` for executor hook catalogs
+whose tool ids lack the `mcp__` prefix. Build a context with `cyt_policy_context_from_values` from config,
+then pass a separate `ctx_json` including `tool_kind` to `cyt_effective_policy`, `cyt_partition_catalog`,
+and other policy functions.
 
 ## Examples
 

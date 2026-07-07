@@ -55,6 +55,31 @@ def _tool_open_tag(name: str, description: str) -> str:
     return f"<tool {' '.join(attrs)}>"
 
 
+def format_tool_item(
+    tool: dict[str, Any],
+    *,
+    include_tool_description: bool = True,
+) -> str:
+    """Format a single ``<tool>…</tool>`` block (no ``<agent-tools>`` wrapper)."""
+    name = str(tool.get("name", "")).strip()
+    if not name:
+        return ""
+    description = ""
+    if include_tool_description:
+        description = str(tool.get("description", "") or "").strip()
+    schema = tool.get("input_schema")
+    if schema is None:
+        schema = tool.get("parameters", {})
+    body = {"input_schema": schema or {}}
+    return "\n".join(
+        [
+            _tool_open_tag(name, description),
+            minimize_json_single_quotes(body),
+            "</tool>",
+        ],
+    )
+
+
 def format_agent_tools(
     pruned_tools: list[dict[str, Any]],
     *,
@@ -62,21 +87,15 @@ def format_agent_tools(
 ) -> str:
     if not pruned_tools:
         return ""
-    lines = [_agent_tools_open_tag(include_tool_description=include_tool_description)]
+    item_lines: list[str] = []
     for tool in pruned_tools:
-        name = str(tool.get("name", "")).strip()
-        if not name:
-            continue
-        description = ""
-        if include_tool_description:
-            description = str(tool.get("description", "") or "").strip()
-        lines.append(_tool_open_tag(name, description))
-        schema = tool.get("input_schema")
-        if schema is None:
-            schema = tool.get("parameters", {})
-        body = {"input_schema": schema or {}}
-        lines.append(minimize_json_single_quotes(body))
-        lines.append("</tool>")
+        item = format_tool_item(tool, include_tool_description=include_tool_description)
+        if item:
+            item_lines.append(item)
+    if not item_lines:
+        return ""
+    lines = [_agent_tools_open_tag(include_tool_description=include_tool_description)]
+    lines.extend(item_lines)
     lines.append("</agent-tools>")
     return ensure_agent_tools_starts_on_new_line("\n".join(lines))
 

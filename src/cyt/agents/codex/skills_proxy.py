@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from cyt.config import inject_into_user_message
 from cyt.indexer.tokens import count_tokens
+from cyt.injection.pre_exposed import filter_pre_exposed_skills
+from cyt.injection.session_text import session_text_from_proxy_body
 from cyt.proxy.anthropic import PruneResult, extract_last_assistant_message, format_search_query
 from cyt.proxy.openai_responses import clean_input, extract_user_query_from_input
 from cyt.proxy.user_message_inject import (
@@ -18,13 +20,18 @@ from cyt.skills.inject import format_agent_skills
 from cyt.skills.proxy_inject import DeferredSkillsContext, SkillsProxyInjectMeta
 from cyt.skills.search import MatchedSkill
 
-UPSTREAM_KIND = "openai"
+UPSTREAM_KIND: Literal["openai"] = "openai"
 
 
-def _skills_text_from_matches(matches: list[MatchedSkill]) -> tuple[str, int]:
+def _skills_text_from_matches(
+    matches: list[MatchedSkill],
+    body: dict[str, Any],
+) -> tuple[str, int]:
     if not matches:
         return "", 0
-    injected = format_agent_skills(matches)
+    session_text = session_text_from_proxy_body(body, UPSTREAM_KIND)
+    gated = filter_pre_exposed_skills(matches, session_text)
+    injected = format_agent_skills(gated)
     if not injected:
         return "", 0
     return injected, count_tokens(injected)
@@ -131,7 +138,7 @@ def inject_skills_matches_into_openai_body(
     elif already_has_agent_skills(input_items):
         return original, meta
 
-    text, skills_in = _skills_text_from_matches(matches)
+    text, skills_in = _skills_text_from_matches(matches, original)
     if skills_in <= 0:
         return original, meta
 

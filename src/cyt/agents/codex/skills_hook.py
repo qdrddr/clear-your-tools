@@ -9,6 +9,8 @@ CODEX_SKILLS_DIR = Path("~/.codex/skills")
 
 
 def _text_from_codex_content(content: object) -> str | None:
+    if isinstance(content, str) and content.strip():
+        return content.strip()
     if not isinstance(content, list):
         return None
     parts: list[str] = []
@@ -16,7 +18,7 @@ def _text_from_codex_content(content: object) -> str | None:
         if not isinstance(block, dict):
             continue
         mapping = cast(dict[str, Any], block)
-        if mapping.get("type") != "output_text":
+        if mapping.get("type") not in ("output_text", "input_text", "text"):
             continue
         text = mapping.get("text")
         if isinstance(text, str) and text.strip():
@@ -43,6 +45,24 @@ def model_from_codex_record(record: dict[str, Any]) -> str | None:
     return None
 
 
+def codex_message_text_from_payload(payload: dict[str, Any]) -> str | None:
+    if payload.get("type") != "message":
+        return None
+    role = payload.get("role")
+    if role not in ("user", "assistant"):
+        return None
+    return _text_from_codex_content(payload.get("content"))
+
+
+def codex_turn_from_record(record: dict[str, Any]) -> str | None:
+    if record.get("type") != "response_item":
+        return None
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    return codex_message_text_from_payload(payload)
+
+
 def assistant_text_from_record(record: dict[str, Any]) -> tuple[str | None, str | None]:
     record_type = record.get("type")
     if record_type == "response_item":
@@ -56,6 +76,16 @@ def assistant_text_from_record(record: dict[str, Any]) -> tuple[str | None, str 
         phase_str = phase if isinstance(phase, str) else None
         return text, phase_str
     return None, None
+
+
+def all_turns_text_from_records(records: list[Any]) -> str:
+    parts: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if text := codex_turn_from_record(record):
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def last_assistant_from_records(records: list[Any]) -> str | None:

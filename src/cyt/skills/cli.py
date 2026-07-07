@@ -21,6 +21,8 @@ from cyt.config import (
     tools_enabled,
     tools_inject_via,
 )
+from cyt.injection.pre_exposed import filter_pre_exposed_skills, filter_pre_exposed_tools
+from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.proxy.anthropic import PruneResult
 from cyt.proxy.user_message_inject import combine_injection_parts
 from cyt.skills.agents import resolve_skills_agent
@@ -332,7 +334,12 @@ def _handle_user_prompt_skills(
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
         return outcome, details, ""
 
-    injected = format_agent_skills(matches)
+    session_text = session_text_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
+    gated_matches = filter_pre_exposed_skills(matches, session_text)
+    injected = format_agent_skills(gated_matches)
     if not injected:
         return (
             "user_prompt_empty_injection",
@@ -369,6 +376,8 @@ def _handle_user_prompt_skills(
 
 def _append_coordinated_skills_injection(
     *,
+    payload: dict[str, Any],
+    allow_transcript_file_read: bool,
     skill_matches: list[MatchedSkill] | None,
     prompt: str,
     model: str,
@@ -381,7 +390,12 @@ def _append_coordinated_skills_injection(
 ) -> None:
     if skill_matches is None:
         return
-    injected_skills = format_agent_skills(skill_matches)
+    session_text = session_text_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
+    gated_matches = filter_pre_exposed_skills(skill_matches, session_text)
+    injected_skills = format_agent_skills(gated_matches)
     if injected_skills:
         skills_in = injection_token_count(injected_skills)
         if skills_in > 0:
@@ -406,6 +420,7 @@ def _append_coordinated_skills_injection(
 def _append_coordinated_tools_injection(
     *,
     payload: dict[str, Any],
+    allow_transcript_file_read: bool,
     config: dict[str, Any],
     query: str,
     model: str,
@@ -424,7 +439,12 @@ def _append_coordinated_tools_injection(
         details["resolved_model"] = model
         details["prune_status"] = prune_result.status
         return
-    injected_tools = format_agent_tools(pruned)
+    session_text = session_text_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
+    gated = filter_pre_exposed_tools(pruned, session_text)
+    injected_tools = format_agent_tools(gated)
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")
         return
@@ -513,6 +533,8 @@ def _run_coordinated_user_prompt_injection(
 
         if skills_allowed:
             _append_coordinated_skills_injection(
+                payload=payload,
+                allow_transcript_file_read=allow_transcript_file_read,
                 skill_matches=skill_matches,
                 prompt=prompt,
                 model=model,
@@ -527,6 +549,7 @@ def _run_coordinated_user_prompt_injection(
         if tools_allowed and prune_result is not None and catalog is not None:
             _append_coordinated_tools_injection(
                 payload=payload,
+                allow_transcript_file_read=allow_transcript_file_read,
                 config=config,
                 query=query,
                 model=model,

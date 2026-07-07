@@ -711,6 +711,8 @@ def transform_openai_request(
     )
 
     from cyt.config import inject_into_user_message, load_config
+    from cyt.injection.pre_exposed import filter_pre_exposed_tools
+    from cyt.injection.session_text import session_text_from_proxy_body
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
         append_injection_to_body,
@@ -725,7 +727,13 @@ def transform_openai_request(
         and tools_inject_allowed(resolved_config, "proxy")
         and mcp_for_inject
     ):
-        tools_text = format_agent_tools(mcp_for_inject, include_tool_description=False)
+        session_text = session_text_from_proxy_body(original, "openai")
+        gated = filter_pre_exposed_tools(
+            mcp_for_inject,
+            session_text,
+            include_tool_description=False,
+        )
+        tools_text = format_agent_tools(gated, include_tool_description=False)
         if tools_text and not already_has_user_turn_injection(
             original,
             "openai",

@@ -20,16 +20,25 @@ def _skill_open_tag(path: str, name: str | None) -> str:
     return f'<skill path="{path}">'
 
 
+def format_skill_item(match: MatchedSkill) -> str:
+    """Format a single ``<skill>…</skill>`` block (no ``<agent-skills>`` wrapper)."""
+    path = shorten_home_path(match.file_path)
+    return "\n".join(
+        [
+            _skill_open_tag(path, match.name),
+            injection_markdown_body(match.markdown).rstrip(),
+            "</skill>",
+        ],
+    )
+
+
 def format_agent_skills(matches: list[MatchedSkill]) -> str:
     if not matches:
         return ""
-    lines = [_INTRO, "", "<agent-skills>"]
-    for match in matches:
-        path = shorten_home_path(match.file_path)
-        lines.append(_skill_open_tag(path, match.name))
-        lines.append(injection_markdown_body(match.markdown).rstrip())
-        lines.append("</skill>")
-    lines.append("</agent-skills>")
+    item_lines = [format_skill_item(match) for match in matches]
+    if not any(item_lines):
+        return ""
+    lines = [_INTRO, "", "<agent-skills>", *item_lines, "</agent-skills>"]
     return "\n".join(lines)
 
 

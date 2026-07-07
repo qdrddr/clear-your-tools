@@ -173,7 +173,10 @@ All public functions delegate to `cyt_*` via cgo — no duplicate Rust logic in 
 
 ### Policy context JSON
 
-Most policy functions take `ctxJSON` — a JSON object with `system_policy`, `mcp_policy`, optional `per_tool`, and optional `tool_kind` (`"system"` or `"mcp"`). The `tool_kind` field is a runtime batch override (not read from YAML); set it to `"mcp"` so bare executor-style tool ids use MCP policies without an `mcp__` prefix.
+Most policy functions take `ctxJSON` — a JSON object with `system_policy`, `mcp_policy`, optional `per_tool`,
+and optional `tool_kind` (`"system"` or `"mcp"`). The `tool_kind` field is
+a runtime batch override (not read from YAML); set it to `"mcp"` so bare executor-style tool
+ids use MCP policies without an `mcp__` prefix.
 
 Use the typed [`PolicyContext`](policy_context.go) helper to build and serialize context JSON:
 
@@ -188,7 +191,8 @@ ctxJSON, _ := ctx.MarshalJSONString()
 policy, _ := cytindexer.EffectivePolicy(ctxJSON, "tools.demo.org.search")
 ```
 
-`ScoringPolicyContext` maps description policy variants to base scoring policies and copies `tool_kind` (mirrors Python `scoring_policy_context`).
+`ScoringPolicyContext` maps description policy variants to base scoring policies and copies `tool_kind`
+(mirrors Python `scoring_policy_context`).
 
 ## Testing
 

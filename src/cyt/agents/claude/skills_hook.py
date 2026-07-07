@@ -24,6 +24,23 @@ def _text_from_claude_content(content: object) -> str | None:
     return "\n".join(parts) if parts else None
 
 
+def _claude_message_text(message: dict[str, Any]) -> str | None:
+    role = message.get("role")
+    if role not in ("user", "assistant"):
+        return None
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    return _text_from_claude_content(content)
+
+
+def claude_turn_from_record(record: dict[str, Any]) -> str | None:
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    return _claude_message_text(message)
+
+
 def claude_assistant_from_record(record: dict[str, Any]) -> str | None:
     """Claude Code jsonl: top-level type assistant, or message.role assistant."""
     record_type = record.get("type")
@@ -58,6 +75,16 @@ def assistant_text_from_record(record: dict[str, Any]) -> tuple[str | None, str 
         if text:
             return text, None
     return None, None
+
+
+def all_turns_text_from_records(records: list[Any]) -> str:
+    parts: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if text := claude_turn_from_record(record):
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def last_assistant_from_records(records: list[Any]) -> str | None:

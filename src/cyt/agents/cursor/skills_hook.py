@@ -58,6 +58,17 @@ def _text_from_cursor_content(content: object) -> str | None:
     return "\n".join(parts) if parts else None
 
 
+def cursor_turn_from_record(record: dict[str, Any]) -> str | None:
+    """Return user or assistant text from a Cursor agent-transcript record."""
+    role = record.get("role")
+    if role not in ("user", "assistant"):
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    return _text_from_cursor_content(message.get("content"))
+
+
 def cursor_assistant_from_record(record: dict[str, Any]) -> str | None:
     """Cursor agent-transcripts: top-level role assistant + message.content[].text."""
     if record.get("role") != "assistant":
@@ -66,6 +77,16 @@ def cursor_assistant_from_record(record: dict[str, Any]) -> str | None:
     if not isinstance(message, dict):
         return None
     return _text_from_cursor_content(message.get("content"))
+
+
+def all_turns_text_from_records(records: list[Any]) -> str:
+    parts: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if text := cursor_turn_from_record(record):
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def last_assistant_from_records(records: list[Any]) -> str | None:

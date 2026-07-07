@@ -277,6 +277,24 @@ def test_enrich_hook_payload_falls_back_to_text_file() -> None:
         assert enriched["cyt_transcript"] == ["line one\nline two\n"]
 
 
+def test_enrich_hook_payload_adds_cyt_rules_injection_from_cursor_rules_file() -> None:
+    from cyt_client.rules_file import build_rules_mdc, rules_file_path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        injection = "<agent-tools>\n<tool name='mcp__seen__tool'>\n{'input_schema':{}}\n</tool>\n</agent-tools>"
+        rules_file_path(workspace).parent.mkdir(parents=True, exist_ok=True)
+        rules_file_path(workspace).write_text(build_rules_mdc(injection), encoding="utf-8")
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "hello",
+            "cwd": str(workspace),
+        }
+        enriched = json.loads(enrich_hook_payload(json.dumps(payload).encode()))
+        assert enriched["cyt_rules_injection"] == injection
+
+
 def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str]) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         transcript = Path(tmp) / "session.jsonl"

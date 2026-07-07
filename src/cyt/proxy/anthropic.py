@@ -260,6 +260,50 @@ def _anthropic_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> Pru
     )
 
 
+def _format_gated_agent_tools(
+    mcp_tools: list[dict[str, Any]],
+    session_text: str,
+) -> str:
+    from cyt.injection.pre_exposed import filter_pre_exposed_tools
+    from cyt.tools.inject import format_agent_tools
+
+    gated = filter_pre_exposed_tools(mcp_tools, session_text)
+    return format_agent_tools(gated)
+
+
+def _anthropic_user_message_tools_inject(
+    original: dict[str, Any],
+    result: PruneResult,
+    *,
+    session_text: str,
+) -> tuple[dict[str, Any], str]:
+    from cyt.proxy.user_message_inject import (
+        anthropic_root_tools_with_mcp_stubs,
+        anthropic_tools_for_user_message_inject,
+        split_tools_for_root_and_inject,
+    )
+
+    source_tools = original.get("tools") or []
+    if not isinstance(source_tools, list) or not source_tools:
+        return original, ""
+
+    if result.status == "pass_through" or result.tools is None:
+        mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
+        original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
+        return original, _format_gated_agent_tools(mcp_tools, session_text)
+
+    pruned_tools = result.tools if isinstance(result.tools, list) else []
+    if not pruned_tools:
+        return original, ""
+
+    mcp_tools, system_tools = anthropic_tools_for_user_message_inject(
+        source_tools,
+        pruned_tools,
+    )
+    original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
+    return original, _format_gated_agent_tools(mcp_tools, session_text)
+
+
 def _anthropic_finish_transform(
     original: dict[str, Any],
     result: PruneResult,
@@ -271,16 +315,13 @@ def _anthropic_finish_transform(
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
     from cyt.config import inject_into_user_message, load_config
+    from cyt.injection.session_text import session_text_from_proxy_body
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
-        anthropic_root_tools_with_mcp_stubs,
-        anthropic_tools_for_user_message_inject,
         append_injection_to_body,
-        split_tools_for_root_and_inject,
     )
     from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
     from cyt.tools.budget import tools_inject_allowed
-    from cyt.tools.inject import format_agent_tools
 
     resolved_config = config or load_config()
     user_message_inject = inject_into_user_message(resolved_config) and tools_inject_allowed(
@@ -288,6 +329,9 @@ def _anthropic_finish_transform(
         "proxy",
     )
     deferred_tools_text = ""
+    proxy_session_text = (
+        session_text_from_proxy_body(original, "anthropic") if user_message_inject else ""
+    )
 
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -306,22 +350,17 @@ def _anthropic_finish_transform(
             return original, result, skills_meta
 
         if user_message_inject:
-            source_tools = original.get("tools") or []
-            if isinstance(source_tools, list) and source_tools:
-                mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
-                original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
-                deferred_tools_text = format_agent_tools(mcp_tools)
-    elif user_message_inject:
-        source_tools = original.get("tools") or []
-        pruned_tools = result.tools if isinstance(result.tools, list) else []
-        mcp_tools = []
-        if isinstance(source_tools, list) and source_tools and pruned_tools:
-            mcp_tools, system_tools = anthropic_tools_for_user_message_inject(
-                source_tools,
-                pruned_tools,
+            original, deferred_tools_text = _anthropic_user_message_tools_inject(
+                original,
+                result,
+                session_text=proxy_session_text,
             )
-            original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
-            deferred_tools_text = format_agent_tools(mcp_tools)
+    elif user_message_inject:
+        original, deferred_tools_text = _anthropic_user_message_tools_inject(
+            original,
+            result,
+            session_text=proxy_session_text,
+        )
     elif result.tools is not None:
         original["tools"] = result.tools
 
