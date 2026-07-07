@@ -60,7 +60,8 @@ def _strip_rules_mdc_frontmatter(content: str) -> str:
     end = text.find("\n---", 3)
     if end == -1:
         return content.strip()
-    return text[end + 4 :].lstrip("\n").strip()
+    body_start = end + 4
+    return text[body_start:].lstrip("\n").strip()
 
 
 def _attach_cyt_rules_injection(data: dict[str, Any]) -> bool:
