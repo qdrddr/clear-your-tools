@@ -29,3 +29,6 @@ python-source = "src"
 dev = [
     "maturin>=1.7,<2.0",
 ]
+
+[tool.uv]
+default-groups = ["dev"]

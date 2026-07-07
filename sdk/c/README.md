@@ -154,7 +154,8 @@ and other policy functions.
 | `examples/basic.c` | Catalog build |
 | `examples/error_handling.c` | Failure paths, `cyt_get_last_error` |
 | `examples/retrieve.c` | Decomposed catalog + `cyt_retrieve_tools` |
-| `examples/policies.c` | Partition, merge, policy helpers |
+| `examples/policies.c` | Partition, merge, policy helpers, `tool_kind` |
+| `examples/pipeline.c` | Classify/count, batch pass-through, `coordinate_bm25_prune` |
 | `examples/skills.c` | PageIndex + BM25 cohesion |
 
 ## Related SDKs

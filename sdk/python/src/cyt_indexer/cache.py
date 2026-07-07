@@ -45,7 +45,7 @@ def ensure_tool_catalog_from_entries(
 
 
 def ensure_skills_registry(
-    source_paths: list[str],
+    source_paths: list[str] | list[dict[str, str]],
     catalog_root: str,
     pageindex_config: dict[str, Any] | None,
     pipeline: str,
@@ -53,7 +53,11 @@ def ensure_skills_registry(
     *,
     policy: CachePolicy = "auto",
 ) -> list[dict[str, Any]]:
-    """Ensure page index (+ BM25 chunks when pipeline is bm25) for skill sources."""
+    """Ensure page index (+ BM25 chunks when pipeline is bm25) for skill sources.
+
+    Each source may be a filesystem path string or a dict with
+    ``path``, ``content``, and optional ``content_sha256`` for in-memory client skills.
+    """
     refs = _native.ensure_skills_registry(
         source_paths,
         catalog_root,

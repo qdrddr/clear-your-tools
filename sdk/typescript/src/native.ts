@@ -22,6 +22,8 @@ export const retrieveCoreNative = native.retrieveCore;
 export const retrieveToolsNative = native.retrieveTools;
 export const chunkSurvivorKeyNative = native.chunkSurvivorKey;
 export const removedChunksNative = native.removedChunks;
+export const resolveBuildCatalogNative = native.resolveBuildCatalog;
+export const retrieveCatalogToolCountNative = native.retrieveCatalogToolCount;
 export const DecomposedCatalogNative = native.DecomposedCatalog;
 
 // Paths
@@ -29,6 +31,11 @@ export const configurePathConstantsNative = native.configurePathConstants;
 export const pathMdExtNative = native.mdExt;
 export const pathJsonExtNative = native.jsonExt;
 export const pathDecomposedPrefixNative = native.decomposedPrefix;
+export const pathDecomposedRootNative = native.decomposedRoot;
+export const pathCatalogPrefixNative = native.catalogPrefix;
+export const pathDefaultCatalogDirNative = native.pathDefaultCatalogDir;
+export const pathBuilderMemoryOnlyNative = native.pathBuilderMemoryOnly;
+export const pathWriteCatalogPruneNative = native.pathWriteCatalogPrune;
 export const toDecomposedKeyNative = native.toDecomposedKey;
 export const toolIdFromDecomposedRelNative = native.toolIdFromDecomposedRel;
 export const getRootToolKeyNative = native.getRootToolKey;
@@ -40,6 +47,9 @@ export const decomposedScoreNative = native.decomposedScore;
 export const enumScoreNative = native.enumScore;
 export const rerankScoreNative = native.rerankScore;
 export const emptyOptionalFallbackKNative = native.emptyOptionalFallbackK;
+export const runtimeDefaultSystemPolicyNative =
+  native.runtimeDefaultSystemPolicy;
+export const runtimeDefaultMcpPolicyNative = native.runtimeDefaultMcpPolicy;
 
 // Policies
 export const toolPoliciesNative = native.toolPolicies;

@@ -59,6 +59,8 @@ def test_build_registry_for_hook_payload_uses_client_skills_only() -> None:
         entries = build_registry_for_hook_payload(config, payload)
         doc_ids = {entry.doc_id for entry in entries}
         assert doc_ids == {"client-only"}
+        assert not (catalog_dir / "client_staging").exists()
+        assert entries[0].source_path == str(client_path.resolve())
 
         clear_registry_cache()
         config_entries = build_registry(config)

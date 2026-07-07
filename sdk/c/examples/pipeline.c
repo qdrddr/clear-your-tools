@@ -59,5 +59,26 @@ int main(void) {
     cyt_example_free(optional);
 
     printf("pipeline: classify/batch ok\n");
+
+    char *coord_out = NULL;
+    const char *skills = "[]";
+    const char *empty_catalog = "{\"json\":[],\"md\":[]}";
+    const char *index = "{\"tools\":[],\"files\":{}}";
+    if (!cyt_example_ok(cyt_coordinate_bm25_prune(
+                            skills, empty_catalog, empty_catalog, index,
+                            "hello", ctx_values, ctx_values, NULL, &coord_out),
+                        "cyt_coordinate_bm25_prune")) {
+        return 1;
+    }
+    char *coordinated = cyt_example_take(&coord_out);
+    if (coordinated == NULL || strstr(coordinated, "skills") == NULL ||
+        strstr(coordinated, "tools") == NULL) {
+        fprintf(stderr, "unexpected coordinate_bm25_prune JSON\n");
+        cyt_example_free(coordinated);
+        return 1;
+    }
+    cyt_example_free(coordinated);
+
+    printf("pipeline: coordinate ok\n");
     return 0;
 }

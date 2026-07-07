@@ -2,9 +2,14 @@ import {
   collectEnumsNative,
   configurePathConstantsNative,
   getRootToolKeyNative,
+  pathBuilderMemoryOnlyNative,
+  pathCatalogPrefixNative,
+  pathDefaultCatalogDirNative,
   pathDecomposedPrefixNative,
+  pathDecomposedRootNative,
   pathJsonExtNative,
   pathMdExtNative,
+  pathWriteCatalogPruneNative,
   toDecomposedKeyNative,
   toolIdFromDecomposedRelNative,
 } from "./native.js";
@@ -43,6 +48,26 @@ export function jsonExt(): string {
 
 export function decomposedPrefix(): string {
   return pathDecomposedPrefixNative();
+}
+
+export function decomposedRoot(): string {
+  return pathDecomposedRootNative();
+}
+
+export function catalogPrefix(): string {
+  return pathCatalogPrefixNative();
+}
+
+export function defaultCatalogDir(): string {
+  return pathDefaultCatalogDirNative();
+}
+
+export function builderMemoryOnly(): boolean {
+  return pathBuilderMemoryOnlyNative();
+}
+
+export function writeCatalogPrune(): boolean {
+  return pathWriteCatalogPruneNative();
 }
 
 export function toDecomposedKey(filePath: string): string | null {

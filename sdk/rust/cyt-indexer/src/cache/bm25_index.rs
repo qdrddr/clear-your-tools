@@ -3,58 +3,21 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tantivy::schema::{STORED, Schema, TEXT};
-use tantivy::{Index, IndexReader, IndexWriter, doc};
+use tantivy::{Index, IndexReader};
 
 use super::hot::{get_tantivy_handle, store_tantivy_handle};
 use super::lock::BuildLock;
 use super::manifest::CacheStatus;
 use super::{CachePolicy, CacheResult, disk_available};
-use crate::bm25_search::{expand_index_dir, snapshot as bm25_config_snapshot};
+use crate::bm25::index::{build_disk_index, build_ram_index, register_body_analyzer};
+use crate::bm25::{expand_index_dir, search_snapshot};
 
-const BODY_FIELD: &str = "body";
 const TANTIVY_DIR: &str = "tantivy";
 
-fn body_schema() -> Schema {
-    let mut builder = Schema::builder();
-    builder.add_text_field(BODY_FIELD, TEXT | STORED);
-    builder.build()
-}
-
-fn build_ram_index(texts: &[&str]) -> Result<Index, String> {
-    let schema = body_schema();
-    let index = Index::create_in_ram(schema.clone());
-    let mut writer: IndexWriter = index.writer(15_000_000).map_err(|e| e.to_string())?;
-    let body = schema.get_field(BODY_FIELD).map_err(|e| e.to_string())?;
-    for text in texts {
-        writer
-            .add_document(doc!(body => *text))
-            .map_err(|e| e.to_string())?;
-    }
-    writer.commit().map_err(|e| e.to_string())?;
-    Ok(index)
-}
-
-fn build_disk_index(texts: &[&str], dir: &Path) -> Result<Index, String> {
-    if dir.exists() {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let schema = body_schema();
-    let index = Index::create_in_dir(dir, schema.clone()).map_err(|e| e.to_string())?;
-    let mut writer: IndexWriter = index.writer(15_000_000).map_err(|e| e.to_string())?;
-    let body = schema.get_field(BODY_FIELD).map_err(|e| e.to_string())?;
-    for text in texts {
-        writer
-            .add_document(doc!(body => *text))
-            .map_err(|e| e.to_string())?;
-    }
-    writer.commit().map_err(|e| e.to_string())?;
-    Ok(index)
-}
-
 fn open_disk_index(dir: &Path, _mmap: bool) -> Result<Index, String> {
-    Index::open_in_dir(dir).map_err(|e| e.to_string())
+    let index = Index::open_in_dir(dir).map_err(|e| e.to_string())?;
+    register_body_analyzer(&index);
+    Ok(index)
 }
 
 #[derive(Clone)]
@@ -78,7 +41,7 @@ impl Bm25IndexHandle {
 }
 
 fn cache_root(fingerprint: &str) -> PathBuf {
-    let cfg = bm25_config_snapshot();
+    let cfg = search_snapshot();
     expand_index_dir(&cfg.index_dir).join(fingerprint)
 }
 
@@ -127,7 +90,7 @@ pub fn build_or_open_bm25_index(
 
     let root = cache_root(fingerprint);
     let tantivy_dir = root.join(TANTIVY_DIR);
-    let cfg = bm25_config_snapshot();
+    let cfg = search_snapshot();
 
     let try_disk = policy != CachePolicy::ForceMemory && disk_available(&root);
     if try_disk

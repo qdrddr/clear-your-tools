@@ -104,7 +104,7 @@ DEFAULT_CACHE_TOOLS_DIR: str = "~/.config/cyt/tools"
 DEFAULT_INJECT_VIA: str = "proxy"
 DEFAULT_INJECT_INTO_USER_MESSAGE: bool = True
 DEFAULT_SKILLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.45
+DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.70
 DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
 DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
 DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION: float = 10.0
@@ -848,14 +848,9 @@ def output_policy_context_for_terminal_stage(
 
 def scoring_policy_context(ctx: PolicyContext) -> PolicyContext:
     """Map description policies to base scoring policies for partition/pipeline."""
-    from cyt_indexer.policies import PolicyContext, scoring_policy
+    from cyt_indexer.policies import scoring_policy_context as sdk_scoring_policy_context
 
-    scoring = PolicyContext()
-    scoring.system_policy = scoring_policy(ctx.system_policy)
-    scoring.mcp_policy = scoring_policy(ctx.mcp_policy)
-    scoring.per_tool = {tool_id: scoring_policy(policy) for tool_id, policy in ctx.per_tool.items()}
-    scoring.tool_kind = ctx.tool_kind
-    return scoring
+    return sdk_scoring_policy_context(ctx)
 
 
 def pruning_stage_model_nick(

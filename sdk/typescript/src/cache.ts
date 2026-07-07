@@ -32,6 +32,15 @@ export interface SkillEntryRef {
   lazy_pending?: boolean;
 }
 
+/** Filesystem path or in-memory hook/client skill payload. */
+export type SkillSourceInput =
+  | string
+  | {
+      path: string;
+      content?: string;
+      content_sha256?: string;
+    };
+
 export function toolsCatalogContentHash(
   tools: unknown[],
   policyFingerprint: string,
@@ -70,7 +79,7 @@ export function ensureToolCatalogFromEntries(
 }
 
 export function ensureSkillsRegistry(
-  sourcePaths: string[],
+  sourcePaths: SkillSourceInput[],
   catalogRoot: string,
   pageindexConfig: Record<string, unknown> | null | undefined,
   pipeline: string,

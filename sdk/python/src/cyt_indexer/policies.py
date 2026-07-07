@@ -8,7 +8,7 @@ import cyt_indexer._native as _native
 from cyt_indexer._native import PolicyContext
 from cyt_indexer.build import CatalogIndex
 
-__all__ = ["PolicyContext"]
+__all__ = ["PolicyContext", "ToolKind", "apply_tool_kind", "scoring_policy_context"]
 
 # Typing aliases — canonical strings come from Rust `tool_policies()`.
 SystemToolPolicy = Literal[
@@ -36,6 +36,27 @@ ToolKind = Literal["system", "mcp"]
 
 # ``PolicyContext.tool_kind`` — optional batch override for system vs MCP classification.
 # When unset, tool kind is inferred from the ``mcp__`` name prefix.
+
+
+def apply_tool_kind(ctx: PolicyContext, kind: ToolKind) -> PolicyContext:
+    """Set batch tool-kind override on a policy context."""
+    ctx.tool_kind = kind
+    return ctx
+
+
+def scoring_policy_context(ctx: PolicyContext) -> PolicyContext:
+    """Map description policies to base scoring policies; copies ``tool_kind``."""
+    scoring = PolicyContext(
+        scoring_policy(ctx.system_policy),
+        scoring_policy(ctx.mcp_policy),
+    )
+    scoring.per_tool = {
+        tool_id: scoring_policy(policy)
+        for tool_id, policy in ctx.per_tool.items()
+    }
+    if ctx.tool_kind is not None:
+        scoring.tool_kind = ctx.tool_kind
+    return scoring
 
 
 def tool_policies() -> tuple[str, ...]:

@@ -29,7 +29,13 @@ pub use hot::{
 };
 pub use manifest::CacheStatus;
 pub use materialize::{ensure_entry_materialized, materialize_skill_entry};
+#[cfg(any(feature = "ffi", feature = "python", feature = "node"))]
+pub(crate) use skills_registry::parse_skill_sources;
 pub use skills_registry::{SkillEntryRef, ensure_skills_registry};
+#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
+pub(crate) use skills_registry::{
+    ensure_skills_registry_from_specs, parse_skill_source_specs_json,
+};
 pub use tools_catalog::{
     ToolCatalogHandle, ensure_tool_catalog, ensure_tool_catalog_from_entries,
     tool_definition_content_hash, tools_content_hash,

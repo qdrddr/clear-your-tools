@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::cache::{
-    CachePolicy, CacheStatus, configure_memory_cache, ensure_skills_registry, ensure_tool_catalog,
+    CachePolicy, CacheStatus, configure_memory_cache, ensure_tool_catalog,
     ensure_tool_catalog_from_entries, tools_content_hash,
 };
 use crate::ffi::error::CYT_ERR_NULL_PTR;
@@ -178,10 +178,18 @@ pub unsafe extern "C" fn cyt_ensure_skills_registry(
         }
         let paths_val = parse_json_cstr(source_paths_json, "source_paths_json")?;
         let paths_arr = paths_val.as_array().cloned().unwrap_or_default();
-        let paths: Vec<PathBuf> = paths_arr
-            .iter()
-            .filter_map(|v| v.as_str().map(PathBuf::from))
-            .collect();
+        let specs = if paths_arr.iter().any(serde_json::Value::is_object) {
+            crate::cache::parse_skill_source_specs_json(&paths_arr).map_err(|e| {
+                crate::ffi::error::set_error(&e);
+                crate::ffi::error::CYT_ERR_INVALID_ARG
+            })?
+        } else {
+            let paths: Vec<PathBuf> = paths_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(PathBuf::from))
+                .collect();
+            crate::cache::parse_skill_sources(&paths)
+        };
         let root = c_str_to_str(catalog_root, "catalog_root")?;
         let cfg = page_index_config_from_json(pageindex_config_json)?;
         let pipeline_s = c_str_to_str(pipeline, "pipeline")?;
@@ -191,8 +199,8 @@ pub unsafe extern "C" fn cyt_ensure_skills_registry(
         } else {
             Some(c_str_to_str(policy, "policy")?)
         };
-        let refs = ensure_skills_registry(
-            &paths,
+        let refs = crate::cache::ensure_skills_registry_from_specs(
+            &specs,
             PathBuf::from(root).as_path(),
             &cfg,
             pipeline_s,

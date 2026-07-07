@@ -482,6 +482,16 @@ export class SkillsBuilder {
     ) as SkillsIndexDict;
   }
 
+  buildFromFile(
+    sourcePath: string,
+    config?: PageIndexConfigInput,
+  ): SkillsIndexDict {
+    return this.inner.buildFromFile(
+      sourcePath,
+      resolveNativeConfig(config),
+    ) as SkillsIndexDict;
+  }
+
   writeCatalog(): SkillsIndexDict {
     return this.inner.writeCatalog() as SkillsIndexDict;
   }

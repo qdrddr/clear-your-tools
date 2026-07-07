@@ -4,6 +4,8 @@ import {
   chunkSurvivorKeyNative,
   loadCatalogNative,
   removedChunksNative,
+  resolveBuildCatalogNative,
+  retrieveCatalogToolCountNative,
   retrieveCoreNative,
   retrieveToolsNative,
   type PolicyContextJs,
@@ -61,6 +63,19 @@ export function removedChunks(
     surviving,
     applyDecomposedScoreFilter,
   ) as DecomposedCatalogDict;
+}
+
+/** Resolve build catalog JSON from catalog index or decomposed catalog + survivor data. */
+export function resolveBuildCatalog(
+  catalog: JsonRecord,
+  survivorData: JsonRecord,
+): JsonRecord {
+  return resolveBuildCatalogNative(catalog, survivorData) as JsonRecord;
+}
+
+/** Count tools in a catalog dict (alias for catalog tool count on survivor data). */
+export function retrieveCatalogToolCount(data: JsonRecord): number {
+  return retrieveCatalogToolCountNative(data);
 }
 
 export interface RetrieveToolsOptions {

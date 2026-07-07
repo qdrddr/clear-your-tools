@@ -1,8 +1,9 @@
 // N-API bindings for the Rust cache engine (included from `node.rs`).
 
 use crate::cache::{
-    ensure_skills_registry, ensure_tool_catalog, ensure_tool_catalog_from_entries,
-    tools_content_hash, CachePolicy, CacheStatus,
+    ensure_skills_registry_from_specs, ensure_tool_catalog, ensure_tool_catalog_from_entries,
+    parse_skill_source_specs_json, parse_skill_sources, tools_content_hash, CachePolicy,
+    CacheStatus,
 };
 use crate::pageindex::PageIndexConfig;
 use std::path::PathBuf;
@@ -110,21 +111,30 @@ pub fn ensure_tool_catalog_from_entries_napi(
 /// Returns an error when skills registry ensure fails.
 #[napi(js_name = "ensureSkillsRegistry")]
 pub fn ensure_skills_registry_napi(
-    source_paths: Vec<String>,
+    source_paths: Vec<Value>,
     catalog_root: String,
     pageindex_config: Option<Value>,
     pipeline: String,
     index_params_hash: String,
     policy: Option<String>,
 ) -> Result<Vec<Value>> {
-    let paths: Vec<PathBuf> = source_paths.into_iter().map(PathBuf::from).collect();
+    let source_paths = Box::new(source_paths);
+    let specs = if source_paths.iter().any(Value::is_object) {
+        parse_skill_source_specs_json(source_paths.as_ref()).map_err(Error::from_reason)?
+    } else {
+        let paths: Vec<PathBuf> = source_paths
+            .iter()
+            .filter_map(|v| v.as_str().map(PathBuf::from))
+            .collect();
+        parse_skill_sources(&paths)
+    };
     let cfg = page_index_config_from_value(pageindex_config);
     let pipeline = pipeline.into_boxed_str();
     let index_params_hash = index_params_hash.into_boxed_str();
     let cache_policy = cache_policy_from_str(policy.as_deref());
     drop(policy);
-    let refs = ensure_skills_registry(
-        &paths,
+    let refs = ensure_skills_registry_from_specs(
+        &specs,
         PathBuf::from(catalog_root).as_path(),
         &cfg,
         pipeline.as_ref(),

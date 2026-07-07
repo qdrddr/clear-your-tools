@@ -1,6 +1,7 @@
 use super::config::Bm25CohesionConfig;
 use super::types::{TextUnit, WindowMode};
-use crate::bm25_search::{NormalizeMode, normalize_scores, score_corpus, score_query_against_doc};
+use crate::bm25::index::CorpusScorer;
+use crate::bm25_search::{NormalizeMode, normalize_scores, score_corpus};
 
 fn join_units(units: &[TextUnit]) -> String {
     units.iter().map(|u| u.text.as_str()).collect()
@@ -43,6 +44,7 @@ pub fn similarity_curve(
 
     let corpus = build_corpus_units(units, config);
     let corpus_refs: Vec<&str> = corpus.iter().map(String::as_str).collect();
+    let scorer = CorpusScorer::from_corpus(&corpus_refs)?;
 
     let mut raw = Vec::new();
     match config.window_mode {
@@ -52,7 +54,7 @@ pub fn similarity_curve(
                 let doc_idx = i + w;
                 if doc_idx < corpus.len() {
                     let doc = corpus[doc_idx].as_str();
-                    raw.push(score_query_against_doc(&query, doc, &corpus_refs)?);
+                    raw.push(scorer.score_query_against_doc(&query, doc, &corpus_refs)?);
                 }
             }
         }
@@ -61,7 +63,7 @@ pub fn similarity_curve(
             for i in 0..limit {
                 let query = join_units(&units[i..i + w]);
                 let doc = join_units(&units[i + w..i + w + n]);
-                raw.push(score_query_against_doc(&query, &doc, &corpus_refs)?);
+                raw.push(scorer.score_query_against_doc(&query, &doc, &corpus_refs)?);
             }
         }
     }

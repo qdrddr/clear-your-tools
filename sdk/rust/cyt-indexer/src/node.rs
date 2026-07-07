@@ -388,6 +388,41 @@ pub fn empty_optional_fallback_k_napi() -> u32 {
     u32::try_from(runtime_config::empty_optional_fallback_k()).unwrap_or(u32::MAX)
 }
 
+#[napi(js_name = "runtimeDefaultSystemPolicy")]
+#[must_use]
+pub fn runtime_default_system_policy_napi() -> String {
+    runtime_config::default_system_policy()
+}
+
+#[napi(js_name = "runtimeDefaultMcpPolicy")]
+#[must_use]
+pub fn runtime_default_mcp_policy_napi() -> String {
+    runtime_config::default_mcp_policy()
+}
+
+/// # Errors
+/// Does not fail; malformed catalog shapes yield an empty build catalog.
+#[napi(js_name = "resolveBuildCatalog")]
+pub fn resolve_build_catalog_napi(catalog: Value, survivor: Value) -> Result<Value> {
+    let catalog = Box::new(catalog);
+    let survivor = Box::new(survivor);
+    let build = if catalog.get("tools").is_some() {
+        catalog_index_from_value(&catalog).to_catalog_dict()
+    } else {
+        resolve_build_catalog(&catalog, &survivor)
+    };
+    Ok(build)
+}
+
+/// # Errors
+/// Does not fail; missing catalog sections count as zero tools.
+#[napi(js_name = "retrieveCatalogToolCount")]
+pub fn retrieve_catalog_tool_count_napi(data: Value) -> Result<i64> {
+    let data = Box::new(data);
+    i64::try_from(core_catalog_tool_count(&data))
+        .map_err(|_| Error::from_reason("catalog tool count overflow"))
+}
+
 #[napi]
 #[must_use]
 pub fn path_builder_memory_only() -> bool {

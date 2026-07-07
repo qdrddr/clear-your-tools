@@ -17,6 +17,12 @@ impl Bm25CohesionChunker {
     /// Returns an error when configuration validation fails.
     pub fn new(config: Bm25CohesionConfig) -> Result<Self, String> {
         config.validate()?;
+        let mut analyzer_cfg = crate::analyzer::snapshot();
+        analyzer_cfg.use_stopwords = config.use_stopwords;
+        analyzer_cfg.stem_language = match config.stem_language {
+            super::config::StemLanguage::English => "english".to_string(),
+        };
+        crate::analyzer::configure(&analyzer_cfg);
         let token_counter = config.token_counter_impl();
         Ok(Self {
             config,
@@ -258,6 +264,7 @@ fn skip_and_merge(groups: &[Vec<TextUnit>], config: &Bm25CohesionConfig) -> Vec<
         .map(|g| g.iter().map(|u| u.text.as_str()).collect())
         .collect();
     let refs: Vec<&str> = group_texts.iter().map(String::as_str).collect();
+    let scorer = crate::bm25::index::CorpusScorer::from_corpus(&refs).ok();
 
     let mut merged_groups = Vec::new();
     let mut i = 0usize;
@@ -270,9 +277,13 @@ fn skip_and_merge(groups: &[Vec<TextUnit>], config: &Bm25CohesionConfig) -> Vec<
         let mut best_score = -1.0_f64;
         let mut best_idx = None;
         for j in (i + 1)..=skip_index {
-            let score =
-                crate::bm25_search::score_query_against_doc(&group_texts[i], refs[j], &refs)
-                    .unwrap_or(0.0);
+            let score = scorer
+                .as_ref()
+                .and_then(|s| {
+                    s.score_query_against_doc(&group_texts[i], refs[j], &refs)
+                        .ok()
+                })
+                .unwrap_or(0.0);
             if score >= config.merge_threshold && score > best_score {
                 best_score = score;
                 best_idx = Some(j);

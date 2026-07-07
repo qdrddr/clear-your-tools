@@ -15,6 +15,30 @@ from cyt_indexer._native import (
     get_root_tool_key as _get_root_tool_key,
 )
 from cyt_indexer._native import (
+    path_builder_memory_only as _path_builder_memory_only,
+)
+from cyt_indexer._native import (
+    path_catalog_prefix as _path_catalog_prefix,
+)
+from cyt_indexer._native import (
+    path_default_catalog_dir as _path_default_catalog_dir,
+)
+from cyt_indexer._native import (
+    path_decomposed_prefix as _path_decomposed_prefix,
+)
+from cyt_indexer._native import (
+    path_decomposed_root as _path_decomposed_root,
+)
+from cyt_indexer._native import (
+    path_json_ext as _path_json_ext,
+)
+from cyt_indexer._native import (
+    path_md_ext as _path_md_ext,
+)
+from cyt_indexer._native import (
+    path_write_catalog_prune as _path_write_catalog_prune,
+)
+from cyt_indexer._native import (
     to_decomposed_key as _to_decomposed_key,
 )
 from cyt_indexer._native import (
@@ -43,6 +67,38 @@ def configure_path_constants(
         str(default_catalog_dir),
         (builder_memory_only, write_catalog_prune),
     )
+
+
+def md_ext() -> str:
+    return _path_md_ext()
+
+
+def json_ext() -> str:
+    return _path_json_ext()
+
+
+def decomposed_prefix() -> str:
+    return _path_decomposed_prefix()
+
+
+def decomposed_root() -> str:
+    return _path_decomposed_root()
+
+
+def catalog_prefix() -> str:
+    return _path_catalog_prefix()
+
+
+def default_catalog_dir() -> str:
+    return _path_default_catalog_dir()
+
+
+def builder_memory_only() -> bool:
+    return _path_builder_memory_only()
+
+
+def write_catalog_prune() -> bool:
+    return _path_write_catalog_prune()
 
 
 def to_decomposed_key(file_path: str) -> str | None:

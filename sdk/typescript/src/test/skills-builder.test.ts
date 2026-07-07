@@ -14,6 +14,13 @@ async function createSkillDir(): Promise<string> {
   return skillsDir;
 }
 
+test("SkillsBuilder buildFromFile indexes a single skill markdown file", async () => {
+  const skillsDir = await createSkillDir();
+  const builder = new SkillsBuilder({ memoryOnly: true });
+  const index = builder.buildFromFile(join(skillsDir, "x.md"));
+  assert.ok(Object.keys(index.files ?? {}).length > 0);
+});
+
 test("SkillsBuilder buildFromDirs indexes skill markdown", async () => {
   const skillsDir = await createSkillDir();
   const builder = new SkillsBuilder({ memoryOnly: true });

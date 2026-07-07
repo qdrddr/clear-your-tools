@@ -209,6 +209,11 @@ pub const NAPI_EXPORTS: &[&str] = &[
     "classifyAndCountCatalog",
     "searchSkillsAndSelect",
     "buildSkillNodeCatalog",
+    "coordinateBm25Prune",
+    "resolveBuildCatalog",
+    "retrieveCatalogToolCount",
+    "runtimeDefaultSystemPolicy",
+    "runtimeDefaultMcpPolicy",
 ];
 
 /// Macro-generated symbols documented via cbindgen stubs (not visible to cbindgen in macro expansion).

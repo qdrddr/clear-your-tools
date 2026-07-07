@@ -11,13 +11,35 @@ from cyt_indexer.build import (
     prepare_tool_entry,
     truncate_description,
 )
-from cyt_indexer.paths import collect_enums
+from cyt_indexer.paths import (
+    builder_memory_only,
+    catalog_prefix,
+    collect_enums,
+    configure_path_constants,
+    default_catalog_dir,
+    decomposed_prefix,
+    decomposed_root,
+    json_ext,
+    md_ext,
+    write_catalog_prune,
+)
 from cyt_indexer.retrieve import (
     DecomposedCatalog,
     chunk_survivor_key,
     load_catalog,
     removed_chunks,
+    resolve_build_catalog,
+    retrieve_catalog_tool_count,
     retrieve_tools,
+)
+from cyt_indexer.runtime_defaults import (
+    configure_runtime_defaults,
+    default_mcp_policy,
+    default_system_policy,
+    decomposed_score,
+    empty_optional_fallback_k,
+    enum_score,
+    rerank_score,
 )
 from cyt_indexer.bm25_search import (
     batch_reconstruct_skill_matches,
@@ -30,6 +52,7 @@ from cyt_indexer.bm25_search import (
     greedy_select_skill_items,
 )
 from cyt_indexer.cache import (
+    configure_memory_cache,
     ensure_skills_registry,
     ensure_tool_catalog,
     ensure_tool_catalog_from_entries,
@@ -91,7 +114,7 @@ from cyt_indexer.pipeline import (
     prune_catalog_bm25_and_retrieve,
     search_skills_and_select,
 )
-from cyt_indexer.policies import PolicyContext
+from cyt_indexer.policies import PolicyContext, apply_tool_kind, scoring_policy_context
 from cyt_indexer import policies as policies
 
 __all__ = [
@@ -102,7 +125,28 @@ __all__ = [
     "NativeCatalogIndex",
     "PageIndexConfigInput",
     "PolicyContext",
+    "apply_tool_kind",
+    "builder_memory_only",
+    "catalog_prefix",
     "chunk_survivor_key",
+    "configure_path_constants",
+    "configure_memory_cache",
+    "configure_runtime_defaults",
+    "default_catalog_dir",
+    "default_mcp_policy",
+    "default_system_policy",
+    "decomposed_prefix",
+    "decomposed_root",
+    "decomposed_score",
+    "empty_optional_fallback_k",
+    "enum_score",
+    "json_ext",
+    "md_ext",
+    "rerank_score",
+    "resolve_build_catalog",
+    "retrieve_catalog_tool_count",
+    "scoring_policy_context",
+    "write_catalog_prune",
     "cohesion_config_dict",
     "anthropic_tool_to_catalog_entry",
     "anthropic_tools_to_catalog_entries",

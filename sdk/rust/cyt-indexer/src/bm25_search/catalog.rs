@@ -8,7 +8,7 @@ use super::config::{self, expand_index_dir};
 use super::normalize::{NormalizeMode, normalize_scores};
 use super::tantivy_score;
 
-const FINGERPRINT_VERSION: &str = "v2-tantivy";
+const FINGERPRINT_VERSION: &str = "v3-unified-analyzer";
 
 #[derive(Debug, Clone)]
 pub struct CatalogDocument {
@@ -45,12 +45,19 @@ pub fn catalog_fingerprint(
     stopwords: &str,
 ) -> String {
     use sha2::{Digest, Sha256};
+    let cfg = config::snapshot();
     let mut hasher = Sha256::new();
     hasher.update(FINGERPRINT_VERSION.as_bytes());
     hasher.update(b"\0");
     hasher.update(stem_language.as_bytes());
     hasher.update(b"\0");
     hasher.update(stopwords.as_bytes());
+    hasher.update(b"\0");
+    hasher.update([u8::from(cfg.use_stopwords)]);
+    hasher.update(b"\0");
+    hasher.update(cfg.k1.to_le_bytes());
+    hasher.update(b"\0");
+    hasher.update(cfg.b.to_le_bytes());
     hasher.update(b"\0");
     let mut sorted = docs.to_vec();
     sorted.sort_by(|a, b| {

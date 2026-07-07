@@ -166,6 +166,7 @@ If you already ran `./sdk/c/scripts/build-c-lib.sh`, `cyt-native-ensure` copies 
 | `documents.go` | Document extraction |
 | `bm25.go` | BM25 cohesion |
 | `pageindex.go` | Skills builder, pageindex |
+| `cache.go` | Tool/skills cache ensure (`EnsureSkillsRegistry` accepts path strings or inline `{path, content}` objects in JSON) |
 | `cgo_lib.go` | Internal cgo bridge (not imported by consumers) |
 | `cmd/cyt-native-ensure/` | Downloads or copies C FFI artifacts |
 

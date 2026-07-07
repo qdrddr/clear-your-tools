@@ -6,8 +6,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 use crate::cache::{
-    CachePolicy, CacheStatus, configure_memory_cache, ensure_skills_registry, ensure_tool_catalog,
-    ensure_tool_catalog_from_entries, tools_content_hash,
+    CachePolicy, CacheStatus, configure_memory_cache, ensure_skills_registry_from_specs,
+    ensure_tool_catalog, ensure_tool_catalog_from_entries, parse_skill_source_specs_json,
+    parse_skill_sources, tools_content_hash,
 };
 use crate::pageindex::PageIndexConfig;
 
@@ -83,17 +84,28 @@ fn ensure_tool_catalog_py(
 #[pyfunction(name = "ensure_skills_registry")]
 fn ensure_skills_registry_py(
     py: Python<'_>,
-    source_paths: Vec<String>,
+    source_paths: Bound<'_, PyAny>,
     catalog_root: &str,
     pageindex_config: Option<Bound<'_, PyAny>>,
     pipeline: &str,
     index_params_hash: &str,
     policy: Option<&str>,
 ) -> PyResult<Py<PyAny>> {
-    let paths: Vec<PathBuf> = source_paths.into_iter().map(PathBuf::from).collect();
+    let sources_val = py_to_value(source_paths)?;
+    let sources_arr = sources_val.as_array().cloned().unwrap_or_default();
+    let specs = if sources_arr.iter().any(serde_json::Value::is_object) {
+        parse_skill_source_specs_json(&sources_arr)
+    } else {
+        let paths: Vec<PathBuf> = sources_arr
+            .iter()
+            .filter_map(|v| v.as_str().map(PathBuf::from))
+            .collect();
+        Ok(parse_skill_sources(&paths))
+    }
+    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
     let cfg = page_index_config_from_py(pageindex_config)?;
-    let refs = ensure_skills_registry(
-        &paths,
+    let refs = ensure_skills_registry_from_specs(
+        &specs,
         PathBuf::from(catalog_root).as_path(),
         &cfg,
         pipeline,

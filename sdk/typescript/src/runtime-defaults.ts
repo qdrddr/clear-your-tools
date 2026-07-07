@@ -4,6 +4,8 @@ import {
   emptyOptionalFallbackKNative,
   enumScoreNative,
   rerankScoreNative,
+  runtimeDefaultMcpPolicyNative,
+  runtimeDefaultSystemPolicyNative,
 } from "./native.js";
 
 export interface RuntimeDefaultsConfig {
@@ -41,4 +43,12 @@ export function rerankScore(): number {
 
 export function emptyOptionalFallbackK(): number {
   return emptyOptionalFallbackKNative();
+}
+
+export function defaultSystemPolicy(): string {
+  return runtimeDefaultSystemPolicyNative();
+}
+
+export function defaultMcpPolicy(): string {
+  return runtimeDefaultMcpPolicyNative();
 }

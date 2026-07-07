@@ -10,8 +10,8 @@ use crate::pageindex::cache_layout::nodes_dir;
 use crate::pageindex::cache_layout::skill_entry_dir;
 use crate::pageindex::{
     EntryMetadata, PageIndexConfig, SkillDocument, SkillsIndex, build_chunk_variant,
-    build_page_index_for_file, chunk_variant_valid, load_merged_document_json, page_index_valid,
-    write_page_index_entry,
+    build_page_index_for_content, build_page_index_for_file, chunk_variant_valid,
+    load_merged_document_json, page_index_valid, write_page_index_entry,
 };
 use crate::skills_io::refresh_skills_index_cache;
 
@@ -21,6 +21,60 @@ use super::hot::{get_merged_document, store_merged_document, store_skills_index}
 use super::manifest::CacheStatus;
 use super::materialize::stub_document_from_source;
 use super::{CachePolicy, disk_available, expand_tilde};
+
+#[derive(Debug, Clone)]
+pub struct SkillSourceSpec {
+    path: PathBuf,
+    content: Option<String>,
+    content_sha256: Option<String>,
+}
+
+pub fn parse_skill_sources(source_paths: &[PathBuf]) -> Vec<SkillSourceSpec> {
+    source_paths
+        .iter()
+        .map(|path| SkillSourceSpec {
+            path: path.clone(),
+            content: None,
+            content_sha256: None,
+        })
+        .collect()
+}
+
+#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
+fn parse_skill_sources_json(values: &[serde_json::Value]) -> Result<Vec<SkillSourceSpec>, String> {
+    let mut specs = Vec::new();
+    for value in values {
+        if let Some(path_str) = value.as_str() {
+            specs.push(SkillSourceSpec {
+                path: PathBuf::from(path_str),
+                content: None,
+                content_sha256: None,
+            });
+            continue;
+        }
+        let Some(obj) = value.as_object() else {
+            continue;
+        };
+        let path = obj
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| "skill source object missing path".to_string())?;
+        let content = obj
+            .get("content")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let content_sha256 = obj
+            .get("content_sha256")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        specs.push(SkillSourceSpec {
+            path: PathBuf::from(path),
+            content,
+            content_sha256,
+        });
+    }
+    Ok(specs)
+}
 
 #[derive(Debug, Clone)]
 pub struct SkillEntryRef {
@@ -39,9 +93,17 @@ pub struct SkillEntryRef {
 
 fn file_content_hash(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    Ok(content_hash_bytes(&bytes))
+}
+
+fn content_hash_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    Ok(hex::encode(hasher.finalize()))
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn content_hash_text(content: &str) -> String {
+    content_hash_bytes(content.as_bytes())
 }
 
 fn doc_id_from_path(path: &Path) -> String {
@@ -96,7 +158,7 @@ fn load_document_cached(
 
 #[allow(clippy::too_many_arguments)]
 fn ensure_one_skill_entry(
-    source: &Path,
+    spec: &SkillSourceSpec,
     catalog_root: &Path,
     pageindex_config: &PageIndexConfig,
     _pipeline: &str,
@@ -106,7 +168,14 @@ fn ensure_one_skill_entry(
     materialize_bm25: bool,
     lazy_registry: bool,
 ) -> Result<SkillEntryRef, String> {
-    let content_sha256 = file_content_hash(source)?;
+    let source = &spec.path;
+    let content_sha256 = match spec.content_sha256.as_deref() {
+        Some(hash) if !hash.is_empty() => hash.to_string(),
+        _ => match spec.content.as_deref() {
+            Some(content) => content_hash_text(content),
+            None => file_content_hash(source)?,
+        },
+    };
     let doc_id = doc_id_from_path(source);
     let entry_dir = skill_entry_dir(catalog_root, &content_sha256);
     let bm25_chunk_dir = if materialize_bm25 {
@@ -144,11 +213,15 @@ fn ensure_one_skill_entry(
             )?;
             cache_status = CacheStatus::Miss;
         }
-    } else if lazy_registry {
+    } else if lazy_registry && spec.content.is_none() {
         lazy_pending = true;
         document = Some(stub_document_from_source(source, &doc_id)?);
     } else {
-        let index = build_page_index_for_file(source, pageindex_config)?;
+        let index = if let Some(ref content) = spec.content {
+            build_page_index_for_content(source, content, pageindex_config)?
+        } else {
+            build_page_index_for_file(source, pageindex_config)?
+        };
 
         if disk_ok {
             let metadata = EntryMetadata {
@@ -205,6 +278,9 @@ fn ensure_one_skill_entry(
 
 /// Ensure page index + optional BM25 chunk variant for each source skill file.
 ///
+/// `source_paths` may be filesystem paths, or a JSON array of path strings / objects with
+/// `{path, content, content_sha256}` for in-memory client-supplied skills.
+///
 /// When ``memory_cache_config().lazy_registry`` is true, entries without a disk hit
 /// return frontmatter-only stubs and defer full indexing to first BM25 use.
 ///
@@ -219,18 +295,41 @@ pub fn ensure_skills_registry(
     index_params_hash: &str,
     policy: CachePolicy,
 ) -> Result<Vec<SkillEntryRef>, String> {
+    ensure_skills_registry_from_specs(
+        &parse_skill_sources(source_paths),
+        catalog_root,
+        pageindex_config,
+        pipeline,
+        index_params_hash,
+        policy,
+    )
+}
+
+/// Ensure page index entries from parsed source specs (paths and optional in-memory content).
+///
+/// # Errors
+///
+/// Returns an error when a source cannot be indexed.
+pub fn ensure_skills_registry_from_specs(
+    sources: &[SkillSourceSpec],
+    catalog_root: &Path,
+    pageindex_config: &PageIndexConfig,
+    pipeline: &str,
+    index_params_hash: &str,
+    policy: CachePolicy,
+) -> Result<Vec<SkillEntryRef>, String> {
     let root = expand_tilde(catalog_root);
     let disk_ok = policy != CachePolicy::ForceMemory && disk_available(&root);
     let materialize_bm25 = pipeline.trim().eq_ignore_ascii_case("bm25");
     let lazy_registry = memory_cache_config().lazy_registry;
     let mut refs = Vec::new();
 
-    for source in source_paths {
-        if !source.is_file() {
+    for spec in sources {
+        if spec.content.is_none() && !spec.path.is_file() {
             continue;
         }
         refs.push(ensure_one_skill_entry(
-            source,
+            spec,
             &root,
             pageindex_config,
             pipeline,
@@ -243,4 +342,16 @@ pub fn ensure_skills_registry(
     }
 
     Ok(refs)
+}
+
+/// Parse hook/client skill source JSON into registry specs.
+///
+/// # Errors
+///
+/// Returns an error when an object entry is missing required fields.
+#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
+pub fn parse_skill_source_specs_json(
+    values: &[serde_json::Value],
+) -> Result<Vec<SkillSourceSpec>, String> {
+    parse_skill_sources_json(values)
 }

@@ -49,9 +49,34 @@ pub fn build_page_index_for_file(
     source: &Path,
     config: &PageIndexConfig,
 ) -> Result<SkillsIndex, String> {
+    let content = fs::read_to_string(source).map_err(|e| e.to_string())?;
+    build_page_index_for_content(source, &content, config)
+}
+
+/// Build a page-index-only skills index from markdown content in memory.
+///
+/// `source` is the canonical skill path stored in document metadata (not a temp copy).
+///
+/// # Errors
+///
+/// Returns an error when indexing fails.
+pub fn build_page_index_for_content(
+    source: &Path,
+    content: &str,
+    config: &PageIndexConfig,
+) -> Result<SkillsIndex, String> {
     let mut index = SkillsIndex::default();
     let doc_id = doc_id_from_source_path(source);
-    index_skill_md_file(source, &doc_id, config, &mut index, false, None, None)?;
+    index_skill_md_content(SkillMdIndexRequest {
+        path: source,
+        doc_id: &doc_id,
+        content,
+        config,
+        index: &mut index,
+        include_chunks: false,
+        chunk_pipeline: None,
+        chunk_params_hash: None,
+    })?;
     Ok(index)
 }
 
@@ -66,17 +91,34 @@ pub fn build_skills_index_for_file(
     pipeline: &str,
     params_hash: &str,
 ) -> Result<SkillsIndex, String> {
+    let content = fs::read_to_string(source).map_err(|e| e.to_string())?;
+    build_skills_index_for_content(source, &content, config, pipeline, params_hash)
+}
+
+/// Build a full skills index (with chunk variants) from markdown content in memory.
+///
+/// # Errors
+///
+/// Returns an error when indexing fails.
+pub fn build_skills_index_for_content(
+    source: &Path,
+    content: &str,
+    config: &PageIndexConfig,
+    pipeline: &str,
+    params_hash: &str,
+) -> Result<SkillsIndex, String> {
     let mut index = SkillsIndex::default();
     let doc_id = doc_id_from_source_path(source);
-    index_skill_md_file(
-        source,
-        &doc_id,
+    index_skill_md_content(SkillMdIndexRequest {
+        path: source,
+        doc_id: &doc_id,
+        content,
         config,
-        &mut index,
-        true,
-        Some(pipeline),
-        Some(params_hash),
-    )?;
+        index: &mut index,
+        include_chunks: true,
+        chunk_pipeline: Some(pipeline),
+        chunk_params_hash: Some(params_hash),
+    })?;
     Ok(index)
 }
 
@@ -242,16 +284,50 @@ fn index_skill_md_file(
     chunk_params_hash: Option<&str>,
 ) -> Result<(), String> {
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let prefix = extract_skill_prefix(&content);
+    index_skill_md_content(SkillMdIndexRequest {
+        path,
+        doc_id,
+        content: &content,
+        config,
+        index,
+        include_chunks,
+        chunk_pipeline,
+        chunk_params_hash,
+    })
+}
+
+struct SkillMdIndexRequest<'a> {
+    path: &'a Path,
+    doc_id: &'a str,
+    content: &'a str,
+    config: &'a PageIndexConfig,
+    index: &'a mut SkillsIndex,
+    include_chunks: bool,
+    chunk_pipeline: Option<&'a str>,
+    chunk_params_hash: Option<&'a str>,
+}
+
+fn index_skill_md_content(req: SkillMdIndexRequest<'_>) -> Result<(), String> {
+    let SkillMdIndexRequest {
+        path,
+        doc_id,
+        content,
+        config,
+        index,
+        include_chunks,
+        chunk_pipeline,
+        chunk_params_hash,
+    } = req;
+    let prefix = extract_skill_prefix(content);
     let source_path = super::document_json::shorten_home_path(path.to_string_lossy().as_ref())?;
     if index.documents.contains_key(doc_id) {
         return Ok(());
     }
 
-    let result = md_to_tree(&content, &source_path, config);
+    let result = md_to_tree(content, &source_path, config);
     let preamble = prefix.preamble.clone();
     let mut flat_for_decompose = build_flat_structure(
-        &content,
+        content,
         prefix.frontmatter.as_deref(),
         prefix.frontmatter_line_num,
         preamble.as_deref(),

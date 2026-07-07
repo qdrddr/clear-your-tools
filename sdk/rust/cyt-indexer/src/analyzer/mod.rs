@@ -57,6 +57,15 @@ pub fn analyzer_config_snapshot() -> Bm25AnalyzerConfig {
         .clone()
 }
 
+/// Clone of the active Tantivy text analyzer for index registration.
+#[must_use]
+pub fn registered_text_analyzer() -> TextAnalyzer {
+    analyzer_lock()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
 /// Tokenize text into analyzed terms (stemmed, stopword-filtered when enabled).
 #[must_use]
 #[allow(clippy::significant_drop_tightening)] // write guard must outlive `token_stream`.

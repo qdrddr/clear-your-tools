@@ -7,6 +7,7 @@
 )]
 
 pub mod analyzer;
+pub mod bm25;
 pub mod bm25_cohesion;
 pub mod bm25_search;
 pub mod build;

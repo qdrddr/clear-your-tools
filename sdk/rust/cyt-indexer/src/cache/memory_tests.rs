@@ -70,6 +70,36 @@ fn lazy_registry_defers_full_index() {
 }
 
 #[test]
+fn inline_content_skips_disk_source_read() {
+    let tmp = std::env::temp_dir().join(format!("cyt-inline-reg-{}", std::process::id()));
+    let catalog = tmp.join("catalog");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&catalog).unwrap();
+
+    let source = serde_json::json!([{
+        "path": "/virtual/client/skills/demo.md",
+        "content": "---\nname: demo\n---\n# Title\n\nInline body",
+        "content_sha256": "abc123deadbeef", // pragma: allowlist secret
+    }]);
+    let specs = crate::cache::parse_skill_source_specs_json(source.as_array().unwrap()).unwrap();
+    let refs = crate::cache::ensure_skills_registry_from_specs(
+        &specs,
+        &catalog,
+        &PageIndexConfig::default(),
+        "bm25",
+        "inline-hash",
+        CachePolicy::ForceMemory,
+    )
+    .unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].doc_id, "demo");
+    assert_eq!(refs[0].source_path, "/virtual/client/skills/demo.md");
+    assert_eq!(refs[0].content_sha256, "abc123deadbeef"); // pragma: allowlist secret
+    assert!(!refs[0].lazy_pending);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn merged_document_store_roundtrip() {
     let entry = PathBuf::from("/tmp/example-entry");
     let doc = json!({"id": "demo", "structure": []});

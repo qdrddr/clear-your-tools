@@ -83,3 +83,19 @@ effectivePolicy("tools.demo.org.search", ctx); // => "prune_all"
 
 const scoring = scoringPolicyContext(ctx); // copies toolKind, maps description variants
 ```
+
+### Skills cache (`ensureSkillsRegistry`)
+
+Accepts filesystem paths or inline hook/client skill objects (`path`, optional `content`, optional `content_sha256`):
+
+```typescript
+import { ensureSkillsRegistry } from "cyt-indexer-sdk";
+
+ensureSkillsRegistry(
+  [{ path: "/virtual/skill.md", content: "---\nname: x\n---\nBody" }],
+  catalogRoot,
+  pageindexConfig,
+  "bm25",
+  indexParamsHash,
+);
+```

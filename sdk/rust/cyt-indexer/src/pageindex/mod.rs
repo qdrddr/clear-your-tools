@@ -16,7 +16,8 @@ pub mod tree;
 pub mod types;
 
 pub use build::{
-    build_chunk_variant, build_page_index_for_file, build_page_index_only, build_skills_index,
+    build_chunk_variant, build_page_index_for_content, build_page_index_for_file,
+    build_page_index_only, build_skills_index, build_skills_index_for_content,
     build_skills_index_for_file, chunk_variant_valid, page_index_valid, write_page_index_entry,
 };
 pub use cache_layout::{

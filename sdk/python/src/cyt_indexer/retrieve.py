@@ -17,6 +17,12 @@ from cyt_indexer._native import (
     removed_chunks as _removed_chunks,
 )
 from cyt_indexer._native import (
+    resolve_build_catalog as _resolve_build_catalog,
+)
+from cyt_indexer._native import (
+    retrieve_catalog_tool_count as _retrieve_catalog_tool_count,
+)
+from cyt_indexer._native import (
     retrieve_tools as _retrieve_tools,
 )
 from cyt_indexer.runtime_defaults import decomposed_score, enum_score
@@ -35,6 +41,8 @@ __all__ = [
     "chunk_survivor_key",
     "load_catalog",
     "removed_chunks",
+    "resolve_build_catalog",
+    "retrieve_catalog_tool_count",
     "retrieve_tools",
 ]
 
@@ -61,6 +69,20 @@ def removed_chunks(
         surviving,
         apply_decomposed_score_filter,
     )
+
+
+def resolve_build_catalog(
+    catalog: dict[str, Any],
+    survivor_data: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve build catalog JSON from catalog index or decomposed catalog + survivor data."""
+    result = _resolve_build_catalog(catalog, survivor_data)
+    return dict(result) if isinstance(result, dict) else result
+
+
+def retrieve_catalog_tool_count(data: dict[str, Any]) -> int:
+    """Count tools in a catalog dict (alias for catalog tool count on survivor data)."""
+    return int(_retrieve_catalog_tool_count(data))
 
 
 def retrieve_tools(

@@ -12,6 +12,12 @@ from cyt_indexer._native import (
     runtime_empty_optional_fallback_k as _runtime_empty_optional_fallback_k,
 )
 from cyt_indexer._native import (
+    runtime_default_mcp_policy as _runtime_default_mcp_policy,
+)
+from cyt_indexer._native import (
+    runtime_default_system_policy as _runtime_default_system_policy,
+)
+from cyt_indexer._native import (
     runtime_enum_score as _runtime_enum_score,
 )
 from cyt_indexer._native import (
@@ -53,3 +59,11 @@ def rerank_score() -> float:
 
 def empty_optional_fallback_k() -> int:
     return _runtime_empty_optional_fallback_k()
+
+
+def default_system_policy() -> str:
+    return _runtime_default_system_policy()
+
+
+def default_mcp_policy() -> str:
+    return _runtime_default_mcp_policy()

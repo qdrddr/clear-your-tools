@@ -323,6 +323,35 @@ fn runtime_empty_optional_fallback_k_py() -> usize {
     runtime_config::empty_optional_fallback_k()
 }
 
+#[pyfunction(name = "runtime_default_system_policy")]
+fn runtime_default_system_policy_py() -> String {
+    runtime_config::default_system_policy()
+}
+
+#[pyfunction(name = "runtime_default_mcp_policy")]
+fn runtime_default_mcp_policy_py() -> String {
+    runtime_config::default_mcp_policy()
+}
+
+#[pyfunction(name = "resolve_build_catalog")]
+fn resolve_build_catalog_py(
+    py: Python<'_>,
+    catalog: &Bound<'_, PyAny>,
+    survivor_data: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let survivor_val = py_to_value(survivor_data)?;
+    let build = catalog_build_dict(catalog, &survivor_val)?;
+    value_to_py(py, &build)
+}
+
+#[pyfunction(name = "retrieve_catalog_tool_count")]
+fn retrieve_catalog_tool_count_py(data: Bound<'_, PyAny>) -> PyResult<i64> {
+    let val = py_to_value(data)?;
+    i64::try_from(crate::build::catalog_tool_count(&val)).map_err(|_| {
+        PyErr::new::<pyo3::exceptions::PyOverflowError, _>("catalog tool count overflow")
+    })
+}
+
 pub(crate) fn catalog_index_from_py(obj: Bound<'_, PyAny>) -> PyResult<crate::build::CatalogIndex> {
     if let Ok(native) = obj.extract::<PyRef<PyNativeCatalogIndex>>() {
         return Ok(native.inner.clone());
@@ -577,6 +606,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(runtime_enum_score_py, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_rerank_score_py, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_empty_optional_fallback_k_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_default_system_policy_py, m)?)?;
+    m.add_function(wrap_pyfunction!(runtime_default_mcp_policy_py, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_build_catalog_py, m)?)?;
+    m.add_function(wrap_pyfunction!(retrieve_catalog_tool_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_tool_count_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_catalog_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic_tools_to_catalog_entries_py, m)?)?;
