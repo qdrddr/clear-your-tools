@@ -44,9 +44,6 @@ _METADATA_FILE = "metadata.json"
 _BM25_PIPELINE = "bm25"
 
 _REGISTRY_CACHE: dict[tuple[Any, ...], list[SkillEntryRef]] = {}
-_DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-7648c4.log",
-)
 
 
 def clear_registry_cache() -> None:
@@ -113,34 +110,6 @@ class SkillEntryRef:
     disk_backed: bool
     document: dict[str, Any]
     memory_index: dict[str, Any] | None = None
-
-
-def _agent_debug_log(
-    *,
-    location: str,
-    message: str,
-    hypothesis_id: str,
-    data: dict[str, Any],
-) -> None:
-    # #region agent log
-    import time
-
-    payload = {
-        "sessionId": "7648c4",
-        "runId": "pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        _DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, default=str) + "\n")
-    except OSError:
-        pass
-    # #endregion
 
 
 def doc_id_from_path(source_path: Path) -> str:
@@ -585,17 +554,6 @@ def _build_registry_from_client_skills(
         )
         original_by_hash[content_hash] = original_path
 
-    _agent_debug_log(
-        location="catalog.py:_build_registry_from_client_skills",
-        message="client skills registry inputs",
-        hypothesis_id="B",
-        data={
-            "inline_source_paths": [item["path"] for item in inline_sources],
-            "catalog_root": str(catalog_root),
-            "client_staging_exists": (catalog_root / "client_staging").exists(),
-        },
-    )
-
     rust_refs = ensure_skills_registry(
         inline_sources,
         str(catalog_root),
@@ -619,17 +577,6 @@ def _build_registry_from_client_skills(
             pageindex_config=pageindex_config,
         )
         entries.append(entry)
-        _agent_debug_log(
-            location="catalog.py:_build_registry_from_client_skills",
-            message="client skill entry resolved",
-            hypothesis_id="C",
-            data={
-                "doc_id": entry.doc_id,
-                "source_path": entry.source_path,
-                "document_path": entry.document.get("path"),
-                "entry_dir": entry.entry_dir,
-            },
-        )
     return entries
 
 
@@ -679,16 +626,6 @@ def _build_registry_uncached(
         pipeline,
         index_params_hash,
         policy=cache_policy_for_config(cfg),
-    )
-
-    _agent_debug_log(
-        location="catalog.py:_build_registry_uncached",
-        message="config skills registry inputs",
-        hypothesis_id="A",
-        data={
-            "source_paths": source_paths,
-            "catalog_root": str(catalog_root),
-        },
     )
 
     entries: list[SkillEntryRef] = []
