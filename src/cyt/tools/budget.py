@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from cyt.config import tools_inject_via
+from cyt.config import tools_enabled, tools_inject_via
 from cyt.skills.budget import (
     count_hook_request_tokens,
     resolve_inject_budget,
@@ -21,6 +21,8 @@ def tools_inject_allowed(
     cli_prompt: bool = False,
 ) -> bool:
     del cli_prompt
+    if not tools_enabled(config):
+        return False
     return tools_inject_via(config) == inject_path
 
 

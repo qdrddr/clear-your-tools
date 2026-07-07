@@ -23,6 +23,19 @@ def test_filter_tools_passes_through_when_hook_mode_without_for_hook() -> None:
     assert result.tools == tools
 
 
+def test_filter_tools_passes_through_when_tools_disabled() -> None:
+    tools = [_tool("mcp__a__one"), _tool("mcp__a__two")]
+    config = {
+        "pruning": {
+            "inject_via": "proxy",
+            "tools": {"enabled": False},
+        },
+    }
+    result = filter_tools_for_query(tools, "find files", config=config)
+    assert result.status == "pass_through"
+    assert result.tools == tools
+
+
 def test_filter_tools_prunes_when_hook_mode_with_for_hook() -> None:
     tools = [_tool("mcp__a__one"), _tool("mcp__a__two")]
     config = {

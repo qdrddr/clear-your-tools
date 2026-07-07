@@ -49,6 +49,20 @@ def _hook_payload(prompt: str = "read a file") -> dict[str, Any]:
     }
 
 
+def test_hook_skips_tools_when_tools_disabled() -> None:
+    config = {
+        "skills": {"enabled": False},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {"enabled": False},
+        },
+    }
+    payload = _hook_payload()
+    result = skills_cli.run_hook_payload(payload, config)
+    assert result.stdout_text == ""
+    assert result.outcome == "skipped_inject_via_proxy"
+
+
 def test_hook_injects_agent_tools_block() -> None:
     fixture = Path(__file__).resolve().parent / "fixtures" / "mcp_definitions_sample.json"
     catalog = json.loads(fixture.read_text(encoding="utf-8"))["tools"]

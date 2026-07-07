@@ -18,7 +18,6 @@ from cyt.config import (
     llm_minimum_tools,
     load_config,
     pruning_pipeline_from_config,
-    tools_inject_via,
     uses_executor_tool_catalog,
 )
 from cyt.indexer.build import (
@@ -49,6 +48,7 @@ from cyt.pruners.policies import (
 )
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
+from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.policy_context import apply_executor_tool_kind
 from cyt_core.types.prune import PruneResult
 
@@ -998,7 +998,11 @@ def filter_tools_for_query(
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
 
     config = config or load_config()
-    if not for_hook and tools_inject_via(config) == "hook":
+    if for_hook:
+        tools_allowed = tools_inject_allowed(config, "hook")
+    else:
+        tools_allowed = tools_inject_allowed(config, "proxy")
+    if not tools_allowed:
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
             tools=original_tools,
@@ -1245,7 +1249,7 @@ def _anthropic_finish_transform(
     query: str | None,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
-    from cyt.config import inject_into_user_message
+    from cyt.config import inject_into_user_message, load_config
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
         anthropic_root_tools_with_mcp_stubs,
@@ -1254,9 +1258,14 @@ def _anthropic_finish_transform(
         split_tools_for_root_and_inject,
     )
     from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
+    from cyt.tools.budget import tools_inject_allowed
     from cyt.tools.inject import format_agent_tools
 
-    user_message_inject = inject_into_user_message(config)
+    resolved_config = config or load_config()
+    user_message_inject = inject_into_user_message(resolved_config) and tools_inject_allowed(
+        resolved_config,
+        "proxy",
+    )
     deferred_tools_text = ""
 
     if result.status != "applied" or result.tools is None:
@@ -1391,16 +1400,18 @@ def transform_anthropic_request(
     skill_entries = (
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
+    resolved_config = config or load_config()
+    tools_allowed = tools_inject_allowed(resolved_config, "proxy")
     coordinated = coordinate_skills_tools_prune(
         query,
-        config or load_config(),
+        resolved_config,
         [ToolSource("root", tools)],
         skill_entries=skill_entries,
         upstream_kind="anthropic",
         capture_decomposed_catalog=capture_decomposed_catalog,
         pruner_settings=pruner_settings,
         skills_allowed=bool(deferred is not None and deferred.skills_allowed),
-        tools_allowed=True,
+        tools_allowed=tools_allowed,
         tools_pipeline_override=pruning_pipeline,
         skill_out=skill_out if deferred is not None else None,
     )

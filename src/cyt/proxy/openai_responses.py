@@ -559,11 +559,15 @@ def _openai_prune_request_tools(
 ) -> tuple[PruneResult | None, list[dict[str, Any]]]:
     from cyt.config import inject_into_user_message, load_config
     from cyt.pruning.coordinator import coordinate_skills_tools_prune
+    from cyt.tools.budget import tools_inject_allowed
 
     result: PruneResult | None = None
     mcp_for_inject: list[dict[str, Any]] = []
-    user_message_inject = inject_into_user_message(config)
     resolved_config = config or load_config()
+    user_message_inject = inject_into_user_message(resolved_config) and tools_inject_allowed(
+        resolved_config,
+        "proxy",
+    )
     skill_entries = (
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
@@ -608,7 +612,7 @@ def _openai_prune_request_tools(
         capture_decomposed_catalog=capture_decomposed_catalog,
         pruner_settings=pruner_settings,
         skills_allowed=bool(deferred is not None and deferred.skills_allowed),
-        tools_allowed=True,
+        tools_allowed=tools_inject_allowed(resolved_config, "proxy"),
         tools_pipeline_override=pruning_pipeline,
         skill_out=skill_out if deferred is not None else None,
     )
@@ -706,15 +710,21 @@ def transform_openai_request(
         pruner_settings=pruner_settings,
     )
 
-    from cyt.config import inject_into_user_message
+    from cyt.config import inject_into_user_message, load_config
     from cyt.proxy.user_message_inject import (
         already_has_user_turn_injection,
         append_injection_to_body,
     )
+    from cyt.tools.budget import tools_inject_allowed
     from cyt.tools.inject import format_agent_tools
 
+    resolved_config = config or load_config()
     tools_injected = False
-    if inject_into_user_message(config) and mcp_for_inject:
+    if (
+        inject_into_user_message(resolved_config)
+        and tools_inject_allowed(resolved_config, "proxy")
+        and mcp_for_inject
+    ):
         tools_text = format_agent_tools(mcp_for_inject, include_tool_description=False)
         if tools_text and not already_has_user_turn_injection(
             original,

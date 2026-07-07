@@ -113,6 +113,7 @@ DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
 DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
 DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
+DEFAULT_TOOLS_ENABLED: bool = True
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "executor"
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
@@ -157,6 +158,7 @@ _DEFAULTS: dict[str, Any] = {
     "pruning": {
         "inject_via": DEFAULT_INJECT_VIA,
         "tools": {
+            "enabled": DEFAULT_TOOLS_ENABLED,
             "hook": {
                 "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
@@ -1009,6 +1011,11 @@ def inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
     return "hook" if mode == "hook" else "proxy"
 
 
+def tools_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return bool(_tools(_merged_config(cfg)).get("enabled", DEFAULT_TOOLS_ENABLED))
+
+
 def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
     return inject_via(config)
 
@@ -1081,6 +1088,8 @@ def resolved_tools_hook_file(config: dict[str, Any] | None = None) -> Path:
 
 def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
+    if not tools_enabled(cfg):
+        return False
     if tools_inject_via(cfg) != "hook":
         return False
     if tools_hook_tools_from(cfg) == "executor":

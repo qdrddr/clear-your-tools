@@ -6,14 +6,23 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Generator
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from cyt.launch.secrets import clear_keyring_cache
 from cyt.skills import cli as skills_cli
 from tests.test_credential_helpers import install_test_pre_dotenv
+
+
+@pytest.fixture(autouse=True)
+def _reset_credential_caches() -> Generator[None]:
+    clear_keyring_cache()
+    yield
+    clear_keyring_cache()
 
 
 @pytest.fixture(autouse=True)

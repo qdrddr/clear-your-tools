@@ -150,6 +150,7 @@ models:
 pruning:
   inject_via: proxy # hook | proxy — applies to skills and tools injection
   tools:
+    enabled: true # false: skip tool pruning/injection (proxy forwards tools verbatim; hook skips tools)
     hook:
       tools_from: executor # executor | definitions
       executor_url: http://localhost:4789

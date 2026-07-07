@@ -18,6 +18,7 @@ from cyt.config import (
     required_skills_env_var_names,
     skills_enabled,
     skills_pipeline,
+    tools_enabled,
     tools_inject_via,
 )
 from cyt.proxy.anthropic import PruneResult
@@ -698,19 +699,19 @@ def _read_run_input(
 
 def _exit_if_hook_disabled(
     *,
-    skills_enabled_flag: bool,
-    tools_hook_enabled: bool,
+    config: dict[str, Any],
     cli_prompt: bool,
     debug: bool,
     raw_stdin: str,
     payload: dict[str, Any],
     cwd: str | None,
 ) -> bool:
-    if skills_enabled_flag or tools_hook_enabled or cli_prompt:
+    del debug, raw_stdin, payload, cwd
+    if cli_prompt or skills_enabled(config) or tools_enabled(config):
         return False
     print(
-        "cyt hook: skills.enabled is false and tools hook injection is disabled; "
-        "hook produced no injection. Enable skills or set pruning.inject_via: hook",
+        "cyt hook: skills.enabled and pruning.tools.enabled are both false; "
+        "hook produced no injection.",
         file=sys.stderr,
     )
     return True
@@ -805,8 +806,6 @@ def run(
 
     raw_stdin, payload, cli_prompt = _read_run_input(prompt, model)
     cwd = hook_cwd(payload)
-    enabled = skills_enabled(config)
-    tools_hook_enabled = tools_inject_allowed(config, "hook", cli_prompt=cli_prompt)
 
     if cli_prompt:
         print(
@@ -815,8 +814,7 @@ def run(
         )
 
     if _exit_if_hook_disabled(
-        skills_enabled_flag=enabled,
-        tools_hook_enabled=tools_hook_enabled,
+        config=config,
         cli_prompt=cli_prompt,
         debug=debug,
         raw_stdin=raw_stdin,
@@ -856,7 +854,7 @@ def run(
             raw_stdin=raw_stdin,
             payload=payload,
             cwd=cwd,
-            skills_enabled=enabled if not cli_prompt else True,
+            skills_enabled=skills_enabled(config) if not cli_prompt else True,
             outcome=outcome,
             details=debug_details or None,
         )
