@@ -7,7 +7,7 @@ from typing import Any
 
 _CURSOR_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
 _CURSOR_RULES_LIFECYCLE_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
-_CURSOR_RULES_CLEANUP_EVENTS = frozenset({"sessionStart", "sessionEnd"})
+_CURSOR_RULES_CLEANUP_EVENTS = frozenset({"sessionEnd"})
 
 
 def cursor_hook_event_name(payload: dict[str, Any]) -> str | None:

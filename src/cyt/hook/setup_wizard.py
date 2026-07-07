@@ -85,10 +85,6 @@ def cursor_before_submit_entry(*, agent: AgentName = "cursor") -> dict[str, Any]
     return cyt_client_entry(agent=agent)
 
 
-def cursor_session_start_cleanup_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
-    return cyt_client_entry(agent=agent)
-
-
 def cursor_session_start_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
     return cyt_daemon_start_entry(agent=agent)
 
@@ -100,7 +96,6 @@ def cursor_session_end_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
 def cursor_hook_entries(*, agent: AgentName = "cursor") -> dict[str, dict[str, Any]]:
     return {
         "before_submit": cursor_before_submit_entry(agent=agent),
-        "session_start_cleanup": cursor_session_start_cleanup_entry(agent=agent),
         "session_start": cursor_session_start_entry(agent=agent),
         "session_end": cursor_session_end_entry(agent=agent),
     }
@@ -110,7 +105,6 @@ def cursor_desired_hook_commands(*, agent: AgentName = "cursor") -> list[str]:
     entries = cursor_hook_entries(agent=agent)
     return [
         str(entries["before_submit"].get("command")),
-        str(entries["session_start_cleanup"].get("command")),
         str(entries["session_start"].get("command")),
         str(entries["session_end"].get("command")),
     ]
@@ -165,18 +159,23 @@ def default_hook_skills_directories(
     include_codex: bool,
     include_cursor: bool = False,
 ) -> list[str]:
+    agent_defaults: list[str] = []
+    if include_claude:
+        agent_defaults.append(str(CLAUDE_SKILLS_DIR))
+    if include_codex:
+        agent_defaults.append(str(CODEX_SKILLS_DIR))
+    if include_cursor:
+        agent_defaults.append(str(CURSOR_SKILLS_DIR))
+
+    selected_agents = sum((include_claude, include_codex, include_cursor))
+    if selected_agents == 1:
+        return agent_defaults
+
     raw = skills_cfg.get("directories")
     if isinstance(raw, list) and raw:
         return [str(path) for path in raw if str(path).strip()]
 
-    defaults: list[str] = []
-    if include_claude:
-        defaults.append(str(CLAUDE_SKILLS_DIR))
-    if include_codex:
-        defaults.append(str(CODEX_SKILLS_DIR))
-    if include_cursor:
-        defaults.append(str(CURSOR_SKILLS_DIR))
-    return defaults
+    return agent_defaults
 
 
 def _prompt_hook_skills_directories(
@@ -452,7 +451,6 @@ def upsert_cursor_hooks(
     hooks_section: dict[str, Any],
     *,
     before_submit_entry: dict[str, Any],
-    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
     session_end_entry: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
@@ -461,7 +459,7 @@ def upsert_cursor_hooks(
 
     for event_name, entries in (
         (CURSOR_BEFORE_SUBMIT_EVENT, [before_submit_entry]),
-        (CURSOR_SESSION_START_EVENT, [session_start_cleanup_entry, session_start_entry]),
+        (CURSOR_SESSION_START_EVENT, [session_start_entry]),
         (CURSOR_SESSION_END_EVENT, [session_end_entry]),
     ):
         merged, event_changed = _upsert_cursor_flat_event(merged, event_name, entries)
@@ -474,7 +472,6 @@ def upsert_cursor_hooks_into_file(
     path: Path,
     *,
     before_submit_entry: dict[str, Any],
-    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
     session_end_entry: dict[str, Any],
 ) -> bool:
@@ -483,7 +480,6 @@ def upsert_cursor_hooks_into_file(
     merged_hooks, changed = upsert_cursor_hooks(
         hooks_section,
         before_submit_entry=before_submit_entry,
-        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
         session_end_entry=session_end_entry,
     )
@@ -988,7 +984,6 @@ def _handle_existing_cursor_hooks(
     *,
     needs_update: bool,
     before_submit_entry: dict[str, Any],
-    session_start_cleanup_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
     session_end_entry: dict[str, Any],
 ) -> bool:
@@ -1022,7 +1017,6 @@ def _handle_existing_cursor_hooks(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
-        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
         session_end_entry=session_end_entry,
     ):
@@ -1041,7 +1035,6 @@ def _install_cursor_hooks_for_target(
     del debug
     entries = cursor_hook_entries(agent="cursor")
     before_submit_entry = entries["before_submit"]
-    session_start_cleanup_entry = entries["session_start_cleanup"]
     session_start_entry = entries["session_start"]
     session_end_entry = entries["session_end"]
     hooks_data = _load_json_object(path)
@@ -1063,7 +1056,6 @@ def _install_cursor_hooks_for_target(
             hooks_section,
             needs_update=needs_update,
             before_submit_entry=before_submit_entry,
-            session_start_cleanup_entry=session_start_cleanup_entry,
             session_start_entry=session_start_entry,
             session_end_entry=session_end_entry,
         )
@@ -1074,7 +1066,6 @@ def _install_cursor_hooks_for_target(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
-        session_start_cleanup_entry=session_start_cleanup_entry,
         session_start_entry=session_start_entry,
         session_end_entry=session_end_entry,
     ):

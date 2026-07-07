@@ -77,7 +77,6 @@ def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:
     changed = upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=entries["before_submit"],
-        session_start_cleanup_entry=entries["session_start_cleanup"],
         session_start_entry=entries["session_start"],
         session_end_entry=entries["session_end"],
     )

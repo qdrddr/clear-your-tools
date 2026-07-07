@@ -37,8 +37,8 @@ cyt hook cursor
 
 [`hooks.json`](./hooks.json) wires:
 
-- **`sessionStart`** → `cyt-client` (delete stale rules file), then `cyt hook daemon start` (colocated hook HTTP server)
-- **`beforeSubmitPrompt`** → `CYT_LAUNCH_AGENT=cursor cyt-client` (prune + inject via rules file)
+- **`sessionStart`** → `cyt hook daemon start` (colocated hook HTTP server)
+- **`beforeSubmitPrompt`** → `CYT_LAUNCH_AGENT=cursor cyt-client` (delete stale rules file, prune + inject via rules file)
 - **`sessionEnd`** → `cyt-client` (delete rules file)
 
 ## Rules-file injection (Cursor IDE)
@@ -51,8 +51,7 @@ deletes it when nothing survives pruning).
 
 | Event | cyt-client behavior |
 | --- | --- |
-| `sessionStart` | Delete rules file (clear leftovers from prior session) — no HTTP |
-| `beforeSubmitPrompt` | POST `/hook/inject`, write rules file when content changed |
+| `beforeSubmitPrompt` | Delete rules file, POST `/hook/inject`, write rules file when content changed |
 | `sessionEnd` | Delete rules file — no HTTP |
 
 The rules file is auto-appended to `.gitignore` in git workspaces. Set `CYT_CURSOR_RULES_FILE=0` to disable rules-file sync.
@@ -77,9 +76,10 @@ echo '{"hook_event_name":"beforeSubmitPrompt","conversation_id":"test","prompt":
   | CYT_LAUNCH_AGENT=cursor cyt-client
 ```
 
-- **`beforeSubmitPrompt`** (Cursor) — fires when the user sends a prompt. Cursor may include `model` on the payload;
+- **`beforeSubmitPrompt`** (Cursor) — fires when the user sends a prompt.
+Deletes any stale rules file, then prunes and injects fresh content. Cursor may include `model` on the payload;
 otherwise BM25 matching uses the prompt text alone.
-- **`sessionStart`** — deletes any stale rules file, then starts the hook daemon.
+- **`sessionStart`** — starts the hook daemon only (`cyt hook daemon start`).
 - **`sessionEnd`** — deletes the rules file when the chat session closes.
 
 The first inject may build cached skill indexes under `~/.config/cyt/skills/entries/`; later runs reuse them.

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+import traceback
 
 from cyt_client.cursor import (
     format_cursor_continue,
@@ -15,11 +17,33 @@ from cyt_client.port import resolve_hook_url
 from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
+    is_valid_workspace_root,
     sync_cursor_rules_file,
     workspace_root_from_payload,
 )
 from cyt_client.transcript import enrich_hook_payload
 from cyt_client.transport import post_hook_inject
+
+_verbose = False
+
+
+def _parse_verbose_flag(argv: list[str] | None = None) -> bool:
+    parser = argparse.ArgumentParser(prog="cyt-client", add_help=False)
+    parser.add_argument("--verbose", action="store_true")
+    args, _unknown = parser.parse_known_args(argv)
+    return bool(args.verbose)
+
+
+def _verbose_log(message: str) -> None:
+    if _verbose:
+        print(message, file=sys.stderr, flush=True)
+
+
+def _verbose_exception(context: str) -> None:
+    if not _verbose:
+        return
+    print(f"cyt-client: {context}", file=sys.stderr, flush=True)
+    traceback.print_exc(file=sys.stderr)
 
 
 def _parse_payload(raw: bytes) -> dict | None:
@@ -43,47 +67,66 @@ def _write_hook_stdout(body: bytes, *, cursor_output: bool) -> None:
         sys.stdout.flush()
 
 
+def _emit_cursor_continue() -> None:
+    print(format_cursor_continue(), flush=True)
+
+
 def _handle_cursor_rules_cleanup(payload: dict) -> None:
     workspace = workspace_root_from_payload(payload)
     if workspace is not None:
-        delete_cursor_rules_file(workspace)
-    print(format_cursor_continue(), flush=True)
+        if is_valid_workspace_root(workspace):
+            delete_cursor_rules_file(workspace)
+        else:
+            _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+    _emit_cursor_continue()
 
 
 def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
     workspace = workspace_root_from_payload(payload)
     if workspace is None:
-        print(format_cursor_continue(), flush=True)
+        _emit_cursor_continue()
         return
+
+    if not is_valid_workspace_root(workspace):
+        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+        _emit_cursor_continue()
+        return
+
+    delete_cursor_rules_file(workspace)
 
     payload_bytes = enrich_hook_payload(raw)
     hook_url = resolve_hook_url()
     if hook_url is None:
-        print(format_cursor_continue(), flush=True)
+        _verbose_log("cyt-client: hook server unavailable")
+        _emit_cursor_continue()
         return
 
     try:
         status, body = post_hook_inject(hook_url, payload_bytes)
-    except ConnectionError:
-        print(format_cursor_continue(), flush=True)
+    except ConnectionError as exc:
+        _verbose_log(f"cyt-client: hook server connection failed: {exc}")
+        _emit_cursor_continue()
         return
 
     if status >= 400:
-        print(format_cursor_continue(), flush=True)
+        _verbose_log(f"cyt-client: hook server returned HTTP {status}")
+        _emit_cursor_continue()
         return
 
-    sync_cursor_rules_file(workspace, extract_additional_context(body))
+    try:
+        sync_cursor_rules_file(workspace, extract_additional_context(body))
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to sync rules file: {exc}")
+        _emit_cursor_continue()
+        return
+
     print(format_cursor_stdout(body.decode()), flush=True)
 
 
-def main() -> None:
-    raw = sys.stdin.buffer.read()
-    payload = _parse_payload(raw)
-    cursor_output = payload is not None and is_cursor_hook_payload(payload)
-
+def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
     if payload is None:
         if cursor_output:
-            print(format_cursor_continue(), flush=True)
+            _emit_cursor_continue()
         return
 
     if cursor_output and is_cursor_rules_cleanup_event(payload):
@@ -100,17 +143,36 @@ def main() -> None:
     payload_bytes = enrich_hook_payload(raw)
     hook_url = resolve_hook_url()
     if hook_url is None:
+        _verbose_log("cyt-client: hook server unavailable")
         return
 
     try:
         status, body = post_hook_inject(hook_url, payload_bytes)
-    except ConnectionError:
+    except ConnectionError as exc:
+        _verbose_log(f"cyt-client: hook server connection failed: {exc}")
         return
 
     if status >= 400:
+        _verbose_log(f"cyt-client: hook server returned HTTP {status}")
         return
 
     _write_hook_stdout(body, cursor_output=False)
+
+
+def main(argv: list[str] | None = None) -> None:
+    global _verbose
+    _verbose = _parse_verbose_flag(argv)
+
+    cursor_output = False
+    try:
+        raw = sys.stdin.buffer.read()
+        payload = _parse_payload(raw)
+        cursor_output = payload is not None and is_cursor_hook_payload(payload)
+        _run_hook(raw, payload, cursor_output=cursor_output)
+    except Exception:
+        _verbose_exception("unexpected error")
+        if cursor_output:
+            _emit_cursor_continue()
 
 
 if __name__ == "__main__":

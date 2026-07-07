@@ -3,10 +3,6 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
-        "timeout": 60
-      },
-      {
         "command": "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended",
         "timeout": 60
       }

@@ -281,9 +281,16 @@ def test_default_hook_skills_directories_uses_agent_defaults() -> None:
         include_claude=True,
         include_codex=True,
     )
+    cursor_only = hook_setup.default_hook_skills_directories(
+        {"directories": ["~/.claude/skills"]},
+        include_claude=False,
+        include_codex=False,
+        include_cursor=True,
+    )
 
     assert claude_only == ["~/.claude/skills"]
     assert both == ["~/.claude/skills", "~/.codex/skills"]
+    assert cursor_only == ["~/.cursor/skills"]
 
 
 def test_save_hook_skills_directories_writes_config(tmp_path: Path) -> None:
@@ -688,7 +695,6 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     changed = hook_setup.upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=entries["before_submit"],
-        session_start_cleanup_entry=entries["session_start_cleanup"],
         session_start_entry=entries["session_start"],
         session_end_entry=entries["session_end"],
     )
@@ -698,10 +704,7 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert data["version"] == 1
     assert isinstance(data["hooks"], dict)
     assert data["hooks"]["beforeSubmitPrompt"] == [entries["before_submit"]]
-    assert data["hooks"]["sessionStart"] == [
-        entries["session_start_cleanup"],
-        entries["session_start"],
-    ]
+    assert data["hooks"]["sessionStart"] == [entries["session_start"]]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
     assert entries["before_submit"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
     assert (
@@ -733,7 +736,6 @@ def test_upsert_cursor_hooks_into_file_repairs_non_object_hooks(tmp_path: Path) 
     changed = hook_setup.upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=hook_setup.cursor_before_submit_entry(agent="cursor"),
-        session_start_cleanup_entry=hook_setup.cursor_session_start_cleanup_entry(agent="cursor"),
         session_start_entry=hook_setup.cursor_session_start_entry(agent="cursor"),
         session_end_entry=hook_setup.cursor_session_end_entry(agent="cursor"),
     )
@@ -764,9 +766,8 @@ def test_run_hook_setup_installs_cursor_hooks(
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
-    assert data["hooks"]["sessionStart"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
     assert (
-        data["hooks"]["sessionStart"][1]["command"]
+        data["hooks"]["sessionStart"][0]["command"]
         == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
     )
     assert data["hooks"]["sessionEnd"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"

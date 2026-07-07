@@ -87,6 +87,20 @@ def test_cli_silent_on_connection_error(capsys: pytest.CaptureFixture[str]) -> N
     assert captured.err == ""
 
 
+def test_cli_verbose_logs_connection_error(capsys: pytest.CaptureFixture[str]) -> None:
+    payload = b'{"hook_event_name":"UserPromptSubmit","prompt":"hello"}'
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch("cyt_client.cli.post_hook_inject", side_effect=ConnectionError("refused")):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main(["--verbose"])
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "hook server connection failed" in captured.err
+
+
 def test_cli_writes_response_body_to_stdout_only(capsys: pytest.CaptureFixture[str]) -> None:
     payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
     with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
@@ -182,23 +196,84 @@ def test_cli_silent_when_server_unavailable(capsys: pytest.CaptureFixture[str]) 
 def test_cli_cursor_returns_continue_when_server_unavailable(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        payload = json.dumps(
+            {
+                "hook_event_name": "beforeSubmitPrompt",
+                "prompt": "hello",
+                "conversation_id": "conv-1",
+                "workspace_roots": [str(workspace)],
+            },
+        ).encode()
+        with patch("cyt_client.cli.resolve_hook_url", return_value=None):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        captured = capsys.readouterr()
+        assert json.loads(captured.out) == {"continue": True}
+        assert captured.err == ""
+
+
+def test_cli_cursor_invalid_workspace_silent_continue(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     payload = json.dumps(
         {
             "hook_event_name": "beforeSubmitPrompt",
             "prompt": "hello",
             "conversation_id": "conv-1",
-            "workspace_roots": ["/tmp/project"],
+            "workspace_roots": ["/path/to/project"],
         },
     ).encode()
-    with patch("cyt_client.cli.resolve_hook_url", return_value=None):
-        from cyt_client.cli import main
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
 
-        with patch("sys.stdin.buffer.read", return_value=payload):
-            main()
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
 
+    post.assert_not_called()
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"continue": True}
     assert captured.err == ""
+
+
+def test_cli_cursor_invalid_workspace_verbose_logs(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = json.dumps(
+        {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": ["/path/to/project"],
+        },
+    ).encode()
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main(["--verbose"])
+
+    post.assert_not_called()
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"continue": True}
+    assert "invalid workspace root: /path/to/project" in captured.err
+
+
+def test_is_valid_workspace_root() -> None:
+    from cyt_client.rules_file import is_valid_workspace_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        assert is_valid_workspace_root(workspace)
+        assert not is_valid_workspace_root(workspace / "missing")
+        assert not is_valid_workspace_root(Path("/path/to/project"))
 
 
 def test_format_hook_stdout_roundtrip() -> None:
@@ -375,29 +450,50 @@ def test_ensure_gitignore_entry_is_idempotent() -> None:
         assert lines.count(GITIGNORE_ENTRY) == 1
 
 
-def test_cli_session_start_deletes_rules_file_without_http(
+def test_cli_before_submit_deletes_stale_rules_file_before_inject(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         workspace = Path(tmp) / "project"
+        workspace.mkdir()
         rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
         rules_path.parent.mkdir(parents=True)
-        rules_path.write_text("stale", encoding="utf-8")
-        payload = json.dumps(
-            {
-                "hook_event_name": "sessionStart",
-                "workspace_roots": [str(workspace)],
-            },
-        ).encode()
-        with patch("cyt_client.cli.post_hook_inject") as post:
-            from cyt_client.cli import main
+        rules_path.write_text("stale content", encoding="utf-8")
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
+        with patch(
+            "cyt_client.cli.resolve_hook_url",
+            return_value="http://127.0.0.1:8834/hook/inject",
+        ):
+            inject_response = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": "<agent-skills>fresh</agent-skills>",
+                    },
+                },
+            ).encode()
+            with patch(
+                "cyt_client.cli.post_hook_inject",
+                return_value=(200, inject_response),
+            ) as post:
+                from cyt_client.cli import main
 
-            with patch("sys.stdin.buffer.read", return_value=payload):
-                main()
+                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                    main()
 
-        post.assert_not_called()
-        assert not rules_path.is_file()
-        assert json.loads(capsys.readouterr().out) == {"continue": True}
+        post.assert_called_once()
+        assert rules_path.is_file()
+        assert "fresh" in rules_path.read_text(encoding="utf-8")
+        assert "stale content" not in rules_path.read_text(encoding="utf-8")
+        assert json.loads(capsys.readouterr().out) == {
+            "continue": True,
+            "additional_context": "<agent-skills>fresh</agent-skills>",
+        }
 
 
 def test_cli_session_end_deletes_rules_file_without_http(

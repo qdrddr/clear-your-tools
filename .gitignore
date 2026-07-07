@@ -141,3 +141,4 @@ sdk/go/coverage.out
 sdk/go/coverage.html
 sdk/go/vendor/
 .postman/
+.cursor/rules/cyt-injection.mdc

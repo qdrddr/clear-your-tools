@@ -30,6 +30,14 @@ def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
     return None
 
 
+def is_valid_workspace_root(workspace: Path) -> bool:
+    """Return True when ``workspace`` exists and is a directory."""
+    try:
+        return workspace.is_dir()
+    except OSError:
+        return False
+
+
 def rules_file_path(workspace: Path) -> Path:
     return workspace / RULES_REL_PATH
 
@@ -82,7 +90,7 @@ def ensure_gitignore_entry(workspace: Path, rel_path: str = GITIGNORE_ENTRY) -> 
 
 def delete_cursor_rules_file(workspace: Path) -> bool:
     """Delete the rules file if present. Return True when a file was removed."""
-    if not cursor_rules_file_enabled():
+    if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
         return False
 
     path = rules_file_path(workspace)
@@ -94,7 +102,7 @@ def delete_cursor_rules_file(workspace: Path) -> bool:
 
 def sync_cursor_rules_file(workspace: Path, injection: str) -> bool:
     """Write or delete the rules file. Return True when disk state changed."""
-    if not cursor_rules_file_enabled():
+    if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
         return False
 
     path = rules_file_path(workspace)
