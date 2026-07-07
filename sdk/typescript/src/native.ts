@@ -182,6 +182,7 @@ export const batchReconstructSkillMatchesNative =
 export const greedySelectSkillItemsNative = native.greedySelectSkillItems;
 
 // Pipeline
+export const coordinateBm25PruneNative = native.coordinateBm25Prune;
 export const pruneCatalogBm25AndRetrieveNative =
   native.pruneCatalogBm25AndRetrieve;
 export const classifyAndCountCatalogNative = native.classifyAndCountCatalog;

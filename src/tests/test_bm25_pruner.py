@@ -313,7 +313,10 @@ def test_proxy_falls_back_to_bm25_when_rerank_fails(
         },
     ]
 
-    with patch("cyt.proxy.anthropic.rerank_catalog_dict", side_effect=RuntimeError("rerank down")):
+    with patch(
+        "cyt.pruners.tools_filter.rerank_catalog_dict",
+        side_effect=RuntimeError("rerank down"),
+    ):
         result = filter_tools_for_query(
             tools,
             "reading files",

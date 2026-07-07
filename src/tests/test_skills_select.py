@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 from cyt.skills.catalog import SkillEntryRef
@@ -146,6 +147,7 @@ def test_item_budget_pools_nodes_across_skills_by_score() -> None:
         return sum(match.token_count for match in matches) * 50
 
     with (
+        patch.dict(os.environ, {"CYT_DEBUG_NATIVE_FALLBACK": "1"}),
         patch(
             "cyt.skills.select._greedy_select_items_native",
             return_value=None,
@@ -208,6 +210,7 @@ def test_item_budget_stops_when_next_node_would_exceed_budget() -> None:
         return len(matches) * 100
 
     with (
+        patch.dict(os.environ, {"CYT_DEBUG_NATIVE_FALLBACK": "1"}),
         patch(
             "cyt.skills.select._greedy_select_items_native",
             return_value=None,

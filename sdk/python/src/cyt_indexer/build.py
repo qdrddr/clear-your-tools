@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from cyt_indexer._native import NativeCatalogIndex
 from cyt_indexer._native import anthropic_tool_to_catalog_entry as _anthropic_tool_to_catalog_entry
 from cyt_indexer._native import anthropic_tools_to_catalog_entries as _anthropic_tools_to_catalog_entries
 from cyt_indexer._native import build_catalog_from_tools as _build_catalog_from_tools
@@ -17,6 +18,7 @@ from cyt_indexer.paths import collect_enums
 
 __all__ = [
     "CatalogIndex",
+    "NativeCatalogIndex",
     "anthropic_tool_to_catalog_entry",
     "anthropic_tools_to_catalog_entries",
     "build_catalog_from_tools",
@@ -39,6 +41,21 @@ class CatalogIndex:
 
     tools: list[dict[str, Any]]
     files: dict[str, str] = field(default_factory=dict)
+    _native: NativeCatalogIndex | None = field(default=None, repr=False, compare=False)
+
+    def native_handle(self) -> NativeCatalogIndex:
+        """Return a Rust-backed handle to avoid re-serializing this index across FFI calls."""
+        if self._native is None:
+            self._native = NativeCatalogIndex.from_parts(self.tools, self.files)
+        return self._native
+
+    @classmethod
+    def from_native(cls, native: NativeCatalogIndex) -> CatalogIndex:
+        return cls(
+            tools=list(native.tools),
+            files=dict(native.files),
+            _native=native,
+        )
 
     def to_catalog_dict(
         self,
@@ -46,7 +63,7 @@ class CatalogIndex:
     ) -> dict[str, list[dict[str, Any]]]:
         """Convert decomposed catalog files to rerank/llm input format (Rust-backed)."""
         return _catalog_index_to_catalog_dict(
-            {"tools": self.tools, "files": self.files},
+            self.native_handle(),
             catalog_prefix,
         )
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 from cyt_indexer import get_skill_line_content
@@ -9,6 +11,12 @@ from cyt_indexer import get_skill_line_content
 from cyt.common.paths import shorten_home_path
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
 from cyt.skills.frontmatter import skill_name_from_frontmatter
+
+logger = logging.getLogger(__name__)
+
+
+def _native_fallback_enabled() -> bool:
+    return os.environ.get("CYT_DEBUG_NATIVE_FALLBACK") == "1"
 
 
 def count_content_nodes(entries: list[SkillEntryRef]) -> int:
@@ -59,14 +67,20 @@ def _entries_payload_for_nodes(entries: list[SkillEntryRef]) -> list[dict[str, A
 
 def build_skill_node_items(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
     """Build rerankable items from cached content nodes (never chunks)."""
-    try:
-        from cyt_indexer.pipeline import build_skill_node_catalog
+    from cyt_indexer.pipeline import build_skill_node_catalog
 
+    try:
         items = build_skill_node_catalog(_entries_payload_for_nodes(entries))
         if items:
             return items
     except Exception:
-        pass
+        logger.exception("build_skill_node_catalog native call failed")
+        if not _native_fallback_enabled():
+            raise
+
+    if not _native_fallback_enabled():
+        return []
+
     fallback_items: list[dict[str, Any]] = []
     for entry in entries:
         structure = entry.document.get("structure")

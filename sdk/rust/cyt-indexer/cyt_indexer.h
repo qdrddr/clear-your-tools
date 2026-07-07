@@ -642,6 +642,23 @@ int cyt_search_skills_and_select(const char *entries_json,
                                  char **out);
 
 /*
+ Run skills BM25 search and tool BM25 prune in parallel.
+
+ # Safety
+
+ All JSON pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+ */
+int cyt_coordinate_bm25_prune(const char *skills_entries_json,
+                              const char *catalog_json,
+                              const char *build_catalog_json,
+                              const char *catalog_index_json,
+                              const char *query,
+                              const char *scoring_ctx_json,
+                              const char *output_ctx_json,
+                              const char *options_json,
+                              char **out);
+
+/*
  Build rerankable node bodies from cached skill entries.
 
  # Safety

@@ -5,9 +5,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { batchToolPassThrough, policyContextFromValues } from "../policies.js";
+import {
+  PolicyContext,
+  applyToolKind,
+  batchToolPassThrough,
+  effectivePolicy,
+  policyContextFromValues,
+  scoringPolicyContext,
+} from "../policies.js";
 import { buildCatalogIndex } from "../build.js";
-import { classifyAndCountCatalog } from "../pipeline.js";
+import { classifyAndCountCatalog, coordinateBm25Prune } from "../pipeline.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -84,6 +91,41 @@ print(json.dumps(batch_tool_pass_through(ctx, ["Agent", "grep"])))
   assertJsonEqual(got, want);
 });
 
+test("parity effectivePolicy respects tool_kind override", () => {
+  if (skipParity()) {
+    return;
+  }
+  if (!pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer._native import PolicyContext, effective_policy
+ctx = PolicyContext()
+ctx.system_policy = "prune_optional"
+ctx.mcp_policy = "prune_all"
+ctx.tool_kind = "mcp"
+print(json.dumps(effective_policy(ctx, "tools.demo.org.search")))
+`) as string;
+
+  const ctx = new PolicyContext("prune_optional", "prune_all");
+  applyToolKind(ctx, "mcp");
+  assert.equal(effectivePolicy("tools.demo.org.search", ctx), want);
+});
+
+test("scoringPolicyContext copies toolKind", () => {
+  const ctx = new PolicyContext(
+    "prune_optional_descriptions",
+    "prune_all_descriptions",
+  );
+  applyToolKind(ctx, "mcp");
+  const scoring = scoringPolicyContext(ctx);
+  assert.equal(scoring.toolKind, "mcp");
+  assert.equal(scoring.systemPolicy, "prune_optional");
+  assert.equal(scoring.mcpPolicy, "prune_all");
+});
+
 test("parity classifyAndCountCatalog matches Python reference", () => {
   if (skipParity()) {
     return;
@@ -130,6 +172,38 @@ print(json.dumps(build_catalog_index([], [])))
     tools: index.tools,
     files: index.files,
   };
+  assertJsonEqual(got, want);
+});
+
+test("parity coordinateBm25Prune matches Python reference", () => {
+  if (skipParity()) {
+    return;
+  }
+  if (!pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer._native import policy_context_from_values, coordinate_bm25_prune
+ctx = policy_context_from_values({})
+catalog = {"json": [], "md": []}
+index = {"tools": [], "files": {}}
+print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx, ctx)))
+`);
+
+  const ctx = policyContextFromValues({});
+  const catalog = { json: [], md: [] };
+  const index = { tools: [], files: {} };
+  const got = coordinateBm25Prune(
+    [],
+    catalog,
+    catalog,
+    index,
+    "hello",
+    ctx,
+    ctx,
+  );
   assertJsonEqual(got, want);
 });
 

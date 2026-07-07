@@ -79,8 +79,9 @@ pub use paths::{
     to_decomposed_key, to_skills_decomposed_key, tool_id_from_decomposed_rel,
 };
 pub use pipeline::{
-    PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions, build_skill_node_catalog,
-    classify_and_count_catalog, prune_catalog_bm25_and_retrieve, search_skills_and_select,
+    CoordinateBm25Options, PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions,
+    build_skill_node_catalog, classify_and_count_catalog, coordinate_bm25_prune,
+    prune_catalog_bm25_and_retrieve, search_skills_and_select,
 };
 pub use policies::{
     PolicyContext, ToolPolicy, anthropic_tool_is_mcp, anthropic_tool_is_system,

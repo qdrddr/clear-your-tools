@@ -54,6 +54,7 @@ def frontmatter_gate_trace(
     rows: list[FrontmatterGateRow] = []
     seen: set[tuple[str, str]] = set()
 
+    entries_by_doc_id = {entry.doc_id: entry for entry in entries}
     if isinstance(trace_rows, list):
         for row in trace_rows:
             if not isinstance(row, dict):
@@ -64,14 +65,13 @@ def frontmatter_gate_trace(
             seen.add(key)
             score_val = row.get("score")
             normalized_score = float(score_val) if score_val is not None else None
+            entry = entries_by_doc_id.get(doc_id)
+            file_path = shorten_home_path(entry.source_path) if entry is not None else doc_id
             rows.append(
                 FrontmatterGateRow(
                     entry_dir=entry_dir,
                     doc_id=doc_id,
-                    file_path=next(
-                        (shorten_home_path(e.source_path) for e in entries if e.doc_id == doc_id),
-                        doc_id,
-                    ),
+                    file_path=file_path,
                     score=normalized_score,
                     raw_score=normalized_score,
                     passed=bool(row.get("passed", True)),

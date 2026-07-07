@@ -262,3 +262,88 @@ print(json.dumps(classify_and_count_catalog(catalog, None)))
 	}
 	assertJSONEqual(t, got, want)
 }
+
+func TestParityEffectivePolicyToolKind(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import PolicyContext, effective_policy
+ctx = PolicyContext()
+ctx.system_policy = "prune_optional"
+ctx.mcp_policy = "prune_all"
+ctx.tool_kind = "mcp"
+print(json.dumps(effective_policy(ctx, "tools.demo.org.search")))
+`)
+
+	kind := ToolKindMcp
+	ctx := PolicyContext{
+		SystemPolicy: "prune_optional",
+		McpPolicy:    "prune_all",
+		ToolKind:     &kind,
+	}
+	ctxJSON, err := ctx.MarshalJSONString()
+	if err != nil {
+		t.Fatalf("MarshalJSONString: %v", err)
+	}
+	got, err := EffectivePolicy(ctxJSON, "tools.demo.org.search")
+	if err != nil {
+		t.Fatalf("EffectivePolicy: %v", err)
+	}
+	gotBytes, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got: %v", err)
+	}
+	assertJSONEqual(t, string(gotBytes), want)
+}
+
+func TestScoringPolicyContextCopiesToolKind(t *testing.T) {
+	kind := ToolKindMcp
+	ctx := PolicyContext{
+		SystemPolicy: "prune_optional_descriptions",
+		McpPolicy:    "prune_all_descriptions",
+		ToolKind:     &kind,
+	}
+	scoring, err := ScoringPolicyContext(ctx)
+	if err != nil {
+		t.Fatalf("ScoringPolicyContext: %v", err)
+	}
+	if scoring.ToolKind == nil || *scoring.ToolKind != ToolKindMcp {
+		t.Fatalf("expected tool_kind mcp, got %#v", scoring.ToolKind)
+	}
+	if scoring.SystemPolicy != "prune_optional" || scoring.McpPolicy != "prune_all" {
+		t.Fatalf("unexpected scoring policies: %#v", scoring)
+	}
+}
+
+func TestParityCoordinateBm25Prune(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import policy_context_from_values, coordinate_bm25_prune
+ctx = policy_context_from_values({})
+catalog = {"json": [], "md": []}
+index = {"tools": [], "files": {}}
+print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx, ctx)))
+`)
+
+	ctx := `{}`
+	catalog := `{"json":[],"md":[]}`
+	index := `{"tools":[],"files":{}}`
+	got, err := CoordinateBm25Prune("[]", catalog, catalog, index, "hello", ctx, ctx, "")
+	if err != nil {
+		t.Fatalf("CoordinateBm25Prune: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}

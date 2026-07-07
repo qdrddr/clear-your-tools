@@ -179,7 +179,10 @@ def test_coordinated_hook_applies_executor_tool_kind() -> None:
         raise RuntimeError("stop-after-context")
 
     with (
-        patch("cyt.proxy.anthropic._run_catalog_pruning", side_effect=capture_run_catalog_pruning),
+        patch(
+            "cyt.pruners.tools_filter._run_catalog_pruning",
+            side_effect=capture_run_catalog_pruning,
+        ),
         patch("cyt.pruning.coordinator._run_skills_search", return_value=[]),
         patch("cyt.config.effective_pruning_pipeline", return_value=["bm25"]),
         patch("cyt.config.effective_skills_pipeline", return_value="bm25"),

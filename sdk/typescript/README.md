@@ -61,3 +61,22 @@ const nodes = buildSkillNodeCatalog([]);
 ```
 
 Composite APIs mirror the Python `cyt_indexer.pipeline` module and Go `cytindexer` pipeline helpers.
+
+### Policy context (`PolicyContext`)
+
+Native `PolicyContext` exposes `systemPolicy`, `mcpPolicy`, `perTool`, and optional `toolKind` (`"system"` | `"mcp"`). The `toolKind` field is a runtime batch override (not loaded from YAML config); set it to `"mcp"` so bare executor-style tool ids use MCP policies without an `mcp__` prefix.
+
+```typescript
+import {
+  PolicyContext,
+  applyToolKind,
+  effectivePolicy,
+  scoringPolicyContext,
+} from "cyt-indexer-sdk";
+
+const ctx = new PolicyContext("prune_optional", "prune_all");
+applyToolKind(ctx, "mcp");
+effectivePolicy("tools.demo.org.search", ctx); // => "prune_all"
+
+const scoring = scoringPolicyContext(ctx); // copies toolKind, maps description variants
+```

@@ -92,7 +92,10 @@ pub fn json_object_or_empty(val: &Value) -> serde_json::Map<String, Value> {
 }
 
 /// Parse policy context from JSON supporting both `policy_context_from_values` config
-/// and direct `{system_policy, mcp_policy, per_tool}` objects.
+/// and direct `{system_policy, mcp_policy, per_tool, tool_kind}` objects.
+///
+/// `tool_kind` (`"system"` | `"mcp"`) is an optional runtime batch override: when set,
+/// all tools in the session use MCP or system classification instead of the `mcp__` prefix.
 pub fn parse_policy_context(val: &Value) -> PolicyContext {
     if val.get("system_policy").is_some()
         || val.get("mcp_policy").is_some()

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "examples/common.h"
 
@@ -62,6 +63,24 @@ int main(void) {
         return 1;
     }
     cyt_example_free(batch_flags);
+
+    char *policy_out = NULL;
+    const char *mcp_ctx = "{\"system_policy\":\"prune_optional\","
+                          "\"mcp_policy\":\"prune_all\","
+                          "\"tool_kind\":\"mcp\"}";
+    if (!cyt_example_ok(
+            cyt_effective_policy(mcp_ctx, "tools.demo.org.search", &policy_out),
+            "cyt_effective_policy tool_kind")) {
+        return 1;
+    }
+    char *policy = cyt_example_take(&policy_out);
+    if (policy == NULL || strcmp(policy, "prune_all") != 0) {
+        fprintf(stderr, "unexpected effective_policy with tool_kind=mcp: %s\n",
+                policy ? policy : "(null)");
+        cyt_example_free(policy);
+        return 1;
+    }
+    cyt_example_free(policy);
 
     if (cyt_is_description_policy("prune_optional_descriptions") != 1) {
         fprintf(stderr, "cyt_is_description_policy failed\n");

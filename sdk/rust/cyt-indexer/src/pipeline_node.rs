@@ -1,8 +1,9 @@
 // N-API bindings for composite pipeline APIs (included from `node.rs`).
 
 use crate::pipeline::{
-    PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions, build_skill_node_catalog,
-    classify_and_count_catalog, prune_catalog_bm25_and_retrieve, search_skills_and_select,
+    CoordinateBm25Options, PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions,
+    build_skill_node_catalog, classify_and_count_catalog, coordinate_bm25_prune,
+    prune_catalog_bm25_and_retrieve, search_skills_and_select,
 };
 use serde_json::Map;
 
@@ -79,6 +80,61 @@ fn prune_result_to_value(result: PruneRetrieveResult) -> Value {
         "optional_chunk_count_in": result.optional_chunk_count_in,
         "optional_chunk_count_out": result.optional_chunk_count_out,
     })
+}
+
+fn coordinate_options_from_value(opt: Option<Value>) -> CoordinateBm25Options {
+    let mut opts = CoordinateBm25Options::default();
+    let Some(v) = opt else {
+        return opts;
+    };
+    let Some(obj) = v.as_object() else {
+        return opts;
+    };
+    if let Some(skills) = obj.get("skills") {
+        opts.skills = search_options_from_value(Some(skills.clone()));
+    }
+    if let Some(tools) = obj.get("tools") {
+        opts.tools = prune_options_from_value(Some(tools.clone()));
+    }
+    opts
+}
+
+/// Run skills BM25 search and tool BM25 prune in parallel.
+///
+/// # Errors
+///
+/// Returns an error when either composite pipeline fails.
+#[napi(js_name = "coordinateBm25Prune")]
+#[allow(clippy::too_many_arguments)]
+pub fn coordinate_bm25_prune_napi(
+    skills_entries: Value,
+    catalog_data: Value,
+    build_catalog: Value,
+    catalog_index: Value,
+    query: String,
+    scoring_ctx: &PolicyContextNapi,
+    output_ctx: &PolicyContextNapi,
+    options: Option<Value>,
+) -> Result<Value> {
+    let skills_entries = Box::new(skills_entries);
+    let catalog_data = Box::new(catalog_data);
+    let build_catalog = Box::new(build_catalog);
+    let catalog_index = Box::new(catalog_index);
+    let query = query.into_boxed_str();
+    let arr = skills_entries.as_array().cloned().unwrap_or_default();
+    let index = catalog_index_from_value(&catalog_index);
+    let opts = coordinate_options_from_value(options);
+    coordinate_bm25_prune(
+        &arr,
+        &catalog_data,
+        &build_catalog,
+        &index,
+        query.as_ref(),
+        ctx_from_napi(scoring_ctx),
+        ctx_from_napi(output_ctx),
+        &opts,
+    )
+    .map_err(Error::from_reason)
 }
 
 /// Partition, BM25-score, recompose, and retrieve tools in one call.

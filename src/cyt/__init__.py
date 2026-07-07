@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
@@ -34,6 +35,8 @@ def __getattr__(name: str) -> object:
 def _compat_bootstrap() -> None:
     global _cyt_bootstrapped
     if _cyt_bootstrapped:
+        return
+    if os.environ.get("CYT_NO_AUTO_BOOTSTRAP") == "1":
         return
     _cyt_bootstrapped = True
     warnings.warn(

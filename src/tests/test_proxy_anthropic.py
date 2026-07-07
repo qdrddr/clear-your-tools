@@ -628,7 +628,7 @@ def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> 
     with (
         patch("cyt.skills.llm.llm_prune_tools_and_skills") as mock_combined,
         patch(
-            "cyt.proxy.anthropic.llm_catalog_dict",
+            "cyt.pruners.tools_filter.llm_catalog_dict",
             return_value=(data, {"input": 0, "output": 0}),
         ) as mock_tools_only,
     ):
@@ -661,11 +661,11 @@ def test_run_pipeline_stage_llm_retries_before_bm25_fallback() -> None:
 
     with (
         patch(
-            "cyt.proxy.anthropic._run_llm_stage",
+            "cyt.pruners.tools_filter._run_llm_stage",
             side_effect=RuntimeError("llm unavailable"),
         ) as mock_llm,
         patch(
-            "cyt.proxy.anthropic._run_bm25_stage",
+            "cyt.pruners.tools_filter._run_bm25_stage",
             return_value=(data, None, None),
         ) as mock_bm25,
     ):
@@ -699,8 +699,8 @@ def test_run_pipeline_stage_llm_succeeds_without_retry() -> None:
     pruning_token_usage: dict[str, StageTokenUsage] = {}
 
     with (
-        patch("cyt.proxy.anthropic._run_llm_stage", return_value=pruned) as mock_llm,
-        patch("cyt.proxy.anthropic._run_bm25_stage") as mock_bm25,
+        patch("cyt.pruners.tools_filter._run_llm_stage", return_value=pruned) as mock_llm,
+        patch("cyt.pruners.tools_filter._run_bm25_stage") as mock_bm25,
     ):
         updated, post_rerank, post_rerank_scored = _run_pipeline_stage(
             "llm",

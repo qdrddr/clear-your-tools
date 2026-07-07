@@ -324,6 +324,15 @@ fn runtime_empty_optional_fallback_k_py() -> usize {
 }
 
 pub(crate) fn catalog_index_from_py(obj: Bound<'_, PyAny>) -> PyResult<crate::build::CatalogIndex> {
+    if let Ok(native) = obj.extract::<PyRef<PyNativeCatalogIndex>>() {
+        return Ok(native.inner.clone());
+    }
+    if obj.getattr("native_handle").is_ok()
+        && let Ok(handle) = obj.call_method0("native_handle")
+        && let Ok(native) = handle.extract::<PyRef<PyNativeCatalogIndex>>()
+    {
+        return Ok(native.inner.clone());
+    }
     if obj.getattr("tools").is_ok() && obj.getattr("files").is_ok() {
         let val = serde_json::json!({
             "tools": py_to_value(obj.getattr("tools")?)?,
@@ -332,6 +341,46 @@ pub(crate) fn catalog_index_from_py(obj: Bound<'_, PyAny>) -> PyResult<crate::bu
         return Ok(catalog_index_from_value(&val));
     }
     Ok(catalog_index_from_value(&py_to_value(obj)?))
+}
+
+/// Native in-memory catalog index (avoids re-serializing large file maps across pipeline calls).
+#[pyclass(name = "NativeCatalogIndex", from_py_object)]
+#[derive(Clone)]
+struct PyNativeCatalogIndex {
+    inner: crate::build::CatalogIndex,
+}
+
+#[pymethods]
+impl PyNativeCatalogIndex {
+    #[classmethod]
+    #[pyo3(signature = (tools, files))]
+    fn from_parts(
+        _cls: &Bound<'_, PyType>,
+        tools: Bound<'_, PyAny>,
+        files: Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let val = serde_json::json!({
+            "tools": py_to_value(tools)?,
+            "files": py_to_value(files)?,
+        });
+        Ok(Self {
+            inner: catalog_index_from_value(&val),
+        })
+    }
+
+    #[getter]
+    fn tools(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        value_to_py(py, &Value::Array(self.inner.tools.clone()))
+    }
+
+    #[getter]
+    fn files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let dict = PyDict::new(py);
+        for (k, v) in &self.inner.files {
+            dict.set_item(k, v)?;
+        }
+        Ok(dict.into())
+    }
 }
 
 #[pyfunction(name = "catalog_index_to_catalog_dict")]
@@ -554,6 +603,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(path_write_catalog_prune_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_index_to_catalog_dict_py, m)?)?;
     m.add_class::<PyDecomposedCatalog>()?;
+    m.add_class::<PyNativeCatalogIndex>()?;
     m.add_function(wrap_pyfunction!(retrieve_tools_py, m)?)?;
     policies_python::register(m)?;
     pageindex_python::register(m)?;

@@ -50,8 +50,11 @@ def test_filter_tools_for_query_applies_executor_tool_kind_for_hook() -> None:
         raise RuntimeError("stop-after-context")
 
     with (
-        patch("cyt.proxy.anthropic._run_catalog_pruning", side_effect=capture_run_catalog_pruning),
-        patch("cyt.proxy.anthropic.request_pass_through", return_value=False),
+        patch(
+            "cyt.pruners.tools_filter._run_catalog_pruning",
+            side_effect=capture_run_catalog_pruning,
+        ),
+        patch("cyt.pruners.tools_filter.request_pass_through", return_value=False),
     ):
         try:
             filter_tools_for_query(

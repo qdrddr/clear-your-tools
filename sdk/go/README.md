@@ -162,6 +162,7 @@ If you already ran `./sdk/c/scripts/build-c-lib.sh`, `cyt-native-ensure` copies 
 | `paths.go` | Path constants, `CollectEnums` |
 | `runtime.go` | Runtime scoring defaults |
 | `policies.go` | Full policies surface |
+| `policy_context.go` | Typed `PolicyContext` JSON, `ScoringPolicyContext`, `ApplyToolKind` |
 | `documents.go` | Document extraction |
 | `bm25.go` | BM25 cohesion |
 | `pageindex.go` | Skills builder, pageindex |
@@ -169,6 +170,25 @@ If you already ran `./sdk/c/scripts/build-c-lib.sh`, `cyt-native-ensure` copies 
 | `cmd/cyt-native-ensure/` | Downloads or copies C FFI artifacts |
 
 All public functions delegate to `cyt_*` via cgo — no duplicate Rust logic in Go.
+
+### Policy context JSON
+
+Most policy functions take `ctxJSON` — a JSON object with `system_policy`, `mcp_policy`, optional `per_tool`, and optional `tool_kind` (`"system"` or `"mcp"`). The `tool_kind` field is a runtime batch override (not read from YAML); set it to `"mcp"` so bare executor-style tool ids use MCP policies without an `mcp__` prefix.
+
+Use the typed [`PolicyContext`](policy_context.go) helper to build and serialize context JSON:
+
+```go
+kind := cytindexer.ToolKindMcp
+ctx := cytindexer.PolicyContext{
+    SystemPolicy: "prune_optional",
+    McpPolicy:    "prune_all",
+    ToolKind:     &kind,
+}
+ctxJSON, _ := ctx.MarshalJSONString()
+policy, _ := cytindexer.EffectivePolicy(ctxJSON, "tools.demo.org.search")
+```
+
+`ScoringPolicyContext` maps description policy variants to base scoring policies and copies `tool_kind` (mirrors Python `scoring_policy_context`).
 
 ## Testing
 

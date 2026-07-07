@@ -3,6 +3,7 @@
 import {
   buildSkillNodeCatalogNative,
   classifyAndCountCatalogNative,
+  coordinateBm25PruneNative,
   pruneCatalogBm25AndRetrieveNative,
   searchSkillsAndSelectNative,
 } from "./native.js";
@@ -113,4 +114,49 @@ export function searchSkillsAndSelect(
 
 export function buildSkillNodeCatalog(entries: JsonRecord[]): unknown[] {
   return buildSkillNodeCatalogNative(entries) as unknown[];
+}
+
+export interface CoordinateBm25Options {
+  skills?: SearchSkillsOptions;
+  tools?: PruneBm25Options;
+}
+
+function coordinateOptionsToNative(
+  options?: CoordinateBm25Options,
+): JsonRecord | undefined {
+  if (!options) {
+    return undefined;
+  }
+  const out: JsonRecord = {};
+  const skills = searchOptionsToNative(options.skills);
+  const tools = pruneOptionsToNative(options.tools);
+  if (skills) {
+    out.skills = skills;
+  }
+  if (tools) {
+    out.tools = tools;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function coordinateBm25Prune(
+  skillsEntries: JsonRecord[],
+  catalogData: JsonRecord,
+  buildCatalog: JsonRecord,
+  catalogIndex: JsonRecord,
+  query: string,
+  scoringCtx: PolicyContext,
+  outputCtx: PolicyContext,
+  options?: CoordinateBm25Options,
+): JsonRecord {
+  return coordinateBm25PruneNative(
+    skillsEntries,
+    catalogData,
+    buildCatalog,
+    catalogIndex,
+    query,
+    scoringCtx,
+    outputCtx,
+    coordinateOptionsToNative(options),
+  ) as JsonRecord;
 }

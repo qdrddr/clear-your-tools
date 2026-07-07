@@ -7,8 +7,9 @@ use crate::ffi::json_util::{
     write_json_out,
 };
 use crate::pipeline::{
-    PruneBm25Options, SearchSkillsOptions, build_skill_node_catalog, classify_and_count_catalog,
-    prune_catalog_bm25_and_retrieve,
+    CoordinateBm25Options, PruneBm25Options, SearchSkillsOptions, build_skill_node_catalog,
+    classify_and_count_catalog, coordinate_bm25_prune, prune_catalog_bm25_and_retrieve,
+    search_skills_and_select,
 };
 use crate::policies::PolicyContext;
 use serde_json::{Map, Value, json};
@@ -198,11 +199,77 @@ pub unsafe extern "C" fn cyt_search_skills_and_select(
         } else {
             search_options_from_json(&unsafe { parse_json_cstr(options_json, "options_json")? })
         };
-        let result =
-            crate::pipeline::search_skills_and_select(&entries, q, &opts).map_err(|e| {
-                set_error(&e);
-                CYT_ERR_INVALID_ARG
-            })?;
+        let result = search_skills_and_select(&entries, q, &opts).map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
+        unsafe { write_json_out(&result, out)? };
+        Ok(())
+    })
+}
+
+fn coordinate_options_from_json(val: &Value) -> CoordinateBm25Options {
+    let mut opts = CoordinateBm25Options::default();
+    if let Some(skills) = val.get("skills") {
+        opts.skills = search_options_from_json(skills);
+    }
+    if let Some(tools) = val.get("tools") {
+        opts.tools = prune_options_from_json(tools);
+    }
+    opts
+}
+
+#[unsafe(no_mangle)]
+/// Run skills BM25 search and tool BM25 prune in parallel.
+///
+/// # Safety
+///
+/// All JSON pointers must be valid null-terminated UTF-8 C strings; `out` must be non-null.
+pub unsafe extern "C" fn cyt_coordinate_bm25_prune(
+    skills_entries_json: *const c_char,
+    catalog_json: *const c_char,
+    build_catalog_json: *const c_char,
+    catalog_index_json: *const c_char,
+    query: *const c_char,
+    scoring_ctx_json: *const c_char,
+    output_ctx_json: *const c_char,
+    options_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let skills_entries = json_array_or_empty(&unsafe {
+            parse_json_cstr(skills_entries_json, "skills_entries_json")?
+        });
+        let catalog = unsafe { parse_json_cstr(catalog_json, "catalog_json")? };
+        let build_catalog = unsafe { parse_json_cstr(build_catalog_json, "build_catalog_json")? };
+        let index_val = unsafe { parse_json_cstr(catalog_index_json, "catalog_index_json")? };
+        let q = unsafe { c_str_to_str(query, "query")? };
+        let scoring = parse_ctx_json(scoring_ctx_json)?;
+        let output = parse_ctx_json(output_ctx_json)?;
+        let opts = if options_json.is_null() {
+            CoordinateBm25Options::default()
+        } else {
+            coordinate_options_from_json(&unsafe { parse_json_cstr(options_json, "options_json")? })
+        };
+        let index = catalog_index_from_value(&index_val);
+        let result = coordinate_bm25_prune(
+            &skills_entries,
+            &catalog,
+            &build_catalog,
+            &index,
+            q,
+            &scoring,
+            &output,
+            &opts,
+        )
+        .map_err(|e| {
+            set_error(&e);
+            CYT_ERR_INVALID_ARG
+        })?;
         unsafe { write_json_out(&result, out)? };
         Ok(())
     })

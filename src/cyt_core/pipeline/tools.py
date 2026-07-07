@@ -23,7 +23,7 @@ def prune_tools_for_query(
     return prune_catalog_bm25_and_retrieve(
         catalog.catalog_data,
         catalog.build_catalog,
-        catalog.catalog_index,
+        catalog.pipeline_catalog_index(),
         query,
         scoring_ctx,
         output_ctx,

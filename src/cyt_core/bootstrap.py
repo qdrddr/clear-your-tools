@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from cyt_core.types.config import Bm25SdkConfig
+
 __all__ = [
     "AppContext",
     "bootstrap",
@@ -80,11 +82,20 @@ def configure_sdk_tokenizer_defaults() -> None:
     configure_tokenizer_defaults(encoding="cl100k_base", allowed_special="all")
 
 
-def configure_sdk_bm25_defaults(config: dict | None = None) -> None:
+def configure_sdk_bm25_defaults(config: Bm25SdkConfig | dict | None = None) -> None:
     from cyt_indexer.bm25_search import configure_bm25_defaults
 
     if config is None:
         configure_bm25_defaults(use_stopwords=True, mmap=False)
+        return
+
+    if isinstance(config, Bm25SdkConfig):
+        configure_bm25_defaults(
+            index_dir=config.index_dir,
+            stem_language=config.stem_language,
+            use_stopwords=config.stopwords,
+            mmap=config.mmap,
+        )
         return
 
     from cyt.config import (
@@ -103,7 +114,7 @@ def configure_sdk_bm25_defaults(config: dict | None = None) -> None:
     )
 
 
-def bootstrap(*, config: dict | None = None) -> AppContext:
+def bootstrap(*, config: Bm25SdkConfig | dict | None = None) -> AppContext:
     """Apply SDK runtime overrides and return the configured app context."""
     configure_sdk_path_constants()
     configure_sdk_runtime_defaults()

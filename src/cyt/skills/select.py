@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import BudgetItemRow, SearchItemRow
 from cyt.skills.reconstruct import (
     EntryIndexCache,
+    build_entry_lookup,
     entry_for_row,
     reconstruct_doc_match,
     reconstruct_matches_from_items,
 )
 from cyt.skills.search import MatchedSkill, _frontmatter_by_doc
+
+logger = logging.getLogger(__name__)
+
+
+def _native_fallback_enabled() -> bool:
+    return os.environ.get("CYT_DEBUG_NATIVE_FALLBACK") == "1"
 
 
 def _item_key(row: SearchItemRow) -> tuple[str, str]:
@@ -83,8 +92,9 @@ def _greedy_select_items_native(
     from cyt_indexer.bm25_search import greedy_select_skill_items
 
     payload: list[dict[str, str | float | bool | None]] = []
+    lookup = build_entry_lookup(entries)
     for row in survivors:
-        entry = entry_for_row(row, entries)
+        entry = entry_for_row(row, entries, lookup=lookup)
         if entry is None:
             continue
         payload.append(_survivor_payload(row, entry, item_kind=item_kind))
@@ -98,6 +108,9 @@ def _greedy_select_items_native(
             max_tokens=max_tokens,
         )
     except Exception:
+        logger.exception("greedy_select_skill_items native call failed")
+        if not _native_fallback_enabled():
+            raise
         return None
 
     selected_keys = {
@@ -133,11 +146,12 @@ def _greedy_select_items(
 
     index_cache = EntryIndexCache()
     frontmatter_by_doc = _frontmatter_by_doc(entries)
+    lookup = build_entry_lookup(entries)
     rows_by_doc: dict[tuple[str, str], list[SearchItemRow]] = {}
     match_by_doc: dict[tuple[str, str], MatchedSkill | None] = {}
 
     for row in ordered:
-        entry = entry_for_row(row, entries)
+        entry = entry_for_row(row, entries, lookup=lookup)
         key = _item_key(row)
         if entry is None:
             trial_tokens[key] = _wrapped_injection_tokens(best_matches) if best_matches else 0
@@ -280,13 +294,15 @@ def select_items_with_budget_trace(
     )
     if native_result is not None:
         selected, matches, trial_tokens = native_result
-    else:
+    elif _native_fallback_enabled():
         selected, matches, trial_tokens = _greedy_select_items(
             survivors,
             entries,
             item_kind=item_kind,
             max_tokens=max_tokens,
         )
+    else:
+        selected, matches, trial_tokens = [], [], {}
     return matches, budget_rows_for_item_survivors(
         survivors=survivors,
         selected=selected,

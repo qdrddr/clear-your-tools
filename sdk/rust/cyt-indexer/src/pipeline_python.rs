@@ -1,10 +1,10 @@
 //! `PyO3` bindings for composite pipeline APIs (included from python.rs).
 
 use super::policies_python::ctx_from_py_any;
-use crate::build::catalog_index_from_value;
 use crate::pipeline::{
-    PruneBm25Options, SearchSkillsOptions, build_skill_node_catalog, classify_and_count_catalog,
-    prune_catalog_bm25_and_retrieve, search_skills_and_select,
+    CoordinateBm25Options, PruneBm25Options, SearchSkillsOptions, build_skill_node_catalog,
+    classify_and_count_catalog, coordinate_bm25_prune, prune_catalog_bm25_and_retrieve,
+    search_skills_and_select,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -124,8 +124,7 @@ fn prune_catalog_bm25_and_retrieve_py(
 ) -> PyResult<Py<PyAny>> {
     let catalog_val = py_to_value(catalog_data)?;
     let build_val = py_to_value(build_catalog)?;
-    let index_val = py_to_value(catalog_index)?;
-    let index = catalog_index_from_value(&index_val);
+    let index = super::catalog_index_from_py(catalog_index)?;
     let scoring = ctx_from_py_any(scoring_ctx)?;
     let output = ctx_from_py_any(output_ctx)?;
     let opts = options_from_py(options)?;
@@ -185,10 +184,68 @@ fn build_skill_node_catalog_py(py: Python<'_>, entries: Bound<'_, PyAny>) -> PyR
     value_to_py(py, &Value::Array(items))
 }
 
+fn coordinate_options_from_py(dict: Option<&Bound<'_, PyDict>>) -> PyResult<CoordinateBm25Options> {
+    let mut opts = CoordinateBm25Options::default();
+    let Some(dict) = dict else {
+        return Ok(opts);
+    };
+    if let Ok(Some(item)) = dict.get_item("skills")
+        && let Ok(sub) = item.cast::<PyDict>()
+    {
+        opts.skills = search_options_from_py(Some(sub))?;
+    }
+    if let Ok(Some(item)) = dict.get_item("tools")
+        && let Ok(sub) = item.cast::<PyDict>()
+    {
+        opts.tools = options_from_py(Some(sub))?;
+    }
+    Ok(opts)
+}
+
+#[pyfunction(name = "coordinate_bm25_prune")]
+#[pyo3(signature = (skills_entries, catalog_data, build_catalog, catalog_index, query, scoring_ctx, output_ctx, options=None))]
+#[allow(clippy::too_many_arguments)]
+fn coordinate_bm25_prune_py(
+    py: Python<'_>,
+    skills_entries: Bound<'_, PyAny>,
+    catalog_data: Bound<'_, PyAny>,
+    build_catalog: Bound<'_, PyAny>,
+    catalog_index: Bound<'_, PyAny>,
+    query: &str,
+    scoring_ctx: &Bound<'_, PyAny>,
+    output_ctx: &Bound<'_, PyAny>,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let skills_val = py_to_value(skills_entries)?;
+    let skills_arr = skills_val.as_array().cloned().unwrap_or_default();
+    let catalog_val = py_to_value(catalog_data)?;
+    let build_val = py_to_value(build_catalog)?;
+    let index = super::catalog_index_from_py(catalog_index)?;
+    let scoring = ctx_from_py_any(scoring_ctx)?;
+    let output = ctx_from_py_any(output_ctx)?;
+    let opts = coordinate_options_from_py(options)?;
+    let result = py
+        .detach(|| {
+            coordinate_bm25_prune(
+                &skills_arr,
+                &catalog_val,
+                &build_val,
+                &index,
+                query,
+                &scoring,
+                &output,
+                &opts,
+            )
+        })
+        .map_err(PyErr::new::<pyo3::exceptions::PyValueError, _>)?;
+    value_to_py(py, &result)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(prune_catalog_bm25_and_retrieve_py, m)?)?;
     m.add_function(wrap_pyfunction!(classify_and_count_catalog_py, m)?)?;
     m.add_function(wrap_pyfunction!(search_skills_and_select_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_skill_node_catalog_py, m)?)?;
+    m.add_function(wrap_pyfunction!(coordinate_bm25_prune_py, m)?)?;
     Ok(())
 }

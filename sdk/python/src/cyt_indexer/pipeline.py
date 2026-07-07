@@ -10,6 +10,7 @@ from cyt_indexer.policies import PolicyContext
 __all__ = [
     "build_skill_node_catalog",
     "classify_and_count_catalog",
+    "coordinate_bm25_prune",
     "prune_catalog_bm25_and_retrieve",
     "search_skills_and_select",
 ]
@@ -18,7 +19,7 @@ __all__ = [
 def prune_catalog_bm25_and_retrieve(
     catalog_data: dict[str, Any],
     build_catalog: dict[str, Any],
-    catalog_index: dict[str, Any],
+    catalog_index: dict[str, Any] | Any,
     query: str,
     scoring_ctx: PolicyContext,
     output_ctx: PolicyContext,
@@ -64,3 +65,28 @@ def build_skill_node_catalog(entries: list[dict[str, Any]]) -> list[dict[str, An
     if isinstance(result, list):
         return [dict(item) if isinstance(item, dict) else item for item in result]
     return []
+
+
+def coordinate_bm25_prune(
+    skills_entries: list[dict[str, Any]],
+    catalog_data: dict[str, Any],
+    build_catalog: dict[str, Any],
+    catalog_index: dict[str, Any] | Any,
+    query: str,
+    scoring_ctx: PolicyContext,
+    output_ctx: PolicyContext,
+    *,
+    options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run skills BM25 search and tool BM25 prune in one native call."""
+    result = _native.coordinate_bm25_prune(
+        skills_entries,
+        catalog_data,
+        build_catalog,
+        catalog_index,
+        query,
+        scoring_ctx,
+        output_ctx,
+        options,
+    )
+    return dict(result) if isinstance(result, dict) else result

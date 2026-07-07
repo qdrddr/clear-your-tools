@@ -11,8 +11,8 @@ from cyt.config import (
     effective_skills_pipeline,
     skills_enabled,
 )
-from cyt.proxy.anthropic import PruneResult, filter_tools_for_query
 from cyt.pruners.remote import PrunerSettingsCache
+from cyt.pruners.tools_filter import filter_tools_for_query
 from cyt.pruning.context import (
     MAX_PRUNE_BATCH_WORKERS,
     PruneContext,
@@ -21,6 +21,7 @@ from cyt.pruning.context import (
 )
 from cyt.pruning.parallel import run_parallel
 from cyt.skills.search import MatchedSkill
+from cyt_core.types.prune import PruneResult
 
 __all__ = [
     "MAX_PRUNE_BATCH_WORKERS",

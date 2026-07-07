@@ -29,7 +29,34 @@ class EntryIndexCache:
         return cached
 
 
-def entry_for_row(row: SearchItemRow, entries: list[SkillEntryRef]) -> SkillEntryRef | None:
+EntryLookup = dict[tuple[str, str], SkillEntryRef]
+
+
+def build_entry_lookup(entries: list[SkillEntryRef]) -> EntryLookup:
+    """Build O(1) lookup keyed by (doc_id, file_path) with doc_id-only fallback."""
+    lookup: EntryLookup = {}
+    by_doc_id: dict[str, SkillEntryRef] = {}
+    for entry in entries:
+        file_path = shorten_home_path(entry.source_path)
+        lookup[(entry.doc_id, file_path)] = entry
+        by_doc_id.setdefault(entry.doc_id, entry)
+    for doc_id, entry in by_doc_id.items():
+        lookup.setdefault((doc_id, ""), entry)
+    return lookup
+
+
+def entry_for_row(
+    row: SearchItemRow,
+    entries: list[SkillEntryRef],
+    *,
+    lookup: EntryLookup | None = None,
+) -> SkillEntryRef | None:
+    if lookup is not None:
+        matched = lookup.get((row.doc_id, row.file_path))
+        if matched is not None:
+            return matched
+        return lookup.get((row.doc_id, ""))
+
     for entry in entries:
         if entry.doc_id == row.doc_id and shorten_home_path(entry.source_path) == row.file_path:
             return entry
@@ -128,9 +155,10 @@ def reconstruct_matches_from_items(
     index_cache: EntryIndexCache | None = None,
 ) -> list[MatchedSkill]:
     """Group search rows by doc and rebuild MatchedSkill list."""
+    lookup = build_entry_lookup(entries)
     by_doc: dict[tuple[str, str], tuple[SkillEntryRef, list[SearchItemRow]]] = {}
     for row in items:
-        entry = entry_for_row(row, entries)
+        entry = entry_for_row(row, entries, lookup=lookup)
         if entry is None:
             continue
         key = (entry.entry_dir, entry.doc_id)

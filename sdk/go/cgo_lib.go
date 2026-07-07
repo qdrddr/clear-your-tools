@@ -753,6 +753,37 @@ func cgoBuildSkillNodeCatalog(entriesJSON string) (string, error) {
 	return takeJSON(&out)
 }
 
+func cgoCoordinateBm25Prune(
+	skillsEntriesJSON, catalogJSON, buildCatalogJSON, catalogIndexJSON, query, scoringCtxJSON, outputCtxJSON, optionsJSON string,
+) (string, error) {
+	cSkills := cString(skillsEntriesJSON)
+	defer freeCString(cSkills)
+	cCatalog := cString(catalogJSON)
+	defer freeCString(cCatalog)
+	cBuild := cString(buildCatalogJSON)
+	defer freeCString(cBuild)
+	cIndex := cString(catalogIndexJSON)
+	defer freeCString(cIndex)
+	cQuery := cString(query)
+	defer freeCString(cQuery)
+	cScoring := cString(scoringCtxJSON)
+	defer freeCString(cScoring)
+	cOutput := cString(outputCtxJSON)
+	defer freeCString(cOutput)
+	var cOptions *C.char
+	if optionsJSON != "" {
+		cOptions = cString(optionsJSON)
+		defer freeCString(cOptions)
+	}
+	var out *C.char
+	if C.cyt_coordinate_bm25_prune(
+		cSkills, cCatalog, cBuild, cIndex, cQuery, cScoring, cOutput, cOptions, &out,
+	) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoPartitionCatalog(dataJSON, ctxJSON string) (string, error) {
 	cData := cString(dataJSON)
 	defer freeCString(cData)

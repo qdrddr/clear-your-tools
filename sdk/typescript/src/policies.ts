@@ -84,6 +84,34 @@ export type ToolKind = "system" | "mcp";
 
 export { PolicyContextNative as PolicyContext };
 
+/** Set batch tool-kind override on a native policy context (mirrors Python apply_executor_tool_kind). */
+export function applyToolKind(
+  ctx: PolicyContext,
+  kind: ToolKind,
+): PolicyContext {
+  ctx.toolKind = kind;
+  return ctx;
+}
+
+/**
+ * Map description policies to base scoring policies for partition/pipeline.
+ * Copies toolKind (mirrors Python scoring_policy_context).
+ */
+export function scoringPolicyContext(ctx: PolicyContext): PolicyContext {
+  const scoring = new PolicyContextNative(
+    scoringPolicy(ctx.systemPolicy),
+    scoringPolicy(ctx.mcpPolicy),
+  );
+  scoring.perTool = Object.fromEntries(
+    Object.entries(ctx.perTool).map(([toolId, policy]) => [
+      toolId,
+      scoringPolicy(policy),
+    ]),
+  );
+  scoring.toolKind = ctx.toolKind;
+  return scoring;
+}
+
 export function toolPolicies(): string[] {
   return toolPoliciesNative();
 }

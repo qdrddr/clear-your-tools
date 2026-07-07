@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from cyt.agents._types import CYT_AGENT_FIELD, CYT_LAUNCH_AGENT_ENV
-from cyt.proxy.anthropic import format_search_query
+from cyt.common.search_query import format_search_query
 from cyt.skills.hook_payload import model_from_payload, prompt_from_payload
 
 logger = logging.getLogger(__name__)

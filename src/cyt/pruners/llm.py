@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import llm_minimum_tools, load_config, require_proxy_env
-from cyt.indexer.tokens import compact_json, count_tokens, log_token_usage
+from cyt.indexer.tokens import compact_json, count_tokens, count_tokens_batch, log_token_usage
 from cyt.pruners.catalog_common import (
     catalog_below_minimum_tools,
     finalize_catalog_result,
@@ -193,7 +193,8 @@ def count_llm_request_tokens(
 ) -> int:
     """Estimate input tokens sent to the LLM selector for one request."""
     user_message = _llm_user_message(query, chunks_text)
-    return count_tokens(system_prompt) + count_tokens(user_message)
+    prompt_tokens, user_tokens = count_tokens_batch([system_prompt, user_message])
+    return prompt_tokens + user_tokens
 
 
 def _usage_from_litellm_response(

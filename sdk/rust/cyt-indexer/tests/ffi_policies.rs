@@ -13,6 +13,11 @@ unsafe extern "C" {
     fn cyt_full_pass_through(ctx_json: *const c_char) -> c_int;
     fn cyt_is_non_system_chunk(item_json: *const c_char) -> c_int;
     fn cyt_tool_pass_through(ctx_json: *const c_char, tool_id: *const c_char) -> c_int;
+    fn cyt_effective_policy(
+        ctx_json: *const c_char,
+        tool_id: *const c_char,
+        out: *mut *mut c_char,
+    ) -> c_int;
     fn cyt_batch_tool_pass_through(
         ctx_json: *const c_char,
         tool_ids_json: *const c_char,
@@ -192,6 +197,20 @@ fn policy_json_exports_table() {
             json
         );
     }
+}
+
+#[test]
+fn effective_policy_honors_tool_kind_in_ctx_json() {
+    let ctx = cstr(
+        b"{\"system_policy\":\"prune_optional\",\"mcp_policy\":\"prune_all\",\"tool_kind\":\"mcp\"}\0",
+    );
+    let tool = cstr(b"tools.demo.org.search\0");
+    let mut out: *mut c_char = ptr::null_mut();
+    let code = unsafe { cyt_effective_policy(ctx.as_ptr(), tool.as_ptr(), ptr::addr_of_mut!(out)) };
+    assert_eq!(code, CYT_OK);
+    assert!(!out.is_null());
+    let policy = unsafe { read_out(out) };
+    assert_eq!(policy, "prune_all");
 }
 
 #[test]

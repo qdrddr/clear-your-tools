@@ -144,6 +144,7 @@ pub const EXPORTS: &[FfiExport] = &[
     export("cyt_classify_and_count_catalog", "pipeline"),
     export("cyt_search_skills_and_select", "pipeline"),
     export("cyt_build_skill_node_catalog", "pipeline"),
+    export("cyt_coordinate_bm25_prune", "pipeline"),
     // documents
     export("cyt_extract_document_text", "documents"),
     export("cyt_extract_level_info", "documents"),

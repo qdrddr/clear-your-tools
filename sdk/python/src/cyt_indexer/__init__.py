@@ -2,6 +2,7 @@
 
 from cyt_indexer.build import (
     CatalogIndex,
+    NativeCatalogIndex,
     anthropic_tool_to_catalog_entry,
     anthropic_tools_to_catalog_entries,
     build_catalog_from_tools,
@@ -46,7 +47,9 @@ from cyt_indexer.pageindex import (
     PageIndexConfigInput,
     ReconstructOptions,
     SkillsBuilder,
+    build_page_index_for_file,
     build_skills_index,
+    build_skills_index_for_file,
     build_page_index_only,
     build_chunk_variant,
     chunk_variant_valid,
@@ -74,12 +77,31 @@ from cyt_indexer.pageindex import (
     write_reconstructed_skill,
     write_skills_index,
 )
+from cyt_indexer.catalog_io import CatalogBuilder, write_catalog_index
+from cyt_indexer.documents import (
+    extract_document_text,
+    extract_json_catalog_document,
+    extract_level_info,
+    extract_md_catalog_document,
+)
+from cyt_indexer.pipeline import (
+    build_skill_node_catalog,
+    classify_and_count_catalog,
+    coordinate_bm25_prune,
+    prune_catalog_bm25_and_retrieve,
+    search_skills_and_select,
+)
+from cyt_indexer.policies import PolicyContext
+from cyt_indexer import policies as policies
 
 __all__ = [
-    "Bm25CohesionConfig",
+    "CatalogBuilder",
     "CatalogIndex",
+    "Bm25CohesionConfig",
     "DecomposedCatalog",
+    "NativeCatalogIndex",
     "PageIndexConfigInput",
+    "PolicyContext",
     "chunk_survivor_key",
     "cohesion_config_dict",
     "anthropic_tool_to_catalog_entry",
@@ -91,6 +113,10 @@ __all__ = [
     "batch_reconstruct_skill_matches",
     "configure_bm25_defaults",
     "exp_similarity",
+    "extract_document_text",
+    "extract_json_catalog_document",
+    "extract_level_info",
+    "extract_md_catalog_document",
     "greedy_select_skill_items",
     "configure_tokenizer_defaults",
     "count_json_tokens",
@@ -104,13 +130,22 @@ __all__ = [
     "default_bm25_cohesion_config",
     "build_catalog_index",
     "build_catalog_from_tools",
+    "build_page_index_for_file",
+    "build_skill_node_catalog",
+    "build_skills_index_for_file",
     "catalog_tool_count",
+    "classify_and_count_catalog",
+    "coordinate_bm25_prune",
     "collect_enums",
     "load_catalog",
     "removed_chunks",
     "prepare_tool_entry",
+    "prune_catalog_bm25_and_retrieve",
     "retrieve_tools",
+    "search_skills_and_select",
     "truncate_description",
+    "write_catalog_index",
+    "policies",
     "PageIndexConfig",
     "ReconstructOptions",
     "SkillsBuilder",

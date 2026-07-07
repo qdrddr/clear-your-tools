@@ -125,8 +125,10 @@ export {
   classifyAndCountCatalog,
   searchSkillsAndSelect,
   buildSkillNodeCatalog,
+  coordinateBm25Prune,
   type PruneBm25Options,
   type SearchSkillsOptions,
+  type CoordinateBm25Options,
 } from "./pipeline.js";
 
 // Full policy surface (mirrors cyt_indexer.policies).

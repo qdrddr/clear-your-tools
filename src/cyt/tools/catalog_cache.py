@@ -11,6 +11,7 @@ from cyt_indexer.cache import ensure_tool_catalog_from_entries
 from cyt.cache.policy import cache_policy_for_config
 from cyt.config import cache_tools_dir
 from cyt.pruners.policies import PolicyContext
+from cyt_core.types import CatalogSnapshot
 
 
 @dataclass(frozen=True)
@@ -50,3 +51,8 @@ def ensure_tool_catalog_cached(
         cache_status=str(result.get("cache_status", "memory_fallback")),
         disk_backed=bool(result.get("disk_backed")),
     )
+
+
+def catalog_snapshot_from_cache(result: ToolCatalogCacheResult) -> CatalogSnapshot:
+    """Build a pipeline snapshot with a native catalog-index handle."""
+    return CatalogSnapshot.from_index(result.catalog, result.catalog, result.index)

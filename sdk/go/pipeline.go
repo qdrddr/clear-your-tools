@@ -29,3 +29,19 @@ func SearchSkillsAndSelect(entriesJSON, query, optionsJSON string) (string, erro
 func BuildSkillNodeCatalog(entriesJSON string) (string, error) {
 	return cgoBuildSkillNodeCatalog(entriesJSON)
 }
+
+// CoordinateBm25Prune runs skills BM25 search and tool BM25 prune in parallel.
+func CoordinateBm25Prune(
+	skillsEntriesJSON, catalogJSON, buildCatalogJSON, catalogIndexJSON, query, scoringCtxJSON, outputCtxJSON, optionsJSON string,
+) (string, error) {
+	return cgoCoordinateBm25Prune(
+		skillsEntriesJSON,
+		catalogJSON,
+		buildCatalogJSON,
+		catalogIndexJSON,
+		query,
+		scoringCtxJSON,
+		outputCtxJSON,
+		optionsJSON,
+	)
+}
