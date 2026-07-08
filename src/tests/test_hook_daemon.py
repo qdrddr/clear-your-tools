@@ -41,6 +41,44 @@ def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
     assert payload["pid"] is None
 
 
+def test_daemon_start_prints_status_when_not_unattended(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+    ):
+        hook_daemon.daemon_start(verbose=False, unattended=False)
+
+    err = capsys.readouterr().err.strip()
+    assert (
+        err
+        == "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/inject"
+    )
+
+
+def test_daemon_start_is_silent_when_unattended(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+    ):
+        hook_daemon.daemon_start(verbose=False, unattended=True)
+
+    assert capsys.readouterr().err == ""
+
+
 def test_daemon_start_restarts_reused_server_when_credentials_required(
     pidfile_path: Path,
 ) -> None:
@@ -205,6 +243,54 @@ def test_daemon_stop_kills_reused_hook_server_on_port(pidfile_path: Path) -> Non
         hook_daemon.daemon_stop(verbose=True)
         stop.assert_called_once_with(8834, verbose=True)
     assert not pidfile_path.exists()
+
+
+def test_daemon_restart_stops_then_starts(pidfile_path: Path) -> None:
+    with (
+        patch("cyt.hook.daemon.daemon_stop") as stop,
+        patch("cyt.hook.daemon.daemon_start") as start,
+    ):
+        start.return_value = hook_daemon.HookDaemonStartResult(
+            outcome="spawned",
+            port=8835,
+            hook_url="http://127.0.0.1:8835/hook/inject",
+            pid=12345,
+            reused=False,
+        )
+        result = hook_daemon.daemon_restart(verbose=True, unattended=True)
+
+    stop.assert_called_once_with(verbose=True, config_path=None)
+    start.assert_called_once_with(
+        config_path=None,
+        verbose=True,
+        foreground=False,
+        unattended=True,
+    )
+    assert result.port == 8835
+    assert result.reused is False
+
+
+def test_daemon_restart_prints_status_when_not_unattended(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch("cyt.hook.daemon.daemon_stop"),
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", side_effect=[None, None]),
+        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+        patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
+    ):
+        spawn.return_value = MagicMock(pid=12345)
+        hook_daemon.daemon_restart(verbose=False, unattended=False)
+
+    err = capsys.readouterr().err.strip()
+    assert err == "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/inject"
 
 
 def test_daemon_stop_without_pidfile_scans_config_port() -> None:

@@ -92,8 +92,6 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
-    delete_cursor_rules_file(workspace)
-
     payload_bytes = enrich_hook_payload(raw)
     hook_url = resolve_hook_url()
     if hook_url is None:
@@ -113,8 +111,15 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
+    injection = extract_additional_context(body)
+    if not injection.strip():
+        _verbose_log("cyt-client: hook returned no additionalContext; skipping rules file sync")
+        delete_cursor_rules_file(workspace)
+        print(format_cursor_stdout(body.decode()), flush=True)
+        return
+
     try:
-        sync_cursor_rules_file(workspace, extract_additional_context(body))
+        sync_cursor_rules_file(workspace, injection)
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to sync rules file: {exc}")
         _emit_cursor_continue()

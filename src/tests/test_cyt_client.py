@@ -496,6 +496,48 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
         }
 
 
+def test_cli_before_submit_deletes_rules_file_on_empty_injection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("existing pruned tools", encoding="utf-8")
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
+        with patch(
+            "cyt_client.cli.resolve_hook_url",
+            return_value="http://127.0.0.1:8834/hook/inject",
+        ):
+            inject_response = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": "",
+                    },
+                },
+            ).encode()
+            with patch(
+                "cyt_client.cli.post_hook_inject",
+                return_value=(200, inject_response),
+            ):
+                from cyt_client.cli import main
+
+                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                    main(["--verbose"])
+
+        captured = capsys.readouterr()
+        assert not rules_path.is_file()
+        assert json.loads(captured.out) == {"continue": True}
+        assert "skipping rules file sync" in captured.err
+
+
 def test_cli_session_end_deletes_rules_file_without_http(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

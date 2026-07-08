@@ -1,4 +1,4 @@
-"""Hook daemon lifecycle: start, stop, status."""
+"""Hook daemon lifecycle: start, stop, restart, status."""
 
 from __future__ import annotations
 
@@ -50,6 +50,36 @@ class HookDaemonStartResult:
 def _log(verbose: bool, message: str) -> None:
     if verbose:
         print(message, file=sys.stderr)
+
+
+def _running_status_line(
+    *,
+    port: int,
+    hook_url: str,
+    pid: int | None = None,
+    reused: bool = False,
+) -> str:
+    if reused:
+        pid_text = "pid=null (reused)"
+    elif pid is not None:
+        pid_text = f"pid={pid}"
+    else:
+        pid_text = "pid=null"
+    return f"hook daemon: running {pid_text} port={port} url={hook_url}"
+
+
+def _emit_start_status(result: HookDaemonStartResult, *, unattended: bool) -> None:
+    if unattended:
+        return
+    print(
+        _running_status_line(
+            port=result.port,
+            hook_url=result.hook_url,
+            pid=result.pid,
+            reused=result.reused,
+        ),
+        file=sys.stderr,
+    )
 
 
 def _write_pidfile(
@@ -232,13 +262,15 @@ def daemon_start(
             mode=mode,
         )
         _log(verbose, f"hook daemon: reusing {hook_url}")
-        return HookDaemonStartResult(
+        result = HookDaemonStartResult(
             outcome="reused",
             port=reused_port,
             hook_url=hook_url,
             pid=None,
             reused=True,
         )
+        _emit_start_status(result, unattended=unattended)
+        return result
 
     spawn_port = _find_spawn_port(base_port)
     if foreground:
@@ -266,6 +298,16 @@ def daemon_start(
             mode=mode,
         )
         _log(verbose, f"hook daemon: serving foreground on port {spawn_port}")
+        _emit_start_status(
+            HookDaemonStartResult(
+                outcome="spawned",
+                port=spawn_port,
+                hook_url=hook_url_for_port(spawn_port),
+                pid=os.getpid(),
+                reused=False,
+            ),
+            unattended=unattended,
+        )
         run_async_cli(
             run_reverse_server(
                 config=runtime.config,
@@ -304,13 +346,15 @@ def daemon_start(
         mode=mode,
     )
     _log(verbose, f"hook daemon: started pid={process.pid} port={spawn_port}")
-    return HookDaemonStartResult(
+    result = HookDaemonStartResult(
         outcome="spawned",
         port=spawn_port,
         hook_url=hook_url,
         pid=process.pid,
         reused=False,
     )
+    _emit_start_status(result, unattended=unattended)
+    return result
 
 
 def _pid_alive(pid: int) -> bool:
@@ -401,6 +445,22 @@ def _resolve_stop_port(
     return _find_reusable_hook_port(base_port)
 
 
+def daemon_restart(
+    *,
+    config_path: Path | None = None,
+    verbose: bool = False,
+    unattended: bool = False,
+) -> HookDaemonStartResult:
+    """Stop any hook daemon and start a fresh one."""
+    daemon_stop(verbose=verbose, config_path=config_path)
+    return daemon_start(
+        config_path=config_path,
+        verbose=verbose,
+        foreground=False,
+        unattended=unattended,
+    )
+
+
 def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> None:
     """Stop a hook daemon process and clear pidfile state."""
     pidfile = read_hook_daemon_pidfile()
@@ -440,13 +500,21 @@ def daemon_status(*, config_path: Path | None = None) -> None:
     port = _find_reusable_hook_port(resolve_reverse_port(load_config(config_path), None))
     if port is not None:
         hook_url = hook_url_for_port(port)
-        pid_text = "pid=null"
+        pid: int | None = None
+        reused = False
         if pidfile is not None:
             pid_value = pidfile.get("pid")
             if pid_value is not None:
-                pid_text = f"pid={pid_value}"
-            if pidfile.get("reused"):
-                pid_text = "pid=null (reused)"
-        print(f"hook daemon: running {pid_text} port={port} url={hook_url}", file=sys.stderr)
+                pid = int(pid_value)
+            reused = bool(pidfile.get("reused"))
+        print(
+            _running_status_line(
+                port=port,
+                hook_url=hook_url,
+                pid=pid,
+                reused=reused,
+            ),
+            file=sys.stderr,
+        )
         return
     print("hook daemon: not running", file=sys.stderr)

@@ -50,6 +50,19 @@ from cyt_core.types.prune import PruneResult
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_executor_hook_tool_kind(
+    *contexts: PolicyContext | None,
+    config: dict[str, Any],
+) -> None:
+    """Classify executor hook catalogs as MCP so prune_all applies to every tool."""
+    if not uses_executor_tool_catalog(config):
+        return
+    for ctx in contexts:
+        if ctx is not None:
+            apply_executor_tool_kind(ctx, "mcp")
+
+
 # Initial LLM pruning attempt plus two retries before BM25 fallback.
 LLM_STAGE_MAX_ATTEMPTS = 3
 
@@ -158,6 +171,7 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
+    _apply_executor_hook_tool_kind(ctx, output_ctx, config=resolved_config)
     from cyt.tools.catalog_cache import catalog_snapshot_from_cache, ensure_tool_catalog_cached
 
     cached = ensure_tool_catalog_cached(
@@ -180,6 +194,7 @@ def _run_catalog_pruning(
         resolved_config,
         terminal_stage=terminal_stage,
     )
+    _apply_executor_hook_tool_kind(reinstate_ctx, config=resolved_config)
     if pipeline == ["bm25"] and skill_entries is None:
         from cyt_indexer.pipeline import prune_catalog_bm25_and_retrieve
 
@@ -337,6 +352,7 @@ def _run_rerank_stage(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    ctx: PolicyContext | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     rerank_usage: StageTokenUsage
     rerank_settings = pruner_settings.for_stage("rerank") if pruner_settings else None
@@ -363,6 +379,7 @@ def _run_rerank_stage(
             data, rerank_usage = rerank_catalog_dict(
                 data,
                 query,
+                ctx=ctx,
                 prune=False,
                 merge_pinned=False,
                 config=config,
@@ -372,6 +389,7 @@ def _run_rerank_stage(
         data, rerank_usage = rerank_catalog_dict(
             data,
             query,
+            ctx=ctx,
             prune=False,
             merge_pinned=False,
             config=config,
@@ -407,6 +425,7 @@ def _run_llm_stage(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    ctx: PolicyContext | None = None,
 ) -> dict[str, Any]:
     if trim_before_llm:
         data = trim_catalog_dict(data)
@@ -442,6 +461,7 @@ def _run_llm_stage(
             data, llm_usage = llm_catalog_dict(
                 data,
                 query,
+                ctx=ctx,
                 merge_pinned=False,
                 config=config,
                 settings=llm_settings,
@@ -450,6 +470,7 @@ def _run_llm_stage(
         data, llm_usage = llm_catalog_dict(
             data,
             query,
+            ctx=ctx,
             merge_pinned=False,
             config=config,
             settings=llm_settings,
@@ -472,8 +493,15 @@ def _run_bm25_stage(
     decomposed_breakdown: dict[str, dict[str, int]],
     decomposed: dict[str, int],
     pruning_token_usage: dict[str, StageTokenUsage],
+    ctx: PolicyContext | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
-    data, bm25_usage = bm25_catalog_dict(data, query, prune=False, merge_pinned=False)
+    data, bm25_usage = bm25_catalog_dict(
+        data,
+        query,
+        ctx=ctx,
+        prune=False,
+        merge_pinned=False,
+    )
     pruning_token_usage["bm25"] = bm25_usage
     if capture_catalog and snapshots is not None:
         snapshots["bm25"] = _snapshot_catalog(data)
@@ -499,6 +527,7 @@ class _StageKwargs(TypedDict):
     skill_llm_out: dict[str, Any] | None
     config: dict[str, Any] | None
     pruner_settings: PrunerSettingsCache | None
+    ctx: PolicyContext | None
 
 
 def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
@@ -510,6 +539,7 @@ def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
         "decomposed_breakdown": stage_kwargs["decomposed_breakdown"],
         "decomposed": stage_kwargs["decomposed"],
         "pruning_token_usage": stage_kwargs["pruning_token_usage"],
+        "ctx": stage_kwargs["ctx"],
     }
 
 
@@ -529,6 +559,7 @@ def _run_pipeline_stage(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    ctx: PolicyContext | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     stage_kwargs: _StageKwargs = {
         "data": data,
@@ -542,6 +573,7 @@ def _run_pipeline_stage(
         "skill_llm_out": skill_llm_out,
         "config": config,
         "pruner_settings": pruner_settings,
+        "ctx": ctx,
     }
     if stage == "rerank":
         try:
@@ -634,6 +666,7 @@ def _run_pruning_pipeline(
             skill_llm_out=skill_llm_out,
             config=config,
             pruner_settings=pruner_settings,
+            ctx=policy_ctx,
         )
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
@@ -842,8 +875,7 @@ def filter_tools_for_query(
         terminal_stage=terminal_stage,
     )
     if for_hook and uses_executor_tool_catalog(config):
-        apply_executor_tool_kind(policy_ctx, "mcp")
-        apply_executor_tool_kind(output_policy_ctx, "mcp")
+        _apply_executor_hook_tool_kind(policy_ctx, output_policy_ctx, config=config)
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(

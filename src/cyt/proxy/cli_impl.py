@@ -465,6 +465,17 @@ def _build_parser() -> argparse.ArgumentParser:
     daemon_stop = daemon_sub.add_parser("stop", help="Stop a daemon process started by CYT")
     daemon_stop.add_argument("--config", type=Path, default=None)
     daemon_stop.add_argument("--verbose", action="store_true")
+    daemon_restart = daemon_sub.add_parser(
+        "restart",
+        help="Stop any hook daemon and start a fresh one",
+    )
+    daemon_restart.add_argument("--config", type=Path, default=None)
+    daemon_restart.add_argument("--verbose", action="store_true")
+    daemon_restart.add_argument(
+        "--unattended",
+        action="store_true",
+        help="Hook mode: no prompts, no stdout; missing credential names go to stderr",
+    )
     daemon_status = daemon_sub.add_parser("status", help="Print hook daemon status")
     daemon_status.add_argument("--config", type=Path, default=None)
 
@@ -653,7 +664,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
         run_hook_uninstall()
         return
     if getattr(args, "hook_command", None) == "daemon":
-        from cyt.hook.daemon import daemon_start, daemon_status, daemon_stop
+        from cyt.hook.daemon import daemon_restart, daemon_start, daemon_status, daemon_stop
 
         daemon_cmd = getattr(args, "daemon_command", None)
         verbose = bool(getattr(args, "verbose", False))
@@ -668,6 +679,13 @@ def _run_hook_command(args: argparse.Namespace) -> None:
             return
         if daemon_cmd == "stop":
             daemon_stop(verbose=verbose, config_path=config_path)
+            return
+        if daemon_cmd == "restart":
+            daemon_restart(
+                config_path=config_path,
+                verbose=verbose,
+                unattended=bool(getattr(args, "unattended", False)),
+            )
             return
         if daemon_cmd == "status":
             daemon_status(config_path=config_path)
