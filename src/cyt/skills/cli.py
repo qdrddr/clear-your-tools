@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,21 +124,138 @@ def _write_hook_debug_log(
 ) -> None:
     if not debug or not cli_prompt:
         return
-    debug_details = dict(details) if details else {}
-    search_trace = debug_details.pop("search_trace", None)
-    if search_trace is not None:
-        trace_payload = trace_to_debug_details(search_trace)
-        if debug_details.get("injected"):
-            trace_payload["injected"] = debug_details["injected"]
-        debug_details["skills_search"] = trace_payload
+    from cyt.config import tools_enabled as tools_feature_enabled
+
+    debug_details = _format_hook_debug_details(details)
     write_skills_hook_debug_log(
         raw_stdin=raw_stdin,
         payload=payload,
         cwd=cwd,
         skills_enabled=skills_enabled(config) if not cli_prompt else True,
+        tools_enabled=tools_feature_enabled(config),
         outcome=outcome,
         details=debug_details or None,
     )
+
+
+def _stdout_debug_summary(stdout_text: str) -> dict[str, Any]:
+    """Summarize hook stdout for debug logs (what the agent hook actually receives)."""
+    if not stdout_text.strip():
+        return {"empty": True}
+    try:
+        parsed = json.loads(stdout_text)
+    except json.JSONDecodeError:
+        return {"parse_error": True, "stdout_len": len(stdout_text)}
+    if not isinstance(parsed, dict):
+        return {"parse_error": True, "stdout_len": len(stdout_text)}
+
+    hook_output = parsed.get("hookSpecificOutput")
+    if not isinstance(hook_output, dict):
+        return {
+            "stdout_len": len(stdout_text),
+            "top_level_keys": list(parsed.keys()),
+            "hook_specific_output": False,
+        }
+
+    additional_context = hook_output.get("additionalContext")
+    if additional_context is None:
+        additional_context = hook_output.get("additional_context")
+    context_text = additional_context if isinstance(additional_context, str) else ""
+    context_field: str | None
+    if "additionalContext" in hook_output:
+        context_field = "additionalContext"
+    elif "additional_context" in hook_output:
+        context_field = "additional_context"
+    else:
+        context_field = None
+
+    return {
+        "stdout_len": len(stdout_text),
+        "top_level_keys": list(parsed.keys()),
+        "hook_specific_output_keys": list(hook_output.keys()),
+        "hook_event_name": hook_output.get("hookEventName"),
+        "additional_context_field": context_field,
+        "additional_context_len": len(context_text),
+        "has_agent_skills": "<agent-skills" in context_text,
+        "has_agent_tools": "<agent-tools" in context_text,
+        "has_context7": "context7" in context_text.lower(),
+    }
+
+
+_SKILLS_DEBUG_KEYS = frozenset(
+    {"pipeline_run", "search_trace", "injected_skills", "injected", "skills_search"},
+)
+_TOOLS_DEBUG_KEYS = frozenset(
+    {
+        "prune_status",
+        "budget_debug",
+        "catalog_tool_count",
+        "pruned_tool_count",
+        "pruned_tool_names",
+        "injected_tools",
+    },
+)
+_RESERVED_DEBUG_KEYS = (
+    _SKILLS_DEBUG_KEYS
+    | _TOOLS_DEBUG_KEYS
+    | frozenset(
+        {"stdout", "resolved_model", "request_tokens"},
+    )
+)
+
+
+def _skills_debug_block(details: dict[str, Any]) -> dict[str, Any]:
+    block: dict[str, Any] = {}
+    for key in ("pipeline_run", "search_trace", "injected_skills", "injected"):
+        if key not in details or details[key] is None:
+            continue
+        if key == "injected" and "injected_skills" in details:
+            continue
+        block[key] = details[key]
+    if "skills_search" in details:
+        block["search"] = details["skills_search"]
+    search_trace = block.pop("search_trace", None)
+    if search_trace is not None:
+        trace_payload = trace_to_debug_details(search_trace)
+        if block.get("injected"):
+            trace_payload["injected"] = block["injected"]
+        block["search"] = trace_payload
+    return block
+
+
+def _tools_debug_block(details: dict[str, Any]) -> dict[str, Any]:
+    block = {key: details[key] for key in _TOOLS_DEBUG_KEYS if key in details}
+    if "injected" in details and any(
+        key in details for key in ("prune_status", "catalog_tool_count", "pruned_tool_names")
+    ):
+        block.setdefault("injected", details["injected"])
+    return block
+
+
+def _format_hook_debug_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not details:
+        return None
+
+    formatted: dict[str, Any] = {}
+    skills_block = _skills_debug_block(details)
+    if skills_block:
+        formatted["skills"] = skills_block
+
+    tools_block = _tools_debug_block(details)
+    if tools_block:
+        formatted["tools"] = tools_block
+
+    if "stdout" in details:
+        formatted["stdout"] = details["stdout"]
+    for key, value in details.items():
+        if key not in _RESERVED_DEBUG_KEYS:
+            formatted[key] = value
+    if "resolved_model" in details:
+        formatted["resolved_model"] = details["resolved_model"]
+    if "request_tokens" in details:
+        formatted["request_tokens"] = details["request_tokens"]
+
+    return formatted or None
 
 
 def _ensure_skills_credentials(config: dict[str, Any]) -> None:
@@ -400,7 +518,7 @@ def _handle_user_prompt_skills(
             "resolved_model": model,
             "pipeline_run": pipeline_run,
             "search_trace": search_trace,
-            "injected": injected if debug else None,
+            "injected_skills": injected if debug else None,
         },
         injected,
     )
@@ -470,6 +588,9 @@ def _append_coordinated_tools_injection(
         outcomes.append("user_prompt_no_tool_matches")
         details["resolved_model"] = model
         details["prune_status"] = prune_result.status
+        if debug:
+            details["catalog_tool_count"] = len(catalog)
+            details["pruned_tool_count"] = 0
         return
     session_text = session_text_from_hook_payload(
         payload,
@@ -729,13 +850,19 @@ def _handle_user_prompt(
 
 
 def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, Any]]:
+    import uuid
+
     payload: dict[str, Any] = {
         "hook_event_name": "UserPromptSubmit",
         "prompt": prompt.strip(),
-        "cwd": str(Path.cwd()),
+        "cwd": os.environ.get("CYT_HOOK_CWD") or str(Path.cwd()),
+        "session_id": os.environ.get("CYT_SESSION_ID") or f"cli-{uuid.uuid4().hex[:12]}",
     }
     if model:
         payload["model"] = model
+    agent = os.environ.get("CYT_LAUNCH_AGENT", "").strip()
+    if agent:
+        payload["cyt_agent"] = agent
     return json.dumps(payload), payload
 
 
@@ -844,6 +971,10 @@ def run_hook_payload(
         io_guarded=io_guarded,
     )
     stdout_text = format_hook_stdout(injection_text, payload, plain=plain_output)
+    debug_details = details
+    if debug and details is not None:
+        debug_details = dict(details)
+        debug_details["stdout"] = _stdout_debug_summary(stdout_text)
     _write_hook_debug_log(
         debug=debug,
         raw_stdin=raw_stdin,
@@ -852,7 +983,7 @@ def run_hook_payload(
         config=config,
         cli_prompt=plain_output,
         outcome=outcome,
-        details=details,
+        details=debug_details,
     )
     return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
 

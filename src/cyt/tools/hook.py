@@ -31,6 +31,17 @@ from cyt.tools.stats import record_tools_hook_injection
 logger = logging.getLogger(__name__)
 
 
+def _missing_tools_catalog_outcome(
+    result: PruneResult,
+    *,
+    debug: bool,
+) -> tuple[str, dict[str, Any], str]:
+    details: dict[str, Any] = {"catalog_tool_count": 0, "prune_status": result.status}
+    if debug:
+        return "skipped_missing_tools_catalog", details, ""
+    return "skipped_missing_tools_catalog", {}, ""
+
+
 def handle_user_prompt_tools(
     payload: dict[str, Any],
     config: dict[str, Any],
@@ -45,6 +56,9 @@ def handle_user_prompt_tools(
         return "skipped_inject_via_proxy", {}, ""
 
     if tools_hook_file_missing(config):
+        details: dict[str, Any] = {"catalog_tool_count": 0, "prune_status": "missing_catalog"}
+        if debug:
+            return "skipped_missing_tools_catalog", details, ""
         return "skipped_missing_tools_catalog", {}, ""
 
     query = skills_search_query_from_hook_payload(
@@ -68,13 +82,15 @@ def handle_user_prompt_tools(
     model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
     pruned, result, catalog = _prune_hook_tool_catalog(query, config, io_guarded=io_guarded)
     if catalog is None:
-        return "skipped_missing_tools_catalog", {}, ""
+        return _missing_tools_catalog_outcome(result, debug=debug)
     if not pruned:
         return (
             "user_prompt_no_tool_matches",
             {
                 "resolved_model": model,
                 "prune_status": result.status,
+                "catalog_tool_count": len(catalog),
+                "pruned_tool_count": 0,
             },
             "",
         )
@@ -136,9 +152,13 @@ def _finish_tools_hook_injection(
         "prune_status": result.status,
         "request_tokens": request_tokens,
         "budget_debug": budget_debug,
+        "catalog_tool_count": len(catalog),
+        "pruned_tool_count": len(result.tools or []),
     }
     if debug:
-        details["injected"] = injected
+        pruned_names = [str(tool.get("name", "")) for tool in (result.tools or [])[:20]]
+        details["pruned_tool_names"] = pruned_names
+        details["injected_tools"] = injected
     return "user_prompt_tools_injected", details, injected
 
 

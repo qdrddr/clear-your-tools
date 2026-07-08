@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from cyt.agents._registry import get_agent
 from cyt.agents.claude.launch import build_claude_env
@@ -20,6 +21,7 @@ from cyt.config import (
     inject_via,
     launch_needs_proxy,
     load_config,
+    required_proxy_env_var_names,
     required_tools_hook_env_var_names,
     tools_hook_tools_from,
 )
@@ -317,13 +319,52 @@ def _launch_env_for_agent(
     return launch_env
 
 
+def _ensure_hook_credentials_for_launch(
+    config: dict[str, Any],
+    *,
+    credential_sources: dict[str, str] | None = None,
+) -> None:
+    """Resolve hook credentials before starting or restarting the hook daemon."""
+    from cyt.config import inject_via
+
+    if inject_via(config) != "hook":
+        return
+
+    names = list(
+        dict.fromkeys(
+            [
+                *required_tools_hook_env_var_names(config),
+                *required_proxy_env_var_names(config),
+            ],
+        ),
+    )
+    if not names:
+        return
+    ensure_named_credentials(
+        names,
+        credential_sources=credential_sources,
+        allow_prompt=sys.stdin.isatty(),
+        require_all=False,
+    )
+
+
 def _ensure_hook_server(
     *,
     runtime: RuntimeContext,
 ) -> None:
     from cyt.hook.daemon import daemon_start
 
-    result = daemon_start(config_path=runtime.config_path, verbose=False)
+    config = runtime.config
+    _ensure_hook_credentials_for_launch(
+        config,
+        credential_sources=runtime.credential_sources,
+    )
+
+    result = daemon_start(
+        config_path=runtime.config_path,
+        verbose=False,
+        unattended=True,
+    )
     runtime.port = result.port
 
 
@@ -351,16 +392,6 @@ def _run_cursor_launch_session(
     else:
         ensure_cursor_hooks_for_launch(quiet=True)
 
-    if (
-        sys.stdin.isatty()
-        and inject_via(config) == "hook"
-        and tools_hook_tools_from(config) == "executor"
-    ):
-        ensure_named_credentials(
-            required_tools_hook_env_var_names(config),
-            credential_sources=runtime.credential_sources,
-        )
-
     from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
 
     if tools_hook_tools_from(config) == "executor" and inject_via(config) == "hook":
@@ -369,6 +400,7 @@ def _run_cursor_launch_session(
     from cyt.cache import warm_caches
 
     warm_caches(config)
+    os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
     os.environ.update(launch_agent_env("cursor"))
     _ensure_hook_server(runtime=runtime)
@@ -414,16 +446,6 @@ def _run_launch_session(
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
         runtime.config = config
 
-    if (
-        sys.stdin.isatty()
-        and inject_via(config) == "hook"
-        and tools_hook_tools_from(config) == "executor"
-    ):
-        ensure_named_credentials(
-            required_tools_hook_env_var_names(config),
-            credential_sources=runtime.credential_sources,
-        )
-
     from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
 
     if tools_hook_tools_from(config) == "executor" and inject_via(config) == "hook":
@@ -432,6 +454,7 @@ def _run_launch_session(
     from cyt.cache import warm_caches
 
     warm_caches(config)
+    os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
     inject_via_hook = not launch_needs_proxy(config)
     if switch_provider and not inject_via_hook:

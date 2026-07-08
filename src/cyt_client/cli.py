@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import Any
 
 from cyt_client.cursor import (
     format_cursor_continue,
@@ -68,6 +69,40 @@ def _verbose_exception(context: str) -> None:
         return
     print(f"cyt-client: {context}", file=sys.stderr, flush=True)
     traceback.print_exc(file=sys.stderr)
+
+
+def _hook_stdout_debug_summary(body: bytes) -> dict[str, Any]:
+    if not body.strip():
+        return {"empty": True}
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return {"parse_error": True, "body_len": len(body)}
+    if not isinstance(parsed, dict):
+        return {"parse_error": True, "body_len": len(body)}
+    hook_output = parsed.get("hookSpecificOutput")
+    if not isinstance(hook_output, dict):
+        return {"body_len": len(body), "top_level_keys": list(parsed.keys())}
+    context = hook_output.get("additionalContext")
+    if context is None:
+        context = hook_output.get("additional_context")
+    context_text = context if isinstance(context, str) else ""
+    return {
+        "body_len": len(body),
+        "top_level_keys": list(parsed.keys()),
+        "hook_specific_output_keys": list(hook_output.keys()),
+        "additional_context_field": (
+            "additionalContext"
+            if "additionalContext" in hook_output
+            else "additional_context"
+            if "additional_context" in hook_output
+            else None
+        ),
+        "additional_context_len": len(context_text),
+        "has_agent_tools": "<agent-tools" in context_text,
+        "has_agent_skills": "<agent-skills" in context_text,
+        "has_context7": "context7" in context_text.lower(),
+    }
 
 
 def _parse_payload(raw: bytes) -> dict | None:
@@ -199,6 +234,7 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
             "hook_url": hook_url,
             "status": status,
             "body_len": len(body),
+            **_hook_stdout_debug_summary(body),
         },
     )
     # #endregion
