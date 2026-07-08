@@ -5,10 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 import traceback
-from pathlib import Path
-from typing import Any
 
 from cyt_client.cursor import (
     format_cursor_continue,
@@ -29,26 +26,6 @@ from cyt_client.transport import post_hook_inject
 
 _verbose = False
 _debug = False
-_DEBUG_LOG = Path(__file__).resolve().parents[2] / ".cursor" / "debug-698c1a.log"
-_DEBUG_SESSION = "698c1a"
-
-
-def _agent_debug_log(*, location: str, message: str, hypothesis_id: str, data: dict) -> None:
-    payload = {
-        "sessionId": _DEBUG_SESSION,
-        "runId": "pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        _DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with _DEBUG_LOG.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, default=str) + "\n")
-    except Exception:
-        pass
 
 
 def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool]:
@@ -69,40 +46,6 @@ def _verbose_exception(context: str) -> None:
         return
     print(f"cyt-client: {context}", file=sys.stderr, flush=True)
     traceback.print_exc(file=sys.stderr)
-
-
-def _hook_stdout_debug_summary(body: bytes) -> dict[str, Any]:
-    if not body.strip():
-        return {"empty": True}
-    try:
-        parsed = json.loads(body)
-    except json.JSONDecodeError:
-        return {"parse_error": True, "body_len": len(body)}
-    if not isinstance(parsed, dict):
-        return {"parse_error": True, "body_len": len(body)}
-    hook_output = parsed.get("hookSpecificOutput")
-    if not isinstance(hook_output, dict):
-        return {"body_len": len(body), "top_level_keys": list(parsed.keys())}
-    context = hook_output.get("additionalContext")
-    if context is None:
-        context = hook_output.get("additional_context")
-    context_text = context if isinstance(context, str) else ""
-    return {
-        "body_len": len(body),
-        "top_level_keys": list(parsed.keys()),
-        "hook_specific_output_keys": list(hook_output.keys()),
-        "additional_context_field": (
-            "additionalContext"
-            if "additionalContext" in hook_output
-            else "additional_context"
-            if "additional_context" in hook_output
-            else None
-        ),
-        "additional_context_len": len(context_text),
-        "has_agent_tools": "<agent-tools" in context_text,
-        "has_agent_skills": "<agent-skills" in context_text,
-        "has_context7": "context7" in context_text.lower(),
-    }
 
 
 def _parse_payload(raw: bytes) -> dict | None:
@@ -214,30 +157,7 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
         status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
     except ConnectionError as exc:
         _verbose_log(f"cyt-client: hook server connection failed: {exc}")
-        # #region agent log
-        _agent_debug_log(
-            location="cyt_client/cli.py:_run_hook",
-            message="hook inject connection failed",
-            hypothesis_id="A",
-            data={"debug": _debug, "hook_url": hook_url},
-        )
-        # #endregion
         return
-
-    # #region agent log
-    _agent_debug_log(
-        location="cyt_client/cli.py:_run_hook",
-        message="hook inject completed",
-        hypothesis_id="A",
-        data={
-            "debug": _debug,
-            "hook_url": hook_url,
-            "status": status,
-            "body_len": len(body),
-            **_hook_stdout_debug_summary(body),
-        },
-    )
-    # #endregion
 
     if status >= 400:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")

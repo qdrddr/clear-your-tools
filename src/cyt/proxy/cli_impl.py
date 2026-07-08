@@ -365,7 +365,7 @@ def _build_parser() -> argparse.ArgumentParser:
         parser.add_argument(
             "--debug",
             action="store_true",
-            help="Log hook diagnostics to .debug/skills/ when used with --prompt",
+            help="Log hook diagnostics to .debug/hooks/ when used with --prompt",
         )
         parser.add_argument(
             "--prompt",

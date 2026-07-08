@@ -721,7 +721,6 @@ def transform_openai_request(
     from cyt.tools.inject import format_agent_tools
 
     resolved_config = config or load_config()
-    tools_injected = False
     if (
         inject_into_user_message(resolved_config)
         and tools_inject_allowed(resolved_config, "proxy")
@@ -740,29 +739,5 @@ def transform_openai_request(
             tag="<agent-tools>",
         ):
             original = append_injection_to_body(original, tools_text, kind="openai")
-            tools_injected = True
-
-    # #region agent log
-    from cyt.config import inject_via
-    from cyt.proxy.agent_debug_log import agent_debug_log
-    from cyt.proxy.user_message_inject import already_has_user_turn_injection as _has_inj
-
-    agent_debug_log(
-        location="openai_responses.py:transform_openai_request",
-        message="proxy openai transform complete",
-        hypothesis_id="C",
-        data={
-            "inject_via": inject_via(config),
-            "inject_into_user_message": inject_into_user_message(config),
-            "skills_in": getattr(skills_meta, "skills_in", 0),
-            "skills_query": getattr(skills_meta, "query", None),
-            "mcp_for_inject_count": len(mcp_for_inject or []),
-            "tools_injected_to_user": tools_injected,
-            "user_has_agent_skills": _has_inj(original, "openai", tag="<agent-skills>"),
-            "user_has_agent_tools": _has_inj(original, "openai", tag="<agent-tools>"),
-            "prune_status": getattr(prune_result, "status", None),
-        },
-    )
-    # #endregion
 
     return original, prune_result, skills_meta

@@ -383,8 +383,8 @@ Full defaults: [`src/cyt/config/defaults.yaml`](src/cyt/config/defaults.yaml).
 <details>
 <summary><strong>Debugging</strong></summary>
 
-**Hook debug** — `CYT_SKILLS_DEBUG=1` or `--debug`; logs under `.debug/skills/` and
-`~/.config/cyt/debug/skills/`.
+**Hook debug** — `CYT_SKILLS_DEBUG=1` or `--debug`; logs under `.debug/hooks/` and
+`~/.config/cyt/debug/hooks/`.
 
 **Common hook outcomes:**
 

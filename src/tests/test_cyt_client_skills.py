@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from cyt_client.agent import CYT_LAUNCH_AGENT_ENV
 from cyt_client.skills import (
-    CYT_LAUNCH_AGENT_ENV,
     attach_client_skills,
     collect_client_skills,
     infer_launch_agent,
@@ -24,6 +24,14 @@ def _write_skill(path: Path, body: str) -> None:
 
 
 def test_infer_launch_agent_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "CODEX_HOME",
+        "CURSOR_VERSION",
+        "CLAUDE_PROJECT_DIR",
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
     assert infer_launch_agent({}) == "codex"
     monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "claude")
@@ -32,7 +40,16 @@ def test_infer_launch_agent_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert infer_launch_agent({}) == "cursor"
 
 
-def test_infer_launch_agent_from_transcript_path() -> None:
+def test_infer_launch_agent_from_transcript_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "CODEX_HOME",
+        "CURSOR_VERSION",
+        "CLAUDE_PROJECT_DIR",
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CYT_LAUNCH_AGENT",
+    ):
+        monkeypatch.delenv(name, raising=False)
     assert (
         infer_launch_agent({"transcript_path": "/Users/me/.codex/sessions/2026/rollout.jsonl"})
         == "codex"
@@ -41,7 +58,10 @@ def test_infer_launch_agent_from_transcript_path() -> None:
         infer_launch_agent({"transcript_path": "/Users/me/.claude/projects/foo.jsonl"}) == "claude"
     )
     assert (
-        infer_launch_agent({"transcript_path": "/Users/me/.cursor/chats/session.jsonl"}) == "cursor"
+        infer_launch_agent(
+            {"transcript_path": "/Users/me/.cursor/projects/foo/session.jsonl"},
+        )
+        == "cursor"
     )
 
 

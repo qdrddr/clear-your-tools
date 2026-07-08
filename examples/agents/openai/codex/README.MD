@@ -22,7 +22,7 @@ so `uv` is usually not found and the hook fails before any logging.
 For local development, point the hook at the absolute path to
 [`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) (uses the repo `.venv/bin/python`). Set
 `CYT_SKILLS_DEBUG=1` in the environment or pass `--debug` via a wrapper to log stdin to
-`.debug/skills/` (Codex project `cwd`) and `~/.config/cyt/debug/skills/`.
+`.debug/hooks/` (Codex project `cwd`) and `~/.config/cyt/debug/hooks/`.
 
 Example `~/.codex/hooks.json` entry:
 

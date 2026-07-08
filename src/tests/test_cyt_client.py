@@ -17,6 +17,7 @@ from cyt_client.transcript import enrich_hook_payload
 
 def test_cyt_client_package_has_no_cyt_imports() -> None:
     for module_name in (
+        "cyt_client.agent",
         "cyt_client.cli",
         "cyt_client.cursor",
         "cyt_client.port",
@@ -174,6 +175,8 @@ def test_enrich_hook_payload_adds_cyt_agent_and_skills(monkeypatch: pytest.Monke
     ).encode()
     enriched = json.loads(enrich_hook_payload(raw))
     assert enriched["hook_event_name"] == "beforeSubmitPrompt"
+    assert enriched["cyt_hook_payload"]["hook_event_name"] == "beforeSubmitPrompt"
+    assert "cyt_agent" not in enriched["cyt_hook_payload"]
     assert enriched["cyt_agent"] == "cursor"
     assert "cyt_skills" in enriched
 

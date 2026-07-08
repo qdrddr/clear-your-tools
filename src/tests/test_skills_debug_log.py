@@ -1,11 +1,17 @@
-"""Tests for skills hook debug log files."""
+"""Tests for hook debug log files."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from cyt.skills.debug_log import split_hook_and_cyt_client, write_skills_hook_debug_log
+from cyt.skills.debug_log import (
+    extract_hook_payload,
+    hooks_debug_dirs,
+    payload_mutations,
+    split_hook_and_cyt_client,
+    write_hook_debug_log,
+)
 
 
 def test_split_hook_and_cyt_client_moves_cyt_prefixed_fields() -> None:
@@ -23,23 +29,48 @@ def test_split_hook_and_cyt_client_moves_cyt_prefixed_fields() -> None:
     assert cyt_client["transcript"] == [{"role": "user"}]
 
 
-def test_write_skills_hook_debug_log_separates_hook_and_cyt_client(tmp_path: Path) -> None:
+def test_extract_hook_payload_prefers_cyt_hook_payload() -> None:
+    original = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    request = {
+        **original,
+        "cyt_hook_payload": original,
+        "cyt_agent": "claude",
+    }
+    assert extract_hook_payload(request) == original
+
+
+def test_payload_mutations_reports_server_changes() -> None:
+    request = {"hook_event_name": "beforeSubmitPrompt", "prompt": "hi"}
+    server = {"hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": "/tmp"}
+    mutations = payload_mutations(request, server)
+    assert {"field": "cwd", "change": "added", "value": "/tmp"} in mutations
+    assert {
+        "field": "hook_event_name",
+        "change": "updated",
+        "from": "beforeSubmitPrompt",
+        "to": "UserPromptSubmit",
+    } in mutations
+
+
+def test_write_hook_debug_log_uses_hooks_dir_and_full_payload(tmp_path: Path) -> None:
     hook = {
         "hook_event_name": "UserPromptSubmit",
         "session_id": "sess-1",
         "prompt": "hello",
         "cwd": str(tmp_path),
     }
-    enriched = {
+    request_payload = {
         **hook,
+        "cyt_hook_payload": hook,
         "cyt_agent": "claude",
         "cyt_skills": [{"path": "/tmp/SKILL.md", "content": "skill"}],
     }
-    raw_stdin = json.dumps(enriched)
+    server_payload = dict(request_payload)
+    server_payload["session_id"] = "sess-1-normalized"
 
-    path = write_skills_hook_debug_log(
-        raw_stdin=raw_stdin,
-        payload=enriched,
+    path = write_hook_debug_log(
+        request_payload=request_payload,
+        server_payload=server_payload,
         cwd=str(tmp_path),
         skills_enabled=True,
         tools_enabled=True,
@@ -47,13 +78,11 @@ def test_write_skills_hook_debug_log_separates_hook_and_cyt_client(tmp_path: Pat
         details={"stdout": {"additional_context_len": 42}},
     )
 
+    assert path.parent == hooks_debug_dirs(str(tmp_path))[0]
     entry = json.loads(path.read_text(encoding="utf-8"))
     assert entry["stdin_raw"] == hook
-    assert "payload" not in entry
-    assert "details" not in entry
+    assert entry["cyt_client"]["payload"] == request_payload
     assert entry["cyt_client"]["agent"] == "claude"
-    assert entry["cyt_client"]["skills"] == [{"path": "/tmp/SKILL.md", "content": "skill"}]
-    assert entry["cyt_client"]["skills_enabled"] is True
-    assert entry["cyt_client"]["tools_enabled"] is True
-    assert entry["cyt_client"]["outcome"] == "user_prompt_injected"
     assert entry["cyt_client"]["injection"] == {"stdout": {"additional_context_len": 42}}
+    assert entry["server"]["payload"]["session_id"] == "sess-1-normalized"
+    assert any(m["field"] == "session_id" for m in entry["server"]["mutations"])

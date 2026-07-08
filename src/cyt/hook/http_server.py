@@ -42,30 +42,15 @@ async def hook_inject(request: Request) -> Response:
     config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
     debug = _hook_debug_enabled(request)
     try:
-        result = await _run_hook_in_thread(payload, config, debug=debug)
+        result = await _run_hook_in_thread(
+            payload,
+            config,
+            request_payload=payload_raw,
+            debug=debug,
+        )
     except Exception as exc:
         logger.exception("hook inject failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
-
-    # #region agent log
-    from cyt.config import inject_into_user_message, inject_via
-    from cyt.proxy.agent_debug_log import agent_debug_log
-
-    agent_debug_log(
-        location="hook/http_server.py:hook_inject",
-        message="hook HTTP inject completed",
-        hypothesis_id="B",
-        data={
-            "outcome": result.outcome,
-            "stdout_len": len(result.stdout_text or ""),
-            "inject_via": inject_via(config),
-            "inject_into_user_message": inject_into_user_message(config),
-            "has_cyt_config_state": getattr(request.app.state, "cyt_config", None) is not None,
-            "hook_event": payload.get("hook_event_name"),
-            "debug": debug,
-        },
-    )
-    # #endregion
 
     if not result.stdout_text:
         return PlainTextResponse("", status_code=200)
@@ -76,6 +61,7 @@ async def _run_hook_in_thread(
     payload: dict[str, Any],
     config: dict[str, Any],
     *,
+    request_payload: dict[str, Any] | None = None,
     debug: bool = False,
 ) -> HookRunResult:
     import asyncio
@@ -84,6 +70,7 @@ async def _run_hook_in_thread(
         run_hook_payload,
         payload,
         config,
+        request_payload=request_payload,
         plain_output=False,
         debug=debug,
         io_guarded=True,

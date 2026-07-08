@@ -356,21 +356,6 @@ def daemon_start(
         mode=mode,
     )
     _log(verbose, f"hook daemon: started pid={process.pid} port={spawn_port}")
-    # #region agent log
-    from cyt.proxy.agent_debug_log import agent_debug_log
-
-    agent_debug_log(
-        location="hook/daemon.py:daemon_start",
-        message="hook daemon spawned",
-        hypothesis_id="C",
-        data={
-            "port": spawn_port,
-            "needs_creds": needs_creds,
-            "extra_env_keys": sorted((extra_env or {}).keys()),
-            "has_executor_token": "EXECUTOR_TOKEN" in (extra_env or {}),
-        },
-    )
-    # #endregion
     result = HookDaemonStartResult(
         outcome="spawned",
         port=spawn_port,

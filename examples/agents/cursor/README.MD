@@ -65,7 +65,7 @@ The rules file is auto-appended to `.gitignore` in git workspaces. Set `CYT_CURS
 | `conversation_id` | `session_id` |
 | `hookSpecificOutput.additionalContext` | `additional_context` + `continue: true` (ignored by Cursor IDE; use rules file) |
 
-Set `CYT_SKILLS_DEBUG=1` to log hook stdin under `~/.config/cyt/debug/skills/`.
+Set `CYT_SKILLS_DEBUG=1` to log hook stdin under `~/.config/cyt/debug/hooks/`.
 
 Ensure `cyt` / `cyt-client` and the hook daemon are on `PATH`.
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-_CURSOR_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
+from cyt_client.agent import looks_like_cursor_payload
+
+_CURSOR_ROUTING_EVENTS = frozenset({"sessionStart", "sessionEnd"})
 _CURSOR_RULES_LIFECYCLE_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
 _CURSOR_RULES_CLEANUP_EVENTS = frozenset({"sessionEnd"})
 
@@ -18,8 +20,10 @@ def cursor_hook_event_name(payload: dict[str, Any]) -> str | None:
 
 
 def is_cursor_hook_payload(payload: dict[str, Any]) -> bool:
+    if looks_like_cursor_payload(payload):
+        return True
     event = cursor_hook_event_name(payload)
-    return event in _CURSOR_EVENTS if event is not None else False
+    return event in _CURSOR_ROUTING_EVENTS if event is not None else False
 
 
 def is_cursor_rules_lifecycle_event(payload: dict[str, Any]) -> bool:

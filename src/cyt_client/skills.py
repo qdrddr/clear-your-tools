@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
-CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
+from cyt_client.agent import infer_harness_agent
 
 _AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
     "claude": (".claude/skills", "~/.claude/skills"),
@@ -31,36 +30,9 @@ def _payload_cwd(data: dict[str, Any]) -> Path:
     return Path.cwd()
 
 
-def _infer_agent_from_path_text(text: str) -> str | None:
-    normalized = text.replace("\\", "/")
-    if "/.codex/" in normalized or normalized.endswith("/.codex"):
-        return "codex"
-    if "/.claude/" in normalized or normalized.endswith("/.claude"):
-        return "claude"
-    if "/.cursor/" in normalized or normalized.endswith("/.cursor"):
-        return "cursor"
-    return None
-
-
 def infer_launch_agent(data: dict[str, Any]) -> str | None:
-    """Resolve the active agent from ``CYT_LAUNCH_AGENT`` or hook payload hints."""
-    env_value = os.environ.get(CYT_LAUNCH_AGENT_ENV, "").strip().lower()
-    if env_value in _AGENT_SKILL_DIRS:
-        return env_value
-
-    for key in ("transcript_path",):
-        raw = data.get(key)
-        if isinstance(raw, str) and raw.strip():
-            agent = _infer_agent_from_path_text(raw.strip())
-            if agent is not None:
-                return agent
-
-    nested = data.get("payload")
-    if isinstance(nested, dict):
-        nested_agent = infer_launch_agent(nested)
-        if nested_agent is not None:
-            return nested_agent
-    return None
+    """Resolve the active agent from harness env/payload signals."""
+    return infer_harness_agent(data)
 
 
 def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:

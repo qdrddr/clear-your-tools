@@ -68,6 +68,7 @@ async def test_hook_inject_honors_debug_header(hook_client: httpx.AsyncClient) -
 
     assert response.status_code == 200
     assert run_hook.call_args.kwargs["debug"] is True
+    assert run_hook.call_args.kwargs["request_payload"] == payload
 
 
 @pytest.mark.asyncio

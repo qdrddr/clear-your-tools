@@ -35,7 +35,7 @@ from cyt.skills.budget import (
     skills_inject_allowed,
 )
 from cyt.skills.client_skills import build_registry_for_hook_payload
-from cyt.skills.debug_log import write_skills_hook_debug_log
+from cyt.skills.debug_log import write_hook_debug_log
 from cyt.skills.diagnostics import SkillsSearchTrace
 from cyt.skills.hook_payload import (
     hook_cwd,
@@ -114,22 +114,22 @@ def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | Non
 def _write_hook_debug_log(
     *,
     debug: bool,
-    raw_stdin: str,
-    payload: dict[str, Any],
+    request_payload: dict[str, Any],
+    server_payload: dict[str, Any],
     cwd: str | None,
     config: dict[str, Any],
     cli_prompt: bool,
     outcome: str,
     details: dict[str, Any] | None,
 ) -> None:
-    if not debug or not cli_prompt:
+    if not debug:
         return
     from cyt.config import tools_enabled as tools_feature_enabled
 
     debug_details = _format_hook_debug_details(details)
-    write_skills_hook_debug_log(
-        raw_stdin=raw_stdin,
-        payload=payload,
+    write_hook_debug_log(
+        request_payload=request_payload,
+        server_payload=server_payload,
         cwd=cwd,
         skills_enabled=skills_enabled(config) if not cli_prompt else True,
         tools_enabled=tools_feature_enabled(config),
@@ -822,26 +822,6 @@ def _handle_user_prompt(
     else:
         outcome = "skipped_inject_via_proxy"
 
-    # #region agent log
-    from cyt.config import inject_into_user_message, inject_via
-    from cyt.proxy.agent_debug_log import agent_debug_log
-
-    agent_debug_log(
-        location="skills/cli.py:_handle_user_prompt",
-        message="hook user prompt dispatch",
-        hypothesis_id="B",
-        data={
-            "outcome": outcome,
-            "skills_allowed": skills_allowed,
-            "tools_allowed": tools_allowed,
-            "inject_via": inject_via(config),
-            "inject_into_user_message": inject_into_user_message(config),
-            "combined_len": len(combined),
-            "outcomes": outcomes,
-        },
-    )
-    # #endregion
-
     if combined:
         return outcome, details, combined
     if outcomes:
@@ -949,6 +929,7 @@ def run_hook_payload(
     payload: dict[str, Any],
     config: dict[str, Any],
     *,
+    request_payload: dict[str, Any] | None = None,
     plain_output: bool = False,
     debug: bool = False,
     io_guarded: bool = False,
@@ -957,7 +938,8 @@ def run_hook_payload(
     """Run hook logic for *payload* and return formatted stdout without printing."""
     configure_hook_quiet()
     _ensure_hook_credentials(config, allow_prompt=False)
-    raw_stdin = json.dumps(payload)
+    captured_request = request_payload if request_payload is not None else payload
+    raw_stdin = json.dumps(captured_request)
     event_name = hook_event_name(payload)
     outcome, details, injection_text = _dispatch_hook_event(
         event_name,
@@ -977,8 +959,8 @@ def run_hook_payload(
         debug_details["stdout"] = _stdout_debug_summary(stdout_text)
     _write_hook_debug_log(
         debug=debug,
-        raw_stdin=raw_stdin,
-        payload=payload,
+        request_payload=captured_request,
+        server_payload=payload,
         cwd=hook_cwd(payload),
         config=config,
         cli_prompt=plain_output,
@@ -986,6 +968,16 @@ def run_hook_payload(
         details=debug_details,
     )
     return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
+
+
+def _request_payload_from_raw_stdin(raw_stdin: str, *, fallback: dict[str, Any]) -> dict[str, Any]:
+    if not raw_stdin.strip():
+        return fallback
+    try:
+        parsed = json.loads(raw_stdin)
+    except json.JSONDecodeError:
+        return fallback
+    return parsed if isinstance(parsed, dict) else fallback
 
 
 def run(
@@ -1041,8 +1033,8 @@ def run(
     if debug:
         _write_hook_debug_log(
             debug=debug,
-            raw_stdin=raw_stdin,
-            payload=payload,
+            request_payload=_request_payload_from_raw_stdin(raw_stdin, fallback=payload),
+            server_payload=payload,
             cwd=cwd,
             config=config,
             cli_prompt=cli_prompt,
@@ -1072,7 +1064,7 @@ def main() -> None:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Log hook diagnostics to .debug/skills/ when used with --prompt",
+        help="Log hook diagnostics to .debug/hooks/ when used with --prompt",
     )
     parser.add_argument(
         "--prompt",

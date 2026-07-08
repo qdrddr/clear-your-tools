@@ -63,7 +63,7 @@ hooks are optional and `UserPromptSubmit` produces no injection when hooks remai
 Copy or merge [`hooks.json`](./hooks.json) into `~/.claude/settings.json`. For local development,
 point the hook at the absolute path to [`hooks/cyt-skills.sh`](./hooks/cyt-skills.sh) (uses the repo
 `.venv/bin/python`). Set `CYT_SKILLS_DEBUG=1` in the environment or pass `--debug` via a wrapper to
-log stdin to `.debug/skills/` (project `cwd`) and `~/.config/cyt/debug/skills/`.
+log stdin to `.debug/hooks/` (project `cwd`) and `~/.config/cyt/debug/hooks/`.
 
 Example `~/.claude/settings.json` hook entry:
 

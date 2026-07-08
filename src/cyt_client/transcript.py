@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 import json
-import os
 from pathlib import Path
 from typing import Any
 
+from cyt_client.agent import infer_harness_agent
 from cyt_client.rules_file import rules_file_path, workspace_root_from_payload
 from cyt_client.skills import attach_client_skills
 
-CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 CYT_AGENT_FIELD = "cyt_agent"
+CYT_HOOK_PAYLOAD_FIELD = "cyt_hook_payload"
 CYT_RULES_INJECTION_FIELD = "cyt_rules_injection"
 
 
@@ -79,13 +80,12 @@ def _attach_cyt_rules_injection(data: dict[str, Any]) -> bool:
 
 
 def _attach_cyt_agent(data: dict[str, Any]) -> None:
-    env_value = os.environ.get(CYT_LAUNCH_AGENT_ENV, "").strip()
-    if env_value:
-        data[CYT_AGENT_FIELD] = env_value
+    if agent := infer_harness_agent(data):
+        data[CYT_AGENT_FIELD] = agent
 
 
 def enrich_hook_payload(payload_bytes: bytes) -> bytes:
-    """Attach ``cyt_agent``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
+    """Attach ``cyt_hook_payload``, ``cyt_agent``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
     if not payload_bytes.strip():
         return payload_bytes
     try:
@@ -94,6 +94,8 @@ def enrich_hook_payload(payload_bytes: bytes) -> bytes:
         return payload_bytes
     if not isinstance(data, dict):
         return payload_bytes
+
+    data[CYT_HOOK_PAYLOAD_FIELD] = copy.deepcopy(data)
 
     _attach_cyt_agent(data)
 
