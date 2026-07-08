@@ -11,7 +11,7 @@ response:
     date: Wed, 08 Jul 2026 19:05:20 GMT
   body:
     type: json
-    content: |-
+    content: |-  # pragma: allowlist secret
       [
         {
           "address": "tools.lean_ctx_mcp.org.localleanctxmcp.ctx_call",
