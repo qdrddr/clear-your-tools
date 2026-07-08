@@ -43,7 +43,12 @@ def load_tool_catalog(config: dict[str, Any] | None = None) -> list[dict[str, An
     if tools_hook_tools_from(cfg) == "definitions":
         path = resolved_tools_hook_file(cfg)
         return _load_definitions_cached(path)
-    return load_executor_tools(cfg, allow_prompt=False, blocking=False)
+    tools = load_executor_tools(cfg, allow_prompt=False, blocking=False)
+    if tools is not None and not tools:
+        from cyt.tools.sources.executor_http import fetch_executor_tools
+
+        tools = fetch_executor_tools(cfg, allow_prompt=False, blocking=True)
+    return tools
 
 
 def _load_definitions_cached(path: Path) -> list[dict[str, Any]]:

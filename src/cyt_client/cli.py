@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import traceback
+from pathlib import Path
 
 from cyt_client.cursor import (
     format_cursor_continue,
@@ -25,13 +27,35 @@ from cyt_client.transcript import enrich_hook_payload
 from cyt_client.transport import post_hook_inject
 
 _verbose = False
+_debug = False
+_DEBUG_LOG = Path(__file__).resolve().parents[2] / ".cursor" / "debug-698c1a.log"
+_DEBUG_SESSION = "698c1a"
 
 
-def _parse_verbose_flag(argv: list[str] | None = None) -> bool:
+def _agent_debug_log(*, location: str, message: str, hypothesis_id: str, data: dict) -> None:
+    payload = {
+        "sessionId": _DEBUG_SESSION,
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        _DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _DEBUG_LOG.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool]:
     parser = argparse.ArgumentParser(prog="cyt-client", add_help=False)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--debug", action="store_true")
     args, _unknown = parser.parse_known_args(argv)
-    return bool(args.verbose)
+    return bool(args.verbose), bool(args.debug)
 
 
 def _verbose_log(message: str) -> None:
@@ -100,7 +124,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         return
 
     try:
-        status, body = post_hook_inject(hook_url, payload_bytes)
+        status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
     except ConnectionError as exc:
         _verbose_log(f"cyt-client: hook server connection failed: {exc}")
         _emit_cursor_continue()
@@ -152,10 +176,32 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
         return
 
     try:
-        status, body = post_hook_inject(hook_url, payload_bytes)
+        status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
     except ConnectionError as exc:
         _verbose_log(f"cyt-client: hook server connection failed: {exc}")
+        # #region agent log
+        _agent_debug_log(
+            location="cyt_client/cli.py:_run_hook",
+            message="hook inject connection failed",
+            hypothesis_id="A",
+            data={"debug": _debug, "hook_url": hook_url},
+        )
+        # #endregion
         return
+
+    # #region agent log
+    _agent_debug_log(
+        location="cyt_client/cli.py:_run_hook",
+        message="hook inject completed",
+        hypothesis_id="A",
+        data={
+            "debug": _debug,
+            "hook_url": hook_url,
+            "status": status,
+            "body_len": len(body),
+        },
+    )
+    # #endregion
 
     if status >= 400:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")
@@ -165,8 +211,8 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    global _verbose
-    _verbose = _parse_verbose_flag(argv)
+    global _verbose, _debug
+    _verbose, _debug = _parse_client_flags(argv)
 
     cursor_output = False
     try:

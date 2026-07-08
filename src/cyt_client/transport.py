@@ -7,13 +7,17 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 POST_TIMEOUT_SECONDS = 55.0  # must stay below agent hook timeout (see USER_PROMPT_TIMEOUT_SECONDS)
+HOOK_DEBUG_HEADER = "X-CYT-Hook-Debug"
 
 
-def post_hook_inject(url: str, payload_bytes: bytes) -> tuple[int, bytes]:
+def post_hook_inject(url: str, payload_bytes: bytes, *, debug: bool = False) -> tuple[int, bytes]:
+    headers = {"Content-Type": "application/json"}
+    if debug:
+        headers[HOOK_DEBUG_HEADER] = "1"
     request = Request(
         url,
         data=payload_bytes,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

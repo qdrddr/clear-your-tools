@@ -16,6 +16,12 @@ from cyt.skills.hook_quiet import configure_hook_quiet
 
 logger = logging.getLogger(__name__)
 
+HOOK_DEBUG_HEADER = "X-CYT-Hook-Debug"
+
+
+def _hook_debug_enabled(request: Request) -> bool:
+    return request.headers.get(HOOK_DEBUG_HEADER, "").strip() == "1"
+
 
 async def hook_inject(request: Request) -> Response:
     """Run hook injection for JSON body and return exact stdout bytes."""
@@ -34,8 +40,9 @@ async def hook_inject(request: Request) -> Response:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
     config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
+    debug = _hook_debug_enabled(request)
     try:
-        result = await _run_hook_in_thread(payload, config)
+        result = await _run_hook_in_thread(payload, config, debug=debug)
     except Exception as exc:
         logger.exception("hook inject failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -55,6 +62,7 @@ async def hook_inject(request: Request) -> Response:
             "inject_into_user_message": inject_into_user_message(config),
             "has_cyt_config_state": getattr(request.app.state, "cyt_config", None) is not None,
             "hook_event": payload.get("hook_event_name"),
+            "debug": debug,
         },
     )
     # #endregion
@@ -64,7 +72,12 @@ async def hook_inject(request: Request) -> Response:
     return PlainTextResponse(result.stdout_text, status_code=200)
 
 
-async def _run_hook_in_thread(payload: dict[str, Any], config: dict[str, Any]) -> HookRunResult:
+async def _run_hook_in_thread(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    debug: bool = False,
+) -> HookRunResult:
     import asyncio
 
     return await asyncio.to_thread(
@@ -72,7 +85,7 @@ async def _run_hook_in_thread(payload: dict[str, Any], config: dict[str, Any]) -
         payload,
         config,
         plain_output=False,
-        debug=False,
+        debug=debug,
         io_guarded=True,
         allow_transcript_file_read=False,
     )

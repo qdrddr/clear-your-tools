@@ -1,4 +1,4 @@
-"""Temporary agent debug session logging (session 84b471)."""
+"""Temporary agent debug session logging (session 698c1a)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-_LOG = Path(__file__).resolve().parents[3] / ".cursor" / "debug-84b471.log"
-_SESSION = "84b471"
+_LOG = Path(__file__).resolve().parents[3] / ".cursor" / "debug-698c1a.log"
+_SESSION = "698c1a"
 
 
 def agent_debug_log(

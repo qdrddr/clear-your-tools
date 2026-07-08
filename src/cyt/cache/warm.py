@@ -17,12 +17,19 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
     if not tools_inject_allowed(cfg, "hook"):
         return
 
+    from cyt.config import tools_hook_tools_from
     from cyt.indexer.build import anthropic_tools_to_catalog_entries
     from cyt.tools.catalog_cache import ensure_tool_catalog_cached
     from cyt.tools.registry import load_tool_catalog
 
     try:
-        tools = load_tool_catalog(cfg)
+        tools: list[dict[str, Any]] | None
+        if tools_hook_tools_from(cfg) == "executor":
+            from cyt.tools.sources.executor_http import fetch_executor_tools
+
+            tools = fetch_executor_tools(cfg, allow_prompt=False, blocking=True)
+        else:
+            tools = load_tool_catalog(cfg)
         if not tools:
             return
         entries, enums = anthropic_tools_to_catalog_entries(tools)

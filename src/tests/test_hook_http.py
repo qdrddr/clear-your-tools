@@ -56,6 +56,21 @@ async def test_hook_inject_returns_formatted_stdout(hook_client: httpx.AsyncClie
 
 
 @pytest.mark.asyncio
+async def test_hook_inject_honors_debug_header(hook_client: httpx.AsyncClient) -> None:
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    result = HookRunResult(stdout_text="", outcome="noop", details={})
+    with patch("cyt.hook.http_server.run_hook_payload", return_value=result) as run_hook:
+        response = await hook_client.post(
+            "/hook/inject",
+            json=payload,
+            headers={"X-CYT-Hook-Debug": "1"},
+        )
+
+    assert response.status_code == 200
+    assert run_hook.call_args.kwargs["debug"] is True
+
+
+@pytest.mark.asyncio
 async def test_hook_inject_empty_body(hook_client: httpx.AsyncClient) -> None:
     response = await hook_client.post("/hook/inject", content=b"")
     assert response.status_code == 200

@@ -421,7 +421,16 @@ def resolve_hook_daemon_child_env(
     require_all: bool = True,
 ) -> dict[str, str]:
     """Resolve tool/skills pruner API keys for a hook daemon child process."""
-    names = required_proxy_env_var_names(config)
+    from cyt.config import required_tools_hook_env_var_names
+
+    names = list(
+        dict.fromkeys(
+            [
+                *required_proxy_env_var_names(config),
+                *required_tools_hook_env_var_names(config),
+            ],
+        ),
+    )
     if not names:
         return {}
     credential_sources: dict[str, str] = {}

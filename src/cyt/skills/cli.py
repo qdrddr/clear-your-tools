@@ -16,6 +16,7 @@ from cyt.config import (
     required_proxy_env_var_names,
     required_pruning_env_var_names,
     required_skills_env_var_names,
+    required_tools_hook_env_var_names,
     skills_enabled,
     skills_pipeline,
     tools_enabled,
@@ -99,6 +100,7 @@ def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | Non
         names.extend(required_skills_env_var_names(config))
     if tools_inject_via(config) == "hook":
         names.extend(required_pruning_env_var_names(config))
+        names.extend(required_tools_hook_env_var_names(config))
     names = list(dict.fromkeys(names))
     if not names:
         return
@@ -106,6 +108,36 @@ def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | Non
 
     prompt = allow_prompt if allow_prompt is not None else sys.stdin.isatty()
     ensure_named_credentials(names, allow_prompt=prompt)
+
+
+def _write_hook_debug_log(
+    *,
+    debug: bool,
+    raw_stdin: str,
+    payload: dict[str, Any],
+    cwd: str | None,
+    config: dict[str, Any],
+    cli_prompt: bool,
+    outcome: str,
+    details: dict[str, Any] | None,
+) -> None:
+    if not debug or not cli_prompt:
+        return
+    debug_details = dict(details) if details else {}
+    search_trace = debug_details.pop("search_trace", None)
+    if search_trace is not None:
+        trace_payload = trace_to_debug_details(search_trace)
+        if debug_details.get("injected"):
+            trace_payload["injected"] = debug_details["injected"]
+        debug_details["skills_search"] = trace_payload
+    write_skills_hook_debug_log(
+        raw_stdin=raw_stdin,
+        payload=payload,
+        cwd=cwd,
+        skills_enabled=skills_enabled(config) if not cli_prompt else True,
+        outcome=outcome,
+        details=debug_details or None,
+    )
 
 
 def _ensure_skills_credentials(config: dict[str, Any]) -> None:
@@ -812,6 +844,16 @@ def run_hook_payload(
         io_guarded=io_guarded,
     )
     stdout_text = format_hook_stdout(injection_text, payload, plain=plain_output)
+    _write_hook_debug_log(
+        debug=debug,
+        raw_stdin=raw_stdin,
+        payload=payload,
+        cwd=hook_cwd(payload),
+        config=config,
+        cli_prompt=plain_output,
+        outcome=outcome,
+        details=details,
+    )
     return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
 
 
@@ -865,21 +907,16 @@ def run(
             print("skills.pipeline (executed): (not run)", file=sys.stderr)
         _report_cli_outcome(outcome)
 
-    if debug and cli_prompt:
-        debug_details = dict(details) if details else {}
-        search_trace = debug_details.pop("search_trace", None)
-        if search_trace is not None:
-            trace_payload = trace_to_debug_details(search_trace)
-            if debug_details.get("injected"):
-                trace_payload["injected"] = debug_details["injected"]
-            debug_details["skills_search"] = trace_payload
-        write_skills_hook_debug_log(
+    if debug:
+        _write_hook_debug_log(
+            debug=debug,
             raw_stdin=raw_stdin,
             payload=payload,
             cwd=cwd,
-            skills_enabled=skills_enabled(config) if not cli_prompt else True,
+            config=config,
+            cli_prompt=cli_prompt,
             outcome=outcome,
-            details=debug_details or None,
+            details=details,
         )
 
 

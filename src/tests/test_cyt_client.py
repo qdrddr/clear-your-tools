@@ -561,3 +561,18 @@ def test_cli_session_end_deletes_rules_file_without_http(
         post.assert_not_called()
         assert not rules_path.is_file()
         assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_cli_passes_debug_header_to_hook_server() -> None:
+    payload = (
+        b'{"hook_event_name":"UserPromptSubmit","prompt":"hello","cwd":"/tmp/isolated-project"}'
+    )
+    with patch("cyt_client.cli.resolve_hook_url", return_value="http://127.0.0.1:8834/hook/inject"):
+        with patch("cyt_client.cli.post_hook_inject", return_value=(200, b"")) as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main(["--debug"])
+
+    post.assert_called_once()
+    assert post.call_args.kwargs["debug"] is True

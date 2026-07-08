@@ -301,3 +301,18 @@ def test_daemon_stop_without_pidfile_scans_config_port() -> None:
     ):
         hook_daemon.daemon_stop(verbose=True)
         stop.assert_called_once_with(8834, verbose=True)
+
+
+def test_needs_credential_injection_includes_executor_token() -> None:
+    config = {
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "hook": {
+                    "tools_from": "executor",
+                    "executor_token_var": "EXECUTOR_TOKEN",
+                },
+            },
+        },
+    }
+    assert hook_daemon._needs_credential_injection(config) is True

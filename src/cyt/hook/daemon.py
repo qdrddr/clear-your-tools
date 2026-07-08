@@ -17,6 +17,7 @@ from cyt.config import (
     launch_needs_proxy,
     load_config,
     required_proxy_env_var_names,
+    required_tools_hook_env_var_names,
     resolve_reverse_port,
 )
 from cyt.hook.port import (
@@ -115,8 +116,10 @@ def _resolve_daemon_mode(config: dict[str, Any]) -> str:
 
 
 def _needs_credential_injection(config: dict[str, Any]) -> bool:
-    """True when the configured hook pipeline requires remote pruner API keys."""
-    return bool(required_proxy_env_var_names(config))
+    """True when the configured hook pipeline requires remote credentials."""
+    return bool(
+        required_proxy_env_var_names(config) or required_tools_hook_env_var_names(config),
+    )
 
 
 def _report_missing_daemon_credentials(names: list[str]) -> None:
@@ -233,7 +236,14 @@ def daemon_start(
     require_all = not unattended
     extra_env: dict[str, str] | None = None
     if needs_creds:
-        required_names = required_proxy_env_var_names(config)
+        required_names = list(
+            dict.fromkeys(
+                [
+                    *required_proxy_env_var_names(config),
+                    *required_tools_hook_env_var_names(config),
+                ],
+            ),
+        )
         extra_env = _resolve_spawn_credentials(
             config,
             allow_prompt=allow_prompt,
@@ -346,6 +356,21 @@ def daemon_start(
         mode=mode,
     )
     _log(verbose, f"hook daemon: started pid={process.pid} port={spawn_port}")
+    # #region agent log
+    from cyt.proxy.agent_debug_log import agent_debug_log
+
+    agent_debug_log(
+        location="hook/daemon.py:daemon_start",
+        message="hook daemon spawned",
+        hypothesis_id="C",
+        data={
+            "port": spawn_port,
+            "needs_creds": needs_creds,
+            "extra_env_keys": sorted((extra_env or {}).keys()),
+            "has_executor_token": "EXECUTOR_TOKEN" in (extra_env or {}),
+        },
+    )
+    # #endregion
     result = HookDaemonStartResult(
         outcome="spawned",
         port=spawn_port,
