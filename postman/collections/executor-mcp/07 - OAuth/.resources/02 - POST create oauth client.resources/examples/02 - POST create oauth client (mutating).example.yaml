@@ -1,0 +1,30 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/oauth/clients"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "slug": "postman-client",
+        "authorizationUrl": "https://example.com/oauth/authorize",
+        "tokenUrl": "https://example.com/oauth/token",
+        "grant": "authorization_code",
+        "clientId": "REPLACE_ME",
+        "clientSecret": "REPLACE_ME"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:11:14 GMT
+    content-length: "27"
+  body:
+    type: json
+    content: |-
+      {
+        "client": "postman-client"
+      }
+order: 1783534277568

@@ -1,0 +1,15 @@
+$kind: http-request
+name: 03 - POST validate connection (preview)
+url: "{{base_url}}/api/connections/validate"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "integration": "{{connection_integration}}",
+      "template": "apikey",
+      "value": "REPLACE_ME"
+    }
+examples: .resources/03 - POST validate connection.resources/examples
+order: 1203

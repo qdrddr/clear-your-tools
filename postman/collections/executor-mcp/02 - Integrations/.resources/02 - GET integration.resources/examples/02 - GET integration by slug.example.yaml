@@ -1,0 +1,24 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/integrations/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:04:59 GMT
+    content-length: "134"
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "executor",
+        "name": "Executor",
+        "description": "Executor",
+        "kind": "built-in",
+        "canRemove": false,
+        "canRefresh": false,
+        "authMethods": []
+      }
+order: 1783533907545

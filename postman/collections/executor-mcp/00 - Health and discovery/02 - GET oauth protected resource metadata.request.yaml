@@ -1,0 +1,37 @@
+$kind: http-request
+name: 02 - GET oauth protected resource metadata
+description: |
+  RFC 9728 OAuth Protected Resource Metadata for the MCP resource.
+
+  Expected response: JSON (application/json) with fields like resource,
+  authorization_servers, bearer_methods_supported, scopes_supported.
+
+  Local CLI daemon (localhost:4789): this path is NOT routed to MCP discovery
+  today. The server returns 200 with the SPA HTML shell (index.html), not JSON.
+  That is a local routing limitation, not a malformed request. There is no
+  query string on this endpoint.
+
+  Cloud and self-host: return the JSON discovery document at this URL.
+url: "{{base_url}}/.well-known/oauth-protected-resource/mcp"
+method: GET
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      var ct = pm.response.headers.get("Content-Type") || "";
+      if (ct.indexOf("application/json") >= 0) {
+        var body = pm.response.json();
+        pm.test("has resource field", function () {
+          pm.expect(body.resource).to.be.a("string");
+        });
+      } else if (ct.indexOf("text/html") >= 0) {
+        pm.test("local daemon returns HTML (discovery not mounted here)", function () {
+          pm.expect.fail(
+            "Got HTML instead of JSON. On the local CLI daemon this endpoint falls through to the SPA. Use cloud/self-host base_url for RFC 9728 JSON, or use GET /api/oauth/probe for OAuth discovery via the REST API."
+          );
+        });
+      }
+    language: text/javascript
+examples: .resources/02 - GET oauth protected resource metadata.resources/examples
+order: 102

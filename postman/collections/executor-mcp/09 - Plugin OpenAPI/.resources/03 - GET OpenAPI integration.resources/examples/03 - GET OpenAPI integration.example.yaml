@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "122"
+    date: Wed, 08 Jul 2026 19:05:37 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-ping-1783537520895",
+        "description": "Swagger Petstore",
+        "kind": "openapi",
+        "canRemove": true,
+        "canRefresh": true
+      }
+order: 1783537538658

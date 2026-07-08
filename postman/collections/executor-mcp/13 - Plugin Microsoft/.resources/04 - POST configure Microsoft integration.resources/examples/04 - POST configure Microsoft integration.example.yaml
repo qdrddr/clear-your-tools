@@ -1,0 +1,48 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}/config"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "authenticationTemplate": [],
+        "mode": "merge"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "583"
+    date: Wed, 08 Jul 2026 19:05:59 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "authenticationTemplate": [
+          {
+            "slug": "azureAdDelegated",
+            "kind": "oauth2",
+            "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            "scopes": [
+              "offline_access",
+              "User.Read",
+              "Mail.ReadWrite",
+              "Mail.Send",
+              "MailboxSettings.ReadWrite"
+            ]
+          },
+          {
+            "slug": "azureAdClientCredentials",
+            "kind": "oauth2",
+            "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            "scopes": [
+              "https://graph.microsoft.com/.default"
+            ]
+          }
+        ]
+      }
+order: 1783537559575

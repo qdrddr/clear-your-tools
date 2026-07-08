@@ -1,0 +1,30 @@
+$kind: http-example
+name: 05 - PATCH update toolkit
+request:
+  url: "{{base_url}}/api/toolkits/{{toolkit_id}}"
+  method: PATCH
+  body:
+    type: json
+    content: |
+      {
+        "name": "Postman Toolkit Updated3"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:18:09 GMT
+    content-length: "156"
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tk_ex53cp8x3knmrceb5qe",
+        "owner": "org",
+        "slug": "postman-toolkit",
+        "name": "Postman Toolkit Updated3",
+        "createdAt": 1783534362566,
+        "updatedAt": 1783534689445
+      }
+order: 215757548816509

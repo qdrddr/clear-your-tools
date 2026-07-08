@@ -1,0 +1,9 @@
+$kind: http-request
+description: |
+  Fetch a paused execution by id. Requires `execution_id` from a run that paused
+  for approval. Returns 404 when no matching paused execution exists (expected
+  on a fresh local daemon).
+url: "{{base_url}}/api/executions/{{execution_id}}"
+method: GET
+examples: .resources/02 - GET paused execution.resources/examples
+order: 1502

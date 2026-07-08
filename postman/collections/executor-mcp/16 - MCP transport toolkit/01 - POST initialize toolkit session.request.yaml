@@ -1,0 +1,36 @@
+$kind: http-request
+description: |
+  Toolkit-scoped MCP transport at `/mcp/toolkits/:slug`.
+
+  Known local daemon limitation: initialize may return 500 when the toolkit slug
+  triggers `createExecutorHandle({ activeToolkitSlug })` to re-acquire the data
+  directory. Default `/mcp` transport (folder 15) works on local.
+url: "{{base_url}}/mcp/toolkits/{{toolkit_slug}}"
+method: POST
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "postman-executor-mcp-toolkit",
+          "version": "1.0.0"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var sessionId = pm.response.headers.get('mcp-session-id');
+      if (sessionId) pm.environment.set('mcp_toolkit_session_id', sessionId);
+    language: text/javascript
+examples: .resources/01 - POST initialize toolkit session.resources/examples
+order: 3101

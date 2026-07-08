@@ -1,0 +1,39 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}"
+  method: PATCH
+  body:
+    type: json
+    content: |
+      {
+        "description": "Updated via Postman"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "335"
+    date: Wed, 08 Jul 2026 19:05:22 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "owner": "org",
+        "name": "default",
+        "integration": "semble_mcp",
+        "template": "none",
+        "provider": "keychain",
+        "address": "tools.semble_mcp.org.default",
+        "identityLabel": null,
+        "description": "Updated via Postman",
+        "expiresAt": null,
+        "oauthClient": null,
+        "oauthClientOwner": null,
+        "oauthScope": null,
+        "lastHealth": {
+          "status": "healthy",
+          "checkedAt": 1783535339092
+        }
+      }
+order: 1783537523405

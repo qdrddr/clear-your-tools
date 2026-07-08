@@ -1,0 +1,109 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  headers:
+    Accept: application/json, text/event-stream
+    Content-Type: application/json
+    mcp-session-id: "{{mcp_session_id}}"
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": {}
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    mcp-session-id: ee4812a8-d05f-4388-bbe7-d41e1fcad07c
+    date: Wed, 08 Jul 2026 19:08:42 GMT
+    content-length: "1733"
+  body:
+    type: json
+    content: |-
+      {
+        "result": {
+          "tools": [
+            {
+              "name": "execute",
+              "description": "Execute TypeScript in a sandboxed runtime.\n\nBefore writing code, call `skills({ name: \"execute\" })` for the workflow on how to use this tool.",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              },
+              "execution": {
+                "taskSupport": "forbidden"
+              }
+            },
+            {
+              "name": "skills",
+              "description": "Fetch a named how-to skill. Skills hold the long-form guidance that would otherwise bloat another tool's always-loaded description.\nCall `skills({ name: \"execute\" })` for the full guide to writing code for the `execute` tool (search the catalog, call tools, emit results, resume paused runs).\nCall with no name to list the available skills.",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "The skill to fetch, e.g. \"execute\". Omit to list available skills.",
+                    "type": "string"
+                  }
+                }
+              },
+              "execution": {
+                "taskSupport": "forbidden"
+              }
+            },
+            {
+              "name": "resume",
+              "description": "Resume a paused execution using the executionId returned by execute.\nThis connection explicitly allows model-side resume via elicitation_mode=model.",
+              "inputSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                  "executionId": {
+                    "type": "string",
+                    "description": "The execution ID from the paused result"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "accept",
+                      "decline",
+                      "cancel"
+                    ],
+                    "description": "How to respond to the interaction"
+                  },
+                  "content": {
+                    "default": "{}",
+                    "type": "string",
+                    "description": "Optional JSON-encoded response content for form elicitations"
+                  }
+                },
+                "required": [
+                  "executionId",
+                  "action"
+                ]
+              },
+              "execution": {
+                "taskSupport": "forbidden"
+              }
+            }
+          ]
+        },
+        "jsonrpc": "2.0",
+        "id": 2
+      }
+order: 2013343217456084

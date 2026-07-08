@@ -1,0 +1,5 @@
+$kind: folder
+name: "10 - Plugin MCP admin"
+description: |
+  REST admin for MCP server integrations. addServer sets integration_slug.
+order: 2000

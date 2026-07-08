@@ -1,0 +1,5 @@
+$kind: folder
+name: "12 - Plugin Google"
+description: |
+  addBundle sets integration_slug.
+order: 2200

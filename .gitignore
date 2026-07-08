@@ -142,3 +142,6 @@ sdk/go/coverage.html
 sdk/go/vendor/
 .postman/
 .cursor/rules/cyt-injection.mdc
+graphify-out
+graphify-out/cost.json
+graphify-out/cache/

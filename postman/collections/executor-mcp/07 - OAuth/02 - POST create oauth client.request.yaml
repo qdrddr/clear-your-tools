@@ -1,0 +1,18 @@
+$kind: http-request
+name: 02 - POST create oauth client (mutating)
+url: "{{base_url}}/api/oauth/clients"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "slug": "postman-client",
+      "authorizationUrl": "https://example.com/oauth/authorize",
+      "tokenUrl": "https://example.com/oauth/token",
+      "grant": "authorization_code",
+      "clientId": "REPLACE_ME",
+      "clientSecret": "REPLACE_ME"
+    }
+examples: .resources/02 - POST create oauth client.resources/examples
+order: 1602

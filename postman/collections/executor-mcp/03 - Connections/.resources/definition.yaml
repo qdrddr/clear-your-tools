@@ -1,0 +1,5 @@
+$kind: folder
+name: "03 - Connections"
+description: |
+  Run 01 first to set connection_owner, connection_integration, connection_name.
+order: 1200

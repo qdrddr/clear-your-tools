@@ -1,0 +1,26 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/policies"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "149"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "id": "pol_374b2ott27mmrcfjhv5",
+          "owner": "org",
+          "pattern": "*",
+          "action": "approve",
+          "position": "Zz",
+          "createdAt": 1783536431000,
+          "updatedAt": 1783536431000
+        }
+      ]
+order: 1783537535846

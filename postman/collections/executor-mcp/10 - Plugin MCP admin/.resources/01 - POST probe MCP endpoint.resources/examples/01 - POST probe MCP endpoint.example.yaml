@@ -1,0 +1,32 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/mcp/probe"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "endpoint": "https://mcp.deepwiki.com/mcp"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "1897"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "connected": true,
+        "requiresAuthentication": false,
+        "requiresOAuth": false,
+        "supportsDynamicRegistration": false,
+        "name": "DeepWiki",
+        "slug": "mcp_deepwiki_com",
+        "toolCount": 3,
+        "serverName": "DeepWiki",
+        "instructions": "DeepWiki MCP provides AI-powered documentation for GitHub repositories.\n\nAvailable tools:\n- read_wiki_structure: Get a list of documentation topics for a repository\n- read_wiki_contents: View full documentation about a repository\n- ask_question: Ask any question about a repository and get an AI-powered answer\n- list_available_repos: List your available repositories (private mode only)\n- generate_wiki: Generate a codebase wiki for a repository — only use when explicitly requested by the user (private mode only)\n- devin_automation_manage: Manage Devin automations — list, get, create, update, delete, or fetch the trigger event schemas (private mode only)\n- devin_knowledge_manage: Manage Devin knowledge notes and suggestions — list, search, get, create, update, delete notes, view folder structure, list/view/dismiss knowledge suggestions (private mode only)\n- devin_playbook_manage: Manage Devin playbooks — list, get, create, update, delete (private mode only)\n- devin_schedule_manage: Manage scheduled Devin sessions — list, get, create, update, delete (private mode only)\n- devin_session_create: Create one or more child Devin sessions (private mode only)\n- devin_session_interact: Manage a Devin session — get status, send messages, sleep/terminate/archive, read messages & attachments, manage tags (private mode only)\n- devin_session_events: Inspect session events — list summaries, fetch full details, or search event contents (private mode only)\n- devin_session_search: Search and filter Devin sessions (private mode only)\n- list_integrations: List all native integrations and MCP servers with their status and settings URLs (private mode only)\n"
+      }
+order: 1783537539210

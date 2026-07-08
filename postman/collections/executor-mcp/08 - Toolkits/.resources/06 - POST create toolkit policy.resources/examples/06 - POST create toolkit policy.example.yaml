@@ -1,0 +1,31 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "pattern": "*",
+        "action": "approve"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "172"
+    date: Wed, 08 Jul 2026 19:05:36 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tkpol_o12wmflcfmnmrcg776k",
+        "toolkitId": "tk_4u0wti5haadmrcg76ls",
+        "pattern": "*",
+        "action": "approve",
+        "position": "a0",
+        "createdAt": 1783537537052,
+        "updatedAt": 1783537537052
+      }
+order: 1783537537104

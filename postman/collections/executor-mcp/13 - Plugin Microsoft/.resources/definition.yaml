@@ -1,0 +1,5 @@
+$kind: folder
+name: "13 - Plugin Microsoft"
+description: |
+  addGraph sets integration_slug.
+order: 2300

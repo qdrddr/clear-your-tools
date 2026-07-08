@@ -1,0 +1,28 @@
+$kind: http-request
+description: |
+  Starts an interactive OAuth connection flow. Requires a registered OAuth client
+  (`oauth_client_slug` from step 02 or 03) and an OAuth-capable integration on
+  `connection_integration`. Skipped in example sync when prerequisites are missing.
+name: 06 - POST start oauth flow
+url: "{{base_url}}/api/oauth/start"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "client": "{{oauth_client_slug}}",
+      "clientOwner": "org",
+      "owner": "org",
+      "name": "postman-oauth-connection",
+      "integration": "{{connection_integration}}",
+      "template": "oauth"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      try {
+        var res = pm.response.json();
+        if (res.state) pm.environment.set('oauth_state', res.state);
+      } catch (e) {}
+    language: text/javascript
+order: 1606

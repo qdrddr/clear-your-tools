@@ -1,0 +1,38 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/google/integrations/{{integration_slug}}/config"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "authenticationTemplate": [],
+        "mode": "merge"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "248"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "authenticationTemplate": [
+          {
+            "slug": "googleOAuth2",
+            "kind": "oauth2",
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+            "tokenUrl": "https://oauth2.googleapis.com/token",
+            "scopes": [
+              "https://mail.google.com/",
+              "openid",
+              "email",
+              "profile"
+            ]
+          }
+        ]
+      }
+order: 1783537539832

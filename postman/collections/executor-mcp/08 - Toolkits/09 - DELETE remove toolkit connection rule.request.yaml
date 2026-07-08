@@ -1,0 +1,20 @@
+$kind: http-request
+description: |
+  Deletes one connection rule by id. Run step 02 or 08 first to set
+  toolkit_connection_id.
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/connections/{{toolkit_connection_id}}"
+method: DELETE
+scripts:
+  - type: beforeRequest
+    code: |-
+      if (!pm.environment.get("toolkit_connection_id")) {
+        throw new Error(
+          "toolkit_connection_id is empty. Run step 02 (list) or 08 (create) first."
+        );
+      }
+      if (!pm.environment.get("toolkit_id")) {
+        throw new Error("toolkit_id is empty. Run step 01 (list toolkits) first.");
+      }
+    language: text/javascript
+examples: .resources/09 - DELETE remove toolkit connection rule.resources/examples
+order: 1709

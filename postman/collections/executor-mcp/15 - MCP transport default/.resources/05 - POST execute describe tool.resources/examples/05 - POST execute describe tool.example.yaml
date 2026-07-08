@@ -1,0 +1,46 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "tools/call",
+        "params": {
+          "name": "execute",
+          "arguments": {
+            "code": "const details = await tools.describe.tool({ path: \"{{tool_path}}\" });\nreturn JSON.stringify(details);"
+          }
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "3080"
+    date: Wed, 08 Jul 2026 19:06:14 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"path\":\"executor.coreTools.connections.list\",\"name\":\"coreTools.connections.list\",\"description\":\"List saved connections (the credential for one integration). Never returns the credential value. Optionally filter by integration or owner. OAuth scopes are summarized as `oauthScopeCount` by default; pass `verbose: true` to include the full `oauthScope` grant string per connection.\",\"inputTypeScript\":\"{ integration?: string | null; owner?: \\\"org\\\" | \\\"user\\\" | null; verbose?: boolean | null; }\",\"outputTypeScript\":\"{ ok: true; data: { connections: { owner: \\\"org\\\" | \\\"user\\\"; name: string; integration: string; template: string; provider: string; address: string; identityLabel?: string | null | null; description?: string | null | null; expiresAt: number | \\\"NaN\\\" | \\\"Infinity\\\" | \\\"-Infinity\\\" | null; oauthClient: string | null; oauthClientOwner: \\\"org\\\" | \\\"user\\\" | null; oauthScopeCount: number | \\\"NaN\\\" | \\\"Infinity\\\" | \\\"-Infinity\\\" | null; oauthScope?: string | null | null; }[]; }; http?: ToolHttpMeta } | { ok: false; error: ToolError }\",\"typeScriptDefinitions\":{\"ToolError\":\"{ code: string; message: string; status?: number; details?: unknown; retryable?: boolean }\",\"ToolHttpMeta\":\"{ status: number; headers: { [k: string]: string; } }\",\"ToolFile\":\"{ _tag: \\\"ToolFile\\\"; name?: string; mimeType: string; encoding: \\\"base64\\\"; data: string; byteLength: number; }\"}}"
+            }
+          ],
+          "structuredContent": {
+            "status": "completed",
+            "result": "{\"path\":\"executor.coreTools.connections.list\",\"name\":\"coreTools.connections.list\",\"description\":\"List saved connections (the credential for one integration). Never returns the credential value. Optionally filter by integration or owner. OAuth scopes are summarized as `oauthScopeCount` by default; pass `verbose: true` to include the full `oauthScope` grant string per connection.\",\"inputTypeScript\":\"{ integration?: string | null; owner?: \\\"org\\\" | \\\"user\\\" | null; verbose?: boolean | null; }\",\"outputTypeScript\":\"{ ok: true; data: { connections: { owner: \\\"org\\\" | \\\"user\\\"; name: string; integration: string; template: string; provider: string; address: string; identityLabel?: string | null | null; description?: string | null | null; expiresAt: number | \\\"NaN\\\" | \\\"Infinity\\\" | \\\"-Infinity\\\" | null; oauthClient: string | null; oauthClientOwner: \\\"org\\\" | \\\"user\\\" | null; oauthScopeCount: number | \\\"NaN\\\" | \\\"Infinity\\\" | \\\"-Infinity\\\" | null; oauthScope?: string | null | null; }[]; }; http?: ToolHttpMeta } | { ok: false; error: ToolError }\",\"typeScriptDefinitions\":{\"ToolError\":\"{ code: string; message: string; status?: number; details?: unknown; retryable?: boolean }\",\"ToolHttpMeta\":\"{ status: number; headers: { [k: string]: string; } }\",\"ToolFile\":\"{ _tag: \\\"ToolFile\\\"; name?: string; mimeType: string; encoding: \\\"base64\\\"; data: string; byteLength: number; }\"}}",
+            "logs": []
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 4
+      }
+order: 1783537574289

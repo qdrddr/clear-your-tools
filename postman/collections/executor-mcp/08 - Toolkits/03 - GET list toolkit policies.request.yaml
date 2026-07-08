@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res.policies && res.policies.length > 0) {
+        pm.environment.set('toolkit_policy_id', res.policies[0].id);
+      }
+    language: text/javascript
+examples: .resources/03 - GET list toolkit policies.resources/examples
+order: 1705

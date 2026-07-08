@@ -1,0 +1,12 @@
+$kind: http-request
+name: 07 - PATCH update integration (optional)
+url: "{{base_url}}/api/integrations/{{integration_slug}}"
+method: PATCH
+body:
+  type: json
+  content: |
+    {
+      "description": "Updated via Postman"
+    }
+examples: .resources/07 - PATCH update integration.resources/examples
+order: 1107

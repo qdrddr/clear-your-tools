@@ -1,0 +1,9 @@
+$kind: folder
+name: "00 - Health and discovery"
+description: |
+  Standalone checks. No sequence required.
+
+  Note: step 02 (oauth-protected-resource/mcp) returns JSON on cloud/self-host
+  but HTML on the local CLI daemon (SPA fallback). Use GET /api/oauth/probe
+  on local for OAuth server discovery instead.
+order: 100

@@ -1,0 +1,27 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/graphql/integrations"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "endpoint": "https://api.github.com/graphql",
+        "slug": "postman-graphql-{{postman_run_id}}",
+        "name": "Postman GraphQL"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "65"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-graphql-1783537520895",
+        "name": "Postman GraphQL"
+      }
+order: 1783537539321

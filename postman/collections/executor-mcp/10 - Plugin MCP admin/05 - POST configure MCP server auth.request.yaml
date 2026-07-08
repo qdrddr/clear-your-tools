@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/api/mcp/servers/{{integration_slug}}/auth"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "authenticationTemplate": [],
+      "mode": "merge"
+    }
+examples: .resources/05 - POST configure MCP server auth.resources/examples
+order: 2005

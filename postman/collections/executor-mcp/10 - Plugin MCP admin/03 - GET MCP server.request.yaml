@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/mcp/servers/{{integration_slug}}"
+method: GET
+examples: .resources/03 - GET MCP server.resources/examples
+order: 2003

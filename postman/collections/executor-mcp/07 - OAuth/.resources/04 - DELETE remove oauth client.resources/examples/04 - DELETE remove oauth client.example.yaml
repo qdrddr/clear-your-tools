@@ -1,0 +1,24 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/oauth/clients/{{oauth_client_slug}}"
+  method: DELETE
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "16"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "removed": true
+      }
+order: 1783537535991

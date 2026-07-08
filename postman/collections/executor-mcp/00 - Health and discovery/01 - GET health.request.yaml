@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{base_url}}/api/health"
+method: GET
+auth:
+  type: noauth
+examples: .resources/01 - GET health.resources/examples
+order: 101

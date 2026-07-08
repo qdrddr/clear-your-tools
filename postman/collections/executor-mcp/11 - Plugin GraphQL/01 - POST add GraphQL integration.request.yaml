@@ -1,0 +1,20 @@
+$kind: http-request
+name: 01 - POST add GraphQL integration (mutating)
+url: "{{base_url}}/api/graphql/integrations"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "endpoint": "https://api.github.com/graphql",
+      "slug": "postman-graphql-{{postman_run_id}}",
+      "name": "Postman GraphQL"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.slug) pm.environment.set('integration_slug', res.slug);
+    language: text/javascript
+examples: .resources/01 - POST add GraphQL integration.resources/examples
+order: 2101

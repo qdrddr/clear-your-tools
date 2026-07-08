@@ -1,0 +1,25 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}/graph"
+  method: POST
+  body:
+    type: json
+    content: |
+      {}
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "76"
+    date: Wed, 08 Jul 2026 19:06:04 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-msgraph",
+        "toolCount": 290,
+        "addedTools": [],
+        "removedTools": []
+      }
+order: 1783537573873

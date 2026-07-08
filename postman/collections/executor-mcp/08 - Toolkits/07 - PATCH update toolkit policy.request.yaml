@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies/{{toolkit_policy_id}}"
+method: PATCH
+body:
+  type: json
+  content: |
+    {
+      "action": "require_approval"
+    }
+examples: .resources/07 - PATCH update toolkit policy.resources/examples
+order: 1707

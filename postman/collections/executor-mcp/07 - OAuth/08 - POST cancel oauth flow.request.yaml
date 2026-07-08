@@ -1,0 +1,11 @@
+$kind: http-request
+name: 08 - POST cancel oauth flow
+url: "{{base_url}}/api/oauth/cancel"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "state": "{{oauth_state}}"
+    }
+order: 1608

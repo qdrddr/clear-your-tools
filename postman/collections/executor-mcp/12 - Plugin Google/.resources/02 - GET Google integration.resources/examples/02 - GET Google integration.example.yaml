@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/google/integrations/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "103"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-gmail",
+        "description": "Google APIs",
+        "kind": "google",
+        "canRemove": true,
+        "canRefresh": true
+      }
+order: 1783537539815

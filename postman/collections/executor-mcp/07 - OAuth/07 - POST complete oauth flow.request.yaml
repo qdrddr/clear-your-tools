@@ -1,0 +1,12 @@
+$kind: http-request
+name: 07 - POST complete oauth flow
+url: "{{base_url}}/api/oauth/complete"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "state": "{{oauth_state}}",
+      "code": "REPLACE_AUTHORIZATION_CODE"
+    }
+order: 1607

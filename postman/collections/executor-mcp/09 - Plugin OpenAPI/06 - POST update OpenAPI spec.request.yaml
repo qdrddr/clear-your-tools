@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}/spec"
+method: POST
+body:
+  type: json
+  content: |
+    {}
+examples: .resources/06 - POST update OpenAPI spec.resources/examples
+order: 1906

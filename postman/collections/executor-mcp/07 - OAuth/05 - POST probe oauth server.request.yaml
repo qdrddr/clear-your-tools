@@ -1,0 +1,19 @@
+$kind: http-request
+description: |
+  Discovers OAuth authorization-server metadata (RFC 8414 / OIDC) for onboarding.
+
+  Body field is `url` (not `issuer`). Pass either:
+    - an MCP resource URL (e.g. https://mcp.example.com/mcp), or
+    - an authorization-server base URL (e.g. https://accounts.google.com)
+
+  Returns authorizationUrl, tokenUrl, scopesSupported, registrationEndpoint, etc.
+url: "{{base_url}}/api/oauth/probe"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "url": "https://mcp.context7.com/mcp"
+    }
+examples: .resources/05 - POST probe oauth server.resources/examples
+order: 1605

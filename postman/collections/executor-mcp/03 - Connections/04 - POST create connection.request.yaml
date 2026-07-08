@@ -1,0 +1,26 @@
+$kind: http-request
+name: 04 - POST create connection (mutating)
+url: "{{base_url}}/api/connections"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "name": "postman-{{postman_run_id}}",
+      "integration": "{{connection_integration}}",
+      "template": "apikey",
+      "value": "REPLACE_ME"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.name) {
+        pm.environment.set('connection_name', res.name);
+        pm.environment.set('connection_integration', res.integration);
+        pm.environment.set('connection_owner', res.owner);
+      }
+    language: text/javascript
+examples: .resources/04 - POST create connection.resources/examples
+order: 1204

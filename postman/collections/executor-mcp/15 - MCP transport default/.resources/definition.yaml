@@ -1,0 +1,5 @@
+$kind: folder
+name: "15 - MCP transport (default /mcp)"
+description: |
+  Run in order. Step 1 sets mcp_session_id. Step 4 sets tool_path for step 5.
+order: 3000

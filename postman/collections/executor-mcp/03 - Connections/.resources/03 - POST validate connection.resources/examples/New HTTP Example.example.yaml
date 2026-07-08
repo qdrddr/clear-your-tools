@@ -1,0 +1,28 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/validate"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "integration": "{{connection_integration}}",
+        "template": "apikey",
+        "value": "REPLACE_ME"
+      }
+response:
+  statusCode: 404
+  statusText: Not Found
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 19:08:17 GMT
+    content-length: "57"
+  body:
+    type: json
+    content: |-
+      {
+        "_tag": "IntegrationNotFoundError",
+        "slug": "deepwiki_mcp"
+      }
+order: 3986496635985252

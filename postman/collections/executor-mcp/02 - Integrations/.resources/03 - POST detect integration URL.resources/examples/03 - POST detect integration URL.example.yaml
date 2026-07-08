@@ -1,0 +1,30 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/integrations/detect"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "url": "https://mcp.deepwiki.com/mcp"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "130"
+    date: Wed, 08 Jul 2026 19:05:22 GMT
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "kind": "mcp",
+          "confidence": "high",
+          "endpoint": "https://mcp.deepwiki.com/mcp",
+          "name": "mcp.deepwiki.com",
+          "slug": "mcp_deepwiki_com"
+        }
+      ]
+order: 1783537523274

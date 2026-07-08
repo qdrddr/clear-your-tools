@@ -1,0 +1,29 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/validate"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "integration": "{{connection_integration}}",
+        "template": "apikey",
+        "value": "REPLACE_ME"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:07:00 GMT
+    content-length: "96"
+  body:
+    type: json
+    content: |-
+      {
+        "status": "degraded",
+        "checkedAt": 1783534021813,
+        "detail": "MCP discovery timed out after 15000ms"
+      }
+order: 1783534039473

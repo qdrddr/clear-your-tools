@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}/config"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "authenticationTemplate": [],
+      "mode": "merge"
+    }
+examples: .resources/04 - POST configure Microsoft integration.resources/examples
+order: 2304

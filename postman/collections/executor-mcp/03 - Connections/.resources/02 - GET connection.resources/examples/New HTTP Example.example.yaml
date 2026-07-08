@@ -1,0 +1,21 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}"
+  method: GET
+response:
+  statusCode: 404
+  statusText: Not Found
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 19:08:00 GMT
+    content-length: "103"
+  body:
+    type: json
+    content: |-
+      {
+        "_tag": "ConnectionNotFoundError",
+        "owner": "org",
+        "integration": "deepwiki_mcp",
+        "name": "localdeepwikimcp"
+      }
+order: 2712310870964262

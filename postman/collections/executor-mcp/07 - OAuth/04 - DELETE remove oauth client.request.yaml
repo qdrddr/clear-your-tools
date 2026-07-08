@@ -1,0 +1,11 @@
+$kind: http-request
+name: 04 - DELETE remove oauth client (destructive)
+url: "{{base_url}}/api/oauth/clients/{{oauth_client_slug}}"
+method: DELETE
+body:
+  type: json
+  content: |
+    {
+      "owner": "org"
+    }
+order: 1604

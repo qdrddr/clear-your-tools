@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{base_url}}/api/integrations/detect"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "url": "https://mcp.deepwiki.com/mcp"
+    }
+examples: .resources/03 - POST detect integration URL.resources/examples
+order: 1103

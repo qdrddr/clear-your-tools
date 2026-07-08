@@ -1,5 +1,25 @@
 $kind: collection
 name: executor-mcp
+description: |
+  Executor REST + MCP API collection (Postman v3 folder format).
+
+  Set in Environment1:
+    - base_url — e.g. http://localhost:4789 (no trailing slash)
+    - executor-token — Bearer token from local auth.json
+
+  Folders are numbered and requests within each folder are ordered.
+  Run requests top-to-bottom inside a folder when the folder description says so.
+  afterResponse scripts chain variables (integration_slug, toolkit_id, mcp_session_id, etc.).
+
+  Swagger UI: {{base_url}}/api/docs (local daemon)
+
+  Not included (host-specific):
+    - Cloud account API (/account/*)
+    - Cloud auth API (/auth/*)
+    - Self-host admin API (/admin/*)
+
+  Known local limitation: MCP toolkit initialize may 500 until the local daemon
+  toolkit session bug is fixed; REST toolkit endpoints still work.
 auth:
   - id: 216f7ea7-2769-460d-ba52-bec091a1e5a4
     type: bearer

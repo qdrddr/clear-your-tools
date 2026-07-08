@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/graphql/integrations/{{integration_slug}}/config"
+method: GET
+examples: .resources/03 - GET GraphQL integration config.resources/examples
+order: 2103

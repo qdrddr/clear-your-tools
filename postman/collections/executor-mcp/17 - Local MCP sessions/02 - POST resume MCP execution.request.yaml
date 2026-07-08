@@ -1,0 +1,11 @@
+$kind: http-request
+name: 02 - POST resume MCP execution (approve/decline)
+url: "{{base_url}}/api/mcp-sessions/{{mcp_session_id}}/executions/{{execution_id}}/resume"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "action": "accept"
+    }
+order: 3202

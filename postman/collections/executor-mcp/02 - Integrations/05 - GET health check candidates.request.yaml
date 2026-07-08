@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/integrations/{{integration_slug}}/health-check/candidates"
+method: GET
+examples: .resources/05 - GET health check candidates.resources/examples
+order: 1105

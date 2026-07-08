@@ -1,0 +1,17 @@
+$kind: http-request
+description: |
+  Preview an OpenAPI document without persisting it.
+
+  `spec` must be a STRING containing the raw OpenAPI JSON (or YAML text),
+  not a nested JSON object. For adding by URL, use step 02 (addSpec) instead,
+  which accepts `{ "kind": "url", "url": "..." }`.
+url: "{{base_url}}/api/openapi/preview"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "spec": "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Ping API\",\"version\":\"1.0.0\"},\"servers\":[{\"url\":\"https://api.example.com\"}],\"paths\":{\"/ping\":{\"get\":{\"operationId\":\"getPing\",\"summary\":\"Ping\",\"responses\":{\"200\":{\"description\":\"OK\"}}}}}}"
+    }
+examples: .resources/01 - POST preview OpenAPI spec.resources/examples
+order: 1901

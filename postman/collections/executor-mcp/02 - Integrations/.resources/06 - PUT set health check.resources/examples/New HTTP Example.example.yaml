@@ -1,0 +1,25 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/integrations/{{integration_slug}}/health-check"
+  method: PUT
+  body:
+    type: json
+    content: |
+      {
+        "spec": null
+      }
+response:
+  statusCode: 404
+  statusText: Not Found
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 19:07:39 GMT
+    content-length: "60"
+  body:
+    type: json
+    content: |-
+      {
+        "_tag": "IntegrationNotFoundError",
+        "slug": "postman-graphql"
+      }
+order: 1692380246305215

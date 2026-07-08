@@ -1,0 +1,5 @@
+$kind: folder
+name: "11 - Plugin GraphQL"
+description: |
+  addIntegration sets integration_slug.
+order: 2100

@@ -1,0 +1,30 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/mcp/servers/{{integration_slug}}/auth"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "authenticationTemplate": [],
+        "mode": "merge"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "58"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "authenticationTemplate": [
+          {
+            "slug": "none",
+            "kind": "none"
+          }
+        ]
+      }
+order: 1783537539238

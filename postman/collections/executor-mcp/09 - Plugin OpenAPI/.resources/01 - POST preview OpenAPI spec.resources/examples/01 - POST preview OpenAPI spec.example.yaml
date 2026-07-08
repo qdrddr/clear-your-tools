@@ -1,0 +1,45 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/openapi/preview"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "spec": "{\"openapi\":\"3.0.3\",\"info\":{\"title\":\"Ping API\",\"version\":\"1.0.0\"},\"servers\":[{\"url\":\"https://api.example.com\"}],\"paths\":{\"/ping\":{\"get\":{\"operationId\":\"getPing\",\"summary\":\"Ping\",\"responses\":{\"200\":{\"description\":\"OK\"}}}}}}"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "320"
+    date: Wed, 08 Jul 2026 19:05:36 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "title": "Ping API",
+        "version": "1.0.0",
+        "servers": [
+          {
+            "url": "https://api.example.com"
+          }
+        ],
+        "operationCount": 1,
+        "tags": [],
+        "securitySchemes": [],
+        "authStrategies": [],
+        "headerPresets": [],
+        "oauth2Presets": [],
+        "healthCheckCandidates": [
+          {
+            "operation": "ping.getPing",
+            "method": "get",
+            "requiredArgCount": 0,
+            "destructive": false,
+            "summary": "Ping"
+          }
+        ]
+      }
+order: 1783537537549

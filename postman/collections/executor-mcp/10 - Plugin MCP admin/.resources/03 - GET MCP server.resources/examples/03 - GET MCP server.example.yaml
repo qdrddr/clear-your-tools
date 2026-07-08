@@ -1,0 +1,33 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/mcp/servers/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "268"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-mcp-1783537520895",
+        "description": "Postman MCP",
+        "kind": "mcp",
+        "canRemove": true,
+        "canRefresh": true,
+        "config": {
+          "transport": "remote",
+          "endpoint": "https://mcp.deepwiki.com/mcp",
+          "remoteTransport": "auto",
+          "authenticationTemplate": [
+            {
+              "slug": "none",
+              "kind": "none"
+            }
+          ]
+        }
+      }
+order: 1783537539227

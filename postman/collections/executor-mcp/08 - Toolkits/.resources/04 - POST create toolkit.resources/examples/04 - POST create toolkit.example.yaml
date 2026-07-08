@@ -1,0 +1,30 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/toolkits"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "name": "Postman Toolkit {{postman_run_id}}"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "175"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tk_4u0wti5haadmrcg76ls",
+        "owner": "org",
+        "slug": "postman-toolkit-1783537520895",
+        "name": "Postman Toolkit 1783537520895",
+        "createdAt": 1783537536304,
+        "updatedAt": 1783537536304
+      }
+order: 1783537536311

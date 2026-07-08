@@ -1,0 +1,35 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}/refresh"
+  method: POST
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "964"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "address": "tools.semble_mcp.org.default.search",
+          "owner": "org",
+          "integration": "semble_mcp",
+          "connection": "default",
+          "name": "search",
+          "pluginId": "mcp",
+          "description": "Search once with a focused query describing what the code does or its name.\n\nWrite queries using function/class names or behavior descriptions, not error messages.\nReturns file paths and line numbers — navigate directly there, do not repeat the search.\nPass a git URL or local path as `repo`; indexes are cached for the session.\n"
+        },
+        {
+          "address": "tools.semble_mcp.org.default.find_related",
+          "owner": "org",
+          "integration": "semble_mcp",
+          "connection": "default",
+          "name": "find_related",
+          "pluginId": "mcp",
+          "description": "Find code similar to a known location.\n\nUseful for discovering all implementations of an interface, all callers of a function,\nor all tests for a class. Use after `search` when you need related code beyond the primary result.\nPass `file_path` and `line` from a prior search result.\n"
+        }
+      ]
+order: 1783537535822

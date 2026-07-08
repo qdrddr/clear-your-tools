@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}/config"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "authenticationTemplate": [],
+      "mode": "merge"
+    }
+examples: .resources/05 - POST configure OpenAPI integration.resources/examples
+order: 1905

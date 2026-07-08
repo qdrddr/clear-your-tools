@@ -1,0 +1,5 @@
+$kind: folder
+name: "17 - Local MCP sessions"
+description: |
+  Local daemon approval flow. Requires mcp_session_id and execution_id from a paused MCP execute.
+order: 3200

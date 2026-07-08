@@ -1,0 +1,12 @@
+$kind: http-request
+name: 04 - DELETE remove policy (destructive)
+url: "{{base_url}}/api/policies/{{policy_id}}"
+method: DELETE
+body:
+  type: json
+  content: |
+    {
+      "owner": "org"
+    }
+examples: .resources/04 - DELETE remove policy.resources/examples
+order: 1404

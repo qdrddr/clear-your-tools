@@ -1,0 +1,17 @@
+$kind: http-request
+description: |
+  Lists all connection rules for the toolkit. There is no GET-by-id endpoint;
+  pick the rule you want from connections[].id and set toolkit_connection_id
+  (this script sets it to the first rule).
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/connections"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res.connections && res.connections.length > 0) {
+        pm.environment.set("toolkit_connection_id", res.connections[0].id);
+      }
+    language: text/javascript
+examples: .resources/02 - GET list toolkit connections.resources/examples
+order: 1704

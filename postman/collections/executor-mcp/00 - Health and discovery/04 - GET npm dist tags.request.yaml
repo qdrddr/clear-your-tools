@@ -1,0 +1,8 @@
+$kind: http-request
+name: 04 - GET npm dist tags (public)
+url: "{{base_url}}/v1/app/npm/dist-tags"
+method: GET
+auth:
+  type: noauth
+examples: .resources/04 - GET npm dist tags.resources/examples
+order: 104

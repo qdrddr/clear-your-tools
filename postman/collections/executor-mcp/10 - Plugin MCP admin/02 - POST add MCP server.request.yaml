@@ -1,0 +1,20 @@
+$kind: http-request
+name: 02 - POST add MCP server (mutating)
+url: "{{base_url}}/api/mcp/servers"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "name": "Postman MCP",
+      "endpoint": "https://mcp.deepwiki.com/mcp",
+      "slug": "postman-mcp-{{postman_run_id}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.slug) pm.environment.set('integration_slug', res.slug);
+    language: text/javascript
+examples: .resources/02 - POST add MCP server.resources/examples
+order: 2002

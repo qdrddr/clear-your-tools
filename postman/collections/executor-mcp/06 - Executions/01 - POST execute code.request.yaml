@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{base_url}}/api/executions"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "code": "return JSON.stringify({ ok: true, via: \"postman\" });",
+      "autoApprove": true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      try {
+        var res = pm.response.json();
+        if (res.status === 'paused' && res.structured && res.structured.executionId) {
+          pm.environment.set('execution_id', res.structured.executionId);
+        }
+      } catch (e) {}
+    language: text/javascript
+examples: .resources/01 - POST execute code.resources/examples
+order: 1501

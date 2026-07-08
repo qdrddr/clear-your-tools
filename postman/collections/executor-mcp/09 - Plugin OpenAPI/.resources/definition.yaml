@@ -1,0 +1,6 @@
+$kind: folder
+name: "09 - Plugin OpenAPI"
+description: |
+  Step 01 preview: `spec` is a raw OpenAPI JSON/YAML string.
+  Step 02 addSpec: `spec` is `{ "kind": "url"|"blob", ... }` and sets integration_slug.
+order: 1900

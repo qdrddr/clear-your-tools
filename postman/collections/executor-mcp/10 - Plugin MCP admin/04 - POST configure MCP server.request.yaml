@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{base_url}}/api/mcp/servers/{{integration_slug}}/config"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "config": {
+        "transport": "remote",
+        "endpoint": "https://mcp.deepwiki.com/mcp",
+        "remoteTransport": "auto",
+        "authenticationTemplate": [
+          {
+            "slug": "none",
+            "kind": "none"
+          }
+        ]
+      }
+    }
+examples: .resources/04 - POST configure MCP server.resources/examples
+order: 2004

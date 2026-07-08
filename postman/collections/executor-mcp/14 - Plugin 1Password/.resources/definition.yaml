@@ -1,0 +1,5 @@
+$kind: folder
+name: "14 - Plugin 1Password"
+description: |
+  Standalone reads. Configure/remove are mutating.
+order: 2400

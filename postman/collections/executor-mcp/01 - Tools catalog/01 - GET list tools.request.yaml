@@ -1,0 +1,16 @@
+$kind: http-request
+name: 01 - GET list tools (exclude blocked)
+url: "{{base_url}}/api/tools"
+method: GET
+queryParams:
+  includeBlocked: "false"
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (Array.isArray(res) && res.length > 0) {
+        pm.environment.set('current_tool_address', res[0].address);
+      }
+    language: text/javascript
+examples: .resources/01 - GET list tools.resources/examples
+order: 1001

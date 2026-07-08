@@ -1,0 +1,5 @@
+$kind: folder
+name: "02 - Integrations"
+description: |
+  Run 01 first to set integration_slug. Steps 04-06 are health-check configuration.
+order: 1100

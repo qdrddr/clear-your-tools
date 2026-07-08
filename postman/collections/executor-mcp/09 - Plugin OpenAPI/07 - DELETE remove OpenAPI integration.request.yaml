@@ -1,0 +1,5 @@
+$kind: http-request
+name: 07 - DELETE remove OpenAPI integration (destructive)
+url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}"
+method: DELETE
+order: 1907

@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/api/policies"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (Array.isArray(res) && res.length > 0) {
+        pm.environment.set('policy_id', res[0].id);
+      }
+    language: text/javascript
+examples: .resources/01 - GET list policies.resources/examples
+order: 1401

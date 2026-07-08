@@ -1,0 +1,24 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+      }
+response:
+  statusCode: 202
+  statusText: Accepted
+  headers:
+    content-type: application/json
+    content-length: "0"
+    date: Wed, 08 Jul 2026 19:06:14 GMT
+  body:
+    type: text
+    content: |-
+      
+order: 1783537574227

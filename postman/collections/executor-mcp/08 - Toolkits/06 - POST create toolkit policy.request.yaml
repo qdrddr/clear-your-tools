@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "pattern": "*",
+      "action": "approve"
+    }
+examples: .resources/06 - POST create toolkit policy.resources/examples
+order: 1706
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.id) {
+        pm.environment.set("toolkit_policy_id", res.id);
+      }
+    language: text/javascript

@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{base_url}}/mcp"
+method: OPTIONS
+auth:
+  type: noauth
+headers:
+  Origin: http://localhost
+  Access-Control-Request-Method: POST
+examples: .resources/03 - OPTIONS mcp preflight.resources/examples
+order: 103

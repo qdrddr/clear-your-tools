@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}/graph"
+method: POST
+body:
+  type: json
+  content: |
+    {}
+examples: .resources/05 - POST update Microsoft Graph.resources/examples
+order: 2305

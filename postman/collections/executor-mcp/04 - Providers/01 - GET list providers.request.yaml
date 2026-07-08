@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/api/providers"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (Array.isArray(res) && res.length > 0) {
+        pm.environment.set('provider_key', res[0]);
+      }
+    language: text/javascript
+examples: .resources/01 - GET list providers.resources/examples
+order: 1301

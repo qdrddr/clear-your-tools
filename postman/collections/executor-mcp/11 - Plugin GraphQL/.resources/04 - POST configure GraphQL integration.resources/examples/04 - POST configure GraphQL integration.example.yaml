@@ -1,0 +1,25 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/graphql/integrations/{{integration_slug}}/config"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "authenticationTemplate": [],
+        "mode": "merge"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "29"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "authenticationTemplate": []
+      }
+order: 1783537539366

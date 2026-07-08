@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/providers/{{provider_key}}/items"
+method: GET
+examples: .resources/02 - GET provider items.resources/examples
+order: 1302

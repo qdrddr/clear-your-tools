@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/api/policies/{{policy_id}}"
+method: PATCH
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "action": "require_approval"
+    }
+examples: .resources/03 - PATCH update policy.resources/examples
+order: 1403

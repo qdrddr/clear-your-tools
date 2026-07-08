@@ -1,0 +1,106 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/integrations"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "1501"
+    date: Wed, 08 Jul 2026 19:05:20 GMT
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "slug": "executor",
+          "name": "Executor",
+          "description": "Executor",
+          "kind": "built-in",
+          "canRemove": false,
+          "canRefresh": false,
+          "authMethods": []
+        },
+        {
+          "slug": "lean_ctx_mcp",
+          "name": "Lean Ctx MCP",
+          "description": "Lean Ctx MCP",
+          "kind": "mcp",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [
+            {
+              "id": "env",
+              "label": "Environment variables",
+              "kind": "apikey",
+              "template": "env",
+              "placements": [
+                {
+                  "carrier": "env",
+                  "name": "LEAN_CTX_DATA_DIR",
+                  "prefix": "",
+                  "variable": "LEAN_CTX_DATA_DIR"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "slug": "postman-graphql",
+          "name": "Postman GraphQL",
+          "description": "Postman GraphQL",
+          "kind": "graphql",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [],
+          "displayUrl": "https://api.github.com/graphql"
+        },
+        {
+          "slug": "postman-graphql-1783537000225",
+          "name": "Postman GraphQL",
+          "description": "Postman GraphQL",
+          "kind": "graphql",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [],
+          "displayUrl": "https://api.github.com/graphql"
+        },
+        {
+          "slug": "postman-graphql-1783537403358",
+          "name": "Postman GraphQL",
+          "description": "Postman GraphQL",
+          "kind": "graphql",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [],
+          "displayUrl": "https://api.github.com/graphql"
+        },
+        {
+          "slug": "postman-graphql-1783537476601",
+          "name": "Postman GraphQL",
+          "description": "Postman GraphQL",
+          "kind": "graphql",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [],
+          "displayUrl": "https://api.github.com/graphql"
+        },
+        {
+          "slug": "semble_mcp",
+          "name": "Semble MCP",
+          "description": "Semble MCP",
+          "kind": "mcp",
+          "canRemove": true,
+          "canRefresh": true,
+          "authMethods": [
+            {
+              "id": "none",
+              "label": "No authentication",
+              "kind": "none",
+              "template": "none"
+            }
+          ]
+        }
+      ]
+order: 1783537520985

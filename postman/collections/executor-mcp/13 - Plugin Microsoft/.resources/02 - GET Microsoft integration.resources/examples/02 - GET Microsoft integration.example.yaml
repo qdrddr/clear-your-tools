@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "132"
+    date: Wed, 08 Jul 2026 19:05:41 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-msgraph",
+        "description": "Selected Microsoft Graph workloads.",
+        "kind": "microsoft",
+        "canRemove": true,
+        "canRefresh": true
+      }
+order: 1783537559512

@@ -1,0 +1,44 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/mcp/servers/{{integration_slug}}/config"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "config": {
+          "transport": "remote",
+          "endpoint": "https://mcp.deepwiki.com/mcp",
+          "remoteTransport": "auto",
+          "authenticationTemplate": [
+            {
+              "slug": "none",
+              "kind": "none"
+            }
+          ]
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "157"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "config": {
+          "transport": "remote",
+          "endpoint": "https://mcp.deepwiki.com/mcp",
+          "remoteTransport": "auto",
+          "authenticationTemplate": [
+            {
+              "slug": "none",
+              "kind": "none"
+            }
+          ]
+        }
+      }
+order: 1783537539232

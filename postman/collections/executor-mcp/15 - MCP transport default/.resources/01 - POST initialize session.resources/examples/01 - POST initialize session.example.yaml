@@ -1,0 +1,47 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-03-26",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "postman-executor-mcp",
+            "version": "1.0.0"
+          }
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "163"
+    date: Wed, 08 Jul 2026 19:06:14 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "result": {
+          "protocolVersion": "2025-03-26",
+          "capabilities": {
+            "tools": {
+              "listChanged": true
+            }
+          },
+          "serverInfo": {
+            "name": "executor",
+            "version": "1.0.0"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 1
+      }
+order: 1783537574222

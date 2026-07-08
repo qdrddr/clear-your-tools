@@ -1,0 +1,20 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/graphql/integrations/{{integration_slug}}"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "98"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "endpoint": "https://api.github.com/graphql",
+        "name": "Postman GraphQL",
+        "authenticationTemplate": []
+      }
+order: 1783537539349

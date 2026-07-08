@@ -1,0 +1,31 @@
+$kind: http-example
+name: 04 - POST create toolkit (mutating)
+request:
+  url: "{{base_url}}/api/toolkits"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "name": "Postman Toolkit2"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:14:21 GMT
+    content-length: "149"
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tk_m6h1smrusrcmrcedays",
+        "owner": "org",
+        "slug": "postman-toolkit2",
+        "name": "Postman Toolkit2",
+        "createdAt": 1783534462660,
+        "updatedAt": 1783534462660
+      }
+order: 199320037210595

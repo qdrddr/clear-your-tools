@@ -1,0 +1,454 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/tools/schema"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "8026"
+    date: Wed, 08 Jul 2026 19:05:20 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "address": "tools.lean_ctx_mcp.org.localleanctxmcp.ctx_call",
+        "name": "ctx_call",
+        "description": "Invoke any of the 50+ lean-ctx tools by name. Use for tools not in the core set.\nCATEGORIES:\narch: ctx_architecture, ctx_impact, ctx_callgraph, ctx_refactor, ctx_symbol, ctx_routes, ctx_smells, ctx_index",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "arguments": {
+              "description": "Arguments object to pass to the invoked tool",
+              "type": "object"
+            },
+            "name": {
+              "description": "Tool name to invoke (e.g. 'ctx_architecture', 'ctx_benchmark')",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "_meta": {
+              "type": "object",
+              "properties": {
+                "progressToken": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                },
+                "io.modelcontextprotocol/related-task": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": {}
+            },
+            "content": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "annotations": {
+                        "type": "object",
+                        "properties": {
+                          "audience": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant"
+                              ]
+                            }
+                          },
+                          "priority": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "lastModified": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "_meta": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "image"
+                      },
+                      "data": {
+                        "type": "string"
+                      },
+                      "mimeType": {
+                        "type": "string"
+                      },
+                      "annotations": {
+                        "type": "object",
+                        "properties": {
+                          "audience": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant"
+                              ]
+                            }
+                          },
+                          "priority": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "lastModified": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "_meta": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "data",
+                      "mimeType"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "audio"
+                      },
+                      "data": {
+                        "type": "string"
+                      },
+                      "mimeType": {
+                        "type": "string"
+                      },
+                      "annotations": {
+                        "type": "object",
+                        "properties": {
+                          "audience": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant"
+                              ]
+                            }
+                          },
+                          "priority": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "lastModified": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "_meta": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "data",
+                      "mimeType"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "icons": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "src": {
+                              "type": "string"
+                            },
+                            "mimeType": {
+                              "type": "string"
+                            },
+                            "sizes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "theme": {
+                              "type": "string",
+                              "enum": [
+                                "light",
+                                "dark"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "src"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "uri": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "mimeType": {
+                        "type": "string"
+                      },
+                      "size": {
+                        "type": "number"
+                      },
+                      "annotations": {
+                        "type": "object",
+                        "properties": {
+                          "audience": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant"
+                              ]
+                            }
+                          },
+                          "priority": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "lastModified": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "_meta": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": {}
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "resource_link"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "uri",
+                      "type"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "resource"
+                      },
+                      "resource": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string"
+                              },
+                              "mimeType": {
+                                "type": "string"
+                              },
+                              "_meta": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "uri": {
+                                "type": "string"
+                              },
+                              "mimeType": {
+                                "type": "string"
+                              },
+                              "_meta": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              },
+                              "blob": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "uri",
+                              "blob"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "annotations": {
+                        "type": "object",
+                        "properties": {
+                          "audience": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "user",
+                                "assistant"
+                              ]
+                            }
+                          },
+                          "priority": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "lastModified": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "_meta": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "resource"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "structuredContent": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "isError": {
+              "const": false
+            }
+          },
+          "required": [
+            "content"
+          ],
+          "additionalProperties": {}
+        },
+        "schemaDefinitions": null,
+        "inputTypeScript": "{ arguments?: { [k: string]: unknown; }; name: string; }",
+        "outputTypeScript": "{ _meta?: { progressToken?: string | number; \"io.modelcontextprotocol/related-task\"?: { taskId: string; }; [k: string]: unknown; }; content: ({ type: \"text\"; text: string; annotations?: { audience?: (\"user\" | \"assistant\")[]; priority?: number; lastModified?: string; }; _meta?: { [k: string]: unknown; }; } | { type: \"image\"; data: string; mimeType: string; annotations?: { audience?: (\"user\" | \"assistant\")[]; priority?: number; lastModified?: string; }; _meta?: { [k: string]: unknown; }; } | { type: \"audio\"; data: string; mimeType: string; annotations?: { audience?: (\"user\" | \"assistant\")[]; priority?: number; lastModified?: string; }; _meta?: { [k: string]: unknown; }; } | { name: string; title?: string; icons?: { src: string; mimeType?: string; sizes?: string[]; theme?: (\"light\" | \"dark\"); }[]; uri: string; description?: string; mimeType?: string; size?: number; annotations?: { audience?: (\"user\" | \"assistant\")[]; priority?: number; lastModified?: string; }; _meta?: { [k: string]: unknown; }; type: \"resource_link\"; } | { type: \"resource\"; resource: ({ uri: string; mimeType?: string; _meta?: { [k: string]: unknown; }; text: string; } | { uri: string; mimeType?: string; _meta?: { [k: string]: unknown; }; blob: string; }); annotations?: { audience?: (\"user\" | \"assistant\")[]; priority?: number; lastModified?: string; }; _meta?: { [k: string]: unknown; }; })[]; structuredContent?: { [k: string]: unknown; }; isError?: false; [k: string]: unknown; }",
+        "typeScriptDefinitions": null
+      }
+order: 1783537520980

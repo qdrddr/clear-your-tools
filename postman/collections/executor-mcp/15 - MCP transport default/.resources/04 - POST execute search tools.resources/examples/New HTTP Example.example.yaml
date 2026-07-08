@@ -1,0 +1,51 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  headers:
+    Accept: application/json, text/event-stream
+    Content-Type: application/json
+    mcp-session-id: "{{mcp_session_id}}"
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "execute",
+          "arguments": {
+            "code": "const listed = await tools.search({ query: \"list\", limit: 100 });\nreturn JSON.stringify({ paths: listed.items.map((item) => item.path).sort() });"
+          }
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    mcp-session-id: ee4812a8-d05f-4388-bbe7-d41e1fcad07c
+    date: Wed, 08 Jul 2026 19:09:11 GMT
+    content-length: "734"
+  body:
+    type: json
+    content: |-
+      {
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"paths\":[\"executor.coreTools.connections.list\",\"executor.coreTools.integrations.list\",\"executor.coreTools.oauth.clients.createHandoff\",\"executor.coreTools.oauth.clients.list\",\"executor.coreTools.policies.list\",\"executor.coreTools.providers.list\",\"executor.onepassword.listVaults\"]}"
+            }
+          ],
+          "structuredContent": {
+            "status": "completed",
+            "result": "{\"paths\":[\"executor.coreTools.connections.list\",\"executor.coreTools.integrations.list\",\"executor.coreTools.oauth.clients.createHandoff\",\"executor.coreTools.oauth.clients.list\",\"executor.coreTools.policies.list\",\"executor.coreTools.providers.list\",\"executor.onepassword.listVaults\"]}",
+            "logs": []
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 3
+      }
+order: 1913086659656242

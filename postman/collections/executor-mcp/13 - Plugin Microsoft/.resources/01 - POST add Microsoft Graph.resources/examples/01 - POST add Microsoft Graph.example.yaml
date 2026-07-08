@@ -1,0 +1,28 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/microsoft/graph"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "presetIds": [
+          "mail"
+        ],
+        "slug": "postman-msgraph"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "42"
+    date: Wed, 08 Jul 2026 19:05:41 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-msgraph",
+        "toolCount": 290
+      }
+order: 1783537559445

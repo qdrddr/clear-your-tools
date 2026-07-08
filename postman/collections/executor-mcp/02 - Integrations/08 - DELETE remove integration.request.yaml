@@ -1,0 +1,5 @@
+$kind: http-request
+name: 08 - DELETE remove integration (destructive)
+url: "{{base_url}}/api/integrations/{{integration_slug}}"
+method: DELETE
+order: 1108

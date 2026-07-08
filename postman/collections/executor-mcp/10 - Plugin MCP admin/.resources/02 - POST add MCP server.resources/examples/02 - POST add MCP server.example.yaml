@@ -1,0 +1,26 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/mcp/servers"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "name": "Postman MCP",
+        "endpoint": "https://mcp.deepwiki.com/mcp",
+        "slug": "postman-mcp-{{postman_run_id}}"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "36"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-mcp-1783537520895"
+      }
+order: 1783537539221

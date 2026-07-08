@@ -1,0 +1,20 @@
+$kind: http-request
+name: 02 - POST create policy (mutating)
+url: "{{base_url}}/api/policies"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "pattern": "postman-{{postman_run_id}}.*",
+      "action": "approve"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.id) pm.environment.set('policy_id', res.id);
+    language: text/javascript
+examples: .resources/02 - POST create policy.resources/examples
+order: 1402

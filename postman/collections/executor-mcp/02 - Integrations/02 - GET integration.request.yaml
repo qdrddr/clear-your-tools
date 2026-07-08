@@ -1,0 +1,6 @@
+$kind: http-request
+name: 02 - GET integration by slug
+url: "{{base_url}}/api/integrations/{{integration_slug}}"
+method: GET
+examples: .resources/02 - GET integration.resources/examples
+order: 1102

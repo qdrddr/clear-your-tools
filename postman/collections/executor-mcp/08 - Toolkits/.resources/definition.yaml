@@ -1,0 +1,12 @@
+$kind: folder
+name: "08 - Toolkits"
+description: |
+  Run 01 first to set toolkit_id and toolkit_slug.
+
+  Toolkit connection rules: only list (GET .../connections), create (POST), and
+  delete (DELETE .../connections/:connectionId). There is no GET-by-id endpoint;
+  use step 02 and match on the id field in the connections array.
+
+  Before step 09 (delete connection rule), run 02 or 08 so toolkit_connection_id
+  is set. Step 08 also sets it after create.
+order: 1700

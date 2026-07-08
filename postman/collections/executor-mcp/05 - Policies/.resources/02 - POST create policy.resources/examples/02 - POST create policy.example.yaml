@@ -1,0 +1,32 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/policies"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "pattern": "postman-{{postman_run_id}}.*",
+        "action": "approve"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "168"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "id": "pol_swq79dz4vrmrcg7695",
+        "owner": "org",
+        "pattern": "postman-1783537520895.*",
+        "action": "approve",
+        "position": "Zy",
+        "createdAt": 1783537535000,
+        "updatedAt": 1783537535000
+      }
+order: 1783537535854

@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies/{{toolkit_policy_id}}"
+method: DELETE
+examples: .resources/10 - DELETE remove toolkit policy.resources/examples
+order: 1710

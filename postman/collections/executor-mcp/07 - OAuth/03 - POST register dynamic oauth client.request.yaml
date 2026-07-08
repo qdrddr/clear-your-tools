@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{base_url}}/api/oauth/clients/register-dynamic"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "slug": "postman-dynamic",
+      "registrationEndpoint": "https://example.com/oauth/register",
+      "authorizationUrl": "https://example.com/oauth/authorize",
+      "tokenUrl": "https://example.com/oauth/token",
+      "scopes": [
+        "openid"
+      ]
+    }
+examples: .resources/03 - POST register dynamic oauth client.resources/examples
+order: 1603

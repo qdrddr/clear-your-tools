@@ -1,0 +1,18 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/toolkits/{{toolkit_id}}/connections/{{toolkit_connection_id}}"
+  method: DELETE
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "16"
+    date: Wed, 08 Jul 2026 19:05:36 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "removed": true
+      }
+order: 1783537537287

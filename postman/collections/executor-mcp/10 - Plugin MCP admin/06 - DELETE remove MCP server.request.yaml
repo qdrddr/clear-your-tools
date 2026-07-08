@@ -1,0 +1,6 @@
+$kind: http-request
+name: 06 - DELETE remove MCP server (destructive)
+url: "{{base_url}}/api/mcp/servers/{{integration_slug}}"
+method: DELETE
+examples: .resources/06 - DELETE remove MCP server.resources/examples
+order: 2006

@@ -1,0 +1,5 @@
+$kind: folder
+name: "16 - MCP transport (toolkit /mcp/toolkits/{slug})"
+description: |
+  Run folder 08 step 01 first for toolkit_slug. Then run in order; uses mcp_toolkit_session_id.
+order: 3100

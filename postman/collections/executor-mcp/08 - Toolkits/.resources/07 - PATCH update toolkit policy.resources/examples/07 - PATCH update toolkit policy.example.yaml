@@ -1,0 +1,30 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/toolkits/{{toolkit_id}}/policies/{{toolkit_policy_id}}"
+  method: PATCH
+  body:
+    type: json
+    content: |
+      {
+        "action": "require_approval"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "181"
+    date: Wed, 08 Jul 2026 19:05:36 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tkpol_o12wmflcfmnmrcg776k",
+        "toolkitId": "tk_4u0wti5haadmrcg76ls",
+        "pattern": "*",
+        "action": "require_approval",
+        "position": "a0",
+        "createdAt": 1783537537052,
+        "updatedAt": 1783537537139
+      }
+order: 1783537537155

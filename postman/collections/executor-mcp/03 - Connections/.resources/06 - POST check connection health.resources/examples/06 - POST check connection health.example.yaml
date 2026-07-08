@@ -1,0 +1,19 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}/health"
+  method: POST
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "46"
+    date: Wed, 08 Jul 2026 19:05:28 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "status": "healthy",
+        "checkedAt": 1783537529451
+      }
+order: 1783537529455

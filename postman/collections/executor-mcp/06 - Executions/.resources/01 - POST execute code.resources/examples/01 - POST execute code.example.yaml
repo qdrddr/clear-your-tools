@@ -1,0 +1,32 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/executions"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "code": "return JSON.stringify({ ok: true, via: \"postman\" });",
+        "autoApprove": true
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "172"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "status": "completed",
+        "text": "{\"ok\":true,\"via\":\"postman\"}",
+        "structured": {
+          "status": "completed",
+          "result": "{\"ok\":true,\"via\":\"postman\"}",
+          "logs": []
+        },
+        "isError": false
+      }
+order: 1783537535885

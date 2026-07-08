@@ -1,0 +1,24 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/oauth/cancel"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "state": "{{oauth_state}}"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "18"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "cancelled": true
+      }
+order: 1783537536288

@@ -1,0 +1,28 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/google/bundles"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "urls": [
+          "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest"
+        ],
+        "slug": "postman-gmail"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "39"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-gmail",
+        "toolCount": 88
+      }
+order: 1783537539808

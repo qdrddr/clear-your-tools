@@ -1,0 +1,75 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/microsoft/integrations/{{integration_slug}}/config"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "1586"
+    date: Wed, 08 Jul 2026 19:05:59 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "sourceUrl": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "microsoftGraphPresetIds": [
+          "mail"
+        ],
+        "microsoftGraphCustomScopes": [],
+        "microsoftGraphScopes": [
+          "offline_access",
+          "User.Read",
+          "Mail.ReadWrite",
+          "Mail.Send",
+          "MailboxSettings.ReadWrite"
+        ],
+        "microsoftGraphExactPaths": [],
+        "microsoftGraphPathPrefixes": [
+          "/me/messages",
+          "/me/mailFolders",
+          "/me/sendMail",
+          "/me/getMailTips",
+          "/me/inferenceClassification",
+          "/me/mailboxSettings",
+          "/me/outlook",
+          "/users/{user-id}/messages",
+          "/users/{user-id}/mailFolders",
+          "/users/{user-id}/sendMail",
+          "/users/{user-id}/outlook"
+        ],
+        "microsoftGraphTagPrefixes": [],
+        "microsoftGraphCoversFullGraph": false,
+        "microsoftGraphAuthorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "microsoftGraphTokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "microsoftGraphClientCredentialsTokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "baseUrl": null,
+        "headers": null,
+        "queryParams": null,
+        "authenticationTemplate": [
+          {
+            "slug": "azureAdDelegated",
+            "kind": "oauth2",
+            "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            "scopes": [
+              "offline_access",
+              "User.Read",
+              "Mail.ReadWrite",
+              "Mail.Send",
+              "MailboxSettings.ReadWrite"
+            ]
+          },
+          {
+            "slug": "azureAdClientCredentials",
+            "kind": "oauth2",
+            "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            "scopes": [
+              "https://graph.microsoft.com/.default"
+            ]
+          }
+        ]
+      }
+order: 1783537559526

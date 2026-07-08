@@ -1,0 +1,21 @@
+$kind: http-request
+name: 01 - POST add Google bundle (mutating)
+url: "{{base_url}}/api/google/bundles"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "urls": [
+        "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest"
+      ],
+      "slug": "postman-gmail"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.slug) pm.environment.set('integration_slug', res.slug);
+    language: text/javascript
+examples: .resources/01 - POST add Google bundle.resources/examples
+order: 2201

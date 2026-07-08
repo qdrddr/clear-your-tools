@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/api/integrations"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (!Array.isArray(res) || res.length === 0) return;
+      var pick = res.find(function (i) { return i.slug !== "executor" && i.canRemove; }) ||
+        res.find(function (i) { return i.slug !== "executor"; }) ||
+        res[0];
+      pm.environment.set("integration_slug", pick.slug);
+    language: text/javascript
+examples: .resources/01 - GET list integrations.resources/examples
+order: 1101

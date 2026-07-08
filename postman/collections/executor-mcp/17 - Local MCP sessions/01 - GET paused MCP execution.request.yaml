@@ -1,0 +1,5 @@
+$kind: http-request
+name: 01 - GET paused MCP execution
+url: "{{base_url}}/api/mcp-sessions/{{mcp_session_id}}/executions/{{execution_id}}"
+method: GET
+order: 3201

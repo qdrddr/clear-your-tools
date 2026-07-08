@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}"
+method: PATCH
+body:
+  type: json
+  content: |
+    {
+      "description": "Updated via Postman"
+    }
+examples: .resources/05 - PATCH update connection.resources/examples
+order: 1205

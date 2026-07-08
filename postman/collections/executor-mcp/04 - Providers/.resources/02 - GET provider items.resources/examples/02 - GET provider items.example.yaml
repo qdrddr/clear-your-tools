@@ -1,0 +1,16 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/providers/{{provider_key}}/items"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "2"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      []
+order: 1783537535843

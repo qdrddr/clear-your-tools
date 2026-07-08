@@ -1,0 +1,29 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/toolkits/{{toolkit_id}}/connections"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "pattern": "github.*"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "161"
+    date: Wed, 08 Jul 2026 19:05:36 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "id": "tkconn_t4twy1fk1gimrcg77ac",
+        "toolkitId": "tk_4u0wti5haadmrcg76ls",
+        "pattern": "github.*",
+        "position": "a0",
+        "createdAt": 1783537537188,
+        "updatedAt": 1783537537188
+      }
+order: 1783537537218

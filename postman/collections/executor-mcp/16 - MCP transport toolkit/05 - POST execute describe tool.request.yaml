@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{base_url}}/mcp/toolkits/{{toolkit_slug}}"
+method: POST
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  mcp-session-id: "{{mcp_toolkit_session_id}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "tools/call",
+      "params": {
+        "name": "execute",
+        "arguments": {
+          "code": "const details = await tools.describe.tool({ path: \"{{tool_path}}\" });\nreturn JSON.stringify(details);"
+        }
+      }
+    }
+examples: .resources/05 - POST execute describe tool.resources/examples
+order: 3105

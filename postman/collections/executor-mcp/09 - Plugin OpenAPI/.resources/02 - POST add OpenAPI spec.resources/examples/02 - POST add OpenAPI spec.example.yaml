@@ -1,0 +1,29 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/openapi/specs"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "slug": "postman-ping-{{postman_run_id}}",
+        "spec": {
+          "kind": "url",
+          "url": "https://learn.openapis.org/examples/v3.0/petstore.json"
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "51"
+    date: Wed, 08 Jul 2026 19:05:37 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-ping-1783537520895",
+        "toolCount": 3
+      }
+order: 1783537538650

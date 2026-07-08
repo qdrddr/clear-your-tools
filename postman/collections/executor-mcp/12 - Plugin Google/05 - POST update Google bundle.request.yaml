@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{base_url}}/api/google/integrations/{{integration_slug}}/bundle"
+method: POST
+body:
+  type: json
+  content: |
+    {}
+examples: .resources/05 - POST update Google bundle.resources/examples
+order: 2205

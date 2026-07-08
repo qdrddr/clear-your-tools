@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}/config"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "149"
+    date: Wed, 08 Jul 2026 19:05:37 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "sourceUrl": "https://learn.openapis.org/examples/v3.0/petstore.json",
+        "baseUrl": null,
+        "headers": null,
+        "queryParams": null,
+        "authenticationTemplate": null
+      }
+order: 1783537538673

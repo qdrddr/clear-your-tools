@@ -1,0 +1,45 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/integrations/{{integration_slug}}"
+  method: PATCH
+  body:
+    type: json
+    content: |
+      {
+        "description": "Updated via Postman"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "326"
+    date: Wed, 08 Jul 2026 19:05:22 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "lean_ctx_mcp",
+        "name": "Lean Ctx MCP",
+        "description": "Updated via Postman",
+        "kind": "mcp",
+        "canRemove": true,
+        "canRefresh": true,
+        "authMethods": [
+          {
+            "id": "env",
+            "label": "Environment variables",
+            "kind": "apikey",
+            "template": "env",
+            "placements": [
+              {
+                "carrier": "env",
+                "name": "LEAN_CTX_DATA_DIR",
+                "prefix": "",
+                "variable": "LEAN_CTX_DATA_DIR"
+              }
+            ]
+          }
+        ]
+      }
+order: 1783537523322

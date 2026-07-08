@@ -1,0 +1,35 @@
+$kind: http-request
+url: "{{base_url}}/mcp"
+method: POST
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  mcp-session-id: "{{mcp_session_id}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "execute",
+        "arguments": {
+          "code": "const listed = await tools.search({ query: \"list\", limit: 100 });\nreturn JSON.stringify({ paths: listed.items.map((item) => item.path).sort() });"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      try {
+        var payload = pm.response.json();
+        var text = payload.result && payload.result.content && payload.result.content[0] && payload.result.content[0].text;
+        if (!text) return;
+        var parsed = JSON.parse(text);
+        var paths = parsed.paths || (parsed.items || []).map(function (item) { return item.path; });
+        if (paths.length > 0) pm.environment.set('tool_path', paths[0]);
+      } catch (e) {}
+    language: text/javascript
+examples: .resources/04 - POST execute search tools.resources/examples
+order: 3004

@@ -1,0 +1,25 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/openapi/integrations/{{integration_slug}}/spec"
+  method: POST
+  body:
+    type: json
+    content: |
+      {}
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "85"
+    date: Wed, 08 Jul 2026 19:05:37 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "slug": "postman-ping-1783537520895",
+        "toolCount": 3,
+        "addedTools": [],
+        "removedTools": []
+      }
+order: 1783537538839

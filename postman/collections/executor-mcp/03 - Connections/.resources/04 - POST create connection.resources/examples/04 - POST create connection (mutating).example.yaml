@@ -1,0 +1,40 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "name": "postman-example",
+        "integration": "{{connection_integration}}",
+        "template": "apikey",
+        "value": "REPLACE_ME"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Wed, 08 Jul 2026 18:08:10 GMT
+    content-length: "314"
+  body:
+    type: json
+    content: |-
+      {
+        "owner": "org",
+        "name": "postmanExample",
+        "integration": "code_review_graph_mcp",
+        "template": "apikey",
+        "provider": "keychain",
+        "address": "tools.code_review_graph_mcp.org.postmanExample",
+        "identityLabel": null,
+        "description": null,
+        "expiresAt": null,
+        "oauthClient": null,
+        "oauthClientOwner": null,
+        "oauthScope": null,
+        "lastHealth": null
+      }
+order: 1783534094991

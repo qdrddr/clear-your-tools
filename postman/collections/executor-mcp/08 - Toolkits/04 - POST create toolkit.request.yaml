@@ -1,0 +1,22 @@
+$kind: http-request
+name: 04 - POST create toolkit (mutating)
+url: "{{base_url}}/api/toolkits"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "owner": "org",
+      "name": "Postman Toolkit {{postman_run_id}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var res = pm.response.json();
+      if (res && res.id) {
+        pm.environment.set('toolkit_id', res.id);
+        if (res.slug) pm.environment.set('toolkit_slug', res.slug);
+      }
+    language: text/javascript
+examples: .resources/04 - POST create toolkit.resources/examples
+order: 1702

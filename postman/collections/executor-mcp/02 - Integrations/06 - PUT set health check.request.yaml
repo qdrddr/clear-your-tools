@@ -1,0 +1,12 @@
+$kind: http-request
+name: 06 - PUT set health check (optional)
+url: "{{base_url}}/api/integrations/{{integration_slug}}/health-check"
+method: PUT
+body:
+  type: json
+  content: |
+    {
+      "spec": null
+    }
+examples: .resources/06 - PUT set health check.resources/examples
+order: 1106

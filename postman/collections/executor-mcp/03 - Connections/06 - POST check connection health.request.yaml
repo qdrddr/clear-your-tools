@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}/health"
+method: POST
+examples: .resources/06 - POST check connection health.resources/examples
+order: 1206

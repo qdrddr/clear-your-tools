@@ -1,0 +1,19 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/v1/app/npm/dist-tags"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "41"
+    date: Wed, 08 Jul 2026 19:05:20 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "latest": "1.5.29",
+        "beta": "1.4.7-beta.0"
+      }
+order: 1783537520935

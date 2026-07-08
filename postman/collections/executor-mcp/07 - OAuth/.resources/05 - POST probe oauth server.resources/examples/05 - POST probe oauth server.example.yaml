@@ -1,0 +1,37 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/oauth/probe"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "url": "https://mcp.context7.com/mcp"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "409"
+    date: Wed, 08 Jul 2026 19:05:35 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "issuer": "https://context7.com",
+        "authorizationUrl": "https://context7.com/api/oauth/authorize",
+        "tokenUrl": "https://context7.com/api/oauth/token",
+        "resource": "https://mcp.context7.com",
+        "scopesSupported": [
+          "profile",
+          "email"
+        ],
+        "registrationEndpoint": "https://context7.com/api/oauth/register",
+        "tokenEndpointAuthMethodsSupported": [
+          "client_secret_basic",
+          "client_secret_post"
+        ],
+        "clientIdMetadataDocumentSupported": false
+      }
+order: 1783537536258

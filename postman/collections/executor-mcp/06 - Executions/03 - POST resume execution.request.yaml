@@ -1,0 +1,11 @@
+$kind: http-request
+name: 03 - POST resume execution
+url: "{{base_url}}/api/executions/{{execution_id}}/resume"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "action": "accept"
+    }
+order: 1503

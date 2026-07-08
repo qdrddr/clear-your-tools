@@ -1,0 +1,38 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/google/integrations/{{integration_slug}}/config"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "444"
+    date: Wed, 08 Jul 2026 19:05:38 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "googleDiscoveryUrls": [
+          "https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest",
+          "https://www.googleapis.com/discovery/v1/apis/oauth2/v2/rest"
+        ],
+        "baseUrl": null,
+        "headers": null,
+        "queryParams": null,
+        "authenticationTemplate": [
+          {
+            "slug": "googleOAuth2",
+            "kind": "oauth2",
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+            "tokenUrl": "https://oauth2.googleapis.com/token",
+            "scopes": [
+              "https://mail.google.com/",
+              "openid",
+              "email",
+              "profile"
+            ]
+          }
+        ]
+      }
+order: 1783537539820

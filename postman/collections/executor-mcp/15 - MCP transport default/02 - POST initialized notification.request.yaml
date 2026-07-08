@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{base_url}}/mcp"
+method: POST
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  mcp-session-id: "{{mcp_session_id}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized",
+      "params": {}
+    }
+examples: .resources/02 - POST initialized notification.resources/examples
+order: 3002

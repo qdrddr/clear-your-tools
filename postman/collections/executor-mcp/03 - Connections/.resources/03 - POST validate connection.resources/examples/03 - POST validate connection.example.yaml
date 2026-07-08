@@ -1,0 +1,28 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/api/connections/validate"
+  method: POST
+  body:
+    type: json
+    content: |
+      {
+        "owner": "org",
+        "integration": "{{connection_integration}}",
+        "template": "apikey",
+        "value": "REPLACE_ME"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    content-length: "46"
+    date: Wed, 08 Jul 2026 19:03:33 GMT
+  body:
+    type: json
+    content: |-
+      {
+        "status": "healthy",
+        "checkedAt": 1783537413855
+      }
+order: 1783537413857

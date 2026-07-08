@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/connections/{{connection_owner}}/{{connection_integration}}/{{connection_name}}/refresh"
+method: POST
+examples: .resources/07 - POST refresh connection tools.resources/examples
+order: 1207

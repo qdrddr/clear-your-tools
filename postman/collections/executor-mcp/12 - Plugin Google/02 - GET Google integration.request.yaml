@@ -1,0 +1,5 @@
+$kind: http-request
+url: "{{base_url}}/api/google/integrations/{{integration_slug}}"
+method: GET
+examples: .resources/02 - GET Google integration.resources/examples
+order: 2202

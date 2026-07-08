@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{base_url}}/api/mcp/probe"
+method: POST
+body:
+  type: json
+  content: |
+    {
+      "endpoint": "https://mcp.deepwiki.com/mcp"
+    }
+examples: .resources/01 - POST probe MCP endpoint.resources/examples
+order: 2001
