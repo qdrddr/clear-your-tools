@@ -10,11 +10,11 @@ from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.pruners.llm import (
     SELECTOR_NO_MATCH_INSTRUCTION,
-    SELECTOR_SYSTEM_PROMPT,
     apply_selector_ids_to_catalog,
     llm_catalog_dict,
     llm_select_ids,
     prepare_catalog_selector_chunks,
+    tool_selector_system_prompt,
     trim_catalog_dict,
 )
 from cyt.pruners.remote import LlmPruningSettings
@@ -36,15 +36,23 @@ SKILLS_SELECTOR_SYSTEM_PROMPT = (
     "Later the selected nodes will be recompiled into partial skill markdown for another LLM. "
     "Return the selector id values from the skill-node id attributes that match the user query. "
     "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise. "
+    "You have a soft budget of 5000 tokens to select the most relevant nodes. "
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
 
-COMBINED_SELECTOR_SYSTEM_PROMPT = (
-    f"{SELECTOR_SYSTEM_PROMPT}\n\n"
-    f"{SKILLS_SELECTOR_SYSTEM_PROMPT}\n\n"
-    "The available items include MCP tool chunks (<chunk id=N>) and agent skill nodes "
-    "(<skill-node id=N>). Return selector ids from both kinds that match the user query."
-)
+
+def combined_selector_system_prompt(config: dict[str, Any] | None = None) -> str:
+    """Tools + skills selector prompt, with cached executor MCP appendix when available."""
+    return (
+        f"{tool_selector_system_prompt(config)}\n\n"
+        f"{SKILLS_SELECTOR_SYSTEM_PROMPT}\n\n"
+        "The available items include MCP tool chunks (<chunk id=N>) and agent skill nodes "
+        "(<skill-node id=N>). Return selector ids from both kinds that match the user query."
+    )
+
+
+# Import-time snapshot (appendix empty until cache is warm). Prefer the function above.
+COMBINED_SELECTOR_SYSTEM_PROMPT = combined_selector_system_prompt()
 
 
 @dataclass(frozen=True)
@@ -214,7 +222,7 @@ def llm_prune_tools_and_skills(
     try:
         selected_ids, usage = llm_select_ids(
             query,
-            COMBINED_SELECTOR_SYSTEM_PROMPT,
+            combined_selector_system_prompt(config),
             combined_items,
             config=config,
             settings=settings,

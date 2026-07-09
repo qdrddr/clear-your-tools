@@ -440,7 +440,11 @@ def resolve_hook_daemon_child_env(
         allow_prompt=allow_prompt,
         require_all=require_all,
     )
-    return {name: value for name in credential_sources if (value := os.environ.get(name))}
+    resolved: dict[str, str] = {}
+    for name in names:
+        if value := os.environ.get(name):
+            resolved[name] = value
+    return resolved
 
 
 def ensure_proxy_pipeline_credentials(

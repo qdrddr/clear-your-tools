@@ -1218,6 +1218,10 @@ def create_app(
         }
         if launch_agent is not None:
             payload["agent"] = launch_agent
+        if config is not None:
+            from cyt.tools.sources.executor_http import executor_catalog_health_snapshot
+
+            payload.update(executor_catalog_health_snapshot(config))
         return JSONResponse(payload)
 
     from cyt.hook.http_server import hook_inject

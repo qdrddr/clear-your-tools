@@ -14,7 +14,7 @@ def test_pruning_pipeline_reads_tools_sequence() -> None:
 
 
 def test_merge_model_entry_inherits_provider_fields() -> None:
-    config = {
+    config: dict[str, Any] = {
         "models": {
             "providers": [
                 {
@@ -42,7 +42,7 @@ def test_merge_model_entry_inherits_provider_fields() -> None:
 
 
 def test_merge_model_entry_resolves_bundled_provider_registry() -> None:
-    config = {
+    config: dict[str, Any] = {
         "models": {
             "llm": {
                 "remote": [
@@ -58,6 +58,34 @@ def test_merge_model_entry_resolves_bundled_provider_registry() -> None:
     entry = configs.merge_model_entry(config, config["models"]["llm"]["remote"][0])
     assert entry["domain_match"] == ["api.anthropic.com"]
     assert entry["key_var_name"] == "ANTHROPIC_API_KEY"
+
+
+def test_merge_model_entry_openrouter_ai_uses_litellm_provider_slug() -> None:
+    config: dict[str, Any] = {
+        "models": {
+            "providers": [
+                {
+                    "provider_nick": "openrouter-ai",
+                    "provider": "openrouter-ai",
+                    "domain_match": ["openrouter.ai"],
+                },
+            ],
+            "llm": {
+                "remote": [
+                    {
+                        "nick": "mercury-2",
+                        "name": "inception/mercury-2",
+                        "provider_nick": "openrouter-ai",
+                    },
+                ],
+            },
+        },
+    }
+    entry = configs.merge_model_entry(config, config["models"]["llm"]["remote"][0])
+    assert entry["provider"] == "openrouter"
+    assert configs.litellm_model_name(entry) == "openrouter/inception/mercury-2"
+    resolved_name, _, _ = configs.resolve_model("mercury-2", "llm", "remote", config=config)
+    assert resolved_name == "openrouter/inception/mercury-2"
 
 
 def test_pruning_system_tool_policy_from_canonical_path() -> None:

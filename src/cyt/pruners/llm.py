@@ -50,17 +50,38 @@ SELECTOR_NO_MATCH_INSTRUCTION = (
     f"If nothing is suitable for the user query, return ids: [{SELECTOR_EMPTY_ID}] only."
 )
 
-SELECTOR_SYSTEM_PROMPT = (
+TOOL_SELECTOR_SYSTEM_PROMPT = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
     "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
-    "Later on the results will re-compile MCP tools into their full normal definitions based on your selection. "
+    "Later we re-compile MCP tools into their full normal definitions based on your selection. "
     "The goal is to return chunk IDs that match the user query the most. "
     "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
     "to save on tokens by removing the irrelevant to user query noise."
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
-    "potentially be useful for the request. "
+    "potentially be useful for the request. You have a soft budget of 5000 tokens to select the most relevant chunks."
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
+
+
+def tool_selector_system_prompt(config: dict[str, Any] | None = None) -> str:
+    """``TOOL_SELECTOR_SYSTEM_PROMPT`` plus cached executor MCP execute tool/skill appendix.
+
+    Appendix is memory/disk cache only — never hits the live executor API.
+    """
+    prompt = TOOL_SELECTOR_SYSTEM_PROMPT
+    try:
+        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
+
+        appendix = format_executor_mcp_selector_appendix(
+            get_executor_mcp_cache(config, allow_prompt=False),
+        )
+    except Exception as exc:
+        logger.debug("executor MCP selector appendix skipped: %s", exc)
+        return prompt
+    if not appendix:
+        return prompt
+    return f"{prompt}\n\n{appendix}"
 
 
 class RelevantChunkIds(BaseModel):
@@ -176,7 +197,7 @@ def prepare_catalog_selector_chunks(
 
 def _llm_user_message(query: str, chunks_text: str) -> str:
     """User turn for the selector model: stable chunk prefix, query suffix (prompt-cache friendly)."""
-    return f"Available Chunks:\n\n{chunks_text}\n\nUser Query: {query}"
+    return f"Available Chunks:\n\n{chunks_text}\n\n<user-query >\n{query}\n</user-query>"
 
 
 def llm_selector_bulk_base_tokens(query: str, system_prompt: str) -> int:
@@ -189,7 +210,7 @@ def count_llm_request_tokens(
     query: str,
     chunks_text: str,
     *,
-    system_prompt: str = SELECTOR_SYSTEM_PROMPT,
+    system_prompt: str = TOOL_SELECTOR_SYSTEM_PROMPT,
 ) -> int:
     """Estimate input tokens sent to the LLM selector for one request."""
     user_message = _llm_user_message(query, chunks_text)
@@ -269,11 +290,22 @@ def _selector_uses_openrouter(settings: LlmPruningSettings) -> bool:
     return "openrouter" in dns
 
 
+_OPENROUTER_MANDATORY_REASONING_MODEL_MARKERS = ("gpt-oss",)
+
+
+def _selector_requires_reasoning_effort(settings: LlmPruningSettings) -> bool:
+    """OpenRouter models that reject ``reasoning.effort: none`` (must enable reasoning)."""
+    model = settings.model_name.lower()
+    return any(marker in model for marker in _OPENROUTER_MANDATORY_REASONING_MODEL_MARKERS)
+
+
 def _selector_completion_extras(settings: LlmPruningSettings) -> dict[str, Any]:
     """Request kwargs so reasoning models emit structured selector JSON in content."""
-    if _selector_uses_openrouter(settings):
-        return {"reasoning": {"effort": "none"}}
-    return {}
+    if not _selector_uses_openrouter(settings):
+        return {}
+    if _selector_requires_reasoning_effort(settings):
+        return {"reasoning": {"effort": "low"}}
+    return {"reasoning": {"effort": "none"}}
 
 
 def _parse_selector_json(content_val: str) -> RelevantChunkIds | None:
@@ -332,7 +364,7 @@ def call_llm(
     query: str,
     chunks_text: str,
     *,
-    system_prompt: str = SELECTOR_SYSTEM_PROMPT,
+    system_prompt: str = TOOL_SELECTOR_SYSTEM_PROMPT,
 ) -> tuple[RelevantChunkIds, StageTokenUsage]:
     configure_litellm_quiet()
     user_message = _llm_user_message(query, chunks_text)
@@ -552,7 +584,7 @@ def llm_catalog_dict(
 
     selected_ids, total_usage = llm_select_ids(
         query,
-        SELECTOR_SYSTEM_PROMPT,
+        tool_selector_system_prompt(config),
         formatted_chunks,
         config=config,
         settings=settings,

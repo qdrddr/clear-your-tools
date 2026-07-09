@@ -1,0 +1,47 @@
+$kind: http-example
+name: New HTTP Example
+request:
+  url: "{{base_url}}/mcp"
+  method: POST
+  headers:
+    Accept: application/json, text/event-stream
+    Content-Type: application/json
+    mcp-session-id: "{{mcp_session_id}}"
+  body:
+    type: json
+    content: |
+      {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "skills",
+          "arguments": {
+            "name": "execute"
+          }
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    mcp-session-id: ee4812a8-d05f-4388-bbe7-d41e1fcad07c
+    date: Thu, 09 Jul 2026 12:38:19 GMT
+    content-length: "4597"
+  body:
+    type: json
+    content: |-
+      {
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "# execute\n\nExecute TypeScript in a sandboxed runtime with access to configured API tools.\n\n## Workflow\n\n1. `const { items: matches } = await tools.search({ query: \"<intent + key nouns>\", limit: 12 });`\n2. `const path = matches[0]?.path; if (!path) return \"No matching tools found.\";`\n3. `const details = await tools.describe.tool({ path });`\n4. Use `details.inputTypeScript` / `details.outputTypeScript` and `details.typeScriptDefinitions` for compact shapes.\n5. Use `tools.executor.coreTools.connections.list({})` when you need live saved-connection inventory.\n6. Call the tool: `const result = await tools.<path>(input);`\n\n## Rules\n\n- `tools.search()` returns paginated, ranked matches: `{ items, total, hasMore, nextOffset }`. Best-first. Use short intent phrases like `github issues`, `repo details`, or `create calendar event`.\n- When you already know the namespace, narrow with `tools.search({ namespace: \"github\", query: \"issues\" })`.\n- `tools.executor.coreTools.connections.list({})` returns saved connections with `{ address, integration, owner, name, ... }`. The `address` field includes the leading `tools.` root.\n- Tool calls return a value union: `{ ok: true, data }` for success or `{ ok: false, error: { code, message, status?, details?, retryable? } }` for expected tool/domain failures. Branch on `result.ok`.\n- `data` is the upstream payload itself. HTTP-backed tools (OpenAPI) also set `http: { status, headers }` beside `data` — read `result.http?.headers` for pagination (Link) or rate-limit headers.\n- Use `emit(value)` to append user-visible output and return `undefined`. Plain values become MCP text content. MCP content blocks are forwarded as-is. `ToolFile` values are rendered by MIME. Emitted output goes to the user, not back to you; the result envelope reports an `emitted` count so you can confirm it landed, but to read a value yourself, `return` it.\n- File-returning tools may return `ToolFile` values: `{ _tag: \"ToolFile\", name?, mimeType, encoding: \"base64\", data, byteLength }`. Emit any attachment with `emit(result.data)`.\n- To emit MCP-native content directly, pass an MCP content block to `emit(...)`, such as `{ type: \"image\", data, mimeType }`, `{ type: \"audio\", data, mimeType }`, `{ type: \"text\", text }`, `{ type: \"resource\", resource }`, or `{ type: \"resource_link\", uri, name, ... }`.\n- `emit(ToolFile)` is MIME-based: `image/*` becomes MCP image content, `audio/*` becomes MCP audio content, text-like files become decoded text, and other binary files become embedded MCP resources.\n- `return` is only for ordinary structured data. Returning a `ToolFile`, a `ToolResult`, an MCP content block, or a bare base64 string does not emit content to the MCP client.\n- Some providers, including Gmail, return attachment bytes without a public URL. To send that attachment to another API from code, decode `ToolFile.data` from base64 and pass the bytes to that API's upload/file input.\n- If `tools.search()` returns `hasMore: true` and you didn't find what you need, fetch the next page: `tools.search({ query, offset: nextOffset, limit })`.\n- Always use the full address when calling tools: `tools.<integration>.<owner>.<connection>.<tool>(args)`. The `path` returned by `tools.search()` / `tools.describe.tool()` is already the exact path under `tools` — call `tools[path]` rather than guessing segments.\n- The `tools` object is a lazy proxy — `Object.keys(tools)` won't work. Use `tools.search()` or `tools.executor.coreTools.connections.list({})` instead.\n- Pass an object to system tools, e.g. `tools.search({ query: \"...\" })`, `tools.executor.coreTools.connections.list({})`, and `tools.describe.tool({ path })`.\n- `tools.describe.tool()` returns compact TypeScript shapes. Use `inputTypeScript`, `outputTypeScript`, and `typeScriptDefinitions`. If the path doesn't resolve, the result carries `error: { code: \"tool_not_found\", suggestions }` — use a suggestion instead of retrying the same path.\n- For tools that return large collections (e.g. `getStates`, `getAll`), filter results in code rather than calling per-item tools.\n- Do not use `fetch` — all API calls go through `tools.*`.\n- If execution pauses for interaction, resume it with the returned `resumePayload`.\n- TypeScript type syntax (`: T`, `as T`, generics, interfaces, type aliases) is stripped before execution — feel free to write idiomatic TypeScript using the shapes from `tools.describe.tool()`. Decorators and `enum` are not supported."
+            }
+          ]
+        },
+        "jsonrpc": "2.0",
+        "id": 3
+      }
+order: 2038078626245126

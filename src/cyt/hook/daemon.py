@@ -254,7 +254,7 @@ def daemon_start(
             _report_missing_daemon_credentials(missing)
 
     reused_port = _find_reusable_hook_port(base_port)
-    if reused_port is not None and extra_env is not None:
+    if reused_port is not None and extra_env:
         _log(
             verbose,
             "hook daemon: restarting existing server to inject pruning credentials",

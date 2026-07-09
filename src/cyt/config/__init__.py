@@ -1669,6 +1669,38 @@ def provider_registry(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return registry
 
 
+def bundled_provider_registry() -> dict[str, dict[str, Any]]:
+    """Bundled ``models.providers`` only (no user overlay)."""
+    registry: dict[str, dict[str, Any]] = {}
+    bundled_providers = _load_bundled_defaults_yaml().get("models", {}).get("providers", [])
+    for nick, normalized in _iter_normalized_providers(bundled_providers):
+        registry[nick] = normalized
+    return registry
+
+
+def _litellm_provider_for_entry(
+    *,
+    provider_nick: str | None,
+    entry_provider: object | None,
+    registry_provider: object | None,
+) -> str | None:
+    """Resolve a LiteLLM provider slug; never treat ``provider_nick`` as the slug."""
+    nick = str(provider_nick).strip() if provider_nick else ""
+    for candidate in (entry_provider, registry_provider):
+        if isinstance(candidate, str):
+            value = candidate.strip()
+            if value and value != nick:
+                return value
+    if nick:
+        bundled = bundled_provider_registry().get(nick, {})
+        bundled_provider = bundled.get("provider")
+        if isinstance(bundled_provider, str):
+            value = bundled_provider.strip()
+            if value and value != nick:
+                return value
+    return None
+
+
 def merge_model_entry(config: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
     """Merge provider registry fields into a model catalog row (inline fields win)."""
     nick = entry.get("provider_nick") or entry.get("provider")
@@ -1676,7 +1708,11 @@ def merge_model_entry(config: dict[str, Any], entry: dict[str, Any]) -> dict[str
     if nick:
         base = dict(provider_registry(config).get(str(nick), {}))
     merged = {**base, **entry}
-    provider = entry.get("provider") or base.get("provider") or nick
+    provider = _litellm_provider_for_entry(
+        provider_nick=str(nick) if nick else None,
+        entry_provider=entry.get("provider"),
+        registry_provider=base.get("provider"),
+    )
     if provider:
         merged["provider"] = provider
     return merged

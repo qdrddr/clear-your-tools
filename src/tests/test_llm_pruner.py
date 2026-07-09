@@ -8,13 +8,16 @@ from unittest.mock import patch
 
 from cyt.common.token_usage import empty_usage
 from cyt.pruners.llm import (
+    TOOL_SELECTOR_SYSTEM_PROMPT,
     LlmPruningSettings,
     RelevantChunkIds,
     _llm_user_message,
     call_llm,
     llm_select_ids,
     normalize_selector_ids,
+    tool_selector_system_prompt,
 )
+from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
 
 
 def _settings(*, responses_api: bool) -> LlmPruningSettings:
@@ -31,8 +34,9 @@ def _settings(*, responses_api: bool) -> LlmPruningSettings:
 def test_llm_user_message_puts_query_after_chunks() -> None:
     message = _llm_user_message("find tools", "<chunk id=1>\n{}\n</chunk>")
     assert message.startswith("Available Chunks:\n\n")
-    assert message.endswith("User Query: find tools")
+    assert message.endswith("</user-query>")
     assert "<chunk id=1>" in message
+    assert "<user-query >\nfind tools\n</user-query>" in message
 
 
 def test_call_llm_uses_custom_system_prompt() -> None:
@@ -110,7 +114,8 @@ def test_call_llm_uses_responses_api_when_enabled() -> None:
     assert responses_mock.call_args.kwargs["text_format"].__name__ == "RelevantChunkIds"
     assert responses_mock.call_args.kwargs["instructions"]
     assert responses_mock.call_args.kwargs["input"].startswith("Available Chunks:")
-    assert responses_mock.call_args.kwargs["input"].endswith("User Query: find tools")
+    assert "<user-query >\nfind tools\n</user-query>" in responses_mock.call_args.kwargs["input"]
+    assert responses_mock.call_args.kwargs["input"].endswith("</user-query>")
     assert parsed.ids == [7, 8]
     assert usage.input_tokens == 12
     assert usage.output_tokens == 4
@@ -193,6 +198,27 @@ def test_call_llm_openrouter_requests_no_reasoning_effort() -> None:
     assert completion_mock.call_args.kwargs["reasoning"] == {"effort": "none"}
 
 
+def test_call_llm_openrouter_gpt_oss_requests_low_reasoning_effort() -> None:
+    settings = LlmPruningSettings(
+        model_name="openrouter/openai/gpt-oss-120b",
+        api_key="1111111112222222222222222222222222222222",
+        base_url="https://openrouter.ai/api",
+        provider="openrouter",
+        provider_dns="openrouter",
+        responses_api=False,
+    )
+    fake_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[1]}'))],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
+        id="chatcmpl-gpt-oss",
+    )
+
+    with patch("cyt.pruners.llm.completion", return_value=fake_response) as completion_mock:
+        call_llm(settings, "find tools", "<chunk>")
+
+    assert completion_mock.call_args.kwargs["reasoning"] == {"effort": "low"}
+
+
 def test_normalize_selector_ids_drops_empty_sentinel() -> None:
     assert normalize_selector_ids([-1]) == []
     assert normalize_selector_ids([1, -1, 3]) == [1, 3]
@@ -223,3 +249,53 @@ def test_call_llm_minus_one_mixed_with_valid_ids() -> None:
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
     assert parsed.ids == [2, 5]
+
+
+def test_format_executor_mcp_selector_appendix_minimizes_execute_tool() -> None:
+    appendix = format_executor_mcp_selector_appendix(
+        {
+            "tools_list": [
+                {
+                    "name": "execute",
+                    "description": 'Run "code"',
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"code": {"type": "string"}},
+                        "required": ["code"],
+                    },
+                },
+            ],
+            "execute_skill": "# execute\n\nUse tools.search()",
+        },
+    )
+    assert "Executor MCP transport context" in appendix
+    assert "<tool name='execute'" in appendix
+    assert "description='Run \"code\"'" in appendix
+    assert "{'input_schema':{" in appendix
+    assert "<execute-skill>" in appendix
+    assert "Use tools.search()" in appendix
+    assert "</execute-skill>" in appendix
+
+
+def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
+    mcp = {
+        "tools_list": [{"name": "execute", "description": "Run", "inputSchema": {}}],
+        "execute_skill": "# execute",
+    }
+    with patch(
+        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        return_value=mcp,
+    ):
+        prompt = tool_selector_system_prompt({"pruning": {}})
+
+    assert prompt.startswith(TOOL_SELECTOR_SYSTEM_PROMPT)
+    assert "<tool name='execute'" in prompt
+    assert "# execute" in prompt
+
+
+def test_tool_selector_system_prompt_without_cache_is_base_only() -> None:
+    with patch(
+        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        return_value=None,
+    ):
+        assert tool_selector_system_prompt() == TOOL_SELECTOR_SYSTEM_PROMPT

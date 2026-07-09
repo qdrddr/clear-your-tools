@@ -18,6 +18,7 @@ from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
     is_valid_workspace_root,
+    set_rules_file_rel_path,
     sync_cursor_rules_file,
     workspace_root_from_payload,
 )
@@ -28,12 +29,17 @@ _verbose = False
 _debug = False
 
 
-def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool]:
+def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool, str | None]:
     parser = argparse.ArgumentParser(prog="cyt-client", add_help=False)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--rule",
+        metavar="PATH",
+        help="Cursor rules file path (relative to workspace); default: .cursor/rules/cyt-injection.mdc",
+    )
     args, _unknown = parser.parse_known_args(argv)
-    return bool(args.verbose), bool(args.debug)
+    return bool(args.verbose), bool(args.debug), args.rule
 
 
 def _verbose_log(message: str) -> None:
@@ -168,13 +174,15 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     global _verbose, _debug
-    _verbose, _debug = _parse_client_flags(argv)
+    _verbose, _debug, rule_path = _parse_client_flags(argv)
 
     cursor_output = False
     try:
         raw = sys.stdin.buffer.read()
         payload = _parse_payload(raw)
         cursor_output = payload is not None and is_cursor_hook_payload(payload)
+        if cursor_output and rule_path:
+            set_rules_file_rel_path(rule_path)
         _run_hook(raw, payload, cursor_output=cursor_output)
     except Exception:
         _verbose_exception("unexpected error")

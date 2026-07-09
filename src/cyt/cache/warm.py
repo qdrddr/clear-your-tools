@@ -25,9 +25,18 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
     try:
         tools: list[dict[str, Any]] | None
         if tools_hook_tools_from(cfg) == "executor":
-            from cyt.tools.sources.executor_http import fetch_executor_tools
+            from cyt.tools.sources.executor_http import (
+                get_executor_catalog,
+                load_executor_catalog_from_disk,
+                schedule_executor_catalog_refresh,
+            )
 
-            tools = fetch_executor_tools(cfg, allow_prompt=False, blocking=True)
+            load_executor_catalog_from_disk(cfg)
+            tools = get_executor_catalog(cfg, allow_prompt=False, blocking=False)
+            if not tools:
+                tools = get_executor_catalog(cfg, allow_prompt=False, blocking=True)
+            else:
+                schedule_executor_catalog_refresh(cfg, allow_prompt=False, force=False)
         else:
             tools = load_tool_catalog(cfg)
         if not tools:

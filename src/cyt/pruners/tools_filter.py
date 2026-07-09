@@ -14,6 +14,7 @@ from cyt.config import (
     llm_minimum_tools,
     load_config,
     pruning_pipeline_from_config,
+    pruning_stage_model_nick,
     uses_executor_tool_catalog,
 )
 from cyt.indexer.build import (
@@ -63,7 +64,7 @@ def _apply_executor_hook_tool_kind(
             apply_executor_tool_kind(ctx, "mcp")
 
 
-# Initial LLM pruning attempt plus two retries before BM25 fallback.
+# Initial LLM pruning attempt plus two retries before rerank/BM25 fallback.
 LLM_STAGE_MAX_ATTEMPTS = 3
 
 __all__ = [
@@ -600,10 +601,28 @@ def _run_pipeline_stage(
                     )
                 else:
                     logger.warning(
-                        "llm pruning failed after %d attempts, falling back to bm25: %s",
+                        "llm pruning failed after %d attempts: %s",
                         LLM_STAGE_MAX_ATTEMPTS,
                         exc,
                     )
+        resolved_config = config or load_config()
+        if pruning_stage_model_nick(resolved_config, "rerank"):
+            try:
+                logger.warning(
+                    "llm pruning failed after %d attempts, trying rerank fallback",
+                    LLM_STAGE_MAX_ATTEMPTS,
+                )
+                return _run_rerank_stage(**stage_kwargs)
+            except Exception as rerank_exc:
+                logger.warning(
+                    "rerank fallback after llm failure failed, falling back to bm25: %s",
+                    rerank_exc,
+                )
+        else:
+            logger.warning(
+                "llm pruning failed after %d attempts, falling back to bm25",
+                LLM_STAGE_MAX_ATTEMPTS,
+            )
         return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
     if stage == "bm25":
         return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
@@ -874,7 +893,8 @@ def filter_tools_for_query(
         config,
         terminal_stage=terminal_stage,
     )
-    if for_hook and uses_executor_tool_catalog(config):
+    uses_executor = uses_executor_tool_catalog(config)
+    if for_hook and uses_executor:
         _apply_executor_hook_tool_kind(policy_ctx, output_policy_ctx, config=config)
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)

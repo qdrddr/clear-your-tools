@@ -122,45 +122,139 @@ def test_cli_writes_response_body_to_stdout_only(capsys: pytest.CaptureFixture[s
 def test_cli_reformats_cursor_before_submit_prompt_output(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        workspace = Path(tmp) / "project"
-        workspace.mkdir()
-        payload = {
-            "hook_event_name": "beforeSubmitPrompt",
-            "prompt": "hello",
-            "conversation_id": "conv-1",
-            "workspace_roots": [str(workspace)],
-        }
-        with patch(
-            "cyt_client.cli.resolve_hook_url",
-            return_value="http://127.0.0.1:8834/hook/inject",
-        ):
-            inject_response = json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "UserPromptSubmit",
-                        "additionalContext": "<agent-skills>skill text</agent-skills>",
-                    },
-                },
-            ).encode()
+    from cyt_client.rules_file import reset_rules_file_rel_path
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "project"
+            workspace.mkdir()
+            payload = {
+                "hook_event_name": "beforeSubmitPrompt",
+                "prompt": "hello",
+                "conversation_id": "conv-1",
+                "workspace_roots": [str(workspace)],
+            }
             with patch(
-                "cyt_client.cli.post_hook_inject",
-                return_value=(200, inject_response),
+                "cyt_client.cli.resolve_hook_url",
+                return_value="http://127.0.0.1:8834/hook/inject",
             ):
-                from cyt_client.cli import main
+                inject_response = json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": "<agent-skills>skill text</agent-skills>",
+                        },
+                    },
+                ).encode()
+                with patch(
+                    "cyt_client.cli.post_hook_inject",
+                    return_value=(200, inject_response),
+                ):
+                    from cyt_client.cli import main
 
-                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
-                    main()
+                    with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                        main()
 
-        captured = capsys.readouterr()
-        assert json.loads(captured.out) == {
-            "continue": True,
-            "additional_context": "<agent-skills>skill text</agent-skills>",
-        }
-        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
-        assert rules_path.is_file()
-        assert "alwaysApply: true" in rules_path.read_text(encoding="utf-8")
-        assert "<agent-skills>skill text</agent-skills>" in rules_path.read_text(encoding="utf-8")
+            captured = capsys.readouterr()
+            assert json.loads(captured.out) == {
+                "continue": True,
+                "additional_context": "<agent-skills>skill text</agent-skills>",
+            }
+            rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+            assert rules_path.is_file()
+            assert "alwaysApply: true" in rules_path.read_text(encoding="utf-8")
+            assert "<agent-skills>skill text</agent-skills>" in rules_path.read_text(
+                encoding="utf-8",
+            )
+    finally:
+        reset_rules_file_rel_path()
+
+
+def test_cli_cursor_before_submit_writes_custom_rule_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cyt_client.rules_file import reset_rules_file_rel_path
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "project"
+            workspace.mkdir()
+            custom_rules = workspace / ".cursor" / "rules" / "cyt-indexer.mdc"
+            default_rules = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+            payload = {
+                "hook_event_name": "beforeSubmitPrompt",
+                "prompt": "hello",
+                "conversation_id": "conv-1",
+                "workspace_roots": [str(workspace)],
+            }
+            with patch(
+                "cyt_client.cli.resolve_hook_url",
+                return_value="http://127.0.0.1:8834/hook/inject",
+            ):
+                inject_response = json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": "<agent-skills>custom path</agent-skills>",
+                        },
+                    },
+                ).encode()
+                with patch(
+                    "cyt_client.cli.post_hook_inject",
+                    return_value=(200, inject_response),
+                ):
+                    from cyt_client.cli import main
+
+                    with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                        main(["--rule", ".cursor/rules/cyt-indexer.mdc"])
+
+            captured = capsys.readouterr()
+            assert json.loads(captured.out) == {
+                "continue": True,
+                "additional_context": "<agent-skills>custom path</agent-skills>",
+            }
+            assert custom_rules.is_file()
+            assert "<agent-skills>custom path</agent-skills>" in custom_rules.read_text(
+                encoding="utf-8",
+            )
+            assert not default_rules.is_file()
+    finally:
+        reset_rules_file_rel_path()
+
+
+def test_cli_rule_flag_ignored_for_non_cursor_payload(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cyt_client.rules_file import reset_rules_file_rel_path
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "project"
+            workspace.mkdir()
+            custom_rules = workspace / ".cursor" / "rules" / "cyt-indexer.mdc"
+            payload = {
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": "hello",
+                "cwd": str(workspace),
+            }
+            with patch(
+                "cyt_client.cli.resolve_hook_url",
+                return_value="http://127.0.0.1:8834/hook/inject",
+            ):
+                with patch(
+                    "cyt_client.cli.post_hook_inject",
+                    return_value=(200, b'{"hookSpecificOutput":{"additionalContext":"x"}}'),
+                ):
+                    from cyt_client.cli import main
+
+                    with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                        main(["--rule", ".cursor/rules/cyt-indexer.mdc"])
+
+            captured = capsys.readouterr()
+            assert captured.out == '{"hookSpecificOutput":{"additionalContext":"x"}}'
+            assert not custom_rules.is_file()
+    finally:
+        reset_rules_file_rel_path()
 
 
 def test_enrich_hook_payload_adds_cyt_agent_and_skills(monkeypatch: pytest.MonkeyPatch) -> None:

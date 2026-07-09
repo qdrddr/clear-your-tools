@@ -10,6 +10,21 @@ from typing import Any
 RULES_REL_PATH = Path(".cursor/rules/cyt-injection.mdc")
 GITIGNORE_ENTRY = ".cursor/rules/cyt-injection.mdc"
 _RULES_DESCRIPTION = "CYT pruned skills and tools for this prompt"
+_custom_rules_rel_path: Path | None = None
+
+
+def set_rules_file_rel_path(path: str | None) -> None:
+    """Override the workspace-relative rules path (e.g. from ``--rule``)."""
+    global _custom_rules_rel_path
+    if path is None or not path.strip():
+        _custom_rules_rel_path = None
+        return
+    _custom_rules_rel_path = Path(path.strip())
+
+
+def reset_rules_file_rel_path() -> None:
+    """Clear any custom rules path override (mainly for tests)."""
+    set_rules_file_rel_path(None)
 
 
 def cursor_rules_file_enabled() -> bool:
@@ -39,7 +54,17 @@ def is_valid_workspace_root(workspace: Path) -> bool:
 
 
 def rules_file_path(workspace: Path) -> Path:
-    return workspace / RULES_REL_PATH
+    rel = _custom_rules_rel_path if _custom_rules_rel_path is not None else RULES_REL_PATH
+    if rel.is_absolute():
+        return rel
+    return workspace / rel
+
+
+def _gitignore_entry_for_rules_path(workspace: Path, path: Path) -> str | None:
+    try:
+        return str(path.relative_to(workspace))
+    except ValueError:
+        return None
 
 
 def build_rules_mdc(injection: str) -> str:
@@ -117,5 +142,6 @@ def sync_cursor_rules_file(workspace: Path, injection: str) -> bool:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new_content, encoding="utf-8")
-    ensure_gitignore_entry(workspace)
+    if gitignore_entry := _gitignore_entry_for_rules_path(workspace, path):
+        ensure_gitignore_entry(workspace, rel_path=gitignore_entry)
     return True
