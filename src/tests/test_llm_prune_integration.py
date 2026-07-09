@@ -28,7 +28,7 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -39,7 +39,7 @@ import pytest
 
 from cyt.common.agents import AgentName
 from cyt.common.paths import shorten_home_path
-from cyt.common.token_usage import StageTokenUsage
+from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import load_config, require_proxy_env
 from cyt.hook import http_server as cyt_hook_http_server
 from cyt.launch.upstream import parse_agent_name
@@ -51,14 +51,12 @@ from cyt.pruners.llm import (
     prepare_catalog_selector_chunks,
     tool_selector_system_prompt,
 )
-from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
 from cyt.skills.cli import HookRunResult, run_hook_payload
 from cyt.skills.hook_payload import normalize_hook_payload
 from cyt.skills.inject import format_agent_skills
 from cyt.skills.llm import (
     SKILLS_SELECTOR_SYSTEM_PROMPT,
-    combined_selector_system_prompt,
     prepare_skill_nodes,
     reconstruct_skills_from_llm_ids,
 )
@@ -112,35 +110,14 @@ DEFAULT_USER_PROMPT = (
     "Also show me how to resolve a Next.js library id with Context7."
 )
 
-_DEBUG_LOG_PATH = Path(
-    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/debug-5bd726.log",
-)
-_DEBUG_SESSION_ID = "5bd726"
 
-
-def _agent_debug_log(
-    *,
-    hypothesis_id: str,
-    location: str,
-    message: str,
-    data: dict[str, Any],
-    run_id: str = "pre-fix",
-) -> None:
-    # region agent log
-    import time
-
-    payload = {
-        "sessionId": _DEBUG_SESSION_ID,
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, default=str) + "\n")
-    # endregion
+@dataclass(frozen=True)
+class SelectorLegTrace:
+    system_prompt: str
+    user_prompt: str
+    selected_ids: set[int]
+    pruned_output: str
+    token_usage: StageTokenUsage
 
 
 @dataclass(frozen=True)
@@ -156,6 +133,8 @@ class LlmPruneTrace:
     pruned_output: str
     token_usage: StageTokenUsage
     selector_skill_matches: tuple[MatchedSkill, ...] = ()
+    tools_selector: SelectorLegTrace | None = None
+    skills_selector: SelectorLegTrace | None = None
 
 
 @dataclass(frozen=True)
@@ -270,22 +249,6 @@ def maybe_sync_cursor_rules_file(
         return None
 
     injection = extract_additional_context(trace.stdout_text.encode())
-    # region agent log
-    _agent_debug_log(
-        hypothesis_id="H4",
-        location="test_llm_prune_integration.py:maybe_sync_cursor_rules_file",
-        message="rules sync decision",
-        data={
-            "mode": trace.mode,
-            "outcome": trace.outcome,
-            "stdout_len": len(trace.stdout_text),
-            "injection_len": len(injection),
-            "injection_has_lean_ctx": "lean-ctx" in injection,
-            "injection_has_agent_skills": "<agent-skills>" in injection,
-            "injection_preview": injection[:240],
-        },
-    )
-    # endregion
     if not injection.strip():
         deleted = delete_cursor_rules_file(workspace)
         print(
@@ -314,23 +277,6 @@ def invoke_hook_inject_local(
     """
     raw = agent_raw_hook_payload(agent, prompt=prompt)
     enriched = enrich_like_cyt_client(raw, agent=agent)
-    # region agent log
-    cyt_skills = enriched.get("cyt_skills")
-    _agent_debug_log(
-        hypothesis_id="H2",
-        location="test_llm_prune_integration.py:invoke_hook_inject_local",
-        message="enriched hook payload skills snapshot",
-        data={
-            "cyt_skills_count": len(cyt_skills) if isinstance(cyt_skills, list) else 0,
-            "cyt_skill_paths": [
-                str(item.get("path", "")) for item in cyt_skills if isinstance(item, dict)
-            ][:10]
-            if isinstance(cyt_skills, list)
-            else [],
-            "has_cyt_rules_injection": bool(enriched.get("cyt_rules_injection")),
-        },
-    )
-    # endregion
     normalized = normalize_hook_payload(enriched)
     result = run_hook_payload(
         normalized,
@@ -341,20 +287,6 @@ def invoke_hook_inject_local(
         io_guarded=True,
         allow_transcript_file_read=False,
     )
-    # region agent log
-    _agent_debug_log(
-        hypothesis_id="H3",
-        location="test_llm_prune_integration.py:invoke_hook_inject_local",
-        message="hook inject result",
-        data={
-            "outcome": result.outcome,
-            "stdout_len": len(result.stdout_text),
-            "stdout_has_lean_ctx": "lean-ctx" in result.stdout_text,
-            "details_keys": sorted((result.details or {}).keys()),
-            "injected_skills_preview": str((result.details or {}).get("injected_skills", ""))[:240],
-        },
-    )
-    # endregion
     return result, raw, enriched
 
 
@@ -506,6 +438,75 @@ def _format_pruned_tools(catalog: dict[str, Any], selected_ids: set[int]) -> str
     return json.dumps(pruned, indent=2)
 
 
+def _run_tools_selector_leg(
+    query: str,
+    *,
+    tool_catalog: dict[str, Any],
+    config: dict[str, Any],
+) -> SelectorLegTrace:
+    tool_chunks, _tool_metadata, _ = prepare_catalog_selector_chunks(tool_catalog)
+    tools_prompt = tool_selector_system_prompt(config)
+    tool_ids, tool_usage = llm_select_ids(
+        query,
+        tools_prompt,
+        tool_chunks,
+        config=config,
+    )
+    tool_text = _format_pruned_tools(tool_catalog, tool_ids)
+    return SelectorLegTrace(
+        system_prompt=tools_prompt,
+        user_prompt=_llm_user_message(query, "".join(tool_chunks)),
+        selected_ids=set(tool_ids),
+        pruned_output=tool_text or "(no tools selected)",
+        token_usage=tool_usage,
+    )
+
+
+def _run_skills_selector_leg(
+    query: str,
+    *,
+    skill_entries: list[SkillEntryRef],
+    config: dict[str, Any],
+) -> tuple[SelectorLegTrace, tuple[MatchedSkill, ...]]:
+    skill_items, skill_metadata = prepare_skill_nodes(skill_entries)
+    selected_ids, usage = llm_select_ids(
+        query,
+        SKILLS_SELECTOR_SYSTEM_PROMPT,
+        skill_items,
+        config=config,
+    )
+    skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
+    matches = reconstruct_skills_from_llm_ids(
+        skill_metadata,
+        skill_selected,
+        skill_entries,
+        config=config,
+    )
+    pruned_output = format_agent_skills(matches) if matches else "(no skill nodes selected)"
+    return (
+        SelectorLegTrace(
+            system_prompt=SKILLS_SELECTOR_SYSTEM_PROMPT,
+            user_prompt=_llm_user_message(query, "".join(skill_items)),
+            selected_ids=skill_selected,
+            pruned_output=pruned_output,
+            token_usage=usage,
+        ),
+        tuple(matches),
+    )
+
+
+def _selector_skill_search_side_effect(
+    selector_skill_matches: tuple[MatchedSkill, ...],
+) -> Callable[..., list[MatchedSkill]]:
+    def _search_skills_from_selector(
+        *_args: object,
+        **_kwargs: object,
+    ) -> list[MatchedSkill]:
+        return list(selector_skill_matches)
+
+    return _search_skills_from_selector
+
+
 def _daemon_patch_stack(
     mode: ScenarioMode,
     *,
@@ -538,19 +539,6 @@ def _daemon_patch_stack(
             *_args: object,
             **_kwargs: object,
         ) -> list[SkillEntryRef]:
-            # region agent log
-            _agent_debug_log(
-                hypothesis_id="H1",
-                location="test_llm_prune_integration.py:_patched_build_registry",
-                message="hook registry patched to fixture",
-                data={
-                    "entry_count": len(minimal_entries),
-                    "doc_ids": [item.doc_id for item in minimal_entries],
-                    "source_paths": [item.source_path for item in minimal_entries],
-                },
-                run_id="post-fix",
-            )
-            # endregion
             return list(minimal_entries)
 
         stack.enter_context(
@@ -572,94 +560,16 @@ def _daemon_patch_stack(
                 side_effect=lambda _query, entries, **_: entries,
             ),
         )
-        from cyt.skills.search import (
-            search_skills_with_pipeline as real_search_skills_with_pipeline,
-        )
 
         if selector_skill_matches is not None:
-
-            def _search_skills_from_selector(
-                *_args: object,
-                **_kwargs: object,
-            ) -> list[MatchedSkill]:
-                matches = list(selector_skill_matches)
-                # region agent log
-                _agent_debug_log(
-                    hypothesis_id="H6",
-                    location="test_llm_prune_integration.py:_search_skills_from_selector",
-                    message="hook skills search uses selector matches",
-                    data={
-                        "match_count": len(matches),
-                        "match_names": [match.name for match in matches],
-                        "match_paths": [match.file_path for match in matches],
-                    },
-                    run_id="post-fix",
-                )
-                # endregion
-                return matches
-
+            selector_side_effect = _selector_skill_search_side_effect(selector_skill_matches)
             stack.enter_context(
-                patch("cyt.skills.cli.search_skills", side_effect=_search_skills_from_selector),
+                patch("cyt.skills.cli.search_skills", side_effect=selector_side_effect),
             )
-        else:
-
-            def _trace_search_skills(
-                query: str,
-                entries: list[SkillEntryRef],
-                *,
-                config: dict[str, Any] | None = None,
-                max_tokens: int | None = None,
-                pruner_settings: PrunerSettingsCache | None = None,
-                skip_frontmatter_gate: bool = False,
-            ) -> list[MatchedSkill]:
-                matches, pipeline_run = real_search_skills_with_pipeline(
-                    query,
-                    entries,
-                    config=config,
-                    max_tokens=max_tokens,
-                    pruner_settings=pruner_settings,
-                    skip_frontmatter_gate=skip_frontmatter_gate,
-                )
-                # region agent log
-                _agent_debug_log(
-                    hypothesis_id="H3",
-                    location="test_llm_prune_integration.py:_trace_search_skills",
-                    message="hook skills search matches",
-                    data={
-                        "match_count": len(matches),
-                        "configured_pipeline": pipeline_run.configured,
-                        "executed_pipeline": pipeline_run.executed,
-                        "fallback_reason": pipeline_run.fallback_reason,
-                        "match_names": [getattr(match, "name", None) for match in matches],
-                        "match_paths": [getattr(match, "file_path", None) for match in matches],
-                        "match_preview": [
-                            str(getattr(match, "markdown", ""))[:120] for match in matches[:3]
-                        ],
-                    },
-                    run_id="post-fix",
-                )
-                # endregion
-                return matches
-
+            # Combined mode uses the coordinated hook path (proxy_inject -> search.search_skills).
             stack.enter_context(
-                patch("cyt.skills.cli.search_skills", side_effect=_trace_search_skills),
+                patch("cyt.skills.search.search_skills", side_effect=selector_side_effect),
             )
-        # region agent log
-        _agent_debug_log(
-            hypothesis_id="H1",
-            location="test_llm_prune_integration.py:_daemon_patch_stack",
-            message="skills patch stack armed",
-            data={
-                "mode": mode,
-                "fixture_doc_id": entry.doc_id,
-                "fixture_source_path": entry.source_path,
-                "fixture_node_id": skill_node_id,
-                "hook_bridge_patched": True,
-                "skills_cli_patched": "fixture",
-            },
-            run_id="post-fix",
-        )
-        # endregion
     return stack
 
 
@@ -727,109 +637,70 @@ def run_llm_prune_scenario(
 
     tool_catalog: dict[str, Any] | None = None
     skill_entries: list[SkillEntryRef] = []
-    formatted_items: list[str] = []
-    tool_metadata: dict[int, Any] = {}
-    skill_metadata: dict[int, Any] = {}
     system_prompt = TOOL_SELECTOR_SYSTEM_PROMPT
-
-    if mode in {"tools", "combined"}:
-        tool_catalog = load_decomposed_tool_catalog(tool_json_path)
-        tool_chunks, tool_metadata, _ = prepare_catalog_selector_chunks(tool_catalog)
-        formatted_items.extend(tool_chunks)
-
-    if mode in {"skills", "combined"}:
-        skill_entries = [load_single_skill_entry(skill_entry_dir, node_id=skill_node_id)]
-        skill_start_id = 1
-        if mode == "combined":
-            skill_start_id = max(tool_metadata.keys(), default=0) + 1
-        skill_items, skill_metadata = prepare_skill_nodes(
-            skill_entries,
-            start_id=skill_start_id,
-        )
-        formatted_items.extend(skill_items)
-
-    if mode == "tools":
-        system_prompt = tool_selector_system_prompt(config)
-    elif mode == "skills":
-        system_prompt = SKILLS_SELECTOR_SYSTEM_PROMPT
-    else:
-        system_prompt = combined_selector_system_prompt(config)
-
-    chunks_text = "".join(formatted_items)
-    user_prompt = _llm_user_message(query, chunks_text)
-    selected_ids, usage = llm_select_ids(
-        query,
-        system_prompt,
-        formatted_items,
-        config=config,
-    )
-    # region agent log
-    if mode in {"skills", "combined"}:
-        _agent_debug_log(
-            hypothesis_id="H5",
-            location="test_llm_prune_integration.py:run_llm_prune_scenario",
-            message="selector skills result",
-            data={
-                "mode": mode,
-                "fixture_paths": [entry.source_path for entry in skill_entries],
-                "fixture_doc_ids": [entry.doc_id for entry in skill_entries],
-                "selected_ids": sorted(selected_ids),
-                "skill_metadata_ids": sorted(skill_metadata.keys()),
-            },
-        )
-    # endregion
-
+    user_prompt = ""
+    selected_ids: set[int] = set()
+    usage = empty_usage()
     pruned_output = ""
     selector_skill_matches: tuple[MatchedSkill, ...] = ()
-    if mode == "tools" and tool_catalog is not None:
-        pruned_output = _format_pruned_tools(tool_catalog, selected_ids)
-    elif mode == "skills" and skill_entries:
-        skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
-        matches = reconstruct_skills_from_llm_ids(
-            skill_metadata,
-            skill_selected,
-            skill_entries,
+    tools_selector: SelectorLegTrace | None = None
+    skills_selector: SelectorLegTrace | None = None
+
+    if mode == "combined":
+        tool_catalog = load_decomposed_tool_catalog(tool_json_path)
+        skill_entries = [load_single_skill_entry(skill_entry_dir, node_id=skill_node_id)]
+        tools_selector = _run_tools_selector_leg(
+            query,
+            tool_catalog=tool_catalog,
             config=config,
         )
-        # region agent log
-        _agent_debug_log(
-            hypothesis_id="H8",
-            location="test_llm_prune_integration.py:run_llm_prune_scenario",
-            message="selector reconstruct body snapshot",
-            data={
-                "selected_ids": sorted(skill_selected),
-                "match_count": len(matches),
-                "match_bodies": [
-                    {
-                        "name": match.name,
-                        "markdown_len": len(match.markdown),
-                        "injection_body_len": len(
-                            __import__(
-                                "cyt.skills.frontmatter",
-                                fromlist=["injection_markdown_body"],
-                            ).injection_markdown_body(match.markdown),
-                        ),
-                    }
-                    for match in matches
-                ],
-            },
-        )
-        # endregion
-        selector_skill_matches = tuple(matches)
-        pruned_output = format_agent_skills(matches) if matches else "(no skill nodes selected)"
-    elif mode == "combined" and tool_catalog is not None and skill_entries:
-        tool_selected = {sid for sid in selected_ids if sid in tool_metadata}
-        skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
-        tool_text = _format_pruned_tools(tool_catalog, tool_selected)
-        skill_matches = reconstruct_skills_from_llm_ids(
-            skill_metadata,
-            skill_selected,
-            skill_entries,
+        skills_selector, selector_skill_matches = _run_skills_selector_leg(
+            query,
+            skill_entries=skill_entries,
             config=config,
         )
-        selector_skill_matches = tuple(skill_matches)
-        skill_text = format_agent_skills(skill_matches) if skill_matches else ""
-        pruned_output = "\n\n".join(part for part in (tool_text, skill_text) if part.strip())
+        usage = tools_selector.token_usage.merge(skills_selector.token_usage)
+        selected_ids = tools_selector.selected_ids | skills_selector.selected_ids
+        system_prompt = f"{tools_selector.system_prompt}\n\n---\n\n{skills_selector.system_prompt}"
+        user_prompt = "\n\n---\n\n".join(
+            part
+            for part in (tools_selector.user_prompt, skills_selector.user_prompt)
+            if part.strip()
+        )
+        pruned_output = (
+            "\n\n".join(
+                part
+                for part in (tools_selector.pruned_output, skills_selector.pruned_output)
+                if part.strip() and not part.startswith("(no ")
+            )
+            or "(empty)"
+        )
+    else:
+        if mode == "tools":
+            tool_catalog = load_decomposed_tool_catalog(tool_json_path)
+            tools_selector = _run_tools_selector_leg(
+                query,
+                tool_catalog=tool_catalog,
+                config=config,
+            )
+            system_prompt = tools_selector.system_prompt
+            user_prompt = tools_selector.user_prompt
+            selected_ids = tools_selector.selected_ids
+            usage = tools_selector.token_usage
+            pruned_output = tools_selector.pruned_output
+
+        if mode == "skills":
+            skill_entries = [load_single_skill_entry(skill_entry_dir, node_id=skill_node_id)]
+            skills_selector, selector_skill_matches = _run_skills_selector_leg(
+                query,
+                skill_entries=skill_entries,
+                config=config,
+            )
+            system_prompt = skills_selector.system_prompt
+            user_prompt = skills_selector.user_prompt
+            selected_ids = skills_selector.selected_ids
+            usage = skills_selector.token_usage
+            pruned_output = skills_selector.pruned_output
 
     return LlmPruneTrace(
         mode=mode,
@@ -843,7 +714,29 @@ def run_llm_prune_scenario(
         pruned_output=pruned_output or "(empty)",
         token_usage=usage,
         selector_skill_matches=selector_skill_matches,
+        tools_selector=tools_selector,
+        skills_selector=skills_selector,
     )
+
+
+def _print_selector_leg(title: str, leg: SelectorLegTrace) -> None:
+    _print_section(f"{title} — system prompt", leg.system_prompt)
+    _print_section(f"{title} — user prompt", leg.user_prompt)
+    _print_section(f"{title} — selected ids", json.dumps(sorted(leg.selected_ids)))
+    _print_section(
+        f"{title} — token usage",
+        json.dumps(
+            {
+                "input_tokens": leg.token_usage.input_tokens,
+                "output_tokens": leg.token_usage.output_tokens,
+                "reasoning_tokens": leg.token_usage.reasoning_tokens,
+                "model": leg.token_usage.model_name,
+                "provider": leg.token_usage.provider,
+            },
+            indent=2,
+        ),
+    )
+    _print_section(f"{title} — pruned output", leg.pruned_output)
 
 
 def print_llm_prune_trace(trace: LlmPruneTrace) -> None:
@@ -857,6 +750,33 @@ def print_llm_prune_trace(trace: LlmPruneTrace) -> None:
         json.dumps(trace.enriched_hook_payload, indent=2),
     )
     _print_section("enriched query", trace.query)
+
+    if trace.mode == "combined" and trace.tools_selector and trace.skills_selector:
+        _print_selector_leg("tools selector", trace.tools_selector)
+        _print_selector_leg("skills selector", trace.skills_selector)
+        _print_section(
+            "combined token usage",
+            json.dumps(
+                {
+                    "input_tokens": trace.token_usage.input_tokens,
+                    "output_tokens": trace.token_usage.output_tokens,
+                    "reasoning_tokens": trace.token_usage.reasoning_tokens,
+                    "model": trace.token_usage.model_name,
+                    "provider": trace.token_usage.provider,
+                },
+                indent=2,
+            ),
+        )
+        _print_section("combined pruned output", trace.pruned_output)
+        return
+
+    if trace.tools_selector is not None:
+        _print_selector_leg("tools selector", trace.tools_selector)
+        return
+    if trace.skills_selector is not None:
+        _print_selector_leg("skills selector", trace.skills_selector)
+        return
+
     _print_section("system prompt", trace.system_prompt)
     _print_section("user prompt", trace.user_prompt)
     _print_section("selected ids", json.dumps(sorted(trace.selected_ids)))

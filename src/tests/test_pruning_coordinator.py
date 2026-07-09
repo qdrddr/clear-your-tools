@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from cyt.config import effective_skills_pipeline
 from cyt.proxy.anthropic import PruneResult
-from cyt.pruning.context import MAX_PRUNE_BATCH_WORKERS, PruneContext, WorkUnit
+from cyt.pruning.context import MAX_PRUNE_BATCH_WORKERS, PruneContext
 from cyt.pruning.coordinator import (
     ToolSource,
     build_prune_plan,
@@ -44,7 +44,7 @@ def test_build_plan_both_bm25_parallel_stage() -> None:
     assert kinds == {"tools_stage", "skills_search"}
 
 
-def test_build_plan_both_rerank_merges() -> None:
+def test_build_plan_both_rerank_parallel_stage() -> None:
     ctx = PruneContext(
         query="find files",
         config={},
@@ -54,9 +54,24 @@ def test_build_plan_both_rerank_merges() -> None:
         tools_allowed=True,
     )
     plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
-    assert plan == [
-        [WorkUnit(kind="combined_stage", source_id="root", stage="rerank", pipeline=("rerank",))],
-    ]
+    assert len(plan) == 1
+    kinds = {unit.kind for unit in plan[0]}
+    assert kinds == {"tools_stage", "skills_search"}
+
+
+def test_build_plan_both_llm_parallel_stage() -> None:
+    ctx = PruneContext(
+        query="find files",
+        config={},
+        tools_effective=["llm"],
+        skills_effective="llm",
+        skills_allowed=True,
+        tools_allowed=True,
+    )
+    plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
+    assert len(plan) == 1
+    kinds = {unit.kind for unit in plan[0]}
+    assert kinds == {"tools_stage", "skills_search"}
 
 
 def test_build_plan_bm25_tools_rerank_skills_two_stages() -> None:

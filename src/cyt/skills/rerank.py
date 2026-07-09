@@ -2,33 +2,22 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import rerank_score_skills, reranker_minimum_tools
-from cyt.indexer.build import catalog_tool_count
-from cyt.pruners.documents import (
-    extract_json_catalog_document,
-    extract_md_catalog_document,
-    extract_skill_node_document,
-)
+from cyt.config import rerank_score_skills
+from cyt.pruners.documents import extract_skill_node_document
 from cyt.pruners.remote import RerankPruningSettings
 from cyt.pruners.rerank import (
-    RERANK_ENUMS,
-    prune_reranked_catalog,
     prune_reranked_skill_items,
     rerank_items,
     rerank_pruning_settings,
-    rerank_unified_item_lists,
 )
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.nodes import build_skill_node_items
 from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
 from cyt.skills.search import MatchedSkill
-
-logger = logging.getLogger(__name__)
 
 
 def reconstruct_skills_from_reranked_items(
@@ -52,11 +41,13 @@ def rerank_skill_nodes(
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
+    settings: RerankPruningSettings | None = None,
 ) -> tuple[list[MatchedSkill], StageTokenUsage]:
     matches, _rows, _threshold, usage = rerank_skill_nodes_with_trace(
         query,
         entries,
         config=config,
+        settings=settings,
     )
     return matches, usage
 
@@ -104,65 +95,3 @@ def rerank_skill_nodes_with_trace(
     survivors = prune_reranked_skill_items(scored, config=config)
     matches = reconstruct_skills_from_reranked_items(survivors, entries, config=config)
     return matches, search_rows, threshold, usage
-
-
-def rerank_prune_tools_and_skills(
-    data: dict[str, Any],
-    query: str,
-    skill_entries: list[SkillEntryRef],
-    *,
-    config: dict[str, Any] | None = None,
-    settings: RerankPruningSettings | None = None,
-) -> tuple[dict[str, Any], list[MatchedSkill], StageTokenUsage]:
-    """Combined tool catalog + skill node rerank in one bulk when possible."""
-    settings = rerank_pruning_settings(config, settings=settings)
-    targets: list[tuple[list[dict[str, Any]], Any]] = []
-
-    tool_count = catalog_tool_count(data)
-    if tool_count >= reranker_minimum_tools(config):
-        json_items = data.get("json")
-        if isinstance(json_items, list) and json_items:
-            targets.append((json_items, extract_json_catalog_document))
-        if RERANK_ENUMS:
-            md_items = data.get("md")
-            if isinstance(md_items, list) and md_items:
-                targets.append((md_items, extract_md_catalog_document))
-
-    skill_items = build_skill_node_items(skill_entries)
-    if skill_items:
-        targets.append((skill_items, extract_skill_node_document))
-
-    if not targets:
-        return data, [], empty_usage()
-
-    try:
-        usage = rerank_unified_item_lists(query, targets, settings)
-    except Exception as exc:
-        logger.warning("combined rerank prune failed, falling back to sequential: %s", exc)
-        from cyt.pruners.rerank import rerank_catalog_dict
-
-        pruned_data, tool_usage = rerank_catalog_dict(
-            data,
-            query,
-            prune=True,
-            merge_pinned=False,
-            config=config,
-            settings=settings,
-        )
-        skill_matches, skill_usage = rerank_skill_nodes(
-            query,
-            skill_entries,
-            config=config,
-        )
-        return pruned_data, skill_matches, tool_usage.merge(skill_usage)
-
-    if tool_count >= reranker_minimum_tools(config):
-        data = prune_reranked_catalog(data)
-
-    skill_survivors = prune_reranked_skill_items(skill_items, config=config)
-    skill_matches = reconstruct_skills_from_reranked_items(
-        skill_survivors,
-        skill_entries,
-        config=config,
-    )
-    return data, skill_matches, usage

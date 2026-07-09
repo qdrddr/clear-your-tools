@@ -614,7 +614,7 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
     assert "<agent-skills>" in out["messages"][0]["content"]
 
 
-def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> None:
+def test_run_llm_stage_skips_skill_selection_when_pipeline_rerank() -> None:
     from cyt.proxy.anthropic import _run_llm_stage
 
     data = {"json": [{"id": "1"}], "md": [], "tools": [{"name": "t1"}]}
@@ -625,13 +625,10 @@ def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> 
         "pruning": {"tools": {"policy": {"minimum_tools": 1}}},
     }
 
-    with (
-        patch("cyt.skills.llm.llm_prune_tools_and_skills") as mock_combined,
-        patch(
-            "cyt.pruners.tools_filter.llm_catalog_dict",
-            return_value=(data, {"input": 0, "output": 0}),
-        ) as mock_tools_only,
-    ):
+    with patch(
+        "cyt.pruners.tools_filter.llm_catalog_dict",
+        return_value=(data, {"input": 0, "output": 0}),
+    ) as mock_tools_only:
         _run_llm_stage(
             data,
             "query",
@@ -646,7 +643,6 @@ def test_run_llm_stage_skips_combined_skill_selection_when_pipeline_rerank() -> 
             config=config,
         )
 
-    mock_combined.assert_not_called()
     mock_tools_only.assert_called_once()
     assert "matches" not in skill_out
 

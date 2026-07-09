@@ -69,6 +69,7 @@ packages = ["src/cyt", "src/cyt_core", "src/cyt_client"]
 exclude = [
   "/.cursorignore",
   "/.git",
+  "/.gitnexus",
   "/src/nogo",
   "/src/old",
   "/anthropic.log.1",

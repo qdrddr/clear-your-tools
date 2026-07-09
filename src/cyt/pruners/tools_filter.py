@@ -359,23 +359,53 @@ def _run_rerank_stage(
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     rerank_usage: StageTokenUsage
     rerank_settings = pruner_settings.for_stage("rerank") if pruner_settings else None
-    tools_already_pruned = False
-    if skill_entries:
+    skill_matches_resolved = skill_llm_out is not None and skill_llm_out.get("matches") is not None
+    prune_skills_in_parallel = skill_entries is not None and not skill_matches_resolved
+    if prune_skills_in_parallel:
         from cyt.config import skills_pipeline_uses_rerank
-        from cyt.skills.rerank import rerank_prune_tools_and_skills
+        from cyt.pruning.parallel import run_parallel
+        from cyt.skills.catalog import SkillEntryRef
+        from cyt.skills.rerank import rerank_skill_nodes
+        from cyt.skills.search import MatchedSkill
 
-        skill_matches_resolved = (
-            skill_llm_out is not None and skill_llm_out.get("matches") is not None
-        )
-        if skills_pipeline_uses_rerank(config) and not skill_matches_resolved:
-            data, skill_matches, rerank_usage = rerank_prune_tools_and_skills(
-                data,
-                query,
-                skill_entries,
-                config=config,
-                settings=rerank_settings,
+        parallel_skill_entries = cast(list[SkillEntryRef], skill_entries)
+
+        if skills_pipeline_uses_rerank(config):
+
+            def _rerank_tools() -> tuple[dict[str, Any], StageTokenUsage]:
+                scored, usage = rerank_catalog_dict(
+                    data,
+                    query,
+                    ctx=ctx,
+                    prune=False,
+                    merge_pinned=False,
+                    config=config,
+                    settings=rerank_settings,
+                )
+                return prune_reranked_catalog(scored), usage
+
+            def _rerank_skills() -> tuple[list[MatchedSkill], StageTokenUsage]:
+                return rerank_skill_nodes(
+                    query,
+                    parallel_skill_entries,
+                    config=config,
+                    settings=rerank_settings,
+                )
+
+            parallel_results = run_parallel(
+                {"tools": _rerank_tools, "skills": _rerank_skills},
             )
-            tools_already_pruned = True
+            tools_result = cast(
+                tuple[dict[str, Any], StageTokenUsage],
+                parallel_results["tools"],
+            )
+            skills_result = cast(
+                tuple[list[MatchedSkill], StageTokenUsage],
+                parallel_results["skills"],
+            )
+            data, rerank_usage = tools_result
+            skill_matches, skill_usage = skills_result
+            rerank_usage = rerank_usage.merge(skill_usage)
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:
@@ -388,6 +418,7 @@ def _run_rerank_stage(
                 config=config,
                 settings=rerank_settings,
             )
+            data = prune_reranked_catalog(data)
     else:
         data, rerank_usage = rerank_catalog_dict(
             data,
@@ -398,12 +429,11 @@ def _run_rerank_stage(
             config=config,
             settings=rerank_settings,
         )
+        data = prune_reranked_catalog(data)
     pruning_token_usage["rerank"] = rerank_usage
     if capture_catalog and snapshots is not None:
         snapshots["rerank"] = _snapshot_catalog(data)
     post_rerank_scored = copy.deepcopy(data)
-    if not tools_already_pruned:
-        data = prune_reranked_catalog(data)
     if capture_catalog and snapshots is not None:
         snapshots["rerank_pruned"] = _snapshot_catalog(data)
     post_rerank = copy.deepcopy(data)
@@ -435,29 +465,51 @@ def _run_llm_stage(
 
     llm_usage: StageTokenUsage
     llm_settings = pruner_settings.for_stage("llm") if pruner_settings else None
-    if skill_entries:
+    skill_matches_resolved = skill_llm_out is not None and skill_llm_out.get("matches") is not None
+    prune_skills_in_parallel = skill_entries is not None and not skill_matches_resolved
+    if prune_skills_in_parallel:
         from cyt.config import skills_pipeline_uses_llm
-        from cyt.skills.llm import llm_prune_tools_and_skills
+        from cyt.pruning.parallel import run_parallel
+        from cyt.skills.catalog import SkillEntryRef
+        from cyt.skills.llm import llm_skill_nodes
+        from cyt.skills.search import MatchedSkill
 
-        skill_matches_resolved = (
-            skill_llm_out is not None and skill_llm_out.get("matches") is not None
-        )
+        parallel_skill_entries = cast(list[SkillEntryRef], skill_entries)
+
         catalog_count = catalog_tool_count(data)
         llm_min = llm_minimum_tools(config)
-        use_combined = (
-            skills_pipeline_uses_llm(config)
-            and catalog_count >= llm_min
-            and not skill_matches_resolved
-        )
-        if use_combined:
-            data, skill_matches, llm_usage = llm_prune_tools_and_skills(
-                data,
-                query,
-                skill_entries,
-                trim_before_llm=False,
-                config=config,
-                settings=llm_settings,
+        if skills_pipeline_uses_llm(config) and catalog_count >= llm_min:
+
+            def _llm_tools() -> tuple[dict[str, Any], StageTokenUsage]:
+                return llm_catalog_dict(
+                    data,
+                    query,
+                    ctx=ctx,
+                    merge_pinned=False,
+                    config=config,
+                    settings=llm_settings,
+                )
+
+            def _llm_skills() -> tuple[list[MatchedSkill], StageTokenUsage]:
+                return llm_skill_nodes(
+                    query,
+                    parallel_skill_entries,
+                    config=config,
+                    settings=llm_settings,
+                )
+
+            parallel_results = run_parallel({"tools": _llm_tools, "skills": _llm_skills})
+            tools_result = cast(
+                tuple[dict[str, Any], StageTokenUsage],
+                parallel_results["tools"],
             )
+            skills_result = cast(
+                tuple[list[MatchedSkill], StageTokenUsage],
+                parallel_results["skills"],
+            )
+            data, llm_usage = tools_result
+            skill_matches, skill_usage = skills_result
+            llm_usage = llm_usage.merge(skill_usage)
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:

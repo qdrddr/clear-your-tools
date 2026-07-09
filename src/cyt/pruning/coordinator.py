@@ -113,16 +113,7 @@ def _tool_units_for_stage(
 ) -> list[WorkUnit]:
     units: list[WorkUnit] = []
     for source_id in source_ids:
-        if kind == "combined_stage":
-            units.append(
-                WorkUnit(
-                    kind="combined_stage",
-                    source_id=source_id,
-                    stage=stage,
-                    pipeline=pipeline,
-                ),
-            )
-        elif kind == "tools_stage":
+        if kind == "tools_stage":
             units.append(
                 WorkUnit(
                     kind="tools_stage",
@@ -195,23 +186,29 @@ def _plan_both_skills_and_tools(
 
     if tools_eff == ["rerank"] and skills_eff == "rerank" and not _skills_resolved(ctx):
         stages.append(
-            _tool_units_for_stage(
-                source_ids,
-                kind="combined_stage",
-                stage="rerank",
-                pipeline=("rerank",),
-            ),
+            [
+                *_tool_units_for_stage(
+                    source_ids,
+                    kind="tools_stage",
+                    stage="rerank",
+                    pipeline=("rerank",),
+                ),
+                WorkUnit(kind="skills_search", stage="rerank"),
+            ],
         )
         return stages
 
     if tools_eff == ["llm"] and skills_eff == "llm" and not _skills_resolved(ctx):
         stages.append(
-            _tool_units_for_stage(
-                source_ids,
-                kind="combined_stage",
-                stage="llm",
-                pipeline=("llm",),
-            ),
+            [
+                *_tool_units_for_stage(
+                    source_ids,
+                    kind="tools_stage",
+                    stage="llm",
+                    pipeline=("llm",),
+                ),
+                WorkUnit(kind="skills_search", stage="llm"),
+            ],
         )
         return stages
 
@@ -336,20 +333,15 @@ def _run_tools_filter(
     source: ToolSource,
     *,
     pipeline: list[str],
-    combined: bool,
     for_hook: bool,
     capture_decomposed_catalog: bool,
 ) -> PruneResult:
-    skill_entries = ctx.skill_entries if combined else None
-    skill_llm_out = ctx.skill_out if combined else None
     return filter_tools_for_query(
         source.tools,
         ctx.query,
         list(pipeline),
         capture_decomposed_catalog=capture_decomposed_catalog,
         merged_to_api_tools=source.merged_to_api_tools,
-        skill_entries=skill_entries,
-        skill_llm_out=skill_llm_out,
         config=ctx.config,
         pruner_settings=ctx.pruner_settings,
         for_hook=for_hook,
@@ -384,15 +376,13 @@ def _register_plan_unit(
 
     source = sources[unit.source_id]
     pipeline = list(unit.pipeline or ctx.tools_effective)
-    combined = unit.kind == "combined_stage"
-    if unit.kind in ("combined_stage", "tools_stage"):
+    if unit.kind == "tools_stage":
 
         def _tools_stage_fn() -> PruneResult:
             return _run_tools_filter(
                 ctx,
                 source,
                 pipeline=pipeline,
-                combined=combined,
                 for_hook=for_hook,
                 capture_decomposed_catalog=capture_decomposed_catalog,
             )
@@ -401,17 +391,10 @@ def _register_plan_unit(
         return
 
     def _tools_pipeline_fn() -> PruneResult:
-        pipeline_combined = (
-            not _skills_resolved(ctx)
-            and len(pipeline) == 1
-            and pipeline[0] in ("rerank", "llm")
-            and ctx.skills_effective == pipeline[0]
-        )
         return _run_tools_filter(
             ctx,
             source,
             pipeline=pipeline,
-            combined=pipeline_combined,
             for_hook=for_hook,
             capture_decomposed_catalog=capture_decomposed_catalog,
         )

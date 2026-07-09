@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,12 +9,7 @@ from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.pruners.llm import (
     SELECTOR_NO_MATCH_INSTRUCTION,
-    apply_selector_ids_to_catalog,
-    llm_catalog_dict,
     llm_select_ids,
-    prepare_catalog_selector_chunks,
-    tool_selector_system_prompt,
-    trim_catalog_dict,
 )
 from cyt.pruners.remote import LlmPruningSettings
 from cyt.skills.catalog import (
@@ -27,8 +21,6 @@ from cyt.skills.nodes import load_node_body, skill_name
 from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
 from cyt.skills.search import MatchedSkill
 
-logger = logging.getLogger(__name__)
-
 SKILLS_SELECTOR_SYSTEM_PROMPT = (
     'These are agent skills in a "decomposed" state, represented as skill nodes. '
     "Each skill-node has a global selector id attribute. "
@@ -39,20 +31,6 @@ SKILLS_SELECTOR_SYSTEM_PROMPT = (
     "You have a soft budget of 5000 tokens to select the most relevant nodes. "
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
-
-
-def combined_selector_system_prompt(config: dict[str, Any] | None = None) -> str:
-    """Tools + skills selector prompt, with cached executor MCP appendix when available."""
-    return (
-        f"{tool_selector_system_prompt(config)}\n\n"
-        f"{SKILLS_SELECTOR_SYSTEM_PROMPT}\n\n"
-        "The available items include MCP tool chunks (<chunk id=N>) and agent skill nodes "
-        "(<skill-node id=N>). Return selector ids from both kinds that match the user query."
-    )
-
-
-# Import-time snapshot (appendix empty until cache is warm). Prefer the function above.
-COMBINED_SELECTOR_SYSTEM_PROMPT = combined_selector_system_prompt()
 
 
 @dataclass(frozen=True)
@@ -196,61 +174,3 @@ def llm_skill_nodes_with_trace(
         )
     matches = reconstruct_skills_from_llm_ids(metadata, selected_ids, entries, config=config)
     return matches, search_rows, usage
-
-
-def llm_prune_tools_and_skills(
-    data: dict[str, Any],
-    query: str,
-    skill_entries: list[SkillEntryRef],
-    *,
-    trim_before_llm: bool = False,
-    config: dict[str, Any] | None = None,
-    settings: LlmPruningSettings | None = None,
-) -> tuple[dict[str, Any], list[MatchedSkill], StageTokenUsage]:
-    """Combined tool catalog + skill node LLM selection in one bulk when possible."""
-    if trim_before_llm:
-        data = trim_catalog_dict(data)
-
-    tool_chunks, tool_metadata, list_keys = prepare_catalog_selector_chunks(data)
-    last_tool_id = max(tool_metadata.keys(), default=0)
-    skill_items, skill_metadata = prepare_skill_nodes(skill_entries, start_id=last_tool_id + 1)
-
-    combined_items = tool_chunks + skill_items
-    if not combined_items:
-        return data, [], empty_usage()
-
-    try:
-        selected_ids, usage = llm_select_ids(
-            query,
-            combined_selector_system_prompt(config),
-            combined_items,
-            config=config,
-            settings=settings,
-        )
-    except Exception as exc:
-        logger.warning("combined llm prune failed, falling back to sequential: %s", exc)
-        pruned_data, tool_usage = llm_catalog_dict(
-            data,
-            query,
-            merge_pinned=False,
-            config=config,
-            settings=settings,
-        )
-        skill_matches, skill_usage = llm_skill_nodes(
-            query,
-            skill_entries,
-            config=config,
-            settings=settings,
-        )
-        return pruned_data, skill_matches, tool_usage.merge(skill_usage)
-
-    tool_selected = {sid for sid in selected_ids if sid in tool_metadata}
-    skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
-    result = apply_selector_ids_to_catalog(data, tool_metadata, tool_selected, list_keys)
-    skill_matches = reconstruct_skills_from_llm_ids(
-        skill_metadata,
-        skill_selected,
-        skill_entries,
-        config=config,
-    )
-    return result, skill_matches, usage

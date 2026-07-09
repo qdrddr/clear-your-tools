@@ -12,7 +12,6 @@ WorkUnitKind = Literal[
     "tools_pipeline",
     "tools_stage",
     "skills_search",
-    "combined_stage",
 ]
 
 

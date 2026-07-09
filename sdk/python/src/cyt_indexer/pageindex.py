@@ -192,7 +192,12 @@ def build_skills_index_for_file(
     params_hash: str = "default",
 ) -> dict[str, Any]:
     cfg = _config_dict(config)
-    return _build_skills_index_for_file(source_path, cfg, pipeline, params_hash)
+    return _build_skills_index_for_file(
+        source_path,
+        config=cfg,
+        pipeline=pipeline,
+        params_hash=params_hash,
+    )
 
 
 def build_page_index_only(
