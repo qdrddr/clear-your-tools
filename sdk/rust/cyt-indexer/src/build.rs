@@ -1,6 +1,10 @@
 use crate::paths::{self, decomposed_prefix, json_ext, md_ext};
+use crate::tiktoken;
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
+
+const FULL_METADATA_REL: &str = "schemas/full/metadata.json";
+const DECOMPOSED_METADATA_REL: &str = "schemas/decomposed/metadata.json";
 
 #[derive(Debug, Clone)]
 pub struct CatalogIndex {
@@ -485,6 +489,82 @@ fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_nam
     parts.join("/")
 }
 
+fn catalog_file_token_count(rel_path: &str, content: &str) -> usize {
+    if rel_path.ends_with(&json_ext()) {
+        serde_json::from_str::<Value>(content)
+            .ok()
+            .and_then(|value| tiktoken::count_json_tokens(&value).ok())
+            .unwrap_or_else(|| tiktoken::count_tokens_or_min(content))
+    } else {
+        tiktoken::count_tokens_or_min(content)
+    }
+}
+
+fn serialize_metadata_json(value: &Value) -> String {
+    let mut serialized = serde_json::to_string_pretty(value).unwrap_or_default();
+    serialized.push('\n');
+    serialized
+}
+
+pub(crate) fn attach_tool_schema_metadata(files: &mut HashMap<String, String>) {
+    let full_prefix = "schemas/full/";
+    let mut full_entries: Vec<Value> = files
+        .iter()
+        .filter(|(rel, _)| rel.starts_with(full_prefix) && rel.ends_with(&json_ext()))
+        .map(|(rel, content)| {
+            json!({
+                "file_path": rel,
+                "token_count": catalog_file_token_count(rel, content),
+            })
+        })
+        .collect();
+    full_entries.sort_by(|a, b| {
+        a.get("file_path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(b.get("file_path").and_then(Value::as_str).unwrap_or(""))
+    });
+    if !full_entries.is_empty() {
+        let metadata = if full_entries.len() == 1 {
+            full_entries.into_iter().next().unwrap_or(Value::Null)
+        } else {
+            json!({ "files": full_entries })
+        };
+        files.insert(
+            FULL_METADATA_REL.to_string(),
+            serialize_metadata_json(&metadata),
+        );
+    }
+
+    let decomposed_prefix = decomposed_prefix();
+    let mut decomposed_entries: Vec<Value> = files
+        .iter()
+        .filter(|(rel, _)| {
+            rel.starts_with(&decomposed_prefix)
+                && *rel != DECOMPOSED_METADATA_REL
+                && (rel.ends_with(&json_ext()) || rel.ends_with(&md_ext()))
+        })
+        .map(|(rel, content)| {
+            json!({
+                "file_path": rel,
+                "token_count": catalog_file_token_count(rel, content),
+            })
+        })
+        .collect();
+    decomposed_entries.sort_by(|a, b| {
+        a.get("file_path")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(b.get("file_path").and_then(Value::as_str).unwrap_or(""))
+    });
+    if !decomposed_entries.is_empty() {
+        files.insert(
+            DECOMPOSED_METADATA_REL.to_string(),
+            serialize_metadata_json(&Value::Array(decomposed_entries)),
+        );
+    }
+}
+
 #[must_use]
 pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex {
     let mut files = HashMap::new();
@@ -530,6 +610,8 @@ pub fn build_catalog_index(tools: &[Value], all_enums: &[Value]) -> CatalogIndex
         "tools.json".into(),
         serde_json::to_string_pretty(tools).unwrap_or_default(),
     );
+
+    attach_tool_schema_metadata(&mut files);
 
     CatalogIndex {
         tools: tools.to_vec(),

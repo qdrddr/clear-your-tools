@@ -117,7 +117,7 @@ pub fn anthropic_tools_to_catalog_entries(tools: &[Value]) -> (Vec<Value>, Vec<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     #[test]
     fn anthropic_tool_produces_decomposed_files() {
@@ -137,10 +137,12 @@ mod tests {
         assert!(index.files.contains_key("schemas/decomposed/Agent.json"));
         assert!(index.files.keys().any(|k| k.contains("Agent/model")));
         assert!(index.files.contains_key("schemas/decomposed/haiku.md"));
+        assert!(index.files.contains_key("schemas/full/metadata.json"));
+        assert!(index.files.contains_key("schemas/decomposed/metadata.json"));
     }
 
     #[test]
-    fn catalog_entry_passthrough() {
+    fn catalog_entry_passthrough() -> Result<(), String> {
         let tool = json!({
             "id": "mcp__test__foo",
             "server": "test",
@@ -167,6 +169,28 @@ mod tests {
                 .contains_key("schemas/decomposed/mcp__test__foo.json")
         );
         assert!(index.files.keys().any(|k| k.contains("optional_field")));
+        assert!(index.files.contains_key("schemas/full/metadata.json"));
+        assert!(index.files.contains_key("schemas/decomposed/metadata.json"));
+        let full_meta_raw = index
+            .files
+            .get("schemas/full/metadata.json")
+            .ok_or_else(|| "missing schemas/full/metadata.json".to_string())?;
+        let full_meta: Value = serde_json::from_str(full_meta_raw)
+            .map_err(|e| format!("invalid schemas/full/metadata.json: {e}"))?;
+        assert!(full_meta.get("token_count").is_some() || full_meta.get("files").is_some());
+        let decomposed_meta_raw = index
+            .files
+            .get("schemas/decomposed/metadata.json")
+            .ok_or_else(|| "missing schemas/decomposed/metadata.json".to_string())?;
+        let decomposed_meta: Value = serde_json::from_str(decomposed_meta_raw)
+            .map_err(|e| format!("invalid schemas/decomposed/metadata.json: {e}"))?;
+        let entries = decomposed_meta
+            .as_array()
+            .ok_or_else(|| "decomposed metadata is not an array".to_string())?;
+        assert!(!entries.is_empty());
+        assert!(entries[0].get("file_path").is_some());
+        assert!(entries[0].get("token_count").is_some());
+        Ok(())
     }
 
     #[test]

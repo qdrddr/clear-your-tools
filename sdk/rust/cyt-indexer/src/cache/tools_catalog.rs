@@ -183,6 +183,7 @@ fn merge_catalog_indexes(parts: Vec<CatalogIndex>) -> CatalogIndex {
         "tools.json".into(),
         serde_json::to_string_pretty(&tools).unwrap_or_default(),
     );
+    crate::build::attach_tool_schema_metadata(&mut files);
     CatalogIndex { tools, files }
 }
 

@@ -105,11 +105,16 @@ pub(crate) fn insert_chunks_on_node(
 }
 
 /// Write node-only page index and node markdown files into the index file map.
-pub fn decompose_page_index(index: &mut SkillsIndex, doc: &SkillDocument, flat_structure: &Value) {
+pub fn decompose_page_index(
+    index: &mut SkillsIndex,
+    doc: &SkillDocument,
+    flat_structure: &Value,
+    config: &PageIndexConfig,
+) {
     let page_json = serialize_document_json(&build_page_index_json_value(doc)).unwrap_or_default();
     index.files.insert(page_index_rel().to_string(), page_json);
 
-    write_node_markdown_files(index, doc, flat_structure);
+    write_node_markdown_files(index, doc, flat_structure, config);
 }
 
 /// Write chunk variant index and chunk markdown files into the index file map.
@@ -135,7 +140,7 @@ pub fn decompose_document(
     flat_structure: &Value,
     config: &PageIndexConfig,
 ) {
-    decompose_page_index(index, doc, flat_structure);
+    decompose_page_index(index, doc, flat_structure, config);
     let chunk_metadata = super::document_json::ChunkVariantMetadata {
         pipeline: "bm25".to_string(),
         index_params: config.to_index_params_value(),
@@ -143,7 +148,13 @@ pub fn decompose_document(
     decompose_chunk_variant(index, &doc.structure, "bm25", "legacy", &chunk_metadata);
 }
 
-fn write_node_markdown_files(index: &mut SkillsIndex, doc: &SkillDocument, flat_structure: &Value) {
+fn write_node_markdown_files(
+    index: &mut SkillsIndex,
+    doc: &SkillDocument,
+    flat_structure: &Value,
+    config: &PageIndexConfig,
+) {
+    let token_counter = config.cohesion_config_for_chunking().token_counter_impl();
     let nodes = structure_to_list(flat_structure);
     for node in nodes {
         let Some(obj) = node.as_object() else {
@@ -162,8 +173,9 @@ fn write_node_markdown_files(index: &mut SkillsIndex, doc: &SkillDocument, flat_
             text.to_string()
         };
 
+        let token_count = token_counter.count(&body);
         let md_content = format!(
-            "---\ndoc_id: {}\nnode_id: {node_id}\nline_num: {line_num}\n---\n{body}",
+            "---\ndoc_id: {}\nnode_id: {node_id}\nline_num: {line_num}\ntoken_count: {token_count}\n---\n{body}",
             doc.id
         );
 

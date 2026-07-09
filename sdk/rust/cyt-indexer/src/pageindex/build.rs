@@ -358,7 +358,7 @@ fn index_skill_md_content(req: SkillMdIndexRequest<'_>) -> Result<(), String> {
         prefix.frontmatter,
         preamble,
     );
-    decompose_page_index(index, &doc, &flat_for_decompose);
+    decompose_page_index(index, &doc, &flat_for_decompose, config);
     if include_chunks {
         let pipeline = chunk_pipeline.unwrap_or("bm25");
         let params_hash = chunk_params_hash.unwrap_or("default");

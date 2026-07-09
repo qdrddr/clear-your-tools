@@ -178,6 +178,10 @@ fn decomposed_markdown_preserves_original_header() -> Result<(), String> {
         content.contains("## When to Use\n\nBody text"),
         "decomposed body should preserve the original heading level"
     );
+    assert!(
+        content.contains("token_count:"),
+        "node frontmatter should include token_count"
+    );
 
     let _ = fs::remove_dir_all(&tmp);
     Ok(())
