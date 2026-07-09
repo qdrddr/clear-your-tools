@@ -37,6 +37,11 @@ func CatalogIndexToCatalogDict(indexJSON, catalogPrefix string) (string, error) 
 	return cgoCatalogIndexToCatalogDict(indexJSON, catalogPrefix)
 }
 
+// CatalogIndexToolSchemaMetadata returns cached full/decomposed tool schema token metadata.
+func CatalogIndexToolSchemaMetadata(indexJSON string) (string, error) {
+	return cgoCatalogIndexToolSchemaMetadata(indexJSON)
+}
+
 // CatalogBuilder is an opaque catalog builder handle.
 type CatalogBuilder struct {
 	handle catalogBuilderHandle

@@ -9,7 +9,10 @@ use crate::bm25_search::{
     bm25_frontmatter_gate, bm25_search_skill_chunks, greedy_select_skill_items,
 };
 use crate::pageindex::node_id::node_id_from_value;
-use crate::pageindex::{get_line_content, is_frontmatter_node, load_merged_document_json};
+use crate::pageindex::retrieve::token_count_from_decomposed_frontmatter;
+use crate::pageindex::{
+    get_line_content, is_frontmatter_node, load_merged_document_json, node_md_rel,
+};
 use crate::skills_io::load_skills_index_from_entry;
 
 #[derive(Debug, Clone)]
@@ -158,14 +161,17 @@ fn load_structure_for_entry(entry: &Value) -> Result<Option<Value>, String> {
     Ok(doc.get("structure").cloned())
 }
 
-fn load_node_body(entry: &Value, node_id: u32) -> Result<String, String> {
+fn load_node_body_and_token_count(
+    entry: &Value,
+    node_id: u32,
+) -> Result<(String, Option<usize>), String> {
     let Some(obj) = entry.as_object() else {
-        return Ok(String::new());
+        return Ok((String::new(), None));
     };
     let entry_dir = obj.get("entry_dir").and_then(Value::as_str).unwrap_or("");
     let doc_id = obj.get("doc_id").and_then(Value::as_str).unwrap_or("");
     if entry_dir.is_empty() || doc_id.is_empty() {
-        return Ok(String::new());
+        return Ok((String::new(), None));
     }
     let bm25_chunk_dir = obj
         .get("bm25_chunk_dir")
@@ -176,16 +182,26 @@ fn load_node_body(entry: &Value, node_id: u32) -> Result<String, String> {
     let spec = node_id.to_string();
     let rows = get_line_content(&index, doc_id, &[], &[spec.as_str()], &[]);
     let Some(arr) = rows.as_array() else {
-        return Ok(String::new());
+        return Ok((String::new(), None));
     };
-    let content = arr
-        .first()
-        .and_then(|row| row.get("content"))
+    let row = arr.first();
+    let content = row
+        .and_then(|item| item.get("content"))
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim()
         .to_string();
-    Ok(content)
+    let token_count = row
+        .and_then(|item| item.get("token_count"))
+        .and_then(Value::as_u64)
+        .and_then(|count| usize::try_from(count).ok())
+        .or_else(|| {
+            index
+                .files
+                .get(&node_md_rel(node_id))
+                .and_then(|raw| token_count_from_decomposed_frontmatter(raw))
+        });
+    Ok((content, token_count))
 }
 
 /// Batch-load rerankable node bodies from cached skill entries.
@@ -221,18 +237,24 @@ pub fn build_skill_node_catalog(entries: &[Value]) -> Result<Vec<Value>, String>
             continue;
         };
         for node_id in iter_content_node_ids(&structure) {
-            let body = load_node_body(entry, node_id)?;
+            let (body, token_count) = load_node_body_and_token_count(entry, node_id)?;
             if body.is_empty() {
                 continue;
             }
-            items.push(json!({
+            let mut item = json!({
                 "entry_dir": entry_dir,
                 "doc_id": doc_id,
                 "node_id": node_id,
                 "file_path": file_path,
                 "content": body,
                 "score": "0.0",
-            }));
+            });
+            if let Some(token_count) = token_count
+                && let Some(obj) = item.as_object_mut()
+            {
+                obj.insert("token_count".into(), json!(token_count));
+            }
+            items.push(item);
         }
     }
     Ok(items)

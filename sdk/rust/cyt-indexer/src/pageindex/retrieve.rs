@@ -11,6 +11,12 @@ fn u64_to_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(0)
 }
 
+fn json_insert_token_count(entry: &mut Value, token_count: usize) {
+    if let Some(obj) = entry.as_object_mut() {
+        obj.insert("token_count".into(), json!(token_count));
+    }
+}
+
 /// Parse a line-number spec such as `"5-7"`, `"3,8"`, or `"12"`.
 ///
 /// # Errors
@@ -189,10 +195,14 @@ pub fn get_line_content(
             if let Some(rel) = rel
                 && let Some(raw) = index.files.get(&rel)
             {
-                results.push(json!({
+                let mut row = json!({
                     "chunk_id": chunk_id,
                     "content": strip_decomposed_frontmatter(raw),
-                }));
+                });
+                if let Some(token_count) = token_count_from_decomposed_frontmatter(raw) {
+                    json_insert_token_count(&mut row, token_count);
+                }
+                results.push(row);
             }
         }
         results.sort_by_key(|v| v.get("chunk_id").and_then(Value::as_u64).unwrap_or(0));
@@ -224,11 +234,18 @@ pub fn get_line_content(
         }
 
         let content = resolve_node_content(index, doc_id, obj);
-        results.push(json!({
+        let mut row = json!({
             "line_num": line_num,
             "node_id": node_id,
             "content": content,
-        }));
+        });
+        let rel = node_md_rel(node_id);
+        if let Some(raw) = index.files.get(&rel)
+            && let Some(token_count) = token_count_from_decomposed_frontmatter(raw)
+        {
+            json_insert_token_count(&mut row, token_count);
+        }
+        results.push(row);
     }
 
     results.sort_by_key(|v| {
@@ -286,6 +303,22 @@ pub(crate) fn strip_decomposed_frontmatter(content: &str) -> String {
             .to_string();
     }
     content.to_string()
+}
+
+/// Parse ``token_count`` from decomposed markdown/JSON frontmatter when present.
+#[must_use]
+pub fn token_count_from_decomposed_frontmatter(content: &str) -> Option<usize> {
+    if !content.starts_with("---") {
+        return None;
+    }
+    let end = content[3..].find("\n---")?;
+    let frontmatter = &content[3..3 + end];
+    for line in frontmatter.lines() {
+        if let Some(rest) = line.strip_prefix("token_count:") {
+            return rest.trim().parse().ok();
+        }
+    }
+    None
 }
 
 #[cfg(test)]

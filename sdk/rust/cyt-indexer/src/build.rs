@@ -2,6 +2,7 @@ use crate::paths::{self, decomposed_prefix, json_ext, md_ext};
 use crate::tiktoken;
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 
 const FULL_METADATA_REL: &str = "schemas/full/metadata.json";
 const DECOMPOSED_METADATA_REL: &str = "schemas/decomposed/metadata.json";
@@ -31,14 +32,27 @@ pub fn catalog_index_from_value(val: &Value) -> CatalogIndex {
     CatalogIndex { tools, files }
 }
 
+fn json_insert_token_count(entry: &mut Value, token_count: usize) {
+    if let Some(obj) = entry.as_object_mut() {
+        obj.insert("token_count".into(), json!(token_count));
+    }
+}
+
 impl CatalogIndex {
     #[must_use]
     pub fn to_catalog_dict(&self) -> Value {
         self.to_catalog_dict_with_prefix(&crate::paths::catalog_prefix())
     }
 
+    /// Return cached full/decomposed tool schema token metadata when present.
+    #[must_use]
+    pub fn tool_schema_metadata(&self) -> Value {
+        tool_schema_metadata_from_files(&self.files)
+    }
+
     #[must_use]
     pub fn to_catalog_dict_with_prefix(&self, catalog_prefix: &str) -> Value {
+        let token_counts = decomposed_file_token_counts(&self.files);
         let mut md_entries = Vec::new();
         let mut json_entries = Vec::new();
         let mut paths: Vec<_> = self.files.keys().cloned().collect();
@@ -52,7 +66,7 @@ impl CatalogIndex {
             let file_path = format!("{catalog_prefix}/{rel_path}");
             if rel_path.ends_with(&md_ext()) {
                 let id = path_stem(&rel_path);
-                md_entries.push(json!({
+                let mut entry = json!({
                     "id": id,
                     "file_path": file_path,
                     "score": 1.0,
@@ -60,7 +74,11 @@ impl CatalogIndex {
                     "end_line": 1,
                     "language": "markdown",
                     "content": content,
-                }));
+                });
+                if let Some(token_count) = token_counts.get(rel_path.as_str()) {
+                    json_insert_token_count(&mut entry, *token_count);
+                }
+                md_entries.push(entry);
             } else if rel_path.ends_with(&json_ext()) {
                 let Ok(parsed) = serde_json::from_str::<Value>(content) else {
                     continue;
@@ -72,7 +90,7 @@ impl CatalogIndex {
                 let entry_id = parsed.get("id").cloned().unwrap_or_else(|| {
                     Value::String(paths::tool_id_from_decomposed_rel(&rel_path))
                 });
-                json_entries.push(json!({
+                let mut entry = json!({
                     "id": entry_id,
                     "name": entry_id,
                     "file_path": file_path,
@@ -81,7 +99,11 @@ impl CatalogIndex {
                     "end_line": line_count,
                     "language": "json",
                     "content": parsed,
-                }));
+                });
+                if let Some(token_count) = token_counts.get(rel_path.as_str()) {
+                    json_insert_token_count(&mut entry, *token_count);
+                }
+                json_entries.push(entry);
             }
         }
         json!({
@@ -487,6 +509,55 @@ fn property_relative_path(tool_id: &str, path_segments: &[PathSegment], prop_nam
     }
     parts.push(format!("{prop_name}{}", json_ext()));
     parts.join("/")
+}
+
+fn decomposed_file_token_counts(files: &HashMap<String, String>) -> HashMap<String, usize> {
+    let Some(raw) = files.get(DECOMPOSED_METADATA_REL) else {
+        return HashMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return HashMap::new();
+    };
+    let entries = value
+        .as_array()
+        .or_else(|| value.get("files").and_then(Value::as_array));
+    let Some(entries) = entries else {
+        return HashMap::new();
+    };
+    let mut map = HashMap::new();
+    for entry in entries {
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
+        let Some(file_path) = obj.get("file_path").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(token_count) = obj.get("token_count").and_then(Value::as_u64) else {
+            continue;
+        };
+        let Ok(token_count) = usize::try_from(token_count) else {
+            continue;
+        };
+        map.insert(file_path.to_string(), token_count);
+    }
+    map
+}
+
+/// Read cached tool schema token metadata from a catalog index file table.
+#[must_use]
+pub fn tool_schema_metadata_from_files<S: BuildHasher>(
+    files: &HashMap<String, String, S>,
+) -> Value {
+    let full = files
+        .get(FULL_METADATA_REL)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let decomposed = files
+        .get(DECOMPOSED_METADATA_REL)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    json!({
+        "full": full.unwrap_or(Value::Null),
+        "decomposed": decomposed.unwrap_or(Value::Null),
+    })
 }
 
 fn catalog_file_token_count(rel_path: &str, content: &str) -> usize {

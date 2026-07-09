@@ -8,7 +8,7 @@ use crate::pageindex::{
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
     get_line_content_from_spec, md_to_tree, page_index_valid, parse_node_ids,
     reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
-    spec_refs::OwnedSpecRefs, write_reconstructed_skill,
+    spec_refs::OwnedSpecRefs, token_count_from_decomposed_frontmatter, write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -616,6 +616,13 @@ impl SkillsBuilderNapi {
             .to_skills_dict()
             .ok_or_else(|| Error::from_reason("index not built"))
     }
+}
+
+/// Parse ``token_count`` from decomposed markdown/JSON frontmatter when present.
+#[napi]
+#[allow(clippy::needless_pass_by_value, clippy::must_use_candidate)]
+pub fn token_count_from_decomposed_frontmatter_napi(content: String) -> Option<u32> {
+    token_count_from_decomposed_frontmatter(&content).and_then(|count| u32::try_from(count).ok())
 }
 
 /// # Errors

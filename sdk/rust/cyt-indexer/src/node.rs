@@ -460,6 +460,15 @@ pub fn catalog_index_to_catalog_dict(
     Ok(val)
 }
 
+/// # Errors
+/// Does not fail; invalid index shapes yield empty metadata.
+#[napi]
+pub fn catalog_index_tool_schema_metadata(index: Value) -> Result<Value> {
+    let index = Box::new(index);
+    let idx = catalog_index_from_value(&index);
+    Ok(idx.tool_schema_metadata())
+}
+
 #[napi]
 #[must_use]
 pub fn md_ext() -> String {

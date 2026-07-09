@@ -34,6 +34,7 @@ from cyt_indexer._native import repair_skill_chunks as _repair_skill_chunks
 from cyt_indexer._native import skills_index_from_decomposed_dir as _skills_index_from_decomposed_dir
 from cyt_indexer._native import update_skill_document_source_path as _update_skill_document_source_path
 from cyt_indexer._native import write_reconstructed_skill as _write_reconstructed_skill
+from cyt_indexer._native import token_count_from_decomposed_frontmatter as _token_count_from_decomposed_frontmatter
 from cyt_indexer._native import write_skills_index as _write_skills_index
 
 
@@ -387,6 +388,11 @@ def parse_skill_node_ids(spec: str) -> list[int]:
 
 def parse_skill_chunk_ids(spec: str) -> list[int]:
     return _parse_skill_chunk_ids(spec)
+
+
+def token_count_from_decomposed_frontmatter(content: str) -> int | None:
+    """Parse ``token_count`` from decomposed markdown/JSON frontmatter when present."""
+    return _token_count_from_decomposed_frontmatter(content)
 
 
 class SkillsBuilder:

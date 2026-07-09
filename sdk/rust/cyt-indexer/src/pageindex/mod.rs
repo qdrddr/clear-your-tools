@@ -42,7 +42,7 @@ pub use reconstruct::{
 };
 pub use retrieve::{
     get_document, get_document_structure, get_line_content, get_line_content_from_spec,
-    parse_line_nums, parse_node_ids,
+    parse_line_nums, parse_node_ids, token_count_from_decomposed_frontmatter,
 };
 pub use skills_repair::{repair_skill_chunks, repair_skill_variant_chunks};
 pub use tree::{

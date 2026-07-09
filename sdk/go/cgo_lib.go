@@ -333,6 +333,16 @@ func cgoCatalogIndexToCatalogDict(indexJSON, catalogPrefix string) (string, erro
 	return takeJSON(&out)
 }
 
+func cgoCatalogIndexToolSchemaMetadata(indexJSON string) (string, error) {
+	cIndex := cString(indexJSON)
+	defer freeCString(cIndex)
+	var out *C.char
+	if C.cyt_catalog_index_tool_schema_metadata(cIndex, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoCatalogBuilderNew(memoryOnly bool, outputDir string) (catalogBuilderHandle, error) {
 	cDir := cString(outputDir)
 	defer freeCString(cDir)
@@ -1407,6 +1417,19 @@ func cgoParseSkillNodeIDs(spec string) (string, error) {
 		return "", lastError()
 	}
 	return takeJSON(&out)
+}
+
+func cgoTokenCountFromDecomposedFrontmatter(content string) (int64, bool, error) {
+	cContent := cString(content)
+	defer freeCString(cContent)
+	var out C.long
+	if C.cyt_token_count_from_decomposed_frontmatter(cContent, &out) != ok {
+		return 0, false, lastError()
+	}
+	if out < 0 {
+		return 0, false, nil
+	}
+	return int64(out), true, nil
 }
 
 func cgoReconstructOptionsDefault() (string, error) {

@@ -19,6 +19,7 @@ import {
   pageIndexValidNative,
   parseSkillChunkIdsNative,
   parseSkillNodeIdsNative,
+  tokenCountFromDecomposedFrontmatterNative,
   reconstructSkillMarkdownNative,
   repairSkillChunksNative,
   repairSkillVariantChunksNative,
@@ -339,6 +340,12 @@ export function parseSkillNodeIds(spec: string): number[] {
 
 export function parseSkillChunkIds(spec: string): number[] {
   return parseSkillChunkIdsNative(spec);
+}
+
+export function tokenCountFromDecomposedFrontmatter(
+  content: string,
+): number | null {
+  return tokenCountFromDecomposedFrontmatterNative(content);
 }
 
 export function repairSkillChunks(

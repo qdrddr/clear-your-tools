@@ -410,6 +410,19 @@ impl PyNativeCatalogIndex {
         }
         Ok(dict.into())
     }
+
+    fn tool_schema_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        value_to_py(py, &self.inner.tool_schema_metadata())
+    }
+}
+
+#[pyfunction(name = "catalog_index_tool_schema_metadata")]
+fn catalog_index_tool_schema_metadata_py(
+    py: Python<'_>,
+    index: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let idx = catalog_index_from_py(index)?;
+    value_to_py(py, &idx.tool_schema_metadata())
 }
 
 #[pyfunction(name = "catalog_index_to_catalog_dict")]
@@ -635,6 +648,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(path_default_catalog_dir_py, m)?)?;
     m.add_function(wrap_pyfunction!(path_write_catalog_prune_py, m)?)?;
     m.add_function(wrap_pyfunction!(catalog_index_to_catalog_dict_py, m)?)?;
+    m.add_function(wrap_pyfunction!(catalog_index_tool_schema_metadata_py, m)?)?;
     m.add_class::<PyDecomposedCatalog>()?;
     m.add_class::<PyNativeCatalogIndex>()?;
     m.add_function(wrap_pyfunction!(retrieve_tools_py, m)?)?;

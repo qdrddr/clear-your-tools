@@ -28,6 +28,30 @@ test("CatalogIndex.toCatalogDict builds json and markdown entries", () => {
   assert.equal(dict.json[0]?.id, "search");
 });
 
+test("CatalogIndex.toolSchemaMetadata reads cached token metadata", () => {
+  const index = buildCatalogFromTools([
+    {
+      id: "mcp__test__foo",
+      server: "test",
+      tool: "mcp__test__foo",
+      summary: "A test tool",
+      full_schema: {
+        id: "mcp__test__foo",
+        name: "mcp__test__foo",
+        description: "A test tool",
+        inputSchema: {
+          type: "object",
+          properties: { q: { type: "string" } },
+          required: ["q"],
+        },
+      },
+    },
+  ]);
+  const meta = index.toolSchemaMetadata();
+  assert.ok(meta.full);
+  assert.ok(Array.isArray(meta.decomposed));
+});
+
 test("CatalogIndex.toCatalogDict skips non-object JSON", () => {
   const dict = new CatalogIndex([], {
     "schemas/decomposed/broken.json": "[]",

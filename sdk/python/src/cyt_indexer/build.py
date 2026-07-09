@@ -23,6 +23,7 @@ __all__ = [
     "anthropic_tools_to_catalog_entries",
     "build_catalog_from_tools",
     "build_catalog_index",
+    "catalog_index_tool_schema_metadata",
     "catalog_tool_count",
     "collect_enums",
     "prepare_tool_entry",
@@ -67,9 +68,28 @@ class CatalogIndex:
             catalog_prefix,
         )
 
+    def tool_schema_metadata(self) -> dict[str, Any]:
+        """Return cached full/decomposed tool schema token metadata when present."""
+        result = self.native_handle().tool_schema_metadata()
+        return dict(result) if isinstance(result, dict) else result
+
 
 def _catalog_index_from_raw(raw: dict[str, Any]) -> CatalogIndex:
     return CatalogIndex(tools=list(raw["tools"]), files=dict(raw["files"]))
+
+
+def catalog_index_tool_schema_metadata(
+    index: CatalogIndex | dict[str, Any],
+) -> dict[str, Any]:
+    """Return cached full/decomposed tool schema token metadata from a catalog index."""
+    if isinstance(index, CatalogIndex):
+        return index.tool_schema_metadata()
+    native = NativeCatalogIndex.from_parts(
+        index.get("tools", []),
+        index.get("files", {}),
+    )
+    result = native.tool_schema_metadata()
+    return dict(result) if isinstance(result, dict) else result
 
 
 def build_catalog_index(

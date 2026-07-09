@@ -53,6 +53,7 @@ pub use bm25_search::{
 };
 pub use build::{
     CatalogIndex, build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,
+    tool_schema_metadata_from_files,
 };
 pub use catalog_builder::CatalogBuilder;
 pub use catalog_io::write_catalog_index;
@@ -71,8 +72,8 @@ pub use pageindex::{
     load_merged_document_json as load_merged_skill_document_json, md_to_tree,
     parse_chunk_ids as parse_skill_chunk_ids, parse_line_nums as parse_skill_line_nums,
     parse_node_ids as parse_skill_node_ids, reconstruct_skill_markdown, repair_skill_chunks,
-    retrieve_output_rel_path, update_document_source_path, write_entry_metadata,
-    write_reconstructed_skill,
+    retrieve_output_rel_path, token_count_from_decomposed_frontmatter, update_document_source_path,
+    write_entry_metadata, write_reconstructed_skill,
 };
 pub use paths::{
     PathConfig, collect_enums, configure as configure_paths, get_root_tool_key,

@@ -4,6 +4,7 @@ import {
   buildCatalogFromToolsNative,
   buildCatalogIndexNative,
   catalogIndexToCatalogDictNative,
+  catalogIndexToolSchemaMetadataNative,
   catalogToolCountNative,
   prepareToolEntryNative,
   truncateDescriptionNative,
@@ -36,6 +37,13 @@ export class CatalogIndex {
       json: JsonRecord[];
       tools: JsonRecord[];
     };
+  }
+
+  toolSchemaMetadata(): JsonRecord {
+    return catalogIndexToolSchemaMetadataNative({
+      tools: this.tools,
+      files: this.files,
+    }) as JsonRecord;
   }
 }
 
@@ -94,4 +102,11 @@ export function truncateDescription(
   maxTokens = 60,
 ): string {
   return truncateDescriptionNative(description, maxTokens);
+}
+
+export function catalogIndexToolSchemaMetadata(index: {
+  tools: JsonRecord[];
+  files: Record<string, string>;
+}): JsonRecord {
+  return catalogIndexToolSchemaMetadataNative(index) as JsonRecord;
 }

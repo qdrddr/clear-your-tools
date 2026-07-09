@@ -190,6 +190,17 @@ mod tests {
         assert!(!entries.is_empty());
         assert!(entries[0].get("file_path").is_some());
         assert!(entries[0].get("token_count").is_some());
+
+        let catalog = index.to_catalog_dict();
+        let json_items = catalog
+            .get("json")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "catalog json entries missing".to_string())?;
+        assert!(
+            json_items
+                .iter()
+                .any(|item| item.get("token_count").is_some())
+        );
         Ok(())
     }
 

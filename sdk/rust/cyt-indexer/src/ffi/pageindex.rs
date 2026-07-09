@@ -27,7 +27,7 @@ use crate::skills_io::{
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_long};
 use std::path::PathBuf;
 
 /// Opaque skills builder handle.
@@ -534,6 +534,28 @@ pub unsafe extern "C" fn cyt_parse_skill_node_ids(
             CYT_ERR_INVALID_ARG
         })?;
         unsafe { write_json_out(&json!(ids), out)? };
+        Ok(())
+    })
+}
+
+/// Parse ``token_count`` from decomposed markdown/JSON frontmatter when present.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_token_count_from_decomposed_frontmatter(
+    content: *const c_char,
+    out: *mut c_long,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let text = unsafe { c_str_to_str(content, "content")? };
+        let count = crate::pageindex::token_count_from_decomposed_frontmatter(text);
+        unsafe {
+            *out = count
+                .and_then(|value| i64::try_from(value).ok())
+                .unwrap_or(-1);
+        }
         Ok(())
     })
 }

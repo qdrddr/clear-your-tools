@@ -196,3 +196,22 @@ pub unsafe extern "C" fn cyt_catalog_index_to_catalog_dict(
         Ok(())
     })
 }
+
+/// Return cached full/decomposed tool schema token metadata from catalog index JSON.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_catalog_index_tool_schema_metadata(
+    index_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let val = unsafe { parse_json_cstr(index_json, "index_json")? };
+        let idx = catalog_index_from_json(&val);
+        let result = idx.tool_schema_metadata();
+        unsafe { write_json_out(&result, out)? };
+        Ok(())
+    })
+}

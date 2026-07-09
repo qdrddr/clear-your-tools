@@ -5,7 +5,8 @@ use crate::pageindex::{
     get_content_retrieve_result, get_document, get_document_structure, get_line_content,
     get_line_content_from_spec, load_merged_document_json, md_to_tree, page_index_valid,
     parse_node_ids, reconstruct_skill_markdown, repair_skill_chunks, repair_skill_variant_chunks,
-    spec_refs::OwnedSpecRefs, update_document_source_path, write_reconstructed_skill,
+    spec_refs::OwnedSpecRefs, token_count_from_decomposed_frontmatter, update_document_source_path,
+    write_reconstructed_skill,
 };
 use crate::skills_builder::SkillsBuilder;
 use crate::skills_io::{
@@ -610,6 +611,11 @@ impl PySkillsBuilder {
     }
 }
 
+#[pyfunction(name = "token_count_from_decomposed_frontmatter")]
+fn token_count_from_decomposed_frontmatter_py(content: &str) -> Option<usize> {
+    token_count_from_decomposed_frontmatter(content)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build_skills_index_py, m)?)?;
     m.add_function(wrap_pyfunction!(write_skills_index_py, m)?)?;
@@ -637,6 +643,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(write_reconstructed_skill_py, m)?)?;
     m.add_function(wrap_pyfunction!(parse_skill_chunk_ids_py, m)?)?;
     m.add_function(wrap_pyfunction!(parse_skill_node_ids_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        token_count_from_decomposed_frontmatter_py,
+        m
+    )?)?;
     m.add_class::<PyReconstructOptions>()?;
     m.add_class::<PySkillsBuilder>()?;
     Ok(())

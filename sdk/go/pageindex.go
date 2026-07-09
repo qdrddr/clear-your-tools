@@ -131,6 +131,12 @@ func ParseSkillNodeIDs(spec string) (string, error) {
 	return cgoParseSkillNodeIDs(spec)
 }
 
+// TokenCountFromDecomposedFrontmatter parses token_count from decomposed frontmatter.
+// The second return value is false when token_count is absent.
+func TokenCountFromDecomposedFrontmatter(content string) (int64, bool, error) {
+	return cgoTokenCountFromDecomposedFrontmatter(content)
+}
+
 // ReconstructOptionsDefault returns default reconstruct options JSON.
 func ReconstructOptionsDefault() (string, error) {
 	return cgoReconstructOptionsDefault()

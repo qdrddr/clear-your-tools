@@ -386,6 +386,11 @@ int cyt_catalog_index_to_catalog_dict(const char *index_json,
                                       const char *catalog_prefix,
                                       char **out);
 
+/*
+ Return cached full/decomposed tool schema token metadata from catalog index JSON.
+ */
+int cyt_catalog_index_tool_schema_metadata(const char *index_json, char **out);
+
 int cyt_catalog_builder_new(int memory_only,
                             const char *output_dir,
                             struct CYT_CytCatalogBuilder **out);
@@ -514,6 +519,11 @@ int cyt_get_skill_line_content(const char *index_or_docs_json,
 int cyt_parse_skill_chunk_ids(const char *spec, char **out);
 
 int cyt_parse_skill_node_ids(const char *spec, char **out);
+
+/*
+ Parse ``token_count`` from decomposed markdown/JSON frontmatter when present.
+ */
+int cyt_token_count_from_decomposed_frontmatter(const char *content, long *out);
 
 int cyt_skills_builder_new(int memory_only,
                            const char *output_dir,

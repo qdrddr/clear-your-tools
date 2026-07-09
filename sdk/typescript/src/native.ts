@@ -15,6 +15,8 @@ export const anthropicToolsToCatalogEntriesNative =
 export const truncateDescriptionNative = native.truncateDescription;
 export const catalogToolCountNative = native.catalogToolCount;
 export const catalogIndexToCatalogDictNative = native.catalogIndexToCatalogDict;
+export const catalogIndexToolSchemaMetadataNative =
+  native.catalogIndexToolSchemaMetadata;
 
 // Retrieve
 export const loadCatalogNative = native.loadCatalog;
@@ -162,6 +164,8 @@ export const reconstructSkillMarkdownNative =
 export const writeReconstructedSkillNative = native.writeReconstructedSkillNapi;
 export const parseSkillNodeIdsNative = native.parseSkillNodeIdsNapi;
 export const parseSkillChunkIdsNative = native.parseSkillChunkIdsNapi;
+export const tokenCountFromDecomposedFrontmatterNative =
+  native.tokenCountFromDecomposedFrontmatterNapi;
 export const SkillsBuilderNative = native.SkillsBuilderNapi;
 export const bm25CohesionChunkNative = native.bm25CohesionChunkNapi;
 
