@@ -25,7 +25,7 @@ from cyt.indexer.build import (
 from cyt.indexer.retrieve import retrieve_tools
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
-from cyt.pruners.llm import llm_catalog_dict, trim_catalog_dict
+from cyt.pruners.llm import LLM_PRE_TRIM_TOP_K_JSON, llm_catalog_dict, trim_catalog_dict
 from cyt.pruners.policies import (
     PolicyContext,
     batch_tool_pass_through,
@@ -34,6 +34,7 @@ from cyt.pruners.policies import (
     drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
+    is_decomposed_tool_root_chunk,
     merge_catalog,
     merge_tools_preserving_order,
     mitigate_empty_optional_properties,
@@ -41,6 +42,7 @@ from cyt.pruners.policies import (
     partition_catalog,
     policy_context_from_config,
     request_pass_through,
+    root_tool_id_from_chunk,
     tools_for_catalog,
 )
 from cyt.pruners.remote import PrunerSettingsCache
@@ -429,7 +431,7 @@ def _run_llm_stage(
     ctx: PolicyContext | None = None,
 ) -> dict[str, Any]:
     if trim_before_llm:
-        data = trim_catalog_dict(data)
+        data = trim_catalog_dict(data, top_k=LLM_PRE_TRIM_TOP_K_JSON)
 
     llm_usage: StageTokenUsage
     llm_settings = pruner_settings.for_stage("llm") if pruner_settings else None
@@ -715,6 +717,63 @@ def _run_pruning_pipeline(
     )
 
 
+def _append_unique_json_chunks(
+    entries: list[dict[str, Any]],
+    seen_paths: set[object],
+    items: object,
+) -> None:
+    if not isinstance(items, list):
+        return
+    for item in cast(list[object], items):
+        if not isinstance(item, dict):
+            continue
+        chunk = cast(dict[str, Any], item)
+        file_path = chunk.get("file_path")
+        if file_path in seen_paths:
+            continue
+        seen_paths.add(file_path)
+        entries.append(copy.deepcopy(chunk))
+
+
+def _llm_selection_from_catalog(
+    data: dict[str, Any],
+) -> tuple[list[dict[str, Any]] | None, set[str], set[str]]:
+    llm_json = data.get("json") if isinstance(data.get("json"), list) else None
+    llm_selected_paths = {
+        str(item.get("file_path", ""))
+        for item in (llm_json or [])
+        if isinstance(item, dict) and item.get("file_path")
+    }
+    llm_selected_tool_ids = {
+        root_tool_id_from_chunk(item) for item in (llm_json or []) if isinstance(item, dict)
+    }
+    return llm_json, llm_selected_paths, llm_selected_tool_ids
+
+
+def _append_post_rerank_roots_for_recompose(
+    entries: list[dict[str, Any]],
+    seen_paths: set[object],
+    post_rerank: dict[str, Any],
+    *,
+    terminal_is_llm: bool,
+    llm_selected_tool_ids: set[str],
+) -> None:
+    post_items = post_rerank.get("json")
+    if terminal_is_llm:
+        if not llm_selected_tool_ids or not isinstance(post_items, list):
+            return
+        selected_roots = [
+            cast(dict[str, Any], raw)
+            for raw in post_items
+            if isinstance(raw, dict)
+            and is_decomposed_tool_root_chunk(cast(dict[str, Any], raw))
+            and root_tool_id_from_chunk(cast(dict[str, Any], raw)) in llm_selected_tool_ids
+        ]
+        _append_unique_json_chunks(entries, seen_paths, selected_roots)
+        return
+    _append_unique_json_chunks(entries, seen_paths, post_items)
+
+
 def _json_entries_for_recompose(
     data: dict[str, Any],
     post_rerank: dict[str, Any] | None,
@@ -732,32 +791,23 @@ def _json_entries_for_recompose(
     entries: list[dict[str, Any]] = []
     seen_paths: set[object] = set()
 
-    def _append_unique(items: object) -> None:
-        if not isinstance(items, list):
-            return
-        for item in cast(list[object], items):
-            if not isinstance(item, dict):
-                continue
-            chunk = cast(dict[str, Any], item)
-            file_path = chunk.get("file_path")
-            if file_path in seen_paths:
-                continue
-            seen_paths.add(file_path)
-            entries.append(copy.deepcopy(chunk))
-
     if isinstance(pinned, dict):
-        _append_unique(pinned.get("json"))
-    if catalog_needs_pruned_recompose(data, policy_ctx) and post_rerank is not None:
-        _append_unique(post_rerank.get("json"))
-    llm_json = data.get("json") if isinstance(data.get("json"), list) else None
-    _append_unique(llm_json)
-    llm_selected_paths = {
-        str(item.get("file_path", ""))
-        for item in (llm_json or [])
-        if isinstance(item, dict) and item.get("file_path")
-    }
+        _append_unique_json_chunks(entries, seen_paths, pinned.get("json"))
 
     pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
+    terminal_is_llm = bool(pipeline) and pipeline[-1] == "llm"
+    llm_json, llm_selected_paths, llm_selected_tool_ids = _llm_selection_from_catalog(data)
+
+    if catalog_needs_pruned_recompose(data, policy_ctx) and post_rerank is not None:
+        _append_post_rerank_roots_for_recompose(
+            entries,
+            seen_paths,
+            post_rerank,
+            terminal_is_llm=terminal_is_llm,
+            llm_selected_tool_ids=llm_selected_tool_ids,
+        )
+
+    _append_unique_json_chunks(entries, seen_paths, llm_json)
 
     filtered = filter_recompose_json_entries(
         entries,

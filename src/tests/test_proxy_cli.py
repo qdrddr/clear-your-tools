@@ -10,6 +10,10 @@ import pytest
 import cyt.config as configs
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.proxy.bootstrap import _apply_bm25_fallback_if_needed, prepare_runtime
+from tests.test_credential_helpers import (
+    install_test_pre_dotenv,
+    isolate_credential_env_paths,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +21,12 @@ def _reset_credential_caches() -> Generator[None]:
     clear_keyring_cache()
     yield
     clear_keyring_cache()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_credential_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    isolate_credential_env_paths(monkeypatch, tmp_path)
+    install_test_pre_dotenv(monkeypatch)
 
 
 def _deepinfra_api_key_var() -> str:

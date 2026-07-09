@@ -34,8 +34,10 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# Top_k may exclude relevant items, should not be capping by top_k, but by score only.
-# LLM_TRIM_TOP_K_JSON: int = 40
+# After rerank/bm25, cap how many scored json chunks reach the LLM selector.
+LLM_PRE_TRIM_TOP_K_JSON: int = 40
+# Hard cap on chunk ids accepted from the LLM selector (union across bulks).
+LLM_MAX_SELECTED_IDS: int = 40
 LLM_TRIM_MIN_JSON_SCORE: float = 0.11
 
 LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
@@ -50,6 +52,12 @@ SELECTOR_NO_MATCH_INSTRUCTION = (
     f"If nothing is suitable for the user query, return ids: [{SELECTOR_EMPTY_ID}] only."
 )
 
+SELECTOR_VAGUE_QUERY_INSTRUCTION = (
+    "If the user query is a single generic word with no specific technical task "
+    "(e.g. 'test', 'investigate', 'help'), return ids: [-1] only unless exactly one tool "
+    "is an obvious exact match."
+)
+
 TOOL_SELECTOR_SYSTEM_PROMPT = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
     "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
@@ -59,6 +67,7 @@ TOOL_SELECTOR_SYSTEM_PROMPT = (
     "to save on tokens by removing the irrelevant to user query noise."
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
     "potentially be useful for the request. You have a soft budget of 5000 tokens to select the most relevant chunks."
+    f"{SELECTOR_VAGUE_QUERY_INSTRUCTION}"
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
 
@@ -122,29 +131,43 @@ def _json_item_score(item: dict[str, Any]) -> float:
         return 0.0
 
 
-def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
-    """Drop low-scoring json entries before the LLM selector stage."""
-    json_items = data.get("json")
-    if not isinstance(json_items, list):
-        return data
-
+def _trim_scored_catalog_list(
+    items: list[Any],
+    *,
+    min_score: float,
+    top_k: int | None,
+) -> list[dict[str, Any]]:
     filtered: list[dict[str, Any]] = []
-    for item in json_items:
+    for item in items:
         if not isinstance(item, dict):
             continue
-        if _json_item_score(item) < LLM_TRIM_MIN_JSON_SCORE:
+        if _json_item_score(item) < min_score:
             continue
         filtered.append(item)
+    filtered.sort(key=_json_item_score, reverse=True)
+    if top_k is not None and len(filtered) > top_k:
+        return filtered[:top_k]
+    return filtered
 
-    filtered.sort(key=lambda x: str(x.get("file_path", "")))
 
-    #    trimmed = filtered[:LLM_TRIM_TOP_K_JSON]
-    #    for item in trimmed:
-    #        for field in LLM_TRIM_FIELDS:
-    #            item.pop(field, None)
-    #
-    #    data["json"] = trimmed
-    data["json"] = filtered
+def trim_catalog_dict(data: dict[str, Any], *, top_k: int | None = None) -> dict[str, Any]:
+    """Drop low-scoring catalog entries before the LLM selector; optionally keep top-k by score."""
+    json_items = data.get("json")
+    if isinstance(json_items, list):
+        data["json"] = _trim_scored_catalog_list(
+            json_items,
+            min_score=LLM_TRIM_MIN_JSON_SCORE,
+            top_k=top_k,
+        )
+
+    md_items = data.get("md")
+    if isinstance(md_items, list):
+        data["md"] = _trim_scored_catalog_list(
+            md_items,
+            min_score=LLM_TRIM_MIN_JSON_SCORE,
+            top_k=top_k,
+        )
+
     return data
 
 
@@ -500,6 +523,14 @@ def llm_select_ids(
             "pruning model tokens (llm)",
             total_usage.input_tokens + total_usage.output_tokens,
         )
+
+    if len(selected_ids) > LLM_MAX_SELECTED_IDS:
+        logger.warning(
+            "llm selector returned %d chunk ids, capping to %d",
+            len(selected_ids),
+            LLM_MAX_SELECTED_IDS,
+        )
+        selected_ids = set(sorted(selected_ids)[:LLM_MAX_SELECTED_IDS])
 
     return selected_ids, total_usage
 

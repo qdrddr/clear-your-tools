@@ -26,7 +26,14 @@ os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
 
 BUNDLED_DEFAULTS_NAME = "defaults.yaml"
 USER_ENV_PATH = Path("~/.config/cyt/.env").expanduser()
-CWD_ENV_PATH = Path.cwd() / ".env"
+
+
+def cwd_env_path() -> Path:
+    """Return ``./.env`` for the current working directory (not import-time cwd)."""
+    return Path.cwd() / ".env"
+
+
+CWD_ENV_PATH = cwd_env_path()
 
 _proxy_env_loaded = False
 
@@ -39,7 +46,7 @@ def load_proxy_env() -> None:
     global _proxy_env_loaded
     if _proxy_env_loaded:
         return
-    for path in (CWD_ENV_PATH, USER_ENV_PATH):
+    for path in (cwd_env_path(), USER_ENV_PATH):
         if path.exists():
             load_dotenv(dotenv_path=path, override=False)
     _proxy_env_loaded = True
@@ -1513,7 +1520,7 @@ def missing_proxy_env_var_names(config: dict[str, Any]) -> list[str]:
 def format_proxy_env_help(missing: list[str]) -> str:
     """Human-readable guidance when pruning pipeline API keys are unset."""
     vars_block = "\n".join(f"\t{name}" for name in missing)
-    env_locations = "\n".join(f"\t{p}" for p in (CWD_ENV_PATH, USER_ENV_PATH))
+    env_locations = "\n".join(f"\t{p}" for p in (cwd_env_path(), USER_ENV_PATH))
     return (
         f"Required environment variable(s) not set:\n{vars_block}\n"
         f"Export them in the shell or define them in\n{env_locations}\n"

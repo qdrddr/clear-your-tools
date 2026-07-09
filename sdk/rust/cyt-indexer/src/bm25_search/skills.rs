@@ -544,8 +544,8 @@ fn reconstruct_group_match(
         reconstruct_skill_markdown(
             &index,
             doc_id,
-            &spec_refs,
             &[],
+            &spec_refs,
             &[],
             &ReconstructOptions::default(),
         )?

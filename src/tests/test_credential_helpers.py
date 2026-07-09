@@ -35,15 +35,18 @@ def process_env_before_dotenv_for_tests() -> dict[str, str]:
 def isolate_credential_env_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    *,
+    chdir: bool = True,
 ) -> dict[str, Path]:
     """Point env-file lookups at empty temp paths."""
     work_dir = tmp_path / "credential-work"
     work_dir.mkdir(parents=True, exist_ok=True)
     user_env = tmp_path / "home" / ".config" / "cyt" / ".env"
     cwd_env = work_dir / ".env"
-    monkeypatch.setattr(configs, "CWD_ENV_PATH", cwd_env)
+    monkeypatch.setattr(configs, "cwd_env_path", lambda: cwd_env)
     monkeypatch.setattr(configs, "USER_ENV_PATH", user_env)
-    monkeypatch.chdir(work_dir)
+    if chdir:
+        monkeypatch.chdir(work_dir)
     return {
         "work_dir": work_dir,
         "cwd_env": cwd_env,

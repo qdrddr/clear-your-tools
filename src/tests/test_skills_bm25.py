@@ -98,6 +98,43 @@ def test_bm25_skill_chunks_wires_native_search() -> None:
         assert matches == []
 
 
+def test_node_reconstruct_batch_matches_direct_node_id_specs() -> None:
+    """Regression: batch reconstruct must use node_id_specs, not line_num_specs."""
+    from cyt.skills.frontmatter import injection_markdown_body
+    from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
+    from tests.test_llm_prune_integration import (
+        DEFAULT_SKILL_ENTRY_DIR,
+        DEFAULT_SKILL_NODE_ID,
+        load_single_skill_entry,
+    )
+
+    if not DEFAULT_SKILL_ENTRY_DIR.is_dir():
+        import pytest
+
+        pytest.skip("lean-ctx skill cache fixture unavailable")
+
+    entry = load_single_skill_entry(DEFAULT_SKILL_ENTRY_DIR, node_id=DEFAULT_SKILL_NODE_ID)
+    survivors = [
+        {
+            "entry_dir": entry.entry_dir,
+            "doc_id": entry.doc_id,
+            "node_id": DEFAULT_SKILL_NODE_ID,
+            "file_path": entry.source_path,
+            "score": 1.0,
+        },
+    ]
+    matches = reconstruct_matches_from_survivor_dicts(
+        survivors,
+        [entry],
+        item_kind="node",
+        id_field="node_id",
+    )
+    assert matches
+    body = injection_markdown_body(matches[0].markdown)
+    assert body.strip()
+    assert "File Editing" in body
+
+
 def test_transcript_enriched_query_improves_bm25_match() -> None:
     """Assistant context from transcript_path should reach BM25 as format_search_query."""
     with tempfile.TemporaryDirectory() as tmp:

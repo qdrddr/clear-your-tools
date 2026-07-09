@@ -81,3 +81,9 @@ def test_format_agent_skills_omits_name_attribute_but_keeps_body_when_missing() 
     assert "# Create Hook" in injected
     assert "Body" in injected
     assert "description:" not in injected
+
+
+def test_format_agent_skills_skips_frontmatter_only_matches() -> None:
+    frontmatter_only = "---\nname: lean-ctx\ndescription: Context engineering tools.\n---"
+    injected = format_agent_skills([_match(name="lean-ctx", markdown=frontmatter_only)])
+    assert injected == ""

@@ -299,3 +299,18 @@ def test_tool_selector_system_prompt_without_cache_is_base_only() -> None:
         return_value=None,
     ):
         assert tool_selector_system_prompt() == TOOL_SELECTOR_SYSTEM_PROMPT
+
+
+def test_trim_catalog_dict_keeps_top_k_by_score() -> None:
+    from cyt.pruners.llm import trim_catalog_dict
+
+    data = {
+        "json": [
+            {"file_path": "a", "score": 0.9},
+            {"file_path": "b", "score": 0.5},
+            {"file_path": "c", "score": 0.2},
+            {"file_path": "d", "score": 0.05},
+        ],
+    }
+    trimmed = trim_catalog_dict(data, top_k=2)
+    assert [item["file_path"] for item in trimmed["json"]] == ["a", "b"]

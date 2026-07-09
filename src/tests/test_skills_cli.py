@@ -15,7 +15,10 @@ import pytest
 
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.skills import cli as skills_cli
-from tests.test_credential_helpers import install_test_pre_dotenv
+from tests.test_credential_helpers import (
+    install_test_pre_dotenv,
+    isolate_credential_env_paths,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +29,8 @@ def _reset_credential_caches() -> Generator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _track_shell_exports(monkeypatch: pytest.MonkeyPatch) -> None:
+def _track_shell_exports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    isolate_credential_env_paths(monkeypatch, tmp_path, chdir=False)
     install_test_pre_dotenv(monkeypatch)
 
 

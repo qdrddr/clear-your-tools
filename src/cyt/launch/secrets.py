@@ -27,9 +27,9 @@ _runtime_credential_sources: dict[str, str] = {}
 
 
 def _cwd_env_path() -> Path:
-    from cyt.config import CWD_ENV_PATH
+    from cyt.config import cwd_env_path
 
-    return CWD_ENV_PATH
+    return cwd_env_path()
 
 
 def _user_env_path() -> Path:

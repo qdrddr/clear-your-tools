@@ -584,41 +584,6 @@ def _append_coordinated_tools_injection(
     details: dict[str, Any],
 ) -> None:
     pruned = prune_result.tools or []
-    # #region agent log
-    try:
-        import json
-        import time
-
-        with open(
-            "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools"
-            "/.cursor/debug-785b7c.log",
-            "a",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(
-                json.dumps(
-                    {
-                        "sessionId": "785b7c",
-                        "runId": "pre-fix",
-                        "hypothesisId": "E",
-                        "location": "skills/cli.py:_append_coordinated_tools_injection",
-                        "message": "coordinated tools injection",
-                        "data": {
-                            "prune_status": prune_result.status,
-                            "catalog_tool_count": len(catalog),
-                            "pruned_tool_count": len(pruned),
-                            "pruning_stages": list(
-                                (prune_result.pruning_token_usage or {}).keys(),
-                            ),
-                        },
-                        "timestamp": int(time.time() * 1000),
-                    },
-                )
-                + "\n",
-            )
-    except Exception:
-        pass
-    # #endregion
     if not pruned:
         outcomes.append("user_prompt_no_tool_matches")
         details["resolved_model"] = model
