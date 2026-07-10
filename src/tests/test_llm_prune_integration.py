@@ -18,6 +18,12 @@ Run one scenario from the CLI:
 
     uv run python src/tests/test_llm_prune_integration.py --mode tools --agent cursor --rule .debug/rules/cyt-injection.mdc \
         --prompt "resolve Next.js library id"
+
+Run against full on-disk caches (all tools + agent skills; requires warmed
+``~/.config/cyt/cache/executor-catalog/*.json`` and skills entries):
+
+    uv run python src/tests/test_llm_prune_integration.py --mode real --agent cursor \
+        --rule .debug/rules/cyt-injection.mdc --prompt "how to use ctx_edit in lean-ctx?"
 """
 
 from __future__ import annotations
@@ -61,8 +67,10 @@ from cyt.pruners.selector_xml import (
     per_bulk_soft_budget,
 )
 from cyt.pruners.split import split_into_bulks
-from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
+from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids, build_registry
 from cyt.skills.cli import HookRunResult, run_hook_payload
+from cyt.skills.client_skills import build_registry_for_hook_payload
+from cyt.skills.executor_skill import EXECUTOR_SKILL_NAME, with_executor_skill_matches
 from cyt.skills.hook_payload import normalize_hook_payload
 from cyt.skills.inject import format_agent_skills
 from cyt.skills.llm import (
@@ -94,7 +102,7 @@ from cyt_client.rules_file import (
 )
 from cyt_client.transcript import enrich_hook_payload
 
-ScenarioMode = Literal["tools", "skills", "combined"]
+ScenarioMode = Literal["tools", "skills", "combined", "real"]
 SelectorDomain = Literal["tools", "skills"]
 
 DEFAULT_AGENT: AgentName = "cursor"
@@ -121,6 +129,10 @@ DEFAULT_SKILL_NODE_ID = 7
 DEFAULT_USER_PROMPT = (
     "How do I use ctx_patch for anchored file editing? "
     "Also show me how to resolve a Next.js library id with Context7."
+)
+
+DEFAULT_EXECUTOR_CATALOG_CACHE = Path(
+    "~/.config/cyt/cache/executor-catalog/http___localhost_4789__EXECUTOR_TOKEN.json",
 )
 
 
@@ -369,7 +381,7 @@ def maybe_sync_cursor_rules_file(
         return None
 
     injection = extract_additional_context(trace.stdout_text.encode())
-    merge_sections = trace.mode == "combined"
+    merge_sections = trace.mode in {"combined", "real"}
     if not injection.strip() and trace.mode in {"tools", "skills"}:
         rules_inj = trace.enriched_hook_payload.get("cyt_rules_injection")
         if isinstance(rules_inj, str):
@@ -430,12 +442,12 @@ def _integration_config(
     pruning = cfg.setdefault("pruning", {})
     pruning["inject_via"] = "hook"
     tools = pruning.setdefault("tools", {})
-    tools["enabled"] = mode in {None, "tools", "combined"}
+    tools["enabled"] = mode in {None, "tools", "combined", "real"}
     tools.setdefault("policy", {})["minimum_tools"] = 1
     tools["sequence"] = ["llm"]
     tools.setdefault("pipelines", {}).setdefault("llm", {})
     skills = cfg.setdefault("skills", {})
-    skills["enabled"] = mode in {None, "skills", "combined"}
+    skills["enabled"] = mode in {None, "skills", "combined", "real"}
     skills["pipeline"] = "llm"
     skills.setdefault("max_tokens_per_request", 4000)
     if mode in {"skills", "combined"}:
@@ -459,6 +471,84 @@ def load_tool_definition(tool_json_path: Path) -> dict[str, Any]:
     if schema is not None:
         tool["input_schema"] = schema
     return tool
+
+
+def _executor_catalog_slug_for_config(config: dict[str, Any]) -> str:
+    from cyt.config import tools_hook_executor_token_var, tools_hook_executor_url
+    from cyt.tools.sources.executor_catalog_disk import normalize_executor_url_slug
+    from cyt.tools.sources.executor_http import _resolve_executor_token
+
+    url = tools_hook_executor_url(config)
+    token_var = tools_hook_executor_token_var(config)
+    token = _resolve_executor_token(config, allow_prompt=False)
+    return normalize_executor_url_slug(url, token_var=token_var if token else None)
+
+
+def _executor_catalog_disk_available(config: dict[str, Any]) -> bool:
+    from cyt.config import tools_hook_executor_url
+    from cyt.tools.sources.executor_catalog_disk import (
+        normalize_executor_url_slug,
+        read_disk_catalog,
+    )
+
+    url = tools_hook_executor_url(config)
+    if not url:
+        return False
+    slug = _executor_catalog_slug_for_config(config)
+    if read_disk_catalog(slug) is not None:
+        return True
+    return read_disk_catalog(normalize_executor_url_slug(url)) is not None
+
+
+def warm_real_catalogs(
+    config: dict[str, Any],
+    *,
+    agent: AgentName | None = None,
+) -> None:
+    """Warm skills registry and executor tool catalog from on-disk caches."""
+    from cyt.cache import warm_caches
+    from cyt.config import uses_executor_tool_catalog
+
+    warm_caches(config)
+    if uses_executor_tool_catalog(config):
+        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+
+        get_executor_mcp_cache(config, allow_prompt=False)
+    if agent is not None:
+        build_registry(config, agent=agent)
+
+
+def load_real_decomposed_tool_catalog(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the full decomposed tool catalog from warmed executor disk cache."""
+    from cyt.indexer.build import anthropic_tools_to_catalog_entries
+    from cyt.tools.catalog_cache import ensure_tool_catalog_cached
+    from cyt.tools.registry import load_tool_catalog
+    from cyt.tools.sources.executor_http import load_executor_catalog_from_disk
+
+    load_executor_catalog_from_disk(config)
+    tools = load_tool_catalog(config)
+    if not tools:
+        slug = _executor_catalog_slug_for_config(config)
+        raise FileNotFoundError(
+            "executor tool catalog empty after warm; "
+            f"expected disk cache at ~/.config/cyt/cache/executor-catalog/{slug}.json",
+        )
+    entries, enums = anthropic_tools_to_catalog_entries(tools)
+    result = ensure_tool_catalog_cached(entries, enums, config)
+    return result.catalog
+
+
+def load_real_skill_entries(
+    config: dict[str, Any],
+    *,
+    agent: AgentName,
+    payload: dict[str, Any] | None = None,
+) -> list[SkillEntryRef]:
+    """Return the full skills registry for *agent* (all on-disk skill entries)."""
+    entries = build_registry_for_hook_payload(config, payload, agent=agent)
+    if not entries:
+        raise FileNotFoundError(f"no skill entries found for agent={agent}")
+    return entries
 
 
 def load_decomposed_tool_catalog(tool_json_path: Path) -> dict[str, Any]:
@@ -666,7 +756,10 @@ def _run_skills_selector_leg(
         skill_entries,
         config=config,
     )
-    pruned_output = format_agent_skills(matches) if matches else "(no skill nodes selected)"
+    display_matches = with_executor_skill_matches(matches, config)
+    pruned_output = (
+        format_agent_skills(display_matches) if display_matches else "(no skill nodes selected)"
+    )
     return (
         SelectorLegTrace(
             system_prompt=SKILLS_SELECTOR_SYSTEM_PROMPT,
@@ -703,6 +796,11 @@ def _daemon_patch_stack(
     selector_skill_matches: tuple[MatchedSkill, ...] | None = None,
 ) -> ExitStack:
     stack = ExitStack()
+    if mode == "real":
+        stack.enter_context(patch("cyt.tools.hook.record_tools_hook_injection"))
+        stack.enter_context(patch("cyt.skills.stats.record_skills_injection"))
+        return stack
+
     stack.enter_context(patch("cyt.config.tools_hook_file_missing", return_value=False))
     stack.enter_context(patch("cyt.tools.hook.record_tools_hook_injection"))
     stack.enter_context(patch("cyt.skills.stats.record_skills_injection"))
@@ -779,6 +877,8 @@ def run_hook_daemon_scenario(
         if selector_trace is not None and mode in {"skills", "combined"}
         else None
     )
+    if mode == "real":
+        warm_real_catalogs(config, agent=agent)
     with _rules_path_context(rule_path):
         with _daemon_patch_stack(
             mode,
@@ -834,9 +934,18 @@ def run_llm_prune_scenario(
     tools_selector: SelectorLegTrace | None = None
     skills_selector: SelectorLegTrace | None = None
 
-    if mode == "combined":
-        tool_catalog = load_decomposed_tool_catalog(tool_json_path)
-        skill_entries = [load_single_skill_entry(skill_entry_dir, node_id=skill_node_id)]
+    if mode == "combined" or mode == "real":
+        if mode == "real":
+            warm_real_catalogs(config, agent=agent)
+            tool_catalog = load_real_decomposed_tool_catalog(config)
+            skill_entries = load_real_skill_entries(
+                config,
+                agent=agent,
+                payload=enriched,
+            )
+        else:
+            tool_catalog = load_decomposed_tool_catalog(tool_json_path)
+            skill_entries = [load_single_skill_entry(skill_entry_dir, node_id=skill_node_id)]
         tools_selector = _run_tools_selector_leg(
             query,
             tool_catalog=tool_catalog,
@@ -949,7 +1058,7 @@ def print_llm_prune_trace(trace: LlmPruneTrace) -> None:
     )
     _print_section("enriched query", trace.query)
 
-    if trace.mode == "combined" and trace.tools_selector and trace.skills_selector:
+    if trace.mode in {"combined", "real"} and trace.tools_selector and trace.skills_selector:
         _print_selector_leg("tools selector", trace.tools_selector)
         _print_selector_leg("skills selector", trace.skills_selector)
         _print_section(
@@ -966,6 +1075,11 @@ def print_llm_prune_trace(trace: LlmPruneTrace) -> None:
             ),
         )
         _print_section("combined pruned output", trace.pruned_output)
+        if trace.mode == "real" and f'<skill name="{EXECUTOR_SKILL_NAME}"' in trace.pruned_output:
+            marker = f'<skill name="{EXECUTOR_SKILL_NAME}"'
+            start = trace.pruned_output.index(marker)
+            end = trace.pruned_output.index("</skill>", start) + len("</skill>")
+            _print_section("executor skill (in agent-skills)", trace.pruned_output[start:end])
         return
 
     if trace.tools_selector is not None:
@@ -1017,6 +1131,16 @@ def print_hook_daemon_trace(trace: HookDaemonTrace) -> None:
 
 def _fixtures_available() -> bool:
     return DEFAULT_TOOL_JSON.is_file() and DEFAULT_SKILL_ENTRY_DIR.is_dir()
+
+
+def _real_fixtures_available(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    if not _executor_catalog_disk_available(cfg):
+        return False
+    try:
+        return bool(build_registry(cfg))
+    except Exception:
+        return False
 
 
 def _llm_credentials_available(config: dict[str, Any]) -> bool:
@@ -1116,13 +1240,66 @@ def test_llm_prune_integration(
         assert daemon_trace.rules_file.is_file()
 
 
+def test_llm_prune_integration_real(
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
+) -> None:
+    config = _integration_config(
+        mode="real",
+        stats_db=str(tmp_path / "stats.db"),
+    )
+    if not _real_fixtures_available(config):
+        pytest.skip("real-mode ~/.config/cyt caches are not present on this machine")
+    agent = _parse_agent(request.config.getoption("--agent"))
+    rule_path = request.config.getoption("--rule")
+    if not _llm_credentials_available(config):
+        pytest.skip("pruning LLM credentials are not configured")
+
+    selector_trace = run_llm_prune_scenario(
+        "real",
+        prompt=DEFAULT_USER_PROMPT,
+        config=config,
+        agent=agent,
+    )
+    print_llm_prune_trace(selector_trace)
+    assert selector_trace.tools_selector is not None
+    assert selector_trace.skills_selector is not None
+    assert sum(entry.item_count for entry in selector_trace.tools_selector.bulk_plan.bulks) > 1
+    assert sum(entry.item_count for entry in selector_trace.skills_selector.bulk_plan.bulks) >= 1
+
+    daemon_trace = run_hook_daemon_scenario(
+        "real",
+        prompt=DEFAULT_USER_PROMPT,
+        config=config,
+        agent=agent,
+        rule_path=rule_path,
+        selector_trace=selector_trace,
+    )
+    print_hook_daemon_trace(daemon_trace)
+    assert daemon_trace.enriched_hook_payload.get("cyt_agent") == agent
+    assert daemon_trace.outcome in {
+        "user_prompt_injected",
+        "user_prompt_tools_injected",
+        "user_prompt_skills_injected",
+    }
+    assert daemon_trace.stdout_text.strip()
+    if _executor_catalog_disk_available(config):
+        from cyt.skills.executor_skill import executor_skill_match
+
+        if executor_skill_match(config):
+            marker = f'<skill name="{EXECUTOR_SKILL_NAME}"'
+            assert marker in selector_trace.pruned_output
+            hook_injection = extract_additional_context(daemon_trace.stdout_text.encode())
+            assert marker in hook_injection
+
+
 def _cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
-        choices=["tools", "skills", "combined", "all"],
+        choices=["tools", "skills", "combined", "real", "all"],
         default="all",
-        help="which scenario to run (default: all)",
+        help="which scenario to run (default: all; real = full on-disk catalogs)",
     )
     parser.add_argument("--prompt", default=DEFAULT_USER_PROMPT, help="user hook prompt")
     parser.add_argument(
@@ -1148,16 +1325,29 @@ def _cli() -> int:
     else:
         modes = [args.mode]
 
-    needs_tools = any(mode in {"tools", "combined"} for mode in modes)
-    needs_skills = any(mode in {"skills", "combined"} for mode in modes)
-    if needs_tools and not args.tool_json.is_file():
-        print(f"tool fixture missing: {args.tool_json}", file=sys.stderr)
-        return 1
-    if needs_skills and not args.skill_entry.is_dir():
-        print(f"skill fixture missing: {args.skill_entry}", file=sys.stderr)
-        return 1
+    needs_fixture_catalogs = any(mode in {"tools", "skills", "combined"} for mode in modes)
+    needs_real_catalogs = "real" in modes
+    if needs_fixture_catalogs:
+        if any(mode in {"tools", "combined"} for mode in modes) and not args.tool_json.is_file():
+            print(f"tool fixture missing: {args.tool_json}", file=sys.stderr)
+            return 1
+        if any(mode in {"skills", "combined"} for mode in modes) and not args.skill_entry.is_dir():
+            print(f"skill fixture missing: {args.skill_entry}", file=sys.stderr)
+            return 1
 
     agent = _parse_agent(args.agent)
+
+    if needs_real_catalogs:
+        real_config = _integration_config(mode="real")
+        if not _real_fixtures_available(real_config):
+            slug = _executor_catalog_slug_for_config(real_config)
+            print(
+                "real-mode fixtures missing: warmed executor catalog and skills entries required; "
+                f"expected ~/.config/cyt/cache/executor-catalog/{slug}.json "
+                f"(example: {DEFAULT_EXECUTOR_CATALOG_CACHE})",
+                file=sys.stderr,
+            )
+            return 1
 
     with tempfile.TemporaryDirectory() as tmp:
         for mode in modes:
@@ -1170,6 +1360,26 @@ def _cli() -> int:
             except RuntimeError as exc:
                 print(exc, file=sys.stderr)
                 return 1
+
+            if mode == "real":
+                selector_trace = run_llm_prune_scenario(
+                    mode,
+                    prompt=args.prompt,
+                    config=config,
+                    agent=agent,
+                )
+                print_llm_prune_trace(selector_trace)
+
+                daemon_trace = run_hook_daemon_scenario(
+                    mode,
+                    prompt=args.prompt,
+                    config=config,
+                    agent=agent,
+                    rule_path=args.rule,
+                    selector_trace=selector_trace,
+                )
+                print_hook_daemon_trace(daemon_trace)
+                continue
 
             selector_trace = run_llm_prune_scenario(
                 mode,

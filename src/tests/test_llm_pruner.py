@@ -617,7 +617,7 @@ def test_call_llm_minus_one_mixed_with_valid_ids() -> None:
     ]
 
 
-def test_format_executor_mcp_selector_appendix_minimizes_execute_tool() -> None:
+def test_format_executor_mcp_selector_appendix_includes_executor_skill_item() -> None:
     appendix = format_executor_mcp_selector_appendix(
         {
             "tools_list": [
@@ -635,12 +635,11 @@ def test_format_executor_mcp_selector_appendix_minimizes_execute_tool() -> None:
         },
     )
     assert "Executor MCP transport context" in appendix
-    assert "<tool name='execute'" in appendix
-    assert "description='Run \"code\"'" in appendix
-    assert "{'input_schema':{" in appendix
-    assert "<execute-skill>" in appendix
+    assert "<tool" not in appendix
+    assert '<skill name="executor"' in appendix
+    assert 'path="executor/execute"' in appendix
     assert "Use tools.search()" in appendix
-    assert "</execute-skill>" in appendix
+    assert "</skill>" in appendix
 
 
 def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
@@ -655,7 +654,8 @@ def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
         prompt = tool_selector_system_prompt({"pruning": {}})
 
     assert prompt.startswith(TOOL_SELECTOR_SYSTEM_PROMPT)
-    assert "<tool name='execute'" in prompt
+    assert "<tool" not in prompt
+    assert '<skill name="executor"' in prompt
     assert "# execute" in prompt
 
 

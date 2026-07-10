@@ -37,6 +37,7 @@ from cyt.skills.budget import (
 from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.debug_log import write_hook_debug_log
 from cyt.skills.diagnostics import SkillsSearchTrace
+from cyt.skills.executor_skill import EXECUTOR_SKILL_NAME, with_executor_skill_matches
 from cyt.skills.hook_payload import (
     hook_cwd,
     hook_event_name,
@@ -69,6 +70,43 @@ from cyt.tools.hook import finish_tools_hook_injection_from_coordinator, handle_
 from cyt.tools.inject import format_agent_tools
 
 logger = logging.getLogger(__name__)
+
+
+def _executor_skill_already_in_parts(parts: list[str]) -> bool:
+    marker = f'<skill name="{EXECUTOR_SKILL_NAME}"'
+    return any(marker in part for part in parts)
+
+
+def _format_executor_skills_injection(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    allow_transcript_file_read: bool,
+) -> str:
+    session_text = session_text_from_hook_payload(
+        payload,
+        allow_file_read=allow_transcript_file_read,
+    )
+    gated = filter_pre_exposed_skills(with_executor_skill_matches([], config), session_text)
+    return format_agent_skills(gated)
+
+
+def _append_executor_skills_if_needed(
+    parts: list[str],
+    *,
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    allow_transcript_file_read: bool,
+) -> None:
+    if _executor_skill_already_in_parts(parts):
+        return
+    injected = _format_executor_skills_injection(
+        payload,
+        config,
+        allow_transcript_file_read=allow_transcript_file_read,
+    )
+    if injected:
+        parts.append(injected)
 
 
 def _tools_hook_file_missing(config: dict[str, Any]) -> bool:
@@ -508,7 +546,10 @@ def _handle_user_prompt_skills(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated_matches = filter_pre_exposed_skills(matches, session_text)
+    gated_matches = filter_pre_exposed_skills(
+        with_executor_skill_matches(matches, config),
+        session_text,
+    )
     injected = format_agent_skills(gated_matches)
     if not injected:
         return (
@@ -558,13 +599,14 @@ def _append_coordinated_skills_injection(
     outcomes: list[str],
     details: dict[str, Any],
 ) -> None:
-    if skill_matches is None:
-        return
     session_text = session_text_from_hook_payload(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated_matches = filter_pre_exposed_skills(skill_matches, session_text)
+    gated_matches = filter_pre_exposed_skills(
+        with_executor_skill_matches(skill_matches or [], config),
+        session_text,
+    )
     injected_skills = format_agent_skills(gated_matches)
     if injected_skills:
         skills_in = injection_token_count(injected_skills)
@@ -737,6 +779,12 @@ def _run_coordinated_user_prompt_injection(
             )
 
         details["rules_merge_sections"] = True
+        _append_executor_skills_if_needed(
+            parts,
+            payload=payload,
+            config=config,
+            allow_transcript_file_read=allow_transcript_file_read,
+        )
         return parts, outcomes, details
 
 
@@ -798,6 +846,12 @@ def _run_user_prompt_injection(
         if tools_text:
             parts.append(tools_text)
 
+    _append_executor_skills_if_needed(
+        parts,
+        payload=payload,
+        config=config,
+        allow_transcript_file_read=allow_transcript_file_read,
+    )
     return parts, outcomes, details
 
 

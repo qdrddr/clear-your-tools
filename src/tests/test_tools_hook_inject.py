@@ -16,6 +16,9 @@ import pytest
 
 from cyt.proxy.anthropic import PruneResult
 from cyt.skills import cli as skills_cli
+from cyt.skills.executor_skill import EXECUTOR_SKILL_NAME, executor_skill_match_from_text
+from cyt.skills.inject import format_skill_item
+from cyt.tools.hook import _finish_tools_hook_injection
 
 
 @pytest.fixture(autouse=True)
@@ -216,3 +219,47 @@ def test_hook_skips_silently_when_catalog_missing() -> None:
 
         assert stdout.getvalue().strip() == ""
         assert stderr.getvalue().strip() == ""
+
+
+def test_finish_tools_hook_injection_does_not_append_executor_skill() -> None:
+    config = {
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {"hook": {"tools_from": "executor", "executor_url": "http://localhost:4789"}},
+        },
+    }
+    _outcome, _details, injected = _finish_tools_hook_injection(
+        payload={"prompt": "demo"},
+        config=config,
+        query="demo",
+        model="hook",
+        result=PruneResult(
+            tools=[{"name": "tools.demo.tool"}],
+            status="applied",
+            query="demo",
+            tools_in=1,
+            mcp_tools_in=1,
+            tools_out=1,
+            error=None,
+        ),
+        catalog=[{"name": "tools.demo.tool"}],
+        injected="<agent-tools>\n<tool name='tools.demo.tool'>{'input_schema':{}}</tool>\n</agent-tools>",
+        request_tokens=10,
+        budget_debug={},
+        debug=False,
+    )
+    assert f'<skill name="{EXECUTOR_SKILL_NAME}"' not in injected
+    assert "<agent-tools>" in injected
+
+
+def test_filter_pre_exposed_skills_drops_executor_skill_fragment() -> None:
+    from cyt.injection.pre_exposed import filter_pre_exposed_skills
+    from cyt.skills.inject import format_agent_skills
+
+    match = executor_skill_match_from_text("# execute\n\nUse tools.search()")
+    assert match is not None
+    fragment = format_skill_item(match)
+    session_text = fragment
+    filtered = filter_pre_exposed_skills([match], session_text)
+    assert filtered == []
+    assert format_agent_skills(filtered) == ""

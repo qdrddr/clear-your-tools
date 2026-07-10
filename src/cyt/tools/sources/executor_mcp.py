@@ -223,64 +223,25 @@ async def fetch_executor_mcp_cache_async(
     }
 
 
-def find_execute_tool(tools_list: list[Any] | None) -> dict[str, Any] | None:
-    """Return the MCP ``execute`` tool entry from a cached ``tools_list``.
-
-    Accepts ``list[Any]`` because cached JSON may contain non-dict entries.
-    """
-    if not tools_list:
-        return None
-    for tool in tools_list:
-        if not isinstance(tool, dict):
-            continue
-        if str(tool.get("name") or "").strip() == "execute":
-            return tool
-    return None
-
-
-def normalize_mcp_tool_for_inject(tool: dict[str, Any]) -> dict[str, Any]:
-    """Map MCP tool shape (``inputSchema``) to inject shape (``input_schema``)."""
-    normalized: dict[str, Any] = {"name": str(tool.get("name") or "").strip()}
-    description = tool.get("description")
-    if description is not None:
-        normalized["description"] = str(description)
-    schema = tool.get("input_schema")
-    if schema is None:
-        schema = tool.get("inputSchema")
-    if isinstance(schema, dict):
-        normalized["input_schema"] = schema
-    else:
-        normalized["input_schema"] = {}
-    return normalized
-
-
 def format_executor_mcp_selector_appendix(executor_mcp: dict[str, Any] | None) -> str:
-    """Format cached execute tool + skill for appending to the LLM selector system prompt.
+    """Format cached execute skill for appending to the LLM selector system prompt.
 
-    Uses the same minimized single-quote JSON encoding as tool injection.
-    Returns ``""`` when the cache is missing the execute tool / skill.
+    Uses the same ``<skill name="executor">`` shape as hook/proxy injection.
+    Returns ``""`` when the cache is missing the execute skill text.
     """
-    if not isinstance(executor_mcp, dict):
+    from cyt.skills.executor_skill import executor_skill_match_from_cache
+    from cyt.skills.inject import format_skill_item
+
+    match = executor_skill_match_from_cache(executor_mcp)
+    if match is None:
         return ""
-
-    tools_list = executor_mcp.get("tools_list")
-    execute_tool = find_execute_tool(tools_list if isinstance(tools_list, list) else None)
-    execute_skill = executor_mcp.get("execute_skill")
-    skill_text = str(execute_skill).strip() if isinstance(execute_skill, str) else ""
-
-    if execute_tool is None and not skill_text:
+    item = format_skill_item(match)
+    if not item:
         return ""
-
-    from cyt.tools.inject import format_tool_item
-
-    parts: list[str] = [
-        "Executor MCP transport context (use when selecting tools that require sandboxed "
-        "TypeScript execution via the execute tool in 'code mode' to be able to access tools):",
-    ]
-    if execute_tool is not None:
-        parts.append(format_tool_item(normalize_mcp_tool_for_inject(execute_tool)))
-    if skill_text:
-        parts.append("<execute-skill>")
-        parts.append(skill_text)
-        parts.append("</execute-skill>")
-    return "\n".join(parts)
+    return "\n".join(
+        [
+            "Executor MCP transport context (use when selecting tools that require sandboxed "
+            "TypeScript execution via the execute tool in 'code mode' to be able to access tools):",
+            item,
+        ],
+    )

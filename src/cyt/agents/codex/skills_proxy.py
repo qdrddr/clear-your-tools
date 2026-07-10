@@ -16,6 +16,7 @@ from cyt.proxy.user_message_inject import (
     append_injection_to_body,
 )
 from cyt.pruners.remote import PrunerSettingsCache
+from cyt.skills.executor_skill import with_executor_skill_matches
 from cyt.skills.inject import format_agent_skills
 from cyt.skills.proxy_inject import DeferredSkillsContext, SkillsProxyInjectMeta
 from cyt.skills.search import MatchedSkill
@@ -123,7 +124,10 @@ def inject_skills_matches_into_openai_body(
     config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     meta = SkillsProxyInjectMeta(query=query)
-    if not matches:
+    resolved_matches = (
+        with_executor_skill_matches(list(matches), config) if config is not None else list(matches)
+    )
+    if not resolved_matches:
         return body, meta
 
     original = copy.deepcopy(body)
@@ -138,7 +142,7 @@ def inject_skills_matches_into_openai_body(
     elif already_has_agent_skills(input_items):
         return original, meta
 
-    text, skills_in = _skills_text_from_matches(matches, original)
+    text, skills_in = _skills_text_from_matches(resolved_matches, original)
     if skills_in <= 0:
         return original, meta
 
@@ -148,7 +152,7 @@ def inject_skills_matches_into_openai_body(
         original["input"] = openai_insert_skills_developer_message(input_items, text)
     meta.skills_in = skills_in
     meta.skills_final_md = text
-    meta.deferred_matches = matches
+    meta.deferred_matches = resolved_matches
     return original, meta
 
 
