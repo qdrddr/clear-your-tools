@@ -1,5 +1,6 @@
 /** TypeScript SDK for cyt-indexer (Rust-backed catalog indexing). */
 
+export { getVersion } from "./core.js";
 export {
   CatalogIndex,
   anthropicToolToCatalogEntry,
@@ -19,12 +20,14 @@ export {
   removedChunks,
   resolveBuildCatalog,
   retrieveCatalogToolCount,
+  retrieveCore,
   retrieveTools,
   type DecomposedCatalogDict,
   type JsonRecord,
   type PolicyContextJs,
   type PolicyOptions,
   type RemovedChunksOptions,
+  type RetrieveCoreOptions,
   type RetrieveToolsOptions,
 } from "./retrieve.js";
 export {
@@ -142,6 +145,13 @@ export {
   type SearchSkillsOptions,
   type CoordinateBm25Options,
 } from "./pipeline.js";
+export type {
+  ClassifyAndCountCatalogResult,
+  SkillLineContentRow,
+  SkillNodeCatalogItem,
+  ToolSchemaMetadata,
+  ToolSchemaTokenFileEntry,
+} from "./types.js";
 
 // Full policy surface (mirrors cyt_indexer.policies).
 export * from "./policies.js";

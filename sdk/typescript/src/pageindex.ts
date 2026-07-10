@@ -1,5 +1,7 @@
 /** Skills pageindex (markdown tree indexing and retrieval). */
 
+import type { SkillLineContentRow } from "./types.js";
+
 import {
   SkillsBuilderNative,
   buildChunkVariantNative,
@@ -217,12 +219,12 @@ export function getSkillLineContentFromSpec(
   index: SkillsIndexDict,
   docId: string,
   lineNumSpec: string,
-): Array<{ line_num: number; node_id: number; content: string }> {
-  return getSkillLineContentFromSpecNative(index, docId, lineNumSpec) as Array<{
-    line_num: number;
-    node_id: number;
-    content: string;
-  }>;
+): SkillLineContentRow[] {
+  return getSkillLineContentFromSpecNative(
+    index,
+    docId,
+    lineNumSpec,
+  ) as SkillLineContentRow[];
 }
 
 function toNativeReconstructOptions(
@@ -240,24 +242,14 @@ export function getSkillLineContent(
     nodeIdSpecs?: string[];
     chunkIdSpecs?: string[];
   },
-): Array<{
-  line_num: number;
-  node_id: number;
-  content: string;
-  chunk_id?: number;
-}> {
+): SkillLineContentRow[] {
   return getSkillLineContentNative(
     index,
     docId,
     opts?.lineNumSpecs,
     opts?.nodeIdSpecs,
     opts?.chunkIdSpecs,
-  ) as Array<{
-    line_num: number;
-    node_id: number;
-    content: string;
-    chunk_id?: number;
-  }>;
+  ) as SkillLineContentRow[];
 }
 
 export function getSkillContentRetrieveResult(

@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const native = require("../native.cjs") as typeof import("../native.d.ts");
 
 // Build / catalog
+export const getVersionNative = native.getVersion;
 export const buildCatalogIndexNative = native.buildCatalogIndex;
 export const buildCatalogFromToolsNative = native.buildCatalogFromTools;
 export const prepareToolEntryNative = native.prepareToolEntry;

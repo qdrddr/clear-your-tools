@@ -13,8 +13,14 @@ import {
   policyContextFromValues,
   scoringPolicyContext,
 } from "../policies.js";
-import { buildCatalogIndex } from "../build.js";
-import { classifyAndCountCatalog, coordinateBm25Prune } from "../pipeline.js";
+import { buildCatalogIndex, catalogIndexToolSchemaMetadata } from "../build.js";
+import { getVersion } from "../core.js";
+import { tokenCountFromDecomposedFrontmatter } from "../pageindex.js";
+import {
+  classifyAndCountCatalog,
+  coordinateBm25Prune,
+  buildSkillNodeCatalog,
+} from "../pipeline.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -210,4 +216,62 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
 test("parity fixture catalog file is present for local runs", () => {
   const fixture = join(repoRoot, "sdk/e2e/fixtures/bm25_catalog.json");
   assert.equal(existsSync(fixture), true);
+});
+
+test("parity tokenCountFromDecomposedFrontmatter matches Python reference", () => {
+  if (skipParity() || !pythonAvailable()) {
+    return;
+  }
+
+  const content =
+    "---\ndoc_id: d1\nnode_id: 2\ntoken_count: 42\n---\n## Body\n";
+  const want = pythonJSON(`
+import json
+from cyt_indexer import token_count_from_decomposed_frontmatter
+content = ${JSON.stringify(content)}
+print(json.dumps(token_count_from_decomposed_frontmatter(content)))
+`);
+  const got = tokenCountFromDecomposedFrontmatter(content);
+  assertJsonEqual(got, want);
+});
+
+test("parity catalogIndexToolSchemaMetadata matches Python reference", () => {
+  if (skipParity() || !pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer import catalog_index_tool_schema_metadata
+print(json.dumps(catalog_index_tool_schema_metadata({"tools": [], "files": {}})))
+`);
+  const got = catalogIndexToolSchemaMetadata({ tools: [], files: {} });
+  assertJsonEqual(got, want);
+});
+
+test("parity buildSkillNodeCatalog empty matches Python reference", () => {
+  if (skipParity() || !pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer import build_skill_node_catalog
+print(json.dumps(build_skill_node_catalog([])))
+`);
+  const got = buildSkillNodeCatalog([]);
+  assertJsonEqual(got, want);
+});
+
+test("parity getVersion matches Python reference", () => {
+  if (skipParity() || !pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer import get_version
+print(json.dumps(get_version()))
+`);
+  assertJsonEqual(getVersion(), want);
 });

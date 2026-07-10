@@ -10,6 +10,7 @@ import {
   truncateDescriptionNative,
 } from "./native.js";
 import { collectEnums } from "./paths.js";
+import type { ToolSchemaMetadata } from "./types.js";
 import type { JsonRecord } from "./types.js";
 
 export { collectEnums };
@@ -39,11 +40,11 @@ export class CatalogIndex {
     };
   }
 
-  toolSchemaMetadata(): JsonRecord {
+  toolSchemaMetadata(): ToolSchemaMetadata {
     return catalogIndexToolSchemaMetadataNative({
       tools: this.tools,
       files: this.files,
-    }) as JsonRecord;
+    }) as ToolSchemaMetadata;
   }
 }
 
@@ -107,6 +108,6 @@ export function truncateDescription(
 export function catalogIndexToolSchemaMetadata(index: {
   tools: JsonRecord[];
   files: Record<string, string>;
-}): JsonRecord {
-  return catalogIndexToolSchemaMetadataNative(index) as JsonRecord;
+}): ToolSchemaMetadata {
+  return catalogIndexToolSchemaMetadataNative(index) as ToolSchemaMetadata;
 }

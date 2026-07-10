@@ -8,7 +8,11 @@ import {
   searchSkillsAndSelectNative,
 } from "./native.js";
 import { PolicyContextNative } from "./native.js";
-import type { JsonRecord } from "./types.js";
+import type {
+  ClassifyAndCountCatalogResult,
+  JsonRecord,
+  SkillNodeCatalogItem,
+} from "./types.js";
 
 type PolicyContext = InstanceType<typeof PolicyContextNative>;
 
@@ -93,11 +97,11 @@ export function pruneCatalogBm25AndRetrieve(
 export function classifyAndCountCatalog(
   catalogData: JsonRecord,
   tools?: JsonRecord[] | null,
-): JsonRecord {
+): ClassifyAndCountCatalogResult {
   return classifyAndCountCatalogNative(
     catalogData,
     tools ?? undefined,
-  ) as JsonRecord;
+  ) as ClassifyAndCountCatalogResult;
 }
 
 export function searchSkillsAndSelect(
@@ -112,8 +116,10 @@ export function searchSkillsAndSelect(
   ) as JsonRecord;
 }
 
-export function buildSkillNodeCatalog(entries: JsonRecord[]): unknown[] {
-  return buildSkillNodeCatalogNative(entries) as unknown[];
+export function buildSkillNodeCatalog(
+  entries: JsonRecord[],
+): SkillNodeCatalogItem[] {
+  return buildSkillNodeCatalogNative(entries) as SkillNodeCatalogItem[];
 }
 
 export interface CoordinateBm25Options {

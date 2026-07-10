@@ -78,6 +78,28 @@ export function retrieveCatalogToolCount(data: JsonRecord): number {
   return retrieveCatalogToolCountNative(data);
 }
 
+export interface RetrieveCoreOptions {
+  applyDecomposedScoreFilter?: boolean;
+  policyOptions?: PolicyOptions | null;
+}
+
+/** Low-level retrieve over survivor json files (same core as Go/C ``cyt_retrieve_core``). */
+export function retrieveCore(
+  data: JsonRecord,
+  storeJsonFiles: Record<string, unknown>,
+  survivorJsonFiles: Record<string, unknown>,
+  options: RetrieveCoreOptions = {},
+): JsonRecord[] {
+  const { applyDecomposedScoreFilter = false, policyOptions = null } = options;
+  return retrieveCoreNative(
+    data,
+    storeJsonFiles,
+    survivorJsonFiles,
+    applyDecomposedScoreFilter,
+    policyOptions ?? undefined,
+  ) as JsonRecord[];
+}
+
 export interface RetrieveToolsOptions {
   catalog: DecomposedCatalog | CatalogIndex;
   applyDecomposedScoreFilter?: boolean;
