@@ -25,39 +25,137 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_section() {
 		[[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]] && return 0
 		echo ""
-		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-		echo "  $*"
-		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+		echo "$*"
+	}
+
+	# Run a command; suppress stdout in short/silent mode (stderr still visible).
+	cyt_run() {
+		if [[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]]; then
+			"$@" >/dev/null
+		else
+			"$@"
+		fi
 	}
 
 	# Keep only error/warning lines when CYT_LOCAL_DEV_SHORT is set (pipe after shorten_paths).
 	cyt_filter_short_logs() {
 		awk '
-			BEGIN { IGNORECASE = 1 }
-			/^error:/ { print; next }
-			/ error:/ { print; next }
-			/^warning:/ { print; next }
-			/ warning:/ { print; next }
-			/fatal error/ { print; next }
-			/undefined symbols/ { print; next }
-			/^ld: / { print; next }
-			/^clang: error/ { print; next }
-			/: error:/ { print; next }
-			/^\*\*\* / { print; next }
-			/npm warn/ { print; next }
-			/panic!/ { print; next }
-			/thread .* panicked/ { print; next }
-			/AssertionError/ { print; next }
-			/not ok / { print; next }
-			/^E[[:space:]]+/ { print; next }
-			/^=+ FAILURES =+/ { print; next }
-			/^=+ short test summary/ { print; next }
-			/FAILED/ { print; next }
-			/failed/ && !/0 failed/ && !/passed, 0 failed/ { print; next }
-			/failure/ && !/failure info/ { print; next }
-			/✖/ { print; next }
-			/sys\.exit/ { print; next }
-			/unknown command:/ { print; next }
+			BEGIN {
+				IGNORECASE = 1
+				ld_grp_count = 0
+				ld_grp_key = ""
+				ld_grp_header = ""
+				ld_grp_max_items = 8
+			}
+
+			function ld_grp_flush(    i, shown, more) {
+				if (ld_grp_count == 0) return
+				print ld_grp_header (ld_grp_count > 1 ? " [" ld_grp_count " members]" : "")
+				shown = ld_grp_count
+				if (shown > ld_grp_max_items) shown = ld_grp_max_items
+				for (i = 1; i <= shown; i++) print ld_grp_items[i]
+				more = ld_grp_count - shown
+				if (more > 0) print "... +" more " more members"
+				ld_grp_count = 0
+				ld_grp_key = ""
+				ld_grp_header = ""
+				delete ld_grp_items
+			}
+
+			# macOS/iOS ld: group archive member version skew warnings.
+			# Input:  ld: warning: object file (lib.a[336](obj.o)) was built for newer '"'"'macOS'"'"' version (26.5) than being linked (26.0)
+			# Output: ld: warning: object file (lib.a was built for newer '"'"'macOS'"'"' version (26.5) than being linked (26.0) [N members]
+			#         [336](obj.o))
+			function ld_try_group_object_warning(line,    s, p1, p2, p3, rest, key, header, item, marker) {
+				if (line !~ /^ld:[[:space:]]+warning:[[:space:]]+object file \(/)
+					return 0
+				s = line
+				sub(/^ld:[[:space:]]+warning:[[:space:]]+object file \(/, "", s)
+				p1 = index(s, "[")
+				if (p1 == 0) return 0
+				ld_archive = substr(s, 1, p1 - 1)
+				rest = substr(s, p1 + 1)
+				p2 = index(rest, "](")
+				if (p2 == 0) return 0
+				ld_idx = substr(rest, 1, p2 - 1)
+				rest = substr(rest, p2 + 2)
+				marker = ")) was built for newer "
+				p3 = index(rest, marker)
+				if (p3 == 0) return 0
+				ld_obj = substr(rest, 1, p3 - 1)
+				rest = substr(rest, p3 + length(marker))
+				if (rest !~ /^'"'"'[^'"'"']+'"'"' version \([^)]+\) than being linked \([^)]+\)$/)
+					return 0
+				ld_os = rest
+				sub(/^'"'"'/, "", ld_os)
+				sub(/'"'"' version \(.*/, "", ld_os)
+				ld_build = rest
+				sub(/^'"'"'[^'"'"']+'"'"' version \(/, "", ld_build)
+				sub(/\) than being linked \(.*/, "", ld_build)
+				ld_link = rest
+				sub(/^[^)]+\) than being linked \(/, "", ld_link)
+				sub(/\)$/, "", ld_link)
+
+				key = ld_archive SUBSEP ld_os SUBSEP ld_build SUBSEP ld_link
+				header = "ld: warning: object file (" ld_archive " was built for newer \047" ld_os "\047 version (" ld_build ") than being linked (" ld_link ")"
+				item = "[" ld_idx "](" ld_obj "))"
+				if (key != ld_grp_key) ld_grp_flush()
+				ld_grp_key = key
+				ld_grp_header = header
+				ld_grp_count++
+				ld_grp_items[ld_grp_count] = item
+				return 1
+			}
+
+			{
+				if (ld_try_group_object_warning($0)) next
+
+				ld_grp_flush()
+
+				if ($0 ~ /^==>/) next
+				if ($0 ~ /^OK:/) next
+				if ($0 ~ /^  /) next
+				if ($0 ~ /^[━=─#]{3,}/) next
+				if ($0 ~ /^=+ test session starts/) next
+				if ($0 ~ /^=+ FAILURES =+/) { print; next }
+				if ($0 ~ /^=+ short test summary/) { print; next }
+				if ($0 ~ /^platform /) next
+				if ($0 ~ /^collected /) next
+				if ($0 ~ /^test result:/) next
+				if ($0 ~ /^[[:space:]]*Compiling /) next
+				if ($0 ~ /^[[:space:]]*Finished /) next
+				if ($0 ~ /^[[:space:]]*Running /) next
+				if ($0 ~ /^   Doc-tests /) next
+				if ($0 ~ /^running [0-9]+ test/) next
+				if ($0 ~ /^test result: ok/) next
+				if ($0 ~ /^test .* \.\.\. ok/) next
+				if ($0 ~ /^passed, 0 failed/) next
+				if ($0 ~ /^error:/) { print; next }
+				if ($0 ~ / error:/) { print; next }
+				if ($0 ~ /^warning:/) { print; next }
+				if ($0 ~ / warning:/) { print; next }
+				if ($0 ~ /fatal error/) { print; next }
+				if ($0 ~ /undefined symbols/) { print; next }
+				if ($0 ~ /^ld: warning: object file \(.*was built for newer /) next
+				if ($0 ~ /^ld: /) { print; next }
+				if ($0 ~ /^clang: error/) { print; next }
+				if ($0 ~ /: error:/) { print; next }
+				if ($0 ~ /^\*\*\* /) { print; next }
+				if ($0 ~ /npm warn/) { print; next }
+				if ($0 ~ /panic!/) { print; next }
+				if ($0 ~ /thread .* panicked/) { print; next }
+				if ($0 ~ /AssertionError/) { print; next }
+				if ($0 ~ /not ok /) { print; next }
+				if ($0 ~ /^E[[:space:]]+/) { print; next }
+				if ($0 ~ /FAILED/) { print; next }
+				if ($0 ~ /failed/ && $0 !~ /0 failed/ && $0 !~ /passed, 0 failed/) { print; next }
+				if ($0 ~ /failure/ && $0 !~ /failure info/) { print; next }
+				if ($0 ~ /✖/) { print; next }
+				if ($0 ~ /sys\.exit/) { print; next }
+				if ($0 ~ /unknown command:/) { print; next }
+			}
+
+			END { ld_grp_flush() }
 		'
 	}
 
@@ -75,8 +173,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_sync_app() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "uv sync main app (editable cyt-indexer-sdk from sdk/python via pyproject.toml [tool.uv.sources])"
-		uv sync --all-extras --group dev --group test --locked
+		info "uv sync"
+		cyt_run uv sync --all-extras --group dev --group test --locked
 	}
 
 	# Backward-compatible alias.
@@ -88,15 +186,14 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "uv sync sdk/python"
-		uv sync
+		cyt_run uv sync
 	}
 
 	cyt_indexer_release() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "cargo build -p cyt-indexer --release"
-		# Use workspace target/; ignore sandbox CARGO_TARGET_DIR if set by the IDE.
-		env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
+		cyt_run env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
 	}
 
 	cyt_indexer_paths() {
@@ -137,8 +234,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		done
 
 		mkdir -p "${output_dir}"
-		info "cyt-indexer build skills ${forwarded[*]}"
-		"${CYT_INDEXER_BIN}" build skills "${forwarded[@]}"
+		info "cyt-indexer build skills"
+		cyt_run "${CYT_INDEXER_BIN}" build skills "${forwarded[@]}"
 
 		[[ -d "${output_dir}/skills/decomposed" ]] ||
 			die "skills build did not produce ${output_dir}/skills/decomposed"
@@ -149,7 +246,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		)"
 		[[ "${doc_count}" -gt 0 ]] ||
 			die "no skill page_index.json files in ${output_dir}/skills/decomposed"
-		info "skills build ok (${doc_count} documents -> ${output_dir}/skills/decomposed)"
+		info "skills build ok (${doc_count} docs)"
 	}
 
 	cyt_indexer_build_catalog() {
@@ -165,19 +262,19 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		local tools_json
 		tools_json="$(mktemp "${TMPDIR:-/tmp}/cyt-tools.XXXXXX")"
 
-		info "extract tools from ${example}"
-		jq '.body.tools' "${example}" >"${tools_json}"
+		info "extract tools from example json"
+		cyt_run jq '.body.tools' "${example}" >"${tools_json}"
 
 		mkdir -p "${CYT_CATALOG_DIR}"
-		info "cyt-indexer build tools --tools ${tools_json} --output ${CYT_CATALOG_DIR}"
-		"${CYT_INDEXER_BIN}" build tools --tools "${tools_json}" --output "${CYT_CATALOG_DIR}"
+		info "cyt-indexer build tools"
+		cyt_run "${CYT_INDEXER_BIN}" build tools --tools "${tools_json}" --output "${CYT_CATALOG_DIR}"
 		rm -f "${tools_json}"
 
 		[[ -f "${CYT_CATALOG_DIR}/tools.json" ]] || die "catalog build did not produce ${CYT_CATALOG_DIR}/tools.json"
 		local decomposed_count
 		decomposed_count="$(find "${CYT_CATALOG_DIR}/schemas/decomposed" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')"
 		[[ "${decomposed_count}" -gt 1 ]] || die "expected multiple decomposed json files, got ${decomposed_count}"
-		info "catalog build ok (${decomposed_count} decomposed json files)"
+		info "catalog build ok (${decomposed_count} files)"
 	}
 
 	cyt_indexer_extract_survivors() {
@@ -188,8 +285,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		[[ -f "${example}" ]] || die "missing ${example}"
 		mkdir -p "${CYT_CATALOG_DIR}"
 
-		info "extract rerank survivors from ${example} -> ${CYT_SURVIVORS_JSON}"
-		jq '{
+		info "extract rerank survivors"
+		cyt_run jq '{
 		  json: [.pruning.decomposed_catalog.rerank.json[]? | .score |= (tonumber)],
 		  md:   [.pruning.decomposed_catalog.rerank.md[]?   | .score |= (tonumber)]
 		}' "${example}" >"${CYT_SURVIVORS_JSON}"
@@ -210,8 +307,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		[[ $# -gt 0 ]] ||
 			die "indexer retrieve skills requires --catalog DIR --doc-id ID --query metadata|structure|content --output FILE"
 
-		info "cyt-indexer retrieve skills $*"
-		"${CYT_INDEXER_BIN}" retrieve skills "$@"
+		info "cyt-indexer retrieve skills"
+		cyt_run "${CYT_INDEXER_BIN}" retrieve skills "$@"
 
 		local catalog_dir=""
 		local output_file=""
@@ -245,7 +342,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 			output_file="${catalog_dir%/}/${output_file}"
 		fi
 		[[ -s "${output_file}" ]] || die "skills retrieve produced empty ${output_file}"
-		info "skills retrieve ok -> ${output_file}"
+		info "skills retrieve ok"
 	}
 
 	cyt_indexer_retrieve() {
@@ -320,8 +417,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 			esac
 		done
 
-		info "cyt-indexer retrieve tools -> ${CYT_RETRIEVE_OUT}"
-		"${CYT_INDEXER_BIN}" retrieve tools \
+		info "cyt-indexer retrieve tools"
+		cyt_run "${CYT_INDEXER_BIN}" retrieve tools \
 			--catalog "${CYT_CATALOG_DIR}" \
 			--input "${CYT_SURVIVORS_JSON}" \
 			--output "${CYT_RETRIEVE_OUT}" \
@@ -334,7 +431,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		local tool_count
 		tool_count="$(jq 'length' "${CYT_RETRIEVE_OUT}")"
 		[[ "${tool_count}" -gt 0 ]] || die "retrieve produced no tools in ${CYT_RETRIEVE_OUT}"
-		info "retrieve ok (${tool_count} tools -> ${CYT_RETRIEVE_OUT})"
+		info "retrieve ok (${tool_count} tools)"
 	}
 
 	cyt_indexer_all() {
@@ -351,7 +448,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "cargo test -p cyt-indexer"
-		env -u CARGO_TARGET_DIR cargo test -p cyt-indexer
+		cyt_run env -u CARGO_TARGET_DIR cargo test -p cyt-indexer
 		cyt_test_indexer_build
 	}
 
@@ -359,17 +456,17 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd uv
 		cyt_sync_sdk_python
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
-		info "maturin develop --release (native extension from sdk/rust/cyt-indexer)"
-		uv run maturin develop --release
+		info "maturin develop --release"
+		cyt_run uv run maturin develop --release
 	}
 
 	cyt_build_sdk_typescript() {
 		require_cmd npm
 		cd "${CYT_REPO_ROOT}/sdk/typescript" || die "cd failed"
-		info "npm ci && npm run build && npm test (sdk/typescript)"
-		npm ci
-		npm run build
-		npm test
+		info "npm ci, build, test"
+		cyt_run npm ci
+		cyt_run npm run build
+		cyt_run npm test
 	}
 
 	cyt_build_sdk_c() {
@@ -379,33 +476,32 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		local triplet
 		triplet="$(rustc -vV | sed -n 's/^host: //p')"
-		info "build C FFI for sdk/c (host triplet=${triplet})"
-		env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}"
-		info "cmake configure sdk/c (target=${triplet})"
-		env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
+		info "build C FFI (sdk/c, ${triplet})"
+		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}"
+		info "cmake configure + build"
+		cyt_run env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
 			-DCMAKE_BUILD_TYPE=Release \
 			-DCYT_RUST_TARGET="${triplet}"
-		info "cmake --build sdk/c/build"
-		env -u CARGO_TARGET_DIR cmake --build sdk/c/build
+		cyt_run env -u CARGO_TARGET_DIR cmake --build sdk/c/build
 		info "ctest sdk/c"
-		env -u CARGO_TARGET_DIR ctest --test-dir sdk/c/build --output-on-failure
+		cyt_run env -u CARGO_TARGET_DIR ctest --test-dir sdk/c/build --output-on-failure
 	}
 
 	cyt_build_sdk_go() {
 		require_cmd go
 		require_cmd rustc
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "build C FFI for sdk/go (host triplet)"
-		env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --no-sync-header
+		info "build C FFI (sdk/go)"
+		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --no-sync-header
 		cd "${CYT_REPO_ROOT}/sdk/go" || die "cd failed"
 		export CGO_ENABLED=1
 		local host_triplet
 		host_triplet="$(rustc -vV | sed -n 's/^host: //p')"
 		export PATH="${CYT_REPO_ROOT}/target/${host_triplet}/release:${PATH}"
-		info "go run ./cmd/cyt-native-ensure -static-only"
-		go run ./cmd/cyt-native-ensure -static-only
-		info "go test ./... (sdk/go)"
-		env -u CARGO_TARGET_DIR go test ./...
+		info "go native ensure"
+		cyt_run go run ./cmd/cyt-native-ensure -static-only
+		info "go test ./..."
+		cyt_run env -u CARGO_TARGET_DIR go test ./...
 	}
 
 	cyt_build_all_sdks() {
@@ -419,8 +515,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_verify_sdk_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
-		info "verify cyt-indexer-sdk resolves to local sdk/python (not a registry-only install)"
-		uv run python - "${CYT_REPO_ROOT}" <<'PY'
+		info "verify sdk/python"
+		cyt_run uv run python - "${CYT_REPO_ROOT}" <<'PY'
 import json
 import sys
 from importlib import metadata
@@ -469,8 +565,8 @@ PY
 	cyt_verify_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "verify main app (src/) re-exports cyt-indexer-sdk"
-		uv run python - <<'PY'
+		info "verify app"
+		cyt_run uv run python - <<'PY'
 from cyt_indexer.build import build_catalog_index as sdk_build
 from cyt.indexer.build import build_catalog_index as app_build
 
@@ -490,14 +586,14 @@ PY
 	cyt_verify_sdk_import() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
+		cyt_run uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
 	}
 
 	cyt_test_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "pytest src/tests (main app)"
-		uv run pytest src/tests
+		info "pytest src/tests"
+		cyt_run uv run pytest src/tests
 	}
 
 	cyt_test_app() {
@@ -508,8 +604,8 @@ PY
 	cyt_build_app_wheel() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "uv build clear-your-tools sdist/wheel (main app)"
-		uv build
+		info "uv build"
+		cyt_run uv build
 	}
 
 	cyt_build_all_app() {
@@ -520,25 +616,25 @@ PY
 	}
 
 	cyt_run_all() {
-		cyt_section "Core (Rust — sdk/rust/cyt-indexer)"
+		cyt_section "Core (Rust)"
 		cyt_build_rust
 
-		cyt_section "SDK: Python (sdk/python)"
+		cyt_section "SDK: Python"
 		cyt_build_sdk_python
 		cyt_verify_sdk_python
 
 		# C/Go before TypeScript: napi build uses the same dylib name and would
 		# overwrite the C FFI shared library if TypeScript ran first.
-		cyt_section "SDK: C (sdk/c)"
+		cyt_section "SDK: C"
 		cyt_build_sdk_c
 
-		cyt_section "SDK: Go (sdk/go)"
+		cyt_section "SDK: Go"
 		cyt_build_sdk_go
 
-		cyt_section "SDK: TypeScript (sdk/typescript)"
+		cyt_section "SDK: TypeScript"
 		cyt_build_sdk_typescript
 
-		cyt_section "Main app (src/)"
+		cyt_section "Main app"
 		cyt_build_all_app
 	}
 
@@ -617,7 +713,7 @@ PY
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		cyt_verify_app_python
 		cyt_ensure_proxy_api_keys
-		info "proxy via checkout CLI (src/cyt), local SDK"
+		info "proxy"
 		exec uv run src/cyt/proxy/cli.py proxy "$@"
 	}
 

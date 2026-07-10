@@ -7,10 +7,10 @@
 # Production installs (pip install clear-your-tools) pull cyt-indexer-sdk from PyPI instead.
 #
 # Usage:
-#   ./scripts/local-dev.sh [--short] <command> [args...]
+#   ./scripts/local-dev.sh [--short|--silent] <command> [args...]
 #
 # Options:
-#   --short              Only print error/warning lines (hide info/success noise)
+#   --short | --silent   Only print error/warning lines (hide info/success noise)
 #
 # Commands:
 #   Core (Rust):
@@ -41,7 +41,7 @@
 #
 # Examples:
 #   ./scripts/local-dev.sh all
-#   ./scripts/local-dev.sh --short sdk-go
+#   ./scripts/local-dev.sh --silent sdk-go
 #   ./scripts/local-dev.sh sdk-go
 #   ./scripts/local-dev.sh proxy --port 8834
 #   KEEP_SIM_DIR=1 ./scripts/local-dev.sh simulate-registry
@@ -59,7 +59,7 @@ CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
 LOCAL_DEV_ARGS=()
 while (($#)); do
 	case "$1" in
-	--short)
+	--short | --silent)
 		CYT_LOCAL_DEV_SHORT=1
 		shift
 		;;
@@ -187,14 +187,14 @@ EOF
 		;;
 	sdk-all)
 		require_repo_root
-		cyt_section "SDK: Python (sdk/python)"
+		cyt_section "SDK: Python"
 		cyt_build_sdk_python
 		cyt_verify_sdk_python
-		cyt_section "SDK: C (sdk/c)"
+		cyt_section "SDK: C"
 		cyt_build_sdk_c
-		cyt_section "SDK: Go (sdk/go)"
+		cyt_section "SDK: Go"
 		cyt_build_sdk_go
-		cyt_section "SDK: TypeScript (sdk/typescript)"
+		cyt_section "SDK: TypeScript"
 		cyt_build_sdk_typescript
 		;;
 	app-setup | setup)
@@ -241,36 +241,35 @@ EOF
 		KEEP_SIM_DIR="${KEEP_SIM_DIR:-}"
 		trap '[[ -n "${KEEP_SIM_DIR}" ]] || rm -rf "${SIM_DIR}"' EXIT
 
-		info "simulate registry install in ${SIM_DIR}"
+		info "simulate registry install"
 		mkdir -p "${SIM_DIR}/dist-sdk" "${SIM_DIR}/dist-app" "${SIM_DIR}/npm-pack"
 
 		info "build cyt-indexer-sdk wheel"
-		(cd "${CYT_REPO_ROOT}/sdk/python" && uv build -o "${SIM_DIR}/dist-sdk")
+		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/python\" && uv build -o \"${SIM_DIR}/dist-sdk\""
 
 		info "build clear-your-tools wheel"
-		(cd "${CYT_REPO_ROOT}" && uv build -o "${SIM_DIR}/dist-app")
+		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && uv build -o \"${SIM_DIR}/dist-app\""
 
-		info "cargo publish --dry-run (cyt-indexer)"
-		(cd "${CYT_REPO_ROOT}" && cargo publish -p cyt-indexer --dry-run)
+		info "cargo publish --dry-run"
+		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && cargo publish -p cyt-indexer --dry-run"
 
-		info "npm pack (TypeScript SDK; requires native .node)"
-		(cd "${CYT_REPO_ROOT}/sdk/typescript" && npm ci && npm run build && npm pack --pack-destination "${SIM_DIR}/npm-pack")
+		info "npm pack"
+		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/typescript\" && npm ci && npm run build && npm pack --pack-destination \"${SIM_DIR}/npm-pack\""
 
 		SIM_VENV="${SIM_DIR}/venv"
-		uv venv "${SIM_VENV}"
+		cyt_run uv venv "${SIM_VENV}"
 		# shellcheck disable=SC1091
 		source "${SIM_VENV}/bin/activate"
-		info "uv pip install local wheels (no pyproject [tool.uv.sources] in this venv)"
+		info "install wheels in isolated venv"
 		SDK_WHL=("${SIM_DIR}"/dist-sdk/cyt_indexer_sdk-*.whl)
 		APP_WHL=("${SIM_DIR}"/dist-app/clear_your_tools-*.whl)
 		[[ -f "${SDK_WHL[0]}" ]] || die "SDK wheel not found under ${SIM_DIR}/dist-sdk"
 		[[ -f "${APP_WHL[0]}" ]] || die "app wheel not found under ${SIM_DIR}/dist-app"
-		uv pip install "${SDK_WHL[0]}"
-		# Typical PyPI install with optional proxy/pruner deps (not the monorepo path override).
-		uv pip install "${APP_WHL[0]}[all]"
+		cyt_run uv pip install "${SDK_WHL[0]}"
+		cyt_run uv pip install "${APP_WHL[0]}[all]"
 
-		info "smoke imports in isolated venv (registry-style wheels, not editable sdk/python)"
-		python - <<'PY'
+		info "smoke imports"
+		cyt_run python - <<'PY'
 from importlib import metadata
 
 from cyt_indexer._native import build_catalog_index as native_build
@@ -288,30 +287,26 @@ PY
 
 		deactivate 2>/dev/null || true
 
-		info "simulate-registry done"
-		info "  SDK wheels:    ${SIM_DIR}/dist-sdk"
-		info "  App wheels:    ${SIM_DIR}/dist-app"
-		info "  npm tarball:   ${SIM_DIR}/npm-pack"
-		info "  test venv:     ${SIM_VENV}"
+		info "simulate-registry done (${SIM_DIR})"
 		if [[ -n "${KEEP_SIM_DIR}" ]]; then
 			trap - EXIT
-			info "  (KEEP_SIM_DIR=1 — directory kept)"
+			info "KEEP_SIM_DIR=1 — directory kept"
 		fi
 		;;
 	all)
 		require_repo_root
 		cyt_run_all
-		info "all done (run ./scripts/local-dev.sh proxy --port 8834 for manual proxy)"
+		info "all done"
 		;;
 	ci)
 		require_repo_root
-		cyt_section "Main app (src/) — CI"
+		cyt_section "CI"
 		cyt_sync_app
 		cyt_verify_app_python
 		cyt_verify_sdk_import
 		if command -v ruff >/dev/null 2>&1 || [[ -x "${CYT_VENV_BIN}/ruff" ]]; then
 			info "ruff check"
-			uv run ruff check src/cyt src/tests sdk/python
+			cyt_run uv run ruff check src/cyt src/tests sdk/python
 		else
 			info "skip ruff (not on PATH)"
 		fi
