@@ -126,6 +126,8 @@ DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "executor"
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
+DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
+DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
 ToolsHookSource = Literal["executor", "definitions"]
@@ -1568,6 +1570,26 @@ def _stage_minimum_tools(
         return int(cast(int | str, stage_specific))
 
     return DEFAULT_MIN_TOOLS_PRUNING
+
+
+def tools_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
+    """Resolve LLM tools selector soft budget from ``pruning.tools.selector_soft_budget``."""
+    cfg = config or load_config()
+    value = _tools(_merged_config(cfg)).get(
+        "selector_soft_budget",
+        DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+    )
+    return int(value)
+
+
+def skills_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
+    """Resolve LLM skills selector soft budget from ``skills.selector_soft_budget``."""
+    cfg = config or load_config()
+    value = _skills_settings(_merged_config(cfg)).get(
+        "selector_soft_budget",
+        DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+    )
+    return int(value)
 
 
 def llm_minimum_tools(

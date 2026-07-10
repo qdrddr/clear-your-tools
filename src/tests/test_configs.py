@@ -410,6 +410,24 @@ def test_minimum_tools_shared_across_stages() -> None:
     assert configs.reranker_minimum_tools(config) == 30
 
 
+def test_selector_soft_budget_reads_config() -> None:
+    config = {
+        "pruning": {"tools": {"selector_soft_budget": 3500}},
+        "skills": {"selector_soft_budget": 1800},
+    }
+    assert configs.tools_selector_soft_budget(config) == 3500
+    assert configs.skills_selector_soft_budget(config) == 1800
+
+
+def test_selector_soft_budget_defaults() -> None:
+    assert (
+        configs.tools_selector_soft_budget({}) == configs.DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL
+    )
+    assert (
+        configs.skills_selector_soft_budget({}) == configs.DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL
+    )
+
+
 def test_bm25_index_dir_reads_canonical_path() -> None:
     config = {
         "pruning": {

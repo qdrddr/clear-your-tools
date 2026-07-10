@@ -49,7 +49,12 @@ import pytest
 from cyt.common.agents import AgentName
 from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
-from cyt.config import load_config, require_proxy_env
+from cyt.config import (
+    load_config,
+    require_proxy_env,
+    skills_selector_soft_budget,
+    tools_selector_soft_budget,
+)
 from cyt.hook import http_server as cyt_hook_http_server
 from cyt.launch.upstream import parse_agent_name
 from cyt.pruners.llm import (
@@ -63,8 +68,6 @@ from cyt.pruners.llm import (
 )
 from cyt.pruners.selector_xml import (
     SELECTOR_SOFT_BUDGET_MIN,
-    SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
-    SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
     format_skills_selector_token_metadata,
     format_tools_selector_token_metadata,
     per_bulk_soft_budget,
@@ -683,13 +686,14 @@ def _run_tools_selector_leg(
         prepare_catalog_selector_chunks(tool_catalog)
     )
     tools_prompt = tool_selector_system_prompt(config)
+    tools_soft_budget = tools_selector_soft_budget(config)
     bulk_plan = _plan_selector_bulks(
         query,
         tools_prompt,
         tool_chunks,
         chunk_token_counts=tool_token_counts,
         domain="tools",
-        soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+        soft_budget_total=tools_soft_budget,
     )
     token_metadata = format_tools_selector_token_metadata(
         tool_token_rows,
@@ -705,7 +709,7 @@ def _run_tools_selector_leg(
             config,
             soft_budget=budget,
         ),
-        soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+        soft_budget_total=tools_soft_budget,
         config=config,
     )
     tool_text = _format_pruned_tools(tool_catalog, set(tool_scores))
@@ -730,24 +734,27 @@ def _run_skills_selector_leg(
     skill_items, skill_metadata, skill_token_counts, skill_block_rows = prepare_skill_nodes(
         skill_entries,
     )
+    skills_soft_budget = skills_selector_soft_budget(config)
+    skills_prompt = skills_selector_system_prompt(config=config, soft_budget=skills_soft_budget)
     bulk_plan = _plan_selector_bulks(
         query,
-        SKILLS_SELECTOR_SYSTEM_PROMPT,
+        skills_prompt,
         skill_items,
         chunk_token_counts=skill_token_counts,
         domain="skills",
-        soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+        soft_budget_total=skills_soft_budget,
     )
     token_metadata = format_skills_selector_token_metadata(skill_metadata, skill_block_rows)
     selected_scores, usage = llm_select_ids(
         query,
-        SKILLS_SELECTOR_SYSTEM_PROMPT,
+        skills_prompt,
         skill_items,
         chunk_token_counts=skill_token_counts,
         system_prompt_for_budget=lambda budget: skills_selector_system_prompt(
+            config=config,
             soft_budget=budget,
         ),
-        soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+        soft_budget_total=skills_soft_budget,
         config=config,
     )
     skill_selected_scores = {
@@ -765,7 +772,7 @@ def _run_skills_selector_leg(
     )
     return (
         SelectorLegTrace(
-            system_prompt=SKILLS_SELECTOR_SYSTEM_PROMPT,
+            system_prompt=skills_prompt,
             user_prompt=_llm_user_message(query, "".join(skill_items)),
             selected_ids=set(skill_selected_scores),
             selected_scores=skill_selected_scores,
@@ -1212,14 +1219,14 @@ def test_llm_prune_integration(
         assert selector_trace.tools_selector.bulk_plan.domain == "tools"
         assert (
             selector_trace.tools_selector.bulk_plan.soft_budget_total
-            == SELECTOR_SOFT_BUDGET_TOOLS_TOTAL
+            == tools_selector_soft_budget(config)
         )
     if selector_trace.mode == "skills" and selector_trace.skills_selector is not None:
         assert selector_trace.selected_scores == selector_trace.skills_selector.selected_scores
         assert selector_trace.skills_selector.bulk_plan.domain == "skills"
         assert (
             selector_trace.skills_selector.bulk_plan.soft_budget_total
-            == SELECTOR_SOFT_BUDGET_SKILLS_TOTAL
+            == skills_selector_soft_budget(config)
         )
     assert selector_trace.enriched_hook_payload.get("cyt_agent") == agent
 

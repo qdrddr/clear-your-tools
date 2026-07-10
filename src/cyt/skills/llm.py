@@ -7,6 +7,7 @@ from typing import Any
 
 from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
+from cyt.config import skills_selector_soft_budget
 from cyt.pruners.llm import (
     SELECTOR_NO_MATCH_INSTRUCTION,
     SELECTOR_SCORE_INSTRUCTION,
@@ -14,7 +15,6 @@ from cyt.pruners.llm import (
 )
 from cyt.pruners.remote import LlmPruningSettings
 from cyt.pruners.selector_xml import (
-    SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
     SkillSelectorBlockRow,
     format_selector_soft_budget_line,
     selector_id_attr,
@@ -52,9 +52,13 @@ def build_skills_selector_system_prompt(*, soft_budget: int) -> str:
 
 def skills_selector_system_prompt(
     *,
-    soft_budget: int = SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+    config: dict[str, Any] | None = None,
+    soft_budget: int | None = None,
 ) -> str:
-    return build_skills_selector_system_prompt(soft_budget=soft_budget)
+    resolved_budget = (
+        soft_budget if soft_budget is not None else skills_selector_soft_budget(config)
+    )
+    return build_skills_selector_system_prompt(soft_budget=resolved_budget)
 
 
 SKILLS_SELECTOR_SYSTEM_PROMPT = skills_selector_system_prompt()
@@ -201,13 +205,17 @@ def llm_skill_nodes_with_trace(
     if not formatted_items:
         return [], [], empty_usage()
 
+    skills_soft_budget = skills_selector_soft_budget(config)
     selected_scores, usage = llm_select_ids(
         query,
-        SKILLS_SELECTOR_SYSTEM_PROMPT,
+        skills_selector_system_prompt(config=config, soft_budget=skills_soft_budget),
         formatted_items,
         chunk_token_counts=item_token_counts,
-        system_prompt_for_budget=lambda budget: skills_selector_system_prompt(soft_budget=budget),
-        soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+        system_prompt_for_budget=lambda budget: skills_selector_system_prompt(
+            config=config,
+            soft_budget=budget,
+        ),
+        soft_budget_total=skills_soft_budget,
         config=config,
         settings=settings,
     )

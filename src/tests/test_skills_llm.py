@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cyt.common.token_usage import empty_usage
+from cyt.config import skills_selector_soft_budget
 from cyt.skills.catalog import _iter_content_node_ids, build_registry
 from cyt.skills.llm import (
     SkillNodeMeta,
@@ -156,5 +157,7 @@ def test_llm_skill_nodes_uses_pydantic_selector_ids() -> None:
         select_mock.assert_called_once()
         assert select_mock.call_args.args[0] == enriched_query
         assert select_mock.call_args.kwargs["chunk_token_counts"] == item_token_counts
-        assert select_mock.call_args.kwargs["soft_budget_total"] == 5000
+        assert select_mock.call_args.kwargs["soft_budget_total"] == skills_selector_soft_budget(
+            config,
+        )
         assert matches == []

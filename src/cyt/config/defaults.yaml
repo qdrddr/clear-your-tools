@@ -150,6 +150,7 @@ models:
 pruning:
   inject_via: proxy # hook | proxy — applies to skills and tools injection
   tools:
+    selector_soft_budget: 2000
     enabled: true # false: skip tool pruning/injection (proxy forwards tools verbatim; hook skips tools)
     hook:
       tools_from: executor # executor | definitions
@@ -239,6 +240,7 @@ stats:
     path: ~/.config/cyt/stats.db
 
 skills:
+  selector_soft_budget: 2000
   enabled: true
   frontmatter_upper_limit: 0.70
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)

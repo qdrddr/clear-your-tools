@@ -9,7 +9,12 @@ from litellm import completion, responses
 from pydantic import BaseModel, Field
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
-from cyt.config import llm_minimum_tools, load_config, require_proxy_env
+from cyt.config import (
+    llm_minimum_tools,
+    load_config,
+    require_proxy_env,
+    tools_selector_soft_budget,
+)
 from cyt.indexer.tokens import compact_json, count_tokens, count_tokens_batch, log_token_usage
 from cyt.pruners.catalog_common import (
     catalog_below_minimum_tools,
@@ -110,13 +115,14 @@ TOOL_SELECTOR_SYSTEM_PROMPT = build_tool_selector_system_prompt(
 def tool_selector_system_prompt(
     config: dict[str, Any] | None = None,
     *,
-    soft_budget: int = SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+    soft_budget: int | None = None,
 ) -> str:
     """Tool selector prompt plus cached executor MCP execute tool/skill appendix.
 
     Appendix is memory/disk cache only — never hits the live executor API.
     """
-    prompt = build_tool_selector_system_prompt(soft_budget=soft_budget)
+    resolved_budget = soft_budget if soft_budget is not None else tools_selector_soft_budget(config)
+    prompt = build_tool_selector_system_prompt(soft_budget=resolved_budget)
     try:
         from cyt.tools.sources.executor_http import get_executor_mcp_cache
         from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
@@ -826,7 +832,7 @@ def llm_catalog_dict(
             config,
             soft_budget=budget,
         ),
-        soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+        soft_budget_total=tools_selector_soft_budget(config),
         config=config,
         settings=settings,
     )
