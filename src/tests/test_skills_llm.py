@@ -62,9 +62,11 @@ def test_prepare_skill_nodes_includes_token_attrs() -> None:
             "cyt.skills.llm.load_node_content",
             side_effect=lambda _entry, node_id: (f"body-{node_id}", node_id * 10),
         ):
-            formatted, metadata = prepare_skill_nodes(entries)
+            formatted, metadata, item_token_counts = prepare_skill_nodes(entries)
 
         assert formatted
+        assert item_token_counts
+        assert len(item_token_counts) == len(formatted)
         combined = "\n".join(formatted)
         assert "total-tokens=" in combined
         assert " tokens=" in combined
@@ -78,8 +80,10 @@ def test_prepare_skill_nodes_xml_and_metadata() -> None:
         entries = build_registry(config)
         assert entries
 
-        formatted, metadata = prepare_skill_nodes(entries)
+        formatted, metadata, item_token_counts = prepare_skill_nodes(entries)
         assert formatted
+        assert item_token_counts
+        assert len(item_token_counts) == len(formatted)
         combined = "\n".join(formatted)
         assert "<agent-skills total-tokens=" in combined
         assert " tokens=" in combined
@@ -96,7 +100,7 @@ def test_reconstruct_skills_from_llm_ids_uses_node_specs() -> None:
         root = Path(tmp)
         config = _skills_config(root)
         entries = build_registry(config)
-        _, metadata = prepare_skill_nodes(entries)
+        _, metadata, _item_token_counts = prepare_skill_nodes(entries)
         assert metadata
 
         selector_id = next(iter(metadata))
@@ -134,7 +138,7 @@ def test_llm_skill_nodes_uses_pydantic_selector_ids() -> None:
         root = Path(tmp)
         config = _skills_config(root)
         entries = build_registry(config)
-        _, metadata = prepare_skill_nodes(entries)
+        _, metadata, item_token_counts = prepare_skill_nodes(entries)
         selector_ids = list(metadata.keys())
 
         enriched_query = "User_Asks: agent hooks; Assistant_Says: continue with nodes"
@@ -150,4 +154,6 @@ def test_llm_skill_nodes_uses_pydantic_selector_ids() -> None:
 
         select_mock.assert_called_once()
         assert select_mock.call_args.args[0] == enriched_query
+        assert select_mock.call_args.kwargs["chunk_token_counts"] == item_token_counts
+        assert select_mock.call_args.kwargs["soft_budget_total"] == 5000
         assert matches == []

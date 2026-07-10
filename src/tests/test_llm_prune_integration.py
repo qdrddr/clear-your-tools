@@ -51,6 +51,10 @@ from cyt.pruners.llm import (
     prepare_catalog_selector_chunks,
     tool_selector_system_prompt,
 )
+from cyt.pruners.selector_xml import (
+    SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+    SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+)
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
 from cyt.skills.cli import HookRunResult, run_hook_payload
 from cyt.skills.hook_payload import normalize_hook_payload
@@ -59,6 +63,7 @@ from cyt.skills.llm import (
     SKILLS_SELECTOR_SYSTEM_PROMPT,
     prepare_skill_nodes,
     reconstruct_skills_from_llm_ids,
+    skills_selector_system_prompt,
 )
 from cyt.skills.search import MatchedSkill
 from cyt.skills.transcript import skills_search_query_from_hook_payload
@@ -454,6 +459,11 @@ def _run_tools_selector_leg(
         tool_chunks,
         chunk_token_counts=tool_token_counts,
         wrap_agent_tools=True,
+        system_prompt_for_budget=lambda budget: tool_selector_system_prompt(
+            config,
+            soft_budget=budget,
+        ),
+        soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
         config=config,
     )
     tool_text = _format_pruned_tools(tool_catalog, tool_ids)
@@ -472,11 +482,16 @@ def _run_skills_selector_leg(
     skill_entries: list[SkillEntryRef],
     config: dict[str, Any],
 ) -> tuple[SelectorLegTrace, tuple[MatchedSkill, ...]]:
-    skill_items, skill_metadata = prepare_skill_nodes(skill_entries)
+    skill_items, skill_metadata, skill_token_counts = prepare_skill_nodes(skill_entries)
     selected_ids, usage = llm_select_ids(
         query,
         SKILLS_SELECTOR_SYSTEM_PROMPT,
         skill_items,
+        chunk_token_counts=skill_token_counts,
+        system_prompt_for_budget=lambda budget: skills_selector_system_prompt(
+            soft_budget=budget,
+        ),
+        soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
         config=config,
     )
     skill_selected = {sid for sid in selected_ids if sid in skill_metadata}

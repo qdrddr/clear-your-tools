@@ -13,6 +13,8 @@ from cyt.pruners.llm import (
 )
 from cyt.pruners.remote import LlmPruningSettings
 from cyt.pruners.selector_xml import (
+    SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+    format_selector_soft_budget_line,
     selector_id_attr,
     selector_tokens_attr,
     selector_total_tokens_attr,
@@ -26,7 +28,7 @@ from cyt.skills.nodes import load_node_content, skill_name
 from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
 from cyt.skills.search import MatchedSkill
 
-SKILLS_SELECTOR_SYSTEM_PROMPT = (
+_SKILLS_SELECTOR_SYSTEM_PROMPT_PREFIX = (
     'These are agent skills in a "decomposed" state, represented as skill nodes. '
     "Each skill-node has a global selector id attribute. "
     "Your task is to select the most relevant skill-node(s) based on the user query. "
@@ -34,9 +36,25 @@ SKILLS_SELECTOR_SYSTEM_PROMPT = (
     "Return the selector id values from the skill-node id attributes that match the user query. "
     "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise. "
     "Each skill-node and skill tag includes a tokens attribute; agent-skills includes total-tokens. "
-    "You have a soft budget of 5000 tokens to select the most relevant nodes. "
-    f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
+
+
+def build_skills_selector_system_prompt(*, soft_budget: int) -> str:
+    return (
+        f"{_SKILLS_SELECTOR_SYSTEM_PROMPT_PREFIX}"
+        f"{format_selector_soft_budget_line(soft_budget, target='nodes')} "
+        f"{SELECTOR_NO_MATCH_INSTRUCTION}"
+    )
+
+
+def skills_selector_system_prompt(
+    *,
+    soft_budget: int = SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+) -> str:
+    return build_skills_selector_system_prompt(soft_budget=soft_budget)
+
+
+SKILLS_SELECTOR_SYSTEM_PROMPT = skills_selector_system_prompt()
 
 
 @dataclass(frozen=True)
@@ -51,10 +69,11 @@ def prepare_skill_nodes(
     entries: list[SkillEntryRef],
     *,
     start_id: int = 1,
-) -> tuple[list[str], dict[int, SkillNodeMeta]]:
+) -> tuple[list[str], dict[int, SkillNodeMeta], list[int]]:
     """Format skill nodes for the LLM selector; return one XML block per skill."""
     sorted_entries = sorted(entries, key=lambda entry: shorten_home_path(entry.source_path))
     formatted_items: list[str] = []
+    item_token_counts: list[int] = []
     metadata: dict[int, SkillNodeMeta] = {}
     selector_id = start_id
 
@@ -99,8 +118,9 @@ def prepare_skill_nodes(
             ],
         )
         formatted_items.append(skill_block)
+        item_token_counts.append(skill_token_total)
 
-    return formatted_items, metadata
+    return formatted_items, metadata, item_token_counts
 
 
 def reconstruct_skills_from_llm_ids(
@@ -161,7 +181,7 @@ def llm_skill_nodes_with_trace(
     if not query.strip() or not entries:
         return [], [], empty_usage()
 
-    formatted_items, metadata = prepare_skill_nodes(entries)
+    formatted_items, metadata, item_token_counts = prepare_skill_nodes(entries)
     if not formatted_items:
         return [], [], empty_usage()
 
@@ -169,6 +189,9 @@ def llm_skill_nodes_with_trace(
         query,
         SKILLS_SELECTOR_SYSTEM_PROMPT,
         formatted_items,
+        chunk_token_counts=item_token_counts,
+        system_prompt_for_budget=lambda budget: skills_selector_system_prompt(soft_budget=budget),
+        soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
         config=config,
         settings=settings,
     )

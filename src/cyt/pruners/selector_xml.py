@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+SELECTOR_SOFT_BUDGET_TOOLS_TOTAL = 5000
+SELECTOR_SOFT_BUDGET_SKILLS_TOTAL = 5000
+SELECTOR_SOFT_BUDGET_MIN = 100
+
+_SELECTOR_SOFT_BUDGET_NUMBER = re.compile(
+    r"(You have a soft budget of )\d+( tokens to select the most relevant \w+\.?)",
+)
 
 
 def parse_cached_token_count(item: dict[str, Any]) -> int | None:
@@ -31,6 +40,31 @@ def selector_total_tokens_attr(total: int) -> str:
     if total <= 0:
         return ""
     return f" total-tokens={total}"
+
+
+def format_selector_soft_budget_line(budget: int, *, target: str) -> str:
+    return f"You have a soft budget of {budget} tokens to select the most relevant {target}."
+
+
+def per_bulk_soft_budget(
+    total_budget: int,
+    num_bulks: int,
+    *,
+    min_budget: int = SELECTOR_SOFT_BUDGET_MIN,
+) -> int:
+    if num_bulks <= 1:
+        return total_budget
+    return max(min_budget, total_budget // num_bulks)
+
+
+def replace_selector_soft_budget(prompt: str, budget: int) -> str:
+    """Swap the soft-budget token count without interpreting other ``{…}`` in the prompt."""
+    updated, count = _SELECTOR_SOFT_BUDGET_NUMBER.subn(
+        rf"\g<1>{budget}\2",
+        prompt,
+        count=1,
+    )
+    return updated if count else prompt
 
 
 def wrap_agent_tools_bulk(inner: str, *, total_tokens: int) -> str:

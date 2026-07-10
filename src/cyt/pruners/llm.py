@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
 from litellm import completion, responses
@@ -30,7 +31,12 @@ from cyt.pruners.remote import (
     resolve_remote_pruning_settings,
 )
 from cyt.pruners.selector_xml import (
+    SELECTOR_SOFT_BUDGET_MIN,
+    SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+    format_selector_soft_budget_line,
     parse_cached_token_count,
+    per_bulk_soft_budget,
+    replace_selector_soft_budget,
     selector_tokens_attr,
 )
 
@@ -62,7 +68,7 @@ SELECTOR_VAGUE_QUERY_INSTRUCTION = (
     "is an obvious exact match."
 )
 
-TOOL_SELECTOR_SYSTEM_PROMPT = (
+_TOOL_SELECTOR_SYSTEM_PROMPT_PREFIX = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
     "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
     "Later we re-compile MCP tools into their full normal definitions based on your selection. "
@@ -72,18 +78,36 @@ TOOL_SELECTOR_SYSTEM_PROMPT = (
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
     "potentially be useful for the request. Each tool/chunk tag includes a tokens attribute; "
     "agent-tools includes total-tokens. "
-    "You have a soft budget of 5000 tokens to select the most relevant chunks."
-    f"{SELECTOR_VAGUE_QUERY_INSTRUCTION}"
-    f"{SELECTOR_NO_MATCH_INSTRUCTION}"
+)
+
+_TOOL_SELECTOR_SYSTEM_PROMPT_SUFFIX = (
+    f"{SELECTOR_VAGUE_QUERY_INSTRUCTION}{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
 
 
-def tool_selector_system_prompt(config: dict[str, Any] | None = None) -> str:
-    """``TOOL_SELECTOR_SYSTEM_PROMPT`` plus cached executor MCP execute tool/skill appendix.
+def build_tool_selector_system_prompt(*, soft_budget: int) -> str:
+    return (
+        f"{_TOOL_SELECTOR_SYSTEM_PROMPT_PREFIX}"
+        f"{format_selector_soft_budget_line(soft_budget, target='chunks')}"
+        f"{_TOOL_SELECTOR_SYSTEM_PROMPT_SUFFIX}"
+    )
+
+
+TOOL_SELECTOR_SYSTEM_PROMPT = build_tool_selector_system_prompt(
+    soft_budget=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+)
+
+
+def tool_selector_system_prompt(
+    config: dict[str, Any] | None = None,
+    *,
+    soft_budget: int = SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+) -> str:
+    """Tool selector prompt plus cached executor MCP execute tool/skill appendix.
 
     Appendix is memory/disk cache only — never hits the live executor API.
     """
-    prompt = TOOL_SELECTOR_SYSTEM_PROMPT
+    prompt = build_tool_selector_system_prompt(soft_budget=soft_budget)
     try:
         from cyt.tools.sources.executor_http import get_executor_mcp_cache
         from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
@@ -474,6 +498,92 @@ def call_llm(
     return RelevantChunkIds(ids=normalized_ids), usage
 
 
+def _selector_system_prompt_for_budget(
+    system_prompt: str,
+    *,
+    per_bulk_budget: int,
+    system_prompt_for_budget: Callable[[int], str] | None,
+) -> str:
+    if system_prompt_for_budget is not None:
+        return system_prompt_for_budget(per_bulk_budget)
+    return replace_selector_soft_budget(system_prompt, per_bulk_budget)
+
+
+def _run_llm_selector_bulk(
+    resolved_settings: LlmPruningSettings,
+    query: str,
+    bulk_text: str,
+    *,
+    bulk_system_prompt: str,
+) -> tuple[set[int], StageTokenUsage]:
+    bulk_tokens = count_llm_request_tokens(
+        query,
+        bulk_text,
+        system_prompt=bulk_system_prompt,
+    )
+    logger.info("llm request tokens: %d", bulk_tokens)
+    parsed_response, bulk_usage = call_llm(
+        resolved_settings,
+        query,
+        bulk_text,
+        system_prompt=bulk_system_prompt,
+    )
+    if bulk_usage.input_tokens == 0:
+        bulk_usage = StageTokenUsage(
+            input_tokens=bulk_tokens,
+            output_tokens=bulk_usage.output_tokens,
+            usage_source=bulk_usage.usage_source,
+            request_id=bulk_usage.request_id,
+            model_name=resolved_settings.model_name,
+            provider_dns_name=bulk_usage.provider_dns_name,
+            provider=bulk_usage.provider,
+        )
+    return set(parsed_response.ids), bulk_usage
+
+
+def _run_llm_selector_bulks(
+    resolved_settings: LlmPruningSettings,
+    query: str,
+    bulks: list[str],
+    *,
+    bulk_system_prompt: str,
+) -> tuple[set[int], StageTokenUsage]:
+    selected_ids: set[int] = set()
+    total_usage = empty_usage()
+
+    if len(bulks) <= 1:
+        for bulk_text in bulks:
+            bulk_ids, bulk_usage = _run_llm_selector_bulk(
+                resolved_settings,
+                query,
+                bulk_text,
+                bulk_system_prompt=bulk_system_prompt,
+            )
+            total_usage = total_usage.merge(bulk_usage)
+            selected_ids.update(bulk_ids)
+        return selected_ids, total_usage
+
+    from cyt.pruning.parallel import run_parallel
+
+    work = {
+        str(index): (
+            lambda bulk_text=bulk_text: _run_llm_selector_bulk(
+                resolved_settings,
+                query,
+                bulk_text,
+                bulk_system_prompt=bulk_system_prompt,
+            )
+        )
+        for index, bulk_text in enumerate(bulks)
+    }
+    parallel_results = run_parallel(work)
+    for index in range(len(bulks)):
+        bulk_ids, bulk_usage = parallel_results[str(index)]
+        total_usage = total_usage.merge(bulk_usage)
+        selected_ids.update(bulk_ids)
+    return selected_ids, total_usage
+
+
 def llm_select_ids(
     query: str,
     system_prompt: str,
@@ -481,6 +591,9 @@ def llm_select_ids(
     *,
     chunk_token_counts: list[int] | None = None,
     wrap_agent_tools: bool = False,
+    soft_budget_total: int = SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+    soft_budget_min: int = SELECTOR_SOFT_BUDGET_MIN,
+    system_prompt_for_budget: Callable[[int], str] | None = None,
     config: dict[str, Any] | None = None,
     settings: LlmPruningSettings | None = None,
 ) -> tuple[set[int], StageTokenUsage]:
@@ -498,47 +611,22 @@ def llm_select_ids(
         chunk_token_counts=chunk_token_counts,
         wrap_agent_tools=wrap_agent_tools,
     )
-    selected_ids: set[int] = set()
-    total_usage = empty_usage()
-
-    def _run_bulk(bulk_text: str) -> tuple[set[int], StageTokenUsage]:
-        bulk_tokens = count_llm_request_tokens(query, bulk_text, system_prompt=system_prompt)
-        logger.info("llm request tokens: %d", bulk_tokens)
-        parsed_response, bulk_usage = call_llm(
-            resolved_settings,
-            query,
-            bulk_text,
-            system_prompt=system_prompt,
-        )
-        if bulk_usage.input_tokens == 0:
-            bulk_usage = StageTokenUsage(
-                input_tokens=bulk_tokens,
-                output_tokens=bulk_usage.output_tokens,
-                usage_source=bulk_usage.usage_source,
-                request_id=bulk_usage.request_id,
-                model_name=resolved_settings.model_name,
-                provider_dns_name=bulk_usage.provider_dns_name,
-                provider=bulk_usage.provider,
-            )
-        return set(parsed_response.ids), bulk_usage
-
-    if len(bulks) <= 1:
-        for bulk_text in bulks:
-            bulk_ids, bulk_usage = _run_bulk(bulk_text)
-            total_usage = total_usage.merge(bulk_usage)
-            selected_ids.update(bulk_ids)
-    else:
-        from cyt.pruning.parallel import run_parallel
-
-        work = {
-            str(index): (lambda bulk_text=bulk_text: _run_bulk(bulk_text))
-            for index, bulk_text in enumerate(bulks)
-        }
-        parallel_results = run_parallel(work)
-        for index in range(len(bulks)):
-            bulk_ids, bulk_usage = parallel_results[str(index)]
-            total_usage = total_usage.merge(bulk_usage)
-            selected_ids.update(bulk_ids)
+    per_bulk_budget = per_bulk_soft_budget(
+        soft_budget_total,
+        len(bulks),
+        min_budget=soft_budget_min,
+    )
+    bulk_system_prompt = _selector_system_prompt_for_budget(
+        system_prompt,
+        per_bulk_budget=per_bulk_budget,
+        system_prompt_for_budget=system_prompt_for_budget,
+    )
+    selected_ids, total_usage = _run_llm_selector_bulks(
+        resolved_settings,
+        query,
+        bulks,
+        bulk_system_prompt=bulk_system_prompt,
+    )
 
     if total_usage.input_tokens or total_usage.output_tokens:
         log_token_usage(
@@ -643,6 +731,11 @@ def llm_catalog_dict(
         formatted_chunks,
         chunk_token_counts=chunk_token_counts,
         wrap_agent_tools=True,
+        system_prompt_for_budget=lambda budget: tool_selector_system_prompt(
+            config,
+            soft_budget=budget,
+        ),
+        soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
         config=config,
         settings=settings,
     )

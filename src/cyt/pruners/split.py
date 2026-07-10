@@ -9,13 +9,18 @@ def split_into_bulks[T](
     transform_fn: Callable[[T], str],
     base_tokens: int,
     max_tokens: int = 32000,
+    *,
+    item_token_counts: list[int] | None = None,
 ) -> list[list[T]]:
     """Generic splitter that returns list of lists (bulks of items)."""
     if not items:
         return []
 
     texts = [transform_fn(item) for item in items]
-    token_counts = count_tokens_batch(texts)
+    if item_token_counts is not None and len(item_token_counts) == len(items):
+        token_counts = item_token_counts
+    else:
+        token_counts = count_tokens_batch(texts)
 
     bulks = []
     current_bulk: list[T] = []
@@ -82,6 +87,7 @@ def split_chunks_into_bulks(
         transform_fn=lambda pair: pair[0],
         base_tokens=base_tokens,
         max_tokens=max_tokens,
+        item_token_counts=token_counts,
     )
 
     # Convert back to the list of strings format expected by llm.py

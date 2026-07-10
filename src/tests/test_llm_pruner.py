@@ -6,7 +6,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from cyt.common.token_usage import empty_usage
+from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.pruners.llm import (
     TOOL_SELECTOR_SYSTEM_PROMPT,
     LlmPruningSettings,
@@ -104,6 +104,82 @@ def test_call_llm_uses_custom_system_prompt() -> None:
     assert parsed.ids == [3]
     messages = completion_mock.call_args.kwargs["messages"]
     assert messages[0]["content"] == custom_prompt
+
+
+def test_per_bulk_soft_budget_splits_evenly() -> None:
+    from cyt.pruners.selector_xml import per_bulk_soft_budget
+
+    assert per_bulk_soft_budget(5000, 1) == 5000
+    assert per_bulk_soft_budget(5000, 2) == 2500
+    assert per_bulk_soft_budget(5000, 51) == 100
+
+
+def test_build_tool_selector_system_prompt_uses_dynamic_budget() -> None:
+    from cyt.pruners.llm import build_tool_selector_system_prompt
+
+    prompt = build_tool_selector_system_prompt(soft_budget=2500)
+    assert "soft budget of 2500 tokens" in prompt
+    assert "soft budget of 5000 tokens" not in prompt
+
+
+def test_split_into_bulks_uses_cached_token_counts() -> None:
+    from cyt.pruners.split import split_into_bulks
+
+    with patch("cyt.pruners.split.count_tokens_batch") as count_mock:
+        bulks = split_into_bulks(
+            items=["chunk-a", "chunk-b"],
+            transform_fn=lambda item: item,
+            base_tokens=10,
+            max_tokens=100,
+            item_token_counts=[40, 30],
+        )
+
+    count_mock.assert_not_called()
+    assert len(bulks) == 1
+    assert bulks[0] == ["chunk-a", "chunk-b"]
+
+
+def test_llm_select_ids_uses_per_bulk_soft_budget_in_prompt() -> None:
+    captured_prompts: list[str] = []
+
+    def _capture_call_llm(
+        _settings: LlmPruningSettings,
+        _query: str,
+        _bulk_text: str,
+        *,
+        system_prompt: str,
+    ) -> tuple[RelevantChunkIds, StageTokenUsage]:
+        captured_prompts.append(system_prompt)
+        return RelevantChunkIds(ids=[1]), empty_usage()
+
+    with patch("cyt.pruners.llm.call_llm", side_effect=_capture_call_llm):
+        with patch(
+            "cyt.pruners.split.split_chunks_into_bulks",
+            return_value=["bulk-a", "bulk-b"],
+        ):
+            with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
+                settings_mock.return_value = _settings(responses_api=False)
+                llm_select_ids(
+                    "query",
+                    "ignored",
+                    ["a", "b"],
+                    system_prompt_for_budget=lambda budget: f"budget={budget}",
+                    soft_budget_total=5000,
+                )
+
+    assert captured_prompts == ["budget=2500", "budget=2500"]
+
+
+def test_replace_selector_soft_budget_preserves_mcp_appendix_braces() -> None:
+    from cyt.pruners.selector_xml import replace_selector_soft_budget
+
+    prompt = (
+        "You have a soft budget of 5000 tokens to select the most relevant chunks."
+        "<tool name='execute'>{'input_schema':{}}</tool>"
+    )
+    updated = replace_selector_soft_budget(prompt, 2500)
+    assert "soft budget of 2500 tokens" in updated
+    assert "<tool name='execute'>" in updated
 
 
 def test_llm_select_ids_unions_bulk_ids() -> None:
