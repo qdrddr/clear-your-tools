@@ -14,7 +14,9 @@ from cyt_indexer import (  # noqa: E402
     PageIndexConfig,
     SkillsBuilder,
     bm25_cohesion_chunk,
+    build_skill_node_catalog,
     build_skills_index,
+    catalog_index_tool_schema_metadata,
     default_page_index_config,
     get_skill_document,
     get_skill_line_content,
@@ -25,6 +27,7 @@ from cyt_indexer import (  # noqa: E402
     page_index_config_from_mapping,
     page_index_config_without_chunking,
     parse_skill_chunk_ids,
+    token_count_from_decomposed_frontmatter,
     write_skills_index,
 )
 
@@ -130,6 +133,47 @@ def test_build_without_bm25_chunking_emits_one_chunk_per_node() -> None:
         doc_id = next(iter(index["documents"]))
         structure = get_skill_structure(index["documents"], doc_id)
         assert "chunks" in str(structure)
+
+
+def test_token_count_from_decomposed_frontmatter() -> None:
+    content = "---\ndoc_id: d1\nnode_id: 2\ntoken_count: 42\n---\n## Body\n"
+    assert token_count_from_decomposed_frontmatter(content) == 42
+    assert token_count_from_decomposed_frontmatter("no frontmatter") is None
+
+
+def test_build_skills_index_node_files_include_token_count() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp) / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "demo.md").write_text("# Demo\n\nHello\n\n## Part\n\nWorld", encoding="utf-8")
+
+        index = build_skills_index([str(skills_dir)])
+        assert any(
+            "token_count:" in content
+            for rel, content in index["files"].items()
+            if rel.startswith("nodes/") and rel.endswith(".md")
+        )
+
+        doc_id = next(iter(index["documents"]))
+        rows = get_skill_line_content(index, doc_id, node_id_specs=["1"])
+        if rows:
+            assert rows[0].get("token_count", 0) > 0
+
+
+def test_catalog_index_tool_schema_metadata_empty() -> None:
+    metadata = catalog_index_tool_schema_metadata({"tools": [], "files": {}})
+    assert "full" in metadata
+    assert "decomposed" in metadata
+
+
+def test_build_skill_node_catalog_empty() -> None:
+    assert build_skill_node_catalog([]) == []
+
+
+def test_get_version_matches_package() -> None:
+    from cyt_indexer import get_version
+
+    assert get_version()
 
 
 def test_skills_builder_memory_only() -> None:

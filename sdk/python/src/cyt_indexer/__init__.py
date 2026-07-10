@@ -108,8 +108,10 @@ from cyt_indexer.retrieve import (
     removed_chunks,
     resolve_build_catalog,
     retrieve_catalog_tool_count,
+    retrieve_core,
     retrieve_tools,
 )
+from cyt_indexer.version import get_version
 from cyt_indexer.runtime_defaults import (
     configure_runtime_defaults,
     decomposed_score,
@@ -196,6 +198,7 @@ __all__ = [
     "get_skill_line_content",
     "get_skill_line_content_from_spec",
     "get_skill_structure",
+    "get_version",
     "greedy_select_skill_items",
     "json_ext",
     "load_catalog",
@@ -219,6 +222,7 @@ __all__ = [
     "rerank_score",
     "resolve_build_catalog",
     "retrieve_catalog_tool_count",
+    "retrieve_core",
     "retrieve_tools",
     "scoring_policy_context",
     "search_skills_and_select",

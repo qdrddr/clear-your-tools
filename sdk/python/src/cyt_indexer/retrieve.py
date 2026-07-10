@@ -23,6 +23,9 @@ from cyt_indexer._native import (
     retrieve_catalog_tool_count as _retrieve_catalog_tool_count,
 )
 from cyt_indexer._native import (
+    retrieve_core as _retrieve_core,
+)
+from cyt_indexer._native import (
     retrieve_tools as _retrieve_tools,
 )
 from cyt_indexer.runtime_defaults import decomposed_score, enum_score
@@ -43,6 +46,7 @@ __all__ = [
     "removed_chunks",
     "resolve_build_catalog",
     "retrieve_catalog_tool_count",
+    "retrieve_core",
     "retrieve_tools",
 ]
 
@@ -83,6 +87,26 @@ def resolve_build_catalog(
 def retrieve_catalog_tool_count(data: dict[str, Any]) -> int:
     """Count tools in a catalog dict (alias for catalog tool count on survivor data)."""
     return int(_retrieve_catalog_tool_count(data))
+
+
+def retrieve_core(
+    data: dict[str, Any],
+    store_json_files: dict[str, Any],
+    survivor_json_files: dict[str, Any],
+    *,
+    apply_decomposed_score_filter: bool = False,
+    policy_options: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Low-level retrieve over survivor json files (same core as C/Go ``cyt_retrieve_core``)."""
+    return list(
+        _retrieve_core(
+            data,
+            store_json_files,
+            survivor_json_files,
+            apply_decomposed_score_filter,
+            policy_options,
+        ),
+    )
 
 
 def retrieve_tools(

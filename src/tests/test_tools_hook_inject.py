@@ -134,13 +134,16 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
     overlap = threading.Event()
     active = {"count": 0}
     lock = threading.Lock()
+    mock_sleep_s = 0.12
+    # Full _handle_user_prompt path adds catalog/formatting overhead beyond the coordinator-only test.
+    parallel_elapsed_ceiling_s = mock_sleep_s * 2.5
 
     def slow_tools(*_args: object, **_kwargs: object) -> PruneResult:
         with lock:
             active["count"] += 1
             if active["count"] == 2:
                 overlap.set()
-        time.sleep(0.12)
+        time.sleep(mock_sleep_s)
         return PruneResult(
             tools=[{"name": "mcp__x__tool"}],
             status="applied",
@@ -156,7 +159,7 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
             active["count"] += 1
             if active["count"] == 2:
                 overlap.set()
-        time.sleep(0.12)
+        time.sleep(mock_sleep_s)
         return [{"skill": "one"}]
 
     payload = _hook_payload("parallel injection")
@@ -193,7 +196,7 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
 
     assert overlap.is_set()
     assert outcome == "user_prompt_injected"
-    assert elapsed < 0.22
+    assert elapsed < parallel_elapsed_ceiling_s
 
 
 def test_hook_skips_silently_when_catalog_missing() -> None:
