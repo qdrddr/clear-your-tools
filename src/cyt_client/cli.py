@@ -17,6 +17,7 @@ from cyt_client.port import resolve_hook_url
 from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
+    extract_rules_merge_sections,
     is_valid_workspace_root,
     set_rules_file_rel_path,
     sync_cursor_rules_file,
@@ -127,7 +128,11 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         return
 
     try:
-        sync_cursor_rules_file(workspace, injection)
+        sync_cursor_rules_file(
+            workspace,
+            injection,
+            merge_sections=extract_rules_merge_sections(body),
+        )
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to sync rules file: {exc}")
         _emit_cursor_continue()

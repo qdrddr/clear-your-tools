@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
+
+_DECOMPOSED_PREFIX = "schemas/decomposed/"
 
 SELECTOR_SOFT_BUDGET_TOOLS_TOTAL = 5000
 SELECTOR_SOFT_BUDGET_SKILLS_TOTAL = 5000
@@ -42,6 +46,49 @@ def parse_cached_token_count(item: dict[str, Any]) -> int | None:
     except (TypeError, ValueError):
         return None
     return count if count > 0 else None
+
+
+def decomposed_rel_path_from_tool_path(tool_path: Path) -> str | None:
+    """Return ``schemas/decomposed/...`` relative path when present in *tool_path*."""
+    normalized = tool_path.as_posix()
+    index = normalized.find(_DECOMPOSED_PREFIX)
+    if index == -1:
+        return None
+    return normalized[index:]
+
+
+def token_count_from_decomposed_metadata(tool_json_path: Path) -> int | None:
+    """Read cached ``token_count`` from neighboring ``metadata.json`` when present."""
+    metadata_path = tool_json_path.parent / "metadata.json"
+    if not metadata_path.is_file():
+        return None
+
+    try:
+        raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if isinstance(raw, list):
+        entries = raw
+    elif isinstance(raw, dict):
+        files = raw.get("files")
+        entries = files if isinstance(files, list) else [raw]
+    else:
+        return None
+
+    rel_path = decomposed_rel_path_from_tool_path(tool_json_path)
+    tool_name = tool_json_path.name
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        meta_path = str(entry.get("file_path", "")).strip()
+        if not meta_path:
+            continue
+        if rel_path is not None and meta_path == rel_path:
+            return parse_cached_token_count(entry)
+        if Path(meta_path).name == tool_name:
+            return parse_cached_token_count(entry)
+    return None
 
 
 def selector_id_attr(selector_id: int) -> str:

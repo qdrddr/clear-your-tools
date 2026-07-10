@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -103,6 +105,29 @@ def test_format_tools_selector_token_metadata_lists_bulk_and_items() -> None:
     assert "bulk 1 (agent-tools total-tokens=168)" in text
     assert "<tool id=1 tokens=123>" in text
     assert "<chunk id=2 tokens=45>" in text
+
+
+def test_token_count_from_decomposed_metadata_reads_neighbor_metadata_json(tmp_path: Path) -> None:
+    from cyt.pruners.selector_xml import token_count_from_decomposed_metadata
+
+    decomposed_dir = tmp_path / "schemas" / "decomposed"
+    decomposed_dir.mkdir(parents=True)
+    tool_path = decomposed_dir / "tools.demo.org.search.json"
+    tool_path.write_text('{"name": "tools.demo.org.search"}', encoding="utf-8")
+    metadata_path = decomposed_dir / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            [
+                {
+                    "file_path": "schemas/decomposed/tools.demo.org.search.json",
+                    "token_count": 632,
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    assert token_count_from_decomposed_metadata(tool_path) == 632
 
 
 def test_format_skills_selector_token_metadata_lists_nodes_and_blocks() -> None:

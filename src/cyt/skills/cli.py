@@ -348,25 +348,45 @@ class HookRunResult:
     details: dict[str, Any] | None = None
 
 
-def format_hook_stdout(text: str, payload: dict[str, Any], *, plain: bool = False) -> str:
+def format_hook_stdout(
+    text: str,
+    payload: dict[str, Any],
+    *,
+    plain: bool = False,
+    merge_rules_sections: bool = False,
+) -> str:
     if not text:
         return ""
     if plain:
         return text
     event_name = hook_event_name(payload)
     if event_name:
+        hook_output: dict[str, Any] = {
+            "hookEventName": event_name,
+            "additionalContext": text,
+        }
+        if merge_rules_sections:
+            hook_output["cytRulesMergeSections"] = True
         output = {
-            "hookSpecificOutput": {
-                "hookEventName": event_name,
-                "additionalContext": text,
-            },
+            "hookSpecificOutput": hook_output,
         }
         return json.dumps(output)
     return text
 
 
-def _emit_injection(text: str, payload: dict[str, Any], *, plain: bool = False) -> None:
-    formatted = format_hook_stdout(text, payload, plain=plain)
+def _emit_injection(
+    text: str,
+    payload: dict[str, Any],
+    *,
+    plain: bool = False,
+    merge_rules_sections: bool = False,
+) -> None:
+    formatted = format_hook_stdout(
+        text,
+        payload,
+        plain=plain,
+        merge_rules_sections=merge_rules_sections,
+    )
     if formatted:
         print(formatted, flush=True)
 
@@ -716,6 +736,7 @@ def _run_coordinated_user_prompt_injection(
                 details=details,
             )
 
+        details["rules_merge_sections"] = True
         return parts, outcomes, details
 
 
@@ -813,9 +834,15 @@ def _handle_user_prompt(
         )
 
     combined = combine_injection_parts(parts)
+    merge_rules_sections = bool(details.get("rules_merge_sections"))
     if combined:
         if emit_stdout:
-            _emit_injection(combined, payload, plain=plain_output)
+            _emit_injection(
+                combined,
+                payload,
+                plain=plain_output,
+                merge_rules_sections=merge_rules_sections,
+            )
         outcome = "user_prompt_injected"
     elif outcomes:
         outcome = outcomes[-1]
@@ -952,7 +979,12 @@ def run_hook_payload(
         allow_transcript_file_read=allow_transcript_file_read,
         io_guarded=io_guarded,
     )
-    stdout_text = format_hook_stdout(injection_text, payload, plain=plain_output)
+    stdout_text = format_hook_stdout(
+        injection_text,
+        payload,
+        plain=plain_output,
+        merge_rules_sections=bool(details and details.get("rules_merge_sections")),
+    )
     debug_details = details
     if debug and details is not None:
         debug_details = dict(details)

@@ -515,6 +515,80 @@ def test_sync_cursor_rules_file_skips_unchanged_content() -> None:
         assert sync_cursor_rules_file(workspace, injection) is False
 
 
+def test_merge_rules_injection_keeps_prior_tools_when_delta_is_skills_only() -> None:
+    from cyt_client.rules_file import merge_rules_injection
+
+    prior = "<agent-tools><tool name='mcp__a__grep'>demo</tool></agent-tools>"
+    delta = (
+        "Based on the user query added chunks.\n\n"
+        "<agent-skills><skill name='lean-ctx'>ctx_edit</skill></agent-skills>"
+    )
+    merged = merge_rules_injection(prior, delta)
+    assert "<agent-tools>" in merged
+    assert "<agent-skills>" in merged
+    assert merged.index("<agent-skills>") < merged.index("<agent-tools>")
+
+
+def test_merge_rules_injection_keeps_prior_skills_when_delta_is_tools_only() -> None:
+    from cyt_client.rules_file import merge_rules_injection
+
+    prior = "<agent-skills><skill name='lean-ctx'>ctx_edit</skill></agent-skills>"
+    delta = "<agent-tools><tool name='mcp__a__grep'>demo</tool></agent-tools>"
+    merged = merge_rules_injection(prior, delta)
+    assert "<agent-skills>" in merged
+    assert "<agent-tools>" in merged
+
+
+def test_sync_cursor_rules_file_merges_delta_with_prior_sections() -> None:
+    from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            build_rules_mdc("<agent-skills><skill name='lean-ctx'>ctx</skill></agent-skills>"),
+            encoding="utf-8",
+        )
+
+        assert (
+            sync_cursor_rules_file(
+                workspace,
+                "<agent-tools><tool name='mcp__a__grep'>demo</tool></agent-tools>",
+                merge_sections=True,
+            )
+            is True
+        )
+        body = path.read_text(encoding="utf-8")
+        assert "<agent-skills>" in body
+        assert "<agent-tools>" in body
+
+
+def test_sync_cursor_rules_file_replaces_on_single_domain_sync() -> None:
+    from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            build_rules_mdc("<agent-skills><skill name='lean-ctx'>ctx</skill></agent-skills>"),
+            encoding="utf-8",
+        )
+
+        assert (
+            sync_cursor_rules_file(
+                workspace,
+                "<agent-tools><tool name='mcp__a__grep'>demo</tool></agent-tools>",
+                merge_sections=False,
+            )
+            is True
+        )
+        body = path.read_text(encoding="utf-8")
+        assert "<agent-tools>" in body
+        assert "<agent-skills>" not in body
+
+
 def test_sync_cursor_rules_file_deletes_on_empty_injection() -> None:
     from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
 

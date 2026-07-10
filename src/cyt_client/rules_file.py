@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,15 @@ RULES_REL_PATH = Path(".cursor/rules/cyt-injection.mdc")
 GITIGNORE_ENTRY = ".cursor/rules/cyt-injection.mdc"
 _RULES_DESCRIPTION = "CYT pruned skills and tools for this prompt"
 _custom_rules_rel_path: Path | None = None
+
+_SKILLS_BLOCK_RE = re.compile(
+    r"(?:Based on the user query[^\n]*\n\n)?<agent-skills[^>]*>.*?</agent-skills>",
+    re.DOTALL,
+)
+_TOOLS_BLOCK_RE = re.compile(
+    r"<agent-tools[^>]*>.*?</agent-tools>",
+    re.DOTALL,
+)
 
 
 def set_rules_file_rel_path(path: str | None) -> None:
@@ -72,6 +82,56 @@ def build_rules_mdc(injection: str) -> str:
     return f"---\ndescription: {_RULES_DESCRIPTION}\nalwaysApply: true\n---\n\n{body}\n"
 
 
+def _strip_rules_mdc_frontmatter(content: str) -> str:
+    text = content.lstrip()
+    if not text.startswith("---"):
+        return content.strip()
+    end = text.find("\n---", 3)
+    if end == -1:
+        return content.strip()
+    body_start = end + 4
+    return text[body_start:].lstrip("\n").strip()
+
+
+def _extract_injection_section(pattern: re.Pattern[str], text: str) -> str:
+    match = pattern.search(text)
+    return match.group(0).strip() if match else ""
+
+
+def merge_rules_injection(prior: str, delta: str) -> str:
+    """Merge prior rules body with hook delta, keeping each tag from the newest source."""
+    prior_body = prior.strip()
+    delta_body = delta.strip()
+    if not prior_body:
+        return delta_body
+    if not delta_body:
+        return prior_body
+
+    skills = _extract_injection_section(_SKILLS_BLOCK_RE, delta_body) or _extract_injection_section(
+        _SKILLS_BLOCK_RE,
+        prior_body,
+    )
+    tools = _extract_injection_section(_TOOLS_BLOCK_RE, delta_body) or _extract_injection_section(
+        _TOOLS_BLOCK_RE,
+        prior_body,
+    )
+
+    parts = [part for part in (skills, tools) if part]
+    return "\n\n".join(parts)
+
+
+def injection_section_for_domain(text: str, domain: str) -> str:
+    """Return one domain block (skills or tools) from an injection body."""
+    body = text.strip()
+    if not body:
+        return ""
+    if domain == "skills":
+        return _extract_injection_section(_SKILLS_BLOCK_RE, body)
+    if domain == "tools":
+        return _extract_injection_section(_TOOLS_BLOCK_RE, body)
+    return ""
+
+
 def extract_additional_context(body: bytes) -> str:
     if not body.strip():
         return ""
@@ -90,6 +150,29 @@ def extract_additional_context(body: bytes) -> str:
     if isinstance(context, str):
         return context.strip()
     return ""
+
+
+def extract_rules_merge_sections(body: bytes) -> bool:
+    """Return True when hook stdout requests merging rules sections (combined inject)."""
+    if not body.strip():
+        return False
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+
+    hook_output = data.get("hookSpecificOutput")
+    if not isinstance(hook_output, dict):
+        return False
+
+    raw = hook_output.get("cytRulesMergeSections")
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.strip().casefold() in {"1", "true", "yes", "on"}
+    return False
 
 
 def ensure_gitignore_entry(workspace: Path, rel_path: str = GITIGNORE_ENTRY) -> None:
@@ -125,7 +208,12 @@ def delete_cursor_rules_file(workspace: Path) -> bool:
     return True
 
 
-def sync_cursor_rules_file(workspace: Path, injection: str) -> bool:
+def sync_cursor_rules_file(
+    workspace: Path,
+    injection: str,
+    *,
+    merge_sections: bool = False,
+) -> bool:
     """Write or delete the rules file. Return True when disk state changed."""
     if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
         return False
@@ -134,7 +222,14 @@ def sync_cursor_rules_file(workspace: Path, injection: str) -> bool:
     if not injection.strip():
         return delete_cursor_rules_file(workspace)
 
-    new_content = build_rules_mdc(injection)
+    prior_body = ""
+    if merge_sections and path.is_file():
+        prior_body = _strip_rules_mdc_frontmatter(path.read_text(encoding="utf-8"))
+
+    full_injection = (
+        merge_rules_injection(prior_body, injection) if merge_sections else injection.strip()
+    )
+    new_content = build_rules_mdc(full_injection)
     if path.is_file():
         existing = path.read_text(encoding="utf-8")
         if existing == new_content:

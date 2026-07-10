@@ -85,6 +85,7 @@ from cyt_client.agent import (
 from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
+    injection_section_for_domain,
     reset_rules_file_rel_path,
     rules_file_path,
     set_rules_file_rel_path,
@@ -368,6 +369,12 @@ def maybe_sync_cursor_rules_file(
         return None
 
     injection = extract_additional_context(trace.stdout_text.encode())
+    merge_sections = trace.mode == "combined"
+    if not injection.strip() and trace.mode in {"tools", "skills"}:
+        rules_inj = trace.enriched_hook_payload.get("cyt_rules_injection")
+        if isinstance(rules_inj, str):
+            injection = injection_section_for_domain(rules_inj, trace.mode)
+
     if not injection.strip():
         deleted = delete_cursor_rules_file(workspace)
         print(
@@ -377,7 +384,11 @@ def maybe_sync_cursor_rules_file(
         return None
 
     path = rules_file_path(workspace)
-    changed = sync_cursor_rules_file(workspace, injection)
+    changed = sync_cursor_rules_file(
+        workspace,
+        injection,
+        merge_sections=merge_sections,
+    )
     print(f"--rule: wrote {path} (changed={changed})", file=sys.stderr)
     return path
 
@@ -451,6 +462,11 @@ def load_tool_definition(tool_json_path: Path) -> dict[str, Any]:
 
 
 def load_decomposed_tool_catalog(tool_json_path: Path) -> dict[str, Any]:
+    from cyt.pruners.selector_xml import (
+        parse_cached_token_count,
+        token_count_from_decomposed_metadata,
+    )
+
     path = tool_json_path.expanduser()
     if not path.is_file():
         raise FileNotFoundError(f"decomposed tool not found: {path}")
@@ -460,6 +476,11 @@ def load_decomposed_tool_catalog(tool_json_path: Path) -> dict[str, Any]:
     item = dict(item)
     item["file_path"] = shorten_home_path(str(path))
     item.setdefault("score", 1.0)
+    token_count = parse_cached_token_count(item)
+    if token_count is None:
+        token_count = token_count_from_decomposed_metadata(path)
+        if token_count is not None:
+            item["token_count"] = token_count
     return {"json": [item], "md": [], "tools": []}
 
 
