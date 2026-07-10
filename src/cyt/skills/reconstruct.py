@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer import batch_reconstruct_skill_matches, reconstruct_skill_markdown
-
 from cyt.common.paths import shorten_home_path
+from cyt.indexer.bm25_search import batch_reconstruct_skill_matches
+from cyt.indexer.pageindex import reconstruct_skill_markdown
 from cyt.indexer.tokens import count_tokens_batch
 from cyt.skills.catalog import SkillEntryRef, load_entry_skills_index
 from cyt.skills.diagnostics import SearchItemRow

@@ -102,9 +102,8 @@ def _run_bm25_pipeline(
     config: dict[str, Any] | None = None,
     max_tokens: int | None = None,
 ) -> tuple[list[MatchedSkill], list[SearchItemRow], float, list[BudgetItemRow]]:
-    from cyt_indexer.pipeline import search_skills_and_select
-
     from cyt.config import bm25_score_skills
+    from cyt.indexer.pipeline import search_skills_and_select
     from cyt.skills.bm25 import _entries_payload, _match_from_native
 
     threshold = bm25_score_skills(config)

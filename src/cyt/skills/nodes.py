@@ -6,9 +6,8 @@ import logging
 import os
 from typing import Any
 
-from cyt_indexer import get_skill_line_content
-
 from cyt.common.paths import shorten_home_path
+from cyt.indexer.pageindex import get_skill_line_content
 from cyt.skills.catalog import SkillEntryRef, _iter_content_node_ids
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 
@@ -81,7 +80,7 @@ def _entries_payload_for_nodes(entries: list[SkillEntryRef]) -> list[dict[str, A
 
 def build_skill_node_items(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:
     """Build rerankable items from cached content nodes (never chunks)."""
-    from cyt_indexer.pipeline import build_skill_node_catalog
+    from cyt.indexer.pipeline import build_skill_node_catalog
 
     try:
         items = build_skill_node_catalog(_entries_payload_for_nodes(entries))

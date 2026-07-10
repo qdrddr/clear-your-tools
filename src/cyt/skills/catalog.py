@@ -10,17 +10,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt_indexer.cache import ensure_skills_registry
-from cyt_indexer.pageindex import (
-    build_chunk_variant,
-    build_page_index_for_file,
-    build_skills_index_for_file,
-    chunk_variant_valid,
-    finalize_skill_document_json,
-    load_merged_skill_document_json,
-    page_index_config_without_chunking,
-    repair_skill_variant_chunks,
-    update_skill_document_source_path,
-)
 
 from cyt.cache.policy import cache_policy_for_config
 from cyt.common.agents import AgentName
@@ -33,6 +22,18 @@ from cyt.config import (
     skills_index_params_fingerprint,
     skills_pageindex_config,
     skills_pipeline,
+)
+from cyt.indexer.pageindex import (
+    build_chunk_variant,
+    build_page_index_for_file,
+    build_skills_index_for_file,
+    chunk_variant_valid,
+    finalize_skill_document_json,
+    load_merged_skill_document_json,
+    load_skills_index_from_entry,
+    page_index_config_without_chunking,
+    repair_skill_variant_chunks,
+    update_skill_document_source_path,
 )
 from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_agent
 
@@ -406,7 +407,6 @@ def load_entry_skills_index(entry: SkillEntryRef) -> dict[str, Any]:
         if entry.memory_index is None:
             raise ValueError(f"memory-backed entry missing index: {entry.doc_id}")
         return entry.memory_index
-    from cyt_indexer import load_skills_index_from_entry
 
     chunk_dir = entry.bm25_chunk_dir
     return load_skills_index_from_entry(entry.entry_dir, entry.doc_id, chunk_dir)

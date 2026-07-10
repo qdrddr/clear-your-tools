@@ -8,6 +8,7 @@ from cyt_indexer.build import (
     anthropic_tools_to_catalog_entries,
     build_catalog_from_tools,
     build_catalog_index,
+    catalog_index_tool_schema_metadata,
     catalog_tool_count,
     truncate_description,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "anthropic_tools_to_catalog_entries",
     "build_catalog_from_tools",
     "build_catalog_index",
+    "catalog_index_tool_schema_metadata",
     "catalog_tool_count",
     "collect_enums",
     "truncate_description",

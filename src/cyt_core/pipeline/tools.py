@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer.pipeline import prune_catalog_bm25_and_retrieve
-
+from cyt_core.indexer.pipeline import prune_catalog_bm25_and_retrieve
 from cyt_core.types import CatalogSnapshot, PolicyContext
 
 __all__ = ["prune_tools_for_query"]

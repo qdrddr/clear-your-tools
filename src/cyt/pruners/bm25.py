@@ -8,8 +8,6 @@ import logging
 import math
 from typing import Any
 
-from cyt_indexer.bm25_search import bm25_catalog_fingerprint, bm25_score_catalog
-
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
     DEFAULT_BM25_PRUNE_ENUMS,
@@ -20,6 +18,7 @@ from cyt.config import (
     bm25_score_tool_enum,
     load_config,
 )
+from cyt.indexer.bm25_search import bm25_catalog_fingerprint, bm25_score_catalog
 from cyt.pruners.catalog_common import (
     finalize_catalog_result,
     load_pruner_catalog_input,
@@ -102,7 +101,7 @@ def build_or_load_index(
 def normalize_bm25_similarity(raw: float) -> float:
     """Map a raw BM25 score to absolute similarity in [0, 1]."""
     try:
-        from cyt_indexer.bm25_search import exp_similarity
+        from cyt.indexer.bm25_search import exp_similarity
 
         return float(exp_similarity(raw))
     except ImportError:

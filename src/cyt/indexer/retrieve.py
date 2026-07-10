@@ -8,6 +8,9 @@ from cyt_indexer.retrieve import (
     DecomposedCatalog,
     chunk_survivor_key,
     load_catalog,
+    resolve_build_catalog,
+    retrieve_catalog_tool_count,
+    retrieve_core,
 )
 from cyt_indexer.retrieve import (
     removed_chunks as _removed_chunks,
@@ -27,6 +30,9 @@ __all__ = [
     "chunk_survivor_key",
     "load_catalog",
     "removed_chunks",
+    "resolve_build_catalog",
+    "retrieve_catalog_tool_count",
+    "retrieve_core",
     "retrieve_tools",
 ]
 

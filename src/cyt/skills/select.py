@@ -89,7 +89,7 @@ def _greedy_select_items_native(
     item_kind: str,
     max_tokens: int,
 ) -> tuple[list[SearchItemRow], list[MatchedSkill], dict[tuple[str, str], int]] | None:
-    from cyt_indexer.bm25_search import greedy_select_skill_items
+    from cyt.indexer.bm25_search import greedy_select_skill_items
 
     payload: list[dict[str, str | float | bool | None]] = []
     lookup = build_entry_lookup(entries)

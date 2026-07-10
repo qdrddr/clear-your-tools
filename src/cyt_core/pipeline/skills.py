@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer.pipeline import search_skills_and_select
+from cyt_core.indexer.pipeline import search_skills_and_select
 
 __all__ = ["search_skills_for_injection"]
 

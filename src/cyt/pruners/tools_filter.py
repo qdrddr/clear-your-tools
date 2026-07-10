@@ -199,10 +199,9 @@ def _run_catalog_pruning(
     )
     _apply_executor_hook_tool_kind(reinstate_ctx, config=resolved_config)
     if pipeline == ["bm25"] and skill_entries is None:
-        from cyt_indexer.pipeline import prune_catalog_bm25_and_retrieve
-
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
         from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
+        from cyt.indexer.pipeline import prune_catalog_bm25_and_retrieve
         from cyt.pruners.bm25 import bm25_stage_usage
 
         configure_sdk_bm25_defaults(resolved_config)
@@ -321,7 +320,7 @@ def _breakdown_entry(data: dict[str, Any]) -> dict[str, int]:
 
 
 def _count_optional_property_chunks(data: dict[str, Any]) -> int:
-    from cyt_indexer.pipeline import classify_and_count_catalog
+    from cyt.indexer.pipeline import classify_and_count_catalog
 
     result = classify_and_count_catalog(data)
     return int(result.get("optional_chunk_count", 0))

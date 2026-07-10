@@ -5,11 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from cyt_indexer.bm25_search import bm25_frontmatter_gate, bm25_search_skill_chunks
-
 from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import bm25_score_skills, skills_frontmatter_upper_limit
+from cyt.indexer.bm25_search import bm25_frontmatter_gate, bm25_search_skill_chunks
 from cyt.pruners.bm25 import bm25_stage_usage
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.diagnostics import FrontmatterGateRow, SearchItemRow
