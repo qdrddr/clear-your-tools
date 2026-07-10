@@ -18,7 +18,47 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	}
 
 	info() {
+		[[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]] && return 0
 		echo "==> $*"
+	}
+
+	cyt_section() {
+		[[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]] && return 0
+		echo ""
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+		echo "  $*"
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	}
+
+	# Keep only error/warning lines when CYT_LOCAL_DEV_SHORT is set (pipe after shorten_paths).
+	cyt_filter_short_logs() {
+		awk '
+			BEGIN { IGNORECASE = 1 }
+			/^error:/ { print; next }
+			/ error:/ { print; next }
+			/^warning:/ { print; next }
+			/ warning:/ { print; next }
+			/fatal error/ { print; next }
+			/undefined symbols/ { print; next }
+			/^ld: / { print; next }
+			/^clang: error/ { print; next }
+			/: error:/ { print; next }
+			/^\*\*\* / { print; next }
+			/npm warn/ { print; next }
+			/panic!/ { print; next }
+			/thread .* panicked/ { print; next }
+			/AssertionError/ { print; next }
+			/not ok / { print; next }
+			/^E[[:space:]]+/ { print; next }
+			/^=+ FAILURES =+/ { print; next }
+			/^=+ short test summary/ { print; next }
+			/FAILED/ { print; next }
+			/failed/ && !/0 failed/ && !/passed, 0 failed/ { print; next }
+			/failure/ && !/failure info/ { print; next }
+			/✖/ { print; next }
+			/sys\.exit/ { print; next }
+			/unknown command:/ { print; next }
+		'
 	}
 
 	require_cmd() {
@@ -31,12 +71,24 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		[[ -f "${CYT_REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml" ]] || die "missing sdk/rust/cyt-indexer"
 	}
 
-	# Install/sync the workspace venv with [tool.uv.sources] path + editable SDK.
-	cyt_sync_workspace() {
+	# Install/sync the main app workspace venv (src/ + editable sdk/python via pyproject.toml).
+	cyt_sync_app() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "uv sync (editable cyt-indexer-sdk from sdk/python via pyproject.toml [tool.uv.sources])"
+		info "uv sync main app (editable cyt-indexer-sdk from sdk/python via pyproject.toml [tool.uv.sources])"
 		uv sync --all-extras --group dev --group test --locked
+	}
+
+	# Backward-compatible alias.
+	cyt_sync_workspace() {
+		cyt_sync_app
+	}
+
+	cyt_sync_sdk_python() {
+		require_cmd uv
+		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
+		info "uv sync sdk/python"
+		uv sync
 	}
 
 	cyt_indexer_release() {
@@ -299,14 +351,14 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "cargo test -p cyt-indexer"
-		cargo test -p cyt-indexer
+		env -u CARGO_TARGET_DIR cargo test -p cyt-indexer
 		cyt_test_indexer_build
 	}
 
 	cyt_build_sdk_python() {
 		require_cmd uv
+		cyt_sync_sdk_python
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
-		uv sync
 		info "maturin develop --release (native extension from sdk/rust/cyt-indexer)"
 		uv run maturin develop --release
 	}
@@ -314,16 +366,59 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_build_sdk_typescript() {
 		require_cmd npm
 		cd "${CYT_REPO_ROOT}/sdk/typescript" || die "cd failed"
-		info "npm ci && npm run build && npm test"
+		info "npm ci && npm run build && npm test (sdk/typescript)"
 		npm ci
 		npm run build
 		npm test
 	}
 
-	# Fail if cyt-indexer-sdk is not the checkout under sdk/python (e.g. PyPI-only install).
-	cyt_verify_local_sdk() {
-		require_cmd uv
+	cyt_build_sdk_c() {
+		require_cmd cmake
+		require_cmd ctest
+		require_cmd rustc
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		local triplet
+		triplet="$(rustc -vV | sed -n 's/^host: //p')"
+		info "build C FFI for sdk/c (host triplet=${triplet})"
+		env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}"
+		info "cmake configure sdk/c (target=${triplet})"
+		env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
+			-DCMAKE_BUILD_TYPE=Release \
+			-DCYT_RUST_TARGET="${triplet}"
+		info "cmake --build sdk/c/build"
+		env -u CARGO_TARGET_DIR cmake --build sdk/c/build
+		info "ctest sdk/c"
+		env -u CARGO_TARGET_DIR ctest --test-dir sdk/c/build --output-on-failure
+	}
+
+	cyt_build_sdk_go() {
+		require_cmd go
+		require_cmd rustc
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		info "build C FFI for sdk/go (host triplet)"
+		env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --no-sync-header
+		cd "${CYT_REPO_ROOT}/sdk/go" || die "cd failed"
+		export CGO_ENABLED=1
+		local host_triplet
+		host_triplet="$(rustc -vV | sed -n 's/^host: //p')"
+		export PATH="${CYT_REPO_ROOT}/target/${host_triplet}/release:${PATH}"
+		info "go run ./cmd/cyt-native-ensure -static-only"
+		go run ./cmd/cyt-native-ensure -static-only
+		info "go test ./... (sdk/go)"
+		env -u CARGO_TARGET_DIR go test ./...
+	}
+
+	cyt_build_all_sdks() {
+		cyt_build_sdk_python
+		cyt_build_sdk_c
+		cyt_build_sdk_go
+		cyt_build_sdk_typescript
+	}
+
+	# Fail if cyt-indexer-sdk is not the checkout under sdk/python (e.g. PyPI-only install).
+	cyt_verify_sdk_python() {
+		require_cmd uv
+		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "verify cyt-indexer-sdk resolves to local sdk/python (not a registry-only install)"
 		uv run python - "${CYT_REPO_ROOT}" <<'PY'
 import json
@@ -337,7 +432,7 @@ sdk_root = (root / "sdk" / "python").resolve()
 try:
     dist = metadata.distribution("cyt-indexer-sdk")
 except metadata.PackageNotFoundError:
-    sys.exit("cyt-indexer-sdk is not installed; run: ./scripts/local-dev.sh setup sdk-python")
+    sys.exit("cyt-indexer-sdk is not installed; run: ./scripts/local-dev.sh sdk-python")
 
 install_kind = "editable"
 try:
@@ -356,7 +451,7 @@ except FileNotFoundError:
             "cyt-indexer-sdk is not loaded from sdk/python\n"
             f"  package file: {pkg_dir}\n"
             f"  expected under: {sdk_root}\n"
-            "Use this repo's pyproject.toml [tool.uv.sources] and run ./scripts/local-dev.sh setup"
+            "Use this repo's pyproject.toml [tool.uv.sources] and run ./scripts/local-dev.sh app-setup"
         )
     install_kind = "path"
 
@@ -365,16 +460,31 @@ from cyt_indexer._native import build_catalog_index
 if not callable(build_catalog_index):
     sys.exit("cyt_indexer._native.build_catalog_index is not callable (rebuild with sdk-python)")
 
+print("OK: local cyt-indexer-sdk (sdk/python)")
+print(f"  sdk root: {sdk_root}")
+print(f"  install: {install_kind}")
+PY
+	}
+
+	cyt_verify_app_python() {
+		require_cmd uv
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		info "verify main app (src/) re-exports cyt-indexer-sdk"
+		uv run python - <<'PY'
 from cyt_indexer.build import build_catalog_index as sdk_build
 from cyt.indexer.build import build_catalog_index as app_build
 
 if sdk_build is not app_build:
     sys.exit("cyt.indexer.build does not re-export cyt_indexer.build.build_catalog_index")
 
-print("OK: local cyt-indexer-sdk (not a registry-only install)")
-print(f"  sdk root: {sdk_root}")
-print(f"  install: {install_kind}")
+print("OK: main app (src/) uses local cyt-indexer-sdk")
 PY
+	}
+
+	# Backward-compatible alias (sdk + app integration checks).
+	cyt_verify_local_sdk() {
+		cyt_verify_sdk_python
+		cyt_verify_app_python
 	}
 
 	cyt_verify_sdk_import() {
@@ -383,19 +493,53 @@ PY
 		uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
 	}
 
-	cyt_test_app() {
+	cyt_test_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		cyt_verify_local_sdk
-		info "pytest src/tests"
+		info "pytest src/tests (main app)"
 		uv run pytest src/tests
+	}
+
+	cyt_test_app() {
+		cyt_verify_app_python
+		cyt_test_app_python
 	}
 
 	cyt_build_app_wheel() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "uv build (clear-your-tools sdist/wheel; depends on pinned cyt-indexer-sdk version in metadata)"
+		info "uv build clear-your-tools sdist/wheel (main app)"
 		uv build
+	}
+
+	cyt_build_all_app() {
+		cyt_sync_app
+		cyt_verify_app_python
+		cyt_test_app_python
+		cyt_build_app_wheel
+	}
+
+	cyt_run_all() {
+		cyt_section "Core (Rust — sdk/rust/cyt-indexer)"
+		cyt_build_rust
+
+		cyt_section "SDK: Python (sdk/python)"
+		cyt_build_sdk_python
+		cyt_verify_sdk_python
+
+		# C/Go before TypeScript: napi build uses the same dylib name and would
+		# overwrite the C FFI shared library if TypeScript ran first.
+		cyt_section "SDK: C (sdk/c)"
+		cyt_build_sdk_c
+
+		cyt_section "SDK: Go (sdk/go)"
+		cyt_build_sdk_go
+
+		cyt_section "SDK: TypeScript (sdk/typescript)"
+		cyt_build_sdk_typescript
+
+		cyt_section "Main app (src/)"
+		cyt_build_all_app
 	}
 
 	# Expected .env locations (same order as src/cyt/config load_proxy_env):
@@ -471,7 +615,7 @@ PY
 	cyt_run_proxy() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		cyt_verify_local_sdk
+		cyt_verify_app_python
 		cyt_ensure_proxy_api_keys
 		info "proxy via checkout CLI (src/cyt), local SDK"
 		exec uv run src/cyt/proxy/cli.py proxy "$@"

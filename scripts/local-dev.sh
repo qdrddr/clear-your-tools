@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local monorepo workflow: Rust crate → SDK artifacts → src/cyt app (no registry publish).
+# Local monorepo workflow: Rust core → SDK artifacts → main app (src/) (no registry publish).
 #
 # The main app (./src/cyt/) uses cyt-indexer-sdk from sdk/python via pyproject.toml:
 #   [tool.uv.sources]
@@ -7,29 +7,42 @@
 # Production installs (pip install clear-your-tools) pull cyt-indexer-sdk from PyPI instead.
 #
 # Usage:
-#   ./scripts/local-dev.sh <command> [args...]
+#   ./scripts/local-dev.sh [--short] <command> [args...]
+#
+# Options:
+#   --short              Only print error/warning lines (hide info/success noise)
 #
 # Commands:
-#   setup              uv sync workspace (local SDK source override)
-#   rust               cargo test -p cyt-indexer + release CLI catalog build
-#   indexer [subcmd]   cyt-indexer build tools|skills / retrieve tools from debug/full_example.json
-#                      subcmd: build [tools|skills] | survivors | retrieve | all (default: all)
-#                      env: CYT_CATALOG_DIR, CYT_INDEXER_SYSTEM_POLICY, CYT_INDEXER_MCP_POLICY,
-#                           CYT_INDEXER_TOOL_POLICIES (default: AskUserQuestion=always_include)
-#   sdk-python         maturin develop --release
-#   sdk-typescript     npm ci, build, test
-#   verify             assert SDK is local editable + native import works
-#   test               verify + pytest src/tests
-#   build-wheels       uv build clear-your-tools wheel/sdist
-#   proxy [args...]    verify + uv run src/cyt/proxy/cli.py proxy ...
-#                      API keys: use env if set, else ${REPO}/.env or ~/.config/cyt/.env,
-#                      else macOS Keychain (scripts/proxy.sh)
-#   simulate-registry  isolated venv: install built wheels + cargo/npm dry-run checks
-#   all                setup → rust → sdk-python → verify → test → build-wheels
-#   ci                 setup → verify → ruff-check → pytest → build-wheels (no rust/npm)
+#   Core (Rust):
+#     core-rust | rust     cargo test -p cyt-indexer + release CLI catalog build
+#     indexer [subcmd]     cyt-indexer build tools|skills / retrieve (see help)
+#
+#   SDKs:
+#     sdk-python           maturin develop --release + verify sdk/python
+#     sdk-verify           verify sdk/python install + native import
+#     sdk-typescript       npm ci, build, test (sdk/typescript)
+#     sdk-c                cmake build + ctest (sdk/c)
+#     sdk-go               build C FFI + go test (sdk/go)
+#     sdk-all              all SDK targets above
+#
+#   Main app (src/):
+#     app-setup | setup    uv sync workspace (editable sdk/python via pyproject.toml)
+#     app-verify           verify main app (src/) re-exports local cyt-indexer-sdk
+#     app-test | test      app-verify + pytest src/tests
+#     app-build | build-wheels
+#                          uv build clear-your-tools wheel/sdist
+#     app-all              app-setup → app-verify → app-test → app-build
+#
+#   Other:
+#     proxy [args...]      verify + uv run src/cyt/proxy/cli.py proxy ...
+#     simulate-registry    isolated venv: install built wheels + cargo/npm dry-run checks
+#     ci                   app-setup → app-verify → ruff → pytest → app-build (no rust/other sdks)
+#     all                  core-rust → all SDKs → app-all (full monorepo check)
 #
 # Examples:
 #   ./scripts/local-dev.sh all
+#   ./scripts/local-dev.sh --short sdk-go
+#   ./scripts/local-dev.sh sdk-go
 #   ./scripts/local-dev.sh proxy --port 8834
 #   KEEP_SIM_DIR=1 ./scripts/local-dev.sh simulate-registry
 set -euo pipefail
@@ -42,8 +55,24 @@ source "${SCRIPT_DIR}/local-dev-lib.sh"
 source "${SCRIPT_DIR}/shorten-paths.sh"
 export SHORTEN_ROOT="${CYT_REPO_ROOT}"
 
+CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
+LOCAL_DEV_ARGS=()
+while (($#)); do
+	case "$1" in
+	--short)
+		CYT_LOCAL_DEV_SHORT=1
+		shift
+		;;
+	*)
+		LOCAL_DEV_ARGS+=("$1")
+		shift
+		;;
+	esac
+done
+export CYT_LOCAL_DEV_SHORT
+
 usage() {
-	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 _cyt_local_dev_main() {
@@ -51,11 +80,7 @@ _cyt_local_dev_main() {
 	shift || true
 
 	case "${cmd}" in
-	setup)
-		require_repo_root
-		cyt_sync_workspace
-		;;
-	rust)
+	core-rust | rust)
 		require_repo_root
 		cyt_build_rust
 		;;
@@ -141,27 +166,63 @@ EOF
 		;;
 	sdk-python)
 		require_repo_root
-		cyt_sync_workspace
 		cyt_build_sdk_python
-		cyt_verify_sdk_import
+		cyt_verify_sdk_python
+		;;
+	sdk-verify)
+		require_repo_root
+		cyt_verify_sdk_python
 		;;
 	sdk-typescript)
 		require_repo_root
 		cyt_build_sdk_typescript
 		;;
+	sdk-c)
+		require_repo_root
+		cyt_build_sdk_c
+		;;
+	sdk-go)
+		require_repo_root
+		cyt_build_sdk_go
+		;;
+	sdk-all)
+		require_repo_root
+		cyt_section "SDK: Python (sdk/python)"
+		cyt_build_sdk_python
+		cyt_verify_sdk_python
+		cyt_section "SDK: C (sdk/c)"
+		cyt_build_sdk_c
+		cyt_section "SDK: Go (sdk/go)"
+		cyt_build_sdk_go
+		cyt_section "SDK: TypeScript (sdk/typescript)"
+		cyt_build_sdk_typescript
+		;;
+	app-setup | setup)
+		require_repo_root
+		cyt_sync_app
+		;;
+	app-verify)
+		require_repo_root
+		cyt_verify_app_python
+		;;
 	verify)
 		require_repo_root
-		cyt_verify_local_sdk
+		cyt_verify_sdk_python
+		cyt_verify_app_python
 		;;
-	test)
+	app-test | test)
 		require_repo_root
 		cyt_test_app
 		;;
-	build-wheels)
+	app-build | build-wheels)
 		require_repo_root
-		cyt_sync_workspace
-		cyt_verify_local_sdk
+		cyt_sync_app
+		cyt_verify_app_python
 		cyt_build_app_wheel
+		;;
+	app-all)
+		require_repo_root
+		cyt_build_all_app
 		;;
 	proxy)
 		require_repo_root
@@ -172,7 +233,7 @@ EOF
 		require_cmd uv
 		require_cmd cargo
 		require_cmd npm
-		cyt_sync_workspace
+		cyt_sync_app
 		cyt_build_sdk_python
 		cyt_build_rust
 
@@ -228,29 +289,25 @@ PY
 		deactivate 2>/dev/null || true
 
 		info "simulate-registry done"
-		echo "  SDK wheels:    ${SIM_DIR}/dist-sdk"
-		echo "  App wheels:    ${SIM_DIR}/dist-app"
-		echo "  npm tarball:   ${SIM_DIR}/npm-pack"
-		echo "  test venv:     ${SIM_VENV}"
+		info "  SDK wheels:    ${SIM_DIR}/dist-sdk"
+		info "  App wheels:    ${SIM_DIR}/dist-app"
+		info "  npm tarball:   ${SIM_DIR}/npm-pack"
+		info "  test venv:     ${SIM_VENV}"
 		if [[ -n "${KEEP_SIM_DIR}" ]]; then
 			trap - EXIT
-			echo "  (KEEP_SIM_DIR=1 — directory kept)"
+			info "  (KEEP_SIM_DIR=1 — directory kept)"
 		fi
 		;;
 	all)
 		require_repo_root
-		cyt_sync_workspace
-		cyt_build_rust
-		cyt_build_sdk_python
-		cyt_verify_local_sdk
-		cyt_test_app
-		cyt_build_app_wheel
+		cyt_run_all
 		info "all done (run ./scripts/local-dev.sh proxy --port 8834 for manual proxy)"
 		;;
 	ci)
 		require_repo_root
-		cyt_sync_workspace
-		cyt_verify_local_sdk
+		cyt_section "Main app (src/) — CI"
+		cyt_sync_app
+		cyt_verify_app_python
 		cyt_verify_sdk_import
 		if command -v ruff >/dev/null 2>&1 || [[ -x "${CYT_VENV_BIN}/ruff" ]]; then
 			info "ruff check"
@@ -258,13 +315,16 @@ PY
 		else
 			info "skip ruff (not on PATH)"
 		fi
-		cyt_test_app
+		cyt_test_app_python
 		cyt_build_app_wheel
 		;;
 	"" | -h | --help | help)
 		usage
 		;;
 	*)
+		if [[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]]; then
+			die "unknown command: ${cmd}"
+		fi
 		echo "unknown command: ${cmd}" >&2
 		echo >&2
 		usage >&2
@@ -273,5 +333,9 @@ PY
 	esac
 }
 
-_cyt_local_dev_main "$@" 2>&1 | shorten_paths
+if [[ -n "${CYT_LOCAL_DEV_SHORT}" ]]; then
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths | cyt_filter_short_logs
+else
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths
+fi
 exit "${PIPESTATUS[0]}"

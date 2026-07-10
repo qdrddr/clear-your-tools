@@ -15,6 +15,8 @@ groups:
     - check-docstring-first
     - debug-statements
     - flake8
+    - local-dev-app
+    - local-dev-sdk-python
     - mypy
     - name-tests-test
     - python-check-blanket-noqa
@@ -42,6 +44,7 @@ groups:
     - cargo-udeps
     - cbindgen-header-drift
     - c-header-sync
+    - local-dev-core-rust
     - verify-sdk
 
   go:
@@ -54,6 +57,7 @@ groups:
     - go-sec-repo-mod
     - go-staticcheck-repo-mod
     - go-test-repo-mod
+    - local-dev-sdk-go
 
   c:
     - build-c-lib-for-go
@@ -65,9 +69,11 @@ groups:
     - cmake-compile-db
     - cppcheck
     - cpplint
+    - local-dev-sdk-c
 
   ts:
     - all-fallow
+    - local-dev-sdk-typescript
     - typescript-ast-scan
     - typescript-build
     - typescript-npm-audit

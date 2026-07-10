@@ -580,6 +580,72 @@ repos:
         files: ^(ui/|sdk/(typescript|e2e/typescript)/|package\.json|package-lock\.json)
         pass_filenames: false
 
+      - id: local-dev-core-rust
+        name: local-dev core-rust
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh core-rust',
+          ]
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|debug/full_example\.json)
+        pass_filenames: false
+
+      - id: local-dev-sdk-python
+        name: local-dev sdk-python
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-python',
+          ]
+        language: system
+        files: ^(sdk/python/|sdk/rust/cyt-indexer/)
+        pass_filenames: false
+
+      - id: local-dev-sdk-typescript
+        name: local-dev sdk-typescript
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-typescript',
+          ]
+        language: system
+        files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
+        pass_filenames: false
+
+      - id: local-dev-sdk-c
+        name: local-dev sdk-c
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-c',
+          ]
+        language: system
+        files: ^(sdk/c/|sdk/rust/cyt-indexer/src/ffi/)
+        pass_filenames: false
+
+      - id: local-dev-sdk-go
+        name: local-dev sdk-go
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-go',
+          ]
+        language: system
+        files: ^(sdk/go/|sdk/c/|sdk/rust/cyt-indexer/src/ffi/)
+        pass_filenames: false
+
+      - id: local-dev-app
+        name: local-dev app (src/)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh app-all',
+          ]
+        language: system
+        files: ^(src/|pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
       # Keep `suggestion` last
       - id: suggestion
         name: Suggestion
