@@ -120,7 +120,7 @@ def test_reconstruct_skills_from_llm_ids_uses_node_specs() -> None:
             ]
             matches = reconstruct_skills_from_llm_ids(
                 metadata,
-                {selector_id},
+                {selector_id: 85},
                 entries,
                 config=config,
             )
@@ -144,7 +144,7 @@ def test_llm_skill_nodes_uses_pydantic_selector_ids() -> None:
         enriched_query = "User_Asks: agent hooks; Assistant_Says: continue with nodes"
         with patch(
             "cyt.skills.llm.llm_select_ids",
-            return_value=(set(selector_ids), empty_usage()),
+            return_value=(dict.fromkeys(selector_ids, 85), empty_usage()),
         ) as select_mock:
             with patch(
                 "cyt.skills.llm.reconstruct_skills_from_llm_ids",

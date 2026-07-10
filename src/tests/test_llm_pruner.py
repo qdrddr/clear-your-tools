@@ -9,12 +9,15 @@ from unittest.mock import patch
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.pruners.llm import (
     TOOL_SELECTOR_SYSTEM_PROMPT,
+    ChunkSelection,
     LlmPruningSettings,
-    RelevantChunkIds,
+    RelevantChunkSelections,
     _llm_user_message,
     call_llm,
+    cap_selector_scores,
+    filter_selector_selections,
     llm_select_ids,
-    normalize_selector_ids,
+    normalize_selector_selections,
     tool_selector_system_prompt,
 )
 from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
@@ -87,7 +90,11 @@ def test_llm_user_message_puts_query_after_chunks() -> None:
 
 def test_call_llm_uses_custom_system_prompt() -> None:
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[3]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content='{"selections":[{"id":3,"score":85}]}'),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=8, completion_tokens=2),
         id="chatcmpl-custom",
     )
@@ -101,7 +108,7 @@ def test_call_llm_uses_custom_system_prompt() -> None:
             system_prompt=custom_prompt,
         )
 
-    assert parsed.ids == [3]
+    assert parsed.selections == [ChunkSelection(id=3, score=85)]
     messages = completion_mock.call_args.kwargs["messages"]
     assert messages[0]["content"] == custom_prompt
 
@@ -148,9 +155,9 @@ def test_llm_select_ids_uses_per_bulk_soft_budget_in_prompt() -> None:
         _bulk_text: str,
         *,
         system_prompt: str,
-    ) -> tuple[RelevantChunkIds, StageTokenUsage]:
+    ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
         captured_prompts.append(system_prompt)
-        return RelevantChunkIds(ids=[1]), empty_usage()
+        return RelevantChunkSelections(selections=[ChunkSelection(id=1, score=80)]), empty_usage()
 
     with patch("cyt.pruners.llm.call_llm", side_effect=_capture_call_llm):
         with patch(
@@ -186,8 +193,19 @@ def test_llm_select_ids_unions_bulk_ids() -> None:
     with patch(
         "cyt.pruners.llm.call_llm",
         side_effect=[
-            (RelevantChunkIds(ids=[1, 2]), empty_usage()),
-            (RelevantChunkIds(ids=[3]), empty_usage()),
+            (
+                RelevantChunkSelections(
+                    selections=[
+                        ChunkSelection(id=1, score=80),
+                        ChunkSelection(id=2, score=50),
+                    ],
+                ),
+                empty_usage(),
+            ),
+            (
+                RelevantChunkSelections(selections=[ChunkSelection(id=3, score=90)]),
+                empty_usage(),
+            ),
         ],
     ):
         with patch(
@@ -198,12 +216,73 @@ def test_llm_select_ids_unions_bulk_ids() -> None:
                 settings_mock.return_value = _settings(responses_api=False)
                 selected, _usage = llm_select_ids("query", "prompt", ["a", "b"])
 
-    assert selected == {1, 2, 3}
+    assert selected == {1: 80, 2: 50, 3: 90}
+
+
+def test_llm_select_ids_merges_bulk_scores_by_max() -> None:
+    with patch(
+        "cyt.pruners.llm.call_llm",
+        side_effect=[
+            (
+                RelevantChunkSelections(selections=[ChunkSelection(id=5, score=60)]),
+                empty_usage(),
+            ),
+            (
+                RelevantChunkSelections(selections=[ChunkSelection(id=5, score=80)]),
+                empty_usage(),
+            ),
+        ],
+    ):
+        with patch(
+            "cyt.pruners.split.split_chunks_into_bulks",
+            return_value=["bulk-a", "bulk-b"],
+        ):
+            with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
+                settings_mock.return_value = _settings(responses_api=False)
+                selected, _usage = llm_select_ids("query", "prompt", ["a", "b"])
+
+    assert selected == {5: 80}
+
+
+def test_llm_select_ids_drops_scores_below_threshold() -> None:
+    with patch(
+        "cyt.pruners.llm.call_llm",
+        return_value=(
+            RelevantChunkSelections(
+                selections=[
+                    ChunkSelection(id=1, score=29),
+                    ChunkSelection(id=2, score=30),
+                ],
+            ),
+            empty_usage(),
+        ),
+    ):
+        with patch(
+            "cyt.pruners.split.split_chunks_into_bulks",
+            return_value=["bulk-a"],
+        ):
+            with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
+                settings_mock.return_value = _settings(responses_api=False)
+                selected, _usage = llm_select_ids("query", "prompt", ["a"])
+
+    assert selected == {2: 30}
+
+
+def test_cap_selector_scores_keeps_highest_scores() -> None:
+    scored = {index: index for index in range(1, 45)}
+    capped = cap_selector_scores(scored, max_ids=3)
+    assert capped == {44: 44, 43: 43, 42: 42}
 
 
 def test_call_llm_uses_completion_for_chat_completions() -> None:
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[1,2]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='{"selections":[{"id":1,"score":90},{"id":2,"score":70}]}',
+                ),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
         id="chatcmpl-test",
     )
@@ -214,15 +293,24 @@ def test_call_llm_uses_completion_for_chat_completions() -> None:
 
     completion_mock.assert_called_once()
     responses_mock.assert_not_called()
-    assert completion_mock.call_args.kwargs["response_format"].__name__ == "RelevantChunkIds"
-    assert parsed.ids == [1, 2]
+    assert completion_mock.call_args.kwargs["response_format"].__name__ == "RelevantChunkSelections"
+    assert parsed.selections == [
+        ChunkSelection(id=1, score=90),
+        ChunkSelection(id=2, score=70),
+    ]
     assert usage.input_tokens == 10
     assert usage.output_tokens == 3
 
 
 def test_call_llm_uses_responses_api_when_enabled() -> None:
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[7,8]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='{"selections":[{"id":7,"score":80},{"id":8,"score":60}]}',
+                ),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=12, completion_tokens=4),
         id="resp-test",
     )
@@ -233,12 +321,15 @@ def test_call_llm_uses_responses_api_when_enabled() -> None:
 
     responses_mock.assert_called_once()
     completion_mock.assert_not_called()
-    assert responses_mock.call_args.kwargs["text_format"].__name__ == "RelevantChunkIds"
+    assert responses_mock.call_args.kwargs["text_format"].__name__ == "RelevantChunkSelections"
     assert responses_mock.call_args.kwargs["instructions"]
     assert responses_mock.call_args.kwargs["input"].startswith("Available Chunks:")
     assert "<user-query >\nfind tools\n</user-query>" in responses_mock.call_args.kwargs["input"]
     assert responses_mock.call_args.kwargs["input"].endswith("</user-query>")
-    assert parsed.ids == [7, 8]
+    assert parsed.selections == [
+        ChunkSelection(id=7, score=80),
+        ChunkSelection(id=8, score=60),
+    ]
     assert usage.input_tokens == 12
     assert usage.output_tokens == 4
     assert usage.usage_source == "provider"
@@ -262,7 +353,7 @@ def test_call_llm_none_content_returns_zero_selections() -> None:
     with patch("cyt.pruners.llm.completion", return_value=fake_response):
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
-    assert parsed.ids == []
+    assert parsed.selections == []
 
 
 def test_call_llm_ignores_reasoning_only_response() -> None:
@@ -283,7 +374,7 @@ def test_call_llm_ignores_reasoning_only_response() -> None:
     with patch("cyt.pruners.llm.completion", return_value=fake_response):
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
-    assert parsed.ids == []
+    assert parsed.selections == []
 
 
 def test_call_llm_invalid_structured_content_returns_zero_selections() -> None:
@@ -296,7 +387,7 @@ def test_call_llm_invalid_structured_content_returns_zero_selections() -> None:
     with patch("cyt.pruners.llm.completion", return_value=fake_response):
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
-    assert parsed.ids == []
+    assert parsed.selections == []
 
 
 def test_call_llm_openrouter_requests_no_reasoning_effort() -> None:
@@ -309,7 +400,11 @@ def test_call_llm_openrouter_requests_no_reasoning_effort() -> None:
         responses_api=False,
     )
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[1]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content='{"selections":[{"id":1,"score":80}]}'),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
         id="chatcmpl-mercury",
     )
@@ -330,7 +425,11 @@ def test_call_llm_openrouter_gpt_oss_requests_low_reasoning_effort() -> None:
         responses_api=False,
     )
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[1]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content='{"selections":[{"id":1,"score":80}]}'),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
         id="chatcmpl-gpt-oss",
     )
@@ -341,15 +440,38 @@ def test_call_llm_openrouter_gpt_oss_requests_low_reasoning_effort() -> None:
     assert completion_mock.call_args.kwargs["reasoning"] == {"effort": "low"}
 
 
-def test_normalize_selector_ids_drops_empty_sentinel() -> None:
-    assert normalize_selector_ids([-1]) == []
-    assert normalize_selector_ids([1, -1, 3]) == [1, 3]
-    assert normalize_selector_ids([]) == []
+def test_normalize_selector_selections_drops_empty_sentinel() -> None:
+    assert normalize_selector_selections([ChunkSelection(id=-1, score=0)]) == []
+    assert normalize_selector_selections(
+        [
+            ChunkSelection(id=1, score=80),
+            ChunkSelection(id=-1, score=0),
+            ChunkSelection(id=3, score=70),
+        ],
+    ) == [
+        ChunkSelection(id=1, score=80),
+        ChunkSelection(id=3, score=70),
+    ]
+    assert normalize_selector_selections([]) == []
+
+
+def test_filter_selector_selections_applies_min_score() -> None:
+    filtered = filter_selector_selections(
+        [
+            ChunkSelection(id=1, score=29),
+            ChunkSelection(id=2, score=30),
+        ],
+    )
+    assert filtered == {2: 30}
 
 
 def test_call_llm_minus_one_means_zero_selections() -> None:
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[-1]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content='{"selections":[{"id":-1,"score":0}]}'),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
         id="chatcmpl-empty",
     )
@@ -357,12 +479,18 @@ def test_call_llm_minus_one_means_zero_selections() -> None:
     with patch("cyt.pruners.llm.completion", return_value=fake_response):
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
-    assert parsed.ids == []
+    assert parsed.selections == []
 
 
 def test_call_llm_minus_one_mixed_with_valid_ids() -> None:
     fake_response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"ids":[2,-1,5]}'))],
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='{"selections":[{"id":2,"score":80},{"id":-1,"score":0},{"id":5,"score":70}]}',
+                ),
+            ),
+        ],
         usage=SimpleNamespace(prompt_tokens=10, completion_tokens=3),
         id="chatcmpl-mixed",
     )
@@ -370,7 +498,10 @@ def test_call_llm_minus_one_mixed_with_valid_ids() -> None:
     with patch("cyt.pruners.llm.completion", return_value=fake_response):
         parsed, _usage = call_llm(_settings(responses_api=False), "find tools", "<chunk>")
 
-    assert parsed.ids == [2, 5]
+    assert parsed.selections == [
+        ChunkSelection(id=2, score=80),
+        ChunkSelection(id=5, score=70),
+    ]
 
 
 def test_format_executor_mcp_selector_appendix_minimizes_execute_tool() -> None:

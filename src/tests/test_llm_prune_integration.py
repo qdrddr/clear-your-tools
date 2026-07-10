@@ -466,7 +466,7 @@ def _run_tools_selector_leg(
         soft_budget_total=SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
         config=config,
     )
-    tool_text = _format_pruned_tools(tool_catalog, tool_ids)
+    tool_text = _format_pruned_tools(tool_catalog, set(tool_ids))
     return SelectorLegTrace(
         system_prompt=tools_prompt,
         user_prompt=_llm_user_message(query, "".join(tool_chunks)),
@@ -483,7 +483,7 @@ def _run_skills_selector_leg(
     config: dict[str, Any],
 ) -> tuple[SelectorLegTrace, tuple[MatchedSkill, ...]]:
     skill_items, skill_metadata, skill_token_counts = prepare_skill_nodes(skill_entries)
-    selected_ids, usage = llm_select_ids(
+    selected_scores, usage = llm_select_ids(
         query,
         SKILLS_SELECTOR_SYSTEM_PROMPT,
         skill_items,
@@ -494,10 +494,12 @@ def _run_skills_selector_leg(
         soft_budget_total=SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
         config=config,
     )
-    skill_selected = {sid for sid in selected_ids if sid in skill_metadata}
+    skill_selected_scores = {
+        sid: score for sid, score in selected_scores.items() if sid in skill_metadata
+    }
     matches = reconstruct_skills_from_llm_ids(
         skill_metadata,
-        skill_selected,
+        skill_selected_scores,
         skill_entries,
         config=config,
     )
@@ -506,7 +508,7 @@ def _run_skills_selector_leg(
         SelectorLegTrace(
             system_prompt=SKILLS_SELECTOR_SYSTEM_PROMPT,
             user_prompt=_llm_user_message(query, "".join(skill_items)),
-            selected_ids=skill_selected,
+            selected_ids=set(skill_selected_scores),
             pruned_output=pruned_output,
             token_usage=usage,
         ),

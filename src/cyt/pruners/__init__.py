@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 __all__ = [
-    "RelevantChunkIds",
+    "ChunkSelection",
+    "RelevantChunkSelections",
     "apply_selector_ids_to_catalog",
     "bm25_catalog_dict",
     "bm25_stage_usage",
@@ -24,7 +25,8 @@ __all__ = [
 ]
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
-    "RelevantChunkIds": ("cyt.pruners.llm", "RelevantChunkIds"),
+    "ChunkSelection": ("cyt.pruners.llm", "ChunkSelection"),
+    "RelevantChunkSelections": ("cyt.pruners.llm", "RelevantChunkSelections"),
     "apply_selector_ids_to_catalog": ("cyt.pruners.llm", "apply_selector_ids_to_catalog"),
     "call_llm": ("cyt.pruners.llm", "call_llm"),
     "llm_catalog_dict": ("cyt.pruners.llm", "llm_catalog_dict"),
@@ -60,7 +62,8 @@ if TYPE_CHECKING:
     from cyt.pruners.bm25 import bm25_catalog_dict, bm25_stage_usage, prune_bm25_catalog
     from cyt.pruners.documents import extract_skill_node_document
     from cyt.pruners.llm import (
-        RelevantChunkIds,
+        ChunkSelection,
+        RelevantChunkSelections,
         apply_selector_ids_to_catalog,
         call_llm,
         llm_catalog_dict,

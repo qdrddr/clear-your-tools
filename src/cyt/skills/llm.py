@@ -9,6 +9,7 @@ from cyt.common.paths import shorten_home_path
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.pruners.llm import (
     SELECTOR_NO_MATCH_INSTRUCTION,
+    SELECTOR_SCORE_INSTRUCTION,
     llm_select_ids,
 )
 from cyt.pruners.remote import LlmPruningSettings
@@ -33,7 +34,8 @@ _SKILLS_SELECTOR_SYSTEM_PROMPT_PREFIX = (
     "Each skill-node has a global selector id attribute. "
     "Your task is to select the most relevant skill-node(s) based on the user query. "
     "Later the selected nodes will be recompiled into partial skill markdown for another LLM. "
-    "Return the selector id values from the skill-node id attributes that match the user query. "
+    f"{SELECTOR_SCORE_INSTRUCTION}"
+    "Return selector id values from the skill-node id attributes that match the user query. "
     "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise. "
     "Each skill-node and skill tag includes a tokens attribute; agent-skills includes total-tokens. "
 )
@@ -125,7 +127,7 @@ def prepare_skill_nodes(
 
 def reconstruct_skills_from_llm_ids(
     metadata: dict[int, SkillNodeMeta],
-    selected_ids: set[int],
+    selected_scores: dict[int, int],
     entries: list[SkillEntryRef],
     *,
     config: dict[str, Any] | None = None,
@@ -133,7 +135,7 @@ def reconstruct_skills_from_llm_ids(
     """Map surviving selector ids to node_id_specs and rebuild MatchedSkill list."""
     del config
     survivors: list[dict[str, Any]] = []
-    for selector_id in selected_ids:
+    for selector_id, llm_score in selected_scores.items():
         meta = metadata.get(selector_id)
         if meta is None:
             continue
@@ -143,7 +145,7 @@ def reconstruct_skills_from_llm_ids(
                 "doc_id": meta.doc_id,
                 "node_id": meta.node_id,
                 "file_path": meta.file_path,
-                "score": 1.0,
+                "score": llm_score / 100.0,
             },
         )
     return reconstruct_matches_from_survivor_dicts(
@@ -185,7 +187,7 @@ def llm_skill_nodes_with_trace(
     if not formatted_items:
         return [], [], empty_usage()
 
-    selected_ids, usage = llm_select_ids(
+    selected_scores, usage = llm_select_ids(
         query,
         SKILLS_SELECTOR_SYSTEM_PROMPT,
         formatted_items,
@@ -197,16 +199,22 @@ def llm_skill_nodes_with_trace(
     )
     search_rows: list[SearchItemRow] = []
     for selector_id, meta in metadata.items():
-        selected = selector_id in selected_ids
+        llm_score = selected_scores.get(selector_id, 0)
+        passed = selector_id in selected_scores
         search_rows.append(
             SearchItemRow(
                 file_path=meta.file_path,
                 doc_id=meta.doc_id,
                 item_id=str(meta.node_id),
                 item_kind="node",
-                score=1.0 if selected else 0.0,
-                passed=selected,
+                score=llm_score / 100.0,
+                passed=passed,
             ),
         )
-    matches = reconstruct_skills_from_llm_ids(metadata, selected_ids, entries, config=config)
+    matches = reconstruct_skills_from_llm_ids(
+        metadata,
+        selected_scores,
+        entries,
+        config=config,
+    )
     return matches, search_rows, usage
