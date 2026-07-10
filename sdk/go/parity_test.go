@@ -2,10 +2,12 @@ package cytindexer
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 )
 
@@ -346,4 +348,95 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
 		t.Fatalf("CoordinateBm25Prune: %v", err)
 	}
 	assertJSONEqual(t, got, want)
+}
+
+func TestParityTokenCountFromDecomposedFrontmatter(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	content := "---\ndoc_id: d1\nnode_id: 2\ntoken_count: 42\n---\n## Body\n"
+	want := pythonJSON(t, fmt.Sprintf(`
+import json
+from cyt_indexer import token_count_from_decomposed_frontmatter
+content = %s
+print(json.dumps(token_count_from_decomposed_frontmatter(content)))
+`, strconv.Quote(content)))
+
+	got, ok, err := TokenCountFromDecomposedFrontmatter(content)
+	if err != nil {
+		t.Fatalf("TokenCountFromDecomposedFrontmatter: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected token_count in frontmatter")
+	}
+	gotBytes, _ := json.Marshal(got)
+	assertJSONEqual(t, string(gotBytes), want)
+}
+
+func TestParityCatalogIndexToolSchemaMetadata(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer import catalog_index_tool_schema_metadata
+print(json.dumps(catalog_index_tool_schema_metadata({"tools": [], "files": {}})))
+`)
+
+	got, err := CatalogIndexToolSchemaMetadata(`{"tools":[],"files":{}}`)
+	if err != nil {
+		t.Fatalf("CatalogIndexToolSchemaMetadata: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}
+
+func TestParityBuildSkillNodeCatalogEmpty(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer import build_skill_node_catalog
+print(json.dumps(build_skill_node_catalog([])))
+`)
+
+	got, err := BuildSkillNodeCatalog("[]")
+	if err != nil {
+		t.Fatalf("BuildSkillNodeCatalog: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}
+
+func TestParityGetVersion(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer import get_version
+print(json.dumps(get_version()))
+`)
+
+	got, err := Version()
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	gotBytes, _ := json.Marshal(got)
+	assertJSONEqual(t, string(gotBytes), want)
 }
