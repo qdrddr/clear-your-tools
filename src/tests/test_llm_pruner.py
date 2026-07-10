@@ -31,6 +31,52 @@ def _settings(*, responses_api: bool) -> LlmPruningSettings:
     )
 
 
+def test_prepare_catalog_selector_chunks_emits_token_attrs() -> None:
+    from cyt.pruners.llm import prepare_catalog_selector_chunks
+
+    catalog = {
+        "json": [
+            {
+                "id": "tool-a",
+                "file_path": "catalog/schemas/decomposed/tool-a.json",
+                "content": {"type": "object"},
+                "token_count": 123,
+            },
+        ],
+        "md": [
+            {
+                "id": "enum-a",
+                "file_path": "catalog/schemas/decomposed/enum-a.md",
+                "content": "value",
+                "token_count": 45,
+            },
+        ],
+    }
+    chunks, _metadata, _keys, token_counts = prepare_catalog_selector_chunks(catalog)
+    combined = "".join(chunks)
+    assert "<tool id=1 tokens=123>" in combined
+    assert "<chunk id=2 tokens=45>" in combined
+    assert '"token_count"' not in combined
+    assert token_counts == [123, 45]
+
+
+def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
+    from cyt.pruners.split import split_chunks_into_bulks
+
+    chunks = ["<tool id=1 tokens=10>\n{}\n</tool>\n", "<chunk id=2 tokens=20>\n{}\n</chunk>\n"]
+    bulks = split_chunks_into_bulks(
+        "query",
+        "prompt",
+        chunks,
+        chunk_token_counts=[10, 20],
+        wrap_agent_tools=True,
+        max_tokens=32000,
+    )
+    assert len(bulks) == 1
+    assert "<agent-tools total-tokens=30>" in bulks[0]
+    assert "<tool id=1 tokens=10>" in bulks[0]
+
+
 def test_llm_user_message_puts_query_after_chunks() -> None:
     message = _llm_user_message("find tools", "<chunk id=1>\n{}\n</chunk>")
     assert message.startswith("Available Chunks:\n\n")

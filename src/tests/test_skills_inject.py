@@ -72,6 +72,8 @@ def test_format_agent_skills_uses_skill_tag_with_name_and_path() -> None:
     assert "# Create Hook" in injected
     assert "Body" in injected
     assert "description:" not in injected
+    assert "total-tokens=" not in injected
+    assert " tokens=" not in injected
 
 
 def test_format_agent_skills_omits_name_attribute_but_keeps_body_when_missing() -> None:

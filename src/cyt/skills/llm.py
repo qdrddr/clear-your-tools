@@ -12,12 +12,17 @@ from cyt.pruners.llm import (
     llm_select_ids,
 )
 from cyt.pruners.remote import LlmPruningSettings
+from cyt.pruners.selector_xml import (
+    selector_id_attr,
+    selector_tokens_attr,
+    selector_total_tokens_attr,
+)
 from cyt.skills.catalog import (
     SkillEntryRef,
     _iter_content_node_ids,
 )
 from cyt.skills.diagnostics import SearchItemRow
-from cyt.skills.nodes import load_node_body, skill_name
+from cyt.skills.nodes import load_node_content, skill_name
 from cyt.skills.reconstruct import reconstruct_matches_from_survivor_dicts
 from cyt.skills.search import MatchedSkill
 
@@ -28,6 +33,7 @@ SKILLS_SELECTOR_SYSTEM_PROMPT = (
     "Later the selected nodes will be recompiled into partial skill markdown for another LLM. "
     "Return the selector id values from the skill-node id attributes that match the user query. "
     "Choose nodes that could potentially help fulfill the request while omitting irrelevant noise. "
+    "Each skill-node and skill tag includes a tokens attribute; agent-skills includes total-tokens. "
     "You have a soft budget of 5000 tokens to select the most relevant nodes. "
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
@@ -59,8 +65,9 @@ def prepare_skill_nodes(
         file_path = shorten_home_path(entry.source_path)
         name = skill_name(entry)
         node_lines: list[str] = []
+        skill_token_total = 0
         for node_id in _iter_content_node_ids(structure):
-            body = load_node_body(entry, node_id)
+            body, token_count = load_node_content(entry, node_id)
             if not body:
                 continue
             metadata[selector_id] = SkillNodeMeta(
@@ -69,17 +76,23 @@ def prepare_skill_nodes(
                 node_id=node_id,
                 file_path=file_path,
             )
-            node_lines.append(f'<skill-node id="{selector_id}">\n{body}\n</skill-node>')
+            node_tokens_attr = selector_tokens_attr(token_count)
+            if token_count:
+                skill_token_total += token_count
+            node_lines.append(
+                f"<skill-node{selector_id_attr(selector_id)}{node_tokens_attr}>\n{body}\n</skill-node>",
+            )
             selector_id += 1
 
         if not node_lines:
             continue
 
         name_attr = f' name="{name}"' if name else ""
+        skill_tokens_attr = selector_tokens_attr(skill_token_total or None)
         skill_block = "\n".join(
             [
-                "<agent-skills>",
-                f'<skill Path="{file_path}"{name_attr}>',
+                f"<agent-skills{selector_total_tokens_attr(skill_token_total)}>",
+                f'<skill Path="{file_path}"{name_attr}{skill_tokens_attr}>',
                 *node_lines,
                 "</skill>",
                 "</agent-skills>",

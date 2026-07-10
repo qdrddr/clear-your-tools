@@ -421,7 +421,7 @@ def _catalog_json_item_for_inject(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _format_pruned_tools(catalog: dict[str, Any], selected_ids: set[int]) -> str:
-    _chunks, metadata, list_keys = prepare_catalog_selector_chunks(catalog)
+    _chunks, metadata, list_keys, _token_counts = prepare_catalog_selector_chunks(catalog)
     pruned = apply_selector_ids_to_catalog(
         copy.deepcopy(catalog),
         metadata,
@@ -444,12 +444,16 @@ def _run_tools_selector_leg(
     tool_catalog: dict[str, Any],
     config: dict[str, Any],
 ) -> SelectorLegTrace:
-    tool_chunks, _tool_metadata, _ = prepare_catalog_selector_chunks(tool_catalog)
+    tool_chunks, _tool_metadata, _, tool_token_counts = prepare_catalog_selector_chunks(
+        tool_catalog,
+    )
     tools_prompt = tool_selector_system_prompt(config)
     tool_ids, tool_usage = llm_select_ids(
         query,
         tools_prompt,
         tool_chunks,
+        chunk_token_counts=tool_token_counts,
+        wrap_agent_tools=True,
         config=config,
     )
     tool_text = _format_pruned_tools(tool_catalog, tool_ids)

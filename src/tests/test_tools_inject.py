@@ -24,6 +24,8 @@ def test_format_agent_tools_moves_description_to_xml_attr() -> None:
     assert "'description':" not in text
     assert "'input_schema':{'type':'object'" in text
     assert "'name':" not in text
+    assert "total-tokens=" not in text
+    assert " tokens=" not in text
 
 
 def test_format_agent_tools_escapes_multiline_description() -> None:

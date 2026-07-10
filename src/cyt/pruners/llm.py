@@ -29,6 +29,10 @@ from cyt.pruners.remote import (
     request_pruner_settings,
     resolve_remote_pruning_settings,
 )
+from cyt.pruners.selector_xml import (
+    parse_cached_token_count,
+    selector_tokens_attr,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +45,7 @@ LLM_MAX_SELECTED_IDS: int = 40
 LLM_TRIM_MIN_JSON_SCORE: float = 0.11
 
 LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
-LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id")
+LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id", "token_count")
 
 # Only decomposed catalog lists are selectable; ``tools`` is metadata, not a chunk.
 LLM_CATALOG_LIST_KEYS: tuple[str, ...] = ("json", "md")
@@ -54,7 +58,7 @@ SELECTOR_NO_MATCH_INSTRUCTION = (
 
 SELECTOR_VAGUE_QUERY_INSTRUCTION = (
     "If the user query is a single generic word with no specific technical task "
-    "(e.g. 'test', 'investigate', 'help'), return ids: [-1] only unless exactly one tool "
+    f"(e.g. 'test', 'investigate', 'help'), return ids: [{SELECTOR_EMPTY_ID}] only unless exactly one tool "
     "is an obvious exact match."
 )
 
@@ -66,7 +70,9 @@ TOOL_SELECTOR_SYSTEM_PROMPT = (
     "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
     "to save on tokens by removing the irrelevant to user query noise."
     "The goal is to choose most relevant pieces of MCP tools, enums and optional properties that could "
-    "potentially be useful for the request. You have a soft budget of 5000 tokens to select the most relevant chunks."
+    "potentially be useful for the request. Each tool/chunk tag includes a tokens attribute; "
+    "agent-tools includes total-tokens. "
+    "You have a soft budget of 5000 tokens to select the most relevant chunks."
     f"{SELECTOR_VAGUE_QUERY_INSTRUCTION}"
     f"{SELECTOR_NO_MATCH_INSTRUCTION}"
 )
@@ -173,7 +179,7 @@ def trim_catalog_dict(data: dict[str, Any], *, top_k: int | None = None) -> dict
 
 def prepare_catalog_selector_chunks(
     data: dict[str, Any],
-) -> tuple[list[str], dict[int, Any], list[str]]:
+) -> tuple[list[str], dict[int, Any], list[str], list[int]]:
     """Format json/md catalog items as selector chunks with stable global ids."""
     list_keys = [k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)]
 
@@ -181,6 +187,7 @@ def prepare_catalog_selector_chunks(
         raise ValueError("No json/md catalog lists found in JSON root.")
 
     formatted_chunks: list[str] = []
+    chunk_token_counts: list[int] = []
     item_metadata_storage: dict[int, Any] = {}
     keys_to_remove = list(LLM_TRIM_FIELDS)
     model_excluded_fields = set(LLM_MODEL_EXCLUDED_FIELDS)
@@ -198,10 +205,12 @@ def prepare_catalog_selector_chunks(
             for item in items:
                 if not isinstance(item, dict):
                     continue
+                token_count = parse_cached_token_count(item)
                 item_metadata_storage[global_chunk_id] = {
                     "key": target_key,
                     "item": item,
                     "metadata": {k: item.get(k) for k in keys_to_remove},
+                    "token_count": token_count,
                 }
 
                 if target_key == "json" and not str(item.get("file_path", "")).strip():
@@ -212,10 +221,15 @@ def prepare_catalog_selector_chunks(
                     item_for_selector.pop(k, None)
 
                 chunk_body = compact_json(item_for_selector)
-                formatted_chunks.append(f"<chunk id={global_chunk_id}>\n{chunk_body}\n</chunk>\n")
+                tokens_attr = selector_tokens_attr(token_count)
+                tag = "tool" if target_key == "json" else "chunk"
+                formatted_chunks.append(
+                    f"<{tag} id={global_chunk_id}{tokens_attr}>\n{chunk_body}\n</{tag}>\n",
+                )
+                chunk_token_counts.append(token_count or 0)
                 global_chunk_id += 1
 
-    return formatted_chunks, item_metadata_storage, list_keys
+    return formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts
 
 
 def _llm_user_message(query: str, chunks_text: str) -> str:
@@ -465,6 +479,8 @@ def llm_select_ids(
     system_prompt: str,
     formatted_items: list[str],
     *,
+    chunk_token_counts: list[int] | None = None,
+    wrap_agent_tools: bool = False,
     config: dict[str, Any] | None = None,
     settings: LlmPruningSettings | None = None,
 ) -> tuple[set[int], StageTokenUsage]:
@@ -475,7 +491,13 @@ def llm_select_ids(
     from cyt.pruners.split import split_chunks_into_bulks
 
     resolved_settings = llm_pruning_settings(config, settings=settings)
-    bulks = split_chunks_into_bulks(query, system_prompt, formatted_items)
+    bulks = split_chunks_into_bulks(
+        query,
+        system_prompt,
+        formatted_items,
+        chunk_token_counts=chunk_token_counts,
+        wrap_agent_tools=wrap_agent_tools,
+    )
     selected_ids: set[int] = set()
     total_usage = empty_usage()
 
@@ -611,12 +633,16 @@ def llm_catalog_dict(
     if catalog_below_minimum_tools(data, llm_minimum_tools(config), stage="llm"):
         return data, empty_usage()
 
-    formatted_chunks, item_metadata_storage, list_keys = prepare_catalog_selector_chunks(data)
+    formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts = (
+        prepare_catalog_selector_chunks(data)
+    )
 
     selected_ids, total_usage = llm_select_ids(
         query,
         tool_selector_system_prompt(config),
         formatted_chunks,
+        chunk_token_counts=chunk_token_counts,
+        wrap_agent_tools=True,
         config=config,
         settings=settings,
     )

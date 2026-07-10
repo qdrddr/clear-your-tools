@@ -36,18 +36,32 @@ def skill_name(entry: SkillEntryRef) -> str | None:
 
 
 def load_node_body(entry: SkillEntryRef, node_id: int) -> str:
+    body, _token_count = load_node_content(entry, node_id)
+    return body
+
+
+def load_node_content(entry: SkillEntryRef, node_id: int) -> tuple[str, int | None]:
     index = entry.memory_index if not entry.disk_backed else None
     if index is None and entry.disk_backed:
         from cyt.skills.catalog import load_entry_skills_index
 
         index = load_entry_skills_index(entry)
     if index is None:
-        return ""
+        return "", None
     rows = get_skill_line_content(index, entry.doc_id, node_id_specs=[str(node_id)])
     if not rows:
-        return ""
-    content = rows[0].get("content") if isinstance(rows[0], dict) else None
-    return str(content).strip() if content is not None else ""
+        return "", None
+    row = rows[0]
+    content = row.get("content")
+    body = str(content).strip() if content is not None else ""
+    token_count = row.get("token_count")
+    if token_count is None:
+        return body, None
+    try:
+        parsed = int(token_count)
+    except (TypeError, ValueError):
+        return body, None
+    return body, parsed if parsed > 0 else None
 
 
 def _entries_payload_for_nodes(entries: list[SkillEntryRef]) -> list[dict[str, Any]]:

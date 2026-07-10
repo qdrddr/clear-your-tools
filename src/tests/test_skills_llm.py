@@ -51,6 +51,26 @@ def test_iter_content_node_ids_skips_frontmatter() -> None:
     assert _iter_content_node_ids(structure) == [1, 2]
 
 
+def test_prepare_skill_nodes_includes_token_attrs() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        config = _skills_config(root)
+        entries = build_registry(config)
+        assert entries
+
+        with patch(
+            "cyt.skills.llm.load_node_content",
+            side_effect=lambda _entry, node_id: (f"body-{node_id}", node_id * 10),
+        ):
+            formatted, metadata = prepare_skill_nodes(entries)
+
+        assert formatted
+        combined = "\n".join(formatted)
+        assert "total-tokens=" in combined
+        assert " tokens=" in combined
+        assert all(isinstance(meta, SkillNodeMeta) for meta in metadata.values())
+
+
 def test_prepare_skill_nodes_xml_and_metadata() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -61,10 +81,12 @@ def test_prepare_skill_nodes_xml_and_metadata() -> None:
         formatted, metadata = prepare_skill_nodes(entries)
         assert formatted
         combined = "\n".join(formatted)
-        assert "<agent-skills>" in combined
+        assert "<agent-skills total-tokens=" in combined
+        assert " tokens=" in combined
         assert '<skill Path="' in combined
         assert 'name="create-hook"' in combined
         assert "<skill-node id=" in combined
+        assert 'id="' not in combined.split("<skill-node", 1)[-1].split(">", 1)[0]
         assert all(isinstance(meta, SkillNodeMeta) for meta in metadata.values())
         assert all(meta.node_id != 0 for meta in metadata.values())
 

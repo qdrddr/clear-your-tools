@@ -52,6 +52,9 @@ def split_chunks_into_bulks(
     query: str,
     system_prompt: str,
     formatted_chunks: list[str],
+    *,
+    chunk_token_counts: list[int] | None = None,
+    wrap_agent_tools: bool = False,
     max_tokens: int = 32000,
 ) -> list[str]:
     """
@@ -59,6 +62,7 @@ def split_chunks_into_bulks(
     Maintained for backward compatibility with llm.py.
     """
     from cyt.pruners.llm import llm_selector_bulk_base_tokens
+    from cyt.pruners.selector_xml import wrap_agent_tools_bulk
 
     # Base tokens for every bulk (system prompt + chunk header + query suffix)
     base_tokens = llm_selector_bulk_base_tokens(query, system_prompt)
@@ -68,13 +72,27 @@ def split_chunks_into_bulks(
             f"System prompt and query are too long ({base_tokens} tokens) for max_tokens={max_tokens}",
         )
 
+    token_counts = chunk_token_counts
+    if token_counts is not None and len(token_counts) != len(formatted_chunks):
+        token_counts = None
+
     # Use the new generic splitter
     bulks_of_chunks = split_into_bulks(
-        items=formatted_chunks,
-        transform_fn=lambda x: x,
+        items=list(zip(formatted_chunks, token_counts or [0] * len(formatted_chunks), strict=True)),
+        transform_fn=lambda pair: pair[0],
         base_tokens=base_tokens,
         max_tokens=max_tokens,
     )
 
     # Convert back to the list of strings format expected by llm.py
-    return ["\n\n".join(bulk) for bulk in bulks_of_chunks]
+    result: list[str] = []
+    for bulk in bulks_of_chunks:
+        inner = "\n\n".join(chunk for chunk, _count in bulk)
+        if wrap_agent_tools:
+            total_tokens = sum(count for _chunk, count in bulk)
+            wrapped = wrap_agent_tools_bulk(inner, total_tokens=total_tokens)
+            if wrapped:
+                result.append(wrapped)
+        else:
+            result.append(inner)
+    return result
