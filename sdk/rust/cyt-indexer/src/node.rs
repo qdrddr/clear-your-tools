@@ -471,6 +471,12 @@ pub fn catalog_index_tool_schema_metadata(index: Value) -> Result<Value> {
 
 #[napi]
 #[must_use]
+pub fn get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[napi]
+#[must_use]
 pub fn md_ext() -> String {
     paths::md_ext()
 }

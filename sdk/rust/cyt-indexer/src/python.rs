@@ -611,8 +611,14 @@ fn build_catalog_from_tools_py(py: Python<'_>, tools: Bound<'_, PyAny>) -> PyRes
     Ok(dict.into())
 }
 
+#[pyfunction(name = "get_version")]
+const fn get_version_py() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(get_version_py, m)?)?;
     policies_python::refresh_runtime_attrs(m)?;
     m.add_function(wrap_pyfunction!(configure_runtime_defaults_py, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_decomposed_score_py, m)?)?;
