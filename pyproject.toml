@@ -225,6 +225,9 @@ executionEnvironments = [
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["src/tests"]
+markers = [
+    "integration: tests that call real external APIs (skipped unless --run-integration)",
+]
 filterwarnings = [
     "error",
     # Ignore ResourceWarnings from unclosed sockets/event loops
@@ -257,3 +260,4 @@ ignore-words-list = [
     "Bui",
     "te",
 ]
+

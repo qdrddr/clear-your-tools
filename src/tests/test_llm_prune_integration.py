@@ -9,10 +9,13 @@ Two paths, both without a running hook daemon or ``cyt-client`` HTTP:
    ``run_hook_payload`` (same entry as ``POST /hook/inject``) with patched minimal
    tool/skill catalogs.
 
-Run all scenarios (requires configured pruning LLM + API keys):
+Run integration scenarios (requires configured pruning LLM + API keys):
     OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
 
-    uv run pytest src/tests/test_llm_prune_integration.py -s
+    uv run pytest src/tests/test_llm_prune_integration.py --run-integration -s
+
+Normal ``pytest`` runs skip integration tests by default. Opt in with ``--run-integration``
+or ``CYT_RUN_INTEGRATION_TESTS=1``.
 
 Run one scenario from the CLI:
 
@@ -1174,6 +1177,7 @@ def test_plan_selector_bulks_reports_budget_per_bulk() -> None:
     assert "per_bulk_soft_budget:" in formatted
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("mode", ["tools", "skills", "combined"])
 def test_llm_prune_integration(
     mode: ScenarioMode,
@@ -1240,6 +1244,7 @@ def test_llm_prune_integration(
         assert daemon_trace.rules_file.is_file()
 
 
+@pytest.mark.integration
 def test_llm_prune_integration_real(
     tmp_path: Path,
     request: pytest.FixtureRequest,

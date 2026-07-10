@@ -512,8 +512,14 @@ def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> No
 
 def daemon_status(*, config_path: Path | None = None) -> None:
     """Print hook daemon status to stderr."""
+    config = load_config(config_path)
+    if _needs_credential_injection(config):
+        from cyt.hook.credentials import report_and_ensure_hook_credentials
+
+        report_and_ensure_hook_credentials(config, exit_on_missing_non_tty=False)
+
     pidfile = read_hook_daemon_pidfile()
-    port = _find_reusable_hook_port(resolve_reverse_port(load_config(config_path), None))
+    port = _find_reusable_hook_port(resolve_reverse_port(config, None))
     if port is not None:
         hook_url = hook_url_for_port(port)
         pid: int | None = None

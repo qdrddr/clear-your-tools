@@ -15,6 +15,7 @@ from cyt_client.cursor import (
 )
 from cyt_client.port import resolve_hook_url
 from cyt_client.rules_file import (
+    consume_cursor_rules_injection,
     delete_cursor_rules_file,
     extract_additional_context,
     extract_rules_merge_sections,
@@ -101,7 +102,8 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
-    payload_bytes = enrich_hook_payload(raw)
+    prior_rules_injection = consume_cursor_rules_injection(workspace)
+    payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
     hook_url = resolve_hook_url()
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")

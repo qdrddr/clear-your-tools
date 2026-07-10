@@ -621,6 +621,31 @@ def test_ensure_gitignore_entry_is_idempotent() -> None:
         assert lines.count(GITIGNORE_ENTRY) == 1
 
 
+def test_consume_cursor_rules_injection_reads_and_deletes() -> None:
+    from cyt_client.rules_file import (
+        build_rules_mdc,
+        consume_cursor_rules_injection,
+        rules_file_path,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        injection = "<agent-skills>prior</agent-skills>"
+        path = rules_file_path(workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_rules_mdc(injection), encoding="utf-8")
+
+        assert consume_cursor_rules_injection(workspace) == injection
+        assert not path.is_file()
+
+
+def test_consume_cursor_rules_injection_noop_when_absent() -> None:
+    from cyt_client.rules_file import consume_cursor_rules_injection
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert consume_cursor_rules_injection(Path(tmp)) == ""
+
+
 def test_cli_before_submit_deletes_stale_rules_file_before_inject(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -648,9 +673,14 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
                     },
                 },
             ).encode()
+
+            def _post_after_rules_consumed(*_args: object, **_kwargs: object) -> tuple[int, bytes]:
+                assert not rules_path.is_file()
+                return 200, inject_response
+
             with patch(
                 "cyt_client.cli.post_hook_inject",
-                return_value=(200, inject_response),
+                side_effect=_post_after_rules_consumed,
             ) as post:
                 from cyt_client.cli import main
 
@@ -658,6 +688,8 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
                     main()
 
         post.assert_called_once()
+        sent = json.loads(post.call_args.args[1])
+        assert sent["cyt_rules_injection"] == "stale content"
         assert rules_path.is_file()
         assert "fresh" in rules_path.read_text(encoding="utf-8")
         assert "stale content" not in rules_path.read_text(encoding="utf-8")
@@ -694,9 +726,14 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
                     },
                 },
             ).encode()
+
+            def _post_after_rules_consumed(*_args: object, **_kwargs: object) -> tuple[int, bytes]:
+                assert not rules_path.is_file()
+                return 200, inject_response
+
             with patch(
                 "cyt_client.cli.post_hook_inject",
-                return_value=(200, inject_response),
+                side_effect=_post_after_rules_consumed,
             ):
                 from cyt_client.cli import main
 

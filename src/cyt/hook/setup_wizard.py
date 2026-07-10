@@ -11,11 +11,9 @@ from typing import Any, Literal, cast
 
 from cyt.agents._types import AgentName
 from cyt.config import (
-    USER_ENV_PATH,
     inject_via,
     load_config,
     load_user_config_overlay,
-    required_proxy_env_var_names,
     resolve_setup_config_path,
     save_user_config,
     skills_enabled,
@@ -846,50 +844,9 @@ def _agent_hook_path(agent: HookAgentName) -> Path:
 
 
 def _ensure_hook_credentials(config: dict[str, Any]) -> None:
-    from cyt.launch.secrets import (
-        ensure_wizard_credentials,
-        inspect_named_credentials,
-        preload_keyring_credentials,
-    )
+    from cyt.hook.credentials import report_and_ensure_hook_credentials
 
-    names = required_proxy_env_var_names(config)
-    if not names:
-        print("Hook credentials: none required for the current pipeline.")
-        return
-
-    preload_keyring_credentials(names)
-
-    print("Checking required API keys:")
-    before_sources = dict(inspect_named_credentials(names, allow_prompt=False))
-    for name in names:
-        source = before_sources.get(name)
-        if source:
-            print(f"  {name}: {source}")
-        else:
-            print(f"  {name}: missing")
-
-    missing_before = [name for name in names if not before_sources.get(name)]
-    if not missing_before and all(
-        source == "keyring" for source in before_sources.values() if source
-    ):
-        print("All required keys are already available.")
-        return
-
-    if missing_before and not sys.stdin.isatty():
-        vars_block = "\n".join(f"\t{name}" for name in missing_before)
-        raise SystemExit(
-            f"Required environment variable(s) not set:\n{vars_block}\n"
-            f"Run `cyt hook all` interactively or define them in {USER_ENV_PATH}.",
-        )
-
-    sources = ensure_wizard_credentials(names, env_fallback_path=USER_ENV_PATH)
-    persisted = [
-        name for name in names if sources.get(name) and sources[name] != before_sources.get(name)
-    ]
-    if persisted:
-        print("Updated credentials:")
-        for name in persisted:
-            print(f"  {name}: {sources[name]}")
+    report_and_ensure_hook_credentials(config, exit_on_missing_non_tty=True)
 
 
 def _save_tools_hook_wizard_config(

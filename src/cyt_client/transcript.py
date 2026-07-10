@@ -84,7 +84,11 @@ def _attach_cyt_agent(data: dict[str, Any]) -> None:
         data[CYT_AGENT_FIELD] = agent
 
 
-def enrich_hook_payload(payload_bytes: bytes) -> bytes:
+def enrich_hook_payload(
+    payload_bytes: bytes,
+    *,
+    rules_injection: str | None = None,
+) -> bytes:
     """Attach ``cyt_hook_payload``, ``cyt_agent``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
     if not payload_bytes.strip():
         return payload_bytes
@@ -105,7 +109,11 @@ def enrich_hook_payload(payload_bytes: bytes) -> bytes:
         if path.is_file():
             data["cyt_transcript"] = _load_transcript(path)
 
-    _attach_cyt_rules_injection(data)
+    if rules_injection is not None:
+        if rules_injection.strip():
+            data[CYT_RULES_INJECTION_FIELD] = rules_injection.strip()
+    else:
+        _attach_cyt_rules_injection(data)
     attach_client_skills(data)
 
     return json.dumps(data, separators=(",", ":")).encode()
