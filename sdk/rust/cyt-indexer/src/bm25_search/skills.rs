@@ -17,9 +17,11 @@ use crate::cache::{
     CachePolicy, get_merged_document, materialize_skill_entry, memory_cache_config,
     read_chunk_body, store_merged_document,
 };
+use crate::pageindex::SkillsIndex;
 use crate::pageindex::cache_layout::chunk_md_path;
 use crate::pageindex::{PageIndexConfig, ReconstructOptions, reconstruct_skill_markdown};
 use crate::pageindex::{load_merged_document_json, parse_document_on_disk};
+use crate::pageindex::{node_md_rel, token_count_from_decomposed_frontmatter};
 use crate::skills_io::load_skills_index_from_entry;
 use crate::tiktoken;
 
@@ -514,6 +516,28 @@ fn wrapped_injection_tokens(matches: &[Value]) -> usize {
     tiktoken::count_tokens_or_min(&injected)
 }
 
+fn sum_cached_token_counts_for_specs(
+    index: &SkillsIndex,
+    item_kind: &str,
+    id_specs: &[String],
+) -> Option<usize> {
+    let mut total = 0usize;
+    let mut found = false;
+    for spec in id_specs {
+        let id = spec.parse::<u32>().ok()?;
+        let rel = if item_kind == "chunk" {
+            index.chunk_md_rel_for(id)?
+        } else {
+            node_md_rel(id)
+        };
+        let raw = index.files.get(&rel)?;
+        let count = token_count_from_decomposed_frontmatter(raw)?;
+        total += count;
+        found = true;
+    }
+    found.then_some(total)
+}
+
 fn reconstruct_group_match(
     entry_dir: &str,
     doc_id: &str,
@@ -554,13 +578,15 @@ fn reconstruct_group_match(
     if markdown.is_empty() {
         return Ok(None);
     }
+    let token_count = sum_cached_token_counts_for_specs(&index, item_kind, id_specs)
+        .unwrap_or_else(|| tiktoken::count_tokens_or_min(&markdown));
     Ok(Some(json!({
         "doc_id": doc_id,
         "file_path": file_path,
         "markdown": markdown,
         "name": skill_name_from_frontmatter_text(frontmatter, doc_id),
         "score": top_score,
-        "token_count": tiktoken::count_tokens_or_min(&markdown),
+        "token_count": token_count,
         "entry_dir": entry_dir,
     })))
 }

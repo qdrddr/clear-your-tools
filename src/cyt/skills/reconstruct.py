@@ -109,40 +109,48 @@ def _matched_skills_from_batch(
     batch_results: list[dict[str, Any]],
 ) -> list[MatchedSkill]:
     pending: list[tuple[MatchedSkill, str]] = []
+    matched: list[MatchedSkill] = []
     for item in batch_results:
         markdown = str(item.get("markdown", "")).strip()
         if not markdown:
             continue
         name = item.get("name")
-        pending.append(
-            (
-                MatchedSkill(
-                    doc_id=str(item.get("doc_id", "")),
-                    file_path=str(item.get("file_path", "")),
-                    markdown=markdown,
-                    name=name if isinstance(name, str) else None,
-                    score=float(item.get("score", 0)),
-                    token_count=0,
-                ),
-                markdown,
-            ),
+        raw_token_count = item.get("token_count")
+        cached_token_count: int | None = None
+        if raw_token_count is not None:
+            try:
+                parsed = int(raw_token_count)
+            except (TypeError, ValueError):
+                parsed = 0
+            if parsed > 0:
+                cached_token_count = parsed
+        base_match = MatchedSkill(
+            doc_id=str(item.get("doc_id", "")),
+            file_path=str(item.get("file_path", "")),
+            markdown=markdown,
+            name=name if isinstance(name, str) else None,
+            score=float(item.get("score", 0)),
+            token_count=cached_token_count or 0,
         )
-    if not pending:
-        return []
+        if cached_token_count is not None:
+            matched.append(base_match)
+            continue
+        pending.append((base_match, markdown))
 
-    token_counts = count_tokens_batch([markdown for _, markdown in pending])
-    matched: list[MatchedSkill] = []
-    for (match, _), token_count in zip(pending, token_counts, strict=True):
-        matched.append(
-            MatchedSkill(
-                doc_id=match.doc_id,
-                file_path=match.file_path,
-                markdown=match.markdown,
-                name=match.name,
-                score=match.score,
-                token_count=token_count,
-            ),
-        )
+    if pending:
+        token_counts = count_tokens_batch([markdown for _, markdown in pending])
+        for (match, _), token_count in zip(pending, token_counts, strict=True):
+            matched.append(
+                MatchedSkill(
+                    doc_id=match.doc_id,
+                    file_path=match.file_path,
+                    markdown=match.markdown,
+                    name=match.name,
+                    score=match.score,
+                    token_count=token_count,
+                ),
+            )
+
     matched.sort(key=lambda item: item.score, reverse=True)
     return matched
 

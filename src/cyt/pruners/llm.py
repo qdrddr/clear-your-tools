@@ -336,8 +336,15 @@ def count_llm_request_tokens(
     chunks_text: str,
     *,
     system_prompt: str = TOOL_SELECTOR_SYSTEM_PROMPT,
+    cached_content_tokens: int | None = None,
 ) -> int:
     """Estimate input tokens sent to the LLM selector for one request."""
+    if cached_content_tokens is not None and cached_content_tokens > 0:
+        prompt_tokens, frame_tokens = count_tokens_batch(
+            [system_prompt, _llm_user_message(query, "")],
+        )
+        return prompt_tokens + frame_tokens + cached_content_tokens
+
     user_message = _llm_user_message(query, chunks_text)
     prompt_tokens, user_tokens = count_tokens_batch([system_prompt, user_message])
     return prompt_tokens + user_tokens
@@ -490,10 +497,16 @@ def call_llm(
     chunks_text: str,
     *,
     system_prompt: str = TOOL_SELECTOR_SYSTEM_PROMPT,
+    cached_content_tokens: int | None = None,
 ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
     configure_litellm_quiet()
     user_message = _llm_user_message(query, chunks_text)
-    input_tokens = count_llm_request_tokens(query, chunks_text, system_prompt=system_prompt)
+    input_tokens = count_llm_request_tokens(
+        query,
+        chunks_text,
+        system_prompt=system_prompt,
+        cached_content_tokens=cached_content_tokens,
+    )
 
     request_kwargs: dict[str, Any] = {
         "model": settings.model_name,
@@ -579,11 +592,13 @@ def _run_llm_selector_bulk(
     bulk_text: str,
     *,
     bulk_system_prompt: str,
+    cached_content_tokens: int | None = None,
 ) -> tuple[dict[int, int], StageTokenUsage]:
     bulk_tokens = count_llm_request_tokens(
         query,
         bulk_text,
         system_prompt=bulk_system_prompt,
+        cached_content_tokens=cached_content_tokens,
     )
     logger.info("llm request tokens: %d", bulk_tokens)
     parsed_response, bulk_usage = call_llm(
@@ -591,6 +606,7 @@ def _run_llm_selector_bulk(
         query,
         bulk_text,
         system_prompt=bulk_system_prompt,
+        cached_content_tokens=cached_content_tokens,
     )
     if bulk_usage.input_tokens == 0:
         bulk_usage = StageTokenUsage(
@@ -620,17 +636,25 @@ def _run_llm_selector_bulks(
     bulks: list[str],
     *,
     bulk_system_prompt: str,
+    bulk_cached_totals: list[int] | None = None,
 ) -> tuple[dict[int, int], StageTokenUsage]:
     merged_scores: dict[int, int] = {}
     total_usage = empty_usage()
 
+    def _cached_for_bulk(index: int) -> int | None:
+        if bulk_cached_totals is None or index >= len(bulk_cached_totals):
+            return None
+        total = bulk_cached_totals[index]
+        return total if total > 0 else None
+
     if len(bulks) <= 1:
-        for bulk_text in bulks:
+        for index, bulk_text in enumerate(bulks):
             bulk_scores, bulk_usage = _run_llm_selector_bulk(
                 resolved_settings,
                 query,
                 bulk_text,
                 bulk_system_prompt=bulk_system_prompt,
+                cached_content_tokens=_cached_for_bulk(index),
             )
             total_usage = total_usage.merge(bulk_usage)
             _merge_selector_scores(merged_scores, bulk_scores)
@@ -640,11 +664,12 @@ def _run_llm_selector_bulks(
 
     work = {
         str(index): (
-            lambda bulk_text=bulk_text: _run_llm_selector_bulk(
+            lambda bulk_text=bulk_text, bulk_index=index: _run_llm_selector_bulk(
                 resolved_settings,
                 query,
                 bulk_text,
                 bulk_system_prompt=bulk_system_prompt,
+                cached_content_tokens=_cached_for_bulk(bulk_index),
             )
         )
         for index, bulk_text in enumerate(bulks)
@@ -677,7 +702,7 @@ def llm_select_ids(
     from cyt.pruners.split import split_chunks_into_bulks
 
     resolved_settings = llm_pruning_settings(config, settings=settings)
-    bulks = split_chunks_into_bulks(
+    bulks, bulk_cached_totals = split_chunks_into_bulks(
         query,
         system_prompt,
         formatted_items,
@@ -699,6 +724,7 @@ def llm_select_ids(
         query,
         bulks,
         bulk_system_prompt=bulk_system_prompt,
+        bulk_cached_totals=bulk_cached_totals,
     )
 
     if total_usage.input_tokens or total_usage.output_tokens:

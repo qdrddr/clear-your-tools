@@ -69,7 +69,7 @@ def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
     from cyt.pruners.split import split_chunks_into_bulks
 
     chunks = ["<tool id=1 tokens=10>\n{}\n</tool>\n", "<chunk id=2 tokens=20>\n{}\n</chunk>\n"]
-    bulks = split_chunks_into_bulks(
+    bulks, _bulk_cached_totals = split_chunks_into_bulks(
         "query",
         "prompt",
         chunks,
@@ -201,6 +201,37 @@ def test_split_into_bulks_uses_cached_token_counts() -> None:
     assert bulks[0] == ["chunk-a", "chunk-b"]
 
 
+def test_resolve_item_token_counts_recounts_only_missing() -> None:
+    from cyt.pruners.split import resolve_item_token_counts
+
+    with patch("cyt.pruners.split.count_tokens_batch", return_value=[99]) as count_mock:
+        resolved = resolve_item_token_counts(
+            ["cached-body", "missing-body"],
+            item_token_counts=[40, 0],
+        )
+
+    count_mock.assert_called_once_with(["missing-body"])
+    assert resolved == [40, 99]
+
+
+def test_count_llm_request_tokens_uses_cached_content_total() -> None:
+    from cyt.pruners.llm import count_llm_request_tokens
+
+    with patch("cyt.pruners.llm.count_tokens_batch", return_value=[100, 50]) as count_mock:
+        total = count_llm_request_tokens(
+            "find tools",
+            "<tool id=1>\nHUGE BODY\n</tool>",
+            system_prompt="system",
+            cached_content_tokens=1200,
+        )
+
+    count_mock.assert_called_once()
+    called_texts = count_mock.call_args.args[0]
+    assert called_texts[0] == "system"
+    assert "HUGE BODY" not in called_texts[1]
+    assert total == 1350
+
+
 def test_llm_select_ids_uses_per_bulk_soft_budget_in_prompt() -> None:
     captured_prompts: list[str] = []
 
@@ -210,14 +241,16 @@ def test_llm_select_ids_uses_per_bulk_soft_budget_in_prompt() -> None:
         _bulk_text: str,
         *,
         system_prompt: str,
+        cached_content_tokens: int | None = None,
     ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
+        del cached_content_tokens
         captured_prompts.append(system_prompt)
         return RelevantChunkSelections(selections=[ChunkSelection(id=1, score=80)]), empty_usage()
 
     with patch("cyt.pruners.llm.call_llm", side_effect=_capture_call_llm):
         with patch(
             "cyt.pruners.split.split_chunks_into_bulks",
-            return_value=["bulk-a", "bulk-b"],
+            return_value=(["bulk-a", "bulk-b"], [0, 0]),
         ):
             with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
                 settings_mock.return_value = _settings(responses_api=False)
@@ -265,7 +298,7 @@ def test_llm_select_ids_unions_bulk_ids() -> None:
     ):
         with patch(
             "cyt.pruners.split.split_chunks_into_bulks",
-            return_value=["bulk-a", "bulk-b"],
+            return_value=(["bulk-a", "bulk-b"], [0, 0]),
         ):
             with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
                 settings_mock.return_value = _settings(responses_api=False)
@@ -290,7 +323,7 @@ def test_llm_select_ids_merges_bulk_scores_by_max() -> None:
     ):
         with patch(
             "cyt.pruners.split.split_chunks_into_bulks",
-            return_value=["bulk-a", "bulk-b"],
+            return_value=(["bulk-a", "bulk-b"], [0, 0]),
         ):
             with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
                 settings_mock.return_value = _settings(responses_api=False)
@@ -314,7 +347,7 @@ def test_llm_select_ids_drops_scores_below_threshold() -> None:
     ):
         with patch(
             "cyt.pruners.split.split_chunks_into_bulks",
-            return_value=["bulk-a"],
+            return_value=(["bulk-a"], [0]),
         ):
             with patch("cyt.pruners.llm.llm_pruning_settings") as settings_mock:
                 settings_mock.return_value = _settings(responses_api=False)

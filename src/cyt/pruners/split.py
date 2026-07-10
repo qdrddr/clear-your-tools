@@ -4,6 +4,28 @@ from collections.abc import Callable
 from cyt.indexer.tokens import count_tokens_batch
 
 
+def resolve_item_token_counts(
+    texts: list[str],
+    item_token_counts: list[int] | None = None,
+) -> list[int]:
+    """Use cached per-item counts when > 0; tiktoken-batch only items missing cache."""
+    if not texts:
+        return []
+    if item_token_counts is None or len(item_token_counts) != len(texts):
+        return count_tokens_batch(texts)
+
+    resolved = list(item_token_counts)
+    missing_indices = [index for index, count in enumerate(resolved) if count <= 0]
+    if not missing_indices:
+        return resolved
+
+    missing_texts = [texts[index] for index in missing_indices]
+    missing_counts = count_tokens_batch(missing_texts)
+    for index, count in zip(missing_indices, missing_counts, strict=True):
+        resolved[index] = count
+    return resolved
+
+
 def split_into_bulks[T](
     items: list[T],
     transform_fn: Callable[[T], str],
@@ -17,10 +39,7 @@ def split_into_bulks[T](
         return []
 
     texts = [transform_fn(item) for item in items]
-    if item_token_counts is not None and len(item_token_counts) == len(items):
-        token_counts = item_token_counts
-    else:
-        token_counts = count_tokens_batch(texts)
+    token_counts = resolve_item_token_counts(texts, item_token_counts)
 
     bulks = []
     current_bulk: list[T] = []
@@ -61,10 +80,12 @@ def split_chunks_into_bulks(
     chunk_token_counts: list[int] | None = None,
     wrap_agent_tools: bool = False,
     max_tokens: int = 32000,
-) -> list[str]:
+) -> tuple[list[str], list[int]]:
     """
     Split formatted chunks into bulks that fit within max_tokens.
-    Maintained for backward compatibility with llm.py.
+
+    Returns bulk texts and per-bulk cached content token totals (sum of item
+    ``token_count`` values used for splitting; 0 when unknown).
     """
     from cyt.pruners.llm import llm_selector_bulk_base_tokens
     from cyt.pruners.selector_xml import wrap_agent_tools_bulk
@@ -90,15 +111,16 @@ def split_chunks_into_bulks(
         item_token_counts=token_counts,
     )
 
-    # Convert back to the list of strings format expected by llm.py
     result: list[str] = []
+    bulk_cached_totals: list[int] = []
     for bulk in bulks_of_chunks:
         inner = "\n\n".join(chunk for chunk, _count in bulk)
+        total_tokens = sum(count for _chunk, count in bulk)
+        bulk_cached_totals.append(total_tokens)
         if wrap_agent_tools:
-            total_tokens = sum(count for _chunk, count in bulk)
             wrapped = wrap_agent_tools_bulk(inner, total_tokens=total_tokens)
             if wrapped:
                 result.append(wrapped)
         else:
             result.append(inner)
-    return result
+    return result, bulk_cached_totals
