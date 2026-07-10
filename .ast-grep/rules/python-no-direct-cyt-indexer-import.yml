@@ -1,0 +1,22 @@
+id: python-no-direct-cyt-indexer-import
+language: python
+severity: error
+message: >-
+  Import cyt-indexer-sdk only through adapter modules (cyt.indexer/*,
+  cyt_core.indexer/*, cyt_core/bootstrap.py, cyt_core/types/*). Use
+  cyt.indexer or cyt_core facades in application code.
+ignores:
+  - src/cyt/indexer/**
+  - src/cyt_core/indexer/**
+  - src/cyt_core/bootstrap.py
+  - src/cyt_core/types/**
+  - src/tests/**
+files:
+  - src/cyt/**
+  - src/cyt_core/**
+rule:
+  any:
+    - pattern: from cyt_indexer import $$$REST
+    - pattern: from cyt_indexer.$MOD import $$$REST
+    - pattern: import cyt_indexer
+    - pattern: import cyt_indexer.$MOD

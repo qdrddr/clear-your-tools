@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from cyt_indexer.cache import ensure_tool_catalog_from_entries
-
 from cyt.cache.policy import cache_policy_for_config
 from cyt.config import cache_tools_dir
 from cyt.indexer.build import CatalogIndex
+from cyt.indexer.cache import ensure_tool_catalog_from_entries
 from cyt.pruners.policies import PolicyContext
 from cyt_core.types import CatalogSnapshot
 

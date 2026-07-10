@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer.policies import PolicyContext
-
 from cyt_core.indexer.pipeline import coordinate_bm25_prune
 from cyt_core.types import CatalogSnapshot
+from cyt_core.types.policies import PolicyContext
 
 __all__ = ["coordinate_bm25_prune_for_query"]
 

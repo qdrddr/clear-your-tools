@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from cyt_indexer.policies import PolicyContext, effective_policy
-
+from cyt.indexer.policies import PolicyContext, effective_policy
 from cyt.tools.policy_context import apply_executor_tool_kind
 
 

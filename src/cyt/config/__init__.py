@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 if TYPE_CHECKING:
-    from cyt_indexer.policies import PolicyContext
+    from cyt_core.types.policies import PolicyContext
 
 import yaml
 from dotenv import load_dotenv
@@ -835,7 +835,7 @@ def output_policy_context_for_terminal_stage(
     per_tool: dict[str, ToolPolicy] | None = None,
 ) -> PolicyContext:
     """Build output policy context (may include ``*_descriptions`` policies)."""
-    from cyt_indexer.policies import policy_context_from_values
+    from cyt.indexer.policies import policy_context_from_values
 
     if config is None:
         config = load_config()
@@ -857,7 +857,7 @@ def output_policy_context_for_terminal_stage(
 
 def scoring_policy_context(ctx: PolicyContext) -> PolicyContext:
     """Map description policies to base scoring policies for partition/pipeline."""
-    from cyt_indexer.policies import scoring_policy_context as sdk_scoring_policy_context
+    from cyt.indexer.policies import scoring_policy_context as sdk_scoring_policy_context
 
     return sdk_scoring_policy_context(ctx)
 

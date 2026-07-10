@@ -122,14 +122,72 @@ Other CLI entry points work the same way with `uv run` (for example `uv run cyt 
 ├── LIMITATIONS.md
 ├── pyproject.toml
 ├── count_request_tokens.py      # estimate savings on a captured request JSON
+├── sdk/                         # independently published SDKs (not bundled in clear-your-tools wheel)
+│   ├── rust/cyt-indexer/        # crates.io: cyt-indexer
+│   ├── python/                  # PyPI: cyt-indexer-sdk (import name: cyt_indexer)
+│   ├── typescript/              # npm: cyt-indexer-sdk
+│   ├── c/                       # libcyt_indexer (GitHub releases)
+│   └── go/                      # github.com/qdrddr/clear-your-tools/sdk/go
 └── src/
-    └── cyt/                       # installable package (Clear Your Tools)
-        ├── config/                # load_config, defaults.yaml
-        ├── common/                # path_constants, runtime_constants, token_usage, pricing
-        ├── indexer/               # build, retrieve, catalog_io, tokens (tiktoken)
-        ├── pruners/               # llm, rerank, policies
-        └── proxy/                 # transport, reverse, anthropic, stats, cli
+    ├── cyt/                     # installable package (Clear Your Tools)
+    │   ├── config/              # load_config, defaults.yaml
+    │   ├── common/              # path_constants, runtime_constants, token_usage, pricing
+    │   ├── indexer/             # adapter over cyt-indexer-sdk (+ app helpers)
+    │   ├── pruners/             # llm, rerank, policies
+    │   └── proxy/               # transport, reverse, anthropic, stats, cli
+    ├── cyt_core/                # headless core (no import side effects)
+    └── cyt_client/              # lightweight client helpers
 ```
+
+## Package boundaries
+
+The monorepo builds several **independently publishable** artifacts. The main Python app must not
+couple to `sdk/python` source paths — it depends on the installed **`cyt-indexer-sdk`** package
+(PyPI module name: `cyt_indexer`).
+
+```text
+sdk/rust/cyt-indexer  →  cyt-indexer-sdk (PyPI / npm / libcyt_indexer / Go cgo)
+                              ↓ declared dependency (cyt-indexer-sdk==X.Y.Z)
+clear-your-tools (PyPI) →  cyt, cyt_core, cyt_client
+```
+
+### Import rules (main app)
+
+| Allowed | Not allowed |
+| ------- | ----------- |
+| `from cyt.indexer import ...` | `from cyt_indexer import ...` outside adapter modules |
+| `from cyt_core.indexer import ...` | Adding `sdk/python` to `PYTHONPATH` or `sys.path` |
+| `from cyt_core.types import PolicyContext` | Importing `sdk/python/src/...` by filesystem path |
+
+**Adapter modules** (the only places that may import `cyt_indexer` directly):
+
+- `src/cyt/indexer/**` — app-facing facade (`cache`, `documents`, `policies`, `build`, …)
+- `src/cyt_core/indexer/**` — headless core facade
+- `src/cyt_core/bootstrap.py` — SDK runtime configuration
+- `src/cyt_core/types/**` — type aliases over the SDK
+
+Application code (proxy, pruners, tools, skills, config, …) must use `cyt.indexer` or `cyt_core`
+facades. Tests may import `cyt_indexer` only in documented SDK parity tests (for example
+`src/tests/test_removed_chunks.py`).
+
+Enforcement:
+
+- `src/tests/test_import_boundaries.py` — AST check on every CI run
+- `.ast-grep/rules/python-no-direct-cyt-indexer-import.yml` — lint hook (`ast-grep scan`)
+
+### Dev vs production dependency resolution
+
+| Context | `cyt-indexer-sdk` source |
+| ------- | ------------------------ |
+| Monorepo dev (`uv sync`) | Editable path: `[tool.uv.sources] cyt-indexer-sdk = { path = "sdk/python", editable = true }` |
+| Published `clear-your-tools` wheel | PyPI pin: `cyt-indexer-sdk==X.Y.Z` in `[project.dependencies]` |
+
+Local workflow: [`scripts/local-dev.sh`](scripts/local-dev.sh) (`app-setup`, `sdk-python`, `app-verify`).
+Registry isolation smoke: `./scripts/local-dev.sh simulate-registry` (installs built wheels in a temp venv).
+Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md).
+
+Optional publish check: `CYT_ENFORCE_INSTALLED_SDK=1 uv run pytest src/tests/test_import_boundaries.py`
+asserts `cyt_indexer` resolves from site-packages, not `sdk/python`.
 
 ## Library usage
 

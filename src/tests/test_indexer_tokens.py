@@ -78,9 +78,9 @@ def test_truncate_description_word_boundary() -> None:
 
 
 def test_truncate_description_reexported_from_build() -> None:
-    from cyt_indexer import truncate_description as sdk_truncate
+    from cyt.indexer.build import truncate_description as build_truncate
 
-    assert truncate_description is sdk_truncate
+    assert truncate_description is build_truncate
 
 
 def test_prepare_tool_entry_summary_within_token_budget() -> None:

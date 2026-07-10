@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from cyt_indexer.policies import (
+from cyt.common.runtime_constants import EMPTY_OPTIONAL_FALLBACK_K, RERANK_SCORE
+from cyt.config import (
+    load_config,
+    output_policy_context_for_terminal_stage,
+    scoring_policy_context,
+)
+from cyt.indexer.policies import (
     CatalogDict,
     MCPToolPolicy,
     PinnedCatalog,
@@ -62,18 +68,11 @@ from cyt_indexer.policies import (
     tool_pass_through,
     tools_for_catalog,
 )
-from cyt_indexer.policies import (
+from cyt.indexer.policies import (
     full_pass_through as _full_pass_through_ctx,
 )
-from cyt_indexer.policies import (
+from cyt.indexer.policies import (
     request_pass_through as _request_pass_through_ctx,
-)
-
-from cyt.common.runtime_constants import EMPTY_OPTIONAL_FALLBACK_K, RERANK_SCORE
-from cyt.config import (
-    load_config,
-    output_policy_context_for_terminal_stage,
-    scoring_policy_context,
 )
 
 __all__ = [

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from cyt_indexer.policies import PolicyContext, apply_tool_kind
+from cyt.indexer.policies import PolicyContext, apply_tool_kind
 
 ToolKindOverride = Literal["mcp"]
 

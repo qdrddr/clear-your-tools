@@ -9,8 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from cyt_indexer.cache import ensure_skills_registry
-
 from cyt.cache.policy import cache_policy_for_config
 from cyt.common.agents import AgentName
 from cyt.common.paths import shorten_home_path
@@ -23,6 +21,7 @@ from cyt.config import (
     skills_pageindex_config,
     skills_pipeline,
 )
+from cyt.indexer.cache import ensure_skills_registry
 from cyt.indexer.pageindex import (
     build_chunk_variant,
     build_page_index_for_file,

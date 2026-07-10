@@ -173,7 +173,7 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
 
 
 def test_coordinated_hook_applies_executor_tool_kind() -> None:
-    from cyt_indexer.policies import PolicyContext
+    from cyt.indexer.policies import PolicyContext
 
     config: dict[str, Any] = {
         "skills": {"enabled": True, "pipeline": "bm25"},

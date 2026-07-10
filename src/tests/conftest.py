@@ -16,8 +16,7 @@ INTEGRATION_SKIP_REASON = (
 @pytest.fixture(autouse=True)
 def _deterministic_indexer_cache() -> Iterator[None]:
     """Disable async cache writes and clear registry state between tests."""
-    from cyt_indexer.cache import configure_memory_cache
-
+    from cyt.indexer.cache import configure_memory_cache
     from cyt.skills.catalog import clear_registry_cache
 
     configure_memory_cache({"async_disk_writes": False, "lazy_registry": False})

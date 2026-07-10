@@ -1,4 +1,4 @@
-"""Tests for cyt_indexer.removed_chunks (Python SDK)."""
+"""Tests for cyt_indexer.removed_chunks (Python SDK parity — direct SDK import allowed)."""
 
 from __future__ import annotations
 
