@@ -55,12 +55,14 @@ def test_prepare_catalog_selector_chunks_emits_token_attrs() -> None:
             },
         ],
     }
-    chunks, _metadata, _keys, token_counts = prepare_catalog_selector_chunks(catalog)
+    chunks, _metadata, _keys, token_counts, token_rows = prepare_catalog_selector_chunks(catalog)
     combined = "".join(chunks)
     assert "<tool id=1 tokens=123>" in combined
     assert "<chunk id=2 tokens=45>" in combined
     assert '"token_count"' not in combined
     assert token_counts == [123, 45]
+    assert len(token_rows) == 2
+    assert token_rows[0].selector_id == 1 and token_rows[0].tokens == 123
 
 
 def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
@@ -78,6 +80,59 @@ def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
     assert len(bulks) == 1
     assert "<agent-tools total-tokens=30>" in bulks[0]
     assert "<tool id=1 tokens=10>" in bulks[0]
+
+
+def test_format_tools_selector_token_metadata_lists_bulk_and_items() -> None:
+    from cyt.pruners.selector_xml import ToolSelectorTokenRow, format_tools_selector_token_metadata
+
+    rows = [
+        ToolSelectorTokenRow(
+            selector_id=1,
+            tag="tool",
+            tokens=123,
+            file_path="catalog/schemas/decomposed/tool-a.json",
+        ),
+        ToolSelectorTokenRow(
+            selector_id=2,
+            tag="chunk",
+            tokens=45,
+            file_path="catalog/schemas/decomposed/enum-a.md",
+        ),
+    ]
+    text = format_tools_selector_token_metadata(rows, bulk_cached_totals=(168,))
+    assert "bulk 1 (agent-tools total-tokens=168)" in text
+    assert "<tool id=1 tokens=123>" in text
+    assert "<chunk id=2 tokens=45>" in text
+
+
+def test_format_skills_selector_token_metadata_lists_nodes_and_blocks() -> None:
+    from cyt.pruners.selector_xml import (
+        SkillSelectorBlockRow,
+        format_skills_selector_token_metadata,
+    )
+    from cyt.skills.llm import SkillNodeMeta
+
+    metadata = {
+        1: SkillNodeMeta(
+            entry_dir="e1",
+            doc_id="d1",
+            node_id=7,
+            file_path="/skills/demo.md",
+            token_count=50,
+        ),
+    }
+    blocks = [
+        SkillSelectorBlockRow(
+            file_path="/skills/demo.md",
+            name="demo",
+            total_tokens=50,
+            node_selector_ids=(1,),
+        ),
+    ]
+    text = format_skills_selector_token_metadata(metadata, blocks)
+    assert "<skill-node id=1 tokens=50>" in text
+    assert "agent-skills[1] total-tokens=50" in text
+    assert "<skill tokens=50> path=/skills/demo.md name=demo" in text
 
 
 def test_llm_user_message_puts_query_after_chunks() -> None:

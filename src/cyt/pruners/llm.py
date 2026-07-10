@@ -3,7 +3,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 
 from litellm import completion, responses
 from pydantic import BaseModel, Field
@@ -33,6 +33,7 @@ from cyt.pruners.remote import (
 from cyt.pruners.selector_xml import (
     SELECTOR_SOFT_BUDGET_MIN,
     SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
+    ToolSelectorTokenRow,
     format_selector_soft_budget_line,
     parse_cached_token_count,
     per_bulk_soft_budget,
@@ -256,7 +257,7 @@ def trim_catalog_dict(data: dict[str, Any], *, top_k: int | None = None) -> dict
 
 def prepare_catalog_selector_chunks(
     data: dict[str, Any],
-) -> tuple[list[str], dict[int, Any], list[str], list[int]]:
+) -> tuple[list[str], dict[int, Any], list[str], list[int], list[ToolSelectorTokenRow]]:
     """Format json/md catalog items as selector chunks with stable global ids."""
     list_keys = [k for k in LLM_CATALOG_LIST_KEYS if k in data and isinstance(data.get(k), list)]
 
@@ -265,6 +266,7 @@ def prepare_catalog_selector_chunks(
 
     formatted_chunks: list[str] = []
     chunk_token_counts: list[int] = []
+    token_rows: list[ToolSelectorTokenRow] = []
     item_metadata_storage: dict[int, Any] = {}
     keys_to_remove = list(LLM_TRIM_FIELDS)
     model_excluded_fields = set(LLM_MODEL_EXCLUDED_FIELDS)
@@ -299,14 +301,23 @@ def prepare_catalog_selector_chunks(
 
                 chunk_body = compact_json(item_for_selector)
                 tokens_attr = selector_tokens_attr(token_count)
-                tag = "tool" if target_key == "json" else "chunk"
+                tag: Literal["tool", "chunk"] = "tool" if target_key == "json" else "chunk"
                 formatted_chunks.append(
                     f"<{tag} id={global_chunk_id}{tokens_attr}>\n{chunk_body}\n</{tag}>\n",
                 )
                 chunk_token_counts.append(token_count or 0)
+                file_path = str(item.get("file_path", "")).strip() or None
+                token_rows.append(
+                    ToolSelectorTokenRow(
+                        selector_id=global_chunk_id,
+                        tag=tag,
+                        tokens=token_count,
+                        file_path=file_path,
+                    ),
+                )
                 global_chunk_id += 1
 
-    return formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts
+    return formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, token_rows
 
 
 def _llm_user_message(query: str, chunks_text: str) -> str:
@@ -775,7 +786,7 @@ def llm_catalog_dict(
     if catalog_below_minimum_tools(data, llm_minimum_tools(config), stage="llm"):
         return data, empty_usage()
 
-    formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts = (
+    formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, _token_rows = (
         prepare_catalog_selector_chunks(data)
     )
 

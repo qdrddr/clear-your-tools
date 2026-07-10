@@ -164,16 +164,37 @@ pub fn read_document_json(path: &Path) -> Result<Value, String> {
     serde_json::from_str(&raw).map_err(|e| e.to_string())
 }
 
+/// Write bytes to `path` via a same-directory temp file and atomic rename.
+///
+/// # Errors
+///
+/// Returns an error when parent directories or the file cannot be written.
+pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("invalid output path: {}", path.display()))?;
+    let tmp_path = path.with_file_name(format!(".{file_name}.{}.tmp", std::process::id()));
+    fs::write(&tmp_path, bytes).map_err(|e| e.to_string())?;
+    match fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(err.to_string())
+        }
+    }
+}
+
 /// Write an index JSON file using the canonical on-disk format.
 ///
 /// # Errors
 ///
 /// Returns an error when parent directories or the file cannot be written.
 pub fn write_document_json(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    fs::write(path, serialize_document_json(value)?).map_err(|e| e.to_string())
+    write_bytes_atomic(path, serialize_document_json(value)?.as_bytes())
 }
 
 /// Read entry metadata from `metadata.json` when present.

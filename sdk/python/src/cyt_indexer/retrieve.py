@@ -8,10 +8,10 @@ from cyt_indexer._native import (
     DecomposedCatalog,
 )
 from cyt_indexer._native import (
-    load_catalog as _load_catalog,
+    chunk_survivor_key as _chunk_survivor_key,
 )
 from cyt_indexer._native import (
-    chunk_survivor_key as _chunk_survivor_key,
+    load_catalog as _load_catalog,
 )
 from cyt_indexer._native import (
     removed_chunks as _removed_chunks,

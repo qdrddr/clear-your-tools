@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import cyt_indexer._native as _native
+from cyt_indexer.build import CatalogIndex
 from cyt_indexer.policies import PolicyContext
 
 __all__ = [
@@ -19,7 +20,7 @@ __all__ = [
 def prune_catalog_bm25_and_retrieve(
     catalog_data: dict[str, Any],
     build_catalog: dict[str, Any],
-    catalog_index: dict[str, Any] | Any,
+    catalog_index: CatalogIndex | dict[str, Any],
     query: str,
     scoring_ctx: PolicyContext,
     output_ctx: PolicyContext,
@@ -71,7 +72,7 @@ def coordinate_bm25_prune(
     skills_entries: list[dict[str, Any]],
     catalog_data: dict[str, Any],
     build_catalog: dict[str, Any],
-    catalog_index: dict[str, Any] | Any,
+    catalog_index: CatalogIndex | dict[str, Any],
     query: str,
     scoring_ctx: PolicyContext,
     output_ctx: PolicyContext,

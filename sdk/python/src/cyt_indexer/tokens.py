@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from cyt_indexer._native import configure_tokenizer_defaults as _configure_tokenizer_defaults_native
 from cyt_indexer._native import count_json_tokens as _count_json_tokens_native
 from cyt_indexer._native import count_tokens as _count_tokens_native
 from cyt_indexer._native import count_tokens_batch as _count_tokens_batch_native
-from cyt_indexer._native import configure_tokenizer_defaults as _configure_tokenizer_defaults_native
 from cyt_indexer.build import truncate_description
 
 __all__ = [

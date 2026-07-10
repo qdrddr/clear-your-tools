@@ -409,13 +409,19 @@ def _find_listen_pid(port: int) -> int | None:
 
 
 def _terminate_pid(pid: int) -> None:
-    os.kill(pid, signal.SIGTERM)
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         if not _pid_alive(pid):
             return
         time.sleep(0.1)
-    os.kill(pid, signal.SIGKILL)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
 
 def _stop_hook_server_on_port(port: int, *, verbose: bool) -> bool:

@@ -68,9 +68,10 @@ def _registry_cache_key(
     client_skills: list[dict[str, str]] | None = None,
 ) -> tuple[Any, ...]:
     active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    catalog_root = str(_registry_catalog_root(cfg))
     if client_skills is not None:
         return (
-            str(cache_skills_dir(cfg)),
+            catalog_root,
             skills_pipeline(cfg),
             skills_index_params_fingerprint(cfg),
             active_agent,
@@ -86,7 +87,7 @@ def _registry_cache_key(
         stat = source_path.stat()
         sources.append((str(source_path.resolve()), stat.st_mtime_ns, stat.st_size))
     return (
-        str(cache_skills_dir(cfg)),
+        catalog_root,
         skills_pipeline(cfg),
         skills_index_params_fingerprint(cfg),
         active_agent,
@@ -255,6 +256,21 @@ def _load_document_json(
     if not isinstance(document, dict):
         raise ValueError(f"invalid page_index.json for {doc_id}")
     return document
+
+
+def _document_from_ref_or_disk(
+    ref: dict[str, Any],
+    entry_dir: Path,
+    doc_id: str,
+    *,
+    chunk_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Prefer the Rust-built document when no chunk overlay is required."""
+    if chunk_dir is None:
+        inline = ref.get("document")
+        if isinstance(inline, dict):
+            return inline
+    return _load_document_json(entry_dir, doc_id, chunk_dir=chunk_dir)
 
 
 def _read_entry_metadata(entry_dir: Path) -> dict[str, Any] | None:
@@ -439,7 +455,12 @@ def _entry_from_rust_ref(
             )
 
         merge_chunk_dir = chunk_dir if _pipeline_materializes_chunks(pipeline) else None
-        document = _load_document_json(entry_dir, doc_id, chunk_dir=merge_chunk_dir)
+        document = _document_from_ref_or_disk(
+            ref,
+            entry_dir,
+            doc_id,
+            chunk_dir=merge_chunk_dir,
+        )
         if not _metadata_matches(
             _read_entry_metadata(entry_dir),
             pipeline=pipeline,

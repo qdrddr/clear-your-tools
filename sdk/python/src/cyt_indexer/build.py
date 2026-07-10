@@ -5,15 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cyt_indexer._native import NativeCatalogIndex
+from cyt_indexer._native import NativeCatalogIndex, truncate_description
 from cyt_indexer._native import anthropic_tool_to_catalog_entry as _anthropic_tool_to_catalog_entry
-from cyt_indexer._native import anthropic_tools_to_catalog_entries as _anthropic_tools_to_catalog_entries
+from cyt_indexer._native import (
+    anthropic_tools_to_catalog_entries as _anthropic_tools_to_catalog_entries,
+)
 from cyt_indexer._native import build_catalog_from_tools as _build_catalog_from_tools
 from cyt_indexer._native import build_catalog_index as _build_catalog_index
 from cyt_indexer._native import catalog_index_to_catalog_dict as _catalog_index_to_catalog_dict
 from cyt_indexer._native import catalog_tool_count as _catalog_tool_count
 from cyt_indexer._native import prepare_tool_entry as _prepare_tool_entry
-from cyt_indexer._native import truncate_description
 from cyt_indexer.paths import collect_enums
 
 __all__ = [

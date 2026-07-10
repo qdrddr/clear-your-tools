@@ -15,6 +15,7 @@ from cyt.pruners.llm import (
 from cyt.pruners.remote import LlmPruningSettings
 from cyt.pruners.selector_xml import (
     SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
+    SkillSelectorBlockRow,
     format_selector_soft_budget_line,
     selector_id_attr,
     selector_tokens_attr,
@@ -65,17 +66,19 @@ class SkillNodeMeta:
     doc_id: str
     node_id: int
     file_path: str
+    token_count: int | None = None
 
 
 def prepare_skill_nodes(
     entries: list[SkillEntryRef],
     *,
     start_id: int = 1,
-) -> tuple[list[str], dict[int, SkillNodeMeta], list[int]]:
+) -> tuple[list[str], dict[int, SkillNodeMeta], list[int], list[SkillSelectorBlockRow]]:
     """Format skill nodes for the LLM selector; return one XML block per skill."""
     sorted_entries = sorted(entries, key=lambda entry: shorten_home_path(entry.source_path))
     formatted_items: list[str] = []
     item_token_counts: list[int] = []
+    block_rows: list[SkillSelectorBlockRow] = []
     metadata: dict[int, SkillNodeMeta] = {}
     selector_id = start_id
 
@@ -86,6 +89,7 @@ def prepare_skill_nodes(
         file_path = shorten_home_path(entry.source_path)
         name = skill_name(entry)
         node_lines: list[str] = []
+        block_node_ids: list[int] = []
         skill_token_total = 0
         for node_id in _iter_content_node_ids(structure):
             body, token_count = load_node_content(entry, node_id)
@@ -96,7 +100,9 @@ def prepare_skill_nodes(
                 doc_id=entry.doc_id,
                 node_id=node_id,
                 file_path=file_path,
+                token_count=token_count,
             )
+            block_node_ids.append(selector_id)
             node_tokens_attr = selector_tokens_attr(token_count)
             if token_count:
                 skill_token_total += token_count
@@ -121,8 +127,16 @@ def prepare_skill_nodes(
         )
         formatted_items.append(skill_block)
         item_token_counts.append(skill_token_total)
+        block_rows.append(
+            SkillSelectorBlockRow(
+                file_path=file_path,
+                name=name,
+                total_tokens=skill_token_total,
+                node_selector_ids=tuple(block_node_ids),
+            ),
+        )
 
-    return formatted_items, metadata, item_token_counts
+    return formatted_items, metadata, item_token_counts, block_rows
 
 
 def reconstruct_skills_from_llm_ids(
@@ -183,7 +197,7 @@ def llm_skill_nodes_with_trace(
     if not query.strip() or not entries:
         return [], [], empty_usage()
 
-    formatted_items, metadata, item_token_counts = prepare_skill_nodes(entries)
+    formatted_items, metadata, item_token_counts, _block_rows = prepare_skill_nodes(entries)
     if not formatted_items:
         return [], [], empty_usage()
 

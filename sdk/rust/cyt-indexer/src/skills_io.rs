@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::pageindex::cache_layout::{CHUNKS_DIR, NODES_DIR, nodes_dir, page_index_rel};
-use crate::pageindex::document_json::load_merged_document_from_entry;
+use crate::pageindex::document_json::{load_merged_document_from_entry, write_bytes_atomic};
 use crate::pageindex::{SkillDocument, SkillsIndex};
 
 /// Write node and page-index files from an in-memory index to `entry_dir`.
@@ -59,7 +59,7 @@ fn write_selected_files(
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        fs::write(&path, content).map_err(|e| e.to_string())?;
+        write_bytes_atomic(&path, content.as_bytes())?;
     }
     Ok(())
 }

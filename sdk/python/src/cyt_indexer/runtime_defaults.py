@@ -9,13 +9,13 @@ from cyt_indexer._native import (
     runtime_decomposed_score as _runtime_decomposed_score,
 )
 from cyt_indexer._native import (
-    runtime_empty_optional_fallback_k as _runtime_empty_optional_fallback_k,
-)
-from cyt_indexer._native import (
     runtime_default_mcp_policy as _runtime_default_mcp_policy,
 )
 from cyt_indexer._native import (
     runtime_default_system_policy as _runtime_default_system_policy,
+)
+from cyt_indexer._native import (
+    runtime_empty_optional_fallback_k as _runtime_empty_optional_fallback_k,
 )
 from cyt_indexer._native import (
     runtime_enum_score as _runtime_enum_score,

@@ -21,13 +21,13 @@ from cyt_indexer._native import (
     path_catalog_prefix as _path_catalog_prefix,
 )
 from cyt_indexer._native import (
-    path_default_catalog_dir as _path_default_catalog_dir,
-)
-from cyt_indexer._native import (
     path_decomposed_prefix as _path_decomposed_prefix,
 )
 from cyt_indexer._native import (
     path_decomposed_root as _path_decomposed_root,
+)
+from cyt_indexer._native import (
+    path_default_catalog_dir as _path_default_catalog_dir,
 )
 from cyt_indexer._native import (
     path_json_ext as _path_json_ext,

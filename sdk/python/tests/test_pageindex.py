@@ -21,10 +21,10 @@ from cyt_indexer import (  # noqa: E402
     get_skill_line_content_from_spec,
     get_skill_structure,
     load_skills_index_from_dir,
+    md_to_tree,
     page_index_config_from_mapping,
     page_index_config_without_chunking,
     parse_skill_chunk_ids,
-    md_to_tree,
     write_skills_index,
 )
 

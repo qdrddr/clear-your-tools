@@ -4,21 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from cyt_indexer._native import batch_reconstruct_skill_matches as _batch_reconstruct_native
 from cyt_indexer._native import bm25_catalog_fingerprint as _bm25_catalog_fingerprint_native
 from cyt_indexer._native import bm25_frontmatter_gate as _bm25_frontmatter_gate_native
 from cyt_indexer._native import bm25_score_catalog as _bm25_score_catalog_native
 from cyt_indexer._native import bm25_search_skill_chunks as _bm25_search_skill_chunks_native
 from cyt_indexer._native import configure_bm25_defaults as _configure_bm25_defaults_native
 from cyt_indexer._native import exp_similarity as _exp_similarity_native
-from cyt_indexer._native import batch_reconstruct_skill_matches as _batch_reconstruct_native
 from cyt_indexer._native import greedy_select_skill_items as _greedy_select_native
 
 __all__ = [
+    "batch_reconstruct_skill_matches",
     "bm25_catalog_fingerprint",
     "bm25_frontmatter_gate",
     "bm25_score_catalog",
     "bm25_search_skill_chunks",
-    "batch_reconstruct_skill_matches",
     "configure_bm25_defaults",
     "exp_similarity",
     "greedy_select_skill_items",
