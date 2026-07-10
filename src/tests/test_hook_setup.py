@@ -31,7 +31,7 @@ def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
 
     assert "cat <<'EOF' | cyt-client" in command
     assert "019ebcaf" not in command
-    assert "dberezenko" not in command
+    assert "username" not in command
     assert "sess-00000000-0000-4000-8000-000000000001" in command
     assert "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl" in command
     assert "/path/to/your/project" in command

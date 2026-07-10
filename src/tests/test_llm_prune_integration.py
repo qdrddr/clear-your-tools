@@ -109,12 +109,12 @@ _HARNESS_ENV_VARS = (
 )
 
 DEFAULT_TOOL_JSON = Path(
-    "/Users/dberezenko/.config/cyt/tools/entries/"
+    "~/.config/cyt/tools/entries/"
     "f913b7ff3274a796c120a5259cee62001e23d268411b923a77d203a3a837bd10/"  # pragma: allowlist secret
     "schemas/decomposed/tools.context7_mcp.org.localcontext7mcp.resolve_library_id.json",
 )
 DEFAULT_SKILL_ENTRY_DIR = Path(
-    "/Users/dberezenko/.config/cyt/skills/entries/"
+    "~/.config/cyt/skills/entries/"
     "4b4fecc8233152c00af6da0278fd66ed0c00f5d380ca7148cbcd3861f27723a3",  # pragma: allowlist secret
 )
 DEFAULT_SKILL_NODE_ID = 7
