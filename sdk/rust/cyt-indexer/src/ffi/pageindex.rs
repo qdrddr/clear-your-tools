@@ -553,7 +553,7 @@ pub unsafe extern "C" fn cyt_token_count_from_decomposed_frontmatter(
         let count = crate::pageindex::token_count_from_decomposed_frontmatter(text);
         unsafe {
             *out = count
-                .and_then(|value| i64::try_from(value).ok())
+                .and_then(|value| c_long::try_from(value).ok())
                 .unwrap_or(-1);
         }
         Ok(())
@@ -951,3 +951,4 @@ pub unsafe extern "C" fn cyt_update_skill_document_source_path(
         Ok(())
     })
 }
+
