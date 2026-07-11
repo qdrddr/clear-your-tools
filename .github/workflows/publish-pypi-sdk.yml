@@ -111,6 +111,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Rust targets for macOS universal2 wheel
+        if: matrix.macos_archs == 'universal2'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Set package version
         if: needs.resolve-version.outputs.version != ''
         run: |
@@ -197,3 +201,4 @@ jobs:
           name: cyt-release-version
           path: cyt-release-version.txt
           if-no-files-found: error
+
