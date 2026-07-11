@@ -278,4 +278,3 @@ cyt proxy --http2-serve \
 ```
 
 TLS settings can also live in `config.yaml` under `network.proxy.reverse.http2.ssl`.
-

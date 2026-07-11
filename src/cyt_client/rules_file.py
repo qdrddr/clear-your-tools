@@ -208,8 +208,8 @@ def delete_cursor_rules_file(workspace: Path) -> bool:
     return True
 
 
-def consume_cursor_rules_injection(workspace: Path) -> str:
-    """Read rules file body if present, delete the file immediately, return stripped injection."""
+def read_cursor_rules_injection(workspace: Path) -> str:
+    """Read rules file body if present without modifying disk state."""
     if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
         return ""
 
@@ -218,9 +218,16 @@ def consume_cursor_rules_injection(workspace: Path) -> str:
         return ""
 
     content = path.read_text(encoding="utf-8")
-    path.unlink()
     body = _strip_rules_mdc_frontmatter(content)
     return body.strip() if body else ""
+
+
+def consume_cursor_rules_injection(workspace: Path) -> str:
+    """Read rules file body if present, delete the file immediately, return stripped injection."""
+    prior = read_cursor_rules_injection(workspace)
+    if prior:
+        delete_cursor_rules_file(workspace)
+    return prior
 
 
 def sync_cursor_rules_file(

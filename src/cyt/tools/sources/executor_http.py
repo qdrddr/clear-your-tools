@@ -351,49 +351,45 @@ def _run_background_refresh(
     """Refresh list + every tool schema; swap only when the full catalog is ready."""
     state = _get_state(cache_key)
     try:
-        logger.info("executor catalog network_fetch slug=%s", cache_key.slug)
-        tools, executor_mcp = asyncio.run(
-            _fetch_catalog_and_mcp_async(
-                base_url=cache_key.base_url,
-                token=token,
-            ),
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("executor background catalog refresh failed: %s", exc)
-        with _catalog_lock:
-            state.refresh_in_progress = False
-            state.refresh_done.set()
-        return
-    except ValueError as exc:
-        logger.warning("executor background catalog refresh invalid: %s", exc)
-        with _catalog_lock:
-            state.refresh_in_progress = False
-            state.refresh_done.set()
-        return
+        try:
+            logger.info("executor catalog network_fetch slug=%s", cache_key.slug)
+            tools, executor_mcp = asyncio.run(
+                _fetch_catalog_and_mcp_async(
+                    base_url=cache_key.base_url,
+                    token=token,
+                ),
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("executor background catalog refresh failed: %s", exc)
+            return
+        except ValueError as exc:
+            logger.warning("executor background catalog refresh invalid: %s", exc)
+            return
 
-    content_hash = raw_catalog_content_hash(tools)
-    _apply_catalog_to_state(
-        state,
-        tools,
-        content_hash=content_hash,
-        executor_mcp=executor_mcp,
-    )
-    write_kwargs: dict[str, Any] = {
-        "executor_url": cache_key.base_url,
-        "tools": tools,
-        "content_hash": content_hash,
-    }
-    if executor_mcp is not None:
-        write_kwargs["executor"] = executor_mcp
-    write_disk_catalog(cache_key.slug, **write_kwargs)
-    with _catalog_lock:
-        state.refresh_in_progress = False
-        state.refresh_done.set()
-    logger.debug(
-        "executor catalog refresh completed (%d tools, mcp=%s)",
-        len(tools),
-        "yes" if executor_mcp is not None else "no",
-    )
+        content_hash = raw_catalog_content_hash(tools)
+        _apply_catalog_to_state(
+            state,
+            tools,
+            content_hash=content_hash,
+            executor_mcp=executor_mcp,
+        )
+        write_kwargs: dict[str, Any] = {
+            "executor_url": cache_key.base_url,
+            "tools": tools,
+            "content_hash": content_hash,
+        }
+        if executor_mcp is not None:
+            write_kwargs["executor"] = executor_mcp
+        write_disk_catalog(cache_key.slug, **write_kwargs)
+        logger.debug(
+            "executor catalog refresh completed (%d tools, mcp=%s)",
+            len(tools),
+            "yes" if executor_mcp is not None else "no",
+        )
+    finally:
+        with _catalog_lock:
+            state.refresh_in_progress = False
+            state.refresh_done.set()
 
 
 def _start_background_refresh(

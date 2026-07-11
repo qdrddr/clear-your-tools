@@ -102,6 +102,7 @@ DEFAULT_BM25_SCORE_TOOL: float = 0.3
 DEFAULT_BM25_PRUNE_ENUMS: bool = True
 DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
 DEFAULT_BM25_SCORE_SKILLS: float = 0.5
+DEFAULT_SKILLS_ENABLED: bool = False
 DEFAULT_SKILLS_PIPELINE: str = "bm25"
 DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
 DEFAULT_CACHE_ENABLED: bool = True
@@ -230,7 +231,7 @@ _DEFAULTS: dict[str, Any] = {
         },
     },
     "skills": {
-        "enabled": True,
+        "enabled": DEFAULT_SKILLS_ENABLED,
         "pipeline": DEFAULT_SKILLS_PIPELINE,
         "directories": [
             "~/.claude/skills",
@@ -1103,6 +1104,8 @@ def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
 
 def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> list[str]:
     cfg = config or load_config()
+    if not tools_enabled(cfg):
+        return []
     if tools_inject_via(cfg) != "hook":
         return []
     if tools_hook_tools_from(cfg) != "executor":
@@ -1112,7 +1115,11 @@ def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> l
 
 def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
-    return tools_inject_via(cfg) == "hook" and tools_hook_tools_from(cfg) == "executor"
+    return (
+        tools_enabled(cfg)
+        and tools_inject_via(cfg) == "hook"
+        and tools_hook_tools_from(cfg) == "executor"
+    )
 
 
 def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:
@@ -1122,7 +1129,7 @@ def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
-    return bool(_skills_settings(_merged_config(cfg)).get("enabled", True))
+    return bool(_skills_settings(_merged_config(cfg)).get("enabled", DEFAULT_SKILLS_ENABLED))
 
 
 def skills_pipeline(config: dict[str, Any] | None = None) -> str:
@@ -1446,6 +1453,8 @@ def _append_pipeline_stage_env_vars(
     config: dict[str, Any],
     add: Callable[[str], None],
 ) -> None:
+    if not tools_enabled(config):
+        return
     for stage in pruning_pipeline_from_config(config):
         if stage == "rerank":
             _append_pruning_stage_env_var(config, "rerank", add)

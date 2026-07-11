@@ -240,8 +240,8 @@ stats:
     path: ~/.config/cyt/stats.db
 
 skills:
-  selector_soft_budget: 2000
   enabled: true
+  selector_soft_budget: 2000
   frontmatter_upper_limit: 0.70
   pipeline: bm25 # or llm or rerank (node-based; bm25 uses BM25 chunk search)
   catalog_dir: ~/.config/cyt/skills

@@ -254,6 +254,27 @@ def test_required_tools_hook_env_var_names_executor_mode(
     assert configs.required_tools_hook_env_var_names(config) == ["EXECUTOR_TOKEN"]
 
 
+def test_required_tools_hook_env_var_names_skipped_when_tools_disabled(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["enabled"] = False
+    config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
+
+    assert configs.required_tools_hook_env_var_names(config) == []
+
+
+def test_required_pruning_env_var_names_skipped_when_tools_disabled(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["tools"]["enabled"] = False
+    config["pruning"]["tools"]["sequence"] = ["llm"]
+
+    assert configs.required_pruning_env_var_names(config) == []
+
+
 def test_required_tools_hook_env_var_names_definitions_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:

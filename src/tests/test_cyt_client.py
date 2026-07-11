@@ -675,7 +675,7 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
             ).encode()
 
             def _post_after_rules_consumed(*_args: object, **_kwargs: object) -> tuple[int, bytes]:
-                assert not rules_path.is_file()
+                assert rules_path.is_file()
                 return 200, inject_response
 
             with patch(
@@ -728,7 +728,7 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
             ).encode()
 
             def _post_after_rules_consumed(*_args: object, **_kwargs: object) -> tuple[int, bytes]:
-                assert not rules_path.is_file()
+                assert rules_path.is_file()
                 return 200, inject_response
 
             with patch(
@@ -744,6 +744,32 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
         assert not rules_path.is_file()
         assert json.loads(captured.out) == {"continue": True}
         assert "skipping rules file sync" in captured.err
+
+
+def test_cli_before_submit_preserves_rules_file_when_hook_unavailable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("prior pruned context", encoding="utf-8")
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
+        with patch("cyt_client.cli.resolve_hook_url", return_value=None):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                main(["--verbose"])
+
+        assert rules_path.is_file()
+        assert rules_path.read_text(encoding="utf-8") == "prior pruned context"
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
 
 
 def test_cli_session_end_deletes_rules_file_without_http(

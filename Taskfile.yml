@@ -125,4 +125,3 @@ tasks:
       - task: pytest
       - task: ast-scan
       - task: right
-

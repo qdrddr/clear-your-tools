@@ -329,4 +329,3 @@ def test_switch_provider_requires_hook_mode() -> None:
                 runtime=runtime,
                 endpoint="openrouter",
             )
-

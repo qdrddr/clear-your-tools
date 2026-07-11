@@ -15,9 +15,9 @@ INTEGRATION_SKIP_REASON = (
 # Stub credentials in CI and local runs without ~/.config/cyt/.env so hook/cli tests
 # do not exit on missing DEEPINFRA_API_KEY / EXECUTOR_TOKEN / OPENROUTER_API_KEY.
 _CI_CREDENTIAL_STUBS: dict[str, str] = {
-    "DEEPINFRA_API_KEY": "test-ci-stub",
-    "EXECUTOR_TOKEN": "test-ci-stub",
-    "OPENROUTER_API_KEY": "test-ci-stub",
+    "DEEPINFRA_API_KEY": "test-ci-stub",  # pragma: allowlist secret
+    "EXECUTOR_TOKEN": "test-ci-stub",  # pragma: allowlist secret
+    "OPENROUTER_API_KEY": "test-ci-stub",  # pragma: allowlist secret
 }
 
 
@@ -77,4 +77,3 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if item.get_closest_marker("integration"):
             item.add_marker(skip)
-

@@ -108,6 +108,42 @@ def test_daemon_start_restarts_reused_server_when_credentials_required(
     assert result.port == 8835
 
 
+def test_daemon_start_reuses_cyt_spawned_server_with_credentials(
+    pidfile_path: Path,
+) -> None:
+    pidfile_path.write_text(
+        json.dumps(
+            {
+                "pid": 12345,
+                "port": 8834,
+                "hook_url": "http://127.0.0.1:8834/hook/inject",
+                "owner": "cyt-hook-daemon",
+                "reused": False,
+                "credentials_injected": True,
+            },
+        ),
+        encoding="utf-8",
+    )
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch(
+            "cyt.hook.daemon._resolve_spawn_credentials",
+            return_value={OR_KEY: OR_TOKEN},
+        ),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port") as stop,
+    ):
+        result = hook_daemon.daemon_start(verbose=False)
+
+    stop.assert_not_called()
+    assert result.reused is True
+    assert result.port == 8834
+
+
 def test_spawn_hook_server_passes_resolved_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

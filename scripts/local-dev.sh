@@ -342,4 +342,3 @@ else
 	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths
 fi
 exit "${PIPESTATUS[0]}"
-

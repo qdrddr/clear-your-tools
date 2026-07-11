@@ -15,6 +15,7 @@ from cyt.config import (
     DEFAULT_MCP_TOOL_POLICY,
     DEFAULT_MIN_TOOLS_PRUNING,
     DEFAULT_REVERSE_PORT,
+    DEFAULT_SKILLS_ENABLED,
     DEFAULT_STATS_DB_PATH,
     DEFAULT_SYSTEM_TOOL_POLICY,
     POLICY_CHOICES,
@@ -1577,7 +1578,7 @@ def _prompt_skills(
 ) -> dict[str, Any]:
     existing_skills = existing.get("skills")
     skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
-    default_enabled = bool(skills_cfg.get("enabled", True))
+    default_enabled = bool(skills_cfg.get("enabled", DEFAULT_SKILLS_ENABLED))
     print("\n--- Skills injection ---")
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:

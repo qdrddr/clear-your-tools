@@ -90,6 +90,7 @@ def _write_pidfile(
     pid: int | None,
     reused: bool,
     mode: str,
+    credentials_injected: bool = False,
 ) -> None:
     payload = {
         "pid": pid,
@@ -99,6 +100,7 @@ def _write_pidfile(
         "owner": "cyt-hook-daemon",
         "started_at": datetime.now(tz=UTC).isoformat(),
         "reused": reused,
+        "credentials_injected": credentials_injected,
     }
     path = HOOK_DAEMON_PIDFILE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,6 +122,20 @@ def _needs_credential_injection(config: dict[str, Any]) -> bool:
     return bool(
         required_proxy_env_var_names(config) or required_tools_hook_env_var_names(config),
     )
+
+
+def _hook_daemon_has_credentials(reused_port: int) -> bool:
+    """True when the running cyt-managed daemon on ``reused_port`` already has creds."""
+    pidfile = read_hook_daemon_pidfile()
+    if pidfile is None:
+        return False
+    if pidfile.get("owner") != "cyt-hook-daemon":
+        return False
+    if pidfile.get("port") != reused_port:
+        return False
+    if pidfile.get("reused"):
+        return False
+    return bool(pidfile.get("credentials_injected"))
 
 
 def _report_missing_daemon_credentials(names: list[str]) -> None:
@@ -254,7 +270,7 @@ def daemon_start(
             _report_missing_daemon_credentials(missing)
 
     reused_port = _find_reusable_hook_port(base_port)
-    if reused_port is not None and extra_env:
+    if reused_port is not None and extra_env and not _hook_daemon_has_credentials(reused_port):
         _log(
             verbose,
             "hook daemon: restarting existing server to inject pruning credentials",
@@ -306,6 +322,7 @@ def daemon_start(
             pid=os.getpid(),
             reused=False,
             mode=mode,
+            credentials_injected=bool(extra_env),
         )
         _log(verbose, f"hook daemon: serving foreground on port {spawn_port}")
         _emit_start_status(
@@ -354,6 +371,7 @@ def daemon_start(
         pid=process.pid,
         reused=False,
         mode=mode,
+        credentials_injected=bool(extra_env),
     )
     _log(verbose, f"hook daemon: started pid={process.pid} port={spawn_port}")
     result = HookDaemonStartResult(

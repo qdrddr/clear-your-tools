@@ -472,16 +472,18 @@ def build_pruner_settings_cache(config: dict[str, Any]) -> PrunerSettingsCache:
         pruning_pipeline_from_config,
         skills_enabled,
         skills_pipeline,
+        tools_enabled,
     )
     from cyt.pruners.llm import llm_pruning_settings
     from cyt.pruners.rerank import rerank_pruning_settings
 
     cache = PrunerSettingsCache()
-    for stage in pruning_pipeline_from_config(config):
-        if stage == "rerank":
-            cache.rerank = rerank_pruning_settings(config)
-        elif stage == "llm":
-            cache.llm = llm_pruning_settings(config)
+    if tools_enabled(config):
+        for stage in pruning_pipeline_from_config(config):
+            if stage == "rerank":
+                cache.rerank = rerank_pruning_settings(config)
+            elif stage == "llm":
+                cache.llm = llm_pruning_settings(config)
 
     if skills_enabled(config):
         pipeline = skills_pipeline(config).strip().lower()
