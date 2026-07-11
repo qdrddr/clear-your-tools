@@ -201,19 +201,23 @@ class TestHookModeEnvReport:
         self,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        print_runtime_env_report(
-            quiet=False,
-            credential_sources={},
-            port=8834,
-            endpoint="openrouter",
-            upstream_url="https://openrouter.ai/api",
-            include_agent_recipe=True,
-            agent="codex",
-            launch_env={"CYT_HOOK_URL": "http://127.0.0.1:8834/hook/inject"},
-            config=_config(),
-            hook_mode=True,
-            switch_provider=False,
-        )
+        with patch(
+            "cyt.agents.codex.launch.read_config_model_provider",
+            return_value="cyt",
+        ):
+            print_runtime_env_report(
+                quiet=False,
+                credential_sources={},
+                port=8834,
+                endpoint="openrouter",
+                upstream_url="https://openrouter.ai/api",
+                include_agent_recipe=True,
+                agent="codex",
+                launch_env={"CYT_HOOK_URL": "http://127.0.0.1:8834/hook/inject"},
+                config=_config(),
+                hook_mode=True,
+                switch_provider=False,
+            )
         err = capsys.readouterr().err
         assert "Hook server:" in err
         assert "Manual hook recipe:" in err
@@ -325,3 +329,4 @@ def test_switch_provider_requires_hook_mode() -> None:
                 runtime=runtime,
                 endpoint="openrouter",
             )
+

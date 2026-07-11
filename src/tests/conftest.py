@@ -12,6 +12,22 @@ INTEGRATION_SKIP_REASON = (
     "integration tests disabled (pass --run-integration or set CYT_RUN_INTEGRATION_TESTS=1)"
 )
 
+# Stub credentials in CI and local runs without ~/.config/cyt/.env so hook/cli tests
+# do not exit on missing DEEPINFRA_API_KEY / EXECUTOR_TOKEN / OPENROUTER_API_KEY.
+_CI_CREDENTIAL_STUBS: dict[str, str] = {
+    "DEEPINFRA_API_KEY": "test-ci-stub",
+    "EXECUTOR_TOKEN": "test-ci-stub",
+    "OPENROUTER_API_KEY": "test-ci-stub",
+}
+
+
+@pytest.fixture(autouse=True)
+def _ci_credential_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide dummy API keys when unset (GitHub Actions has no keyring or .env)."""
+    for name, value in _CI_CREDENTIAL_STUBS.items():
+        if not os.environ.get(name):
+            monkeypatch.setenv(name, value)
+
 
 @pytest.fixture(autouse=True)
 def _deterministic_indexer_cache() -> Iterator[None]:
@@ -61,3 +77,4 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if item.get_closest_marker("integration"):
             item.add_marker(skip)
+

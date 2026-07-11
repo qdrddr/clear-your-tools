@@ -60,7 +60,7 @@ After setup, run hooks locally before pushing:
 
 ```bash
 uv run prek run -a          # all pre-commit hooks (build TS SDK first; see above)
-task ci                     # Python checks mirroring CI (sync, ruff, mypy, pytest, build)
+task ci                     # Python checks mirroring CI (sync, ast-grep, import checks, ruff, mypy, pytest, build)
 ```
 
 TypeScript-only hooks: `task -d sdk prek` or `cd sdk/typescript && npm test`.
@@ -172,8 +172,9 @@ facades. Tests may import `cyt_indexer` only in documented SDK parity tests (for
 
 Enforcement:
 
-- `src/tests/test_import_boundaries.py` — AST check on every CI run
-- `.ast-grep/rules/python-no-direct-cyt-indexer-import.yml` — lint hook (`ast-grep scan`)
+- `src/tests/test_import_boundaries.py` — AST check on every CI run (via pytest)
+- `.ast-grep/rules/python-no-direct-cyt-indexer-import.yml` — `ast-grep scan` in CI and prek
+- `scripts/check_agent_imports.py` and `scripts/check_cyt_client_imports.py` — import smoke checks in CI and prek
 
 ### Dev vs production dependency resolution
 
@@ -277,3 +278,4 @@ cyt proxy --http2-serve \
 ```
 
 TLS settings can also live in `config.yaml` under `network.proxy.reverse.http2.ssl`.
+

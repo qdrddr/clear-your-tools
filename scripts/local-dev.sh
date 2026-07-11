@@ -36,7 +36,7 @@
 #   Other:
 #     proxy [args...]      verify + uv run src/cyt/proxy/cli.py proxy ...
 #     simulate-registry    isolated venv: install built wheels + cargo/npm dry-run checks
-#     ci                   app-setup → app-verify → ruff → pytest → app-build (no rust/other sdks)
+#     ci                   app-setup → app-verify → ast-grep scan → import checks → ruff → pytest → app-build (no rust/other sdks)
 #     all                  core-rust → all SDKs → app-all (full monorepo check)
 #
 # Examples:
@@ -304,9 +304,17 @@ PY
 		cyt_sync_app
 		cyt_verify_app_python
 		cyt_verify_sdk_import
+		if command -v ast-grep >/dev/null 2>&1; then
+			info "ast-grep scan"
+			cyt_run ast-grep scan src/ sdk/
+		else
+			info "skip ast-grep (not on PATH)"
+		fi
+		cyt_run uv run python scripts/check_agent_imports.py
+		cyt_run uv run python scripts/check_cyt_client_imports.py
 		if command -v ruff >/dev/null 2>&1 || [[ -x "${CYT_VENV_BIN}/ruff" ]]; then
 			info "ruff check"
-			cyt_run uv run ruff check src/cyt src/tests sdk/python
+			cyt_run uv run ruff check src/cyt src/tests
 		else
 			info "skip ruff (not on PATH)"
 		fi
@@ -334,3 +342,4 @@ else
 	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths
 fi
 exit "${PIPESTATUS[0]}"
+

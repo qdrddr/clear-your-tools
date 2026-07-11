@@ -32,6 +32,18 @@ jobs:
       - name: Verify cyt-indexer-sdk import
         run: uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"
 
+      - name: Install ast-grep
+        run: uv pip install ast-grep-cli==0.41.0
+
+      - name: Ast-grep scan
+        run: uv run ast-grep scan src/ sdk/
+
+      - name: Check agent imports
+        run: uv run python scripts/check_agent_imports.py
+
+      - name: Check cyt_client imports
+        run: uv run python scripts/check_cyt_client_imports.py
+
       - name: Ruff lint
         run: uv run ruff check src/cyt src/tests
 
@@ -96,3 +108,4 @@ jobs:
       - name: Test TypeScript SDK
         working-directory: sdk/typescript
         run: npm test
+

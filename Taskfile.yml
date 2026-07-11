@@ -31,7 +31,7 @@ tasks:
   ruff-check:
     desc: Lint without auto-fix (CI mode)
     cmds:
-      - rtk uv run ruff check src/cyt src/tests sdk/python
+      - rtk uv run ruff check src/cyt src/tests
 
   format:
     desc: Format code
@@ -88,6 +88,9 @@ tasks:
     cmds:
       - task: sync
       - task: verify-sdk
+      - task: ast-scan
+      - cmd: uv run python scripts/check_agent_imports.py
+      - cmd: uv run python scripts/check_cyt_client_imports.py
       - task: ruff-check
       - task: format-check
       - task: mypy
@@ -122,3 +125,4 @@ tasks:
       - task: pytest
       - task: ast-scan
       - task: right
+
