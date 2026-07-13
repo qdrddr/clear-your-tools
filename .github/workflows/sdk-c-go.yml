@@ -98,8 +98,17 @@ jobs:
       - name: Build and test sdk/c
         shell: bash
         run: |
-          cmake --build sdk/c/build
-          ctest --test-dir sdk/c/build --output-on-failure
+          build_args=()
+          ctest_args=()
+          case "${{ matrix.target }}" in
+            *-pc-windows-msvc)
+              # MSVC uses a multi-config generator; ctest needs -C <config>.
+              build_args=(--config Release)
+              ctest_args=(-C Release)
+              ;;
+          esac
+          cmake --build sdk/c/build "${build_args[@]}"
+          ctest --test-dir sdk/c/build --output-on-failure "${ctest_args[@]}"
 
       - name: Go tests (sdk/go)
         shell: bash
@@ -133,3 +142,4 @@ jobs:
           # Use monorepo-built artifacts; -force would re-download from GitHub Releases.
           go run ./cmd/cyt-native-ensure
           go test -count=1 ./...
+
