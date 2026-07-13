@@ -6,6 +6,7 @@ import contextlib
 from typing import Any
 
 from cyt.proxy.anthropic import PruneResult
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruning.coordinator import ToolSource, coordinate_skills_tools_prune
 from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.hook_quiet import hook_safe_stdout
@@ -22,6 +23,7 @@ def run_hook_coordinated_prune(
     tools_allowed: bool,
     skills_max_tokens: int | None = None,
     io_guarded: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[PruneResult | None, list[MatchedSkill] | None, list[dict[str, Any]] | None]:
     catalog = load_tool_catalog(config) if tools_allowed else None
     if tools_allowed and catalog is None:
@@ -67,6 +69,7 @@ def run_hook_coordinated_prune(
             tools_allowed=bool(tool_sources),
             skills_max_tokens=skills_max_tokens,
             skill_out=skill_out,
+            pruner_settings=pruner_settings,
         )
 
     prune_result = coordinated.prune_results.get("root") if tool_sources else None

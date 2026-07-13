@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from cyt.proxy.reverse import create_app
+from cyt.pruners.remote import PrunerSettingsCache, RemotePruningSettings
 from cyt.skills.cli import HookRunResult, run_hook_payload
 
 
@@ -76,6 +77,63 @@ async def test_hook_inject_empty_body(hook_client: httpx.AsyncClient) -> None:
     response = await hook_client.post("/hook/inject", content=b"")
     assert response.status_code == 200
     assert response.text == ""
+
+
+@pytest.mark.asyncio
+async def test_hook_inject_passes_app_state_pruner_settings() -> None:
+    cached = RemotePruningSettings(
+        "test-model",
+        "startup-key",
+        "https://example.com",
+        "test",
+        "example.com",
+    )
+    pruner_settings = PrunerSettingsCache(llm=cached)
+    app = create_app(
+        routes={},
+        config={"skills": {"enabled": False}, "pruning": {"inject_via": "hook"}},
+        pruner_settings=pruner_settings,
+    )
+    app.state.pruner_settings = pruner_settings
+    transport = httpx.ASGITransport(app=app)
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    result = HookRunResult(stdout_text="", outcome="noop", details={})
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        with patch("cyt.hook.http_server.run_hook_payload", return_value=result) as run_hook:
+            response = await client.post("/hook/inject", json=payload)
+
+    assert response.status_code == 200
+    assert run_hook.call_args.kwargs["pruner_settings"] is pruner_settings
+
+
+def test_run_hook_payload_defers_cache_when_not_provided() -> None:
+    config: dict[str, Any] = {
+        "skills": {"enabled": False},
+        "pruning": {"inject_via": "proxy"},
+    }
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    with patch("cyt.launch.secrets.build_pruner_settings_cache") as build:
+        with patch("cyt.skills.cli._dispatch_hook_event") as dispatch:
+            dispatch.return_value = ("skipped_inject_via_proxy", {}, "")
+            run_hook_payload(payload, config)
+            build.assert_not_called()
+            assert dispatch.call_args.kwargs["pruner_settings"] is None
+
+
+def test_run_hook_payload_reuses_provided_cache() -> None:
+    config: dict[str, Any] = {
+        "skills": {"enabled": False},
+        "pruning": {"inject_via": "proxy"},
+    }
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello"}
+    provided = PrunerSettingsCache()
+    with patch("cyt.launch.secrets.build_pruner_settings_cache") as build:
+        with patch("cyt.skills.cli._dispatch_hook_event") as dispatch:
+            dispatch.return_value = ("skipped_inject_via_proxy", {}, "")
+            run_hook_payload(payload, config, pruner_settings=provided)
+            build.assert_not_called()
+            assert dispatch.call_args.kwargs["pruner_settings"] is provided
 
 
 def test_run_hook_payload_does_not_print(capsys: pytest.CaptureFixture[str]) -> None:

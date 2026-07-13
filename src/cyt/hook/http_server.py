@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from cyt.config import load_config
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.cli import HookRunResult, run_hook_payload
 from cyt.skills.hook_payload import normalize_hook_payload
 from cyt.skills.hook_quiet import configure_hook_quiet
@@ -40,6 +41,11 @@ async def hook_inject(request: Request) -> Response:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
     config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
+    pruner_settings: PrunerSettingsCache | None = getattr(
+        request.app.state,
+        "pruner_settings",
+        None,
+    )
     debug = _hook_debug_enabled(request)
     try:
         result = await _run_hook_in_thread(
@@ -47,6 +53,7 @@ async def hook_inject(request: Request) -> Response:
             config,
             request_payload=payload_raw,
             debug=debug,
+            pruner_settings=pruner_settings,
         )
     except Exception as exc:
         logger.exception("hook inject failed")
@@ -63,6 +70,7 @@ async def _run_hook_in_thread(
     *,
     request_payload: dict[str, Any] | None = None,
     debug: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> HookRunResult:
     import asyncio
 
@@ -75,4 +83,5 @@ async def _run_hook_in_thread(
         debug=debug,
         io_guarded=True,
         allow_transcript_file_read=False,
+        pruner_settings=pruner_settings,
     )

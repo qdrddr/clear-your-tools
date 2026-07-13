@@ -11,6 +11,7 @@ from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.proxy.anthropic import PruneResult
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.budget import count_hook_request_tokens
 from cyt.skills.hook_payload import prompt_from_payload
 from cyt.skills.hook_quiet import hook_safe_stdout
@@ -50,6 +51,7 @@ def handle_user_prompt_tools(
     debug: bool = False,
     io_guarded: bool = False,
     allow_transcript_file_read: bool = True,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     """Return (outcome, details, injection_text)."""
     if not tools_inject_allowed(config, "hook", cli_prompt=plain_output):
@@ -80,7 +82,12 @@ def handle_user_prompt_tools(
         return "skipped_budget_zero", {"request_tokens": request_tokens}, ""
 
     model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
-    pruned, result, catalog = _prune_hook_tool_catalog(query, config, io_guarded=io_guarded)
+    pruned, result, catalog = _prune_hook_tool_catalog(
+        query,
+        config,
+        io_guarded=io_guarded,
+        pruner_settings=pruner_settings,
+    )
     if catalog is None:
         return _missing_tools_catalog_outcome(result, debug=debug)
     if not pruned:
@@ -194,6 +201,7 @@ def _prune_hook_tool_catalog(
     config: dict[str, Any],
     *,
     io_guarded: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[dict[str, Any]], PruneResult, list[dict[str, Any]] | None]:
     stdout_guard = contextlib.nullcontext() if io_guarded else hook_safe_stdout()
     with stdout_guard:
@@ -212,5 +220,10 @@ def _prune_hook_tool_catalog(
                 ),
                 None,
             )
-        result = prune_tools_for_query(catalog, query, config=config)
+        result = prune_tools_for_query(
+            catalog,
+            query,
+            config=config,
+            pruner_settings=pruner_settings,
+        )
     return result.tools or [], result, catalog

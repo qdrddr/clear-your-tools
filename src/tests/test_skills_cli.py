@@ -754,7 +754,10 @@ def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
             *,
             config: dict,
             max_tokens: int | None = None,
+            pruner_settings: object | None = None,
+            skip_frontmatter_gate: bool = False,
         ) -> list:
+            del pruner_settings, skip_frontmatter_gate
             print("pruning model tokens (llm): 999 tokens", flush=True)
             log_token_usage("pruning model tokens (llm)", 999)
             return real_search(query, entries, config=config, max_tokens=max_tokens)

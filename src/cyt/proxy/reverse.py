@@ -1030,10 +1030,15 @@ async def _proxy_request(
     debug_trace: DebugTrace | None,
     stats_db: StatsDB | None,
     store_full_tools: bool,
-    config: dict[str, Any] | None,
-    pruner_settings: PrunerSettingsCache | None = None,
 ) -> Response:
     from starlette.responses import Response
+
+    config: dict[str, Any] | None = getattr(request.app.state, "cyt_config", None)
+    pruner_settings: PrunerSettingsCache | None = getattr(
+        request.app.state,
+        "pruner_settings",
+        None,
+    )
 
     _log_proxy_request_entry(debug_trace, request)
     match = resolve_upstream(request.url.path, routes)
@@ -1207,7 +1212,7 @@ def create_app(
         finally:
             await client.aclose()
 
-    async def health(_: Request) -> JSONResponse:
+    async def health(request: Request) -> JSONResponse:
         payload: dict[str, Any] = {
             "name": "cyt",
             "status": "ok",
@@ -1218,12 +1223,13 @@ def create_app(
         }
         if launch_agent is not None:
             payload["agent"] = launch_agent
-        if config is not None:
+        cyt_config: dict[str, Any] | None = getattr(request.app.state, "cyt_config", None)
+        if cyt_config is not None:
             from cyt.config import uses_executor_tool_catalog
             from cyt.tools.sources.executor_http import executor_catalog_health_snapshot
 
-            if uses_executor_tool_catalog(config):
-                payload.update(executor_catalog_health_snapshot(config))
+            if uses_executor_tool_catalog(cyt_config):
+                payload.update(executor_catalog_health_snapshot(cyt_config))
         return JSONResponse(payload)
 
     from cyt.hook.http_server import hook_inject
@@ -1241,8 +1247,6 @@ def create_app(
             debug_trace=debug_trace,
             stats_db=stats_db,
             store_full_tools=store_full_tools,
-            config=config,
-            pruner_settings=pruner_settings,
         )
 
     return Starlette(

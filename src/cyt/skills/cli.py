@@ -27,6 +27,7 @@ from cyt.injection.pre_exposed import filter_pre_exposed_skills, filter_pre_expo
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.proxy.anthropic import PruneResult
 from cyt.proxy.user_message_inject import combine_injection_parts
+from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
     count_hook_request_tokens,
@@ -447,6 +448,7 @@ def _search_skills_for_user_prompt(
     debug: bool,
     io_guarded: bool = False,
     payload: dict[str, Any] | None = None,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[MatchedSkill], SkillsPipelineRun | None, SkillsSearchTrace | None]:
     configure_hook_quiet()
     stdout_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_safe_stdout()
@@ -463,6 +465,7 @@ def _search_skills_for_user_prompt(
                 entries,
                 config=config,
                 max_tokens=max_tokens,
+                pruner_settings=pruner_settings,
             )
             pipeline_run = search_trace.pipeline_run
         else:
@@ -471,6 +474,7 @@ def _search_skills_for_user_prompt(
                 entries,
                 config=config,
                 max_tokens=max_tokens,
+                pruner_settings=pruner_settings,
             )
             pipeline_run = None
             search_trace = None
@@ -506,6 +510,7 @@ def _handle_user_prompt_skills(
     debug: bool = False,
     io_guarded: bool = False,
     allow_transcript_file_read: bool = True,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     query = skills_search_query_from_hook_payload(
         payload,
@@ -537,6 +542,7 @@ def _handle_user_prompt_skills(
         debug=debug,
         io_guarded=io_guarded,
         payload=payload,
+        pruner_settings=pruner_settings,
     )
     if not matches:
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
@@ -689,6 +695,7 @@ def _run_coordinated_user_prompt_injection(
     tools_allowed: bool,
     allow_transcript_file_read: bool,
     stdio_guarded: bool,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     from cyt.pruning.hook_bridge import run_hook_coordinated_prune
     from cyt.skills.hook_quiet import hook_quiet_stderr
@@ -740,6 +747,7 @@ def _run_coordinated_user_prompt_injection(
             tools_allowed=tools_allowed,
             skills_max_tokens=budget.effective_max if skills_allowed else None,
             io_guarded=stdio_guarded,
+            pruner_settings=pruner_settings,
         )
 
         parts: list[str] = []
@@ -798,6 +806,7 @@ def _run_user_prompt_injection(
     tools_allowed: bool,
     allow_transcript_file_read: bool,
     io_guarded: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
     """Run skills/tools hook injection via the shared coordinator when both are enabled."""
     parts: list[str] = []
@@ -818,6 +827,7 @@ def _run_user_prompt_injection(
             tools_allowed=tools_allowed,
             allow_transcript_file_read=allow_transcript_file_read,
             stdio_guarded=True,
+            pruner_settings=pruner_settings,
         )
 
     if skills_allowed:
@@ -827,6 +837,7 @@ def _run_user_prompt_injection(
             plain_output=plain_output,
             debug=debug,
             allow_transcript_file_read=allow_transcript_file_read,
+            pruner_settings=pruner_settings,
         )
         outcomes.append(skills_outcome)
         details.update(skills_details)
@@ -840,6 +851,7 @@ def _run_user_prompt_injection(
             plain_output=plain_output,
             debug=debug,
             allow_transcript_file_read=allow_transcript_file_read,
+            pruner_settings=pruner_settings,
         )
         outcomes.append(tools_outcome)
         details.update(tools_details)
@@ -864,6 +876,7 @@ def _handle_user_prompt(
     emit_stdout: bool = True,
     allow_transcript_file_read: bool = True,
     io_guarded: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=plain_output)
     tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=plain_output)
@@ -877,6 +890,7 @@ def _handle_user_prompt(
         tools_allowed=tools_allowed,
         allow_transcript_file_read=allow_transcript_file_read,
         io_guarded=io_guarded,
+        pruner_settings=pruner_settings,
     )
 
     if debug:
@@ -971,6 +985,7 @@ def _dispatch_hook_event(
     emit_stdout: bool = True,
     allow_transcript_file_read: bool = True,
     io_guarded: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[str, dict[str, Any] | None, str]:
     outcome = "empty_stdin" if not raw_stdin.strip() else "noop"
     details: dict[str, Any] | None = None
@@ -997,6 +1012,7 @@ def _dispatch_hook_event(
                 emit_stdout=emit_stdout,
                 allow_transcript_file_read=allow_transcript_file_read,
                 io_guarded=io_guarded,
+                pruner_settings=pruner_settings,
             )
     elif event_name is not None:
         outcome = "unhandled_event"
@@ -1015,6 +1031,7 @@ def run_hook_payload(
     debug: bool = False,
     io_guarded: bool = False,
     allow_transcript_file_read: bool = False,
+    pruner_settings: PrunerSettingsCache | None = None,
 ) -> HookRunResult:
     """Run hook logic for *payload* and return formatted stdout without printing."""
     configure_hook_quiet()
@@ -1032,6 +1049,7 @@ def run_hook_payload(
         emit_stdout=False,
         allow_transcript_file_read=allow_transcript_file_read,
         io_guarded=io_guarded,
+        pruner_settings=pruner_settings,
     )
     stdout_text = format_hook_stdout(
         injection_text,
