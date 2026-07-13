@@ -102,4 +102,3 @@ jobs:
           name: cyt-release-version
           path: cyt-release-version.txt
           if-no-files-found: error
-

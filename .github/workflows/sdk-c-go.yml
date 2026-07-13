@@ -46,9 +46,13 @@ jobs:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             goarch: amd64
+            cgo_cc: x86_64-w64-mingw32-gcc
+            cgo_cxx: x86_64-w64-mingw32-g++
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             goarch: arm64
+            cgo_cc: aarch64-w64-mingw32-gcc
+            cgo_cxx: aarch64-w64-mingw32-g++
 
     steps:
       - name: Checkout
@@ -110,6 +114,19 @@ jobs:
           cmake --build sdk/c/build "${build_args[@]}"
           ctest --test-dir sdk/c/build --output-on-failure "${ctest_args[@]}"
 
+      - name: Install llvm-mingw (Windows ARM64 CGO)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: choco install llvm-mingw -y --no-progress
+
+      - name: Prepare Windows Go CGO import library
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
+          native_dir="${GITHUB_WORKSPACE}/sdk/go/native/${{ matrix.target }}"
+          bash sdk/go/scripts/prepare-windows-cgo.sh "$lib_dir" "$native_dir"
+
       - name: Go tests (sdk/go)
         shell: bash
         working-directory: sdk/go
@@ -119,6 +136,12 @@ jobs:
           CYT_REPO_ROOT: ${{ github.workspace }}
           CYT_RUST_TARGET: ${{ matrix.target }}
         run: |
+          case "${{ matrix.target }}" in
+            *-pc-windows-msvc)
+              export CC="${{ matrix.cgo_cc }}"
+              export CXX="${{ matrix.cgo_cxx }}"
+              ;;
+          esac
           ensure_args=(-static-only)
           case "${{ matrix.target }}" in
             *-pc-windows-msvc) ensure_args=() ;;
@@ -141,6 +164,12 @@ jobs:
           CYT_REPO_ROOT: ${{ github.workspace }}
           CYT_RUST_TARGET: ${{ matrix.target }}
         run: |
+          case "${{ matrix.target }}" in
+            *-pc-windows-msvc)
+              export CC="${{ matrix.cgo_cc }}"
+              export CXX="${{ matrix.cgo_cxx }}"
+              ;;
+          esac
           lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
           case "${{ matrix.target }}" in
             *-apple-darwin) export DYLD_LIBRARY_PATH="${lib_dir}:${DYLD_LIBRARY_PATH:-}" ;;
