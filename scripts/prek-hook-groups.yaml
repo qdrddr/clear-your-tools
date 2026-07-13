@@ -112,3 +112,5 @@ groups:
     - trailing-whitespace
     - trufflehog
     - typos
+    - psscriptanalyzer-check
+    - psscriptanalyzer-format

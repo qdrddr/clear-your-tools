@@ -117,7 +117,7 @@ jobs:
       - name: Install llvm-mingw (Windows ARM64 CGO)
         if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: pwsh
-        run: choco install llvm-mingw -y --no-progress
+        run: ./sdk/go/scripts/install-llvm-mingw.ps1 -Arch aarch64
 
       - name: Prepare Windows Go CGO import library
         if: runner.os == 'Windows'
