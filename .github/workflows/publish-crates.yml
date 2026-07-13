@@ -85,7 +85,8 @@ jobs:
         working-directory: sdk/rust/cyt-indexer
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish
+        # set-version mutates Cargo.toml in CI; publish the tag-aligned version from the checkout.
+        run: cargo publish --allow-dirty
 
       - name: Prepare release version metadata
         if: github.event_name == 'push'
@@ -101,3 +102,4 @@ jobs:
           name: cyt-release-version
           path: cyt-release-version.txt
           if-no-files-found: error
+
