@@ -470,7 +470,10 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` t
 | `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
 | `pruning.tools.hook.mcp_definitions_file` | path | `~/.config/cyt/mcp-definitions.json` |
 
-- **`proxy`**: unchanged — CYT prunes tools in upstream HTTP bodies via the reverse proxy.
+- **`proxy`**: CYT prunes tools from the upstream request `tools` array via the reverse proxy (BM25,
+  rerank, and LLM pipelines run on that request catalog only). Executor is **not** used in proxy
+  mode — `pruning.tools.hook.executor_*` settings are ignored, and the proxy works without Executor
+  running or `EXECUTOR_TOKEN` set.
 - **`hook`**: load a catalog from the definitions file or live executor HTTP API (`tools_from: executor`),
   run the BM25/rerank/LLM pipeline, inject `<agent-tools>…</agent-tools>` context. Missing catalog
   files or an unset executor URL are skipped silently at hook time (configure with `cyt hook`, `cyt setup`, or optional
@@ -504,9 +507,10 @@ network:
       inject_into_user_message: true
 ```
 
-Live executor catalog loading requires a running Executor MCP aggregator at
-`pruning.tools.hook.executor_url` and a Bearer token in `EXECUTOR_TOKEN` (or
-`pruning.tools.hook.executor_token_var`). Snapshot tools offline with `cyt executor save`.
+Live executor catalog loading requires **hook injection** (`pruning.inject_via: hook`), a running
+Executor MCP aggregator at `pruning.tools.hook.executor_url`, and a Bearer token in `EXECUTOR_TOKEN`
+(or `pruning.tools.hook.executor_token_var`). Snapshot tools offline with `cyt executor save`.
+Proxy injection does not load Executor catalogs or MCP cache.
 
 `cyt launch` skips the reverse proxy when **both** tools and skills use hook injection (or skills are
 disabled). Mixed mode (`skills.inject_via: proxy`, `tools.inject_via: hook`) still starts the proxy

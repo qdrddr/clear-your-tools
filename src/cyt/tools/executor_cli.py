@@ -17,7 +17,7 @@ from cyt.config import (
 )
 from cyt.proxy.setup_wizard import _prompt
 from cyt.tools.hook_setup import build_pruning_tools_hook_save_overlay
-from cyt.tools.sources.executor_http import fetch_executor_tools
+from cyt.tools.sources.executor_http import fetch_executor_tools_for_cli
 
 _CONFIG_SUFFIXES = {".yaml", ".yml"}
 
@@ -104,7 +104,7 @@ def run_executor_save(args: argparse.Namespace) -> None:
     _resolve_executor_url(config_path, config)
     config = load_config(config_path)
 
-    tools = fetch_executor_tools(config, allow_prompt=True, blocking=True)
+    tools = fetch_executor_tools_for_cli(config, allow_prompt=True, blocking=True)
     if not tools:
         raise SystemExit("No tools fetched from executor.")
 

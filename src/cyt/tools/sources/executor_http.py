@@ -16,6 +16,7 @@ from cyt.config import (
     load_config,
     tools_hook_executor_token_var,
     tools_hook_executor_url,
+    uses_executor_tool_catalog,
 )
 from cyt.launch.secrets import resolve_credential
 from cyt.tools.sources.executor_catalog_disk import (
@@ -60,6 +61,11 @@ def clear_executor_catalog_cache() -> None:
     """Reset in-process executor catalog state (for tests)."""
     with _catalog_lock:
         _catalog_states.clear()
+
+
+def _executor_runtime_active(config: dict[str, Any]) -> bool:
+    """True when hook injection loads tools from the live Executor catalog."""
+    return uses_executor_tool_catalog(config)
 
 
 def _token_fingerprint(token: str | None) -> str:
@@ -325,6 +331,8 @@ def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
 def load_executor_catalog_from_disk(config: dict[str, Any] | None = None) -> bool:
     """Populate in-memory catalog (+ MCP block) from disk slug when present."""
     cfg = config or load_config()
+    if not _executor_runtime_active(cfg):
+        return False
     if not tools_hook_executor_url(cfg):
         return False
     token = _resolve_executor_token(cfg, allow_prompt=False)
@@ -427,6 +435,8 @@ def schedule_executor_catalog_refresh(
 ) -> None:
     """Start a background catalog refresh when stale; never blocks the caller."""
     cfg = config or load_config()
+    if not _executor_runtime_active(cfg):
+        return
     base_url = tools_hook_executor_url(cfg)
     if not base_url:
         return
@@ -485,6 +495,8 @@ def get_executor_mcp_cache(
     and never calls the live executor API on the request path.
     """
     cfg = config or load_config()
+    if not _executor_runtime_active(cfg):
+        return None
     if not tools_hook_executor_url(cfg):
         return None
 
@@ -502,15 +514,13 @@ def get_executor_mcp_cache(
     return _snapshot_executor_mcp(state)
 
 
-def get_executor_catalog(
-    config: dict[str, Any] | None = None,
+def _get_executor_catalog_impl(
+    cfg: dict[str, Any],
     *,
-    allow_prompt: bool = True,
-    blocking: bool = False,
-    force: bool = False,
+    allow_prompt: bool,
+    blocking: bool,
+    force: bool,
 ) -> list[dict[str, Any]] | None:
-    """Unified SWR entrypoint: memory → disk → wait for refresh → block only if both empty."""
-    cfg = config or load_config()
     if not tools_hook_executor_url(cfg):
         return None
 
@@ -546,6 +556,25 @@ def get_executor_catalog(
     return _snapshot_tools(state)
 
 
+def get_executor_catalog(
+    config: dict[str, Any] | None = None,
+    *,
+    allow_prompt: bool = True,
+    blocking: bool = False,
+    force: bool = False,
+) -> list[dict[str, Any]] | None:
+    """Unified SWR entrypoint: memory → disk → wait for refresh → block only if both empty."""
+    cfg = config or load_config()
+    if not _executor_runtime_active(cfg):
+        return None
+    return _get_executor_catalog_impl(
+        cfg,
+        allow_prompt=allow_prompt,
+        blocking=blocking,
+        force=force,
+    )
+
+
 def load_executor_tools(
     config: dict[str, Any] | None = None,
     *,
@@ -578,11 +607,31 @@ def fetch_executor_tools(
     return result if result is not None else []
 
 
+def fetch_executor_tools_for_cli(
+    config: dict[str, Any] | None = None,
+    *,
+    allow_prompt: bool = True,
+    blocking: bool = False,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    """Fetch executor tools for ``cyt executor save``; ignores ``inject_via``."""
+    cfg = config or load_config()
+    result = _get_executor_catalog_impl(
+        cfg,
+        allow_prompt=allow_prompt,
+        blocking=blocking,
+        force=force,
+    )
+    return result if result is not None else []
+
+
 def executor_catalog_health_snapshot(
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Catalog fields for ``/health``."""
     cfg = config or load_config()
+    if not _executor_runtime_active(cfg):
+        return {}
     if not tools_hook_executor_url(cfg):
         return {}
 

@@ -44,7 +44,7 @@ def test_executor_save_writes_definitions(
     output_path = tmp_path / "out.json"
 
     with patch(
-        "cyt.tools.executor_cli.fetch_executor_tools",
+        "cyt.tools.executor_cli.fetch_executor_tools_for_cli",
         return_value=_SAMPLE_TOOLS,
     ):
         run_executor_save(_save_args(config=config_path, file=output_path))
@@ -96,7 +96,7 @@ def test_executor_save_prompts_and_persists_executor_url(
             side_effect=["", "http://localhost:4789"],
         ),
         patch(
-            "cyt.tools.executor_cli.fetch_executor_tools",
+            "cyt.tools.executor_cli.fetch_executor_tools_for_cli",
             return_value=_SAMPLE_TOOLS,
         ),
     ):

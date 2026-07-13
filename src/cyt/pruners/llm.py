@@ -123,6 +123,10 @@ def tool_selector_system_prompt(
     """
     resolved_budget = soft_budget if soft_budget is not None else tools_selector_soft_budget(config)
     prompt = build_tool_selector_system_prompt(soft_budget=resolved_budget)
+    from cyt.config import uses_executor_tool_catalog
+
+    if not uses_executor_tool_catalog(config):
+        return prompt
     try:
         from cyt.tools.sources.executor_http import get_executor_mcp_cache
         from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix

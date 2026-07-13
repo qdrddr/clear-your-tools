@@ -1,9 +1,9 @@
 # Executor
 
 [Executor](https://github.com/UsefulSoftwareCo/executor) is a local MCP aggregator and
-Code Mode sandbox. Clear Your Tools integrates with Executor
-and loads your live tool catalog from Executor when `pruning.tools.hook.tools_from`
-is `executor` (the default for hook injection) in `~/.config/cyt/config.yaml`.
+Code Mode sandbox. Clear Your Tools integrates with Executor **only in hook injection mode**
+(`pruning.inject_via: hook`) when `pruning.tools.hook.tools_from` is `executor` (the default for
+hook injection) in `~/.config/cyt/config.yaml`. Proxy injection does not use Executor.
 
 ---
 
@@ -48,7 +48,9 @@ Or add it to `~/.config/cyt/.env`. CYT reads the env var named by
 With Executor running and at least one MCP server configured:
 
 - **Hook injection** — `cyt hook` fetches tools from `http://localhost:4789` (override with
-  `pruning.tools.hook.executor_url` in `~/.config/cyt/config.yaml`).
+  `pruning.tools.hook.executor_url` in `~/.config/cyt/config.yaml`). Requires
+  `pruning.inject_via: hook`.
+- **Proxy injection** — does not use Executor; tools are pruned from the upstream request body.
 - **Offline snapshot** — `cyt executor save` writes the current catalog to
   `~/.config/cyt/mcp-definitions.json`.
 - Cached requests are also saved to `~/.config/cyt/cache/executor-catalog/` dir

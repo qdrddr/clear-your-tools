@@ -642,6 +642,19 @@ def test_format_executor_mcp_selector_appendix_includes_executor_skill_item() ->
     assert "</skill>" in appendix
 
 
+_HOOK_EXECUTOR_CONFIG = {
+    "pruning": {
+        "inject_via": "hook",
+        "tools": {
+            "hook": {
+                "tools_from": "executor",
+                "executor_url": "http://localhost:4789",
+            },
+        },
+    },
+}
+
+
 def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
     mcp = {
         "tools_list": [{"name": "execute", "description": "Run", "inputSchema": {}}],
@@ -651,7 +664,7 @@ def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
         "cyt.tools.sources.executor_http.get_executor_mcp_cache",
         return_value=mcp,
     ):
-        prompt = tool_selector_system_prompt({"pruning": {}})
+        prompt = tool_selector_system_prompt(_HOOK_EXECUTOR_CONFIG)
 
     assert prompt.startswith(TOOL_SELECTOR_SYSTEM_PROMPT)
     assert "<tool" not in prompt

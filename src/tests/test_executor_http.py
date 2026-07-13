@@ -35,8 +35,10 @@ from cyt.tools.sources.executor_mcp import (
 
 _CONFIG = {
     "pruning": {
+        "inject_via": "hook",
         "tools": {
             "hook": {
+                "tools_from": "executor",
                 "executor_url": "http://localhost:4789",
                 "executor_token_var": "EXECUTOR_TOKEN",
             },
