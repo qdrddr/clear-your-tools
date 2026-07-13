@@ -99,3 +99,81 @@ def test_ensure_agent_tools_starts_on_new_line() -> None:
     assert ensure_agent_tools_starts_on_new_line(block, after="hello") == "\n" + block
     assert ensure_agent_tools_starts_on_new_line(block, after="hello\n") == "\n" + block
     assert ensure_agent_tools_starts_on_new_line("\n" + block, after="hello\n") == "\n" + block
+
+
+def test_format_agent_tools_includes_executor_workspace_note_when_requested() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    text = format_agent_tools(tools, include_executor_workspace_note=True)
+
+    assert "project&apos;s workspace_roots" in text
+    assert "When using tools with executor" in text
+
+
+def test_format_agent_tools_omits_executor_workspace_note_by_default() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    text = format_agent_tools(tools)
+
+    assert "When using tools with executor" not in text
+
+
+def test_format_agent_tools_single_workspace_path_uses_path_attr() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    text = format_agent_tools(tools, workspace_paths=["/tmp/project"])
+
+    assert " path='/tmp/project'" in text
+    assert "<workspace_roots>" not in text
+
+
+def test_format_agent_tools_multiple_workspace_paths_use_nested_block() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    text = format_agent_tools(tools, workspace_paths=["/tmp/a", "/tmp/b"])
+
+    open_tag = text.lstrip("\n").split("\n", 1)[0]
+    assert " path=" not in open_tag
+    assert "<workspace_roots>" in text
+    assert "<item path='/tmp/a'/>" in text
+    assert "<item path='/tmp/b'/>" in text
+    assert text.index("<workspace_roots>") < text.index("<tool ")
+
+
+def test_format_agent_tools_omits_path_markup_when_no_workspace_paths() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    text = format_agent_tools(tools, workspace_paths=[])
+
+    assert " path=" not in text
+    assert "<workspace_roots>" not in text

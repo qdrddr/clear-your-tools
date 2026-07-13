@@ -22,6 +22,7 @@ from cyt.config import (
     skills_pipeline,
     tools_enabled,
     tools_inject_via,
+    uses_executor_tool_catalog,
 )
 from cyt.injection.pre_exposed import filter_pre_exposed_skills, filter_pre_exposed_tools
 from cyt.injection.session_text import session_text_from_hook_payload
@@ -46,6 +47,7 @@ from cyt.skills.hook_payload import (
     normalize_hook_payload,
     prompt_from_payload,
     session_id,
+    workspace_paths_for_tools_inject,
 )
 from cyt.skills.hook_quiet import configure_hook_quiet, hook_quiet_stderr, hook_safe_stdout
 from cyt.skills.inject import format_agent_skills, injection_token_count
@@ -665,7 +667,11 @@ def _append_coordinated_tools_injection(
         allow_file_read=allow_transcript_file_read,
     )
     gated = filter_pre_exposed_tools(pruned, session_text)
-    injected_tools = format_agent_tools(gated)
+    injected_tools = format_agent_tools(
+        gated,
+        include_executor_workspace_note=uses_executor_tool_catalog(config),
+        workspace_paths=workspace_paths_for_tools_inject(payload),
+    )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")
         return
@@ -933,6 +939,7 @@ def _cli_prompt_payload(prompt: str, model: str | None) -> tuple[str, dict[str, 
         "cwd": os.environ.get("CYT_HOOK_CWD") or str(Path.cwd()),
         "session_id": os.environ.get("CYT_SESSION_ID") or f"cli-{uuid.uuid4().hex[:12]}",
     }
+    payload["cyt"] = {"cwd": payload["cwd"]}
     if model:
         payload["model"] = model
     agent = os.environ.get("CYT_LAUNCH_AGENT", "").strip()

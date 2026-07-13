@@ -103,6 +103,7 @@ def test_hook_injects_agent_tools_block() -> None:
         context = output["hookSpecificOutput"]["additionalContext"]
         assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
         assert "<agent-tools" in context
+        assert " path='/tmp/project'" in context
         assert "mcp__filesystem__read_file" in context
 
 

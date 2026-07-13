@@ -8,17 +8,37 @@ from typing import Any
 from cyt.indexer.tokens import count_tokens
 from cyt.tools.serialize import minimize_json_single_quotes
 
-_AGENT_TOOLS_DESCRIPTION = (
+_EXECUTOR_WORKSPACE_NOTE = (
+    "When using tools with executor, you typically required to specify path to the repository "
+    "with the current project's workspace_roots"
+)
+
+_AGENT_TOOLS_DESCRIPTION_BASE = (
     "Pruned MCP tool definitions below-minimized JSON with relevant properties and enums only for selection. "
     "Name and description live on each <tool> tag; JSON carries input_schema with "
     "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
 )
 
-_AGENT_TOOLS_DESCRIPTION_STUBS_ONLY = (
+_AGENT_TOOLS_DESCRIPTION_STUBS_ONLY_BASE = (
     "Pruned MCP tool definitions below-minimized JSON with relevant properties and enums only for selection. "
     "Name lives on each <tool> tag; descriptions are in root tools[] stubs; JSON carries input_schema with "
     "outer double quotes swapped by single quotes to save tokens normally should be double quotes."
 )
+
+
+def _agent_tools_description(
+    *,
+    include_tool_description: bool,
+    include_executor_workspace_note: bool,
+) -> str:
+    intro = (
+        _AGENT_TOOLS_DESCRIPTION_BASE
+        if include_tool_description
+        else _AGENT_TOOLS_DESCRIPTION_STUBS_ONLY_BASE
+    )
+    if include_executor_workspace_note:
+        return f"{intro} {_EXECUTOR_WORKSPACE_NOTE}."
+    return intro
 
 
 def _xml_single_quoted_attr(value: str) -> str:
@@ -27,13 +47,32 @@ def _xml_single_quoted_attr(value: str) -> str:
     return escaped.replace("&", "&amp;").replace("'", "&apos;")
 
 
-def _agent_tools_open_tag(*, include_tool_description: bool = True) -> str:
-    intro = (
-        _AGENT_TOOLS_DESCRIPTION
-        if include_tool_description
-        else _AGENT_TOOLS_DESCRIPTION_STUBS_ONLY
+def _agent_tools_open_tag(
+    *,
+    include_tool_description: bool = True,
+    include_executor_workspace_note: bool = False,
+    workspace_paths: list[str] | None = None,
+) -> str:
+    intro = _agent_tools_description(
+        include_tool_description=include_tool_description,
+        include_executor_workspace_note=include_executor_workspace_note,
     )
-    return f"<agent-tools description='{_xml_single_quoted_attr(intro)}'>"
+    attrs = [f"description='{_xml_single_quoted_attr(intro)}'"]
+    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    if len(paths) == 1:
+        attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
+    return f"<agent-tools {' '.join(attrs)}>"
+
+
+def _format_workspace_roots_block(workspace_paths: list[str]) -> str:
+    items = [
+        f"<item path='{_xml_single_quoted_attr(path.strip())}'/>"
+        for path in workspace_paths
+        if path.strip()
+    ]
+    if not items:
+        return ""
+    return "\n".join(["<workspace_roots>", *items, "</workspace_roots>"])
 
 
 def ensure_agent_tools_starts_on_new_line(injection: str, *, after: str = "") -> str:
@@ -84,6 +123,8 @@ def format_agent_tools(
     pruned_tools: list[dict[str, Any]],
     *,
     include_tool_description: bool = True,
+    include_executor_workspace_note: bool = False,
+    workspace_paths: list[str] | None = None,
 ) -> str:
     if not pruned_tools:
         return ""
@@ -94,7 +135,18 @@ def format_agent_tools(
             item_lines.append(item)
     if not item_lines:
         return ""
-    lines = [_agent_tools_open_tag(include_tool_description=include_tool_description)]
+    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    lines = [
+        _agent_tools_open_tag(
+            include_tool_description=include_tool_description,
+            include_executor_workspace_note=include_executor_workspace_note,
+            workspace_paths=paths,
+        ),
+    ]
+    if len(paths) > 1:
+        roots_block = _format_workspace_roots_block(paths)
+        if roots_block:
+            lines.append(roots_block)
     lines.extend(item_lines)
     lines.append("</agent-tools>")
     return ensure_agent_tools_starts_on_new_line("\n".join(lines))

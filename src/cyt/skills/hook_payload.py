@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from cyt.agents._types import CYT_AGENT_FIELD
@@ -67,3 +68,42 @@ def prompt_from_payload(payload: dict[str, Any]) -> str | None:
     if isinstance(prompt, str) and prompt.strip():
         return prompt.strip()
     return None
+
+
+def _normalized_path_key(path: str) -> Path:
+    return Path(path.strip()).expanduser()
+
+
+def _append_workspace_path(candidates: list[str], seen: set[Path], raw: str) -> None:
+    stripped = raw.strip()
+    if not stripped:
+        return
+    key = _normalized_path_key(stripped)
+    if key in seen:
+        return
+    seen.add(key)
+    candidates.append(stripped)
+
+
+def workspace_paths_for_tools_inject(payload: dict[str, Any]) -> list[str]:
+    """Merge hook ``workspace_roots``, ``cwd``, and ``cyt.cwd`` into a deduplicated path list."""
+    candidates: list[str] = []
+    seen: set[Path] = set()
+
+    roots = payload.get("workspace_roots")
+    if isinstance(roots, list):
+        for root in roots:
+            if isinstance(root, str):
+                _append_workspace_path(candidates, seen, root)
+
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str):
+        _append_workspace_path(candidates, seen, cwd)
+
+    cyt = payload.get("cyt")
+    if isinstance(cyt, dict):
+        cyt_cwd = cyt.get("cwd")
+        if isinstance(cyt_cwd, str):
+            _append_workspace_path(candidates, seen, cyt_cwd)
+
+    return candidates

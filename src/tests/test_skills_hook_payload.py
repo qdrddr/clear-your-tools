@@ -8,6 +8,7 @@ from cyt.skills.hook_payload import (
     normalize_hook_payload,
     prompt_from_payload,
     session_id,
+    workspace_paths_for_tools_inject,
 )
 
 
@@ -50,3 +51,25 @@ def test_normalize_top_level_wins_over_nested_payload() -> None:
     normalized = normalize_hook_payload(raw)
     assert session_id(normalized) == "top-level"
     assert model_from_payload(normalized) == "nested-model"
+
+
+def test_workspace_paths_for_tools_inject_merges_all_sources() -> None:
+    payload = {
+        "workspace_roots": ["/tmp/a", "/tmp/b"],
+        "cwd": "/tmp/c",
+        "cyt": {"cwd": "/tmp/d"},
+    }
+    assert workspace_paths_for_tools_inject(payload) == ["/tmp/a", "/tmp/b", "/tmp/c", "/tmp/d"]
+
+
+def test_workspace_paths_for_tools_inject_dedupes_resolved_paths() -> None:
+    payload = {
+        "workspace_roots": ["/tmp/project", "~/project"],
+        "cwd": "/tmp/project",
+        "cyt": {"cwd": "/tmp/project"},
+    }
+    assert workspace_paths_for_tools_inject(payload) == ["/tmp/project", "~/project"]
+
+
+def test_workspace_paths_for_tools_inject_empty_when_no_paths() -> None:
+    assert workspace_paths_for_tools_inject({}) == []

@@ -6,14 +6,14 @@ import contextlib
 import logging
 from typing import Any
 
-from cyt.config import tools_hook_file_missing
+from cyt.config import tools_hook_file_missing, uses_executor_tool_catalog
 from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.budget import count_hook_request_tokens
-from cyt.skills.hook_payload import prompt_from_payload
+from cyt.skills.hook_payload import prompt_from_payload, workspace_paths_for_tools_inject
 from cyt.skills.hook_quiet import hook_safe_stdout
 from cyt.skills.transcript import (
     resolve_model,
@@ -107,7 +107,11 @@ def handle_user_prompt_tools(
         allow_file_read=allow_transcript_file_read,
     )
     gated = filter_pre_exposed_tools(pruned, session_text)
-    injected = format_agent_tools(gated)
+    injected = format_agent_tools(
+        gated,
+        include_executor_workspace_note=uses_executor_tool_catalog(config),
+        workspace_paths=workspace_paths_for_tools_inject(payload),
+    )
     if not injected:
         return "user_prompt_empty_tool_injection", {"resolved_model": model}, ""
 

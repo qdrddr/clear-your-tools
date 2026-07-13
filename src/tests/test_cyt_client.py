@@ -275,6 +275,45 @@ def test_enrich_hook_payload_adds_cyt_agent_and_skills(monkeypatch: pytest.Monke
     assert "cyt_skills" in enriched
 
 
+def test_enrich_hook_payload_adds_cyt_cwd_from_cwd_only() -> None:
+    raw = json.dumps(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "hello",
+            "cwd": "/tmp/isolated-project",
+        },
+    ).encode()
+    enriched = json.loads(enrich_hook_payload(raw))
+    assert enriched["cyt"]["cwd"] == "/tmp/isolated-project"
+    assert "workspace_roots" not in enriched
+    assert "cyt" not in enriched["cyt_hook_payload"]
+
+
+def test_enrich_hook_payload_adds_cyt_cwd_from_workspace_roots() -> None:
+    raw = json.dumps(
+        {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "workspace_roots": ["/tmp/project", "/tmp/other"],
+        },
+    ).encode()
+    enriched = json.loads(enrich_hook_payload(raw))
+    assert enriched["cyt"]["cwd"] == "/tmp/project"
+    assert enriched["workspace_roots"] == ["/tmp/project", "/tmp/other"]
+    assert enriched["cyt_hook_payload"]["workspace_roots"] == ["/tmp/project", "/tmp/other"]
+
+
+def test_enrich_hook_payload_skips_cyt_when_no_workspace_path() -> None:
+    raw = json.dumps(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "hello",
+        },
+    ).encode()
+    enriched = json.loads(enrich_hook_payload(raw))
+    assert "cyt" not in enriched
+
+
 def test_cli_silent_when_server_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
     payload = (
         b'{"hook_event_name":"UserPromptSubmit","prompt":"hello","cwd":"/tmp/isolated-project"}'

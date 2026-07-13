@@ -84,12 +84,26 @@ def _attach_cyt_agent(data: dict[str, Any]) -> None:
         data[CYT_AGENT_FIELD] = agent
 
 
+def _attach_cyt_cwd(data: dict[str, Any]) -> None:
+    workspace = workspace_root_from_payload(data)
+    if workspace is None:
+        return
+    cyt = data.get("cyt")
+    if not isinstance(cyt, dict):
+        cyt = {}
+        data["cyt"] = cyt
+    existing = cyt.get("cwd")
+    if isinstance(existing, str) and existing.strip():
+        return
+    cyt["cwd"] = str(workspace)
+
+
 def enrich_hook_payload(
     payload_bytes: bytes,
     *,
     rules_injection: str | None = None,
 ) -> bytes:
-    """Attach ``cyt_hook_payload``, ``cyt_agent``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
+    """Attach ``cyt_hook_payload``, ``cyt_agent``, ``cyt.cwd``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
     if not payload_bytes.strip():
         return payload_bytes
     try:
@@ -102,6 +116,7 @@ def enrich_hook_payload(
     data[CYT_HOOK_PAYLOAD_FIELD] = copy.deepcopy(data)
 
     _attach_cyt_agent(data)
+    _attach_cyt_cwd(data)
 
     transcript_path = _transcript_path_from_data(data)
     if transcript_path is not None:
