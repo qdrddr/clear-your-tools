@@ -163,6 +163,21 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 	}
 
+	cyt_cmake_make_program() {
+		local candidate
+		for candidate in gmake make; do
+			if command -v "$candidate" >/dev/null 2>&1; then
+				command -v "$candidate"
+				return 0
+			fi
+		done
+		die "missing required command: make or gmake"
+	}
+
+	cyt_npm() {
+		env -u npm_config_devdir npm "$@"
+	}
+
 	require_repo_root() {
 		[[ -f "${CYT_REPO_ROOT}/pyproject.toml" ]] || die "not a repo root: ${CYT_REPO_ROOT}"
 		[[ -f "${CYT_REPO_ROOT}/sdk/python/pyproject.toml" ]] || die "missing sdk/python"
@@ -464,9 +479,9 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd npm
 		cd "${CYT_REPO_ROOT}/sdk/typescript" || die "cd failed"
 		info "npm ci, build, test"
-		cyt_run npm ci
-		cyt_run npm run build
-		cyt_run npm test
+		cyt_run cyt_npm ci
+		cyt_run cyt_npm run build
+		cyt_run cyt_npm test
 	}
 
 	cyt_build_sdk_c() {
@@ -474,14 +489,16 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd ctest
 		require_cmd rustc
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		local triplet
+		local triplet make_prog
 		triplet="$(rustc -vV | sed -n 's/^host: //p')"
+		make_prog="$(cyt_cmake_make_program)"
 		info "build C FFI (sdk/c, ${triplet})"
 		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}"
 		info "cmake configure + build"
 		cyt_run env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
 			-DCMAKE_BUILD_TYPE=Release \
-			-DCYT_RUST_TARGET="${triplet}"
+			-DCYT_RUST_TARGET="${triplet}" \
+			-DCMAKE_MAKE_PROGRAM="${make_prog}"
 		cyt_run env -u CARGO_TARGET_DIR cmake --build sdk/c/build
 		info "ctest sdk/c"
 		cyt_run env -u CARGO_TARGET_DIR ctest --test-dir sdk/c/build --output-on-failure
