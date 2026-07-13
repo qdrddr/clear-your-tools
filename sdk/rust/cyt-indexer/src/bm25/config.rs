@@ -162,5 +162,5 @@ pub fn expand_index_dir(path: &Path) -> PathBuf {
 }
 
 fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    crate::paths::home_dir().ok()
 }

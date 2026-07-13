@@ -180,7 +180,7 @@ fn build_skills_index_with_options(
     let mut index = SkillsIndex::default();
 
     for dir in skill_dirs {
-        let expanded = expand_path(dir)?;
+        let expanded = crate::paths::expand_home_path(dir)?;
         if !expanded.is_dir() {
             return Err(format!(
                 "skills directory not found: {}",
@@ -199,21 +199,6 @@ fn build_skills_index_with_options(
     }
 
     Ok(index)
-}
-
-fn home_dir() -> Result<String, String> {
-    std::env::var("HOME").map_err(|_| "HOME not set".to_string())
-}
-
-fn expand_path(path: &Path) -> Result<PathBuf, String> {
-    let s = path.to_string_lossy();
-    if s == "~" {
-        return Ok(PathBuf::from(home_dir()?));
-    }
-    if let Some(stripped) = s.strip_prefix("~/") {
-        return Ok(PathBuf::from(home_dir()?).join(stripped));
-    }
-    Ok(path.to_path_buf())
 }
 
 fn walk_skill_md_files(
@@ -473,9 +458,8 @@ mod tests {
 
     #[test]
     fn stores_home_paths_with_tilde_prefix() -> Result<(), String> {
-        let home = home_dir()?;
-        let skills_dir =
-            PathBuf::from(&home).join(format!(".cyt-skills-home-{}", std::process::id()));
+        let home = crate::paths::home_dir()?;
+        let skills_dir = home.join(format!(".cyt-skills-home-{}", std::process::id()));
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
         fs::write(skills_dir.join("example.md"), "# Example\n\nBody").map_err(|e| e.to_string())?;
 
@@ -498,9 +482,8 @@ mod tests {
 
     #[test]
     fn page_index_only_skips_chunk_files() -> Result<(), String> {
-        let home = home_dir()?;
-        let skills_dir =
-            PathBuf::from(&home).join(format!(".cyt-skills-page-only-{}", std::process::id()));
+        let home = crate::paths::home_dir()?;
+        let skills_dir = home.join(format!(".cyt-skills-page-only-{}", std::process::id()));
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
         fs::write(
             skills_dir.join("skill.md"),
@@ -520,9 +503,8 @@ mod tests {
 
     #[test]
     fn build_page_index_for_file_indexes_in_place() -> Result<(), String> {
-        let home = home_dir()?;
-        let skills_dir =
-            PathBuf::from(&home).join(format!(".cyt-skills-single-{}", std::process::id()));
+        let home = crate::paths::home_dir()?;
+        let skills_dir = home.join(format!(".cyt-skills-single-{}", std::process::id()));
         fs::create_dir_all(&skills_dir).map_err(|e| e.to_string())?;
         let skill_path = skills_dir.join("create-hook.md");
         fs::write(&skill_path, "# Create Hook\n\nBody").map_err(|e| e.to_string())?;

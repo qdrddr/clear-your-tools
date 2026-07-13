@@ -95,7 +95,7 @@ fn is_writable_dir(path: &Path) -> bool {
 pub fn expand_tilde(path: &Path) -> PathBuf {
     let s = path.to_string_lossy();
     if s.starts_with("~/")
-        && let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
+        && let Ok(home) = crate::paths::home_dir()
     {
         return home.join(s.trim_start_matches("~/"));
     }

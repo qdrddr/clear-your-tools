@@ -99,14 +99,7 @@ jobs:
         shell: bash
         run: |
           cmake --build sdk/c/build
-          case "${{ matrix.target }}" in
-            x86_64-apple-darwin)
-              arch -x86_64 ctest --test-dir sdk/c/build --output-on-failure
-              ;;
-            *)
-              ctest --test-dir sdk/c/build --output-on-failure
-              ;;
-          esac
+          ctest --test-dir sdk/c/build --output-on-failure
 
       - name: Go tests (sdk/go)
         shell: bash
@@ -115,6 +108,13 @@ jobs:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
         run: |
+          go run ./cmd/cyt-native-ensure -static-only
+          lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
+          case "${{ matrix.target }}" in
+            *-apple-darwin) export DYLD_LIBRARY_PATH="${lib_dir}:${DYLD_LIBRARY_PATH:-}" ;;
+            *-pc-windows-msvc) export PATH="${lib_dir}:${PATH}" ;;
+            *) export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH:-}" ;;
+          esac
           case "${{ matrix.target }}" in
             x86_64-apple-darwin) arch -x86_64 go test -v ./... ;;
             *) go test -v ./... ;;
@@ -127,6 +127,12 @@ jobs:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
         run: |
+          lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
+          case "${{ matrix.target }}" in
+            *-apple-darwin) export DYLD_LIBRARY_PATH="${lib_dir}:${DYLD_LIBRARY_PATH:-}" ;;
+            *-pc-windows-msvc) export PATH="${lib_dir}:${PATH}" ;;
+            *) export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH:-}" ;;
+          esac
           # Use monorepo-built artifacts; -force would re-download from GitHub Releases.
           case "${{ matrix.target }}" in
             x86_64-apple-darwin)

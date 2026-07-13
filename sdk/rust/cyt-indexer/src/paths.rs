@@ -177,6 +177,62 @@ pub fn get_root_tool_key(file_path: &str) -> Option<String> {
     ))
 }
 
+/// User home directory from `HOME` or `USERPROFILE`.
+///
+/// # Errors
+///
+/// Returns an error when neither variable is set.
+pub fn home_dir() -> Result<PathBuf, String> {
+    for key in ["HOME", "USERPROFILE"] {
+        if let Ok(value) = std::env::var(key)
+            && !value.is_empty()
+        {
+            return Ok(PathBuf::from(value));
+        }
+    }
+    Err("home directory not found (HOME/USERPROFILE unset)".to_string())
+}
+
+#[must_use]
+pub fn normalize_path_separators(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+/// Expand `~/…` prefixes against [`home_dir`].
+///
+/// # Errors
+///
+/// Returns an error when tilde expansion requires home resolution and it fails.
+pub fn expand_home_path(path: &Path) -> Result<PathBuf, String> {
+    let s = path.to_string_lossy();
+    if s == "~" {
+        return home_dir();
+    }
+    if let Some(stripped) = s.strip_prefix("~/") {
+        return Ok(home_dir()?.join(stripped));
+    }
+    Ok(path.to_path_buf())
+}
+
+/// Rewrite absolute paths under the user's home as `~/…`.
+///
+/// # Errors
+///
+/// Returns an error when home resolution or path expansion fails.
+pub fn shorten_home_path(path: &str) -> Result<String, String> {
+    let expanded = expand_home_path(Path::new(path))?;
+    let home = normalize_path_separators(&home_dir()?.to_string_lossy());
+    let path_str = normalize_path_separators(&expanded.to_string_lossy());
+    if path_str == home {
+        return Ok("~".to_string());
+    }
+    let home_prefix = format!("{home}/");
+    if let Some(rest) = path_str.strip_prefix(&home_prefix) {
+        return Ok(format!("~/{rest}"));
+    }
+    Ok(path_str)
+}
+
 #[must_use]
 pub fn collect_enums(schema: &Value) -> Vec<Value> {
     let mut found = Vec::new();
@@ -217,5 +273,18 @@ mod tests {
         configure(cfg);
         let rel = format!("{}tool.json", decomposed_prefix());
         assert_eq!(tool_id_from_decomposed_rel(&rel), "tool");
+    }
+
+    #[test]
+    fn shorten_home_path_normalizes_separators() -> Result<(), String> {
+        let home = home_dir()?;
+        let home_norm = normalize_path_separators(&home.to_string_lossy());
+        let nested = format!("{home_norm}/.cyt-test/example.md");
+        let with_backslashes = nested.replace('/', "\\");
+        assert_eq!(
+            shorten_home_path(&with_backslashes)?,
+            "~/.cyt-test/example.md"
+        );
+        Ok(())
     }
 }

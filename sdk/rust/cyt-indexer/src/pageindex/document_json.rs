@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
@@ -33,39 +33,7 @@ pub struct SkillDocumentOnDisk {
     pub frontmatter: Option<String>,
 }
 
-/// Store paths under `$HOME` as `~/...` in on-disk JSON.
-///
-/// # Errors
-///
-/// Returns an error when `HOME` is unset or the path cannot be expanded.
-pub fn shorten_home_path(path: &str) -> Result<String, String> {
-    let expanded = expand_path(Path::new(path))?;
-    let home = home_dir()?;
-    let path_str = expanded.to_string_lossy().replace('\\', "/");
-    if path_str == home {
-        return Ok("~".to_string());
-    }
-    let home_prefix = format!("{home}/");
-    if let Some(rest) = path_str.strip_prefix(&home_prefix) {
-        return Ok(format!("~/{rest}"));
-    }
-    Ok(path_str)
-}
-
-fn home_dir() -> Result<String, String> {
-    std::env::var("HOME").map_err(|_| "HOME not set".to_string())
-}
-
-fn expand_path(path: &Path) -> Result<PathBuf, String> {
-    let s = path.to_string_lossy();
-    if s == "~" {
-        return Ok(PathBuf::from(home_dir()?));
-    }
-    if let Some(stripped) = s.strip_prefix("~/") {
-        return Ok(PathBuf::from(home_dir()?).join(stripped));
-    }
-    Ok(path.to_path_buf())
-}
+pub use crate::paths::shorten_home_path;
 
 /// Remove BM25 chunk references from a page tree, leaving nodes only.
 #[must_use]

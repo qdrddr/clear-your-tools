@@ -31,10 +31,18 @@ fn sample_tool_entry(name: &str) -> serde_json::Value {
     })
 }
 
+fn unavailable_disk_cache_path() -> PathBuf {
+    if cfg!(windows) {
+        // Non-existent drive letter: parent creation must fail on Windows CI.
+        PathBuf::from(r"Z:\__cyt_nonexistent_drive\cyt-cache-test")
+    } else {
+        PathBuf::from("/nonexistent-root/cyt-cache-test")
+    }
+}
+
 #[test]
 fn disk_available_false_for_missing_home_subpath() {
-    let path = PathBuf::from("/nonexistent-root/cyt-cache-test");
-    assert!(!disk_available(&path));
+    assert!(!disk_available(&unavailable_disk_cache_path()));
 }
 
 #[test]
