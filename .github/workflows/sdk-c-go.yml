@@ -115,10 +115,7 @@ jobs:
             *-pc-windows-msvc) export PATH="${lib_dir}:${PATH}" ;;
             *) export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH:-}" ;;
           esac
-          case "${{ matrix.target }}" in
-            x86_64-apple-darwin) arch -x86_64 go test -v ./... ;;
-            *) go test -v ./... ;;
-          esac
+          go test -v ./...
 
       - name: Verify cyt-native-ensure bootstrap
         shell: bash
@@ -134,13 +131,5 @@ jobs:
             *) export LD_LIBRARY_PATH="${lib_dir}:${LD_LIBRARY_PATH:-}" ;;
           esac
           # Use monorepo-built artifacts; -force would re-download from GitHub Releases.
-          case "${{ matrix.target }}" in
-            x86_64-apple-darwin)
-              arch -x86_64 go run ./cmd/cyt-native-ensure
-              arch -x86_64 go test -count=1 ./...
-              ;;
-            *)
-              go run ./cmd/cyt-native-ensure
-              go test -count=1 ./...
-              ;;
-          esac
+          go run ./cmd/cyt-native-ensure
+          go test -count=1 ./...

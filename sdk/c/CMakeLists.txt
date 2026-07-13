@@ -50,6 +50,12 @@ endif()
 
 set(CYT_ARTIFACT_DIR "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}")
 
+if(CYT_LIB_PROFILE STREQUAL "debug")
+    set(_cyt_build_profile_flag --debug)
+else()
+    set(_cyt_build_profile_flag --release)
+endif()
+
 if(WIN32)
     set(CYT_SHARED_LIB "${CYT_ARTIFACT_DIR}/cyt_indexer.dll")
     set(CYT_IMPORT_LIB "${CYT_ARTIFACT_DIR}/cyt_indexer.dll.lib")
@@ -65,9 +71,7 @@ endif()
 
 add_custom_command(
     OUTPUT "${CYT_SHARED_LIB}"
-    COMMAND bash "${CYT_BUILD_SCRIPT}" --target "${CYT_RUST_TARGET}"
-        $<$<STREQUAL:${CYT_LIB_PROFILE},debug>:--debug>
-        $<$<STREQUAL:${CYT_LIB_PROFILE},release>:--release>
+    COMMAND bash "${CYT_BUILD_SCRIPT}" --target "${CYT_RUST_TARGET}" ${_cyt_build_profile_flag}
     WORKING_DIRECTORY "${CYT_REPO_ROOT}"
     COMMENT "Building cyt-indexer ffi for ${CYT_RUST_TARGET}"
     VERBATIM
