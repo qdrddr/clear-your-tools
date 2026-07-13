@@ -48,7 +48,7 @@ It renders manifests, optionally polls registries/tags, and runs the harness tes
 
 Targets: `rust`, `python`, `typescript`, `clear-your-tools`, `go`, `c`, `all` (default).
 
-**Prerequisites:** `cargo`, `go` 1.24+ with CGO, `cmake`, `uv` (Python 3.13+), `node`/`npm`, network access to public
+**Prerequisites:** `cargo`, `go` 1.25+ with CGO, `cmake`, `uv` (Python 3.13+), `node`/`npm`, network access to public
 registries and GitHub.
 
 ### CI-style run

@@ -11,7 +11,7 @@ GitHub Release / build-c-lib.sh  →  libcyt_indexer + cyt_indexer.h
 
 ## Prerequisites
 
-- Go 1.24+ with **CGO enabled** (`CGO_ENABLED=1`)
+- Go 1.25+ with **CGO enabled** (`CGO_ENABLED=1`)
 - C toolchain (same as sdk/c)
 - Native C library for your platform (see **C native artifacts** below)
 

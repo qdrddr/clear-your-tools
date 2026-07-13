@@ -57,7 +57,7 @@ export CYT_GIT_REPO=https://github.com/qdrddr/clear-your-tools.git
 
 ## Prerequisites
 
-- Go 1.24+ with CGO enabled
+- Go 1.25+ with CGO enabled
 - git, curl, and network access for clone + GitHub Release download
 - C toolchain (clang/gcc; Xcode CLT on macOS)
 

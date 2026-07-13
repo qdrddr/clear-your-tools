@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from cyt import config as configs
+
+CI_CREDENTIAL_STUBS: dict[str, str] = {
+    "DEEPINFRA_API_KEY": "test-ci-stub",  # pragma: allowlist secret
+    "EXECUTOR_TOKEN": "test-ci-stub",  # pragma: allowlist secret
+    "OPENROUTER_API_KEY": "test-ci-stub",  # pragma: allowlist secret
+}
 
 DEFAULT_CREDENTIAL_ENV_VARS: tuple[str, ...] = (
     "OPENROUTER_" + "API_KEY",
@@ -69,6 +76,27 @@ def install_test_pre_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
         original_setenv(name, value, prepend)
 
     monkeypatch.setattr(monkeypatch, "setenv", tracking_setenv)
+
+
+def apply_ci_credential_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provide dummy API keys when unset (GitHub Actions has no keyring or .env)."""
+    pre_dotenv = process_env_before_dotenv_for_tests()
+    for name, stub_value in CI_CREDENTIAL_STUBS.items():
+        if name in pre_dotenv:
+            continue
+        current = os.environ.get(name)
+        if current:
+            # ``install_test_pre_dotenv`` clears the tracked snapshot; re-register
+            # values already present in the process environment.
+            pre_dotenv[name] = current
+            continue
+        monkeypatch.setenv(name, stub_value)
+
+
+def clear_credential_env_var(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """Remove *name* from the process env and tracked pre-dotenv snapshot."""
+    monkeypatch.delenv(name, raising=False)
+    process_env_before_dotenv_for_tests().pop(name, None)
 
 
 @pytest.fixture

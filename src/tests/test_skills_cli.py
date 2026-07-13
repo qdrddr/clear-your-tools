@@ -16,6 +16,8 @@ import pytest
 from cyt.launch.secrets import clear_keyring_cache
 from cyt.skills import cli as skills_cli
 from tests.test_credential_helpers import (
+    apply_ci_credential_stubs,
+    clear_credential_env_var,
     install_test_pre_dotenv,
     isolate_credential_env_paths,
 )
@@ -32,6 +34,7 @@ def _reset_credential_caches() -> Generator[None]:
 def _track_shell_exports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     isolate_credential_env_paths(monkeypatch, tmp_path, chdir=False)
     install_test_pre_dotenv(monkeypatch)
+    apply_ci_credential_stubs(monkeypatch)
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -940,7 +943,7 @@ def test_hook_resolves_skills_key_from_keyring(
             "stats": {"database": {"path": str(root / "stats.db")}},
         }
         monkeypatch.setattr("cyt.config.load_user_config_overlay", lambda _path=None: {})
-        monkeypatch.delenv("OPENROUTER_" + "API_KEY", raising=False)
+        clear_credential_env_var(monkeypatch, "OPENROUTER_" + "API_KEY")
         monkeypatch.setattr(
             "cyt.launch.secrets._read_keyring",
             lambda name: "keyring-secret" if name == "OPENROUTER_" + "API_KEY" else None,

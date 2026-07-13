@@ -62,7 +62,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: false
 
       - name: Install uv (parity tests)
@@ -79,6 +79,7 @@ jobs:
         run: bash sdk/c/scripts/build-c-lib.sh --target ${{ matrix.target }}
 
       - name: Rust FFI tests
+        shell: bash
         run: |
           cargo test -p cyt-indexer --no-default-features --features ffi \
             --target ${{ matrix.target }}
@@ -86,14 +87,26 @@ jobs:
       - name: Configure CMake (sdk/c)
         shell: bash
         run: |
+          extra_args=()
+          case "${{ matrix.target }}" in
+            x86_64-apple-darwin) extra_args=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+            aarch64-apple-darwin) extra_args=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
+          esac
           cmake -S sdk/c -B sdk/c/build -DCMAKE_BUILD_TYPE=Release \
-            -DCYT_RUST_TARGET=${{ matrix.target }}
+            -DCYT_RUST_TARGET=${{ matrix.target }} "${extra_args[@]}"
 
       - name: Build and test sdk/c
         shell: bash
         run: |
           cmake --build sdk/c/build
-          ctest --test-dir sdk/c/build --output-on-failure
+          case "${{ matrix.target }}" in
+            x86_64-apple-darwin)
+              arch -x86_64 ctest --test-dir sdk/c/build --output-on-failure
+              ;;
+            *)
+              ctest --test-dir sdk/c/build --output-on-failure
+              ;;
+          esac
 
       - name: Go tests (sdk/go)
         shell: bash
@@ -101,7 +114,11 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
-        run: go test -v ./...
+        run: |
+          case "${{ matrix.target }}" in
+            x86_64-apple-darwin) arch -x86_64 go test -v ./... ;;
+            *) go test -v ./... ;;
+          esac
 
       - name: Verify cyt-native-ensure bootstrap
         shell: bash
@@ -110,5 +127,14 @@ jobs:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go run ./cmd/cyt-native-ensure -force
-          go test -count=1 ./...
+          # Use monorepo-built artifacts; -force would re-download from GitHub Releases.
+          case "${{ matrix.target }}" in
+            x86_64-apple-darwin)
+              arch -x86_64 go run ./cmd/cyt-native-ensure
+              arch -x86_64 go test -count=1 ./...
+              ;;
+            *)
+              go run ./cmd/cyt-native-ensure
+              go test -count=1 ./...
+              ;;
+          esac
