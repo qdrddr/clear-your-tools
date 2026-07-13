@@ -49,7 +49,7 @@ func main() {
 	flag.Parse()
 
 	ver := resolveVersion(*version)
-	triplet, err := hostTriplet()
+	triplet, err := resolveTriplet()
 	if err != nil {
 		fatal(err)
 	}
@@ -182,15 +182,22 @@ func monorepoArtifactDir(triplet string) string {
 }
 
 func repoRootFromCwd() string {
+	for _, root := range []string{
+		os.Getenv("CYT_REPO_ROOT"),
+		os.Getenv("GITHUB_WORKSPACE"),
+	} {
+		if isRepoRoot(root) {
+			return root
+		}
+	}
+
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
 	for dir := wd; ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, "sdk", "go", "go.mod")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
-				return dir
-			}
+		if isRepoRoot(dir) {
+			return dir
 		}
 		if dir == filepath.Dir(dir) {
 			break
@@ -199,12 +206,34 @@ func repoRootFromCwd() string {
 	return ""
 }
 
+func isRepoRoot(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+
+	if _, err := root.Stat("sdk/go/go.mod"); err != nil {
+		return false
+	}
+	_, err = root.Stat("Cargo.toml")
+	return err == nil
+}
+
 func hasNativeLibs(dir, triplet string) bool {
 	if dir == "" {
 		return false
 	}
 	if _, err := os.Stat(filepath.Join(dir, staticLibName(triplet))); err == nil {
 		return true
+	}
+	if name := importLibName(triplet); name != "" {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
 	}
 	_, err := os.Stat(filepath.Join(dir, sharedLibName(triplet)))
 	return err == nil
@@ -231,7 +260,7 @@ func artifactNames(triplet string, staticOnly bool) []string {
 		names = append(names, sharedLibName(triplet))
 	}
 	if isWindowsMSVC(triplet) {
-		names = append(names, "cyt_indexer.dll.lib")
+		names = append(names, importLibName(triplet))
 	}
 	return names
 }

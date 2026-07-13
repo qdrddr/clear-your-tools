@@ -116,8 +116,14 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
+          CYT_REPO_ROOT: ${{ github.workspace }}
+          CYT_RUST_TARGET: ${{ matrix.target }}
         run: |
-          go run ./cmd/cyt-native-ensure -static-only
+          ensure_args=(-static-only)
+          case "${{ matrix.target }}" in
+            *-pc-windows-msvc) ensure_args=() ;;
+          esac
+          go run ./cmd/cyt-native-ensure "${ensure_args[@]}"
           lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
           case "${{ matrix.target }}" in
             *-apple-darwin) export DYLD_LIBRARY_PATH="${lib_dir}:${DYLD_LIBRARY_PATH:-}" ;;
@@ -132,6 +138,8 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOARCH: ${{ matrix.goarch }}
+          CYT_REPO_ROOT: ${{ github.workspace }}
+          CYT_RUST_TARGET: ${{ matrix.target }}
         run: |
           lib_dir="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/release"
           case "${{ matrix.target }}" in
@@ -142,4 +150,3 @@ jobs:
           # Use monorepo-built artifacts; -force would re-download from GitHub Releases.
           go run ./cmd/cyt-native-ensure
           go test -count=1 ./...
-

@@ -107,6 +107,54 @@ func TestEnsureNativeDownloadsWhenCacheEmpty(t *testing.T) {
 	}
 }
 
+func TestHasNativeLibsWindowsImportLib(t *testing.T) {
+	dir := t.TempDir()
+	triplet := "x86_64-pc-windows-msvc"
+	if err := os.WriteFile(filepath.Join(dir, "cyt_indexer.dll.lib"), []byte("import"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasNativeLibs(dir, triplet) {
+		t.Fatal("expected cyt_indexer.dll.lib to satisfy hasNativeLibs on Windows")
+	}
+}
+
+func TestResolveTripletUsesEnv(t *testing.T) {
+	t.Setenv("CYT_RUST_TARGET", "aarch64-unknown-linux-gnu")
+	got, err := resolveTriplet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "aarch64-unknown-linux-gnu" {
+		t.Fatalf("resolveTriplet() = %q", got)
+	}
+}
+
+func TestCopyArtifactsStaticOnlyWindows(t *testing.T) {
+	src := t.TempDir()
+	dest := t.TempDir()
+	triplet := "x86_64-pc-windows-msvc"
+
+	for name, content := range map[string]string{
+		"cyt_indexer.dll":     "shared",
+		"cyt_indexer.dll.lib": "import",
+		"cyt_indexer.h":       "header",
+	} {
+		if err := os.WriteFile(filepath.Join(src, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := copyArtifacts(src, dest, triplet, true); err != nil {
+		t.Fatal(err)
+	}
+	if !hasNativeLibs(dest, triplet) {
+		t.Fatal("expected import lib to satisfy static-only Windows install")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "cyt_indexer.dll")); !os.IsNotExist(err) {
+		t.Fatal("shared dll should be omitted with staticOnly")
+	}
+}
+
 func TestCopyArtifactsStaticOnly(t *testing.T) {
 	src := t.TempDir()
 	dest := t.TempDir()

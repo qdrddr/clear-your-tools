@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 )
 
 const defaultRepo = "qdrddr/clear-your-tools"
@@ -58,12 +60,29 @@ func sharedLibName(triplet string) string {
 	}
 }
 
+func importLibName(triplet string) string {
+	if isWindowsMSVC(triplet) {
+		return "cyt_indexer.dll.lib"
+	}
+	return ""
+}
+
+func resolveTriplet() (string, error) {
+	if env := strings.TrimSpace(os.Getenv("CYT_RUST_TARGET")); env != "" {
+		if err := validateTriplet(env); err != nil {
+			return "", err
+		}
+		return env, nil
+	}
+	return hostTriplet()
+}
+
 func isWindowsMSVC(triplet string) bool {
-	return len(triplet) >= 16 && triplet[len(triplet)-16:] == "pc-windows-msvc"
+	return strings.HasSuffix(triplet, "pc-windows-msvc")
 }
 
 func isDarwin(triplet string) bool {
-	return len(triplet) >= 12 && triplet[len(triplet)-12:] == "apple-darwin"
+	return strings.HasSuffix(triplet, "apple-darwin")
 }
 
 func validateTriplet(triplet string) error {
