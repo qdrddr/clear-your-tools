@@ -48,23 +48,10 @@ from cyt.pruners.policies import (
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.tools.budget import tools_inject_allowed
-from cyt.tools.policy_context import apply_executor_tool_kind
+from cyt.tools.policy_context import prepare_hook_executor_tool_pruning
 from cyt_core.types.prune import PruneResult
 
 logger = logging.getLogger(__name__)
-
-
-def _apply_executor_hook_tool_kind(
-    *contexts: PolicyContext | None,
-    config: dict[str, Any],
-) -> None:
-    """Classify executor hook catalogs as MCP so prune_all applies to every tool."""
-    if not uses_executor_tool_catalog(config):
-        return
-    for ctx in contexts:
-        if ctx is not None:
-            apply_executor_tool_kind(ctx, "mcp")
-
 
 # Initial LLM pruning attempt plus two retries before rerank/BM25 fallback.
 LLM_STAGE_MAX_ATTEMPTS = 3
@@ -174,7 +161,6 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
-    _apply_executor_hook_tool_kind(ctx, output_ctx, config=resolved_config)
     from cyt.tools.catalog_cache import catalog_snapshot_from_cache, ensure_tool_catalog_cached
 
     cached = ensure_tool_catalog_cached(
@@ -197,7 +183,7 @@ def _run_catalog_pruning(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    _apply_executor_hook_tool_kind(reinstate_ctx, config=resolved_config)
+    prepare_hook_executor_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
     if pipeline == ["bm25"] and skill_entries is None:
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
         from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
@@ -281,6 +267,7 @@ def _run_catalog_pruning(
         pruning_pipeline=pipeline,
         ctx=ctx,
         output_ctx=reinstate_ctx,
+        config=resolved_config,
     )
     merged = retrieve_tools(
         recompose_data,
@@ -717,7 +704,13 @@ def _run_pruning_pipeline(
     if capture_catalog and snapshots is not None:
         snapshots["build_index"] = _snapshot_catalog(data)
 
-    policy_ctx = ctx or policy_context_from_config()
+    resolved_config = config or load_config()
+    terminal_stage = pruning_pipeline[-1] if pruning_pipeline else None
+    policy_ctx = ctx or policy_context_from_config(
+        resolved_config,
+        terminal_stage=terminal_stage,
+    )
+    prepare_hook_executor_tool_pruning(resolved_config, policy_ctx)
     pinned: dict[str, Any] = {}
     if catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)
@@ -836,9 +829,12 @@ def _json_entries_for_recompose(
     pruning_pipeline: list[str] | None = None,
     ctx: PolicyContext | None = None,
     output_ctx: PolicyContext | None = None,
+    config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
-    policy_ctx = ctx or policy_context_from_config()
+    resolved_config = config or load_config()
+    policy_ctx = ctx or policy_context_from_config(resolved_config)
+    prepare_hook_executor_tool_pruning(resolved_config, policy_ctx, output_ctx)
     entries: list[dict[str, Any]] = []
     seen_paths: set[object] = set()
 
@@ -886,6 +882,7 @@ def _recompose_catalog_data(
     pruning_pipeline: list[str] | None = None,
     ctx: PolicyContext | None = None,
     output_ctx: PolicyContext | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build catalog dict for retrieve_tools after pruning.
 
@@ -904,6 +901,7 @@ def _recompose_catalog_data(
             pruning_pipeline=pruning_pipeline,
             ctx=ctx,
             output_ctx=output_ctx,
+            config=config,
         ),
         "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
     }
@@ -994,9 +992,8 @@ def filter_tools_for_query(
         config,
         terminal_stage=terminal_stage,
     )
-    uses_executor = uses_executor_tool_catalog(config)
-    if for_hook and uses_executor:
-        _apply_executor_hook_tool_kind(policy_ctx, output_policy_ctx, config=config)
+    if for_hook and uses_executor_tool_catalog(config):
+        prepare_hook_executor_tool_pruning(config, policy_ctx, output_policy_ctx)
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(

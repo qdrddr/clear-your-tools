@@ -185,3 +185,31 @@ def test_proxy_anthropic_transform_without_executor_credentials(
 
     assert prune_result is not None
     assert out["messages"]
+
+
+def test_filter_tools_for_query_skips_mcp_cache_warm_in_proxy_mode() -> None:
+    tools = [
+        _tool("mcp__alpha__search", description="search files on disk"),
+    ]
+    config = _proxy_config(sequence=["bm25"])
+
+    with (
+        patch(
+            "cyt.pruners.tools_filter._run_catalog_pruning",
+            side_effect=RuntimeError("stop-after-context"),
+        ),
+        patch("cyt.pruners.tools_filter.request_pass_through", return_value=False),
+        patch(
+            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            side_effect=_executor_forbidden,
+        ),
+    ):
+        try:
+            filter_tools_for_query(
+                tools,
+                "search files",
+                config=config,
+                for_hook=False,
+            )
+        except RuntimeError:
+            pass
