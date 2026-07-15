@@ -9,6 +9,7 @@ from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruning.coordinator import ToolSource, coordinate_skills_tools_prune
 from cyt.skills.client_skills import build_registry_for_hook_payload
+from cyt.skills.executor_skill import append_executor_skill_entries
 from cyt.skills.hook_quiet import hook_safe_stdout
 from cyt.skills.search import MatchedSkill, eligible_skills_after_gate
 from cyt.tools.registry import load_tool_catalog
@@ -41,19 +42,17 @@ def run_hook_coordinated_prune(
             None,
         )
 
-    skill_entries: list[Any] = []
-    if skills_allowed:
-        skill_entries = eligible_skills_after_gate(
-            query,
-            build_registry_for_hook_payload(config, payload),
-            config=config,
-        )
+    base_entries = build_registry_for_hook_payload(config, payload) if skills_allowed else []
+    all_entries = append_executor_skill_entries(base_entries, config)
+    skill_entries = (
+        eligible_skills_after_gate(query, all_entries, config=config) if all_entries else []
+    )
 
     tool_sources: list[ToolSource] = []
     if tools_allowed and catalog:
         tool_sources.append(ToolSource("root", catalog))
 
-    if not tool_sources and not skills_allowed:
+    if not tool_sources and not skill_entries:
         return None, None, catalog
 
     skill_out: dict[str, Any] = {}

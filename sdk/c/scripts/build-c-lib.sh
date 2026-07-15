@@ -176,6 +176,16 @@ build_one() {
 			--target "$triplet" "${release_flag[@]}"
 	)
 
+	if [[ "${triplet}" == *-apple-darwin ]]; then
+		local release_dylib deps_dylib
+		release_dylib="$(cargo_target_dir)/${triplet}/${prof}/libcyt_indexer.dylib"
+		deps_dylib="$(cargo_target_dir)/${triplet}/${prof}/deps/libcyt_indexer.dylib"
+		if [[ -f "$release_dylib" ]]; then
+			mkdir -p "$(dirname "$deps_dylib")"
+			cp -f "$release_dylib" "$deps_dylib"
+		fi
+	fi
+
 	if [[ "$SYNC_HEADER" -eq 1 ]]; then
 		sync_header
 	fi

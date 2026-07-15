@@ -147,13 +147,20 @@ def build_prune_plan(
         return stages
 
     if ctx.tools_allowed and not ctx.skills_allowed:
-        stages.append(
-            _tool_units_for_stage(
-                source_ids,
-                kind="tools_pipeline",
-                pipeline=tuple(ctx.tools_effective),
-            ),
+        tool_units = _tool_units_for_stage(
+            source_ids,
+            kind="tools_pipeline",
+            pipeline=tuple(ctx.tools_effective),
         )
+        if ctx.skill_entries and not _skills_resolved(ctx):
+            stages.append(
+                [
+                    *tool_units,
+                    WorkUnit(kind="skills_search", stage=ctx.skills_effective),
+                ],
+            )
+        else:
+            stages.append(tool_units)
         return stages
 
     if not ctx.tools_allowed or not ctx.skills_allowed:

@@ -536,6 +536,63 @@ def build_registry(
     return entries
 
 
+def _build_registry_from_inline_sources(
+    cfg: dict[str, Any],
+    inline_sources: list[dict[str, str]],
+    *,
+    original_by_hash: dict[str, Path],
+) -> list[SkillEntryRef]:
+    """Build a skills registry from inline ``{path, content, content_sha256}`` sources."""
+    if not inline_sources:
+        return []
+
+    catalog_root = _registry_catalog_root(cfg)
+    pipeline = skills_pipeline(cfg)
+    index_params = _index_params(cfg)
+    pageindex_config = skills_pageindex_config(cfg)
+    index_params_hash = skills_index_params_fingerprint(cfg)
+
+    rust_refs = ensure_skills_registry(
+        inline_sources,
+        str(catalog_root),
+        pageindex_config,
+        pipeline,
+        index_params_hash,
+        policy=cache_policy_for_config(cfg),
+    )
+
+    entries: list[SkillEntryRef] = []
+    for ref in rust_refs:
+        content_hash = str(ref["content_sha256"])
+        original_path = original_by_hash.get(content_hash)
+        if original_path is None:
+            continue
+        entry = _entry_from_rust_ref(
+            ref,
+            original_path,
+            pipeline=pipeline,
+            index_params=index_params,
+            index_params_hash=index_params_hash,
+            pageindex_config=pageindex_config,
+        )
+        entries.append(entry)
+    return entries
+
+
+def build_registry_from_inline_sources(
+    cfg: dict[str, Any],
+    inline_sources: list[dict[str, str]],
+    *,
+    original_by_hash: dict[str, Path],
+) -> list[SkillEntryRef]:
+    """Public wrapper for inline skill sources (executor API, cyt-client payloads)."""
+    return _build_registry_from_inline_sources(
+        cfg,
+        inline_sources,
+        original_by_hash=original_by_hash,
+    )
+
+
 def _build_registry_from_client_skills(
     cfg: dict[str, Any],
     client_skills: list[dict[str, str]],
@@ -545,11 +602,6 @@ def _build_registry_from_client_skills(
 ) -> list[SkillEntryRef]:
     """Build a skills registry from cyt-client payload content instead of config dirs."""
     active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
-    catalog_root = _registry_catalog_root(cfg)
-    pipeline = skills_pipeline(cfg)
-    index_params = _index_params(cfg)
-    pageindex_config = skills_pageindex_config(cfg)
-    index_params_hash = skills_index_params_fingerprint(cfg)
 
     seen_content: set[str] = set()
     inline_sources: list[dict[str, str]] = []
@@ -574,30 +626,11 @@ def _build_registry_from_client_skills(
         )
         original_by_hash[content_hash] = original_path
 
-    rust_refs = ensure_skills_registry(
+    return _build_registry_from_inline_sources(
+        cfg,
         inline_sources,
-        str(catalog_root),
-        pageindex_config,
-        pipeline,
-        index_params_hash,
-        policy=cache_policy_for_config(cfg),
+        original_by_hash=original_by_hash,
     )
-
-    entries: list[SkillEntryRef] = []
-    for ref in rust_refs:
-        content_hash = str(ref["content_sha256"])
-        if content_hash not in original_by_hash:
-            continue
-        entry = _entry_from_rust_ref(
-            ref,
-            original_by_hash[content_hash],
-            pipeline=pipeline,
-            index_params=index_params,
-            index_params_hash=index_params_hash,
-            pageindex_config=pageindex_config,
-        )
-        entries.append(entry)
-    return entries
 
 
 def _build_registry_uncached(

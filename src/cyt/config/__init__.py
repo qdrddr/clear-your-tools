@@ -1490,6 +1490,27 @@ def required_skills_env_var_names(config: dict[str, Any]) -> list[str]:
     return required
 
 
+def required_executor_skill_env_var_names(config: dict[str, Any]) -> list[str]:
+    """Env vars for executor skill pruning when directory skills are disabled."""
+    if not uses_executor_tool_catalog(config):
+        return []
+    merged = _config_with_bundled_defaults(config)
+    required: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        if name not in seen:
+            seen.add(name)
+            required.append(name)
+
+    pipeline = skills_pipeline(merged).strip().lower()
+    if pipeline == "rerank":
+        _append_pruning_stage_env_var(merged, "rerank", add)
+    elif pipeline == "llm":
+        _append_pruning_stage_env_var(merged, "llm", add)
+    return required
+
+
 def required_pruning_env_var_names(config: dict[str, Any]) -> list[str]:
     """Environment variable names required by the configured tool pruning pipeline."""
     required: list[str] = []

@@ -1,0 +1,6 @@
+[submodule "chunk-your-skills"]
+	path = chunk-your-skills
+	url = git@github.com:qdrddr/chunk-your-skills.git
+[submodule "chunk-your-tools"]
+	path = chunk-your-tools
+	url = git@github.com:qdrddr/chunk-your-tools.git

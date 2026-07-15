@@ -39,7 +39,7 @@ from cyt.skills.budget import (
 from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.debug_log import write_hook_debug_log
 from cyt.skills.diagnostics import SkillsSearchTrace
-from cyt.skills.executor_skill import EXECUTOR_SKILL_NAME, with_executor_skill_matches
+from cyt.skills.executor_skill import append_executor_skill_entries
 from cyt.skills.hook_payload import (
     hook_cwd,
     hook_event_name,
@@ -75,41 +75,8 @@ from cyt.tools.inject import format_agent_tools
 logger = logging.getLogger(__name__)
 
 
-def _executor_skill_already_in_parts(parts: list[str]) -> bool:
-    marker = f'<skill name="{EXECUTOR_SKILL_NAME}"'
-    return any(marker in part for part in parts)
-
-
-def _format_executor_skills_injection(
-    payload: dict[str, Any],
-    config: dict[str, Any],
-    *,
-    allow_transcript_file_read: bool,
-) -> str:
-    session_text = session_text_from_hook_payload(
-        payload,
-        allow_file_read=allow_transcript_file_read,
-    )
-    gated = filter_pre_exposed_skills(with_executor_skill_matches([], config), session_text)
-    return format_agent_skills(gated)
-
-
-def _append_executor_skills_if_needed(
-    parts: list[str],
-    *,
-    payload: dict[str, Any],
-    config: dict[str, Any],
-    allow_transcript_file_read: bool,
-) -> None:
-    if _executor_skill_already_in_parts(parts):
-        return
-    injected = _format_executor_skills_injection(
-        payload,
-        config,
-        allow_transcript_file_read=allow_transcript_file_read,
-    )
-    if injected:
-        parts.append(injected)
+def _executor_skills_prune_enabled(config: dict[str, Any], *, skills_allowed: bool) -> bool:
+    return skills_allowed or uses_executor_tool_catalog(config)
 
 
 def _tools_hook_file_missing(config: dict[str, Any]) -> bool:
@@ -140,6 +107,10 @@ def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | Non
     names: list[str] = []
     if skills_enabled(config):
         names.extend(required_skills_env_var_names(config))
+    elif uses_executor_tool_catalog(config):
+        from cyt.config import required_executor_skill_env_var_names
+
+        names.extend(required_executor_skill_env_var_names(config))
     if tools_inject_via(config) == "hook":
         names.extend(required_pruning_env_var_names(config))
         names.extend(required_tools_hook_env_var_names(config))
@@ -456,10 +427,13 @@ def _search_skills_for_user_prompt(
     stdout_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_safe_stdout()
     stderr_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
-        entries = build_registry_for_hook_payload(
+        entries = append_executor_skill_entries(
+            build_registry_for_hook_payload(
+                config,
+                payload,
+                agent=resolve_skills_agent(),
+            ),
             config,
-            payload,
-            agent=resolve_skills_agent(),
         )
         if plain_output:
             matches, search_trace = search_skills_with_trace(
@@ -555,7 +529,7 @@ def _handle_user_prompt_skills(
         allow_file_read=allow_transcript_file_read,
     )
     gated_matches = filter_pre_exposed_skills(
-        with_executor_skill_matches(matches, config),
+        matches,
         session_text,
     )
     injected = format_agent_skills(gated_matches)
@@ -612,7 +586,7 @@ def _append_coordinated_skills_injection(
         allow_file_read=allow_transcript_file_read,
     )
     gated_matches = filter_pre_exposed_skills(
-        with_executor_skill_matches(skill_matches or [], config),
+        skill_matches or [],
         session_text,
     )
     injected_skills = format_agent_skills(gated_matches)
@@ -692,6 +666,60 @@ def _append_coordinated_tools_injection(
     details.update(tools_details)
 
 
+def _coordinated_injection_budgets(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    skills_allowed: bool,
+    tools_allowed: bool,
+) -> tuple[bool, bool, bool, int, int | None, dict[str, Any]] | None:
+    """Return injection flags and budgets, or None when both skills and tools are disabled."""
+    if _tools_hook_file_missing(config):
+        tools_allowed = False
+    elif not tools_budget_precheck(config):
+        tools_allowed = False
+
+    skills_budget_ok = skills_budget_precheck(config)
+    if not skills_budget_ok:
+        skills_allowed = False
+
+    skills_prune_enabled = _executor_skills_prune_enabled(
+        config,
+        skills_allowed=skills_allowed,
+    )
+    if not skills_budget_ok:
+        skills_prune_enabled = False
+
+    request_tokens = count_hook_request_tokens(payload)
+    budget = resolve_inject_budget(
+        config,
+        "hook",
+        total_request_tokens=request_tokens,
+    )
+    if skills_prune_enabled and budget.effective_max <= 0:
+        skills_prune_enabled = False
+        skills_allowed = False
+    budget_max, budget_debug = resolve_tools_inject_budget(
+        config,
+        total_request_tokens=request_tokens,
+    )
+    if tools_allowed and budget_max <= 0:
+        tools_allowed = False
+
+    if not skills_prune_enabled and not tools_allowed:
+        return None
+
+    skills_max_tokens = budget.effective_max if skills_prune_enabled else None
+    return (
+        skills_allowed,
+        tools_allowed,
+        skills_prune_enabled,
+        request_tokens,
+        skills_max_tokens,
+        budget_debug,
+    )
+
+
 def _run_coordinated_user_prompt_injection(
     payload: dict[str, Any],
     config: dict[str, Any],
@@ -713,31 +741,24 @@ def _run_coordinated_user_prompt_injection(
     if not query:
         return [], ["user_prompt_missing_prompt"], {}
 
-    if _tools_hook_file_missing(config):
-        tools_allowed = False
-    elif not tools_budget_precheck(config):
-        tools_allowed = False
-
-    if not skills_budget_precheck(config):
-        skills_allowed = False
-
-    request_tokens = count_hook_request_tokens(payload)
-    budget = resolve_inject_budget(
+    budgets = _coordinated_injection_budgets(
+        payload,
         config,
-        "hook",
-        total_request_tokens=request_tokens,
+        skills_allowed=skills_allowed,
+        tools_allowed=tools_allowed,
     )
-    if skills_allowed and budget.effective_max <= 0:
-        skills_allowed = False
-    budget_max, budget_debug = resolve_tools_inject_budget(
-        config,
-        total_request_tokens=request_tokens,
-    )
-    if tools_allowed and budget_max <= 0:
-        tools_allowed = False
-
-    if not skills_allowed and not tools_allowed:
+    if budgets is None:
+        request_tokens = count_hook_request_tokens(payload)
         return [], ["skipped_budget_zero"], {"request_tokens": request_tokens}
+
+    (
+        skills_allowed,
+        tools_allowed,
+        _skills_prune_enabled,
+        request_tokens,
+        skills_max_tokens,
+        budget_debug,
+    ) = budgets
 
     prompt = prompt_from_payload(payload) or query
     model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
@@ -751,7 +772,7 @@ def _run_coordinated_user_prompt_injection(
             payload=payload,
             skills_allowed=skills_allowed,
             tools_allowed=tools_allowed,
-            skills_max_tokens=budget.effective_max if skills_allowed else None,
+            skills_max_tokens=skills_max_tokens,
             io_guarded=stdio_guarded,
             pruner_settings=pruner_settings,
         )
@@ -760,7 +781,7 @@ def _run_coordinated_user_prompt_injection(
         outcomes: list[str] = []
         details: dict[str, Any] = {}
 
-        if skills_allowed:
+        if skill_matches is not None:
             _append_coordinated_skills_injection(
                 payload=payload,
                 allow_transcript_file_read=allow_transcript_file_read,
@@ -793,12 +814,6 @@ def _run_coordinated_user_prompt_injection(
             )
 
         details["rules_merge_sections"] = True
-        _append_executor_skills_if_needed(
-            parts,
-            payload=payload,
-            config=config,
-            allow_transcript_file_read=allow_transcript_file_read,
-        )
         return parts, outcomes, details
 
 
@@ -819,9 +834,11 @@ def _run_user_prompt_injection(
     details: dict[str, Any] = {}
     outcomes: list[str] = []
 
+    executor_skills_prune = uses_executor_tool_catalog(config) and not skills_allowed
+
     if (
-        skills_allowed
-        and tools_allowed
+        tools_allowed
+        and (skills_allowed or executor_skills_prune)
         and not plain_output
         and not _tools_hook_file_missing(config)
     ):
@@ -864,12 +881,6 @@ def _run_user_prompt_injection(
         if tools_text:
             parts.append(tools_text)
 
-    _append_executor_skills_if_needed(
-        parts,
-        payload=payload,
-        config=config,
-        allow_transcript_file_read=allow_transcript_file_read,
-    )
     return parts, outcomes, details
 
 
