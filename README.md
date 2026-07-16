@@ -40,6 +40,8 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 ![Python][python-tech-shield]
 ![TypeScript][typescript-shield]
 ![Rust][rust-tech-shield]
+![Go][go-tech-shield]
+![C][c-tech-shield]
 
   <table>
     <tr>
@@ -608,3 +610,5 @@ See [`LICENSE`](LICENSE).
 [telemetry-shield]: https://img.shields.io/badge/No_Telemetry-none-green?style=for-the-badge
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
+[c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
+[go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white
