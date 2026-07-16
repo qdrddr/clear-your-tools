@@ -146,3 +146,4 @@ graphify-out
 graphify-out/cost.json
 graphify-out/cache/
 .debug/rules/cyt-injection.mdc
+.codebase-memory/
