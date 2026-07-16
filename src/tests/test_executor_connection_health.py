@@ -17,6 +17,11 @@ from cyt.tools.sources.executor_catalog_disk import (
     read_disk_catalog,
     write_disk_catalog,
 )
+from cyt.tools.sources.executor_connection_flapping import (
+    FlappingPolicy,
+    clear_flapping_cache,
+    update_flapping_states,
+)
 from cyt.tools.sources.executor_connection_health import (
     ConnectionHealthSnapshot,
     ConnectionKey,
@@ -52,6 +57,20 @@ _CONFIG = {
 def setup_function() -> None:
     clear_executor_catalog_cache()
     clear_connection_health_cache()
+    clear_flapping_cache()
+
+
+_FLAP_POLICY = FlappingPolicy(
+    window_size=6,
+    min_degraded=1,
+    min_transitions=2,
+    base_quarantine_seconds=90.0,
+    per_degraded_seconds=45.0,
+    per_transition_seconds=30.0,
+    max_quarantine_seconds=600.0,
+    recovery_healthy_samples=3,
+    per_episode_seconds=60.0,
+)
 
 
 def _connection(
@@ -179,6 +198,85 @@ def test_filter_catalog_by_health_applies_when_loaded() -> None:
     ]
     filtered = filter_catalog_by_health(tools, slug)
     assert [tool["name"] for tool in filtered] == ["tools.semble_mcp.org.default.search"]
+
+
+def test_filter_catalog_by_health_excludes_gated_flapping_integration() -> None:
+    slug = "flap-slug"
+    tools: list[dict[str, Any]] = [
+        {
+            "name": "tools.flappy.org.default.search",
+            "owner": "org",
+            "integration": "flappy_mcp",
+        },
+        {
+            "name": "executor.coreTools.connections.list",
+            "integration": "executor",
+            "static": True,
+        },
+    ]
+    apply_health_snapshot(
+        slug,
+        ConnectionHealthSnapshot(
+            connections=[_connection(integration="flappy_mcp", status="healthy")],
+            healthy_integrations={("org", "flappy_mcp")},
+            loaded=True,
+        ),
+        update_flapping=False,
+    )
+    now = 1000.0
+    update_flapping_states(
+        slug,
+        [_connection(integration="flappy_mcp", status="healthy")],
+        policy=_FLAP_POLICY,
+        now=now,
+    )
+    update_flapping_states(
+        slug,
+        [_connection(integration="flappy_mcp", status="degraded")],
+        policy=_FLAP_POLICY,
+        now=now + 10,
+    )
+    update_flapping_states(
+        slug,
+        [_connection(integration="flappy_mcp", status="healthy")],
+        policy=_FLAP_POLICY,
+        now=now + 20,
+    )
+
+    filtered = filter_catalog_by_health(tools, slug)
+    assert [tool["name"] for tool in filtered] == ["executor.coreTools.connections.list"]
+
+
+def test_filter_catalog_by_health_continuous_flapping_never_releases_tools() -> None:
+    slug = "continuous-flap-slug"
+    tools: list[dict[str, Any]] = [
+        {
+            "name": "tools.flappy.org.default.search",
+            "owner": "org",
+            "integration": "flappy_mcp",
+        },
+    ]
+    apply_health_snapshot(
+        slug,
+        ConnectionHealthSnapshot(
+            connections=[_connection(integration="flappy_mcp", status="healthy")],
+            healthy_integrations={("org", "flappy_mcp")},
+            loaded=True,
+        ),
+        update_flapping=False,
+    )
+    now = 2000.0
+    sequence = ["healthy", "degraded", "healthy", "degraded", "healthy", "degraded", "healthy"]
+    for index, status in enumerate(sequence):
+        update_flapping_states(
+            slug,
+            [_connection(integration="flappy_mcp", status=status)],
+            policy=_FLAP_POLICY,
+            now=now + (index * 10),
+        )
+        filtered = filter_catalog_by_health(tools, slug)
+        if index >= 2:
+            assert filtered == []
 
 
 @pytest.mark.asyncio

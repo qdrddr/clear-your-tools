@@ -157,6 +157,18 @@ pruning:
       executor_url: http://localhost:4789
       executor_token_var: EXECUTOR_TOKEN
       mcp_definitions_file: ~/.config/cyt/mcp-definitions.json
+      connection_health:
+        flapping:
+          enabled: true
+          window_size: 12
+          min_degraded: 1
+          min_transitions: 2
+          base_quarantine_seconds: 90
+          per_degraded_seconds: 45
+          per_transition_seconds: 30
+          max_quarantine_seconds: 600
+          recovery_healthy_samples: 6
+          per_episode_seconds: 60
     policy:
       system_tool: prune_optional
       mcp_tool: prune_all

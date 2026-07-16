@@ -13,6 +13,17 @@ from typing import Any
 
 import httpx
 
+from cyt.config import connection_health_flapping_settings, load_config
+from cyt.tools.sources.executor_connection_flapping import (
+    clear_flapping_cache,
+    flapping_policy_from_config,
+    flapping_snapshot_fields,
+    flapping_state_to_disk,
+    gated_integrations,
+    load_flapping_state_from_disk,
+    update_flapping_states,
+)
+
 logger = logging.getLogger(__name__)
 
 _CONNECTIONS_PATH = "/api/connections"
@@ -45,6 +56,7 @@ def clear_connection_health_cache() -> None:
     with _health_lock:
         _health_states.clear()
         _permissive_filter_logged.clear()
+    clear_flapping_cache()
 
 
 def build_healthy_integrations(connections: list[dict[str, Any]]) -> set[tuple[str, str]]:
@@ -125,12 +137,23 @@ def filter_tools_by_integration_health(
     return filtered
 
 
-def health_snapshot_to_disk(snapshot: ConnectionHealthSnapshot) -> dict[str, Any]:
-    return {
+def health_snapshot_to_disk(
+    snapshot: ConnectionHealthSnapshot,
+    *,
+    slug: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "connections": copy.deepcopy(snapshot.connections),
         "healthy_integrations": [list(pair) for pair in sorted(snapshot.healthy_integrations)],
         "updated_at": datetime.now(tz=UTC).isoformat(),
     }
+    if slug is not None:
+        policy = flapping_policy_from_config(connection_health_flapping_settings(config))
+        flapping = flapping_state_to_disk(slug, policy=policy)
+        if flapping:
+            payload["flapping"] = flapping
+    return payload
 
 
 def health_snapshot_from_disk(payload: dict[str, Any]) -> ConnectionHealthSnapshot | None:
@@ -155,17 +178,46 @@ def health_snapshot_from_disk(payload: dict[str, Any]) -> ConnectionHealthSnapsh
     )
 
 
-def apply_health_snapshot(slug: str, snapshot: ConnectionHealthSnapshot) -> None:
+def _load_flapping_from_health_payload(
+    slug: str,
+    payload: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> None:
+    raw_flapping = payload.get("flapping")
+    if not isinstance(raw_flapping, dict):
+        return
+    policy = flapping_policy_from_config(connection_health_flapping_settings(config))
+    load_flapping_state_from_disk(slug, raw_flapping, policy=policy)
+
+
+def apply_health_snapshot(
+    slug: str,
+    snapshot: ConnectionHealthSnapshot,
+    *,
+    config: dict[str, Any] | None = None,
+    update_flapping: bool = True,
+) -> None:
+    cfg = config or load_config()
+    if update_flapping:
+        policy = flapping_policy_from_config(connection_health_flapping_settings(cfg))
+        update_flapping_states(slug, snapshot.connections, policy=policy)
     with _health_lock:
         snapshot.loaded = True
         _health_states[slug] = snapshot
 
 
-def load_health_snapshot_from_disk(slug: str, payload: dict[str, Any]) -> bool:
+def load_health_snapshot_from_disk(
+    slug: str,
+    payload: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> bool:
     snapshot = health_snapshot_from_disk(payload)
     if snapshot is None:
         return False
-    apply_health_snapshot(slug, snapshot)
+    _load_flapping_from_health_payload(slug, payload, config=config)
+    apply_health_snapshot(slug, snapshot, config=config, update_flapping=False)
     return True
 
 
@@ -191,13 +243,19 @@ def health_cache_loaded(slug: str) -> bool:
 def filter_catalog_by_health(
     tools: list[dict[str, Any]],
     slug: str,
+    *,
+    config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Apply integration health gate when cache is loaded; permissive until first refresh."""
     snapshot = snapshot_health_for_catalog(slug)
     if snapshot is None or not snapshot.loaded:
         _log_permissive_filter_once(slug)
         return tools
-    return filter_tools_by_integration_health(tools, snapshot.healthy_integrations)
+    cfg = config or load_config()
+    policy = flapping_policy_from_config(connection_health_flapping_settings(cfg))
+    gated = gated_integrations(slug, policy=policy)
+    effective_healthy = snapshot.healthy_integrations - gated
+    return filter_tools_by_integration_health(tools, effective_healthy)
 
 
 def _log_permissive_filter_once(slug: str) -> None:
@@ -211,7 +269,11 @@ def _log_permissive_filter_once(slug: str) -> None:
     )
 
 
-def connection_health_snapshot_fields(slug: str) -> dict[str, Any]:
+def connection_health_snapshot_fields(
+    slug: str,
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Fields for ``executor_catalog_health_snapshot``."""
     snapshot = snapshot_health_for_catalog(slug)
     if snapshot is None:
@@ -219,14 +281,19 @@ def connection_health_snapshot_fields(slug: str) -> dict[str, Any]:
             "connection_health_loaded": False,
             "healthy_integration_count": 0,
             "total_connection_count": 0,
+            "flapping_enabled": False,
+            "gated_integration_count": 0,
         }
 
+    cfg = config or load_config()
+    policy = flapping_policy_from_config(connection_health_flapping_settings(cfg))
     age_seconds = time.monotonic() - snapshot.updated_at if snapshot.updated_at else None
     payload: dict[str, Any] = {
         "connection_health_loaded": snapshot.loaded,
         "healthy_integration_count": len(snapshot.healthy_integrations),
         "total_connection_count": len(snapshot.connections),
     }
+    payload.update(flapping_snapshot_fields(slug, policy=policy))
     if age_seconds is not None:
         payload["health_cache_age_seconds"] = round(age_seconds, 1)
     return payload

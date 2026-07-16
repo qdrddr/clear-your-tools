@@ -348,11 +348,13 @@ def _apply_catalog_to_state(
 def _apply_health_snapshot_to_cache(
     cache_key: _ExecutorCacheKey,
     health_snapshot: ConnectionHealthSnapshot | None,
+    *,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if health_snapshot is None:
         return None
-    apply_health_snapshot(cache_key.slug, health_snapshot)
-    return health_snapshot_to_disk(health_snapshot)
+    apply_health_snapshot(cache_key.slug, health_snapshot, config=config)
+    return health_snapshot_to_disk(health_snapshot, slug=cache_key.slug, config=config)
 
 
 def _write_refresh_result_to_disk(
@@ -362,6 +364,7 @@ def _write_refresh_result_to_disk(
     content_hash: str,
     executor_mcp: dict[str, Any] | None,
     health_snapshot: ConnectionHealthSnapshot | None,
+    config: dict[str, Any] | None = None,
 ) -> None:
     write_kwargs: dict[str, Any] = {
         "executor_url": cache_key.base_url,
@@ -370,13 +373,21 @@ def _write_refresh_result_to_disk(
     }
     if executor_mcp is not None:
         write_kwargs["executor"] = executor_mcp
-    connections_health = _apply_health_snapshot_to_cache(cache_key, health_snapshot)
+    connections_health = _apply_health_snapshot_to_cache(
+        cache_key,
+        health_snapshot,
+        config=config,
+    )
     if connections_health is not None:
         write_kwargs["connections_health"] = connections_health
     write_disk_catalog(cache_key.slug, **write_kwargs)
 
 
-def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
+def _load_catalog_from_disk(
+    cache_key: _ExecutorCacheKey,
+    *,
+    config: dict[str, Any] | None = None,
+) -> bool:
     envelope = read_disk_catalog(cache_key.slug)
     if envelope is None:
         return False
@@ -388,7 +399,7 @@ def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
     executor_mcp = copy.deepcopy(raw_mcp) if isinstance(raw_mcp, dict) else None
     raw_health = envelope.get("connections_health")
     if isinstance(raw_health, dict):
-        load_health_snapshot_from_disk(cache_key.slug, raw_health)
+        load_health_snapshot_from_disk(cache_key.slug, raw_health, config=config)
     state = _get_state(cache_key)
     _apply_catalog_to_state(
         state,
@@ -420,7 +431,7 @@ def load_executor_catalog_from_disk(config: dict[str, Any] | None = None) -> boo
     with _catalog_lock:
         if state.tools:
             return True
-    return _load_catalog_from_disk(cache_key)
+    return _load_catalog_from_disk(cache_key, config=cfg)
 
 
 def _wait_for_refresh(state: _ExecutorCatalogState) -> None:
@@ -466,6 +477,7 @@ def _run_background_refresh(
             content_hash=content_hash,
             executor_mcp=executor_mcp,
             health_snapshot=health_snapshot,
+            config=config,
         )
         logger.debug(
             "executor catalog refresh completed (%d tools, mcp=%s, health=%s)",
@@ -541,11 +553,21 @@ def _blocking_network_fetch(
     except httpx.HTTPError as exc:
         logger.warning("executor tool catalog fetch failed: %s", exc)
         stale = _snapshot_tools(state)
-        return _return_catalog(stale, cache_key, apply_health_filter=apply_health_filter)
+        return _return_catalog(
+            stale,
+            cache_key,
+            apply_health_filter=apply_health_filter,
+            config=cfg,
+        )
     except ValueError as exc:
         logger.warning("executor tool catalog response invalid: %s", exc)
         stale = _snapshot_tools(state)
-        return _return_catalog(stale, cache_key, apply_health_filter=apply_health_filter)
+        return _return_catalog(
+            stale,
+            cache_key,
+            apply_health_filter=apply_health_filter,
+            config=cfg,
+        )
 
     content_hash = raw_catalog_content_hash(tools)
     _apply_catalog_to_state(
@@ -560,8 +582,14 @@ def _blocking_network_fetch(
         content_hash=content_hash,
         executor_mcp=executor_mcp,
         health_snapshot=health_snapshot,
+        config=cfg,
     )
-    return _return_catalog(copy.deepcopy(tools), cache_key, apply_health_filter=apply_health_filter)
+    return _return_catalog(
+        copy.deepcopy(tools),
+        cache_key,
+        apply_health_filter=apply_health_filter,
+        config=cfg,
+    )
 
 
 def _return_catalog(
@@ -569,12 +597,13 @@ def _return_catalog(
     cache_key: _ExecutorCacheKey,
     *,
     apply_health_filter: bool,
+    config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     if not tools:
         return []
     if not apply_health_filter:
         return tools
-    return filter_catalog_by_health(tools, cache_key.slug)
+    return filter_catalog_by_health(tools, cache_key.slug, config=config)
 
 
 def get_executor_mcp_cache(
@@ -601,7 +630,7 @@ def get_executor_mcp_cache(
         has_memory = bool(state.tools) or state.executor_mcp is not None
 
     if not has_memory:
-        _load_catalog_from_disk(cache_key)
+        _load_catalog_from_disk(cache_key, config=cfg)
 
     schedule_executor_catalog_refresh(cfg, allow_prompt=allow_prompt, force=False)
     return _snapshot_executor_mcp(state)
@@ -626,7 +655,7 @@ def _get_executor_catalog_impl(
         has_memory = bool(state.tools)
 
     if not has_memory:
-        _load_catalog_from_disk(cache_key)
+        _load_catalog_from_disk(cache_key, config=cfg)
         with _catalog_lock:
             has_memory = bool(state.tools)
 
@@ -635,7 +664,12 @@ def _get_executor_catalog_impl(
             _wait_for_refresh(state)
             snapshot = _snapshot_tools(state)
             if snapshot:
-                return _return_catalog(snapshot, cache_key, apply_health_filter=apply_health_filter)
+                return _return_catalog(
+                    snapshot,
+                    cache_key,
+                    apply_health_filter=apply_health_filter,
+                    config=cfg,
+                )
         return _blocking_network_fetch(
             cfg,
             token,
@@ -661,6 +695,7 @@ def _get_executor_catalog_impl(
         _snapshot_tools(state),
         cache_key,
         apply_health_filter=apply_health_filter,
+        config=cfg,
     )
 
 
@@ -765,7 +800,7 @@ def executor_catalog_health_snapshot(
         "executor_mcp_cached": has_mcp,
         "executor_mcp_tools_list_count": mcp_tools,
     }
-    payload.update(connection_health_snapshot_fields(cache_key.slug))
+    payload.update(connection_health_snapshot_fields(cache_key.slug, config=cfg))
     if age_seconds is not None:
         payload["catalog_age_seconds"] = round(age_seconds, 1)
     if content_hash:

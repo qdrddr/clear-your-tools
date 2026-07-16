@@ -127,6 +127,16 @@ DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "executor"
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
+DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED: bool = True
+DEFAULT_CONNECTION_HEALTH_FLAPPING_WINDOW_SIZE: int = 12
+DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_DEGRADED: int = 1
+DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_TRANSITIONS: int = 2
+DEFAULT_CONNECTION_HEALTH_FLAPPING_BASE_QUARANTINE_SECONDS: float = 90.0
+DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_DEGRADED_SECONDS: float = 45.0
+DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_TRANSITION_SECONDS: float = 30.0
+DEFAULT_CONNECTION_HEALTH_FLAPPING_MAX_QUARANTINE_SECONDS: float = 600.0
+DEFAULT_CONNECTION_HEALTH_FLAPPING_RECOVERY_HEALTHY_SAMPLES: int = 6
+DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_EPISODE_SECONDS: float = 60.0
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
@@ -174,6 +184,32 @@ _DEFAULTS: dict[str, Any] = {
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
                 "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
+                "connection_health": {
+                    "flapping": {
+                        "enabled": DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED,
+                        "window_size": DEFAULT_CONNECTION_HEALTH_FLAPPING_WINDOW_SIZE,
+                        "min_degraded": DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_DEGRADED,
+                        "min_transitions": DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_TRANSITIONS,
+                        "base_quarantine_seconds": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_BASE_QUARANTINE_SECONDS
+                        ),
+                        "per_degraded_seconds": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_DEGRADED_SECONDS
+                        ),
+                        "per_transition_seconds": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_TRANSITION_SECONDS
+                        ),
+                        "max_quarantine_seconds": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_MAX_QUARANTINE_SECONDS
+                        ),
+                        "recovery_healthy_samples": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_RECOVERY_HEALTHY_SAMPLES
+                        ),
+                        "per_episode_seconds": (
+                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_EPISODE_SECONDS
+                        ),
+                    },
+                },
             },
             "policy": {
                 "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
@@ -1075,6 +1111,20 @@ def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
 
 def tools_hook_executor_configured(config: dict[str, Any] | None = None) -> bool:
     return bool(tools_hook_executor_url(config))
+
+
+def connection_health_flapping_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merged ``pruning.tools.hook.connection_health.flapping`` settings."""
+    cfg = config or load_config()
+    hook = _tools_hook_settings(_merged_config(cfg))
+    connection_health = hook.get("connection_health")
+    if not isinstance(connection_health, dict):
+        connection_health = {}
+    flapping = connection_health.get("flapping")
+    if not isinstance(flapping, dict):
+        flapping = {}
+    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["connection_health"]["flapping"]
+    return deep_merge(defaults, flapping)
 
 
 def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:
