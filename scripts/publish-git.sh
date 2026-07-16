@@ -191,7 +191,13 @@ mapfile -t files < <(version_files)
 
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
 
-git add -- "${files[@]}"
+for file in "${files[@]}"; do
+	if [[ "${file}" == "${ROOT}/search/.publish-tag" ]]; then
+		git add -f -- "${file}"
+	else
+		git add -- "${file}"
+	fi
+done
 if git diff --cached --quiet; then
 	echo "version manifests already at ${semver}; skipping commit"
 else

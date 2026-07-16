@@ -91,7 +91,6 @@ repos:
         name: prettier github workflow yaml
         files: ^\.github/workflows/.*\.ya?ml$
         types_or: [yaml]
-        always_run: true
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.47.0
