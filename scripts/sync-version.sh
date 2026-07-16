@@ -16,6 +16,8 @@ export SHORTEN_ROOT="${ROOT}"
 ROOT_PYPROJECT="${ROOT}/pyproject.toml"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 CARGO_LOCK="${ROOT}/Cargo.lock"
+CHUNK_YOUR_TOOLS_DIR="${ROOT}/chunk-your-tools"
+CHUNK_YOUR_SKILLS_DIR="${ROOT}/chunk-your-skills"
 SDK_PYPROJECT="${ROOT}/sdk/python/pyproject.toml"
 PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
 PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
@@ -40,6 +42,10 @@ Propagate VERSION to all manifests and lockfiles:
   - sdk/go/moduleversion/version.go (Version)
 
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
+
+When ${CARGO_TOML} declares chunk-your-tools and/or chunk-your-skills
+versions under [dependencies], checkout the matching vX.Y.Z tags in the
+respective git submodules after fetching/pulling.
 EOF
 }
 
@@ -54,6 +60,84 @@ validate_version() {
 	if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
 		echo "error: invalid semver: ${version}" >&2
 		exit 1
+	fi
+}
+
+read_cargo_dep_version() {
+	local crate="$1"
+	local line version=""
+
+	if [[ ! -f "${CARGO_TOML}" ]]; then
+		return 0
+	fi
+
+	line="$(
+		grep -E "^[[:space:]]*${crate}[[:space:]]*=" "${CARGO_TOML}" |
+			head -1 ||
+			true
+	)"
+	if [[ -z "${line}" ]]; then
+		return 0
+	fi
+
+	if [[ "${line}" =~ version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
+		version="${BASH_REMATCH[1]}"
+	elif [[ "${line}" =~ =[[:space:]]*\"([^\"]+)\" ]]; then
+		version="${BASH_REMATCH[1]}"
+	fi
+
+	if [[ -n "${version}" ]]; then
+		printf '%s\n' "${version}"
+	fi
+}
+
+sync_chunk_submodule() {
+	local name="$1"
+	local dir="$2"
+	local version="$3"
+	local tag="v${version}"
+
+	if [[ -z "${version}" ]]; then
+		return 0
+	fi
+
+	validate_version "${version}"
+
+	if [[ ! -e "${dir}/.git" ]]; then
+		printf 'warning: submodule %s not initialized; skipping %s\n' \
+			"${name}" "${tag}" | shorten_paths >&2
+		return 0
+	fi
+
+	(
+		cd "${dir}"
+		git fetch origin --tags
+		git pull --ff-only 2>/dev/null || git pull --ff-only origin 2>/dev/null || true
+		if ! git rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
+			printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
+			exit 1
+		fi
+		git checkout "${tag}"
+	)
+
+	printf 'synced submodule %s to %s\n' "${name}" "${tag}" | shorten_paths
+}
+
+sync_chunk_submodules_from_cargo() {
+	local tools_version skills_version
+
+	tools_version="$(read_cargo_dep_version "chunk-your-tools")"
+	skills_version="$(read_cargo_dep_version "chunk-your-skills")"
+
+	if [[ -z "${tools_version}" && -z "${skills_version}" ]]; then
+		return 0
+	fi
+
+	if [[ -n "${tools_version}" ]]; then
+		sync_chunk_submodule "chunk-your-tools" "${CHUNK_YOUR_TOOLS_DIR}" "${tools_version}"
+	fi
+	if [[ -n "${skills_version}" ]]; then
+		sync_chunk_submodule "chunk-your-skills" "${CHUNK_YOUR_SKILLS_DIR}" "${skills_version}"
 	fi
 }
 
@@ -231,6 +315,7 @@ update_package_lock_version "${version}"
 update_cmake_project_version "${version}"
 update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
+sync_chunk_submodules_from_cargo
 
 cat <<EOF | shorten_paths
 synced version ${version} to:
