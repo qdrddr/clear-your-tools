@@ -91,40 +91,27 @@ def test_build_plan_bm25_tools_rerank_skills_two_stages() -> None:
 
 def test_run_parallel_runs_concurrently() -> None:
     overlap = threading.Event()
-    active = {"count": 0}
-    lock = threading.Lock()
+    gate = threading.Barrier(2, action=overlap.set)
 
     def slow(name: str) -> str:
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap.set()
-        time.sleep(0.1)
+        gate.wait(timeout=2.0)
         return name
 
-    started = time.perf_counter()
     results = run_parallel(
         {"a": lambda: slow("a"), "b": lambda: slow("b")},
         max_workers=MAX_PRUNE_BATCH_WORKERS,
     )
-    elapsed = time.perf_counter() - started
 
     assert overlap.is_set()
     assert results == {"a": "a", "b": "b"}
-    assert elapsed < 0.18
 
 
 def test_coordinate_both_bm25_runs_in_parallel() -> None:
     overlap = threading.Event()
-    active = {"count": 0}
-    lock = threading.Lock()
+    gate = threading.Barrier(2, action=overlap.set)
 
     def slow_tools(*_args: object, **_kwargs: object) -> PruneResult:
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap.set()
-        time.sleep(0.12)
+        gate.wait(timeout=2.0)
         return PruneResult(
             tools=[{"name": "tool_a"}],
             status="applied",
@@ -136,11 +123,7 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
         )
 
     def slow_skills(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap.set()
-        time.sleep(0.12)
+        gate.wait(timeout=2.0)
         return []
 
     config: dict[str, Any] = {
@@ -152,10 +135,9 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
     with (
         patch("cyt.pruning.coordinator.filter_tools_for_query", side_effect=slow_tools),
         patch("cyt.pruning.coordinator._run_skills_search", side_effect=slow_skills),
-        patch("cyt.config.effective_pruning_pipeline", return_value=["bm25"]),
-        patch("cyt.config.effective_skills_pipeline", return_value="bm25"),
+        patch("cyt.pruning.coordinator.effective_pruning_pipeline", return_value=["bm25"]),
+        patch("cyt.pruning.coordinator.effective_skills_pipeline", return_value="bm25"),
     ):
-        started = time.perf_counter()
         result = coordinate_skills_tools_prune(
             "query",
             config,
@@ -165,10 +147,8 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
             skills_allowed=True,
             tools_allowed=True,
         )
-        elapsed = time.perf_counter() - started
 
     assert overlap.is_set()
-    assert elapsed < 0.22
     assert "root" in result.prune_results
 
 

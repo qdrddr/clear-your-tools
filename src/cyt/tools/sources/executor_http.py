@@ -25,13 +25,25 @@ from cyt.tools.sources.executor_catalog_disk import (
     read_disk_catalog,
     write_disk_catalog,
 )
+from cyt.tools.sources.executor_connection_health import (
+    ConnectionHealthSnapshot,
+    apply_health_snapshot,
+    clear_connection_health_cache,
+    connection_health_snapshot_fields,
+    filter_catalog_by_health,
+    health_snapshot_to_disk,
+    load_health_snapshot_from_disk,
+    merge_tool_metadata,
+    refresh_connection_health_async,
+)
 from cyt.tools.sources.executor_mcp import fetch_executor_mcp_cache_async
 
 logger = logging.getLogger(__name__)
 
-_CACHE_TTL_SECONDS = 60.0
-_DEFAULT_SCHEMA_CONCURRENCY = 16
-_REFRESH_WAIT_SECONDS = 120.0
+# Recommended _REFRESH_WAIT_SECONDS > _CACHE_TTL_SECONDS
+_CACHE_TTL_SECONDS = 10.0
+_REFRESH_WAIT_SECONDS = 20.0
+_DEFAULT_SCHEMA_CONCURRENCY = 4
 _LIST_PATH = "/api/tools"
 _SCHEMA_PATH = "/api/tools/schema"
 
@@ -61,6 +73,7 @@ def clear_executor_catalog_cache() -> None:
     """Reset in-process executor catalog state (for tests)."""
     with _catalog_lock:
         _catalog_states.clear()
+    clear_connection_health_cache()
 
 
 def _executor_runtime_active(config: dict[str, Any]) -> bool:
@@ -108,30 +121,43 @@ def _normalize_tool(
     address: str,
     description: str | None,
     input_schema: dict[str, Any] | object,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tool: dict[str, Any] = {"name": address}
     if description:
         tool["description"] = str(description)
     if isinstance(input_schema, dict):
         tool["input_schema"] = input_schema
+    merge_tool_metadata(tool, metadata)
     return tool
+
+
+def _list_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for key in ("owner", "integration", "connection", "static"):
+        if key in item:
+            metadata[key] = item[key]
+    return metadata
 
 
 async def _fetch_list_async(
     *,
     base_url: str,
     token: str | None,
-) -> list[tuple[str, str | None]]:
+) -> list[tuple[str, str | None, dict[str, Any]]]:
     headers = _auth_headers(token)
     timeout = httpx.Timeout(60.0, connect=10.0)
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as client:
-        response = await client.get(f"{base_url}{_LIST_PATH}")
+        response = await client.get(
+            f"{base_url}{_LIST_PATH}",
+            params={"includeBlocked": "false"},
+        )
         response.raise_for_status()
         listed = response.json()
     if not isinstance(listed, list):
         raise ValueError("executor /api/tools response must be a JSON array")
 
-    summaries: list[tuple[str, str | None]] = []
+    summaries: list[tuple[str, str | None, dict[str, Any]]] = []
     for item in listed:
         if not isinstance(item, dict):
             continue
@@ -140,7 +166,7 @@ async def _fetch_list_async(
             continue
         description = item.get("description")
         desc_text = str(description) if description is not None else None
-        summaries.append((address, desc_text))
+        summaries.append((address, desc_text, _list_item_metadata(item)))
     return summaries
 
 
@@ -176,16 +202,18 @@ async def _fetch_schemas_async(
     *,
     base_url: str,
     token: str | None,
-    addresses: list[str],
-    descriptions: dict[str, str | None] | None = None,
+    summaries: list[tuple[str, str | None, dict[str, Any]]],
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
 ) -> list[dict[str, Any]]:
-    if not addresses:
+    if not summaries:
         return []
+
+    addresses = [address for address, _, _ in summaries]
+    descriptions = {address: description for address, description, _ in summaries}
+    metadata_by_address = {address: metadata for address, _, metadata in summaries}
 
     headers = _auth_headers(token)
     timeout = httpx.Timeout(60.0, connect=10.0)
-    descriptions = descriptions or {}
     semaphore = asyncio.Semaphore(max(1, concurrency))
     async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=timeout) as client:
         tasks = [
@@ -196,10 +224,14 @@ async def _fetch_schemas_async(
 
     tools: list[dict[str, Any]] = []
     for address, schema_tool in zip(addresses, schemas, strict=True):
+        metadata = metadata_by_address.get(address, {})
         if schema_tool is not None:
+            merge_tool_metadata(schema_tool, metadata)
             tools.append(schema_tool)
             continue
-        tools.append(_normalize_tool(address, descriptions.get(address), {}))
+        tools.append(
+            _normalize_tool(address, descriptions.get(address), {}, metadata),
+        )
     return tools
 
 
@@ -210,13 +242,10 @@ async def _fetch_full_catalog_async(
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
 ) -> list[dict[str, Any]]:
     summaries = await _fetch_list_async(base_url=base_url, token=token)
-    addresses = [address for address, _ in summaries]
-    descriptions = dict(summaries)
     return await _fetch_schemas_async(
         base_url=base_url,
         token=token,
-        addresses=addresses,
-        descriptions=descriptions,
+        summaries=summaries,
         concurrency=concurrency,
     )
 
@@ -226,11 +255,11 @@ async def _fetch_catalog_and_mcp_async(
     base_url: str,
     token: str | None,
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Fetch REST tool schemas and MCP transport cache in parallel.
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, ConnectionHealthSnapshot | None]:
+    """Fetch REST tool schemas, MCP transport cache, and connection health in parallel.
 
-    MCP failures are non-fatal: returns ``(tools, None)`` so callers preserve any
-    existing on-disk ``executor`` block.
+    MCP and health failures are non-fatal: returns ``(tools, None, None)`` for failed
+    optional fetches so callers preserve any existing on-disk blocks.
     """
     catalog_task = asyncio.create_task(
         _fetch_full_catalog_async(
@@ -242,7 +271,15 @@ async def _fetch_catalog_and_mcp_async(
     mcp_task = asyncio.create_task(
         fetch_executor_mcp_cache_async(base_url=base_url, token=token),
     )
-    tools, mcp_outcome = await asyncio.gather(catalog_task, mcp_task, return_exceptions=True)
+    health_task = asyncio.create_task(
+        refresh_connection_health_async(base_url=base_url, token=token),
+    )
+    tools, mcp_outcome, health_outcome = await asyncio.gather(
+        catalog_task,
+        mcp_task,
+        health_task,
+        return_exceptions=True,
+    )
 
     if isinstance(tools, BaseException):
         raise tools
@@ -253,7 +290,14 @@ async def _fetch_catalog_and_mcp_async(
         executor_mcp = None
     else:
         executor_mcp = mcp_outcome
-    return tools, executor_mcp
+
+    health_snapshot: ConnectionHealthSnapshot | None
+    if isinstance(health_outcome, BaseException):
+        logger.warning("executor connection health refresh failed: %s", health_outcome)
+        health_snapshot = None
+    else:
+        health_snapshot = health_outcome
+    return tools, executor_mcp, health_snapshot
 
 
 def _get_state(key: _ExecutorCacheKey) -> _ExecutorCatalogState:
@@ -301,6 +345,37 @@ def _apply_catalog_to_state(
             state.executor_mcp = executor_mcp
 
 
+def _apply_health_snapshot_to_cache(
+    cache_key: _ExecutorCacheKey,
+    health_snapshot: ConnectionHealthSnapshot | None,
+) -> dict[str, Any] | None:
+    if health_snapshot is None:
+        return None
+    apply_health_snapshot(cache_key.slug, health_snapshot)
+    return health_snapshot_to_disk(health_snapshot)
+
+
+def _write_refresh_result_to_disk(
+    cache_key: _ExecutorCacheKey,
+    *,
+    tools: list[dict[str, Any]],
+    content_hash: str,
+    executor_mcp: dict[str, Any] | None,
+    health_snapshot: ConnectionHealthSnapshot | None,
+) -> None:
+    write_kwargs: dict[str, Any] = {
+        "executor_url": cache_key.base_url,
+        "tools": tools,
+        "content_hash": content_hash,
+    }
+    if executor_mcp is not None:
+        write_kwargs["executor"] = executor_mcp
+    connections_health = _apply_health_snapshot_to_cache(cache_key, health_snapshot)
+    if connections_health is not None:
+        write_kwargs["connections_health"] = connections_health
+    write_disk_catalog(cache_key.slug, **write_kwargs)
+
+
 def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
     envelope = read_disk_catalog(cache_key.slug)
     if envelope is None:
@@ -311,6 +386,9 @@ def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
     content_hash = str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(tools))
     raw_mcp = envelope.get("executor")
     executor_mcp = copy.deepcopy(raw_mcp) if isinstance(raw_mcp, dict) else None
+    raw_health = envelope.get("connections_health")
+    if isinstance(raw_health, dict):
+        load_health_snapshot_from_disk(cache_key.slug, raw_health)
     state = _get_state(cache_key)
     _apply_catalog_to_state(
         state,
@@ -319,11 +397,12 @@ def _load_catalog_from_disk(cache_key: _ExecutorCacheKey) -> bool:
         executor_mcp=executor_mcp,
     )
     logger.info(
-        "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s",
+        "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s health=%s",
         cache_key.slug,
         content_hash[:12],
         len(tools),
         "yes" if executor_mcp is not None else "no",
+        "yes" if isinstance(raw_health, dict) else "no",
     )
     return True
 
@@ -361,7 +440,7 @@ def _run_background_refresh(
     try:
         try:
             logger.info("executor catalog network_fetch slug=%s", cache_key.slug)
-            tools, executor_mcp = asyncio.run(
+            tools, executor_mcp, health_snapshot = asyncio.run(
                 _fetch_catalog_and_mcp_async(
                     base_url=cache_key.base_url,
                     token=token,
@@ -381,18 +460,18 @@ def _run_background_refresh(
             content_hash=content_hash,
             executor_mcp=executor_mcp,
         )
-        write_kwargs: dict[str, Any] = {
-            "executor_url": cache_key.base_url,
-            "tools": tools,
-            "content_hash": content_hash,
-        }
-        if executor_mcp is not None:
-            write_kwargs["executor"] = executor_mcp
-        write_disk_catalog(cache_key.slug, **write_kwargs)
+        _write_refresh_result_to_disk(
+            cache_key,
+            tools=tools,
+            content_hash=content_hash,
+            executor_mcp=executor_mcp,
+            health_snapshot=health_snapshot,
+        )
         logger.debug(
-            "executor catalog refresh completed (%d tools, mcp=%s)",
+            "executor catalog refresh completed (%d tools, mcp=%s, health=%s)",
             len(tools),
             "yes" if executor_mcp is not None else "no",
+            "yes" if health_snapshot is not None else "no",
         )
     finally:
         with _catalog_lock:
@@ -450,21 +529,23 @@ def _blocking_network_fetch(
     cfg: dict[str, Any],
     token: str | None,
     cache_key: _ExecutorCacheKey,
+    *,
+    apply_health_filter: bool = True,
 ) -> list[dict[str, Any]]:
     state = _get_state(cache_key)
     try:
         logger.info("executor catalog network_fetch slug=%s blocking=true", cache_key.slug)
-        tools, executor_mcp = asyncio.run(
+        tools, executor_mcp, health_snapshot = asyncio.run(
             _fetch_catalog_and_mcp_async(base_url=cache_key.base_url, token=token),
         )
     except httpx.HTTPError as exc:
         logger.warning("executor tool catalog fetch failed: %s", exc)
         stale = _snapshot_tools(state)
-        return stale if stale else []
+        return _return_catalog(stale, cache_key, apply_health_filter=apply_health_filter)
     except ValueError as exc:
         logger.warning("executor tool catalog response invalid: %s", exc)
         stale = _snapshot_tools(state)
-        return stale if stale else []
+        return _return_catalog(stale, cache_key, apply_health_filter=apply_health_filter)
 
     content_hash = raw_catalog_content_hash(tools)
     _apply_catalog_to_state(
@@ -473,15 +554,27 @@ def _blocking_network_fetch(
         content_hash=content_hash,
         executor_mcp=executor_mcp,
     )
-    write_kwargs: dict[str, Any] = {
-        "executor_url": cache_key.base_url,
-        "tools": tools,
-        "content_hash": content_hash,
-    }
-    if executor_mcp is not None:
-        write_kwargs["executor"] = executor_mcp
-    write_disk_catalog(cache_key.slug, **write_kwargs)
-    return copy.deepcopy(tools)
+    _write_refresh_result_to_disk(
+        cache_key,
+        tools=tools,
+        content_hash=content_hash,
+        executor_mcp=executor_mcp,
+        health_snapshot=health_snapshot,
+    )
+    return _return_catalog(copy.deepcopy(tools), cache_key, apply_health_filter=apply_health_filter)
+
+
+def _return_catalog(
+    tools: list[dict[str, Any]],
+    cache_key: _ExecutorCacheKey,
+    *,
+    apply_health_filter: bool,
+) -> list[dict[str, Any]]:
+    if not tools:
+        return []
+    if not apply_health_filter:
+        return tools
+    return filter_catalog_by_health(tools, cache_key.slug)
 
 
 def get_executor_mcp_cache(
@@ -520,6 +613,7 @@ def _get_executor_catalog_impl(
     allow_prompt: bool,
     blocking: bool,
     force: bool,
+    apply_health_filter: bool = True,
 ) -> list[dict[str, Any]] | None:
     if not tools_hook_executor_url(cfg):
         return None
@@ -541,11 +635,21 @@ def _get_executor_catalog_impl(
             _wait_for_refresh(state)
             snapshot = _snapshot_tools(state)
             if snapshot:
-                return snapshot
-        return _blocking_network_fetch(cfg, token, cache_key)
+                return _return_catalog(snapshot, cache_key, apply_health_filter=apply_health_filter)
+        return _blocking_network_fetch(
+            cfg,
+            token,
+            cache_key,
+            apply_health_filter=apply_health_filter,
+        )
 
     if force and blocking:
-        return _blocking_network_fetch(cfg, token, cache_key)
+        return _blocking_network_fetch(
+            cfg,
+            token,
+            cache_key,
+            apply_health_filter=apply_health_filter,
+        )
 
     logger.debug(
         "executor catalog cache_hit slug=%s tool_count=%d",
@@ -553,7 +657,11 @@ def _get_executor_catalog_impl(
         len(state.tools),
     )
     schedule_executor_catalog_refresh(cfg, allow_prompt=allow_prompt, force=force)
-    return _snapshot_tools(state)
+    return _return_catalog(
+        _snapshot_tools(state),
+        cache_key,
+        apply_health_filter=apply_health_filter,
+    )
 
 
 def get_executor_catalog(
@@ -621,6 +729,7 @@ def fetch_executor_tools_for_cli(
         allow_prompt=allow_prompt,
         blocking=blocking,
         force=force,
+        apply_health_filter=False,
     )
     return result if result is not None else []
 
@@ -656,6 +765,7 @@ def executor_catalog_health_snapshot(
         "executor_mcp_cached": has_mcp,
         "executor_mcp_tools_list_count": mcp_tools,
     }
+    payload.update(connection_health_snapshot_fields(cache_key.slug))
     if age_seconds is not None:
         payload["catalog_age_seconds"] = round(age_seconds, 1)
     if content_hash:

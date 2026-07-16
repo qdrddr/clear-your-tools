@@ -323,7 +323,7 @@ def test_fetch_executor_tools_blocking_normalizes_list_and_schema() -> None:
             "cyt.tools.sources.executor_http.asyncio.run",
             side_effect=lambda coro: (
                 coro.close(),
-                (expected, mcp_cache),
+                (expected, mcp_cache, None),
             )[1],
         ) as run_mock,
         patch(

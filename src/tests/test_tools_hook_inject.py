@@ -6,7 +6,6 @@ import json
 import sys
 import tempfile
 import threading
-import time
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -136,18 +135,10 @@ def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> di
 
 def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
     overlap = threading.Event()
-    active = {"count": 0}
-    lock = threading.Lock()
-    mock_sleep_s = 0.12
-    # Full _handle_user_prompt path adds catalog/formatting overhead beyond the coordinator-only test.
-    parallel_elapsed_ceiling_s = mock_sleep_s * 2.5
+    gate = threading.Barrier(2, action=overlap.set)
 
     def slow_tools(*_args: object, **_kwargs: object) -> PruneResult:
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap.set()
-        time.sleep(mock_sleep_s)
+        gate.wait(timeout=2.0)
         return PruneResult(
             tools=[{"name": "mcp__x__tool"}],
             status="applied",
@@ -159,11 +150,7 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
         )
 
     def slow_skills(*_args: object, **_kwargs: object) -> list[dict[str, Any]]:
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap.set()
-        time.sleep(mock_sleep_s)
+        gate.wait(timeout=2.0)
         return [{"skill": "one"}]
 
     payload = _hook_payload("parallel injection")
@@ -181,26 +168,23 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
             "cyt.pruning.hook_bridge.eligible_skills_after_gate",
             return_value=[{"path": "skill.md"}],
         ),
-        patch("cyt.config.effective_pruning_pipeline", return_value=["bm25"]),
-        patch("cyt.config.effective_skills_pipeline", return_value="bm25"),
+        patch("cyt.pruning.coordinator.effective_pruning_pipeline", return_value=["bm25"]),
+        patch("cyt.pruning.coordinator.effective_skills_pipeline", return_value="bm25"),
         patch(
             "cyt.skills.cli.format_agent_skills",
             return_value="<agent-skills>skills</agent-skills>",
         ),
         patch("cyt.skills.cli.format_agent_tools", return_value="<agent-tools>tools</agent-tools>"),
     ):
-        started = time.perf_counter()
         outcome, _details, _context = skills_cli._handle_user_prompt(
             payload,
             config,
             emit_stdout=False,
             io_guarded=True,
         )
-        elapsed = time.perf_counter() - started
 
     assert overlap.is_set()
     assert outcome == "user_prompt_injected"
-    assert elapsed < parallel_elapsed_ceiling_s
 
 
 def test_hook_skips_silently_when_catalog_missing() -> None:
