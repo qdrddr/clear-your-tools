@@ -84,12 +84,11 @@ impl CatalogBuilder {
     }
 
     pub fn to_catalog_dict(&mut self) -> Value {
-        self.build_index().to_catalog_dict()
+        crate::build::catalog_index_to_catalog_dict(self.build_index())
     }
 
     pub fn to_catalog_dict_with_prefix(&mut self, catalog_prefix: &str) -> Value {
-        self.build_index()
-            .to_catalog_dict_with_prefix(catalog_prefix)
+        crate::build::catalog_index_to_catalog_dict_with_prefix(self.build_index(), catalog_prefix)
     }
 }
 

@@ -19,7 +19,11 @@ mod cache_python;
 #[path = "pipeline_python.rs"]
 mod pipeline_python;
 
-use crate::build::{build_catalog_index, catalog_index_from_value, catalog_tool_count};
+use crate::build::{
+    build_catalog_index, catalog_index_from_value, catalog_index_to_catalog_dict,
+    catalog_index_to_catalog_dict_with_prefix, catalog_index_tool_schema_metadata,
+    catalog_tool_count,
+};
 use crate::paths::{self, PathConfig, collect_enums};
 use crate::policies::policy_context_from_values;
 use crate::retrieve::process_groups_options_from_fields;
@@ -412,7 +416,7 @@ impl PyNativeCatalogIndex {
     }
 
     fn tool_schema_metadata(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        value_to_py(py, &self.inner.tool_schema_metadata())
+        value_to_py(py, &catalog_index_tool_schema_metadata(&self.inner))
     }
 }
 
@@ -422,7 +426,7 @@ fn catalog_index_tool_schema_metadata_py(
     index: Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let idx = catalog_index_from_py(index)?;
-    value_to_py(py, &idx.tool_schema_metadata())
+    value_to_py(py, &catalog_index_tool_schema_metadata(&idx))
 }
 
 #[pyfunction(name = "catalog_index_to_catalog_dict")]
@@ -434,8 +438,8 @@ fn catalog_index_to_catalog_dict_py(
 ) -> PyResult<Py<PyAny>> {
     let idx = catalog_index_from_py(index)?;
     let val = catalog_prefix.map_or_else(
-        || idx.to_catalog_dict(),
-        |prefix| idx.to_catalog_dict_with_prefix(prefix),
+        || catalog_index_to_catalog_dict(&idx),
+        |prefix| catalog_index_to_catalog_dict_with_prefix(&idx, prefix),
     );
     value_to_py(py, &val)
 }
@@ -531,7 +535,7 @@ fn anthropic_tools_to_catalog_entries_py(
 
 fn catalog_build_dict(catalog: &Bound<'_, PyAny>, survivor_data: &Value) -> PyResult<Value> {
     if let Ok(idx) = catalog_index_from_py(catalog.clone()) {
-        return Ok(idx.to_catalog_dict());
+        return Ok(catalog_index_to_catalog_dict(&idx));
     }
     let val = py_to_value(catalog.clone())?;
     Ok(resolve_build_catalog(&val, survivor_data))

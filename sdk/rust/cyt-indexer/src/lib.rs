@@ -25,7 +25,9 @@ pub mod runtime_config;
 pub mod skills_builder;
 pub mod skills_io;
 pub mod tiktoken;
+pub mod token_enrichment;
 pub mod tool_entries;
+pub mod tools_facade;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -52,7 +54,9 @@ pub use bm25_search::{
     term_frequencies,
 };
 pub use build::{
-    CatalogIndex, build_catalog_index, catalog_tool_count, decompose_tool_schema, dedupe_enums,
+    CatalogIndex, build_catalog_index, catalog_index_from_value, catalog_index_new,
+    catalog_index_to_catalog_dict, catalog_index_to_catalog_dict_with_prefix,
+    catalog_index_tool_schema_metadata, catalog_tool_count, decompose_tool_schema, dedupe_enums,
     tool_schema_metadata_from_files,
 };
 pub use catalog_builder::CatalogBuilder;
@@ -86,7 +90,7 @@ pub use pipeline::{
     prune_catalog_bm25_and_retrieve, search_skills_and_select,
 };
 pub use policies::{
-    PolicyContext, ToolPolicy, anthropic_tool_is_mcp, anthropic_tool_is_system,
+    PolicyContext, ToolKind, ToolPolicy, anthropic_tool_is_mcp, anthropic_tool_is_system,
     append_description_reinstate_entries, apply_per_tool_overrides, batch_tool_pass_through,
     catalog_needs_partition, catalog_needs_pruned_recompose, chunk_tool_id,
     direct_root_optional_chunks_for_tool, drop_recomposed_tools_with_empty_properties,
@@ -97,7 +101,7 @@ pub use policies::{
     is_system_root_chunk, is_system_tool_id, merge_catalog, merge_tools_preserving_order,
     mitigate_empty_optional_properties, needs_description_reinstate,
     needs_empty_optional_mitigation, needs_partition, needs_pruned_recompose,
-    optional_chunks_for_tool, optional_leaf_survived_rerank, parse_tool_policy,
+    optional_chunks_for_tool, optional_leaf_survived_rerank, parse_tool_kind, parse_tool_policy,
     parse_tool_policy_pair, partition_catalog, per_tool_policies_from_value,
     policy_context_from_values, request_pass_through, restore_mcp_tools, restore_system_tools,
     root_chunk_properties_empty, root_tool_id_from_chunk, scoring_policy, split_anthropic_tools,
@@ -129,4 +133,8 @@ pub use tiktoken::{
 pub use tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,
     is_catalog_tool_entry, normalize_tools_for_catalog, prepare_tool_entry, truncate_description,
+};
+pub use tools_facade::{
+    NamedSurvivors, recompose_tools_from_index, recompose_tools_from_names,
+    resolve_survivors_from_names,
 };

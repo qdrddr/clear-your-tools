@@ -1,4 +1,5 @@
 $kind: http-request
+name: 01 - POST initialize toolkit session
 description: |
   Toolkit-scoped MCP transport at `/mcp/toolkits/:slug`.
 

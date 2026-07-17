@@ -5,6 +5,9 @@ pub use pageindex_node::*;
 
 use crate::build::{
     build_catalog_index as core_build_catalog_index, catalog_index_from_value,
+    catalog_index_to_catalog_dict as core_catalog_index_to_catalog_dict,
+    catalog_index_to_catalog_dict_with_prefix as core_catalog_index_to_catalog_dict_with_prefix,
+    catalog_index_tool_schema_metadata as core_catalog_index_tool_schema_metadata,
     catalog_tool_count as core_catalog_tool_count,
 };
 use crate::catalog_builder::CatalogBuilder as RustCatalogBuilder;
@@ -407,7 +410,7 @@ pub fn resolve_build_catalog_napi(catalog: Value, survivor: Value) -> Result<Val
     let catalog = Box::new(catalog);
     let survivor = Box::new(survivor);
     let build = if catalog.get("tools").is_some() {
-        catalog_index_from_value(&catalog).to_catalog_dict()
+        core_catalog_index_to_catalog_dict(&catalog_index_from_value(&catalog))
     } else {
         resolve_build_catalog(&catalog, &survivor)
     };
@@ -451,11 +454,8 @@ pub fn catalog_index_to_catalog_dict(
     let index = Box::new(index);
     let idx = catalog_index_from_value(&index);
     let val = catalog_prefix.map_or_else(
-        || idx.to_catalog_dict(),
-        |prefix| {
-            let prefix = prefix.into_boxed_str();
-            idx.to_catalog_dict_with_prefix(prefix.as_ref())
-        },
+        || core_catalog_index_to_catalog_dict(&idx),
+        |prefix| core_catalog_index_to_catalog_dict_with_prefix(&idx, prefix.as_ref()),
     );
     Ok(val)
 }
@@ -466,7 +466,7 @@ pub fn catalog_index_to_catalog_dict(
 pub fn catalog_index_tool_schema_metadata(index: Value) -> Result<Value> {
     let index = Box::new(index);
     let idx = catalog_index_from_value(&index);
-    Ok(idx.tool_schema_metadata())
+    Ok(core_catalog_index_tool_schema_metadata(&idx))
 }
 
 #[napi]

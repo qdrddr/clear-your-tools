@@ -1,5 +1,6 @@
 //! Catalog retrieval and decomposed catalog FFI exports.
 
+use crate::build::catalog_index_to_catalog_dict;
 use crate::ffi::error::{CYT_ERR_IO, CYT_ERR_NULL_PTR, clear_error, set_error};
 use crate::ffi::json_util::{
     c_str_to_str, catalog_index_from_json, parse_json_cstr, parse_policy_context, run_ffi,
@@ -361,7 +362,7 @@ pub unsafe extern "C" fn cyt_retrieve_tools(
             resolve_build_catalog(&json!({}), &data_val)
         } else {
             let idx_val = unsafe { parse_json_cstr(catalog_index_json, "catalog_index_json")? };
-            catalog_index_from_json(&idx_val).to_catalog_dict()
+            catalog_index_to_catalog_dict(&catalog_index_from_json(&idx_val))
         };
 
         let preserve_set = if preserve_values_json.is_null() {
@@ -419,7 +420,7 @@ pub unsafe extern "C" fn cyt_resolve_build_catalog(
         let catalog_val = unsafe { parse_json_cstr(catalog_json, "catalog_json")? };
         let survivor = unsafe { parse_json_cstr(survivor_json, "survivor_json")? };
         let build = if catalog_val.get("tools").is_some() {
-            catalog_index_from_json(&catalog_val).to_catalog_dict()
+            catalog_index_to_catalog_dict(&catalog_index_from_json(&catalog_val))
         } else {
             resolve_build_catalog(&catalog_val, &survivor)
         };

@@ -1,6 +1,9 @@
 //! Catalog build and tool-entry FFI exports (mirrors `python.rs`).
 
-use crate::build::{build_catalog_index, catalog_tool_count};
+use crate::build::{
+    build_catalog_index, catalog_index_to_catalog_dict, catalog_index_to_catalog_dict_with_prefix,
+    catalog_index_tool_schema_metadata, catalog_tool_count,
+};
 use crate::ffi::error::{CYT_ERR_INVALID_ARG, CYT_ERR_NULL_PTR, clear_error, set_error};
 use crate::ffi::json_util::{
     c_str_to_str, catalog_index_from_json, ffi_guard, json_array_or_empty, parse_json_cstr,
@@ -187,10 +190,10 @@ pub unsafe extern "C" fn cyt_catalog_index_to_catalog_dict(
         let val = unsafe { parse_json_cstr(index_json, "index_json")? };
         let idx = catalog_index_from_json(&val);
         let result = if catalog_prefix.is_null() {
-            idx.to_catalog_dict()
+            catalog_index_to_catalog_dict(&idx)
         } else {
             let prefix = unsafe { c_str_to_str(catalog_prefix, "catalog_prefix")? };
-            idx.to_catalog_dict_with_prefix(prefix)
+            catalog_index_to_catalog_dict_with_prefix(&idx, prefix)
         };
         unsafe { write_json_out(&result, out)? };
         Ok(())
@@ -210,7 +213,7 @@ pub unsafe extern "C" fn cyt_catalog_index_tool_schema_metadata(
         }
         let val = unsafe { parse_json_cstr(index_json, "index_json")? };
         let idx = catalog_index_from_json(&val);
-        let result = idx.tool_schema_metadata();
+        let result = catalog_index_tool_schema_metadata(&idx);
         unsafe { write_json_out(&result, out)? };
         Ok(())
     })

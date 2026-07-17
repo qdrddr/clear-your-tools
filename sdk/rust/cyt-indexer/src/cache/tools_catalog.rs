@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::build::{CatalogIndex, build_catalog_index};
+use crate::build::{CatalogIndex, build_catalog_index, catalog_index_to_catalog_dict};
 use crate::catalog_io::write_catalog_index;
 use crate::paths::{collect_enums, decomposed_prefix, json_ext};
 use crate::tool_entries::anthropic_tools_to_catalog_entries;
@@ -183,7 +183,7 @@ fn merge_catalog_indexes(parts: Vec<CatalogIndex>) -> CatalogIndex {
         "tools.json".into(),
         serde_json::to_string_pretty(&tools).unwrap_or_default(),
     );
-    crate::build::attach_tool_schema_metadata(&mut files);
+    crate::token_enrichment::enrich_tool_schema_metadata(&mut files);
     CatalogIndex { tools, files }
 }
 
@@ -278,7 +278,7 @@ fn ensure_tool_catalog_from_entry_list(
     }
 
     let merged = merge_catalog_indexes(parts);
-    let catalog = merged.to_catalog_dict();
+    let catalog = catalog_index_to_catalog_dict(&merged);
     let cache_status = if any_fallback {
         CacheStatus::MemoryFallback
     } else if any_miss {

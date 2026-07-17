@@ -41,10 +41,13 @@ repos:
   #      - id: cargo-check
   #      - id: cargo-test
   # 1year old
-  - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.11.0
+  - repo: local
     hooks:
       - id: shellcheck
+        name: ShellCheck v0.11.0
+        entry: bash scripts/shellcheck-precommit.sh
+        language: system
+        types: [shell]
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
     hooks:

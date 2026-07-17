@@ -111,7 +111,10 @@ sync_chunk_submodule() {
 
 	(
 		cd "${dir}"
-		git fetch origin --tags
+		if ! git fetch origin --tags 2>/dev/null; then
+			printf 'warning: %s git fetch failed; using local tags only\n' \
+				"${name}" | shorten_paths >&2
+		fi
 		git pull --ff-only 2>/dev/null || git pull --ff-only origin 2>/dev/null || true
 		if ! git rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
 			printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
