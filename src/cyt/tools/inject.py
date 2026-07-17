@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from cyt.executor.tool_names import agent_visible_tool_name
 from cyt.indexer.tokens import count_tokens
 from cyt.tools.serialize import minimize_json_single_quotes
 
@@ -100,7 +101,7 @@ def format_tool_item(
     include_tool_description: bool = True,
 ) -> str:
     """Format a single ``<tool>…</tool>`` block (no ``<agent-tools>`` wrapper)."""
-    name = str(tool.get("name", "")).strip()
+    name = agent_visible_tool_name(tool)
     if not name:
         return ""
     description = ""

@@ -389,7 +389,7 @@ def _summaries_from_catalog(
         description = tool.get("description")
         desc_text = str(description) if description is not None else None
         metadata: dict[str, Any] = {}
-        for key in ("owner", "integration", "connection", "static"):
+        for key in ("owner", "integration", "connection", "static", "tool_name"):
             if key in tool:
                 metadata[key] = tool[key]
         summaries.append((address, desc_text, metadata))

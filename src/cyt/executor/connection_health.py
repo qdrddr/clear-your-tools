@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 _CONNECTIONS_PATH = "/api/connections"
 _HEALTHY_STATUS = "healthy"
-_TOOL_METADATA_KEYS = ("owner", "integration", "connection", "static")
+_TOOL_METADATA_KEYS = ("owner", "integration", "connection", "static", "tool_name")
 
 _health_lock = threading.Lock()
 _health_states: dict[str, ConnectionHealthSnapshot] = {}

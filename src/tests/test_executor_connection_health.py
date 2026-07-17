@@ -649,6 +649,7 @@ async def test_fetch_list_preserves_metadata_and_include_blocked() -> None:
                 "owner": "org",
                 "integration": "semble_mcp",
                 "connection": "default",
+                "name": "search",
                 "description": "search",
                 "static": None,
             },
@@ -679,6 +680,7 @@ async def test_fetch_list_preserves_metadata_and_include_blocked() -> None:
                 "integration": "semble_mcp",
                 "connection": "default",
                 "static": None,
+                "tool_name": "search",
             },
         ),
     ]

@@ -177,3 +177,20 @@ def test_format_agent_tools_omits_path_markup_when_no_workspace_paths() -> None:
 
     assert " path=" not in text
     assert "<workspace_roots>" not in text
+
+
+def test_format_agent_tools_rewrites_dynamic_executor_tool_name() -> None:
+    tools = [
+        {
+            "name": "tools.semble_mcp.org.default.search",
+            "owner": "org",
+            "integration": "semble_mcp",
+            "connection": "default",
+            "tool_name": "search",
+            "description": "Search",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+    text = format_agent_tools(tools)
+    assert "<tool name='semble_mcp.org.default.search' description='Search'>" in text
+    assert "tools.semble_mcp.org.default.search" not in text

@@ -130,6 +130,9 @@ def _list_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
     for key in ("owner", "integration", "connection", "static"):
         if key in item:
             metadata[key] = item[key]
+    short_name = item.get("name")
+    if short_name is not None:
+        metadata["tool_name"] = short_name
     return metadata
 
 
@@ -160,7 +163,7 @@ def merge_list_stubs_into_catalog(
             existing["input_schema"] = copy.deepcopy(tool["input_schema"])
         if tool.get("description") and not existing.get("description"):
             existing["description"] = tool["description"]
-        for key in ("owner", "integration", "connection", "static"):
+        for key in ("owner", "integration", "connection", "static", "tool_name"):
             if key in tool and tool[key] is not None:
                 existing[key] = tool[key]
     with _catalog_lock:
