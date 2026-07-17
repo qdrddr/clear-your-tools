@@ -15,7 +15,6 @@ from cyt.config import (
     load_config,
     pruning_pipeline_from_config,
     pruning_stage_model_nick,
-    uses_executor_tool_catalog,
 )
 from cyt.indexer.build import (
     CatalogIndex,
@@ -48,7 +47,7 @@ from cyt.pruners.policies import (
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.tools.budget import tools_inject_allowed
-from cyt.tools.policy_context import prepare_hook_executor_tool_pruning
+from cyt.tools.policy_context import prepare_hook_tool_pruning
 from cyt_core.types.prune import PruneResult
 
 logger = logging.getLogger(__name__)
@@ -183,7 +182,7 @@ def _run_catalog_pruning(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    prepare_hook_executor_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
+    prepare_hook_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
     if pipeline == ["bm25"] and skill_entries is None:
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
         from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
@@ -710,7 +709,7 @@ def _run_pruning_pipeline(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    prepare_hook_executor_tool_pruning(resolved_config, policy_ctx)
+    prepare_hook_tool_pruning(resolved_config, policy_ctx)
     pinned: dict[str, Any] = {}
     if catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)
@@ -834,7 +833,7 @@ def _json_entries_for_recompose(
     """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
     resolved_config = config or load_config()
     policy_ctx = ctx or policy_context_from_config(resolved_config)
-    prepare_hook_executor_tool_pruning(resolved_config, policy_ctx, output_ctx)
+    prepare_hook_tool_pruning(resolved_config, policy_ctx, output_ctx)
     entries: list[dict[str, Any]] = []
     seen_paths: set[object] = set()
 
@@ -992,8 +991,8 @@ def filter_tools_for_query(
         config,
         terminal_stage=terminal_stage,
     )
-    if for_hook and uses_executor_tool_catalog(config):
-        prepare_hook_executor_tool_pruning(config, policy_ctx, output_policy_ctx)
+    if for_hook:
+        prepare_hook_tool_pruning(config, policy_ctx, output_policy_ctx)
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(

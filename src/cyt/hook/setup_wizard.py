@@ -18,6 +18,7 @@ from cyt.config import (
     save_user_config,
     skills_enabled,
 )
+from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
@@ -1089,6 +1090,7 @@ def run_hook_setup(
     selected_agents = _resolve_hook_setup_agents(agents)
     resolved_config_path = resolve_setup_config_path(config_path)
     config = load_config(config_path)
+    report_mcpc_hook_readiness(config)
     if len(selected_agents) == 1:
         print(f"CYT hook setup ({selected_agents[0]})\n")
     else:

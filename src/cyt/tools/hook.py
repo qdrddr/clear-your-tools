@@ -6,10 +6,15 @@ import contextlib
 import logging
 from typing import Any
 
-from cyt.config import tools_hook_file_missing, uses_executor_tool_catalog
+from cyt.config import (
+    tools_hook_file_missing,
+    uses_executor_tool_catalog,
+    uses_mcpc_tool_catalog,
+)
 from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.injection.session_text import session_text_from_hook_payload
+from cyt.mcpc.readiness import mcpc_hook_catalog_usable
 from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.budget import count_hook_request_tokens
@@ -25,6 +30,7 @@ from cyt.tools.budget import (
     tools_inject_allowed,
 )
 from cyt.tools.inject import format_agent_tools, injection_token_count
+from cyt.tools.mcpc_inject import format_mcpc_agent_tools
 from cyt.tools.prune import prune_tools_for_query
 from cyt.tools.registry import load_tool_catalog
 from cyt.tools.stats import record_tools_hook_injection
@@ -43,6 +49,49 @@ def _missing_tools_catalog_outcome(
     return "skipped_missing_tools_catalog", {}, ""
 
 
+def _format_hook_tool_injection(
+    gated: list[dict[str, Any]],
+    config: dict[str, Any],
+    payload: dict[str, Any],
+) -> str:
+    workspace_paths = workspace_paths_for_tools_inject(payload)
+    if uses_mcpc_tool_catalog(config):
+        return format_mcpc_agent_tools(gated, workspace_paths=workspace_paths)
+    return format_agent_tools(
+        gated,
+        include_executor_workspace_note=uses_executor_tool_catalog(config),
+        workspace_paths=workspace_paths,
+    )
+
+
+def _skipped_mcpc_unavailable_outcome(
+    config: dict[str, Any],
+    *,
+    debug: bool,
+) -> tuple[str, dict[str, Any], str] | None:
+    if not uses_mcpc_tool_catalog(config) or mcpc_hook_catalog_usable(config):
+        return None
+    if debug:
+        return "skipped_mcpc_unavailable", {"catalog_tool_count": 0}, ""
+    return "skipped_mcpc_unavailable", {}, ""
+
+
+def _hook_tools_preflight_outcome(
+    config: dict[str, Any],
+    *,
+    plain_output: bool,
+    debug: bool,
+) -> tuple[str, dict[str, Any], str] | None:
+    if not tools_inject_allowed(config, "hook", cli_prompt=plain_output):
+        return "skipped_inject_via_proxy", {}, ""
+    if tools_hook_file_missing(config):
+        details: dict[str, Any] = {"catalog_tool_count": 0, "prune_status": "missing_catalog"}
+        if debug:
+            return "skipped_missing_tools_catalog", details, ""
+        return "skipped_missing_tools_catalog", {}, ""
+    return _skipped_mcpc_unavailable_outcome(config, debug=debug)
+
+
 def handle_user_prompt_tools(
     payload: dict[str, Any],
     config: dict[str, Any],
@@ -54,14 +103,9 @@ def handle_user_prompt_tools(
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     """Return (outcome, details, injection_text)."""
-    if not tools_inject_allowed(config, "hook", cli_prompt=plain_output):
-        return "skipped_inject_via_proxy", {}, ""
-
-    if tools_hook_file_missing(config):
-        details: dict[str, Any] = {"catalog_tool_count": 0, "prune_status": "missing_catalog"}
-        if debug:
-            return "skipped_missing_tools_catalog", details, ""
-        return "skipped_missing_tools_catalog", {}, ""
+    preflight = _hook_tools_preflight_outcome(config, plain_output=plain_output, debug=debug)
+    if preflight is not None:
+        return preflight
 
     query = skills_search_query_from_hook_payload(
         payload,
@@ -107,11 +151,7 @@ def handle_user_prompt_tools(
         allow_file_read=allow_transcript_file_read,
     )
     gated = filter_pre_exposed_tools(pruned, session_text)
-    injected = format_agent_tools(
-        gated,
-        include_executor_workspace_note=uses_executor_tool_catalog(config),
-        workspace_paths=workspace_paths_for_tools_inject(payload),
-    )
+    injected = _format_hook_tool_injection(gated, config, payload)
     if not injected:
         return "user_prompt_empty_tool_injection", {"resolved_model": model}, ""
 

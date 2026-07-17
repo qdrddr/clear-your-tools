@@ -37,6 +37,20 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
                 tools = get_executor_catalog(cfg, allow_prompt=False, blocking=True)
             else:
                 start_executor_cache_scheduler(cfg, allow_prompt=False)
+        elif tools_hook_tools_from(cfg) == "mcpc":
+            from cyt.mcpc.cache_scheduler import start_mcpc_cache_scheduler
+            from cyt.mcpc.catalog import get_mcpc_catalog, load_mcpc_catalog_from_disk
+            from cyt.mcpc.readiness import mcpc_hook_catalog_usable
+
+            if not mcpc_hook_catalog_usable(cfg):
+                return
+
+            load_mcpc_catalog_from_disk(cfg)
+            tools = get_mcpc_catalog(cfg, blocking=False)
+            if not tools:
+                tools = get_mcpc_catalog(cfg, blocking=True)
+            else:
+                start_mcpc_cache_scheduler(cfg)
         else:
             tools = load_tool_catalog(cfg)
         if not tools:

@@ -17,6 +17,22 @@ def apply_executor_tool_kind(ctx: PolicyContext, kind: ToolKindOverride) -> Poli
     return apply_tool_kind(ctx, kind)
 
 
+def prepare_hook_mcpc_tool_pruning(
+    config: dict[str, Any] | None,
+    *contexts: PolicyContext | None,
+) -> None:
+    """Hook + tools_from mcpc: classify all tools as MCP."""
+    from cyt.config import load_config, uses_mcpc_tool_catalog
+
+    cfg = config or load_config()
+    if not uses_mcpc_tool_catalog(cfg):
+        return
+
+    for ctx in contexts:
+        if ctx is not None:
+            apply_executor_tool_kind(ctx, "mcp")
+
+
 def prepare_hook_executor_tool_pruning(
     config: dict[str, Any] | None,
     *contexts: PolicyContext | None,
@@ -44,3 +60,19 @@ def prepare_hook_executor_tool_pruning(
     except Exception as exc:
         logger.debug("executor MCP cache warm skipped: %s", exc)
         return None
+
+
+def prepare_hook_tool_pruning(
+    config: dict[str, Any] | None,
+    *contexts: PolicyContext | None,
+) -> dict[str, Any] | None:
+    """Classify hook catalog tools as MCP; warm executor transport cache when applicable."""
+    from cyt.config import load_config, uses_executor_tool_catalog, uses_mcpc_tool_catalog
+
+    cfg = config or load_config()
+    if uses_mcpc_tool_catalog(cfg):
+        prepare_hook_mcpc_tool_pruning(cfg, *contexts)
+        return None
+    if uses_executor_tool_catalog(cfg):
+        return prepare_hook_executor_tool_pruning(cfg, *contexts)
+    return None

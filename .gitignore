@@ -1,4 +1,8 @@
-# Python
+# Local databases / caches
+mcp.db
+mcp.db-shm
+mcp.db-wal
+
 __pycache__/
 *.py[cod]
 *$py.class

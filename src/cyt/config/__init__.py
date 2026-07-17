@@ -123,7 +123,7 @@ DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
 DEFAULT_TOOLS_ENABLED: bool = True
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "executor"
+DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "mcpc"
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
@@ -141,11 +141,15 @@ DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS: float = 1.0
 DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY: int = 4
 DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS: float = 120.0
 DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS: float = 900.0
+DEFAULT_MCPC_EXECUTABLE: str = "mcpc"
+DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS: float = 1.0
+DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS: float = 120.0
+DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS: float = 900.0
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
-ToolsHookSource = Literal["executor", "definitions"]
+ToolsHookSource = Literal["executor", "definitions", "mcpc"]
 
 
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -188,6 +192,14 @@ _DEFAULTS: dict[str, Any] = {
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
                 "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
+                "mcpc": {
+                    "executable": DEFAULT_MCPC_EXECUTABLE,
+                    "cache": {
+                        "session_refresh_seconds": DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS,
+                        "tools_refresh_seconds": DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS,
+                        "disk_flush_seconds": DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS,
+                    },
+                },
                 "executor_cache": {
                     "health_refresh_seconds": DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS,
                     "health_probe_concurrency": DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY,
@@ -1097,6 +1109,8 @@ def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSour
     mode = str(value).strip().lower()
     if mode == "definitions":
         return "definitions"
+    if mode == "mcpc":
+        return "mcpc"
     if mode in {"executor", "client"}:
         return "executor"
     return "executor"
@@ -1123,6 +1137,35 @@ def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
 
 def tools_hook_executor_configured(config: dict[str, Any] | None = None) -> bool:
     return bool(tools_hook_executor_url(config))
+
+
+def _tools_hook_mcpc_settings(config: dict[str, Any]) -> dict[str, Any]:
+    hook = _tools_hook_settings(config)
+    mcpc = hook.get("mcpc")
+    if isinstance(mcpc, dict):
+        return mcpc
+    return {}
+
+
+def tools_hook_mcpc_executable(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_mcpc_settings(_merged_config(cfg)).get(
+        "executable",
+        DEFAULT_MCPC_EXECUTABLE,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_MCPC_EXECUTABLE
+
+
+def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merged ``pruning.tools.hook.mcpc.cache`` refresh intervals."""
+    cfg = config or load_config()
+    mcpc = _tools_hook_mcpc_settings(_merged_config(cfg))
+    cache = mcpc.get("cache")
+    if not isinstance(cache, dict):
+        cache = {}
+    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["mcpc"]["cache"]
+    return deep_merge(defaults, cache)
 
 
 def connection_health_flapping_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1172,6 +1215,8 @@ def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
         return False
     if tools_hook_tools_from(cfg) == "executor":
         return not tools_hook_executor_configured(cfg)
+    if tools_hook_tools_from(cfg) == "mcpc":
+        return False
     return not resolved_tools_hook_file(cfg).is_file()
 
 
@@ -1192,6 +1237,15 @@ def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
         tools_enabled(cfg)
         and tools_inject_via(cfg) == "hook"
         and tools_hook_tools_from(cfg) == "executor"
+    )
+
+
+def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return (
+        tools_enabled(cfg)
+        and tools_inject_via(cfg) == "hook"
+        and tools_hook_tools_from(cfg) == "mcpc"
     )
 
 

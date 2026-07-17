@@ -21,7 +21,7 @@ from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no
 
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
-_TOOLS_FROM_CHOICES = ("executor", "definitions")
+_TOOLS_FROM_CHOICES = ("mcpc", "executor", "definitions")
 
 
 def build_tools_hook_config_overlay(
@@ -84,11 +84,13 @@ def prompt_tools_hook_config(
 
     current_from = str(hook.get("tools_from", DEFAULT_TOOLS_HOOK_TOOLS_FROM)).strip().lower()
     if context == "hook":
-        from_default = "executor"
+        from_default = "mcpc"
     elif current_from in {"client", "executor"}:
         from_default = "executor"
+    elif current_from == "mcpc":
+        from_default = "mcpc"
     else:
-        from_default = current_from if current_from in _TOOLS_FROM_CHOICES else "executor"
+        from_default = current_from if current_from in _TOOLS_FROM_CHOICES else "mcpc"
 
     executor_default = str(hook.get("executor_url", DEFAULT_TOOLS_HOOK_EXECUTOR_URL))
     definitions_default = str(
@@ -97,10 +99,16 @@ def prompt_tools_hook_config(
 
     if active_inject == "hook":
         tools_from = _prompt_choice(
-            "Tool catalog source (executor | definitions)",
+            "Tool catalog source (mcpc | executor | definitions)",
             list(_TOOLS_FROM_CHOICES),
             default_index=_TOOLS_FROM_CHOICES.index(from_default),
         )
+        if tools_from == "mcpc":
+            return build_tools_hook_config_overlay(
+                tools_from=tools_from,
+                executor_url=executor_default,
+                mcp_definitions_file=definitions_default,
+            )
         if tools_from == "definitions":
             path_text = _prompt("MCP definitions file", definitions_default)
             path_text = str(Path(path_text).expanduser())
@@ -147,6 +155,11 @@ def ensure_tools_hook_file_interactive(
 
     if tools_hook_tools_from(config) == "executor":
         prompt_target = "Executor URL is not configured"
+    elif tools_hook_tools_from(config) == "mcpc":
+        from cyt.mcpc.readiness import report_mcpc_hook_readiness
+
+        report_mcpc_hook_readiness(config)
+        return config
     else:
         prompt_target = f"Tools definitions file {resolved_tools_hook_file(config)} is missing"
     if not _prompt_yes_no(f"{prompt_target}. Configure now?", default_yes=True):

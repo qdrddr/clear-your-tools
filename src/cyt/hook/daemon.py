@@ -35,6 +35,7 @@ from cyt.launch.proxy_guard import (
     is_port_in_use,
 )
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, resolve_hook_daemon_child_env
+from cyt.mcpc.readiness import report_mcpc_hook_readiness
 
 HookDaemonOutcome = Literal["reused", "spawned", "already_running"]
 
@@ -242,6 +243,7 @@ def daemon_start(
     if unattended:
         verbose = False
     config = load_config(config_path)
+    report_mcpc_hook_readiness(config, unattended=unattended)
     from cyt.cache import warm_caches
 
     warm_caches(config)
@@ -531,6 +533,7 @@ def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> No
 def daemon_status(*, config_path: Path | None = None) -> None:
     """Print hook daemon status to stderr."""
     config = load_config(config_path)
+    report_mcpc_hook_readiness(config)
     if _needs_credential_injection(config):
         from cyt.hook.credentials import report_and_ensure_hook_credentials
 

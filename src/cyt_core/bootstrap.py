@@ -126,4 +126,10 @@ def bootstrap(*, config: Bm25SdkConfig | dict | None = None) -> AppContext:
         wire_executor_runtime()
     except ImportError:
         pass
+    try:
+        from cyt.integrations.mcpc import wire_mcpc_runtime
+
+        wire_mcpc_runtime()
+    except ImportError:
+        pass
     return AppContext(version=_package_version())

@@ -42,6 +42,10 @@ def load_tool_catalog(config: dict[str, Any] | None = None) -> list[dict[str, An
     if tools_hook_tools_from(cfg) == "definitions":
         path = resolved_tools_hook_file(cfg)
         return _load_definitions_cached(path)
+    if tools_hook_tools_from(cfg) == "mcpc":
+        from cyt.mcpc.catalog import get_mcpc_catalog
+
+        return get_mcpc_catalog(cfg, blocking=False)
     from cyt.executor.http import get_executor_catalog
 
     return get_executor_catalog(cfg, allow_prompt=False, blocking=False)

@@ -106,6 +106,74 @@ def test_hook_injects_agent_tools_block() -> None:
         assert "mcp__filesystem__read_file" in context
 
 
+def test_hook_injects_mcpc_agent_tools_block() -> None:
+    catalog = [
+        {
+            "name": "@ctx7/resolve-library-id",
+            "tool_name": "resolve-library-id",
+            "mcpc_session": "@ctx7",
+            "title": "Resolve Context7 Library ID",
+            "description": "Resolve a library id",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "libraryName": {"type": "string"},
+                    "query": {"type": "string"},
+                },
+            },
+            "server_name": "Context7",
+            "server_instructions": "Use this server for docs.",
+        },
+    ]
+
+    config = {
+        "skills": {"enabled": False},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "enabled": True,
+                "hook": {
+                    "tools_from": "mcpc",
+                    "mcpc": {"executable": "mcpc"},
+                },
+                "sequence": ["bm25"],
+            },
+        },
+        "stats": {"database": {"path": "/tmp/stats.db"}},
+    }
+
+    with (
+        patch.object(skills_cli, "load_config", return_value=config),
+        patch("cyt.tools.hook.load_tool_catalog", return_value=catalog),
+        patch(
+            "cyt.tools.hook.prune_tools_for_query",
+            return_value=PruneResult(
+                tools=catalog,
+                status="applied",
+                query="resolve library id",
+                tools_in=1,
+                mcp_tools_in=1,
+                tools_out=1,
+                error=None,
+                tokens_in=100,
+                tokens_out=40,
+            ),
+        ),
+        patch("cyt.tools.hook.record_tools_hook_injection"),
+        patch.object(sys, "stdin", StringIO(json.dumps(_hook_payload("resolve library id")))),
+    ):
+        stdout = StringIO()
+        with patch.object(sys, "stdout", stdout):
+            skills_cli.run(debug=False)
+
+    output = json.loads(stdout.getvalue())
+    context = output["hookSpecificOutput"]["additionalContext"]
+    assert "<agent-tools" in context
+    assert "<server name='Context7'" in context
+    assert "mcpc @ctx7 tools-call resolve-library-id" in context
+    assert "<json-schema>" in context
+
+
 def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> dict[str, Any]:
     return {
         "skills": {
