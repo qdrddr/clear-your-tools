@@ -38,7 +38,7 @@ def prepare_hook_executor_tool_pruning(
             apply_executor_tool_kind(ctx, "mcp")
 
     try:
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.executor.http import get_executor_mcp_cache
 
         return get_executor_mcp_cache(cfg, allow_prompt=False)
     except Exception as exc:

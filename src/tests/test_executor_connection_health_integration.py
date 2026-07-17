@@ -23,18 +23,19 @@ from typing import Any, Literal
 import httpx
 import pytest
 
-from cyt.launch.secrets import resolve_credential
-from cyt.tools.sources.executor_connection_health import (
-    build_healthy_integrations,
+from cyt.executor.connection_health import (
+    apply_health_snapshot,
+    build_healthy_connections,
     clear_connection_health_cache,
-    filter_tools_by_integration_health,
+    filter_catalog_by_health,
     refresh_connection_health_async,
 )
-from cyt.tools.sources.executor_http import (
+from cyt.executor.http import (
     _fetch_full_catalog_async,
     clear_executor_catalog_cache,
     get_executor_catalog,
 )
+from cyt.launch.secrets import resolve_credential
 from tests.test_credential_helpers import CI_CREDENTIAL_STUBS
 
 _EXECUTOR_URL = "http://localhost:4789"
@@ -319,19 +320,29 @@ def _print_health_filter_report(scenario: LiveHealthScenario) -> None:
 
 
 async def _live_health_filter_scenario(token: str) -> LiveHealthScenario:
-    health_snapshot = await refresh_connection_health_async(
+    slug = "live-integration-test"
+    health_snapshot, _delta = await refresh_connection_health_async(
         base_url=_EXECUTOR_URL,
         token=token,
+        slug=slug,
     )
-    healthy = build_healthy_integrations(health_snapshot.connections)
-    assert healthy == health_snapshot.healthy_integrations
+    healthy_connections = build_healthy_connections(health_snapshot.connections)
+    assert healthy_connections == health_snapshot.healthy_connections
+    healthy_integrations = {(key.owner, key.integration) for key in healthy_connections}
 
-    catalog = await _fetch_full_catalog_async(base_url=_EXECUTOR_URL, token=token)
-    filtered = filter_tools_by_integration_health(catalog, healthy)
-    buckets = _integration_buckets(catalog=catalog, connections=health_snapshot.connections)
+    apply_health_snapshot(slug, health_snapshot, update_flapping=False)
+    catalog = await _fetch_full_catalog_async(
+        base_url=_EXECUTOR_URL,
+        token=token,
+        slug=slug,
+        config=_CONFIG,
+    )
+    filtered = filter_catalog_by_health(catalog, slug, config=_CONFIG)
+    connections_list = list(health_snapshot.connections.values())
+    buckets = _integration_buckets(catalog=catalog, connections=connections_list)
     return LiveHealthScenario(
-        connections=health_snapshot.connections,
-        healthy_integrations=healthy,
+        connections=connections_list,
+        healthy_integrations=healthy_integrations,
         catalog=catalog,
         filtered=filtered,
         buckets=buckets,

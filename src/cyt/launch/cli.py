@@ -393,7 +393,7 @@ def _run_cursor_launch_session(
     else:
         ensure_cursor_hooks_for_launch(quiet=True)
 
-    from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
+    from cyt.executor.http import schedule_executor_catalog_refresh
 
     if (
         tools_enabled(config)
@@ -451,7 +451,7 @@ def _run_launch_session(
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
         runtime.config = config
 
-    from cyt.tools.sources.executor_http import schedule_executor_catalog_refresh
+    from cyt.executor.http import schedule_executor_catalog_refresh
 
     if (
         tools_enabled(config)

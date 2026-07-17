@@ -12,37 +12,29 @@ from typing import Any
 
 import httpx
 
-from cyt.config import (
-    load_config,
-    tools_hook_executor_token_var,
-    tools_hook_executor_url,
-    uses_executor_tool_catalog,
-)
-from cyt.launch.secrets import resolve_credential
-from cyt.tools.sources.executor_catalog_disk import (
+from cyt.executor.catalog_disk import (
     normalize_executor_url_slug,
     raw_catalog_content_hash,
     read_disk_catalog,
     write_disk_catalog,
 )
-from cyt.tools.sources.executor_connection_health import (
-    ConnectionHealthSnapshot,
-    apply_health_snapshot,
+from cyt.executor.connection_health import (
+    ConnectionKey,
     clear_connection_health_cache,
     connection_health_snapshot_fields,
     filter_catalog_by_health,
-    health_snapshot_to_disk,
-    load_health_snapshot_from_disk,
     merge_tool_metadata,
-    refresh_connection_health_async,
 )
-from cyt.tools.sources.executor_mcp import fetch_executor_mcp_cache_async
+from cyt.executor.runtime import (
+    load_config,
+    resolve_credential,
+    tools_hook_executor_token_var,
+    tools_hook_executor_url,
+    uses_executor_tool_catalog,
+)
 
 logger = logging.getLogger(__name__)
 
-# Recommended _REFRESH_WAIT_SECONDS > _CACHE_TTL_SECONDS
-_CACHE_TTL_SECONDS = 10.0
-_REFRESH_WAIT_SECONDS = 20.0
 _DEFAULT_SCHEMA_CONCURRENCY = 4
 _LIST_PATH = "/api/tools"
 _SCHEMA_PATH = "/api/tools/schema"
@@ -61,8 +53,6 @@ class _ExecutorCatalogState:
     executor_mcp: dict[str, Any] | None = None
     updated_at: float = 0.0
     catalog_content_hash: str = ""
-    refresh_in_progress: bool = False
-    refresh_done: threading.Event = field(default_factory=threading.Event)
 
 
 _catalog_lock = threading.Lock()
@@ -74,6 +64,9 @@ def clear_executor_catalog_cache() -> None:
     with _catalog_lock:
         _catalog_states.clear()
     clear_connection_health_cache()
+    from cyt.executor.cache_scheduler import clear_executor_cache_schedulers
+
+    clear_executor_cache_schedulers()
 
 
 def _executor_runtime_active(config: dict[str, Any]) -> bool:
@@ -138,6 +131,60 @@ def _list_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
         if key in item:
             metadata[key] = item[key]
     return metadata
+
+
+def _summaries_to_stub_tools(
+    summaries: list[tuple[str, str | None, dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    return [
+        _normalize_tool(address, description, {}, metadata)
+        for address, description, metadata in summaries
+    ]
+
+
+def merge_list_stubs_into_catalog(
+    state: _ExecutorCatalogState,
+    tools: list[dict[str, Any]],
+) -> None:
+    """Merge tier-1 stubs or tier-2 schema tools by address."""
+    by_name = {str(tool.get("name") or ""): tool for tool in state.tools}
+    for tool in tools:
+        name = str(tool.get("name") or "")
+        if not name:
+            continue
+        existing = by_name.get(name)
+        if existing is None:
+            by_name[name] = copy.deepcopy(tool)
+            continue
+        if tool.get("input_schema"):
+            existing["input_schema"] = copy.deepcopy(tool["input_schema"])
+        if tool.get("description") and not existing.get("description"):
+            existing["description"] = tool["description"]
+        for key in ("owner", "integration", "connection", "static"):
+            if key in tool and tool[key] is not None:
+                existing[key] = tool[key]
+    with _catalog_lock:
+        state.tools = list(by_name.values())
+        state.updated_at = time.monotonic()
+        state.catalog_content_hash = raw_catalog_content_hash(state.tools)
+
+
+def evict_schemas_for_connections(
+    state: _ExecutorCatalogState,
+    keys: set[ConnectionKey],
+) -> None:
+    """Strip ``input_schema`` from tools on newly ineligible connections."""
+    if not keys:
+        return
+    from cyt.executor.connection_health import connection_key_from_tool
+
+    with _catalog_lock:
+        for tool in state.tools:
+            key = connection_key_from_tool(tool)
+            if key is not None and key in keys and "input_schema" in tool:
+                del tool["input_schema"]
+        state.catalog_content_hash = raw_catalog_content_hash(state.tools)
+        state.updated_at = time.monotonic()
 
 
 async def _fetch_list_async(
@@ -239,13 +286,22 @@ async def _fetch_full_catalog_async(
     *,
     base_url: str,
     token: str | None,
+    slug: str,
+    config: dict[str, Any] | None = None,
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
 ) -> list[dict[str, Any]]:
+    from cyt.executor.connection_health import filter_summaries_for_schema_fetch
+
     summaries = await _fetch_list_async(base_url=base_url, token=token)
+    eligible = filter_summaries_for_schema_fetch(
+        summaries,
+        slug,
+        config=config or load_config(),
+    )
     return await _fetch_schemas_async(
         base_url=base_url,
         token=token,
-        summaries=summaries,
+        summaries=eligible,
         concurrency=concurrency,
     )
 
@@ -254,32 +310,26 @@ async def _fetch_catalog_and_mcp_async(
     *,
     base_url: str,
     token: str | None,
+    slug: str,
+    config: dict[str, Any] | None = None,
     concurrency: int = _DEFAULT_SCHEMA_CONCURRENCY,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None, ConnectionHealthSnapshot | None]:
-    """Fetch REST tool schemas, MCP transport cache, and connection health in parallel.
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Blocking bootstrap: tier-1 list + eligible tier-2 schemas + MCP transport cache."""
+    from cyt.executor.mcp import fetch_executor_mcp_cache_async
 
-    MCP and health failures are non-fatal: returns ``(tools, None, None)`` for failed
-    optional fetches so callers preserve any existing on-disk blocks.
-    """
     catalog_task = asyncio.create_task(
         _fetch_full_catalog_async(
             base_url=base_url,
             token=token,
+            slug=slug,
+            config=config,
             concurrency=concurrency,
         ),
     )
     mcp_task = asyncio.create_task(
         fetch_executor_mcp_cache_async(base_url=base_url, token=token),
     )
-    health_task = asyncio.create_task(
-        refresh_connection_health_async(base_url=base_url, token=token),
-    )
-    tools, mcp_outcome, health_outcome = await asyncio.gather(
-        catalog_task,
-        mcp_task,
-        health_task,
-        return_exceptions=True,
-    )
+    tools, mcp_outcome = await asyncio.gather(catalog_task, mcp_task, return_exceptions=True)
 
     if isinstance(tools, BaseException):
         raise tools
@@ -290,14 +340,7 @@ async def _fetch_catalog_and_mcp_async(
         executor_mcp = None
     else:
         executor_mcp = mcp_outcome
-
-    health_snapshot: ConnectionHealthSnapshot | None
-    if isinstance(health_outcome, BaseException):
-        logger.warning("executor connection health refresh failed: %s", health_outcome)
-        health_snapshot = None
-    else:
-        health_snapshot = health_outcome
-    return tools, executor_mcp, health_snapshot
+    return tools, executor_mcp
 
 
 def _get_state(key: _ExecutorCacheKey) -> _ExecutorCatalogState:
@@ -321,14 +364,6 @@ def _snapshot_executor_mcp(state: _ExecutorCatalogState) -> dict[str, Any] | Non
         return copy.deepcopy(state.executor_mcp)
 
 
-def _catalog_is_stale(state: _ExecutorCatalogState, *, now: float) -> bool:
-    if not state.tools:
-        return True
-    if state.executor_mcp is None:
-        return True
-    return now - state.updated_at >= _CACHE_TTL_SECONDS
-
-
 def _apply_catalog_to_state(
     state: _ExecutorCatalogState,
     tools: list[dict[str, Any]],
@@ -345,27 +380,15 @@ def _apply_catalog_to_state(
             state.executor_mcp = executor_mcp
 
 
-def _apply_health_snapshot_to_cache(
-    cache_key: _ExecutorCacheKey,
-    health_snapshot: ConnectionHealthSnapshot | None,
-    *,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    if health_snapshot is None:
-        return None
-    apply_health_snapshot(cache_key.slug, health_snapshot, config=config)
-    return health_snapshot_to_disk(health_snapshot, slug=cache_key.slug, config=config)
-
-
-def _write_refresh_result_to_disk(
+def _write_catalog_disk(
     cache_key: _ExecutorCacheKey,
     *,
     tools: list[dict[str, Any]],
-    content_hash: str,
-    executor_mcp: dict[str, Any] | None,
-    health_snapshot: ConnectionHealthSnapshot | None,
+    executor_mcp: dict[str, Any] | None = None,
+    connections_health: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
 ) -> None:
+    content_hash = raw_catalog_content_hash(tools)
     write_kwargs: dict[str, Any] = {
         "executor_url": cache_key.base_url,
         "tools": tools,
@@ -373,11 +396,6 @@ def _write_refresh_result_to_disk(
     }
     if executor_mcp is not None:
         write_kwargs["executor"] = executor_mcp
-    connections_health = _apply_health_snapshot_to_cache(
-        cache_key,
-        health_snapshot,
-        config=config,
-    )
     if connections_health is not None:
         write_kwargs["connections_health"] = connections_health
     write_disk_catalog(cache_key.slug, **write_kwargs)
@@ -397,9 +415,6 @@ def _load_catalog_from_disk(
     content_hash = str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(tools))
     raw_mcp = envelope.get("executor")
     executor_mcp = copy.deepcopy(raw_mcp) if isinstance(raw_mcp, dict) else None
-    raw_health = envelope.get("connections_health")
-    if isinstance(raw_health, dict):
-        load_health_snapshot_from_disk(cache_key.slug, raw_health, config=config)
     state = _get_state(cache_key)
     _apply_catalog_to_state(
         state,
@@ -408,12 +423,11 @@ def _load_catalog_from_disk(
         executor_mcp=executor_mcp,
     )
     logger.info(
-        "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s health=%s",
+        "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s",
         cache_key.slug,
         content_hash[:12],
         len(tools),
         "yes" if executor_mcp is not None else "no",
-        "yes" if isinstance(raw_health, dict) else "no",
     )
     return True
 
@@ -434,88 +448,10 @@ def load_executor_catalog_from_disk(config: dict[str, Any] | None = None) -> boo
     return _load_catalog_from_disk(cache_key, config=cfg)
 
 
-def _wait_for_refresh(state: _ExecutorCatalogState) -> None:
-    if not state.refresh_in_progress:
-        return
-    state.refresh_done.wait(timeout=_REFRESH_WAIT_SECONDS)
+def _ensure_scheduler_started(cfg: dict[str, Any], *, allow_prompt: bool) -> None:
+    from cyt.executor.cache_scheduler import start_executor_cache_scheduler
 
-
-def _run_background_refresh(
-    *,
-    config: dict[str, Any],
-    token: str | None,
-    cache_key: _ExecutorCacheKey,
-) -> None:
-    """Refresh list + every tool schema; swap only when the full catalog is ready."""
-    state = _get_state(cache_key)
-    try:
-        try:
-            logger.info("executor catalog network_fetch slug=%s", cache_key.slug)
-            tools, executor_mcp, health_snapshot = asyncio.run(
-                _fetch_catalog_and_mcp_async(
-                    base_url=cache_key.base_url,
-                    token=token,
-                ),
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("executor background catalog refresh failed: %s", exc)
-            return
-        except ValueError as exc:
-            logger.warning("executor background catalog refresh invalid: %s", exc)
-            return
-
-        content_hash = raw_catalog_content_hash(tools)
-        _apply_catalog_to_state(
-            state,
-            tools,
-            content_hash=content_hash,
-            executor_mcp=executor_mcp,
-        )
-        _write_refresh_result_to_disk(
-            cache_key,
-            tools=tools,
-            content_hash=content_hash,
-            executor_mcp=executor_mcp,
-            health_snapshot=health_snapshot,
-            config=config,
-        )
-        logger.debug(
-            "executor catalog refresh completed (%d tools, mcp=%s, health=%s)",
-            len(tools),
-            "yes" if executor_mcp is not None else "no",
-            "yes" if health_snapshot is not None else "no",
-        )
-    finally:
-        with _catalog_lock:
-            state.refresh_in_progress = False
-            state.refresh_done.set()
-
-
-def _start_background_refresh(
-    cfg: dict[str, Any],
-    token: str | None,
-    cache_key: _ExecutorCacheKey,
-    *,
-    force: bool,
-) -> None:
-    state = _get_state(cache_key)
-    now = time.monotonic()
-
-    with _catalog_lock:
-        if state.refresh_in_progress:
-            return
-        if not force and state.tools and not _catalog_is_stale(state, now=now):
-            return
-        state.refresh_in_progress = True
-        state.refresh_done.clear()
-
-    thread = threading.Thread(
-        target=_run_background_refresh,
-        kwargs={"config": cfg, "token": token, "cache_key": cache_key},
-        name="cyt-executor-catalog-refresh",
-        daemon=True,
-    )
-    thread.start()
+    start_executor_cache_scheduler(cfg, allow_prompt=allow_prompt)
 
 
 def schedule_executor_catalog_refresh(
@@ -524,17 +460,10 @@ def schedule_executor_catalog_refresh(
     allow_prompt: bool = False,
     force: bool = False,
 ) -> None:
-    """Start a background catalog refresh when stale; never blocks the caller."""
-    cfg = config or load_config()
-    if not _executor_runtime_active(cfg):
-        return
-    base_url = tools_hook_executor_url(cfg)
-    if not base_url:
-        return
+    """Ensure background scheduler is running; optionally force catalog refresh."""
+    from cyt.executor.cache_scheduler import schedule_executor_catalog_refresh as _schedule
 
-    token = _resolve_executor_token(cfg, allow_prompt=allow_prompt)
-    cache_key = _cache_key_for_config(cfg, token)
-    _start_background_refresh(cfg, token, cache_key, force=force)
+    _schedule(config, allow_prompt=allow_prompt, force=force)
 
 
 def _blocking_network_fetch(
@@ -544,12 +473,30 @@ def _blocking_network_fetch(
     *,
     apply_health_filter: bool = True,
 ) -> list[dict[str, Any]]:
+    from cyt.executor.connection_health import refresh_connection_health_async
+
     state = _get_state(cache_key)
     try:
         logger.info("executor catalog network_fetch slug=%s blocking=true", cache_key.slug)
-        tools, executor_mcp, health_snapshot = asyncio.run(
-            _fetch_catalog_and_mcp_async(base_url=cache_key.base_url, token=token),
+        tools, executor_mcp = asyncio.run(
+            _fetch_catalog_and_mcp_async(
+                base_url=cache_key.base_url,
+                token=token,
+                slug=cache_key.slug,
+                config=cfg,
+            ),
         )
+        try:
+            asyncio.run(
+                refresh_connection_health_async(
+                    base_url=cache_key.base_url,
+                    token=token,
+                    slug=cache_key.slug,
+                    config=cfg,
+                ),
+            )
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("executor bootstrap health refresh failed: %s", exc)
     except httpx.HTTPError as exc:
         logger.warning("executor tool catalog fetch failed: %s", exc)
         stale = _snapshot_tools(state)
@@ -569,21 +516,19 @@ def _blocking_network_fetch(
             config=cfg,
         )
 
-    content_hash = raw_catalog_content_hash(tools)
     _apply_catalog_to_state(
         state,
         tools,
-        content_hash=content_hash,
+        content_hash=raw_catalog_content_hash(tools),
         executor_mcp=executor_mcp,
     )
-    _write_refresh_result_to_disk(
+    _write_catalog_disk(
         cache_key,
         tools=tools,
-        content_hash=content_hash,
         executor_mcp=executor_mcp,
-        health_snapshot=health_snapshot,
         config=cfg,
     )
+    _ensure_scheduler_started(cfg, allow_prompt=False)
     return _return_catalog(
         copy.deepcopy(tools),
         cache_key,
@@ -613,7 +558,7 @@ def get_executor_mcp_cache(
 ) -> dict[str, Any] | None:
     """Return in-memory MCP transport cache (``tools_list`` + ``execute_skill``).
 
-    Memory-first: loads from disk when cold, schedules a non-blocking SWR refresh,
+    Memory-first: loads from disk when cold, starts background scheduler,
     and never calls the live executor API on the request path.
     """
     cfg = config or load_config()
@@ -632,7 +577,7 @@ def get_executor_mcp_cache(
     if not has_memory:
         _load_catalog_from_disk(cache_key, config=cfg)
 
-    schedule_executor_catalog_refresh(cfg, allow_prompt=allow_prompt, force=False)
+    _ensure_scheduler_started(cfg, allow_prompt=allow_prompt)
     return _snapshot_executor_mcp(state)
 
 
@@ -660,22 +605,15 @@ def _get_executor_catalog_impl(
             has_memory = bool(state.tools)
 
     if not has_memory:
-        if state.refresh_in_progress:
-            _wait_for_refresh(state)
-            snapshot = _snapshot_tools(state)
-            if snapshot:
-                return _return_catalog(
-                    snapshot,
-                    cache_key,
-                    apply_health_filter=apply_health_filter,
-                    config=cfg,
-                )
-        return _blocking_network_fetch(
-            cfg,
-            token,
-            cache_key,
-            apply_health_filter=apply_health_filter,
-        )
+        if blocking or force:
+            return _blocking_network_fetch(
+                cfg,
+                token,
+                cache_key,
+                apply_health_filter=apply_health_filter,
+            )
+        _ensure_scheduler_started(cfg, allow_prompt=allow_prompt)
+        return _return_catalog([], cache_key, apply_health_filter=apply_health_filter, config=cfg)
 
     if force and blocking:
         return _blocking_network_fetch(
@@ -690,7 +628,7 @@ def _get_executor_catalog_impl(
         cache_key.slug,
         len(state.tools),
     )
-    schedule_executor_catalog_refresh(cfg, allow_prompt=allow_prompt, force=force)
+    _ensure_scheduler_started(cfg, allow_prompt=allow_prompt)
     return _return_catalog(
         _snapshot_tools(state),
         cache_key,
@@ -706,7 +644,7 @@ def get_executor_catalog(
     blocking: bool = False,
     force: bool = False,
 ) -> list[dict[str, Any]] | None:
-    """Unified SWR entrypoint: memory → disk → wait for refresh → block only if both empty."""
+    """Unified SWR entrypoint: memory snapshot only on hook path (never blocks on refresh)."""
     cfg = config or load_config()
     if not _executor_runtime_active(cfg):
         return None
@@ -786,7 +724,6 @@ def executor_catalog_health_snapshot(
         tool_count = len(state.tools)
         age_seconds = time.monotonic() - state.updated_at if state.updated_at else None
         content_hash = state.catalog_content_hash
-        refresh_in_progress = state.refresh_in_progress
         has_mcp = state.executor_mcp is not None
         mcp_tools = 0
         if isinstance(state.executor_mcp, dict):
@@ -796,7 +733,6 @@ def executor_catalog_health_snapshot(
 
     payload: dict[str, Any] = {
         "catalog_tool_count": tool_count,
-        "refresh_in_progress": refresh_in_progress,
         "executor_mcp_cached": has_mcp,
         "executor_mcp_tools_list_count": mcp_tools,
     }

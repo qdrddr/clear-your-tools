@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
+from cyt.executor.mcp import format_executor_mcp_selector_appendix
 from cyt.pruners.llm import (
     TOOL_SELECTOR_SYSTEM_PROMPT,
     ChunkSelection,
@@ -22,7 +23,6 @@ from cyt.pruners.llm import (
     normalize_selector_selections,
     tool_selector_system_prompt,
 )
-from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
 
 
 def _settings(*, responses_api: bool) -> LlmPruningSettings:
@@ -661,7 +661,7 @@ def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
         "execute_skill": "# execute",
     }
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         return_value=mcp,
     ):
         prompt = tool_selector_system_prompt(_HOOK_EXECUTOR_CONFIG)
@@ -674,7 +674,7 @@ def test_tool_selector_system_prompt_appends_cached_mcp() -> None:
 
 def test_tool_selector_system_prompt_without_cache_is_base_only() -> None:
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         return_value=None,
     ):
         assert tool_selector_system_prompt() == TOOL_SELECTOR_SYSTEM_PROMPT

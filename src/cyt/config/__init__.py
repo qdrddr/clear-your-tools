@@ -137,6 +137,10 @@ DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_TRANSITION_SECONDS: float = 30.0
 DEFAULT_CONNECTION_HEALTH_FLAPPING_MAX_QUARANTINE_SECONDS: float = 600.0
 DEFAULT_CONNECTION_HEALTH_FLAPPING_RECOVERY_HEALTHY_SAMPLES: int = 6
 DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_EPISODE_SECONDS: float = 60.0
+DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS: float = 1.0
+DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY: int = 4
+DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS: float = 120.0
+DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS: float = 900.0
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
@@ -184,6 +188,14 @@ _DEFAULTS: dict[str, Any] = {
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
                 "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
+                "executor_cache": {
+                    "health_refresh_seconds": DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS,
+                    "health_probe_concurrency": DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY,
+                    "catalog_schema_refresh_seconds": (
+                        DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS
+                    ),
+                    "disk_flush_seconds": DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS,
+                },
                 "connection_health": {
                     "flapping": {
                         "enabled": DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED,
@@ -1125,6 +1137,17 @@ def connection_health_flapping_settings(config: dict[str, Any] | None = None) ->
         flapping = {}
     defaults = _DEFAULTS["pruning"]["tools"]["hook"]["connection_health"]["flapping"]
     return deep_merge(defaults, flapping)
+
+
+def tools_hook_executor_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merged ``pruning.tools.hook.executor_cache`` refresh intervals."""
+    cfg = config or load_config()
+    hook = _tools_hook_settings(_merged_config(cfg))
+    executor_cache = hook.get("executor_cache")
+    if not isinstance(executor_cache, dict):
+        executor_cache = {}
+    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["executor_cache"]
+    return deep_merge(defaults, executor_cache)
 
 
 def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:

@@ -41,7 +41,7 @@ def executor_skill_inline_source(config: dict[str, Any] | None = None) -> dict[s
     if not uses_executor_tool_catalog(cfg):
         return None
     try:
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.executor.http import get_executor_mcp_cache
 
         text = execute_skill_text(get_executor_mcp_cache(cfg, allow_prompt=False))
     except Exception as exc:
@@ -117,7 +117,7 @@ def executor_skill_match(config: dict[str, Any] | None = None) -> MatchedSkill |
     if not uses_executor_tool_catalog(cfg):
         return None
     try:
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.executor.http import get_executor_mcp_cache
 
         return executor_skill_match_from_cache(
             get_executor_mcp_cache(cfg, allow_prompt=False),

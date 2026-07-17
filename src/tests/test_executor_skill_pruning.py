@@ -99,7 +99,7 @@ def _quiet_hook(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_executor_skill_inline_source_reads_cache() -> None:
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         return_value={"execute_skill": _EXECUTOR_SKILL_MD},
     ):
         source = executor_skill_inline_source(_EXECUTOR_CONFIG)
@@ -114,7 +114,7 @@ def test_build_executor_skill_registry_decomposes_inline() -> None:
         root = Path(tmp)
         config = _config_with_catalog(root)
         with patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             return_value={"execute_skill": _EXECUTOR_SKILL_MD},
         ):
             entries = build_executor_skill_registry(config)
@@ -129,7 +129,7 @@ def test_append_executor_skill_entries_dedupes_by_doc_id() -> None:
         root = Path(tmp)
         config = _config_with_catalog(root)
         with patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             return_value={"execute_skill": _EXECUTOR_SKILL_MD},
         ):
             executor_entries = build_executor_skill_registry(config)
@@ -142,7 +142,7 @@ def test_build_prune_plan_runs_skills_search_for_executor_only_entries() -> None
         root = Path(tmp)
         config = _config_with_catalog(root)
         with patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             return_value={"execute_skill": _EXECUTOR_SKILL_MD},
         ):
             entries = build_executor_skill_registry(config)
@@ -172,7 +172,7 @@ def test_executor_skill_pruned_when_skills_disabled() -> None:
         with (
             patch("cyt.config.tools_hook_file_missing", return_value=False),
             patch(
-                "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+                "cyt.executor.http.get_executor_mcp_cache",
                 return_value=_mock_executor_mcp_cache(),
             ),
             patch("cyt.pruning.hook_bridge.load_tool_catalog", return_value=catalog),
@@ -207,7 +207,7 @@ def test_executor_skill_not_injected_when_no_survivors() -> None:
         with (
             patch("cyt.config.tools_hook_file_missing", return_value=False),
             patch(
-                "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+                "cyt.executor.http.get_executor_mcp_cache",
                 return_value=_mock_executor_mcp_cache(),
             ),
             patch("cyt.pruning.hook_bridge.load_tool_catalog", return_value=catalog),
@@ -278,7 +278,7 @@ def test_coordinator_runs_parallel_skills_search_for_executor_only(
         payload = _hook_payload("tools.search workflow")
         with (
             patch(
-                "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+                "cyt.executor.http.get_executor_mcp_cache",
                 return_value={"execute_skill": _EXECUTOR_SKILL_MD},
             ),
             patch("cyt.pruning.coordinator.filter_tools_for_query", side_effect=slow_tools),
@@ -349,7 +349,7 @@ def test_hook_stdout_injects_pruned_executor_skill() -> None:
             patch.object(skills_cli, "load_config", return_value=config),
             patch("cyt.config.tools_hook_file_missing", return_value=False),
             patch(
-                "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+                "cyt.executor.http.get_executor_mcp_cache",
                 return_value=_mock_executor_mcp_cache(),
             ),
             patch("cyt.pruning.hook_bridge.load_tool_catalog", return_value=catalog),

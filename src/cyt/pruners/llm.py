@@ -128,8 +128,8 @@ def tool_selector_system_prompt(
     if not uses_executor_tool_catalog(config):
         return prompt
     try:
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
-        from cyt.tools.sources.executor_mcp import format_executor_mcp_selector_appendix
+        from cyt.executor.http import get_executor_mcp_cache
+        from cyt.executor.mcp import format_executor_mcp_selector_appendix
 
         appendix = format_executor_mcp_selector_appendix(
             get_executor_mcp_cache(config, allow_prompt=False),

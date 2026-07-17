@@ -25,10 +25,10 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
     try:
         tools: list[dict[str, Any]] | None
         if tools_hook_tools_from(cfg) == "executor":
-            from cyt.tools.sources.executor_http import (
+            from cyt.executor.cache_scheduler import start_executor_cache_scheduler
+            from cyt.executor.http import (
                 get_executor_catalog,
                 load_executor_catalog_from_disk,
-                schedule_executor_catalog_refresh,
             )
 
             load_executor_catalog_from_disk(cfg)
@@ -36,7 +36,7 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
             if not tools:
                 tools = get_executor_catalog(cfg, allow_prompt=False, blocking=True)
             else:
-                schedule_executor_catalog_refresh(cfg, allow_prompt=False, force=False)
+                start_executor_cache_scheduler(cfg, allow_prompt=False)
         else:
             tools = load_tool_catalog(cfg)
         if not tools:

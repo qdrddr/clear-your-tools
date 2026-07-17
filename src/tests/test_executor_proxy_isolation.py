@@ -8,15 +8,15 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt.proxy.anthropic import transform_anthropic_request
-from cyt.pruners.llm import tool_selector_system_prompt
-from cyt.pruners.tools_filter import filter_tools_for_query
-from cyt.tools.sources.executor_http import (
+from cyt.executor.cache_scheduler import schedule_executor_catalog_refresh
+from cyt.executor.http import (
     executor_catalog_health_snapshot,
     get_executor_catalog,
     get_executor_mcp_cache,
-    schedule_executor_catalog_refresh,
 )
+from cyt.proxy.anthropic import transform_anthropic_request
+from cyt.pruners.llm import tool_selector_system_prompt
+from cyt.pruners.tools_filter import filter_tools_for_query
 
 _PROXY_CONFIG: dict[str, Any] = {
     "pruning": {
@@ -62,15 +62,15 @@ def _executor_forbidden(*_args: object, **_kwargs: object) -> None:
 def forbid_executor_runtime() -> Generator[None]:
     with (
         patch(
-            "cyt.tools.sources.executor_http._load_catalog_from_disk",
+            "cyt.executor.http._load_catalog_from_disk",
             side_effect=_executor_forbidden,
         ),
         patch(
-            "cyt.tools.sources.executor_http._blocking_network_fetch",
+            "cyt.executor.http._blocking_network_fetch",
             side_effect=_executor_forbidden,
         ),
         patch(
-            "cyt.tools.sources.executor_http._start_background_refresh",
+            "cyt.executor.http._ensure_scheduler_started",
             side_effect=_executor_forbidden,
         ),
     ):
@@ -87,7 +87,7 @@ def test_get_executor_catalog_returns_none_in_proxy_mode() -> None:
 
 def test_schedule_executor_catalog_refresh_noops_in_proxy_mode() -> None:
     with patch(
-        "cyt.tools.sources.executor_http._start_background_refresh",
+        "cyt.executor.cache_scheduler.start_executor_cache_scheduler",
         side_effect=_executor_forbidden,
     ):
         schedule_executor_catalog_refresh(_PROXY_CONFIG, force=True)
@@ -99,7 +99,7 @@ def test_executor_catalog_health_snapshot_empty_in_proxy_mode() -> None:
 
 def test_tool_selector_system_prompt_skips_executor_appendix_in_proxy_mode() -> None:
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         side_effect=_executor_forbidden,
     ):
         prompt = tool_selector_system_prompt(_PROXY_CONFIG)
@@ -139,7 +139,7 @@ def test_proxy_pipeline_does_not_touch_executor(
         )
 
     with patch.multiple(
-        "cyt.tools.sources.executor_http",
+        "cyt.executor.http",
         get_executor_mcp_cache=_executor_forbidden,
         get_executor_catalog=_executor_forbidden,
         schedule_executor_catalog_refresh=_executor_forbidden,
@@ -175,7 +175,7 @@ def test_proxy_anthropic_transform_without_executor_credentials(
         ],
     }
     with patch.multiple(
-        "cyt.tools.sources.executor_http",
+        "cyt.executor.http",
         get_executor_mcp_cache=_executor_forbidden,
         get_executor_catalog=_executor_forbidden,
         schedule_executor_catalog_refresh=_executor_forbidden,
@@ -200,7 +200,7 @@ def test_filter_tools_for_query_skips_mcp_cache_warm_in_proxy_mode() -> None:
         ),
         patch("cyt.pruners.tools_filter.request_pass_through", return_value=False),
         patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             side_effect=_executor_forbidden,
         ),
     ):

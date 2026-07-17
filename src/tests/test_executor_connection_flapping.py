@@ -1,21 +1,23 @@
-"""Tests for integration health flapping detection and gating."""
+"""Tests for connection health flapping detection and gating."""
 
 from __future__ import annotations
 
 from collections import deque
 from typing import Any
 
-from cyt.tools.sources.executor_connection_flapping import (
+from cyt.executor.connection_flapping import (
+    ConnectionFlapState,
     FlappingPolicy,
     IntegrationFlapState,
     clear_flapping_cache,
     compute_penalty_seconds,
     flapping_state_to_disk,
-    gated_integrations,
+    gated_connections,
     is_flapping,
     load_flapping_state_from_disk,
     update_flapping_states,
 )
+from cyt.executor.connection_health import ConnectionKey
 
 _POLICY = FlappingPolicy(
     window_size=6,
@@ -54,8 +56,13 @@ def _connection(
     return conn
 
 
-def _connections_for_status(integration: str, status: str) -> list[dict[str, Any]]:
-    return [_connection(integration=integration, status=status)]
+def _connections_for_status(
+    integration: str,
+    status: str,
+    *,
+    name: str = "default",
+) -> list[dict[str, Any]]:
+    return [_connection(integration=integration, status=status, name=name)]
 
 
 def test_is_flapping_detects_h_d_h_pattern() -> None:
@@ -87,6 +94,7 @@ def test_compute_penalty_respects_max_cap() -> None:
 
 def test_update_flapping_states_gates_on_first_flap() -> None:
     now = 1000.0
+    key = ConnectionKey("org", "flappy_mcp", "default")
     update_flapping_states(
         _SLUG,
         _connections_for_status("flappy_mcp", "healthy"),
@@ -106,12 +114,32 @@ def test_update_flapping_states_gates_on_first_flap() -> None:
         now=now + 20,
     )
 
-    gated = gated_integrations(_SLUG, policy=_POLICY, now=now + 20)
-    assert gated == {("org", "flappy_mcp")}
+    gated = gated_connections(_SLUG, policy=_POLICY, now=now + 20)
+    assert gated == {key}
 
 
-def test_continuous_flapping_keeps_integration_gated() -> None:
+def test_connection_flapping_gates_only_that_connection() -> None:
+    now = 1500.0
+    flappy_key = ConnectionKey("org", "lean_ctx_mcp", "otherconn")
+    healthy_key = ConnectionKey("org", "lean_ctx_mcp", "localleanctxmcp")
+    for index, status in enumerate(["healthy", "degraded", "healthy"]):
+        update_flapping_states(
+            _SLUG,
+            [
+                _connection(integration="lean_ctx_mcp", name="localleanctxmcp", status="healthy"),
+                _connection(integration="lean_ctx_mcp", name="otherconn", status=status),
+            ],
+            policy=_POLICY,
+            now=now + (index * 10),
+        )
+    gated = gated_connections(_SLUG, policy=_POLICY, now=now + 20)
+    assert flappy_key in gated
+    assert healthy_key not in gated
+
+
+def test_continuous_flapping_keeps_connection_gated() -> None:
     now = 2000.0
+    key = ConnectionKey("org", "flappy_mcp", "default")
     sequence = ["healthy", "degraded", "healthy", "degraded", "healthy", "degraded", "healthy"]
     for index, status in enumerate(sequence):
         update_flapping_states(
@@ -120,12 +148,12 @@ def test_continuous_flapping_keeps_integration_gated() -> None:
             policy=_POLICY,
             now=now + (index * 10),
         )
-        gated = gated_integrations(_SLUG, policy=_POLICY, now=now + (index * 10))
+        gated = gated_connections(_SLUG, policy=_POLICY, now=now + (index * 10))
         if index >= 2:
-            assert ("org", "flappy_mcp") in gated
+            assert key in gated
 
     far_future = now + 10_000
-    assert ("org", "flappy_mcp") in gated_integrations(_SLUG, policy=_POLICY, now=far_future)
+    assert key in gated_connections(_SLUG, policy=_POLICY, now=far_future)
 
 
 def test_sustained_outage_recovery_does_not_gate() -> None:
@@ -137,11 +165,12 @@ def test_sustained_outage_recovery_does_not_gate() -> None:
             policy=_POLICY,
             now=now + (index * 10),
         )
-    assert gated_integrations(_SLUG, policy=_POLICY, now=now + 40) == set()
+    assert gated_connections(_SLUG, policy=_POLICY, now=now + 40) == set()
 
 
 def test_release_requires_stable_healthy_streak_and_cooldown() -> None:
     now = 4000.0
+    key = ConnectionKey("org", "mcp", "default")
     update_flapping_states(
         _SLUG,
         _connections_for_status("mcp", "healthy"),
@@ -160,7 +189,7 @@ def test_release_requires_stable_healthy_streak_and_cooldown() -> None:
         policy=_POLICY,
         now=now + 20,
     )
-    assert ("org", "mcp") in gated_integrations(_SLUG, policy=_POLICY, now=now + 20)
+    assert key in gated_connections(_SLUG, policy=_POLICY, now=now + 20)
 
     stable_start = now + 500
     for offset in (0, 10):
@@ -170,7 +199,7 @@ def test_release_requires_stable_healthy_streak_and_cooldown() -> None:
             policy=_POLICY,
             now=stable_start + offset,
         )
-    assert ("org", "mcp") in gated_integrations(_SLUG, policy=_POLICY, now=stable_start + 10)
+    assert key in gated_connections(_SLUG, policy=_POLICY, now=stable_start + 10)
 
     update_flapping_states(
         _SLUG,
@@ -178,12 +207,13 @@ def test_release_requires_stable_healthy_streak_and_cooldown() -> None:
         policy=_POLICY,
         now=stable_start + 20,
     )
-    assert gated_integrations(_SLUG, policy=_POLICY, now=stable_start + 20) == set()
+    assert gated_connections(_SLUG, policy=_POLICY, now=stable_start + 20) == set()
 
 
 def test_flapping_state_disk_round_trip() -> None:
     clear_flapping_cache()
     now = 5000.0
+    key = ConnectionKey("org", "disk_mcp", "default")
     update_flapping_states(
         _SLUG,
         _connections_for_status("disk_mcp", "healthy"),
@@ -205,12 +235,12 @@ def test_flapping_state_disk_round_trip() -> None:
 
     payload = flapping_state_to_disk(_SLUG, policy=_POLICY)
     assert payload
-    assert "org/disk_mcp" in payload["integrations"]
+    assert "org/disk_mcp/default" in payload["connections"]
 
     clear_flapping_cache()
     load_flapping_state_from_disk(_SLUG, payload, policy=_POLICY)
-    gated = gated_integrations(_SLUG, policy=_POLICY, now=now + 20)
-    assert gated == {("org", "disk_mcp")}
+    gated = gated_connections(_SLUG, policy=_POLICY, now=now + 20)
+    assert gated == {key}
 
 
 def test_disabled_policy_never_gates() -> None:
@@ -223,7 +253,7 @@ def test_disabled_policy_never_gates() -> None:
             policy=disabled,
             now=now + (index * 10),
         )
-    assert gated_integrations(_SLUG, policy=disabled, now=now + 20) == set()
+    assert gated_connections(_SLUG, policy=disabled, now=now + 20) == set()
 
 
 def test_manual_state_can_release_after_cooldown_and_stability() -> None:
@@ -237,3 +267,4 @@ def test_manual_state_can_release_after_cooldown_and_stability() -> None:
     assert is_flapping(list(state.status_history), policy=_POLICY) is False
     assert state.consecutive_healthy >= _POLICY.recovery_healthy_samples
     assert 150.0 >= state.quarantine_until
+    assert isinstance(state, ConnectionFlapState)

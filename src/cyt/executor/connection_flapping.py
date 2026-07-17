@@ -1,4 +1,4 @@
-"""Integration health flapping detection and persistent gating."""
+"""Connection health flapping detection and persistent gating."""
 
 from __future__ import annotations
 
@@ -10,15 +10,18 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.executor.connection_health import ConnectionKey
 
 logger = logging.getLogger(__name__)
 
 _HEALTHY_STATUS = "healthy"
-_INTEGRATION_KEY_SEP = "/"
+_CONNECTION_KEY_SEP = "/"
 
 _flapping_lock = threading.Lock()
-_flapping_states: dict[str, dict[tuple[str, str], IntegrationFlapState]] = {}
+_flapping_states: dict[str, dict[ConnectionKey, ConnectionFlapState]] = {}
 
 
 @dataclass(frozen=True)
@@ -36,12 +39,16 @@ class FlappingPolicy:
 
 
 @dataclass
-class IntegrationFlapState:
+class ConnectionFlapState:
     status_history: deque[str] = field(default_factory=deque)
     gated: bool = False
     quarantine_until: float = 0.0
     consecutive_healthy: int = 0
     flap_episodes: int = 0
+
+
+# Backward-compatible alias for tests importing IntegrationFlapState.
+IntegrationFlapState = ConnectionFlapState
 
 
 def clear_flapping_cache() -> None:
@@ -68,25 +75,22 @@ def flapping_policy_from_config(raw: dict[str, Any] | None) -> FlappingPolicy:
     )
 
 
-def derive_integration_statuses(
+def derive_connection_statuses(
     connections: list[dict[str, Any]],
-) -> dict[tuple[str, str], str]:
-    """Map ``(owner, integration)`` to derived status from connection health."""
-    by_integration: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for conn in connections:
-        owner = str(conn.get("owner") or "").strip()
-        integration = str(conn.get("integration") or "").strip()
-        if not owner or not integration:
-            continue
-        by_integration.setdefault((owner, integration), []).append(conn)
+) -> dict[ConnectionKey, str]:
+    """Map each connection to its own ``lastHealth.status`` (no integration rollup)."""
+    from cyt.executor.connection_health import connection_key_from_dict
 
-    statuses: dict[tuple[str, str], str] = {}
-    for key, group in by_integration.items():
-        if any(_connection_is_healthy(conn) for conn in group):
-            statuses[key] = _HEALTHY_STATUS
+    statuses: dict[ConnectionKey, str] = {}
+    for conn in connections:
+        key = connection_key_from_dict(conn)
+        if key is None:
             continue
-        worst = _worst_non_healthy_status(group)
-        statuses[key] = worst if worst is not None else "unknown"
+        last_health = conn.get("lastHealth")
+        if isinstance(last_health, dict) and last_health.get("status"):
+            statuses[key] = str(last_health["status"])
+        else:
+            statuses[key] = "unknown"
     return statuses
 
 
@@ -136,7 +140,7 @@ def compute_penalty_seconds(
     return min(policy.max_quarantine_seconds, raw)
 
 
-def can_release(state: IntegrationFlapState, *, policy: FlappingPolicy, now: float) -> bool:
+def can_release(state: ConnectionFlapState, *, policy: FlappingPolicy, now: float) -> bool:
     """True when stability and cooldown requirements are satisfied."""
     if now < state.quarantine_until:
         return False
@@ -150,13 +154,14 @@ def can_release(state: IntegrationFlapState, *, policy: FlappingPolicy, now: flo
     return not is_flapping(recent, policy=policy)
 
 
-def gated_integrations(
+def gated_connections(
     slug: str,
     *,
     policy: FlappingPolicy,
     now: float | None = None,
-) -> set[tuple[str, str]]:
-    """Return integrations currently gated due to flapping."""
+) -> set[ConnectionKey]:
+    """Return connections currently gated due to flapping."""
+
     if not policy.enabled:
         return set()
     current = now if now is not None else time.monotonic()
@@ -169,11 +174,12 @@ def gated_integrations(
         }
 
 
-def snapshot_flapping_states(slug: str) -> dict[tuple[str, str], IntegrationFlapState]:
+def snapshot_flapping_states(slug: str) -> dict[ConnectionKey, ConnectionFlapState]:
+
     with _flapping_lock:
         states = _flapping_states.get(slug, {})
         return {
-            key: IntegrationFlapState(
+            key: ConnectionFlapState(
                 status_history=deque(state.status_history, maxlen=state.status_history.maxlen),
                 gated=state.gated,
                 quarantine_until=state.quarantine_until,
@@ -190,13 +196,14 @@ def update_flapping_states(
     *,
     policy: FlappingPolicy,
     now: float | None = None,
-) -> dict[tuple[str, str], IntegrationFlapState]:
-    """Append latest statuses and apply gating / release rules."""
+) -> dict[ConnectionKey, ConnectionFlapState]:
+    """Append latest per-connection statuses and apply gating / release rules."""
+
     if not policy.enabled:
         return {}
 
     current = now if now is not None else time.monotonic()
-    statuses = derive_integration_statuses(connections)
+    statuses = derive_connection_statuses(connections)
 
     with _flapping_lock:
         bucket = _flapping_states.setdefault(slug, {})
@@ -204,7 +211,7 @@ def update_flapping_states(
         for key, status in statuses.items():
             state = bucket.get(key)
             if state is None:
-                state = IntegrationFlapState(
+                state = ConnectionFlapState(
                     status_history=deque(maxlen=policy.window_size),
                 )
                 bucket[key] = state
@@ -235,10 +242,11 @@ def update_flapping_states(
                 )
                 state.quarantine_until = max(state.quarantine_until, current + penalty)
                 logger.info(
-                    "integration flapping gated owner=%s integration=%s penalty_s=%.0f "
+                    "connection flapping gated owner=%s integration=%s name=%s penalty_s=%.0f "
                     "degraded=%d transitions=%d episodes=%d reason=flapping",
-                    key[0],
-                    key[1],
+                    key.owner,
+                    key.integration,
+                    key.name,
                     penalty,
                     sum(1 for item in history if item != _HEALTHY_STATUS),
                     sum(
@@ -250,10 +258,11 @@ def update_flapping_states(
                 )
             elif state.gated and can_release(state, policy=policy, now=current):
                 logger.info(
-                    "integration flapping released owner=%s integration=%s "
+                    "connection flapping released owner=%s integration=%s name=%s "
                     "consecutive_healthy=%d episodes=%d",
-                    key[0],
-                    key[1],
+                    key.owner,
+                    key.integration,
+                    key.name,
                     state.consecutive_healthy,
                     state.flap_episodes,
                 )
@@ -275,13 +284,13 @@ def flapping_state_to_disk(
     policy: FlappingPolicy,
 ) -> dict[str, Any]:
     """Serialize flapping state for the connections_health envelope."""
-    integrations: dict[str, Any] = {}
+    connections: dict[str, Any] = {}
     with _flapping_lock:
         states = _flapping_states.get(slug, {})
-        for (owner, integration), state in sorted(states.items()):
+        for key, state in sorted(states.items(), key=lambda item: _connection_key(item[0])):
             if not state.gated and not state.status_history:
                 continue
-            key = _integration_key(owner, integration)
+            key_text = _connection_key(key)
             quarantine_until_iso = None
             if state.quarantine_until > 0:
                 remaining = max(0.0, state.quarantine_until - time.monotonic())
@@ -289,16 +298,16 @@ def flapping_state_to_disk(
                     time.time() + remaining,
                     tz=UTC,
                 ).isoformat()
-            integrations[key] = {
+            connections[key_text] = {
                 "status_history": list(state.status_history),
                 "gated": state.gated,
                 "quarantine_until": quarantine_until_iso,
                 "consecutive_healthy": state.consecutive_healthy,
                 "flap_episodes": state.flap_episodes,
             }
-    if not integrations:
+    if not connections:
         return {}
-    return {"window_size": policy.window_size, "integrations": integrations}
+    return {"window_size": policy.window_size, "connections": connections}
 
 
 def _quarantine_until_from_disk_item(item: dict[str, Any]) -> float:
@@ -317,17 +326,17 @@ def _quarantine_until_from_disk_item(item: dict[str, Any]) -> float:
     return 0.0
 
 
-def _integration_state_from_disk_item(
+def _connection_state_from_disk_item(
     item: dict[str, Any],
     *,
     window_size: int,
-) -> IntegrationFlapState:
+) -> ConnectionFlapState:
     history_raw = item.get("status_history")
     history: deque[str] = deque(maxlen=window_size)
     if isinstance(history_raw, list):
         for entry in history_raw:
             history.append(str(entry))
-    return IntegrationFlapState(
+    return ConnectionFlapState(
         status_history=history,
         gated=bool(item.get("gated")),
         quarantine_until=_quarantine_until_from_disk_item(item),
@@ -343,21 +352,24 @@ def load_flapping_state_from_disk(
     policy: FlappingPolicy,
 ) -> None:
     """Restore flapping state from disk payload."""
+
     if not payload or not policy.enabled:
         return
-    raw_integrations = payload.get("integrations")
-    if not isinstance(raw_integrations, dict):
+    raw_connections = payload.get("connections")
+    if not isinstance(raw_connections, dict):
+        raw_connections = payload.get("integrations")
+    if not isinstance(raw_connections, dict):
         return
 
     window_size = _coerce_int(payload.get("window_size"), policy.window_size)
-    restored: dict[tuple[str, str], IntegrationFlapState] = {}
-    for key_text, item in raw_integrations.items():
+    restored: dict[ConnectionKey, ConnectionFlapState] = {}
+    for key_text, item in raw_connections.items():
         if not isinstance(item, dict):
             continue
-        owner, integration = _parse_integration_key(key_text)
-        if owner is None or integration is None:
+        key = _parse_connection_key(key_text)
+        if key is None:
             continue
-        restored[(owner, integration)] = _integration_state_from_disk_item(
+        restored[key] = _connection_state_from_disk_item(
             item,
             window_size=window_size,
         )
@@ -376,15 +388,15 @@ def flapping_snapshot_fields(
     if not policy.enabled:
         return {
             "flapping_enabled": False,
-            "gated_integration_count": 0,
+            "gated_connection_count": 0,
         }
     current = now if now is not None else time.monotonic()
-    gated = gated_integrations(slug, policy=policy, now=current)
+    gated = gated_connections(slug, policy=policy, now=current)
     entries: list[dict[str, Any]] = []
     with _flapping_lock:
         states = _flapping_states.get(slug, {})
-        for owner, integration in sorted(gated):
-            state = states.get((owner, integration))
+        for key in sorted(gated, key=_connection_key):
+            state = states.get(key)
             if state is None:
                 continue
             history = list(state.status_history)
@@ -397,8 +409,9 @@ def flapping_snapshot_fields(
             seconds_remaining = max(0.0, state.quarantine_until - current)
             entries.append(
                 {
-                    "owner": owner,
-                    "integration": integration,
+                    "owner": key.owner,
+                    "integration": key.integration,
+                    "connection": key.name,
                     "reason": reason,
                     "seconds_remaining": round(seconds_remaining, 1),
                     "flap_episodes": state.flap_episodes,
@@ -407,52 +420,25 @@ def flapping_snapshot_fields(
             )
     return {
         "flapping_enabled": True,
-        "gated_integration_count": len(gated),
-        "gated_integrations": entries,
+        "gated_connection_count": len(gated),
+        "gated_connections": entries,
     }
 
 
-def _connection_is_healthy(conn: dict[str, Any]) -> bool:
-    last_health = conn.get("lastHealth")
-    if not isinstance(last_health, dict):
-        return False
-    return last_health.get("status") == _HEALTHY_STATUS
+def _connection_key(key: ConnectionKey) -> str:
+    return f"{key.owner}{_CONNECTION_KEY_SEP}{key.integration}{_CONNECTION_KEY_SEP}{key.name}"
 
 
-def _worst_non_healthy_status(group: list[dict[str, Any]]) -> str | None:
-    statuses: list[str] = []
-    for conn in group:
-        last_health = conn.get("lastHealth")
-        if not isinstance(last_health, dict):
-            statuses.append("unknown")
-            continue
-        status = last_health.get("status")
-        if status is None:
-            statuses.append("unknown")
-        else:
-            statuses.append(str(status))
-    if not statuses:
+def _parse_connection_key(key: str) -> ConnectionKey | None:
+    from cyt.executor.connection_health import ConnectionKey
+
+    parts = key.split(_CONNECTION_KEY_SEP)
+    if len(parts) != 3:
         return None
-    if any(status == "unhealthy" for status in statuses):
-        return "unhealthy"
-    if any(status == "degraded" for status in statuses):
-        return "degraded"
-    return statuses[0]
-
-
-def _integration_key(owner: str, integration: str) -> str:
-    return f"{owner}{_INTEGRATION_KEY_SEP}{integration}"
-
-
-def _parse_integration_key(key: str) -> tuple[str | None, str | None]:
-    if _INTEGRATION_KEY_SEP not in key:
-        return None, None
-    owner, integration = key.split(_INTEGRATION_KEY_SEP, 1)
-    owner = owner.strip()
-    integration = integration.strip()
-    if not owner or not integration:
-        return None, None
-    return owner, integration
+    owner, integration, name = (part.strip() for part in parts)
+    if not owner or not integration or not name:
+        return None
+    return ConnectionKey(owner=owner, integration=integration, name=name)
 
 
 def _coerce_bool(value: object, default: bool) -> bool:

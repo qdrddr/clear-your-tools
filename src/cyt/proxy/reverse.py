@@ -1205,8 +1205,12 @@ def create_app(
         if config is not None:
             app.state.cyt_config = config
             from cyt.cache import warm_caches
+            from cyt.executor.cache_scheduler import start_executor_cache_scheduler
+            from cyt.executor.connection_health import set_executor_debug_disk
 
+            set_executor_debug_disk(debug)
             warm_caches(config)
+            start_executor_cache_scheduler(config, allow_prompt=False)
         try:
             yield
         finally:
@@ -1226,7 +1230,7 @@ def create_app(
         cyt_config: dict[str, Any] | None = getattr(request.app.state, "cyt_config", None)
         if cyt_config is not None:
             from cyt.config import uses_executor_tool_catalog
-            from cyt.tools.sources.executor_http import executor_catalog_health_snapshot
+            from cyt.executor.http import executor_catalog_health_snapshot
 
             if uses_executor_tool_catalog(cyt_config):
                 payload.update(executor_catalog_health_snapshot(cyt_config))

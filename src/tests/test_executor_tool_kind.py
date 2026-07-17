@@ -39,7 +39,7 @@ def test_prepare_hook_executor_tool_pruning_sets_tool_kind_on_all_contexts() -> 
     mcp_cache = {"tools_list": [{"name": "execute"}], "execute_skill": "# execute"}
 
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         return_value=mcp_cache,
     ) as cache_mock:
         loaded = prepare_hook_executor_tool_pruning(
@@ -63,7 +63,7 @@ def test_prepare_hook_executor_tool_pruning_noop_in_proxy_mode() -> None:
         },
     }
     with patch(
-        "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+        "cyt.executor.http.get_executor_mcp_cache",
         side_effect=AssertionError("must not warm MCP cache in proxy mode"),
     ):
         assert prepare_hook_executor_tool_pruning(config, ctx) is None
@@ -108,7 +108,7 @@ def _capture_filter_tools_contexts(
         ),
         patch("cyt.pruners.tools_filter.request_pass_through", return_value=False),
         patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             return_value=None,
         ),
     ):
@@ -160,7 +160,7 @@ def test_filter_tools_for_query_warms_mcp_cache_on_hook_executor() -> None:
         ),
         patch("cyt.pruners.tools_filter.request_pass_through", return_value=False),
         patch(
-            "cyt.tools.sources.executor_http.get_executor_mcp_cache",
+            "cyt.executor.http.get_executor_mcp_cache",
             return_value={"tools_list": [], "execute_skill": ""},
         ) as cache_mock,
     ):

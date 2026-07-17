@@ -481,8 +481,8 @@ def load_tool_definition(tool_json_path: Path) -> dict[str, Any]:
 
 def _executor_catalog_slug_for_config(config: dict[str, Any]) -> str:
     from cyt.config import tools_hook_executor_token_var, tools_hook_executor_url
-    from cyt.tools.sources.executor_catalog_disk import normalize_executor_url_slug
-    from cyt.tools.sources.executor_http import _resolve_executor_token
+    from cyt.executor.catalog_disk import normalize_executor_url_slug
+    from cyt.executor.http import _resolve_executor_token
 
     url = tools_hook_executor_url(config)
     token_var = tools_hook_executor_token_var(config)
@@ -492,7 +492,7 @@ def _executor_catalog_slug_for_config(config: dict[str, Any]) -> str:
 
 def _executor_catalog_disk_available(config: dict[str, Any]) -> bool:
     from cyt.config import tools_hook_executor_url
-    from cyt.tools.sources.executor_catalog_disk import (
+    from cyt.executor.catalog_disk import (
         normalize_executor_url_slug,
         read_disk_catalog,
     )
@@ -517,7 +517,7 @@ def warm_real_catalogs(
 
     warm_caches(config)
     if uses_executor_tool_catalog(config):
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.executor.http import get_executor_mcp_cache
 
         get_executor_mcp_cache(config, allow_prompt=False)
     if agent is not None:
@@ -526,10 +526,10 @@ def warm_real_catalogs(
 
 def load_real_decomposed_tool_catalog(config: dict[str, Any]) -> dict[str, Any]:
     """Return the full decomposed tool catalog from warmed executor disk cache."""
+    from cyt.executor.http import load_executor_catalog_from_disk
     from cyt.indexer.build import anthropic_tools_to_catalog_entries
     from cyt.tools.catalog_cache import ensure_tool_catalog_cached
     from cyt.tools.registry import load_tool_catalog
-    from cyt.tools.sources.executor_http import load_executor_catalog_from_disk
 
     load_executor_catalog_from_disk(config)
     tools = load_tool_catalog(config)

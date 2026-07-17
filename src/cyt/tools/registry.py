@@ -42,7 +42,7 @@ def load_tool_catalog(config: dict[str, Any] | None = None) -> list[dict[str, An
     if tools_hook_tools_from(cfg) == "definitions":
         path = resolved_tools_hook_file(cfg)
         return _load_definitions_cached(path)
-    from cyt.tools.sources.executor_http import get_executor_catalog
+    from cyt.executor.http import get_executor_catalog
 
     return get_executor_catalog(cfg, allow_prompt=False, blocking=False)
 

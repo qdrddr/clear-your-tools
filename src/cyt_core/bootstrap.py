@@ -120,4 +120,10 @@ def bootstrap(*, config: Bm25SdkConfig | dict | None = None) -> AppContext:
     configure_sdk_runtime_defaults()
     configure_sdk_tokenizer_defaults()
     configure_sdk_bm25_defaults(config)
+    try:
+        from cyt.integrations.executor import wire_executor_runtime
+
+        wire_executor_runtime()
+    except ImportError:
+        pass
     return AppContext(version=_package_version())

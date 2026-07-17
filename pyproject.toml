@@ -81,6 +81,7 @@ exclude = [
 "src/cyt/config/defaults.yaml" = "cyt/config/defaults.yaml"
 "src/cyt/py.typed" = "cyt/py.typed"
 "src/cyt_core/py.typed" = "cyt_core/py.typed"
+"src/cyt/executor/py.typed" = "cyt/executor/py.typed"
 
 [dependency-groups]
 # Development tools (linters, type-checkers) and utilities
@@ -254,7 +255,7 @@ exclude_lines = [
 ]
 
 [tool.codespell]
-skip = [ "sdk/typescript/package-lock.json", ]
+skip = "sdk/typescript/package-lock.json,postman/**"
 ignore-words-list = [
     "fallow",
     "Bui",

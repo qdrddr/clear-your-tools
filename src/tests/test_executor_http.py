@@ -3,32 +3,30 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
-from collections.abc import Callable, Coroutine, Iterable, Mapping
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import httpx
 
-from cyt.tools.sources.executor_catalog_disk import (
+from cyt.executor.catalog_disk import (
     normalize_executor_url_slug,
     raw_catalog_content_hash,
     raw_executor_mcp_content_hash,
     read_disk_catalog,
     write_disk_catalog,
 )
-from cyt.tools.sources.executor_http import (
+from cyt.executor.http import (
     _cache_key_for_config,
-    _ExecutorCacheKey,
     clear_executor_catalog_cache,
     fetch_executor_tools,
     get_executor_catalog,
     load_executor_tools,
     schedule_executor_catalog_refresh,
 )
-from cyt.tools.sources.executor_mcp import (
+from cyt.executor.mcp import (
     _parse_jsonrpc_body,
     _skill_text_from_call_result,
 )
@@ -94,7 +92,7 @@ def test_write_disk_catalog_skips_when_hash_unchanged(tmp_path: Path) -> None:
     mtime_before = path.stat().st_mtime_ns
 
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         action = write_disk_catalog(
@@ -138,7 +136,7 @@ def test_write_disk_catalog_rewrites_when_schema_changes(tmp_path: Path) -> None
     new_hash = raw_catalog_content_hash(new_tools)
 
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         action = write_disk_catalog(
@@ -151,7 +149,7 @@ def test_write_disk_catalog_rewrites_when_schema_changes(tmp_path: Path) -> None
     assert action == "disk_write_updated"
     assert path.stat().st_mtime_ns != mtime_before
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         stored = read_disk_catalog(slug)
@@ -171,7 +169,7 @@ def test_write_disk_catalog_stores_executor_mcp_block(tmp_path: Path) -> None:
     cache_dir = tmp_path / "executor-catalog"
 
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         action = write_disk_catalog(
@@ -216,7 +214,7 @@ def test_write_disk_catalog_preserves_executor_when_omitted(tmp_path: Path) -> N
     )
 
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         action = write_disk_catalog(
@@ -258,7 +256,7 @@ def test_write_disk_catalog_skips_when_tools_and_executor_unchanged(tmp_path: Pa
     mtime_before = path.stat().st_mtime_ns
 
     with patch(
-        "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+        "cyt.executor.catalog_disk.executor_catalog_cache_dir",
         return_value=cache_dir,
     ):
         action = write_disk_catalog(
@@ -312,38 +310,38 @@ def test_fetch_executor_tools_blocking_normalizes_list_and_schema() -> None:
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("secret-token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_http._load_catalog_from_disk",
+            "cyt.executor.http._load_catalog_from_disk",
             return_value=False,
         ),
         patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
             side_effect=lambda coro: (
                 coro.close(),
-                (expected, mcp_cache, None),
+                (expected, mcp_cache),
             )[1],
         ) as run_mock,
         patch(
-            "cyt.tools.sources.executor_http.write_disk_catalog",
+            "cyt.executor.http.write_disk_catalog",
         ) as write_mock,
     ):
         tools = fetch_executor_tools(_CONFIG, blocking=True)
 
     assert tools == expected
-    run_mock.assert_called_once()
+    assert run_mock.call_count == 2
     write_mock.assert_called_once()
     assert write_mock.call_args.kwargs["executor"] == mcp_cache
 
 
 def test_fetch_executor_tools_blocking_uses_memory_cache_without_network() -> None:
     cached = [{"name": "tools.cached.tool", "description": "Cached"}]
-    from cyt.tools.sources import executor_http
+    from cyt.executor import http as executor_http
 
     with patch(
-        "cyt.tools.sources.executor_http.resolve_credential",
+        "cyt.executor.http.resolve_credential",
         return_value=("token", "keyring"),
     ):
         key = executor_http._cache_key_for_config(_CONFIG, "token")
@@ -356,7 +354,7 @@ def test_fetch_executor_tools_blocking_uses_memory_cache_without_network() -> No
         state.updated_at = time.monotonic()
 
         with patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
         ) as run_mock:
             tools = fetch_executor_tools(_CONFIG, blocking=True)
 
@@ -373,15 +371,15 @@ def test_fetch_executor_tools_blocking_returns_stale_on_http_error() -> None:
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_http._load_catalog_from_disk",
+            "cyt.executor.http._load_catalog_from_disk",
             return_value=False,
         ),
         patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
             side_effect=_raise_http_error,
         ),
     ):
@@ -389,128 +387,55 @@ def test_fetch_executor_tools_blocking_returns_stale_on_http_error() -> None:
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_http._load_catalog_from_disk",
+            "cyt.executor.http._load_catalog_from_disk",
             return_value=False,
         ),
         patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
             side_effect=_raise_http_error,
         ),
         patch(
-            "cyt.tools.sources.executor_http._snapshot_tools",
+            "cyt.executor.http._snapshot_tools",
             return_value=stale,
         ),
     ):
         assert fetch_executor_tools(_CONFIG, blocking=True) == stale
 
 
-def test_load_executor_tools_returns_stale_while_refresh_in_progress() -> None:
+def test_load_executor_tools_never_blocks_on_background_refresh() -> None:
     stale = [{"name": "tools.stale.tool", "description": "Old catalog"}]
-    refreshed = [{"name": "tools.new.tool", "description": "New catalog"}]
-    refresh_started = threading.Event()
-    refresh_release = threading.Event()
-    refresh_threads: list[threading.Thread] = []
-
-    class _TrackingThread(threading.Thread):
-        def __init__(
-            self,
-            group: None = None,
-            target: Callable[..., object] | None = None,
-            name: str | None = None,
-            args: Iterable[object] = (),
-            kwargs: Mapping[str, object] | None = None,
-            *,
-            daemon: bool | None = None,
-        ) -> None:
-            super().__init__(
-                group=group,
-                target=target,
-                name=name,
-                args=args,
-                kwargs=kwargs,
-                daemon=daemon,
-            )
-            refresh_threads.append(self)
-
-    def _slow_refresh(
-        *,
-        config: dict[str, object],
-        token: str | None,
-        cache_key: _ExecutorCacheKey,
-    ) -> None:
-        refresh_started.set()
-        refresh_release.wait(timeout=2.0)
-        from cyt.tools.sources import executor_http
-
-        with executor_http._catalog_lock:
-            executor_state = executor_http._catalog_states[
-                executor_http._cache_key_for_config(_CONFIG, "token")
-            ]
-            executor_state.tools = refreshed
-            executor_state.updated_at = time.monotonic()
-            executor_state.refresh_in_progress = False
-            executor_state.refresh_done.set()
-
-    from cyt.tools.sources import executor_http
+    from cyt.executor import http as executor_http
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_http._load_catalog_from_disk",
+            "cyt.executor.http._load_catalog_from_disk",
             return_value=False,
         ),
         patch(
-            "cyt.tools.sources.executor_http._run_background_refresh",
-            side_effect=_slow_refresh,
-        ),
-        patch(
-            "cyt.tools.sources.executor_http.threading.Thread",
-            _TrackingThread,
-        ),
+            "cyt.executor.http._ensure_scheduler_started",
+        ) as scheduler_mock,
     ):
         key = executor_http._cache_key_for_config(_CONFIG, "token")
         state = executor_http._get_state(key)
         state.tools = stale
-        state.updated_at = time.monotonic() - 120.0
+        state.executor_mcp = {
+            "tools_list": [{"name": "execute"}],
+            "execute_skill": "# execute",
+        }
+        state.updated_at = time.monotonic()
 
         tools = load_executor_tools(_CONFIG, allow_prompt=False, blocking=False)
 
-        assert tools == stale
-        assert refresh_started.wait(timeout=2.0)
-
-        with patch(
-            "cyt.tools.sources.executor_http.schedule_executor_catalog_refresh",
-        ):
-            still_stale = load_executor_tools(_CONFIG, allow_prompt=False, blocking=False)
-
-        assert still_stale == stale
-
-        refresh_release.set()
-        for thread in refresh_threads:
-            thread.join(timeout=2.0)
-
-        with executor_http._catalog_lock:
-            executor_state = executor_http._catalog_states[
-                executor_http._cache_key_for_config(_CONFIG, "token")
-            ]
-            executor_state.tools = refreshed
-            executor_state.updated_at = time.monotonic()
-            executor_state.refresh_in_progress = False
-            executor_state.refresh_done.set()
-
-        with patch(
-            "cyt.tools.sources.executor_http.schedule_executor_catalog_refresh",
-        ):
-            updated = load_executor_tools(_CONFIG, allow_prompt=False, blocking=False)
-
-    assert updated == refreshed
+    assert tools == stale
+    scheduler_mock.assert_called_once()
 
 
 def test_get_executor_catalog_loads_disk_on_cold_start(tmp_path: Path) -> None:
@@ -541,18 +466,18 @@ def test_get_executor_catalog_loads_disk_on_cold_start(tmp_path: Path) -> None:
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+            "cyt.executor.catalog_disk.executor_catalog_cache_dir",
             return_value=cache_dir,
         ),
         patch(
-            "cyt.tools.sources.executor_http.schedule_executor_catalog_refresh",
+            "cyt.executor.http._ensure_scheduler_started",
         ),
         patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
         ) as run_mock,
     ):
         loaded = get_executor_catalog(_CONFIG, allow_prompt=False, blocking=False)
@@ -594,43 +519,39 @@ def test_executor_catalog_slug_is_pipeline_agnostic() -> None:
     )
     for cfg in (base, llm_config, rerank_config):
         with patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ):
             key = _cache_key_for_config(cfg, "token")
         assert key.slug == slug
 
 
-def test_schedule_executor_catalog_refresh_skips_when_not_stale() -> None:
-    now = time.monotonic()
+def test_schedule_executor_catalog_refresh_starts_scheduler() -> None:
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
-            return_value=("token", "keyring"),
+            "cyt.executor.cache_scheduler._executor_runtime_active",
+            return_value=True,
         ),
         patch(
-            "cyt.tools.sources.executor_http.time.monotonic",
-            return_value=now,
+            "cyt.executor.cache_scheduler.tools_hook_executor_url",
+            return_value="http://localhost:4789",
         ),
         patch(
-            "cyt.tools.sources.executor_http._get_state",
-        ) as get_state_mock,
+            "cyt.executor.cache_scheduler._resolve_executor_token",
+            return_value="token",
+        ),
         patch(
-            "cyt.tools.sources.executor_http.threading.Thread",
-        ) as thread_mock,
+            "cyt.executor.cache_scheduler.start_executor_cache_scheduler",
+        ) as start_mock,
+        patch(
+            "cyt.executor.cache_scheduler._get_scheduler_state",
+        ) as state_mock,
     ):
-        state = get_state_mock.return_value
-        state.tools = [{"name": "tools.cached"}]
-        state.executor_mcp = {
-            "tools_list": [{"name": "execute"}],
-            "execute_skill": "# execute",
-        }
-        state.updated_at = now
-        state.refresh_in_progress = False
-
+        state = state_mock.return_value
+        state.thread = None
         schedule_executor_catalog_refresh(_CONFIG, force=False)
 
-    thread_mock.assert_not_called()
+    start_mock.assert_called_once()
 
 
 def test_get_executor_mcp_cache_loads_from_disk_without_network(tmp_path: Path) -> None:
@@ -667,21 +588,21 @@ def test_get_executor_mcp_cache_loads_from_disk_without_network(tmp_path: Path) 
 
     with (
         patch(
-            "cyt.tools.sources.executor_http.resolve_credential",
+            "cyt.executor.http.resolve_credential",
             return_value=("token", "keyring"),
         ),
         patch(
-            "cyt.tools.sources.executor_catalog_disk.executor_catalog_cache_dir",
+            "cyt.executor.catalog_disk.executor_catalog_cache_dir",
             return_value=cache_dir,
         ),
         patch(
-            "cyt.tools.sources.executor_http.schedule_executor_catalog_refresh",
+            "cyt.executor.http._ensure_scheduler_started",
         ) as schedule_mock,
         patch(
-            "cyt.tools.sources.executor_http.asyncio.run",
+            "cyt.executor.http.asyncio.run",
         ) as run_mock,
     ):
-        from cyt.tools.sources.executor_http import get_executor_mcp_cache
+        from cyt.executor.http import get_executor_mcp_cache
 
         loaded = get_executor_mcp_cache(_CONFIG, allow_prompt=False)
 

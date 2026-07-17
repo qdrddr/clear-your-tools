@@ -15,9 +15,9 @@ from cyt.config import (
     tools_hook_executor_url,
     tools_hook_mcp_definitions_file,
 )
+from cyt.executor.http import fetch_executor_tools_for_cli
 from cyt.proxy.setup_wizard import _prompt
 from cyt.tools.hook_setup import build_pruning_tools_hook_save_overlay
-from cyt.tools.sources.executor_http import fetch_executor_tools_for_cli
 
 _CONFIG_SUFFIXES = {".yaml", ".yml"}
 
