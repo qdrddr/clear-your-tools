@@ -1,0 +1,271 @@
+$kind: http-example
+name: 01 - GET list connections
+request:
+  url: "{{base_url}}/api/connections"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+    date: Fri, 17 Jul 2026 06:02:36 GMT
+    content-length: "5102"
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "owner": "org",
+          "name": "localcodereviewgraph",
+          "integration": "code_review_graph_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.code_review_graph_mcp.org.localcodereviewgraph",
+          "identityLabel": "Local Code Review Graph",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "degraded",
+            "checkedAt": 1784250303281,
+            "detail": "MCP discovery timed out after 15000ms"
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localcodebasememory",
+          "integration": "codebase_memory_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.codebase_memory_mcp.org.localcodebasememory",
+          "identityLabel": "Local Codebase Memory",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784242106691
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localcontext7mcp",
+          "integration": "context7_mcp",
+          "template": "oauth2",
+          "provider": "keychain",
+          "address": "tools.context7_mcp.org.localcontext7mcp",
+          "identityLabel": "Local Context7 MCP",
+          "description": null,
+          "expiresAt": 1784750238837,
+          "oauthClient": "dcr-context7-com",
+          "oauthClientOwner": "org",
+          "oauthScope": "email offline_access profile",
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784249536290,
+            "detail": "Credential resolved (no probe configured)."
+          }
+        },
+        {
+          "owner": "org",
+          "name": "tmloansnew",
+          "integration": "dbhub",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.dbhub.org.tmloansnew",
+          "identityLabel": "tmloansnew",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "degraded",
+            "checkedAt": 1784250277425,
+            "detail": "Failed connecting to MCP server: Failed connecting via sse"
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localdeepwikimcp",
+          "integration": "deepwiki_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.deepwiki_mcp.org.localdeepwikimcp",
+          "identityLabel": "Local Deepwiki MCP",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784242358562
+          }
+        },
+        {
+          "owner": "org",
+          "name": "default",
+          "integration": "fff",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.fff.org.default",
+          "identityLabel": null,
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784242359662
+          }
+        },
+        {
+          "owner": "org",
+          "name": "default",
+          "integration": "gitnexus",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.gitnexus.org.default",
+          "identityLabel": null,
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "degraded",
+            "checkedAt": 1784250303380,
+            "detail": "MCP discovery timed out after 15000ms"
+          }
+        },
+        {
+          "owner": "org",
+          "name": "default",
+          "integration": "graphify",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.graphify.org.default",
+          "identityLabel": null,
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "degraded",
+            "checkedAt": 1784250303037,
+            "detail": "MCP discovery timed out after 15000ms"
+          }
+        },
+        {
+          "owner": "org",
+          "name": "default",
+          "integration": "hedl_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.hedl_mcp.org.default",
+          "identityLabel": null,
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784241333311
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localjcodemunch",
+          "integration": "jcodemunch",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.jcodemunch.org.localjcodemunch",
+          "identityLabel": "Local Jcodemunch",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "degraded",
+            "checkedAt": 1784250303645,
+            "detail": "MCP discovery timed out after 15000ms"
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localleanctxmcp",
+          "integration": "lean_ctx_mcp",
+          "template": "env",
+          "provider": "keychain",
+          "address": "tools.lean_ctx_mcp.org.localleanctxmcp",
+          "identityLabel": "Local Lean Ctx MCP",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784249858489
+          }
+        },
+        {
+          "owner": "org",
+          "name": "localsemble",
+          "integration": "semble_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.semble_mcp.org.localsemble",
+          "identityLabel": "Local Semble",
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784249572674
+          }
+        },
+        {
+          "owner": "org",
+          "name": "default",
+          "integration": "serve_mcp",
+          "template": "none",
+          "provider": "keychain",
+          "address": "tools.serve_mcp.org.default",
+          "identityLabel": null,
+          "description": null,
+          "expiresAt": null,
+          "oauthClient": null,
+          "oauthClientOwner": null,
+          "oauthScope": null,
+          "missingOAuthScopes": [],
+          "lastHealth": {
+            "status": "healthy",
+            "checkedAt": 1784249869358
+          }
+        }
+      ]
+order: 3937193928324538
