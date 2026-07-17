@@ -91,6 +91,26 @@ read_cargo_dep_version() {
 	fi
 }
 
+submodule_git() {
+	local dir="$1"
+	shift
+	env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE git -C "${dir}" "$@"
+}
+
+submodule_at_tag() {
+	local dir="$1"
+	local tag="$2"
+	local target current
+
+	if ! submodule_git "${dir}" rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
+		return 1
+	fi
+
+	target="$(submodule_git "${dir}" rev-parse "${tag}^{commit}")"
+	current="$(submodule_git "${dir}" rev-parse 'HEAD^{commit}' 2>/dev/null || true)"
+	[[ -n "${current}" && "${current}" == "${target}" ]]
+}
+
 sync_chunk_submodule() {
 	local name="$1"
 	local dir="$2"
@@ -109,19 +129,23 @@ sync_chunk_submodule() {
 		return 0
 	fi
 
-	(
-		cd "${dir}"
-		if ! git fetch origin --tags 2>/dev/null; then
-			printf 'warning: %s git fetch failed; using local tags only\n' \
-				"${name}" | shorten_paths >&2
-		fi
-		git pull --ff-only 2>/dev/null || git pull --ff-only origin 2>/dev/null || true
-		if ! git rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
-			printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
-			exit 1
-		fi
-		git checkout "${tag}"
-	)
+	if submodule_at_tag "${dir}" "${tag}"; then
+		printf 'submodule %s already at %s\n' "${name}" "${tag}" | shorten_paths
+		return 0
+	fi
+
+	if ! submodule_git "${dir}" rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
+		printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
+		return 1
+	fi
+
+	if ! submodule_git "${dir}" fetch origin --tags 2>/dev/null; then
+		printf 'warning: %s git fetch failed; using local tags only\n' \
+			"${name}" | shorten_paths >&2
+	fi
+	submodule_git "${dir}" pull --ff-only 2>/dev/null ||
+		submodule_git "${dir}" pull --ff-only origin 2>/dev/null || true
+	submodule_git "${dir}" checkout "${tag}"
 
 	printf 'synced submodule %s to %s\n' "${name}" "${tag}" | shorten_paths
 }
@@ -266,6 +290,25 @@ update_go_module_version() {
 	mv "${tmp}" "${GO_VERSION}"
 }
 
+print_sync_summary() {
+	local version="$1"
+	local tag="$2"
+
+	cat <<EOF | shorten_paths
+synced version ${version} to:
+  ${ROOT_PYPROJECT} (project + cyt-indexer-sdk dependency)
+  ${CARGO_TOML}
+  ${CARGO_LOCK} (cyt-indexer)
+  ${SDK_PYPROJECT}
+  ${UV_LOCK} (clear-your-tools + cyt-indexer-sdk)
+  ${PACKAGE_JSON}
+  ${PACKAGE_LOCK}
+  ${C_CMAKE} (project VERSION)
+  ${GO_VERSION} (Version)
+  ${TAG_FILE} (tag=${tag})
+EOF
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	usage
 	exit 0
@@ -305,6 +348,12 @@ for file in \
 done
 
 tag="v${version}"
+current_version="$(read_root_pyproject_version)"
+if [[ "${version}" == "${current_version}" ]]; then
+	sync_chunk_submodules_from_cargo
+	print_sync_summary "${version}" "${tag}"
+	exit 0
+fi
 
 update_toml_version "${ROOT_PYPROJECT}" "${version}"
 update_root_pyproject_dependency "${version}"
@@ -320,16 +369,4 @@ update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 sync_chunk_submodules_from_cargo
 
-cat <<EOF | shorten_paths
-synced version ${version} to:
-  ${ROOT_PYPROJECT} (project + cyt-indexer-sdk dependency)
-  ${CARGO_TOML}
-  ${CARGO_LOCK} (cyt-indexer)
-  ${SDK_PYPROJECT}
-  ${UV_LOCK} (clear-your-tools + cyt-indexer-sdk)
-  ${PACKAGE_JSON}
-  ${PACKAGE_LOCK}
-  ${C_CMAKE} (project VERSION)
-  ${GO_VERSION} (Version)
-  ${TAG_FILE} (tag=${tag})
-EOF
+print_sync_summary "${version}" "${tag}"

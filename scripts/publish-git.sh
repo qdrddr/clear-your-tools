@@ -5,6 +5,7 @@
 #   ./scripts/publish-git.sh v1.0.8
 #   ./scripts/publish-git.sh bump-patch
 #   ./scripts/publish-git.sh bump-minor
+#   ./scripts/publish-git.sh bump-major
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,18 +17,20 @@ export SHORTEN_ROOT="${ROOT}"
 
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") TAG | bump-patch | bump-minor
+Usage: $(basename "$0") TAG | bump-patch | bump-minor | bump-major
 
 Examples:
   $(basename "$0") v1.0.8
   $(basename "$0") bump-patch
   $(basename "$0") bump-minor
+  $(basename "$0") bump-major
 
-Auto-bump (bump-patch / bump-minor):
+Auto-bump (bump-patch / bump-minor / bump-major):
   - Fetch the latest git tags and GitHub releases matching vMAJOR.MINOR.PATCH
   - Pick the highest version among both
   - bump-patch: increment PATCH, e.g. v1.0.7 -> v1.0.8
   - bump-minor: increment MINOR and reset PATCH to 0, e.g. v1.0.7 -> v1.1.0
+  - bump-major: increment MAJOR and reset MINOR and PATCH to 0, e.g. v1.2.3 -> v2.0.0
 
 Steps:
   1. Run scripts/sync-version.sh with the semver (without the leading v)
@@ -72,6 +75,19 @@ ${ROOT}/search/.publish-tag
 EOF
 }
 
+stage_version_files() {
+	local file
+
+	mapfile -t files < <(version_files)
+	for file in "${files[@]}"; do
+		if [[ "${file}" == "${ROOT}/search/.publish-tag" ]]; then
+			git add -f -- "${file}"
+		else
+			git add -- "${file}"
+		fi
+	done
+}
+
 semver_tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 collect_version_tags() {
@@ -110,6 +126,11 @@ resolve_bump_tag() {
 		;;
 	bump-minor)
 		minor=$((minor + 1))
+		patch=0
+		;;
+	bump-major)
+		major=$((major + 1))
+		minor=0
 		patch=0
 		;;
 	*)
@@ -162,7 +183,7 @@ require_command gh
 
 arg="$1"
 case "${arg}" in
-bump-patch | bump-minor)
+bump-patch | bump-minor | bump-major)
 	tag="$(resolve_bump_tag "${arg}")"
 	echo "${arg} resolved next tag: ${tag}"
 	;;
@@ -187,21 +208,15 @@ if [[ -z "${branch}" ]]; then
 	exit 1
 fi
 
-mapfile -t files < <(version_files)
-
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
 
-for file in "${files[@]}"; do
-	if [[ "${file}" == "${ROOT}/search/.publish-tag" ]]; then
-		git add -f -- "${file}"
-	else
-		git add -- "${file}"
-	fi
-done
+stage_version_files
 if git diff --cached --quiet; then
 	echo "version manifests already at ${semver}; skipping commit"
 else
-	git commit -m "version bump to ${tag}"
+	# sync-version already ran above; skip the hook here so submodule git
+	# operations do not run while git commit holds the parent index lock.
+	SKIP=sync-version git commit -m "version bump to ${tag}"
 fi
 
 git push origin HEAD
