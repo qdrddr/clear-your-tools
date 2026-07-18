@@ -71,6 +71,8 @@ def test_normalize_tool_builds_composite_name() -> None:
             "title": "Resolve Context7 Library ID",
             "description": "Resolve library id",
             "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": True},
+            "execution": {"taskSupport": "forbidden"},
         },
         server_name="Context7",
         server_instructions="Use docs.",
@@ -78,6 +80,8 @@ def test_normalize_tool_builds_composite_name() -> None:
     assert tool is not None
     assert tool["name"] == "@ctx7/resolve-library-id"
     assert tool["tool_name"] == "resolve-library-id"
+    assert tool["annotations"] == {"readOnlyHint": True}
+    assert tool["execution"] == {"taskSupport": "forbidden"}
     assert tool["mcpc_session"] == "@ctx7"
 
 

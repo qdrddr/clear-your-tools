@@ -119,7 +119,7 @@ def _normalize_tool(
         schema = {}
     description = str(tool.get("description") or "").strip()
     title = str(tool.get("title") or tool_name).strip()
-    return {
+    normalized: dict[str, Any] = {
         "name": f"{session_name}/{tool_name}",
         "tool_name": tool_name,
         "mcpc_session": session_name,
@@ -129,6 +129,13 @@ def _normalize_tool(
         "server_name": server_name,
         "server_instructions": server_instructions,
     }
+    annotations = tool.get("annotations")
+    if isinstance(annotations, dict):
+        normalized["annotations"] = annotations
+    execution = tool.get("execution")
+    if isinstance(execution, dict):
+        normalized["execution"] = execution
+    return normalized
 
 
 def _session_server_name(session_info: dict[str, Any]) -> str:
