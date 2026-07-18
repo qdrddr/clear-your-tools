@@ -294,7 +294,7 @@ def test_coordinator_runs_parallel_skills_search_for_executor_only(
                 return_value="<agent-skills>executor</agent-skills>",
             ),
             patch(
-                "cyt.skills.cli.format_agent_tools",
+                "cyt.skills.cli._format_hook_tool_injection",
                 return_value="<agent-tools>tools</agent-tools>",
             ),
         ):

@@ -47,7 +47,6 @@ from cyt.skills.hook_payload import (
     normalize_hook_payload,
     prompt_from_payload,
     session_id,
-    workspace_paths_for_tools_inject,
 )
 from cyt.skills.hook_quiet import configure_hook_quiet, hook_quiet_stderr, hook_safe_stdout
 from cyt.skills.inject import format_agent_skills, injection_token_count
@@ -69,8 +68,11 @@ from cyt.tools.budget import (
     tools_budget_precheck,
     tools_inject_allowed,
 )
-from cyt.tools.hook import finish_tools_hook_injection_from_coordinator, handle_user_prompt_tools
-from cyt.tools.inject import format_agent_tools
+from cyt.tools.hook import (
+    _format_hook_tool_injection,
+    finish_tools_hook_injection_from_coordinator,
+    handle_user_prompt_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -641,10 +643,10 @@ def _append_coordinated_tools_injection(
         allow_file_read=allow_transcript_file_read,
     )
     gated = filter_pre_exposed_tools(pruned, session_text)
-    injected_tools = format_agent_tools(
+    injected_tools = _format_hook_tool_injection(
         gated,
-        include_executor_workspace_note=uses_executor_tool_catalog(config),
-        workspace_paths=workspace_paths_for_tools_inject(payload),
+        config,
+        payload,
     )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")

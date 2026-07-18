@@ -174,6 +174,92 @@ def test_hook_injects_mcpc_agent_tools_block() -> None:
     assert "<json-schema>" in context
 
 
+def test_coordinated_hook_injects_mcpc_agent_tools_block() -> None:
+    catalog = [
+        {
+            "name": "@fff/grep",
+            "tool_name": "grep",
+            "mcpc_session": "@fff",
+            "title": "Grep",
+            "description": "Search file contents",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+            "server_name": "fff",
+            "server_instructions": "Use grep for content search.",
+        },
+    ]
+    config = {
+        "skills": {
+            "enabled": True,
+            "pipeline": "bm25",
+            "directories": ["/tmp/skills"],
+            "max_tokens_per_request": 4000,
+            "hook": {
+                "request_budget_fraction": 50.0,
+                "inject_cap_multiplier_of_request_tokens": 5.0,
+            },
+        },
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "enabled": True,
+                "hook": {
+                    "tools_from": "mcpc",
+                    "mcpc": {"executable": "mcpc"},
+                },
+                "sequence": ["bm25"],
+            },
+        },
+        "stats": {"database": {"path": "/tmp/stats.db"}},
+    }
+
+    with (
+        patch.object(skills_cli, "load_config", return_value=config),
+        patch("cyt.config.tools_hook_file_missing", return_value=False),
+        patch(
+            "cyt.pruning.coordinator.filter_tools_for_query",
+            return_value=PruneResult(
+                tools=catalog,
+                status="applied",
+                query="grep files",
+                tools_in=1,
+                mcp_tools_in=1,
+                tools_out=1,
+                error=None,
+            ),
+        ),
+        patch("cyt.pruning.coordinator._run_skills_search", return_value=[{"skill": "one"}]),
+        patch("cyt.pruning.hook_bridge.load_tool_catalog", return_value=catalog),
+        patch(
+            "cyt.pruning.hook_bridge.eligible_skills_after_gate",
+            return_value=[{"path": "skill.md"}],
+        ),
+        patch("cyt.pruning.coordinator.effective_pruning_pipeline", return_value=["bm25"]),
+        patch("cyt.pruning.coordinator.effective_skills_pipeline", return_value="bm25"),
+        patch(
+            "cyt.skills.cli.format_agent_skills",
+            return_value="<agent-skills>skills</agent-skills>",
+        ),
+        patch("cyt.tools.hook.record_tools_hook_injection"),
+        patch.object(sys, "stdin", StringIO(json.dumps(_hook_payload("grep files")))),
+    ):
+        stdout = StringIO()
+        with patch.object(sys, "stdout", stdout):
+            skills_cli.run(debug=False)
+
+    output = json.loads(stdout.getvalue())
+    context = output["hookSpecificOutput"]["additionalContext"]
+    assert output["hookSpecificOutput"]["cytRulesMergeSections"] is True
+    assert "<server name='fff'" in context
+    assert "name='grep'" in context
+    assert "name='@fff/grep'" not in context
+    assert "<cli>" in context
+    assert "<json-schema>" in context
+
+
 def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> dict[str, Any]:
     return {
         "skills": {
@@ -242,7 +328,10 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
             "cyt.skills.cli.format_agent_skills",
             return_value="<agent-skills>skills</agent-skills>",
         ),
-        patch("cyt.skills.cli.format_agent_tools", return_value="<agent-tools>tools</agent-tools>"),
+        patch(
+            "cyt.skills.cli._format_hook_tool_injection",
+            return_value="<agent-tools>tools</agent-tools>",
+        ),
     ):
         outcome, _details, _context = skills_cli._handle_user_prompt(
             payload,
