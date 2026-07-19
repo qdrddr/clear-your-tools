@@ -59,7 +59,9 @@ def clear_mcpc_catalog_cache() -> None:
         _catalog_states.clear()
     clear_session_health_cache()
     from cyt.mcpc.cache_scheduler import clear_mcpc_cache_schedulers
+    from cyt.mcpc.skills_cache import clear_mcpc_skills_cache
 
+    clear_mcpc_skills_cache()
     clear_mcpc_cache_schedulers()
 
 
@@ -108,6 +110,7 @@ def _normalize_tool(
     tool: dict[str, Any],
     server_name: str,
     server_instructions: str,
+    server_description: str = "",
 ) -> dict[str, Any] | None:
     tool_name = str(tool.get("name") or "").strip()
     if not tool_name:
@@ -128,6 +131,7 @@ def _normalize_tool(
         "input_schema": schema,
         "server_name": server_name,
         "server_instructions": server_instructions,
+        "server_description": server_description,
     }
     annotations = tool.get("annotations")
     if isinstance(annotations, dict):
@@ -151,6 +155,15 @@ def _session_instructions(session_info: dict[str, Any]) -> str:
     instructions = session_info.get("instructions")
     if isinstance(instructions, str):
         return instructions.strip()
+    return ""
+
+
+def _session_server_description(session_info: dict[str, Any]) -> str:
+    server_info = session_info.get("serverInfo")
+    if isinstance(server_info, dict):
+        description = server_info.get("description")
+        if isinstance(description, str):
+            return description.strip()
     return ""
 
 
@@ -198,9 +211,11 @@ def _fetch_catalog_from_cli(
         tools_raw, session_info = _fetch_session_tools(executable, session_name)
         server_name = _session_server_name(session_info)
         server_instructions = _session_instructions(session_info)
+        server_description = _session_server_description(session_info)
         session_details[session_name] = {
             "server_name": server_name,
             "server_instructions": server_instructions,
+            "server_description": server_description,
             "status": str(sessions_meta.get(session_name, {}).get("status") or "live"),
         }
         for tool in tools_raw:
@@ -209,6 +224,7 @@ def _fetch_catalog_from_cli(
                 tool=tool,
                 server_name=server_name,
                 server_instructions=server_instructions,
+                server_description=server_description,
             )
             if normalized is not None:
                 tools.append(normalized)

@@ -5,6 +5,10 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from cyt.config import skills_enabled, uses_mcpc_tool_catalog
+from cyt.mcpc.help_skill import append_mcpc_help_skill_entries
+from cyt.mcpc.session_resources import append_mcpc_session_resource_entries
+from cyt.mcpc.session_skills import append_mcpc_session_skill_entries
 from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruning.coordinator import ToolSource, coordinate_skills_tools_prune
@@ -13,6 +17,17 @@ from cyt.skills.executor_skill import append_executor_skill_entries
 from cyt.skills.hook_quiet import hook_safe_stdout
 from cyt.skills.search import MatchedSkill, eligible_skills_after_gate
 from cyt.tools.registry import load_tool_catalog
+
+
+def _append_mcpc_skill_resource_entries(
+    entries: list[Any],
+    config: dict[str, Any],
+) -> list[Any]:
+    if not uses_mcpc_tool_catalog(config) or not skills_enabled(config):
+        return entries
+    merged = append_mcpc_help_skill_entries(entries, config)
+    merged = append_mcpc_session_skill_entries(merged, config)
+    return append_mcpc_session_resource_entries(merged, config)
 
 
 def run_hook_coordinated_prune(
@@ -44,6 +59,7 @@ def run_hook_coordinated_prune(
 
     base_entries = build_registry_for_hook_payload(config, payload) if skills_allowed else []
     all_entries = append_executor_skill_entries(base_entries, config)
+    all_entries = _append_mcpc_skill_resource_entries(all_entries, config)
     skill_entries = (
         eligible_skills_after_gate(query, all_entries, config=config) if all_entries else []
     )

@@ -37,9 +37,11 @@ class _SchedulerState:
     thread: threading.Thread | None = None
     session_in_progress: bool = False
     tools_in_progress: bool = False
+    skills_in_progress: bool = False
     disk_in_progress: bool = False
     last_session_refresh_start: float = 0.0
     last_tools_refresh_start: float = 0.0
+    last_skills_refresh_start: float = 0.0
     last_disk_flush_start: float = 0.0
     last_session_fingerprint: str = ""
     force_tools_refresh: bool = False
@@ -118,6 +120,7 @@ def _scheduler_loop(*, config: dict[str, Any], cache_key: _McpcCacheKey) -> None
     cache_settings = tools_hook_mcpc_cache_settings(config)
     session_interval = float(cache_settings.get("session_refresh_seconds") or 1.0)
     tools_interval = float(cache_settings.get("tools_refresh_seconds") or 120.0)
+    skills_interval = float(cache_settings.get("skills_refresh_seconds") or 120.0)
     disk_interval = float(cache_settings.get("disk_flush_seconds") or 900.0)
 
     while not state.stop_event.is_set():
@@ -151,6 +154,20 @@ def _scheduler_loop(*, config: dict[str, Any], cache_key: _McpcCacheKey) -> None
                 state,
                 "tools_in_progress",
                 _run_tools_refresh,
+                config=config,
+                cache_key=cache_key,
+            )
+
+        skills_due = (
+            state.last_skills_refresh_start == 0.0
+            or now - state.last_skills_refresh_start >= skills_interval
+        )
+        if skills_due and not state.skills_in_progress and not state.session_in_progress:
+            state.last_skills_refresh_start = now
+            _start_job(
+                state,
+                "skills_in_progress",
+                _run_skills_refresh,
                 config=config,
                 cache_key=cache_key,
             )
@@ -218,6 +235,15 @@ def _run_tools_refresh(*, config: dict[str, Any], cache_key: _McpcCacheKey) -> N
             state.last_session_fingerprint = session_fingerprint_for_slug(cache_key.slug)
     except Exception as exc:
         logger.warning("mcpc tools refresh failed slug=%s: %s", cache_key.slug, exc)
+
+
+def _run_skills_refresh(*, config: dict[str, Any], cache_key: _McpcCacheKey) -> None:
+    from cyt.mcpc.skills_cache import refresh_mcpc_skills_snapshot
+
+    try:
+        refresh_mcpc_skills_snapshot(config)
+    except Exception as exc:
+        logger.warning("mcpc skills refresh failed slug=%s: %s", cache_key.slug, exc)
 
 
 def _run_disk_flush(*, config: dict[str, Any], cache_key: _McpcCacheKey) -> None:

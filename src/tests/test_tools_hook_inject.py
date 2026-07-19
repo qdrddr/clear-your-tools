@@ -329,7 +329,7 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
             return_value="<agent-skills>skills</agent-skills>",
         ),
         patch(
-            "cyt.skills.cli._format_hook_tool_injection",
+            "cyt.skills.cli.gate_and_format_hook_tools",
             return_value="<agent-tools>tools</agent-tools>",
         ),
     ):

@@ -144,3 +144,60 @@ def test_format_mcpc_agent_tools_nested_cli_payload() -> None:
         '"multiSelect":false}]}\' | mcpc @cursor tools-call AskUserQuestion'
     )
     assert expected_cli in text
+
+
+def test_format_mcpc_cli_and_json_schema_match_pruned_properties_only() -> None:
+    tools = [
+        {
+            "name": "@filesystem/read_text_file",
+            "tool_name": "read_text_file",
+            "mcpc_session": "@filesystem",
+            "title": "Read Text File",
+            "description": "Read a text file",
+            "input_schema": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "$schema": "http://json-schema.org/draft-07/schema#",
+            },
+            "annotations": {"openWorldHint": False, "readOnlyHint": True},
+            "execution": {"taskSupport": "forbidden"},
+            "server_name": "filesystem",
+        },
+    ]
+    text = format_mcpc_agent_tools(tools)
+    assert 'echo \'{"path":"string"}\' | mcpc @filesystem tools-call read_text_file' in text
+    assert "'properties':{'path':" in text
+    assert "'head':" not in text
+    assert "'tail':" not in text
+
+
+def test_format_mcpc_cli_includes_optional_survivors_in_json_schema() -> None:
+    tools = [
+        {
+            "name": "@filesystem/read_text_file",
+            "tool_name": "read_text_file",
+            "mcpc_session": "@filesystem",
+            "title": "Read Text File",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "head": {
+                        "type": "number",
+                        "description": "If provided, returns only the first N lines",
+                    },
+                    "tail": {
+                        "type": "number",
+                        "description": "If provided, returns only the last N lines",
+                    },
+                },
+                "required": ["path"],
+            },
+            "server_name": "filesystem",
+        },
+    ]
+    text = format_mcpc_agent_tools(tools)
+    assert 'echo \'{"path":"string","head":0,"tail":0}\'' in text
+    assert "'head':" in text
+    assert "'tail':" in text

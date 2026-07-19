@@ -55,6 +55,7 @@ def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict
         return {
             "session_refresh_seconds": 1,
             "tools_refresh_seconds": 120,
+            "skills_refresh_seconds": 120,
             "disk_flush_seconds": 900,
         }
     return _tools_hook_mcpc_cache_settings(config)

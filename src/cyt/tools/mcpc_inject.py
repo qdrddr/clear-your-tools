@@ -6,6 +6,7 @@ import json
 from collections import OrderedDict
 from typing import Any, cast
 
+from cyt.injection.mcpc_pre_exposed import McpcPreExposureFlags, compute_mcpc_pre_exposure_flags
 from cyt.tools.inject import _xml_single_quoted_attr, ensure_agent_tools_starts_on_new_line
 from cyt.tools.serialize import minimize_json_single_quotes
 
@@ -30,31 +31,40 @@ def _mcpc_agent_tools_description(*, include_workspace_note: bool) -> str:
 def _agent_tools_open_tag(
     *,
     workspace_paths: list[str] | None = None,
+    include_description: bool = True,
 ) -> str:
-    intro = _mcpc_agent_tools_description(include_workspace_note=True)
-    attrs = [f"description='{_xml_single_quoted_attr(intro)}'"]
+    attrs: list[str] = []
+    if include_description:
+        intro = _mcpc_agent_tools_description(include_workspace_note=True)
+        attrs.append(f"description='{_xml_single_quoted_attr(intro)}'")
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) == 1:
         attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
     elif paths:
         attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
-    return f"<agent-tools {' '.join(attrs)}>"
+    attr_text = f" {' '.join(attrs)}" if attrs else ""
+    return f"<agent-tools{attr_text}>"
 
 
-def _tool_json_schema_body(tool: dict[str, Any]) -> dict[str, Any]:
-    schema: dict[str, Any] = {}
-    raw_schema = tool.get("input_schema")
-    if isinstance(raw_schema, dict):
-        schema = raw_schema
-    else:
-        raw_input_schema = tool.get("inputSchema")
-        if isinstance(raw_input_schema, dict):
-            schema = raw_input_schema
-        else:
-            raw_parameters = tool.get("parameters")
-            if isinstance(raw_parameters, dict):
-                schema = raw_parameters
-    body = dict(schema)
+def _pruned_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
+    """Return the post-prune input schema carried on the tool record."""
+    for key in ("input_schema", "inputSchema", "parameters"):
+        raw = tool.get(key)
+        if isinstance(raw, dict) and raw:
+            return dict(raw)
+    return {}
+
+
+def _mcpc_injection_schema_body(tool: dict[str, Any]) -> dict[str, Any]:
+    """Shared pruned schema body for MCPC ``<json-schema>`` and ``<cli>`` emission."""
+    body = _pruned_input_schema(tool)
+    properties = body.get("properties")
+    if isinstance(properties, dict):
+        prop_names = [str(name) for name in properties]
+        body["properties"] = {name: properties[name] for name in prop_names}
+        required = body.get("required")
+        if isinstance(required, list):
+            body["required"] = [str(name) for name in required if name in body["properties"]]
     annotations = tool.get("annotations")
     if isinstance(annotations, dict):
         body["annotations"] = annotations
@@ -62,6 +72,10 @@ def _tool_json_schema_body(tool: dict[str, Any]) -> dict[str, Any]:
     if isinstance(execution, dict):
         body["execution"] = execution
     return body
+
+
+def _tool_json_schema_body(tool: dict[str, Any]) -> dict[str, Any]:
+    return _mcpc_injection_schema_body(tool)
 
 
 def _input_schema_only(schema_body: dict[str, Any]) -> dict[str, Any]:
@@ -90,10 +104,13 @@ def _property_names(spec: dict[str, Any]) -> list[str]:
     properties = spec.get("properties")
     if not isinstance(properties, dict):
         return []
+    names = [str(name) for name in properties]
     required = spec.get("required")
     if isinstance(required, list) and required:
-        return [str(name) for name in required if name in properties]
-    return [str(name) for name in properties]
+        required_names = [str(name) for name in required if name in properties]
+        optional_names = [name for name in names if name not in required_names]
+        return required_names + optional_names
+    return names
 
 
 def _array_example_count(spec: dict[str, Any]) -> int:
@@ -182,22 +199,26 @@ def _cli_example(session: str, tool_name: str, input_schema: dict[str, Any]) -> 
     return f"echo '{encoded}' | mcpc {session} tools-call {tool_name}"
 
 
-def _format_mcpc_tool_item(tool: dict[str, Any]) -> str:
+def _format_mcpc_tool_item(
+    tool: dict[str, Any],
+    *,
+    include_description: bool = True,
+) -> str:
     tool_name = str(tool.get("tool_name") or tool.get("name") or "").strip()
     session = str(tool.get("mcpc_session") or "").strip()
     if not tool_name or not session:
         return ""
     title = str(tool.get("title") or tool_name).strip()
     description = str(tool.get("description") or "").strip()
-    schema = _tool_json_schema_body(tool)
+    schema_body = _mcpc_injection_schema_body(tool)
     attrs = [
         f"name='{_xml_single_quoted_attr(tool_name)}'",
         f"title='{_xml_single_quoted_attr(title)}'",
         f"mcpc-session='{_xml_single_quoted_attr(session)}'",
     ]
-    if description:
+    if include_description and description:
         attrs.append(f"description='{_xml_single_quoted_attr(description)}'")
-    cli_line = _cli_example(session, tool_name, schema)
+    cli_line = _cli_example(session, tool_name, schema_body)
     return "\n".join(
         [
             f"<tool {' '.join(attrs)}>",
@@ -205,7 +226,7 @@ def _format_mcpc_tool_item(tool: dict[str, Any]) -> str:
             cli_line,
             "</cli>",
             "<json-schema>",
-            minimize_json_single_quotes(schema),
+            minimize_json_single_quotes(schema_body),
             "</json-schema>",
             "</tool>",
         ],
@@ -222,16 +243,43 @@ def _group_tools_by_session(tools: list[dict[str, Any]]) -> OrderedDict[str, lis
     return grouped
 
 
-def _format_server_block(session: str, tools: list[dict[str, Any]]) -> str:
+def _format_server_block(
+    session: str,
+    tools: list[dict[str, Any]],
+    *,
+    surviving_instruction_sessions: set[str] | None = None,
+    pre_exposure: McpcPreExposureFlags | None = None,
+) -> str:
     if not tools:
         return ""
     first = tools[0]
     server_name = str(first.get("server_name") or session).strip()
     instructions = str(first.get("server_instructions") or "").strip()
+    server_description = str(first.get("server_description") or "").strip()
     attrs = [f"name='{_xml_single_quoted_attr(server_name)}'"]
-    if instructions:
+    include_instructions = bool(instructions)
+    if surviving_instruction_sessions is not None:
+        include_instructions = session in surviving_instruction_sessions
+    if pre_exposure is not None:
+        if session in pre_exposure.omit_server_instructions:
+            include_instructions = False
+        if session in pre_exposure.omit_server_description:
+            server_description = ""
+    if include_instructions and instructions:
         attrs.append(f"instructions='{_xml_single_quoted_attr(instructions)}'")
-    item_lines = [_format_mcpc_tool_item(tool) for tool in tools]
+    if server_description:
+        attrs.append(f"description='{_xml_single_quoted_attr(server_description)}'")
+    item_lines = [
+        _format_mcpc_tool_item(
+            tool,
+            include_description=not (
+                pre_exposure is not None
+                and (session, str(tool.get("tool_name") or tool.get("name") or "").strip())
+                in pre_exposure.omit_tool_description
+            ),
+        )
+        for tool in tools
+    ]
     item_lines = [line for line in item_lines if line]
     if not item_lines:
         return ""
@@ -242,16 +290,32 @@ def format_mcpc_agent_tools(
     pruned_tools: list[dict[str, Any]],
     *,
     workspace_paths: list[str] | None = None,
+    session_text: str = "",
+    surviving_instruction_sessions: set[str] | None = None,
+    include_agent_tools_description: bool = True,
 ) -> str:
     if not pruned_tools:
         return ""
+    pre_exposure = compute_mcpc_pre_exposure_flags(pruned_tools, session_text)
     grouped = _group_tools_by_session(pruned_tools)
-    server_blocks = [_format_server_block(session, tools) for session, tools in grouped.items()]
+    server_blocks = [
+        _format_server_block(
+            session,
+            tools,
+            surviving_instruction_sessions=surviving_instruction_sessions,
+            pre_exposure=pre_exposure,
+        )
+        for session, tools in grouped.items()
+    ]
     server_blocks = [block for block in server_blocks if block]
     if not server_blocks:
         return ""
+    omit_intro = pre_exposure.omit_agent_tools_description or not include_agent_tools_description
     lines = [
-        _agent_tools_open_tag(workspace_paths=workspace_paths),
+        _agent_tools_open_tag(
+            workspace_paths=workspace_paths,
+            include_description=not omit_intro,
+        ),
         *server_blocks,
         "</agent-tools>",
     ]

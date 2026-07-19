@@ -144,7 +144,12 @@ DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS: float = 900.0
 DEFAULT_MCPC_EXECUTABLE: str = "mcpc"
 DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS: float = 1.0
 DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS: float = 120.0
+DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS: float = 120.0
 DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS: float = 900.0
+DEFAULT_MCPC_SKILLS_OWN_ENABLED: bool = True
+DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED: bool = True
+DEFAULT_MCPC_RESOURCES_ENABLED: bool = True
+DEFAULT_MCPC_RESOURCES_MIME_TYPES: list[str] = ["text/markdown"]
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
@@ -197,7 +202,16 @@ _DEFAULTS: dict[str, Any] = {
                     "cache": {
                         "session_refresh_seconds": DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS,
                         "tools_refresh_seconds": DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS,
+                        "skills_refresh_seconds": DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS,
                         "disk_flush_seconds": DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS,
+                    },
+                    "skills": {
+                        "in_session": {"enabled": DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED},
+                        "own": {"enabled": DEFAULT_MCPC_SKILLS_OWN_ENABLED},
+                    },
+                    "resources": {
+                        "enabled": DEFAULT_MCPC_RESOURCES_ENABLED,
+                        "mimeType": list(DEFAULT_MCPC_RESOURCES_MIME_TYPES),
                     },
                 },
                 "executor_cache": {
@@ -1166,6 +1180,53 @@ def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict
         cache = {}
     defaults = _DEFAULTS["pruning"]["tools"]["hook"]["mcpc"]["cache"]
     return deep_merge(defaults, cache)
+
+
+def mcpc_skills_own_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    skills = _tools_hook_mcpc_settings(_merged_config(cfg)).get("skills")
+    if not isinstance(skills, dict):
+        return DEFAULT_MCPC_SKILLS_OWN_ENABLED
+    own = skills.get("own")
+    if not isinstance(own, dict):
+        return DEFAULT_MCPC_SKILLS_OWN_ENABLED
+    return bool(own.get("enabled", DEFAULT_MCPC_SKILLS_OWN_ENABLED))
+
+
+def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    skills = _tools_hook_mcpc_settings(_merged_config(cfg)).get("skills")
+    if not isinstance(skills, dict):
+        return DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED
+    in_session = skills.get("in_session")
+    if not isinstance(in_session, dict):
+        return DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED
+    return bool(in_session.get("enabled", DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED))
+
+
+def mcpc_resources_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    resources = _tools_hook_mcpc_settings(_merged_config(cfg)).get("resources")
+    if not isinstance(resources, dict):
+        return DEFAULT_MCPC_RESOURCES_ENABLED
+    return bool(resources.get("enabled", DEFAULT_MCPC_RESOURCES_ENABLED))
+
+
+def mcpc_resources_mime_types(config: dict[str, Any] | None = None) -> list[str]:
+    cfg = config or load_config()
+    resources = _tools_hook_mcpc_settings(_merged_config(cfg)).get("resources")
+    if not isinstance(resources, dict):
+        return list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
+    mime_types = resources.get("mimeType")
+    if not isinstance(mime_types, list):
+        return list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
+    normalized = [str(item).strip() for item in mime_types if str(item).strip()]
+    return normalized or list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
+
+
+def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
+    cache = tools_hook_mcpc_cache_settings(config)
+    return float(cache.get("skills_refresh_seconds") or DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS)
 
 
 def connection_health_flapping_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:

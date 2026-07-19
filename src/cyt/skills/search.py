@@ -27,6 +27,7 @@ class MatchedSkill:
     name: str | None
     score: float
     token_count: int
+    command: str | None = None
 
 
 @dataclass(frozen=True)

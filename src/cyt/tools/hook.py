@@ -12,6 +12,7 @@ from cyt.config import (
     uses_mcpc_tool_catalog,
 )
 from cyt.indexer.tokens import count_json_tokens
+from cyt.injection.mcpc_pre_exposed import filter_pre_exposed_mcpc_tools
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.mcpc.readiness import mcpc_hook_catalog_usable
@@ -31,6 +32,7 @@ from cyt.tools.budget import (
 )
 from cyt.tools.inject import format_agent_tools, injection_token_count
 from cyt.tools.mcpc_inject import format_mcpc_agent_tools
+from cyt.tools.mcpc_prune import split_mcpc_prune_result
 from cyt.tools.prune import prune_tools_for_query
 from cyt.tools.registry import load_tool_catalog
 from cyt.tools.stats import record_tools_hook_injection
@@ -53,14 +55,46 @@ def _format_hook_tool_injection(
     gated: list[dict[str, Any]],
     config: dict[str, Any],
     payload: dict[str, Any],
+    *,
+    session_text: str = "",
+    surviving_instruction_sessions: set[str] | None = None,
 ) -> str:
     workspace_paths = workspace_paths_for_tools_inject(payload)
     if uses_mcpc_tool_catalog(config):
-        return format_mcpc_agent_tools(gated, workspace_paths=workspace_paths)
+        return format_mcpc_agent_tools(
+            gated,
+            workspace_paths=workspace_paths,
+            session_text=session_text,
+            surviving_instruction_sessions=surviving_instruction_sessions,
+        )
     return format_agent_tools(
         gated,
         include_executor_workspace_note=uses_executor_tool_catalog(config),
         workspace_paths=workspace_paths,
+    )
+
+
+def gate_and_format_hook_tools(
+    pruned_tools: list[dict[str, Any]],
+    *,
+    config: dict[str, Any],
+    payload: dict[str, Any],
+    session_text: str,
+) -> str:
+    """Apply MCPC-aware pre-exposure and format hook tool injection."""
+    surviving_instruction_sessions: set[str] | None = None
+    tools = pruned_tools
+    if uses_mcpc_tool_catalog(config):
+        tools, surviving_instruction_sessions = split_mcpc_prune_result(pruned_tools)
+        gated = filter_pre_exposed_mcpc_tools(tools, session_text)
+    else:
+        gated = filter_pre_exposed_tools(tools, session_text)
+    return _format_hook_tool_injection(
+        gated,
+        config,
+        payload,
+        session_text=session_text,
+        surviving_instruction_sessions=surviving_instruction_sessions,
     )
 
 
@@ -150,8 +184,12 @@ def handle_user_prompt_tools(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated = filter_pre_exposed_tools(pruned, session_text)
-    injected = _format_hook_tool_injection(gated, config, payload)
+    injected = gate_and_format_hook_tools(
+        pruned,
+        config=config,
+        payload=payload,
+        session_text=session_text,
+    )
     if not injected:
         return "user_prompt_empty_tool_injection", {"resolved_model": model}, ""
 

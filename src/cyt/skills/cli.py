@@ -24,11 +24,16 @@ from cyt.config import (
     tools_inject_via,
     uses_executor_tool_catalog,
 )
-from cyt.injection.pre_exposed import filter_pre_exposed_skills, filter_pre_exposed_tools
+from cyt.injection.pre_exposed import (
+    filter_pre_exposed_resources,
+    filter_pre_exposed_skills,
+)
 from cyt.injection.session_text import session_text_from_hook_payload
+from cyt.mcpc.session_resources import split_mcpc_resource_matches
 from cyt.proxy.anthropic import PruneResult
 from cyt.proxy.user_message_inject import combine_injection_parts
 from cyt.pruners.remote import PrunerSettingsCache
+from cyt.resources.inject import format_agent_resources
 from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.budget import (
     count_hook_request_tokens,
@@ -69,8 +74,8 @@ from cyt.tools.budget import (
     tools_inject_allowed,
 )
 from cyt.tools.hook import (
-    _format_hook_tool_injection,
     finish_tools_hook_injection_from_coordinator,
+    gate_and_format_hook_tools,
     handle_user_prompt_tools,
 )
 
@@ -587,11 +592,13 @@ def _append_coordinated_skills_injection(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated_matches = filter_pre_exposed_skills(
-        skill_matches or [],
-        session_text,
-    )
-    injected_skills = format_agent_skills(gated_matches)
+    skill_matches_raw = skill_matches or []
+    skill_only, resource_matches = split_mcpc_resource_matches(skill_matches_raw)
+    gated_skills = filter_pre_exposed_skills(skill_only, session_text)
+    gated_resources = filter_pre_exposed_resources(resource_matches, session_text)
+    injected_skills = format_agent_skills(gated_skills)
+    injected_resources = format_agent_resources(gated_resources)
+    injected_any = False
     if injected_skills:
         skills_in = injection_token_count(injected_skills)
         if skills_in > 0:
@@ -605,10 +612,17 @@ def _append_coordinated_skills_injection(
                 config=config,
             )
         parts.append(injected_skills)
-        outcomes.append("user_prompt_skills_injected")
-        details["resolved_model"] = model
+        injected_any = True
         if debug:
             details["injected_skills"] = injected_skills
+    if injected_resources:
+        parts.append(injected_resources)
+        injected_any = True
+        if debug:
+            details["injected_resources"] = injected_resources
+    if injected_any:
+        outcomes.append("user_prompt_skills_injected")
+        details["resolved_model"] = model
         return
     outcomes.append("user_prompt_no_matches")
 
@@ -642,11 +656,11 @@ def _append_coordinated_tools_injection(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated = filter_pre_exposed_tools(pruned, session_text)
-    injected_tools = _format_hook_tool_injection(
-        gated,
-        config,
-        payload,
+    injected_tools = gate_and_format_hook_tools(
+        pruned,
+        config=config,
+        payload=payload,
+        session_text=session_text,
     )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")

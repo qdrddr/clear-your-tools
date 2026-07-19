@@ -160,6 +160,15 @@ pruning:
           session_refresh_seconds: 1
           tools_refresh_seconds: 120
           disk_flush_seconds: 900
+        skills:
+          in_session:
+            enabled: true # mcpc --json @session skills-list
+          own:
+            enabled: true # mcpc help --skill
+        resources:
+          enabled: true
+          mimeType:
+            - text/markdown
       executor_url: http://localhost:4789
       executor_token_var: EXECUTOR_TOKEN
       mcp_definitions_file: ~/.config/cyt/mcp-definitions.json

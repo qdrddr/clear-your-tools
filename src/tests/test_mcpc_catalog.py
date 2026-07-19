@@ -54,7 +54,11 @@ _TOOLS_PAYLOAD = [
 
 _SESSION_INFO = {
     "instructions": "Use this server for docs.",
-    "serverInfo": {"name": "Context7", "version": "3.2.3"},
+    "serverInfo": {
+        "name": "Context7",
+        "version": "3.2.3",
+        "description": "Context7 documentation server.",
+    },
 }
 
 
@@ -85,6 +89,22 @@ def test_normalize_tool_builds_composite_name() -> None:
     assert tool["mcpc_session"] == "@ctx7"
 
 
+def test_normalize_tool_includes_server_description() -> None:
+    tool = _normalize_tool(
+        session_name="@ctx7",
+        tool={
+            "name": "resolve-library-id",
+            "description": "Resolve library id",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        server_name="Context7",
+        server_instructions="Use docs.",
+        server_description="Context7 documentation server.",
+    )
+    assert tool is not None
+    assert tool["server_description"] == "Context7 documentation server."
+
+
 def test_fetch_catalog_from_cli_uses_live_sessions_only() -> None:
     def fake_json(executable: str, args: list[str]) -> object:
         if args == []:
@@ -100,6 +120,7 @@ def test_fetch_catalog_from_cli_uses_live_sessions_only() -> None:
             tools, sessions = _fetch_catalog_from_cli("mcpc", "mcpc", config=_CONFIG)
     assert len(tools) == 1
     assert tools[0]["server_name"] == "Context7"
+    assert tools[0]["server_description"] == "Context7 documentation server."
     assert "@ctx7" in sessions
 
 
