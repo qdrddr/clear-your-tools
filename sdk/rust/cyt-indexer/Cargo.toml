@@ -1,6 +1,6 @@
 [package]
 name = "cyt-indexer"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2024"
 authors = ["Damien Berezenko"]
 description = "Tool schema decomposition and catalog indexing for MCP tool gating"
