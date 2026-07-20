@@ -79,6 +79,10 @@ mcpc connect ~/.mcpc/cursor.json --stdio
 CYT will now create and update `.cursor/rules/cyt-indexer.mdc` automatically as you submit prompts,
 injecting only the tool schemas and skill chunks relevant to your current intent.
 
+<p align="center">
+  <img src="assets/Cursor-hook.gif" alt="CYT Cursor hook pruning and injecting relevant MCP tools and skills" />
+</p>
+
 ## What You Gain
 
 - **~30% token reduction** on typical agent sessions.
