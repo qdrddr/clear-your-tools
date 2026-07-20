@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from cyt_client.config import skills_hook_cursor_rule_file_enabled
+
 RULES_REL_PATH = Path(".cursor/rules/cyt-injection.mdc")
 GITIGNORE_ENTRY = ".cursor/rules/cyt-injection.mdc"
 _RULES_DESCRIPTION = "CYT pruned skills and tools for this prompt"
@@ -38,8 +40,10 @@ def reset_rules_file_rel_path() -> None:
 
 
 def cursor_rules_file_enabled() -> bool:
-    raw = os.environ.get("CYT_CURSOR_RULES_FILE", "1").strip().casefold()
-    return raw not in {"0", "false", "no", "off"}
+    raw = os.environ.get("CYT_CURSOR_RULES_FILE")
+    if raw is not None:
+        return raw.strip().casefold() not in {"0", "false", "no", "off"}
+    return skills_hook_cursor_rule_file_enabled()
 
 
 def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:

@@ -317,6 +317,10 @@ If you prefer, you can use agent hooks instead; that path is separate from the p
 cyt hook all
 ```
 
+### Cursor
+
+Cursor has no reverse proxy — use hooks with MCPC instead. See [CURSOR-HOOK.md](CURSOR-HOOK.md).
+
 ### View pruning stats savings
 
 ```bash

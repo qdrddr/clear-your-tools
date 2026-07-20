@@ -459,7 +459,8 @@ skills hook injection). The reverse proxy does not mutate request `tools` arrays
 `cyt-client` hooks, CYT writes pruned injection to `.cursor/rules/cyt-injection.mdc` with
 `alwaysApply: true` instead — the most reliable delivery path in Cursor IDE today. The file is
 rewritten per prompt (deleted before each inject, then rewritten when content changes), deleted on
-empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` to disable. See
+empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` or
+`skills.hook.cursor_rule_file.enabled: false` in `config.yaml` to disable. See
 [`examples/agents/cursor/README.MD`](examples/agents/cursor/README.MD).
 
 | Key | Values | Default |

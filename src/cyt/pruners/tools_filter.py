@@ -44,6 +44,7 @@ from cyt.pruners.policies import (
     root_tool_id_from_chunk,
     tools_for_catalog,
 )
+from cyt.pruners.query import tools_pruning_query
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.tools.budget import tools_inject_allowed
@@ -1078,6 +1079,7 @@ def filter_tools_for_query(
     pruning_model_tokens: dict[str, int] = {}
     tool_properties_count_in = 0
     tool_properties_count_out = 0
+    pruning_query = tools_pruning_query(query, config)
     try:
         (
             merged,
@@ -1091,7 +1093,7 @@ def filter_tools_for_query(
         ) = _run_catalog_pruning(
             entries,
             enums,
-            query,
+            pruning_query,
             configured_pipeline,
             capture_decomposed_catalog,
             policy_ctx,

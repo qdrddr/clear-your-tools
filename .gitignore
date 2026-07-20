@@ -151,3 +151,4 @@ graphify-out/cost.json
 graphify-out/cache/
 .debug/rules/cyt-injection.mdc
 .codebase-memory/
+~/.config/lean-ctx/

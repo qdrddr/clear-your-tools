@@ -117,6 +117,7 @@ DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
 DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
 DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION: float = 10.0
 DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER: float = 5.0
+DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED: bool = True
 DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
 DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
 DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
@@ -1438,6 +1439,15 @@ def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> f
         DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER,
     )
     return float(value)
+
+
+def skills_hook_cursor_rule_file_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    cursor_rule = _skills_hook_settings(merged).get("cursor_rule_file")
+    if isinstance(cursor_rule, dict) and "enabled" in cursor_rule:
+        return bool(cursor_rule["enabled"])
+    return DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED
 
 
 def skills_proxy_request_budget_fraction(config: dict[str, Any] | None = None) -> float:

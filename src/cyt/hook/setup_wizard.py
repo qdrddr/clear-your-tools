@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from cyt.agents._types import AgentName
+from cyt.agents._types import CYT_LAUNCH_AGENT_ENV, AgentName
 from cyt.config import (
     inject_via,
     load_config,
@@ -80,28 +80,57 @@ def _print_hook_stdin_test_example(*, debug: bool) -> None:
     print("  cyt hook --uninstall")
 
 
-def cursor_before_submit_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
-    return cyt_client_entry(agent=agent)
+def cursor_before_submit_entry(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
+    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
 
 
-def cursor_session_start_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
-    return cyt_daemon_start_entry(agent=agent)
+def cursor_session_start_entry(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
+    return cyt_daemon_start_entry(agent=agent, set_launch_agent=set_launch_agent)
 
 
-def cursor_session_end_entry(*, agent: AgentName = "cursor") -> dict[str, Any]:
-    return cyt_client_entry(agent=agent)
+def cursor_session_end_entry(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
+    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
 
 
-def cursor_hook_entries(*, agent: AgentName = "cursor") -> dict[str, dict[str, Any]]:
+def cursor_hook_entries(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+) -> dict[str, dict[str, Any]]:
     return {
-        "before_submit": cursor_before_submit_entry(agent=agent),
-        "session_start": cursor_session_start_entry(agent=agent),
-        "session_end": cursor_session_end_entry(agent=agent),
+        "before_submit": cursor_before_submit_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+        ),
+        "session_start": cursor_session_start_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+        ),
+        "session_end": cursor_session_end_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+        ),
     }
 
 
-def cursor_desired_hook_commands(*, agent: AgentName = "cursor") -> list[str]:
-    entries = cursor_hook_entries(agent=agent)
+def cursor_desired_hook_commands(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+) -> list[str]:
+    entries = cursor_hook_entries(agent=agent, set_launch_agent=set_launch_agent)
     return [
         str(entries["before_submit"].get("command")),
         str(entries["session_start"].get("command")),
@@ -277,28 +306,37 @@ def _configure_hook_skills_directories(
         print(f"Skills config already set for hook mode in {config_path}")
 
 
-def cyt_client_entry(*, agent: AgentName | None = None) -> dict[str, Any]:
+def cyt_client_entry(
+    *,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
     command = CYT_CLIENT_COMMAND
-    if agent is not None:
-        from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
-
+    if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
 
 
-def cyt_daemon_start_entry(*, agent: AgentName | None = None) -> dict[str, Any]:
+def cyt_daemon_start_entry(
+    *,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
     command = CYT_DAEMON_START_COMMAND
-    if agent is not None:
-        from cyt.skills.agents import CYT_LAUNCH_AGENT_ENV
-
+    if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": SESSION_START_TIMEOUT_SECONDS}
 
 
-def cyt_hook_entry(*, debug: bool = False, agent: AgentName | None = None) -> dict[str, Any]:
+def cyt_hook_entry(
+    *,
+    debug: bool = False,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
     """Back-compat alias; prefer :func:`cyt_client_entry`."""
     del debug
-    return cyt_client_entry(agent=agent)
+    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
 
 
 def _is_legacy_cyt_hook_stdin_command(command: str) -> bool:
@@ -871,12 +909,16 @@ def _install_nested_hooks_for_targets(
     targets: list[tuple[str, Path, AgentName]],
     *,
     debug: bool,
+    set_launch_agent: bool,
 ) -> bool:
     any_changed = False
     action_choices = ("update", "remove", "skip")
     for label, path, agent in targets:
-        user_prompt_entry = cyt_client_entry(agent=agent)
-        session_start_entry = cyt_daemon_start_entry(agent=agent)
+        user_prompt_entry = cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
+        session_start_entry = cyt_daemon_start_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+        )
         hooks_data = _load_json_object(path)
         hooks_section = hooks_data.get("hooks")
         if not isinstance(hooks_section, dict):
@@ -989,9 +1031,10 @@ def _install_cursor_hooks_for_target(
     path: Path,
     *,
     debug: bool,
+    set_launch_agent: bool,
 ) -> bool:
     del debug
-    entries = cursor_hook_entries(agent="cursor")
+    entries = cursor_hook_entries(agent="cursor", set_launch_agent=set_launch_agent)
     before_submit_entry = entries["before_submit"]
     session_start_entry = entries["session_start"]
     session_end_entry = entries["session_end"]
@@ -1001,7 +1044,10 @@ def _install_cursor_hooks_for_target(
         hooks_section = {}
 
     existing_commands = _collect_cyt_hook_commands(hooks_section)
-    desired_commands = cursor_desired_hook_commands(agent="cursor")
+    desired_commands = cursor_desired_hook_commands(
+        agent="cursor",
+        set_launch_agent=set_launch_agent,
+    )
     needs_update = set(existing_commands) != set(desired_commands) or len(existing_commands) != len(
         desired_commands,
     )
@@ -1124,13 +1170,32 @@ def run_hook_setup(
         include_cursor=include_cursor,
     )
 
+    set_launch_agent = _prompt_yes_no(
+        f"Prefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
+        default_yes=False,
+    )
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
 
     any_changed = False
     if nested_targets:
-        any_changed = _install_nested_hooks_for_targets(nested_targets, debug=debug) or any_changed
+        any_changed = (
+            _install_nested_hooks_for_targets(
+                nested_targets,
+                debug=debug,
+                set_launch_agent=set_launch_agent,
+            )
+            or any_changed
+        )
     for label, path in cursor_targets:
-        any_changed = _install_cursor_hooks_for_target(label, path, debug=debug) or any_changed
+        any_changed = (
+            _install_cursor_hooks_for_target(
+                label,
+                path,
+                debug=debug,
+                set_launch_agent=set_launch_agent,
+            )
+            or any_changed
+        )
 
     if any_changed:
         print("\nRestart your agent so hook changes take effect.")

@@ -19,6 +19,7 @@ def test_cyt_client_package_has_no_cyt_imports() -> None:
     for module_name in (
         "cyt_client.agent",
         "cyt_client.cli",
+        "cyt_client.config",
         "cyt_client.cursor",
         "cyt_client.port",
         "cyt_client.rules_file",
@@ -539,6 +540,43 @@ def test_build_rules_mdc_includes_always_apply() -> None:
     text = build_rules_mdc("<agent-skills>demo</agent-skills>")
     assert "alwaysApply: true" in text
     assert "<agent-skills>demo</agent-skills>" in text
+
+
+def test_cursor_rules_file_enabled_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cyt_client.config import skills_hook_cursor_rule_file_enabled
+    from cyt_client.rules_file import cursor_rules_file_enabled, sync_cursor_rules_file
+
+    monkeypatch.delenv("CYT_CURSOR_RULES_FILE", raising=False)
+    assert skills_hook_cursor_rule_file_enabled() is True
+    assert cursor_rules_file_enabled() is True
+
+    with tempfile.TemporaryDirectory() as tmp:
+        config_path = Path(tmp) / "config.yaml"
+        config_path.write_text(
+            "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp)
+        assert skills_hook_cursor_rule_file_enabled() is False
+        assert cursor_rules_file_enabled() is False
+
+        workspace = Path(tmp) / "repo"
+        workspace.mkdir()
+        assert sync_cursor_rules_file(workspace, "<agent-tools>demo</agent-tools>") is False
+
+
+def test_cursor_rules_file_env_overrides_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cyt_client.rules_file import cursor_rules_file_enabled
+
+    with tempfile.TemporaryDirectory() as tmp:
+        config_path = Path(tmp) / "config.yaml"
+        config_path.write_text(
+            "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp)
+        monkeypatch.setenv("CYT_CURSOR_RULES_FILE", "1")
+        assert cursor_rules_file_enabled() is True
 
 
 def test_sync_cursor_rules_file_skips_unchanged_content() -> None:

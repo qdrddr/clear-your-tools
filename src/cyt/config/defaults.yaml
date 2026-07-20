@@ -308,6 +308,8 @@ skills:
   bm25_node_fallback_threshold: 15
 
   hook:
+    cursor_rule_file:
+      enabled: true
     request_budget_fraction: 30.0
     inject_cap_multiplier_of_request_tokens: 25.0
 

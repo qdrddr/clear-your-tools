@@ -75,9 +75,14 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
     }
 
 
-def test_cyt_hook_entry_sets_launch_agent_env_for_agent_specific_hooks() -> None:
-    claude_entry = hook_setup.cyt_client_entry(agent="claude")
-    codex_entry = hook_setup.cyt_client_entry(agent="codex")
+def test_cyt_hook_entry_omits_launch_agent_by_default() -> None:
+    assert hook_setup.cyt_client_entry(agent="claude")["command"] == "cyt-client"
+    assert hook_setup.cyt_client_entry(agent="codex")["command"] == "cyt-client"
+
+
+def test_cyt_hook_entry_sets_launch_agent_when_requested() -> None:
+    claude_entry = hook_setup.cyt_client_entry(agent="claude", set_launch_agent=True)
+    codex_entry = hook_setup.cyt_client_entry(agent="codex", set_launch_agent=True)
 
     assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
     assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt-client"
@@ -86,7 +91,11 @@ def test_cyt_hook_entry_sets_launch_agent_env_for_agent_specific_hooks() -> None
 
 
 def test_cyt_daemon_start_entry() -> None:
-    entry = hook_setup.cyt_daemon_start_entry(agent="claude")
+    assert (
+        hook_setup.cyt_daemon_start_entry(agent="claude")["command"]
+        == "cyt hook daemon start --unattended"
+    )
+    entry = hook_setup.cyt_daemon_start_entry(agent="claude", set_launch_agent=True)
     assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
     assert entry["timeout"] == hook_setup.SESSION_START_TIMEOUT_SECONDS
 
@@ -113,12 +122,12 @@ def test_merge_cyt_hook_upgrades_env_prefixed_legacy_stdin_command() -> None:
             },
         ],
     }
-    entry = hook_setup.cyt_client_entry(agent="claude")
+    entry = hook_setup.cyt_client_entry()
     merged, changed = hook_setup.merge_cyt_hook(existing, entry)
 
     assert changed is True
     commands = [hook["command"] for hook in merged["UserPromptSubmit"][0]["hooks"]]
-    assert commands == ["CYT_LAUNCH_AGENT=claude cyt-client"]
+    assert commands == ["cyt-client"]
 
 
 def test_upsert_cyt_hook_replaces_duplicate_debug_variants() -> None:
@@ -145,14 +154,14 @@ def test_upsert_cyt_hook_replaces_duplicate_debug_variants() -> None:
             },
         ],
     }
-    entry = hook_setup.cyt_client_entry(agent="claude")
+    entry = hook_setup.cyt_client_entry()
     merged, changed = hook_setup.upsert_cyt_hook(existing, entry)
 
     assert changed is True
     hooks = merged["UserPromptSubmit"][0]["hooks"]
     assert len(hooks) == 2
     commands = [hook["command"] for hook in hooks]
-    assert "CYT_LAUNCH_AGENT=claude cyt-client" in commands
+    assert "cyt-client" in commands
     assert "/usr/local/bin/other-hook" in commands
 
 
@@ -163,14 +172,14 @@ def test_upsert_cyt_hook_is_noop_when_settings_match() -> None:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "CYT_LAUNCH_AGENT=codex cyt-client",
+                        "command": "cyt-client",
                         "timeout": 30,
                     },
                 ],
             },
         ],
     }
-    entry = hook_setup.cyt_client_entry(agent="codex")
+    entry = hook_setup.cyt_client_entry()
     merged, changed = hook_setup.upsert_cyt_hook(existing, entry)
 
     assert changed is False
@@ -415,7 +424,8 @@ def test_run_hook_setup_updates_duplicate_hooks(
     )
 
     def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
-        if "debug" in text.lower():
+        lowered = text.lower()
+        if "debug" in lowered or "cyt_launch_agent" in lowered:
             return False
         return True
 
@@ -429,9 +439,9 @@ def test_run_hook_setup_updates_duplicate_hooks(
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     hooks = claude_data["hooks"]["UserPromptSubmit"][0]["hooks"]
     assert len(hooks) == 1
-    assert hooks[0]["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
+    assert hooks[0]["command"] == "cyt-client"
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
+        "cyt hook daemon start --unattended"
     )
 
 
@@ -458,7 +468,8 @@ def test_run_hook_setup_merges_existing_agent_configs(
     )
 
     def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
-        if "debug" in text.lower():
+        lowered = text.lower()
+        if "debug" in lowered or "cyt_launch_agent" in lowered:
             return False
         return True
 
@@ -470,19 +481,13 @@ def test_run_hook_setup_merges_existing_agent_configs(
 
     claude_data = json.loads(claude_path.read_text(encoding="utf-8"))
     codex_data = json.loads(codex_path.read_text(encoding="utf-8"))
-    assert (
-        claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-        == "CYT_LAUNCH_AGENT=claude cyt-client"
-    )
-    assert (
-        codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-        == "CYT_LAUNCH_AGENT=codex cyt-client"
-    )
+    assert claude_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
+    assert codex_data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "cyt-client"
     assert claude_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
+        "cyt hook daemon start --unattended"
     )
     assert codex_data["hooks"]["SessionStart"][0]["hooks"][0]["command"] == (
-        "CYT_LAUNCH_AGENT=codex cyt hook daemon start --unattended"
+        "cyt hook daemon start --unattended"
     )
 
 
@@ -706,11 +711,8 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert data["hooks"]["beforeSubmitPrompt"] == [entries["before_submit"]]
     assert data["hooks"]["sessionStart"] == [entries["session_start"]]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
-    assert entries["before_submit"]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
-    assert (
-        entries["session_start"]["command"]
-        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
-    )
+    assert entries["before_submit"]["command"] == "cyt-client"
+    assert entries["session_start"]["command"] == "cyt hook daemon start --unattended"
 
 
 def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:
@@ -758,16 +760,20 @@ def test_run_hook_setup_installs_cursor_hooks(
         "_configure_hook_skills_directories",
         lambda **_kwargs: None,
     )
-    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        lowered = text.lower()
+        if "cyt_launch_agent" in lowered:
+            return False
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
     _stub_tools_hook_wizard(monkeypatch)
 
     with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
         hook_setup.run_hook_setup(agents=["cursor"])
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
-    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
-    assert (
-        data["hooks"]["sessionStart"][0]["command"]
-        == "CYT_LAUNCH_AGENT=cursor cyt hook daemon start --unattended"
-    )
-    assert data["hooks"]["sessionEnd"][0]["command"] == "CYT_LAUNCH_AGENT=cursor cyt-client"
+    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "cyt-client"
+    assert data["hooks"]["sessionStart"][0]["command"] == "cyt hook daemon start --unattended"
+    assert data["hooks"]["sessionEnd"][0]["command"] == "cyt-client"
