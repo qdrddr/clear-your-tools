@@ -121,9 +121,9 @@ chunk-your-tools decompose --help
 chunk-your-tools recompose --help
 ```
 
-- **`chunk-your-tools`:** Decomposes tools into required properties, optional properties, and enums.
+- **`[chunk-your-tools](https://github.com/qdrddr/chunk-your-tools)`:** Decomposes tools into required properties, optional properties, and enums.
   Restores the shape based on the survivors.
-- **`chunk-your-skills`:** Decomposes skills into frontmatter and markdown header nodes. Restores the
+- **`[chunk-your-skills](https://github.com/qdrddr/chunk-your-skills)`:** Decomposes skills into frontmatter and markdown header nodes. Restores the
   SKILL file hierarchy, index, and structure.
 
 Give the repos a star if you find them useful.
