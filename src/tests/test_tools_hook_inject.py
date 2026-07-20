@@ -144,6 +144,7 @@ def test_hook_injects_mcpc_agent_tools_block() -> None:
 
     with (
         patch.object(skills_cli, "load_config", return_value=config),
+        patch("cyt.tools.hook.mcpc_hook_catalog_usable", return_value=True),
         patch("cyt.tools.hook.load_tool_catalog", return_value=catalog),
         patch(
             "cyt.tools.hook.prune_tools_for_query",

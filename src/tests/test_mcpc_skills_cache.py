@@ -50,7 +50,10 @@ def test_refresh_mcpc_skills_snapshot_updates_memory() -> None:
         resources=[],
         updated_at=1.0,
     )
-    with patch("cyt.mcpc.skills_cache._fetch_skills_snapshot_from_cli", return_value=fetched):
+    with (
+        patch("cyt.mcpc.skills_cache.mcpc_available", return_value=True),
+        patch("cyt.mcpc.skills_cache._fetch_skills_snapshot_from_cli", return_value=fetched),
+    ):
         refresh_mcpc_skills_snapshot(_CONFIG)
     snapshot = get_mcpc_skills_snapshot(_CONFIG, blocking=False)
     assert snapshot is not None
