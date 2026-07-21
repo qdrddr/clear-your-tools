@@ -30,6 +30,7 @@ CODEX_SKILLS_DIR = Path("~/.codex/skills")
 CURSOR_SKILLS_DIR = Path("~/.cursor/skills")
 HOOK_EVENT_NAME = "UserPromptSubmit"
 SESSION_START_EVENT = "SessionStart"
+SESSION_END_EVENT = "SessionEnd"
 CURSOR_BEFORE_SUBMIT_EVENT = "beforeSubmitPrompt"
 CURSOR_SESSION_START_EVENT = "sessionStart"
 CURSOR_SESSION_END_EVENT = "sessionEnd"
@@ -315,6 +316,17 @@ def cyt_client_entry(
     if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
+
+
+def cyt_session_end_entry(
+    *,
+    agent: AgentName | None = None,
+    set_launch_agent: bool = False,
+) -> dict[str, Any]:
+    command = CYT_CLIENT_COMMAND
+    if set_launch_agent and agent is not None:
+        command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
+    return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
 
 
 def cyt_daemon_start_entry(
@@ -625,6 +637,7 @@ def merge_cyt_hooks(
     *,
     user_prompt_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     merged, changed_user = merge_cyt_hook(
         hooks_section,
@@ -636,7 +649,12 @@ def merge_cyt_hooks(
         session_start_entry,
         event_name=SESSION_START_EVENT,
     )
-    return merged, changed_user or changed_session
+    merged, changed_end = merge_cyt_hook(
+        merged,
+        session_end_entry,
+        event_name=SESSION_END_EVENT,
+    )
+    return merged, changed_user or changed_session or changed_end
 
 
 def upsert_cyt_hooks(
@@ -644,6 +662,7 @@ def upsert_cyt_hooks(
     *,
     user_prompt_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     merged, changed_user = upsert_cyt_hook(
         hooks_section,
@@ -655,7 +674,12 @@ def upsert_cyt_hooks(
         session_start_entry,
         event_name=SESSION_START_EVENT,
     )
-    return merged, changed_user or changed_session
+    merged, changed_end = upsert_cyt_hook(
+        merged,
+        session_end_entry,
+        event_name=SESSION_END_EVENT,
+    )
+    return merged, changed_user or changed_session or changed_end
 
 
 def remove_cyt_hooks(hooks_section: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -828,6 +852,7 @@ def upsert_all_hooks_into_file(
     *,
     user_prompt_entry: dict[str, Any],
     session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
     hooks_key: str = "hooks",
 ) -> bool:
     existing = _load_json_object(path)
@@ -838,6 +863,7 @@ def upsert_all_hooks_into_file(
         hooks_section,
         user_prompt_entry=user_prompt_entry,
         session_start_entry=session_start_entry,
+        session_end_entry=session_end_entry,
     )
     if not changed:
         return False
@@ -919,6 +945,10 @@ def _install_nested_hooks_for_targets(
             agent=agent,
             set_launch_agent=set_launch_agent,
         )
+        session_end_entry = cyt_session_end_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+        )
         hooks_data = _load_json_object(path)
         hooks_section = hooks_data.get("hooks")
         if not isinstance(hooks_section, dict):
@@ -928,8 +958,9 @@ def _install_nested_hooks_for_targets(
         desired_commands = {
             str(user_prompt_entry.get("command")),
             str(session_start_entry.get("command")),
+            str(session_end_entry.get("command")),
         }
-        needs_update = set(existing_commands) != desired_commands or len(existing_commands) != 2
+        needs_update = set(existing_commands) != desired_commands or len(existing_commands) != 3
         if existing_commands:
             print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
             default_action = "update" if needs_update else "skip"
@@ -955,6 +986,7 @@ def _install_nested_hooks_for_targets(
                 path,
                 user_prompt_entry=user_prompt_entry,
                 session_start_entry=session_start_entry,
+                session_end_entry=session_end_entry,
             ):
                 print(f"{label}: updated CYT hooks in {path}")
                 any_changed = True
@@ -969,6 +1001,7 @@ def _install_nested_hooks_for_targets(
             path,
             user_prompt_entry=user_prompt_entry,
             session_start_entry=session_start_entry,
+            session_end_entry=session_end_entry,
         ):
             print(f"{label}: added CYT hooks to {path}")
             any_changed = True

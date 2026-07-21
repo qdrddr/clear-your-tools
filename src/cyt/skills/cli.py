@@ -28,6 +28,8 @@ from cyt.injection.pre_exposed import (
     filter_pre_exposed_resources,
     filter_pre_exposed_skills,
 )
+from cyt.injection.session_gate import gate_resources_for_session, gate_skills_for_session
+from cyt.injection.session_log import SessionLogIndex, combined_session_text
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.mcpc.session_resources import split_mcpc_resource_matches
 from cyt.proxy.anthropic import PruneResult
@@ -365,6 +367,8 @@ class HookRunResult:
     stdout_text: str
     outcome: str
     details: dict[str, Any] | None = None
+    session_log: list[dict[str, Any]] | None = None
+    cyt_agent: str | None = None
 
 
 def format_hook_stdout(
@@ -373,8 +377,10 @@ def format_hook_stdout(
     *,
     plain: bool = False,
     merge_rules_sections: bool = False,
+    session_log: list[dict[str, Any]] | None = None,
+    cyt_agent: str | None = None,
 ) -> str:
-    if not text:
+    if not text and not session_log:
         return ""
     if plain:
         return text
@@ -386,11 +392,22 @@ def format_hook_stdout(
         }
         if merge_rules_sections:
             hook_output["cytRulesMergeSections"] = True
-        output = {
+        output: dict[str, Any] = {
             "hookSpecificOutput": hook_output,
         }
+        if cyt_agent:
+            output["cytAgent"] = cyt_agent
+        if session_log:
+            output["cytSessionLog"] = session_log
         return json.dumps(output)
     return text
+
+
+def resolve_effective_hook_agent(payload: dict[str, Any]) -> str | None:
+    raw = payload.get("cyt_agent")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return resolve_skills_agent(payload=payload)
 
 
 def _emit_injection(
@@ -535,11 +552,25 @@ def _handle_user_prompt_skills(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    gated_matches = filter_pre_exposed_skills(
+    index = SessionLogIndex.from_payload(payload)
+    combined_text = combined_session_text(session_text, index)
+    session_gated, skill_logs, skill_full_flags = gate_skills_for_session(
         matches,
-        session_text,
+        session_text=session_text,
+        index=index,
     )
-    injected = format_agent_skills(gated_matches)
+    gated_matches = filter_pre_exposed_skills(
+        session_gated,
+        combined_text,
+    )
+    from cyt.injection.session_log_build import skill_item_key
+    from cyt.skills.inject import _resolve_skill_command
+
+    kept_keys = {
+        skill_item_key(match, command=_resolve_skill_command(match)) for match in gated_matches
+    }
+    skill_logs = [entry for entry in skill_logs if str(entry.get("key") or "") in kept_keys]
+    injected = format_agent_skills(gated_matches, full_flags=skill_full_flags)
     if not injected:
         return (
             "user_prompt_empty_injection",
@@ -562,14 +593,17 @@ def _handle_user_prompt_skills(
             config=config,
         )
 
+    details_out: dict[str, Any] = {
+        "resolved_model": model,
+        "pipeline_run": pipeline_run,
+        "search_trace": search_trace,
+        "injected_skills": injected if debug else None,
+    }
+    if skill_logs:
+        details_out["session_log"] = skill_logs
     return (
         "user_prompt_skills_injected",
-        {
-            "resolved_model": model,
-            "pipeline_run": pipeline_run,
-            "search_trace": search_trace,
-            "injected_skills": injected if debug else None,
-        },
+        details_out,
         injected,
     )
 
@@ -592,12 +626,39 @@ def _append_coordinated_skills_injection(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
+    index = SessionLogIndex.from_payload(payload)
+    combined_text = combined_session_text(session_text, index)
     skill_matches_raw = skill_matches or []
     skill_only, resource_matches = split_mcpc_resource_matches(skill_matches_raw)
-    gated_skills = filter_pre_exposed_skills(skill_only, session_text)
-    gated_resources = filter_pre_exposed_resources(resource_matches, session_text)
-    injected_skills = format_agent_skills(gated_skills)
-    injected_resources = format_agent_resources(gated_resources)
+    session_skills, skill_logs, skill_full_flags = gate_skills_for_session(
+        skill_only,
+        session_text=session_text,
+        index=index,
+    )
+    session_resources, resource_logs, resource_full_flags = gate_resources_for_session(
+        resource_matches,
+        session_text=session_text,
+        index=index,
+    )
+    gated_skills = filter_pre_exposed_skills(session_skills, combined_text)
+    gated_resources = filter_pre_exposed_resources(session_resources, combined_text)
+    from cyt.injection.session_log_build import resource_item_key, skill_item_key
+    from cyt.skills.inject import _resolve_skill_command
+
+    skill_keys = {
+        skill_item_key(match, command=_resolve_skill_command(match)) for match in gated_skills
+    }
+    resource_keys = {resource_item_key(match) for match in gated_resources}
+    skill_logs = [entry for entry in skill_logs if str(entry.get("key") or "") in skill_keys]
+    resource_logs = [
+        entry for entry in resource_logs if str(entry.get("key") or "") in resource_keys
+    ]
+    session_logs = skill_logs + resource_logs
+    injected_skills = format_agent_skills(gated_skills, full_flags=skill_full_flags)
+    injected_resources = format_agent_resources(
+        gated_resources,
+        full_flags=resource_full_flags,
+    )
     injected_any = False
     if injected_skills:
         skills_in = injection_token_count(injected_skills)
@@ -623,6 +684,12 @@ def _append_coordinated_skills_injection(
     if injected_any:
         outcomes.append("user_prompt_skills_injected")
         details["resolved_model"] = model
+        if session_logs:
+            existing = details.get("session_log")
+            if isinstance(existing, list):
+                details["session_log"] = existing + session_logs
+            else:
+                details["session_log"] = session_logs
         return
     outcomes.append("user_prompt_no_matches")
 
@@ -656,11 +723,12 @@ def _append_coordinated_tools_injection(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    injected_tools = gate_and_format_hook_tools(
+    injected_tools, tool_logs = gate_and_format_hook_tools(
         pruned,
         config=config,
         payload=payload,
         session_text=session_text,
+        catalog_tools=catalog,
     )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")
@@ -680,6 +748,12 @@ def _append_coordinated_tools_injection(
     parts.append(injected_tools)
     outcomes.append(tools_outcome)
     details.update(tools_details)
+    if tool_logs:
+        existing = details.get("session_log")
+        if isinstance(existing, list):
+            details["session_log"] = existing + tool_logs
+        else:
+            details["session_log"] = tool_logs
 
 
 def _coordinated_injection_budgets(
@@ -1085,11 +1159,19 @@ def run_hook_payload(
         io_guarded=io_guarded,
         pruner_settings=pruner_settings,
     )
+    session_log = None
+    if isinstance(details, dict):
+        raw_log = details.get("session_log")
+        if isinstance(raw_log, list):
+            session_log = [entry for entry in raw_log if isinstance(entry, dict)]
+    cyt_agent = resolve_effective_hook_agent(payload)
     stdout_text = format_hook_stdout(
         injection_text,
         payload,
         plain=plain_output,
         merge_rules_sections=bool(details and details.get("rules_merge_sections")),
+        session_log=session_log,
+        cyt_agent=cyt_agent,
     )
     debug_details = details
     if debug and details is not None:
@@ -1105,7 +1187,13 @@ def run_hook_payload(
         outcome=outcome,
         details=debug_details,
     )
-    return HookRunResult(stdout_text=stdout_text, outcome=outcome, details=details)
+    return HookRunResult(
+        stdout_text=stdout_text,
+        outcome=outcome,
+        details=details,
+        session_log=session_log,
+        cyt_agent=cyt_agent,
+    )
 
 
 def _request_payload_from_raw_stdin(raw_stdin: str, *, fallback: dict[str, Any]) -> dict[str, Any]:

@@ -59,12 +59,15 @@ def _skill_has_injection_body(match: MatchedSkill) -> bool:
     return bool(injection_markdown_body(match.markdown).strip())
 
 
-def format_skill_item(match: MatchedSkill) -> str:
+def format_skill_item(match: MatchedSkill, *, full: bool = False) -> str:
     """Format a single ``<skill>…</skill>`` block (no ``<agent-skills>`` wrapper)."""
     from cyt.tools.inject import _xml_single_quoted_attr
 
     path = shorten_home_path(match.file_path)
-    body = injection_markdown_body(match.markdown).rstrip()
+    if full:
+        body = match.markdown.rstrip()
+    else:
+        body = injection_markdown_body(match.markdown).rstrip()
     if not body:
         return ""
     command = _resolve_skill_command(match)
@@ -79,13 +82,29 @@ def format_skill_item(match: MatchedSkill) -> str:
     )
 
 
-def format_agent_skills(matches: list[MatchedSkill]) -> str:
+def format_agent_skills(
+    matches: list[MatchedSkill],
+    *,
+    full_flags: dict[str, bool] | None = None,
+) -> str:
     if not matches:
         return ""
-    injectable = [match for match in matches if _skill_has_injection_body(match)]
+    from cyt.injection.session_log_build import skill_item_key
+    from cyt.skills.inject import _resolve_skill_command
+
+    injectable = [match for match in matches if _skill_has_injection_body(match) or full_flags]
     if not injectable:
-        return ""
-    item_lines = [format_skill_item(match) for match in injectable]
+        injectable = list(matches)
+    item_lines: list[str] = []
+    for match in injectable:
+        command = _resolve_skill_command(match)
+        key = skill_item_key(match, command=command)
+        full = bool(full_flags.get(key)) if full_flags else False
+        if not full and not _skill_has_injection_body(match):
+            continue
+        item = format_skill_item(match, full=full)
+        if item:
+            item_lines.append(item)
     if not any(item_lines):
         return ""
     lines = [_INTRO, "", "<agent-skills>", *item_lines, "</agent-skills>"]

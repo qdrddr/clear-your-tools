@@ -156,6 +156,54 @@ def extract_additional_context(body: bytes) -> str:
     return ""
 
 
+def extract_session_log_entries(body: bytes) -> list[dict[str, Any]]:
+    """Return cytSessionLog entries from hook response body."""
+    if not body.strip():
+        return []
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("cytSessionLog")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def extract_cyt_agent(body: bytes) -> str | None:
+    if not body.strip():
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("cytAgent")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def hook_stdout_bytes_for_agent(body: bytes) -> bytes:
+    """Strip cytSessionLog/cytAgent; return agent-visible hook stdout JSON."""
+    if not body.strip():
+        return body
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return body
+    if not isinstance(data, dict):
+        return body
+
+    hook_output = data.get("hookSpecificOutput")
+    if hook_output is None:
+        return body
+    return json.dumps({"hookSpecificOutput": hook_output}, separators=(",", ":")).encode()
+
+
 def extract_rules_merge_sections(body: bytes) -> bool:
     """Return True when hook stdout requests merging rules sections (combined inject)."""
     if not body.strip():

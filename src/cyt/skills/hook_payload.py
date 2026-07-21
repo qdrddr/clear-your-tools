@@ -56,6 +56,20 @@ def session_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def session_log_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = payload.get("cyt_session_log")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict) and item.get("type") != "meta"]
+
+
+def session_agent_from_payload(payload: dict[str, Any]) -> str | None:
+    raw = payload.get("cyt_session_agent") or payload.get(CYT_AGENT_FIELD)
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 def model_from_payload(payload: dict[str, Any]) -> str | None:
     model = payload.get("model")
     if isinstance(model, str) and model.strip():

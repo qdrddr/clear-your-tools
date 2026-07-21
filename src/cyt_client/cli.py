@@ -11,18 +11,28 @@ from cyt_client.cursor import (
     format_cursor_continue,
     format_cursor_stdout,
     is_cursor_hook_payload,
-    is_cursor_rules_cleanup_event,
+    is_session_end_event,
 )
 from cyt_client.port import resolve_hook_url
 from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
+    extract_cyt_agent,
     extract_rules_merge_sections,
+    extract_session_log_entries,
+    hook_stdout_bytes_for_agent,
     is_valid_workspace_root,
     read_cursor_rules_injection,
     set_rules_file_rel_path,
     sync_cursor_rules_file,
     workspace_root_from_payload,
+)
+from cyt_client.sessions import (
+    append_session_log,
+    cleanup_stale_session_logs,
+    session_id_from_payload,
+    session_log_path,
+    sessions_dir_for_payload,
 )
 from cyt_client.transcript import enrich_hook_payload
 from cyt_client.transport import post_hook_inject
@@ -69,11 +79,12 @@ def _parse_payload(raw: bytes) -> dict | None:
 
 
 def _write_hook_stdout(body: bytes, *, cursor_output: bool) -> None:
+    agent_body = hook_stdout_bytes_for_agent(body)
     if cursor_output:
-        print(format_cursor_stdout(body.decode()), flush=True)
+        print(format_cursor_stdout(agent_body.decode()), flush=True)
         return
-    if body:
-        sys.stdout.buffer.write(body)
+    if agent_body:
+        sys.stdout.buffer.write(agent_body)
         sys.stdout.flush()
 
 
@@ -81,14 +92,40 @@ def _emit_cursor_continue() -> None:
     print(format_cursor_continue(), flush=True)
 
 
-def _handle_cursor_rules_cleanup(payload: dict) -> None:
-    workspace = workspace_root_from_payload(payload)
-    if workspace is not None:
-        if is_valid_workspace_root(workspace):
-            delete_cursor_rules_file(workspace)
-        else:
-            _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
-    _emit_cursor_continue()
+def _persist_session_log_response(payload: dict, body: bytes) -> None:
+    entries = extract_session_log_entries(body)
+    if not entries:
+        return
+    path = session_log_path(payload)
+    if path is None:
+        return
+    agent = extract_cyt_agent(body)
+    try:
+        append_session_log(path, entries, agent=agent)
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to append session log: {exc}")
+
+
+def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
+    if cursor_output:
+        workspace = workspace_root_from_payload(payload)
+        if workspace is not None:
+            if is_valid_workspace_root(workspace):
+                delete_cursor_rules_file(workspace)
+            else:
+                _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+
+    sessions_dir = sessions_dir_for_payload(payload)
+    current_session_id = session_id_from_payload(payload)
+    try:
+        removed = cleanup_stale_session_logs(sessions_dir, current_session_id)
+        if _verbose and removed:
+            _verbose_log(f"cyt-client: removed {len(removed)} stale session log(s)")
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to cleanup session logs: {exc}")
+
+    if cursor_output:
+        _emit_cursor_continue()
 
 
 def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
@@ -122,11 +159,13 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
+    _persist_session_log_response(payload, body)
+
     injection = extract_additional_context(body)
     if not injection.strip():
         _verbose_log("cyt-client: hook returned no additionalContext; skipping rules file sync")
         delete_cursor_rules_file(workspace)
-        print(format_cursor_stdout(body.decode()), flush=True)
+        print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
         return
 
     try:
@@ -140,7 +179,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
-    print(format_cursor_stdout(body.decode()), flush=True)
+    print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
 
 
 def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
@@ -149,8 +188,8 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
             _emit_cursor_continue()
         return
 
-    if cursor_output and is_cursor_rules_cleanup_event(payload):
-        _handle_cursor_rules_cleanup(payload)
+    if is_session_end_event(payload):
+        _handle_session_end(payload, cursor_output=cursor_output)
         return
 
     if cursor_output:
@@ -176,6 +215,7 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")
         return
 
+    _persist_session_log_response(payload, body)
     _write_hook_stdout(body, cursor_output=False)
 
 

@@ -23,6 +23,7 @@ def test_cyt_client_package_has_no_cyt_imports() -> None:
         "cyt_client.cursor",
         "cyt_client.port",
         "cyt_client.rules_file",
+        "cyt_client.sessions",
         "cyt_client.skills",
         "cyt_client.transport",
         "cyt_client.transcript",
@@ -887,3 +888,49 @@ def test_cli_passes_debug_header_to_hook_server() -> None:
 
     post.assert_called_once()
     assert post.call_args.kwargs["debug"] is True
+
+
+def test_hook_stdout_bytes_for_agent_strips_session_fields() -> None:
+    from cyt_client.rules_file import hook_stdout_bytes_for_agent
+
+    body = json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": "ctx",
+            },
+            "cytAgent": "cursor",
+            "cytSessionLog": [{"kind": "tool", "key": "tool:Shell"}],
+        },
+    ).encode()
+    stripped = hook_stdout_bytes_for_agent(body)
+    data = json.loads(stripped)
+    assert "cytAgent" not in data
+    assert "cytSessionLog" not in data
+    assert data["hookSpecificOutput"]["additionalContext"] == "ctx"
+
+
+def test_codex_session_end_runs_cleanup_without_http() -> None:
+    from cyt_client.cli import main
+
+    payload = {
+        "hook_event_name": "SessionEnd",
+        "session_id": "codex-sess",
+        "cwd": "/tmp/project",
+    }
+    raw = json.dumps(payload).encode()
+
+    def fake_read() -> bytes:
+        return raw
+
+    with (
+        patch("cyt_client.cli.resolve_hook_url") as resolve,
+        patch(
+            "cyt_client.cli.cleanup_stale_session_logs",
+            return_value=[],
+        ) as cleanup,
+        patch("sys.stdin.buffer.read", fake_read),
+    ):
+        resolve.return_value = None
+        main([])
+    cleanup.assert_called_once()

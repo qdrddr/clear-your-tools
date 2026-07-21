@@ -1,0 +1,196 @@
+"""Session injection log I/O for cyt-client (stdlib only)."""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from pathlib import Path
+from typing import Any
+
+from cyt_client.agent import infer_harness_agent
+from cyt_client.rules_file import is_valid_workspace_root, workspace_root_from_payload
+from cyt_client.skills import _payload_cwd
+
+
+def _agent_from_payload(payload: dict[str, Any]) -> str | None:
+    raw = payload.get("cyt_agent")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return infer_harness_agent(payload)
+
+
+_AGENT_SESSION_DIRS: dict[str, tuple[str, str]] = {
+    "claude": (".claude/cyt/sessions", "~/.claude/cyt/sessions"),
+    "codex": (".codex/cyt/sessions", "~/.codex/cyt/sessions"),
+    "cursor": (".cursor/cyt/sessions", "~/.cursor/cyt/sessions"),
+}
+
+_CONFIG_SESSIONS_DIR = Path("~/.config/cyt/sessions").expanduser()
+_META_TYPE = "meta"
+_SESSION_ID_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_DEFAULT_MAX_AGE_SECONDS = 86400
+
+
+def session_id_from_payload(payload: dict[str, Any]) -> str | None:
+    """Extract session id from hook payload fields."""
+    for layer in (
+        payload,
+        payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
+    ):
+        if not isinstance(layer, dict):
+            continue
+        for key in ("session_id", "sessionId"):
+            raw = layer.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+        conversation_id = layer.get("conversation_id")
+        if isinstance(conversation_id, str) and conversation_id.strip():
+            return conversation_id.strip()
+    return None
+
+
+def _safe_session_filename(session_id: str) -> str:
+    cleaned = _SESSION_ID_SAFE_RE.sub("_", session_id.strip())
+    return cleaned or "session"
+
+
+def sessions_dir_for_payload(payload: dict[str, Any]) -> Path:
+    """Resolve sessions directory: workspace → agent home → ~/.config/cyt/sessions."""
+    agent = _agent_from_payload(payload)
+    pairs = (
+        [_AGENT_SESSION_DIRS[agent]] if agent is not None else list(_AGENT_SESSION_DIRS.values())
+    )
+
+    workspace = workspace_root_from_payload(payload)
+    if workspace is not None and is_valid_workspace_root(workspace):
+        for project_rel, _home_rel in pairs:
+            candidate = workspace / project_rel
+            return candidate
+
+    cwd = _payload_cwd(payload)
+    if cwd.is_dir():
+        for project_rel, _home_rel in pairs:
+            candidate = cwd / project_rel
+            return candidate
+
+    if agent is not None:
+        _project_rel, home_rel = _AGENT_SESSION_DIRS[agent]
+        return Path(home_rel).expanduser()
+
+    return _CONFIG_SESSIONS_DIR
+
+
+def session_log_path(payload: dict[str, Any]) -> Path | None:
+    session_id = session_id_from_payload(payload)
+    if session_id is None:
+        return None
+    return sessions_dir_for_payload(payload) / f"{_safe_session_filename(session_id)}.jsonl"
+
+
+def _parse_jsonl_line(line: str) -> dict[str, Any] | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def read_session_log_file(path: Path) -> tuple[str | None, list[dict[str, Any]]]:
+    """Return (agent from meta line, item entries)."""
+    if not path.is_file():
+        return None, []
+
+    agent: str | None = None
+    items: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        record = _parse_jsonl_line(line)
+        if record is None:
+            continue
+        if record.get("type") == _META_TYPE:
+            raw_agent = record.get("agent")
+            if isinstance(raw_agent, str) and raw_agent.strip():
+                agent = raw_agent.strip()
+            continue
+        items.append(record)
+    return agent, items
+
+
+def agent_from_session_file(path: Path) -> str | None:
+    agent, _items = read_session_log_file(path)
+    return agent
+
+
+def read_session_log(path: Path) -> list[dict[str, Any]]:
+    """Parse JSONL item lines (meta excluded)."""
+    _agent, items = read_session_log_file(path)
+    return items
+
+
+def append_session_log(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append item records; write meta line on first create."""
+    if not entries:
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new_lines: list[str] = []
+    if not path.is_file() and agent:
+        new_lines.append(json.dumps({"type": _META_TYPE, "agent": agent}, separators=(",", ":")))
+    for entry in entries:
+        new_lines.append(json.dumps(entry, separators=(",", ":"), ensure_ascii=False))
+
+    with path.open("a", encoding="utf-8") as handle:
+        for line in new_lines:
+            if handle.tell() > 0:
+                handle.write("\n")
+            handle.write(line)
+
+
+def cleanup_stale_session_logs(
+    directory: Path,
+    current_session_id: str | None,
+    *,
+    max_age_seconds: float = _DEFAULT_MAX_AGE_SECONDS,
+) -> list[Path]:
+    """Delete session files older than max_age by mtime, excluding current session."""
+    if not directory.is_dir():
+        return []
+
+    current_name = (
+        f"{_safe_session_filename(current_session_id)}.jsonl" if current_session_id else None
+    )
+    cutoff = time.time() - max_age_seconds
+    removed: list[Path] = []
+
+    for path in directory.glob("*.jsonl"):
+        if not path.is_file():
+            continue
+        if current_name is not None and path.name == current_name:
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime >= cutoff:
+            continue
+        try:
+            path.unlink()
+            removed.append(path)
+        except OSError:
+            continue
+    return removed
+
+
+def gitignore_entries_for_sessions() -> tuple[str, ...]:
+    return tuple(
+        f"{project_rel.split('/')[0]}/cyt/sessions/"
+        for project_rel, _ in _AGENT_SESSION_DIRS.values()
+    )

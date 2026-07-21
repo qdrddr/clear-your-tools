@@ -35,8 +35,11 @@ def _resource_open_tag(*, command: str, description: str, name: str | None) -> s
     return f"<resource {' '.join(attrs)}>"
 
 
-def format_resource_item(match: MatchedResource) -> str:
-    body = injection_markdown_body(match.markdown).rstrip()
+def format_resource_item(match: MatchedResource, *, full: bool = False) -> str:
+    if full:
+        body = match.markdown.rstrip()
+    else:
+        body = injection_markdown_body(match.markdown).rstrip()
     if not body:
         return ""
     return "\n".join(
@@ -52,10 +55,22 @@ def format_resource_item(match: MatchedResource) -> str:
     )
 
 
-def format_agent_resources(matches: list[MatchedResource]) -> str:
+def format_agent_resources(
+    matches: list[MatchedResource],
+    *,
+    full_flags: dict[str, bool] | None = None,
+) -> str:
     if not matches:
         return ""
-    item_lines = [format_resource_item(match) for match in matches]
+    from cyt.injection.session_log_build import resource_item_key
+
+    item_lines: list[str] = []
+    for match in matches:
+        key = resource_item_key(match)
+        full = bool(full_flags.get(key)) if full_flags else False
+        item = format_resource_item(match, full=full)
+        if item:
+            item_lines.append(item)
     item_lines = [line for line in item_lines if line]
     if not item_lines:
         return ""

@@ -1,4 +1,7 @@
-"""Filter injection survivors already present verbatim in session text."""
+"""Filter injection survivors already present verbatim in session text.
+
+Pre-exposes in-session verbatim survivors of injections.
+"""
 
 from __future__ import annotations
 

@@ -10,6 +10,16 @@ from cyt_client.agent import looks_like_cursor_payload
 _CURSOR_ROUTING_EVENTS = frozenset({"sessionStart", "sessionEnd"})
 _CURSOR_RULES_LIFECYCLE_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
 _CURSOR_RULES_CLEANUP_EVENTS = frozenset({"sessionEnd"})
+_SESSION_END_EVENTS = frozenset({"sessionEnd", "SessionEnd"})
+
+
+def hook_event_name(payload: dict[str, Any]) -> str | None:
+    return cursor_hook_event_name(payload)
+
+
+def is_session_end_event(payload: dict[str, Any]) -> bool:
+    event = hook_event_name(payload)
+    return event in _SESSION_END_EVENTS if event is not None else False
 
 
 def cursor_hook_event_name(payload: dict[str, Any]) -> str | None:

@@ -9,11 +9,14 @@ from typing import Any
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.rules_file import rules_file_path, workspace_root_from_payload
+from cyt_client.sessions import read_session_log_file, session_log_path
 from cyt_client.skills import attach_client_skills
 
 CYT_AGENT_FIELD = "cyt_agent"
 CYT_HOOK_PAYLOAD_FIELD = "cyt_hook_payload"
 CYT_RULES_INJECTION_FIELD = "cyt_rules_injection"
+CYT_SESSION_LOG_FIELD = "cyt_session_log"
+CYT_SESSION_AGENT_FIELD = "cyt_session_agent"
 
 
 def _transcript_path_from_data(data: dict[str, Any]) -> str | None:
@@ -130,5 +133,17 @@ def enrich_hook_payload(
     else:
         _attach_cyt_rules_injection(data)
     attach_client_skills(data)
+    _attach_cyt_session_log(data)
 
     return json.dumps(data, separators=(",", ":")).encode()
+
+
+def _attach_cyt_session_log(data: dict[str, Any]) -> None:
+    path = session_log_path(data)
+    if path is None or not path.is_file():
+        return
+    agent, items = read_session_log_file(path)
+    if items:
+        data[CYT_SESSION_LOG_FIELD] = items
+    if agent:
+        data[CYT_SESSION_AGENT_FIELD] = agent

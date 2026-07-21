@@ -1044,3 +1044,19 @@ def test_hook_records_stats_when_model_missing(monkeypatch: pytest.MonkeyPatch) 
             assert int(row[2]) > 0
         finally:
             db.close()
+
+
+def test_format_hook_stdout_includes_session_log_and_agent() -> None:
+    from cyt.skills.cli import format_hook_stdout
+
+    payload = {"hook_event_name": "UserPromptSubmit"}
+    stdout = format_hook_stdout(
+        "injection",
+        payload,
+        session_log=[{"kind": "tool", "key": "tool:Shell", "name": "Shell"}],
+        cyt_agent="cursor",
+    )
+    data = json.loads(stdout)
+    assert data["cytAgent"] == "cursor"
+    assert data["cytSessionLog"][0]["name"] == "Shell"
+    assert data["hookSpecificOutput"]["additionalContext"] == "injection"

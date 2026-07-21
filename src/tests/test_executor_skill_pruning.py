@@ -295,7 +295,7 @@ def test_coordinator_runs_parallel_skills_search_for_executor_only(
             ),
             patch(
                 "cyt.skills.cli.gate_and_format_hook_tools",
-                return_value="<agent-tools>tools</agent-tools>",
+                return_value=("<agent-tools>tools</agent-tools>", []),
             ),
         ):
             started = time.perf_counter()

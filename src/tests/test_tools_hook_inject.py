@@ -331,7 +331,7 @@ def test_hook_runs_skills_and_tools_injection_in_parallel() -> None:
         ),
         patch(
             "cyt.skills.cli.gate_and_format_hook_tools",
-            return_value="<agent-tools>tools</agent-tools>",
+            return_value=("<agent-tools>tools</agent-tools>", []),
         ),
     ):
         outcome, _details, _context = skills_cli._handle_user_prompt(

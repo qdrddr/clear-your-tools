@@ -14,6 +14,8 @@ from cyt.config import (
 from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.mcpc_pre_exposed import filter_pre_exposed_mcpc_tools
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
+from cyt.injection.session_gate import gate_tools_for_session
+from cyt.injection.session_log import SessionLogIndex, combined_session_text
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.mcpc.readiness import mcpc_hook_catalog_usable
 from cyt.proxy.anthropic import PruneResult
@@ -80,22 +82,49 @@ def gate_and_format_hook_tools(
     config: dict[str, Any],
     payload: dict[str, Any],
     session_text: str,
-) -> str:
-    """Apply MCPC-aware pre-exposure and format hook tool injection."""
+    catalog_tools: list[dict[str, Any]] | None = None,
+    session_index: SessionLogIndex | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Apply session-log gate, pre-exposure, and format hook tool injection."""
     surviving_instruction_sessions: set[str] | None = None
     tools = pruned_tools
+    index = session_index or SessionLogIndex.from_payload(payload)
+    combined_text = combined_session_text(session_text, index)
+
     if uses_mcpc_tool_catalog(config):
         tools, surviving_instruction_sessions = split_mcpc_prune_result(pruned_tools)
-        gated = filter_pre_exposed_mcpc_tools(tools, session_text)
+        session_gated, log_entries, _full_flags = gate_tools_for_session(
+            tools,
+            config=config,
+            session_text=session_text,
+            index=index,
+            catalog_tools=catalog_tools,
+        )
+        gated = filter_pre_exposed_mcpc_tools(session_gated, combined_text)
     else:
-        gated = filter_pre_exposed_tools(tools, session_text)
-    return _format_hook_tool_injection(
+        session_gated, log_entries, _full_flags = gate_tools_for_session(
+            tools,
+            config=config,
+            session_text=session_text,
+            index=index,
+            catalog_tools=catalog_tools,
+        )
+        gated = filter_pre_exposed_tools(session_gated, combined_text)
+
+    from cyt.injection.session_log_build import CatalogKind, tool_item_key
+
+    catalog_kind: CatalogKind = "mcpc" if uses_mcpc_tool_catalog(config) else "executor"
+    gated_keys = {tool_item_key(tool, catalog=catalog_kind) for tool in gated}
+    filtered_logs = [entry for entry in log_entries if str(entry.get("key") or "") in gated_keys]
+
+    formatted = _format_hook_tool_injection(
         gated,
         config,
         payload,
-        session_text=session_text,
+        session_text=combined_text,
         surviving_instruction_sessions=surviving_instruction_sessions,
     )
+    return formatted, filtered_logs
 
 
 def _skipped_mcpc_unavailable_outcome(
@@ -184,16 +213,17 @@ def handle_user_prompt_tools(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    injected = gate_and_format_hook_tools(
+    injected, session_log = gate_and_format_hook_tools(
         pruned,
         config=config,
         payload=payload,
         session_text=session_text,
+        catalog_tools=catalog,
     )
     if not injected:
         return "user_prompt_empty_tool_injection", {"resolved_model": model}, ""
 
-    return _finish_tools_hook_injection(
+    outcome, details, injected_text = _finish_tools_hook_injection(
         payload=payload,
         config=config,
         query=query,
@@ -205,6 +235,9 @@ def handle_user_prompt_tools(
         budget_debug=budget_debug,
         debug=debug,
     )
+    if session_log:
+        details["session_log"] = session_log
+    return outcome, details, injected_text
 
 
 def _finish_tools_hook_injection(
