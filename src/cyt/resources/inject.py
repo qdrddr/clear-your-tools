@@ -24,6 +24,7 @@ class MatchedResource:
     description: str
     score: float
     token_count: int
+    content_hash: str | None = None
 
 
 def _resource_open_tag(*, command: str, description: str, name: str | None) -> str:

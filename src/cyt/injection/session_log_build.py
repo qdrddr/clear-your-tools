@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.common.paths import shorten_home_path
-from cyt.mcpc.catalog_disk import _canonical_tool_entry
 from cyt.resources.inject import MatchedResource
 from cyt.skills.catalog import content_sha256_for_file
 from cyt.skills.search import MatchedSkill
@@ -19,39 +18,159 @@ from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _mcpc_injection_schema
 CatalogKind = Literal["executor", "mcpc"]
 ItemKind = Literal["tool", "skill", "resource"]
 
+_TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
+
+_SKILL_HASH_BY_SOURCE: dict[str, str] | None = None
+
 
 def _sha256_json(value: object) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def tool_content_hash(tool: dict[str, Any], *, catalog: CatalogKind) -> str:
-    if catalog == "mcpc":
-        return _sha256_json(_canonical_tool_entry(tool))
-    schema = tool.get("input_schema") or tool.get("parameters") or tool.get("inputSchema")
+def tool_definition_content_hash(definition: dict[str, Any]) -> str:
+    """Match ``tool_definition_content_hash`` in cyt-indexer (``~/.config/cyt/tools/entries/{hash}/``)."""
+    canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
+
+
+def _mcpc_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
+    schema = tool.get("input_schema") or tool.get("inputSchema") or {}
+    name = str(tool.get("name") or "").strip()
+    if not name:
+        session = str(tool.get("mcpc_session") or "").strip()
+        tool_name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+        name = f"{session}/{tool_name}" if session else tool_name
+    definition: dict[str, Any] = {
+        "name": name,
+        "id": name,
+        "inputSchema": schema if isinstance(schema, dict) else {},
+    }
+    if tool.get("description") is not None:
+        definition["description"] = str(tool["description"])
+    return definition
+
+
+def _executor_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
+    schema = tool.get("input_schema") or tool.get("parameters") or tool.get("inputSchema") or {}
     definition: dict[str, Any] = {
         "name": str(tool.get("name") or ""),
-        "description": str(tool.get("description") or ""),
         "input_schema": schema if isinstance(schema, dict) else {},
     }
-    return _sha256_json(definition)
+    if tool.get("description") is not None:
+        definition["description"] = str(tool["description"])
+    return definition
+
+
+def _original_tool_definition_for_hash(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind,
+) -> dict[str, Any]:
+    full_schema = tool.get("full_schema")
+    if isinstance(full_schema, dict):
+        return full_schema
+    if catalog == "mcpc":
+        return _mcpc_tool_definition_for_hash(tool)
+    return _executor_tool_definition_for_hash(tool)
+
+
+def _load_skill_hash_by_source() -> dict[str, str]:
+    global _SKILL_HASH_BY_SOURCE
+    if _SKILL_HASH_BY_SOURCE is not None:
+        return _SKILL_HASH_BY_SOURCE
+    index: dict[str, str] = {}
+    entries_root = Path("~/.config/cyt/skills/entries").expanduser()
+    if entries_root.is_dir():
+        for entry_dir in entries_root.iterdir():
+            if not entry_dir.is_dir():
+                continue
+            meta_path = entry_dir / "metadata.json"
+            if not meta_path.is_file():
+                continue
+            try:
+                metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            source_path = str(metadata.get("source_path") or "").strip()
+            if source_path:
+                index[source_path] = entry_dir.name
+    _SKILL_HASH_BY_SOURCE = index
+    return index
+
+
+def _resolve_tool_for_hash(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind,
+    catalog_tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    if not catalog_tools:
+        return tool
+    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    session = str(tool.get("mcpc_session") or "").strip()
+    for original in catalog_tools:
+        orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
+        if orig_name != name:
+            continue
+        if (
+            catalog == "mcpc"
+            and session
+            and str(original.get("mcpc_session") or "").strip() != session
+        ):
+            continue
+        return original
+    return tool
+
+
+def tool_content_hash(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind,
+    catalog_tools: list[dict[str, Any]] | None = None,
+) -> str:
+    explicit = tool.get("content_hash")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+
+    source = _resolve_tool_for_hash(tool, catalog=catalog, catalog_tools=catalog_tools)
+    definition = _original_tool_definition_for_hash(source, catalog=catalog)
+    return tool_definition_content_hash(definition)
 
 
 def skill_content_hash(match: MatchedSkill) -> str:
-    path = match.file_path.strip()
+    if match.content_hash:
+        return match.content_hash
+
+    path = shorten_home_path(match.file_path).strip()
     if path:
+        cached = _load_skill_hash_by_source().get(path)
+        if cached:
+            return cached
+
         try:
-            return content_sha256_for_file(Path(path))
+            resolved = Path(path).expanduser()
+            if resolved.is_file():
+                return content_sha256_for_file(resolved)
         except OSError:
             pass
+
     return hashlib.sha256(match.markdown.encode("utf-8")).hexdigest()
 
 
 def resource_content_hash(match: MatchedResource) -> str:
-    path = match.file_path.strip()
+    if match.content_hash:
+        return match.content_hash
+
+    path = shorten_home_path(match.file_path).strip()
     if path:
+        cached = _load_skill_hash_by_source().get(path)
+        if cached:
+            return cached
         try:
-            return content_sha256_for_file(Path(path))
+            resolved = Path(path).expanduser()
+            if resolved.is_file():
+                return content_sha256_for_file(resolved)
         except OSError:
             pass
     return hashlib.sha256(match.markdown.encode("utf-8")).hexdigest()
@@ -161,9 +280,10 @@ def build_tool_log_entry(
     full: bool,
     include_tool_description: bool = True,
     server: dict[str, str] | None = None,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     key = tool_item_key(tool, catalog=catalog)
-    content_hash = tool_content_hash(tool, catalog=catalog)
+    content_hash = tool_content_hash(tool, catalog=catalog, catalog_tools=catalog_tools)
     entry: dict[str, Any] = {
         "kind": "tool",
         "key": key,
@@ -257,6 +377,9 @@ def _tool_dict_from_log_entry(entry: dict[str, Any]) -> dict[str, Any]:
                 tool["server_description"] = server["description"]
     elif "description" in entry:
         tool["description"] = entry["description"]
+    stored_hash = entry.get("hash")
+    if isinstance(stored_hash, str) and stored_hash.strip():
+        tool["content_hash"] = stored_hash.strip()
     return tool
 
 
@@ -266,6 +389,7 @@ def _skill_match_from_log_entry(entry: dict[str, Any]) -> MatchedSkill:
     if entry.get("source") == "file" and path and not markdown.startswith("---"):
         markdown = f"---\nname: {entry.get('name', '')}\n---\n\n{markdown}"
     command = entry.get("command")
+    stored_hash = entry.get("hash")
     return MatchedSkill(
         doc_id=str(entry.get("key", "")),
         file_path=path,
@@ -274,10 +398,14 @@ def _skill_match_from_log_entry(entry: dict[str, Any]) -> MatchedSkill:
         score=0.0,
         token_count=0,
         command=str(command).strip() if isinstance(command, str) else None,
+        content_hash=str(stored_hash).strip()
+        if isinstance(stored_hash, str) and stored_hash.strip()
+        else None,
     )
 
 
 def _resource_match_from_log_entry(entry: dict[str, Any]) -> MatchedResource:
+    stored_hash = entry.get("hash")
     return MatchedResource(
         doc_id=str(entry.get("key", "")),
         file_path=str(entry.get("path") or ""),
@@ -287,4 +415,7 @@ def _resource_match_from_log_entry(entry: dict[str, Any]) -> MatchedResource:
         description=str(entry.get("description") or ""),
         score=0.0,
         token_count=0,
+        content_hash=str(stored_hash).strip()
+        if isinstance(stored_hash, str) and stored_hash.strip()
+        else None,
     )

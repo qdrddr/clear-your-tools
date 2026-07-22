@@ -102,7 +102,39 @@ def reconstruct_doc_match(
         name=name,
         score=top_score,
         token_count=0,
+        content_hash=entry.content_sha256,
     )
+
+
+def _attach_content_hashes(
+    matches: list[MatchedSkill],
+    entries: list[SkillEntryRef],
+) -> list[MatchedSkill]:
+    if not matches or not entries:
+        return matches
+    lookup = build_entry_lookup(entries)
+    enriched: list[MatchedSkill] = []
+    for match in matches:
+        if match.content_hash:
+            enriched.append(match)
+            continue
+        entry = lookup.get((match.doc_id, match.file_path)) or lookup.get((match.doc_id, ""))
+        if entry is None:
+            enriched.append(match)
+            continue
+        enriched.append(
+            MatchedSkill(
+                doc_id=match.doc_id,
+                file_path=match.file_path,
+                markdown=match.markdown,
+                name=match.name,
+                score=match.score,
+                token_count=match.token_count,
+                command=match.command,
+                content_hash=entry.content_sha256,
+            ),
+        )
+    return enriched
 
 
 def _matched_skills_from_batch(
@@ -131,6 +163,7 @@ def _matched_skills_from_batch(
             name=name if isinstance(name, str) else None,
             score=float(item.get("score", 0)),
             token_count=cached_token_count or 0,
+            content_hash=str(item.get("content_hash") or item.get("content_sha256") or "") or None,
         )
         if cached_token_count is not None:
             matched.append(base_match)
@@ -148,6 +181,8 @@ def _matched_skills_from_batch(
                     name=match.name,
                     score=match.score,
                     token_count=token_count,
+                    command=match.command,
+                    content_hash=match.content_hash,
                 ),
             )
 
@@ -197,7 +232,10 @@ def reconstruct_matches_from_items(
             },
         )
 
-    return _matched_skills_from_batch(batch_reconstruct_skill_matches(groups))
+    return _attach_content_hashes(
+        _matched_skills_from_batch(batch_reconstruct_skill_matches(groups)),
+        entries,
+    )
 
 
 def reconstruct_matches_from_survivor_dicts(
@@ -250,4 +288,7 @@ def reconstruct_matches_from_survivor_dicts(
             },
         )
 
-    return _matched_skills_from_batch(batch_reconstruct_skill_matches(groups))
+    return _attach_content_hashes(
+        _matched_skills_from_batch(batch_reconstruct_skill_matches(groups)),
+        entries,
+    )

@@ -68,14 +68,14 @@ def gate_tools_for_session(
     for tool in tools:
         working = deepcopy(tool)
         key = tool_item_key(working, catalog=catalog)
-        current_hash = tool_content_hash(working, catalog=catalog)
+        full_source = _full_tool_from_catalog(working, catalog_tools)
+        current_hash = tool_content_hash(full_source, catalog=catalog, catalog_tools=catalog_tools)
         skinny_fragment = format_tool_fragment(
             working,
             catalog=catalog,
             full=False,
             include_tool_description=include_tool_description,
         )
-        full_source = _full_tool_from_catalog(working, catalog_tools)
         full_fragment = format_tool_fragment(
             full_source,
             catalog=catalog,
@@ -107,6 +107,7 @@ def gate_tools_for_session(
                 full=mode == "full",
                 include_tool_description=include_tool_description,
                 server=server,
+                catalog_tools=catalog_tools,
             ),
         )
     return kept, log_entries, full_flags
