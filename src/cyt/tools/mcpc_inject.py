@@ -11,8 +11,11 @@ from cyt.tools.inject import _xml_single_quoted_attr, ensure_agent_tools_starts_
 from cyt.tools.serialize import minimize_json_single_quotes
 
 _MCPC_WORKSPACE_NOTE = (
-    "When using tools with mcpc CLI app, you typically required to specify path to the repository "
-    "with the current project's workspace_roots/path"
+    "Use these tools via the MCPC CLI, not the MCP Server. Unless noted otherwise, pass the current project's "
+    "workspace_roots/path as the repository cwd dir. "
+    "Do not call these tools through the MCP protocol. Instead, run "
+    'echo \'{"key":"value"}\' | mcpc @session tools-call {tool_name} '
+    "with JSON matching the provided input schema"
 )
 
 _AGENT_TOOLS_DESCRIPTION = (
@@ -193,10 +196,14 @@ def _cli_payload_from_input_schema(input_schema: dict[str, Any]) -> dict[str, ob
     return {}
 
 
+def _shell_single_quoted(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
 def _cli_example(session: str, tool_name: str, input_schema: dict[str, Any]) -> str:
     payload = _cli_payload_from_input_schema(_input_schema_only(input_schema))
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    return f"echo '{encoded}' | mcpc {session} tools-call {tool_name}"
+    return f"echo {_shell_single_quoted(encoded)} | mcpc {session} tools-call {tool_name}"
 
 
 def _format_mcpc_tool_item(

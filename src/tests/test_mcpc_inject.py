@@ -105,7 +105,9 @@ def test_format_mcpc_agent_tools_groups_by_server() -> None:
     ]
     text = format_mcpc_agent_tools(tools, workspace_paths=["/workspace/repo"])
     assert text.startswith("\n<agent-tools description='Pruned MCP tool definitions below")
-    assert "mcpc CLI app" in text
+    assert "MCPC CLI" in text
+    assert "mcpc @session tools-call" in text
+    assert "schema.." not in text
     assert "workspace_roots/path" in text
     assert "<server name='Context7' instructions='Use this server for docs.'" in text
     assert "name='resolve-library-id'" in text
@@ -122,6 +124,30 @@ def test_format_mcpc_agent_tools_groups_by_server() -> None:
     assert "'execution':{'taskSupport':'forbidden'}" in text
     assert "'input_schema':" not in text
     assert "path='/workspace/repo'" in text
+
+
+def test_format_mcpc_cli_shell_quotes_json_with_single_quotes() -> None:
+    tools = [
+        {
+            "name": "@ctx7/resolve-library-id",
+            "tool_name": "resolve-library-id",
+            "mcpc_session": "@ctx7",
+            "title": "Resolve Context7 Library ID",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "libraryName": {"type": "string", "default": "O'Brien"},
+                },
+                "required": ["libraryName"],
+            },
+            "server_name": "Context7",
+        },
+    ]
+    text = format_mcpc_agent_tools(tools)
+    assert (
+        "echo '{\"libraryName\":\"O'\\''Brien\"}' | mcpc @ctx7 tools-call resolve-library-id"
+        in text
+    )
 
 
 def test_format_mcpc_agent_tools_nested_cli_payload() -> None:
