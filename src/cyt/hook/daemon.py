@@ -139,8 +139,8 @@ def _hook_daemon_has_credentials(reused_port: int) -> bool:
     return bool(pidfile.get("credentials_injected"))
 
 
-def _report_missing_daemon_credentials(names: list[str]) -> None:
-    if not names:
+def _report_missing_daemon_credentials(names: list[str], *, unattended: bool = False) -> None:
+    if not names or unattended:
         return
     joined = ", ".join(names)
     print(
@@ -239,6 +239,33 @@ def _configure_unattended_quiet() -> None:
     configure_launch_quiet()
 
 
+def _unattended_fallback_result(
+    base_port: int,
+    *,
+    mode: str,
+) -> HookDaemonStartResult:
+    """Best-effort success for hook sessionStart when spawn/wait fails."""
+    reused_port = _find_reusable_hook_port(base_port)
+    port = reused_port if reused_port is not None else base_port
+    hook_url = hook_url_for_port(port)
+    reused = reused_port is not None
+    if reused:
+        _write_pidfile(
+            port=port,
+            hook_url=hook_url,
+            pid=None,
+            reused=True,
+            mode=mode,
+        )
+    return HookDaemonStartResult(
+        outcome="reused" if reused else "already_running",
+        port=port,
+        hook_url=hook_url,
+        pid=None,
+        reused=reused,
+    )
+
+
 def daemon_start(
     *,
     config_path: Path | None = None,
@@ -275,12 +302,16 @@ def daemon_start(
             allow_prompt=allow_prompt,
             require_all=require_all,
         )
-        if unattended:
-            missing = [name for name in required_names if not extra_env or name not in extra_env]
-            _report_missing_daemon_credentials(missing)
+        missing = [name for name in required_names if not extra_env or name not in extra_env]
+        _report_missing_daemon_credentials(missing, unattended=unattended)
 
     reused_port = _find_reusable_hook_port(base_port)
-    if reused_port is not None and extra_env and not _hook_daemon_has_credentials(reused_port):
+    if (
+        not unattended
+        and reused_port is not None
+        and extra_env
+        and not _hook_daemon_has_credentials(reused_port)
+    ):
         _log(
             verbose,
             "hook daemon: restarting existing server to inject pruning credentials",
@@ -370,6 +401,8 @@ def daemon_start(
     )
     if not _wait_for_hook_server(spawn_port, process=process):
         process.terminate()
+        if unattended:
+            return _unattended_fallback_result(base_port, mode=mode)
         raise SystemExit(
             f"Timed out waiting for hook server on http://{LOCAL_HOST}:{spawn_port}/health",
         )

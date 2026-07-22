@@ -224,7 +224,7 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
     assert extra == {OR_KEY: OR_TOKEN}
 
 
-def test_unattended_missing_credentials_reports_stderr_and_starts(
+def test_unattended_missing_credentials_reuses_silently(
     pidfile_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -253,9 +253,57 @@ def test_unattended_missing_credentials_reports_stderr_and_starts(
         require_all=False,
     )
     err = capsys.readouterr().err
-    assert OR_KEY in err
-    assert "remote pruning disabled" in err
+    assert err == ""
     assert result.reused is True
+    assert result.port == 8834
+
+
+def test_unattended_skips_credential_reinjection(
+    pidfile_path: Path,
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch(
+            "cyt.hook.daemon._resolve_spawn_credentials",
+            return_value={OR_KEY: OR_TOKEN},
+        ),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port") as stop,
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+    ):
+        result = hook_daemon.daemon_start(verbose=False, unattended=True)
+
+    stop.assert_not_called()
+    spawn.assert_not_called()
+    assert result.reused is True
+    assert result.port == 8834
+
+
+def test_unattended_spawn_timeout_exits_successfully(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", side_effect=[None, None]),
+        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+        patch("cyt.hook.daemon._wait_for_hook_server", return_value=False),
+    ):
+        spawn.return_value = MagicMock(pid=12345, terminate=MagicMock())
+        result = hook_daemon.daemon_start(verbose=False, unattended=True)
+
+    spawn.return_value.terminate.assert_called_once()
+    assert capsys.readouterr().err == ""
+    assert result.outcome == "already_running"
     assert result.port == 8834
 
 

@@ -460,7 +460,7 @@ def _build_parser() -> argparse.ArgumentParser:
     daemon_start.add_argument(
         "--unattended",
         action="store_true",
-        help="Hook mode: no prompts, no stdout; missing credential names go to stderr",
+        help="Hook mode: no prompts or output, always exit 0, reuse running daemon",
     )
     daemon_stop = daemon_sub.add_parser("stop", help="Stop a daemon process started by CYT")
     daemon_stop.add_argument("--config", type=Path, default=None)
