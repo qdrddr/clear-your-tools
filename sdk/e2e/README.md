@@ -9,7 +9,7 @@ checkout**—not the active monorepo tree (unless `--workspace` is set).
 | [`python/`](python/) | [PyPI](https://pypi.org/project/cyt-indexer-sdk/) | `cyt-indexer-sdk` |
 | [`typescript/`](typescript/) | [npm](https://www.npmjs.com/package/cyt-indexer-sdk) | `cyt-indexer-sdk` |
 | [`clear-your-tools/`](clear-your-tools/) | [PyPI](https://pypi.org/project/clear-your-tools/) | `clear-your-tools` (pulls `cyt-indexer-sdk` transitively) |
-| [`go/`](go/) | [GitHub tag](https://github.com/qdrddr/clear-your-tools/tags) | `github.com/qdrddr/clear-your-tools/sdk/go` |
+| [`go/`](go/) | [GitHub tag](https://github.com/qdrddr/clear-your-tools/tags) | `github.com/qdrddr/clear-your-tools/sdk/go/v2` |
 | [`c/`](c/) | [GitHub tag](https://github.com/qdrddr/clear-your-tools/tags) | `sdk/c` + `libcyt_indexer` built from tagged crate |
 
 ## CI

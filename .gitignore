@@ -140,6 +140,7 @@ sdk/c/cyt_example_*
 sdk/c/compile_commands.json
 
 # Go SDK local build/test artifacts
+.gocache/
 sdk/go/**/*.test
 sdk/go/coverage.out
 sdk/go/coverage.html

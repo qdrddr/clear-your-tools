@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/qdrddr/clear-your-tools/sdk/go/moduleversion"
+	"github.com/qdrddr/clear-your-tools/sdk/go/v2/moduleversion"
 )
 
 func TestResolveVersionUsesModuleVersion(t *testing.T) {
@@ -23,7 +23,7 @@ func TestResolveVersionUsesModuleVersion(t *testing.T) {
 func TestIsSDKModuleRoot(t *testing.T) {
 	dir := t.TempDir()
 	goMod := filepath.Join(dir, "go.mod")
-	if err := os.WriteFile(goMod, []byte("module github.com/qdrddr/clear-your-tools/sdk/go\n"), 0o644); err != nil {
+	if err := os.WriteFile(goMod, []byte("module github.com/qdrddr/clear-your-tools/sdk/go/v2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !isSDKModuleRoot(dir) {

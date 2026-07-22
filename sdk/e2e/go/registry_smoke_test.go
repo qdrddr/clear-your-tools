@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	cytindexer "github.com/qdrddr/clear-your-tools/sdk/go"
+	cytindexer "github.com/qdrddr/clear-your-tools/sdk/go/v2"
 
 	e2esupport "cyt-indexer-go-registry-e2e"
 )

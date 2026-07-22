@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const sdkModulePath = "github.com/qdrddr/clear-your-tools/sdk/go"
+const sdkModulePath = "github.com/qdrddr/clear-your-tools/sdk/go/v2"
 
 func sdkModuleRoot() string {
 	if exe, err := os.Executable(); err == nil {

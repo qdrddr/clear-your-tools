@@ -1,10 +1,10 @@
-module github.com/qdrddr/clear-your-tools/sdk/go
+module github.com/qdrddr/clear-your-tools/sdk/go/v2
 
 go 1.25.0
 
 tool (
 	github.com/go-critic/go-critic/cmd/gocritic
-	github.com/qdrddr/clear-your-tools/sdk/go/cmd/cyt-native-ensure
+	github.com/qdrddr/clear-your-tools/sdk/go/v2/cmd/cyt-native-ensure
 	github.com/securego/gosec/v2/cmd/gosec
 	golang.org/x/tools/cmd/goimports
 	honnef.co/go/tools/cmd/staticcheck

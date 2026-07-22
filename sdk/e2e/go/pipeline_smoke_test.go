@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	cytindexer "github.com/qdrddr/clear-your-tools/sdk/go"
+	cytindexer "github.com/qdrddr/clear-your-tools/sdk/go/v2"
 )
 
 func repoRoot(t *testing.T) string {

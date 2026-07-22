@@ -24,11 +24,11 @@ CGO_ENABLED=1 go test ./...
 ```
 
 ```bash
-go get github.com/qdrddr/clear-your-tools/sdk/go
+go get github.com/qdrddr/clear-your-tools/sdk/go/v2
 ```
 
 ```go
-import cytindexer "github.com/qdrddr/clear-your-tools/sdk/go"
+import cytindexer "github.com/qdrddr/clear-your-tools/sdk/go/v2"
 
 indexJSON, err := cytindexer.BuildCatalogIndex(`[]`, `[]`)
 if err != nil {
