@@ -106,7 +106,7 @@ def test_normalize_tool_includes_server_description() -> None:
 
 
 def test_fetch_catalog_from_cli_uses_live_sessions_only() -> None:
-    def fake_json(executable: str, args: list[str]) -> object:
+    def fake_json(executable: str, args: list[str], **_kwargs: object) -> object:
         if args == []:
             return _SESSIONS_PAYLOAD
         if args == ["@ctx7", "tools-list"]:

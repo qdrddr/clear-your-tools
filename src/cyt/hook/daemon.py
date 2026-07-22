@@ -232,6 +232,13 @@ def _find_spawn_port(base_port: int, *, max_attempts: int = 100) -> int:
     return find_available_port(base_port, max_attempts=max_attempts)
 
 
+def _configure_unattended_quiet() -> None:
+    """Silence logging during unattended hook daemon start (Cursor sessionStart)."""
+    from cyt.launch.quiet import configure_launch_quiet
+
+    configure_launch_quiet()
+
+
 def daemon_start(
     *,
     config_path: Path | None = None,
@@ -242,6 +249,7 @@ def daemon_start(
     """Ensure a hook-capable CYT server is available (reuse-first)."""
     if unattended:
         verbose = False
+        _configure_unattended_quiet()
     config = load_config(config_path)
     report_mcpc_hook_readiness(config, unattended=unattended)
     from cyt.cache import warm_caches

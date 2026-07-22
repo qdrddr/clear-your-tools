@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from cyt.mcpc.cli import run_mcpc_json
+from cyt.mcpc.cli import restart_mcpc_session, run_mcpc_json
 from cyt.mcpc.runtime import connection_health_flapping_settings, load_config
 from cyt.mcpc.session_flapping import (
     clear_flapping_cache,
@@ -25,6 +25,7 @@ from cyt.mcpc.session_flapping import (
 logger = logging.getLogger(__name__)
 
 _LIVE_STATUS = "live"
+_TRANSIENT_STATUSES = frozenset({"connecting", "reconnecting"})
 
 _health_lock = threading.Lock()
 _health_states: dict[str, SessionHealthSnapshot] = {}
@@ -115,6 +116,39 @@ def _session_is_live(session: dict[str, Any]) -> bool:
     return str(session.get("status") or "").strip().lower() == _LIVE_STATUS
 
 
+def _sessions_raw_from_payload(payload: object | None) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    payload_dict = cast(dict[str, Any], payload)
+    raw = payload_dict.get("sessions")
+    if not isinstance(raw, list):
+        return []
+    return [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]
+
+
+def _sessions_needing_restart(sessions_raw: list[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    for session in sessions_raw:
+        status = str(session.get("status") or "").strip().lower()
+        if status == _LIVE_STATUS or status in _TRANSIENT_STATUSES:
+            continue
+        name = str(session.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def restart_non_live_sessions(
+    executable: str,
+    sessions_raw: list[dict[str, Any]],
+    *,
+    quiet: bool = False,
+) -> None:
+    """Attempt ``mcpc --json @session restart`` for sessions that are not live."""
+    for name in _sessions_needing_restart(sessions_raw):
+        restart_mcpc_session(executable, name, quiet=quiet)
+
+
 def filter_catalog_by_session_health(
     tools: list[dict[str, Any]],
     slug: str,
@@ -203,15 +237,15 @@ def refresh_session_health(
     executable: str,
     slug: str,
     config: dict[str, Any] | None = None,
+    quiet: bool = False,
 ) -> SessionHealthSnapshot:
     cfg = config or load_config()
-    payload = run_mcpc_json(executable, [])
-    sessions_raw: list[dict[str, Any]] = []
-    if isinstance(payload, dict):
-        payload_dict = cast(dict[str, Any], payload)
-        raw = payload_dict.get("sessions")
-        if isinstance(raw, list):
-            sessions_raw = [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]
+    payload = run_mcpc_json(executable, [], quiet=quiet)
+    sessions_raw = _sessions_raw_from_payload(payload)
+    if _sessions_needing_restart(sessions_raw):
+        restart_non_live_sessions(executable, sessions_raw, quiet=quiet)
+        payload = run_mcpc_json(executable, [], quiet=quiet)
+        sessions_raw = _sessions_raw_from_payload(payload)
 
     sessions = sessions_list_to_dict(sessions_raw)
     live = build_live_sessions(sessions)

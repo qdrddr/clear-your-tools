@@ -79,6 +79,43 @@ def test_daemon_start_is_silent_when_unattended(
     assert capsys.readouterr().err == ""
 
 
+def test_unattended_suppresses_mcpc_logging_warnings(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import logging
+
+    logging.basicConfig(level=logging.WARNING, format="%(message)s", force=True)
+    config = {
+        "network": {"proxy": {"reverse": {"port": 8834}}},
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "enabled": True,
+                "hook": {"tools_from": "mcpc", "mcpc": {"executable": "mcpc"}},
+            },
+        },
+        "cache": {"enabled": True},
+    }
+
+    def _warm_with_mcpc_warnings(_cfg: dict[str, object]) -> None:
+        from cyt.mcpc.cli import run_mcpc_json
+
+        run_mcpc_json("mcpc", ["@codebase-memory", "skills-list"])
+
+    with (
+        patch("cyt.hook.daemon.load_config", return_value=config),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.cache.warm_caches", side_effect=_warm_with_mcpc_warnings),
+    ):
+        hook_daemon.daemon_start(verbose=False, unattended=True)
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "mcpc json command failed" not in captured.out
+
+
 def test_daemon_start_restarts_reused_server_when_credentials_required(
     pidfile_path: Path,
 ) -> None:
