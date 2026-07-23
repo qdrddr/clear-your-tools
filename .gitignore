@@ -153,3 +153,6 @@ graphify-out/cache/
 .debug/rules/cyt-injection.mdc
 .codebase-memory/
 ~/.config/lean-ctx/
+scripts/mcpc/output/
+scripts/mcpc/payloads/
+sample.*
