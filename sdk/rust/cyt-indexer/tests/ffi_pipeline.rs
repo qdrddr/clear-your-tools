@@ -60,9 +60,11 @@ fn build_skill_node_catalog_empty_entries() {
 fn pipeline_exports_in_manifest() {
     for name in [
         "cyt_prune_catalog_bm25_and_retrieve",
+        "cyt_recompose_and_retrieve_tools",
         "cyt_classify_and_count_catalog",
         "cyt_search_skills_and_select",
         "cyt_build_skill_node_catalog",
+        "cyt_coordinate_bm25_prune",
     ] {
         assert!(
             EXPORTS.iter().any(|e| e.name == name),

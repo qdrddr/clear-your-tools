@@ -10,7 +10,8 @@ use crate::policies::{
     PolicyContext, catalog_needs_partition, catalog_needs_pruned_recompose,
     classify_optional_chunks_batch, classify_optional_chunks_batch_with_ctx,
     drop_recomposed_tools_with_empty_properties, filter_recompose_json_entries, full_pass_through,
-    merge_catalog, mitigate_empty_optional_properties, partition_catalog,
+    is_decomposed_tool_root_chunk, merge_catalog, mitigate_empty_optional_properties,
+    partition_catalog, root_tool_id_from_chunk,
 };
 use crate::retrieve::{DecomposedCatalog, RetrieveOptions, retrieve_tools_from_catalog};
 use crate::runtime_config;
@@ -102,6 +103,50 @@ fn append_unique_json_entries(
     }
 }
 
+fn llm_selected_tool_ids(data: &Value) -> HashSet<String> {
+    let Some(llm_json) = data.get("json").and_then(Value::as_array) else {
+        return HashSet::new();
+    };
+    llm_json
+        .iter()
+        .filter_map(|item| {
+            let obj = item.as_object()?;
+            if obj.get("file_path").is_none() {
+                return None;
+            }
+            Some(root_tool_id_from_chunk(item))
+        })
+        .collect()
+}
+
+fn append_post_rerank_roots_for_recompose(
+    entries: &mut Vec<Value>,
+    seen: &mut HashSet<String>,
+    post_rerank: &Value,
+    terminal_is_llm: bool,
+    llm_selected_tool_ids: &HashSet<String>,
+) {
+    let Some(post_items) = post_rerank.get("json").and_then(Value::as_array) else {
+        return;
+    };
+    if terminal_is_llm {
+        if llm_selected_tool_ids.is_empty() {
+            return;
+        }
+        let selected_roots: Vec<Value> = post_items
+            .iter()
+            .filter(|item| {
+                is_decomposed_tool_root_chunk(item)
+                    && llm_selected_tool_ids.contains(&root_tool_id_from_chunk(item))
+            })
+            .cloned()
+            .collect();
+        append_unique_json_entries(entries, seen, Some(&selected_roots));
+        return;
+    }
+    append_unique_json_entries(entries, seen, Some(post_items));
+}
+
 fn json_entries_for_recompose(
     data: &Value,
     post_rerank: Option<&Value>,
@@ -113,6 +158,8 @@ fn json_entries_for_recompose(
 ) -> Vec<Value> {
     let mut entries = Vec::new();
     let mut seen_paths = HashSet::new();
+    let terminal_is_llm = pipeline.last().is_some_and(|stage| stage == "llm");
+    let llm_selected_tool_ids = llm_selected_tool_ids(data);
 
     if let Some(pinned_val) = pinned {
         append_unique_json_entries(
@@ -127,10 +174,12 @@ fn json_entries_for_recompose(
     if catalog_needs_pruned_recompose(data, ctx)
         && let Some(pr) = post_rerank
     {
-        append_unique_json_entries(
+        append_post_rerank_roots_for_recompose(
             &mut entries,
             &mut seen_paths,
-            pr.get("json").and_then(Value::as_array).map(Vec::as_slice),
+            pr,
+            terminal_is_llm,
+            &llm_selected_tool_ids,
         );
     }
 
@@ -178,14 +227,12 @@ fn recompose_catalog_data(
             ctx,
         )),
     );
-    recompose.insert(
-        "md".into(),
-        data.get("md")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-            .into(),
-    );
+    let md = post_rerank_scored
+        .and_then(|v| v.get("md").and_then(Value::as_array))
+        .or_else(|| data.get("md").and_then(Value::as_array))
+        .cloned()
+        .unwrap_or_default();
+    recompose.insert("md".into(), Value::Array(md));
     for key in [
         "system_required_enum_values",
         "mcp_required_enum_values",
@@ -340,6 +387,44 @@ pub fn prune_catalog_bm25_and_retrieve(
         optional_chunk_count_in,
         optional_chunk_count_out,
     })
+}
+
+/// Recompose pruned catalog survivors and retrieve merged tool schemas in one call.
+#[must_use]
+pub fn recompose_and_retrieve_tools(
+    data: &Value,
+    build_catalog: &Value,
+    catalog_index: &CatalogIndex,
+    post_rerank: Option<&Value>,
+    post_rerank_scored: Option<&Value>,
+    pinned: Option<&Value>,
+    pipeline: &[String],
+    scoring_ctx: &PolicyContext,
+    output_ctx: &PolicyContext,
+) -> Vec<Value> {
+    let recompose_data = recompose_catalog_data(
+        data,
+        post_rerank,
+        pinned,
+        catalog_index,
+        post_rerank_scored,
+        pipeline,
+        scoring_ctx,
+    );
+
+    let mut store = DecomposedCatalog::from_catalog_index(catalog_index);
+    let retrieve_opts = RetrieveOptions {
+        apply_decomposed_score_filter: false,
+        ..RetrieveOptions::default()
+    };
+    let tools = retrieve_tools_from_catalog(
+        output_ctx,
+        &recompose_data,
+        build_catalog,
+        &mut store,
+        &retrieve_opts,
+    );
+    drop_recomposed_tools_with_empty_properties(output_ctx, &tools, catalog_index)
 }
 
 /// Classify optional catalog chunks and optionally count tool JSON tokens.

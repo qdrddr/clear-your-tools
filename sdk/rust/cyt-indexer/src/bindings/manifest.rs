@@ -142,6 +142,7 @@ pub const EXPORTS: &[FfiExport] = &[
     export("cyt_tool_id_had_empty_original_root_properties", "policies"),
     // pipeline — composite APIs
     export("cyt_prune_catalog_bm25_and_retrieve", "pipeline"),
+    export("cyt_recompose_and_retrieve_tools", "pipeline"),
     export("cyt_classify_and_count_catalog", "pipeline"),
     export("cyt_search_skills_and_select", "pipeline"),
     export("cyt_build_skill_node_catalog", "pipeline"),
@@ -208,6 +209,7 @@ const fn export(name: &'static str, category: &'static str) -> FfiExport {
 pub const NAPI_EXPORTS: &[&str] = &[
     "batchToolPassThrough",
     "pruneCatalogBm25AndRetrieve",
+    "recomposeAndRetrieveTools",
     "classifyAndCountCatalog",
     "searchSkillsAndSelect",
     "buildSkillNodeCatalog",

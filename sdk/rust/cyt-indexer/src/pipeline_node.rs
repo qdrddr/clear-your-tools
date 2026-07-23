@@ -3,7 +3,8 @@
 use crate::pipeline::{
     CoordinateBm25Options, PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions,
     build_skill_node_catalog, classify_and_count_catalog, coordinate_bm25_prune,
-    prune_catalog_bm25_and_retrieve, search_skills_and_select,
+    prune_catalog_bm25_and_retrieve, recompose_and_retrieve_tools,
+    search_skills_and_select,
 };
 use serde_json::Map;
 
@@ -170,6 +171,43 @@ pub fn prune_catalog_bm25_and_retrieve_napi(
     )
     .map_err(Error::from_reason)?;
     Ok(prune_result_to_value(result))
+}
+
+
+/// Recompose pruned catalog survivors and retrieve merged tool schemas in one call.
+///
+/// # Errors
+///
+/// Returns an error when catalog shapes or retrieval fail.
+#[napi(js_name = "recomposeAndRetrieveTools")]
+#[allow(clippy::too_many_arguments)]
+pub fn recompose_and_retrieve_tools_napi(
+    data: Value,
+    build_catalog: Value,
+    catalog_index: Value,
+    post_rerank: Option<Value>,
+    post_rerank_scored: Option<Value>,
+    pinned: Option<Value>,
+    pipeline: Vec<String>,
+    scoring_ctx: &PolicyContextNapi,
+    output_ctx: &PolicyContextNapi,
+) -> Result<Value> {
+    let data = Box::new(data);
+    let build_catalog = Box::new(build_catalog);
+    let catalog_index = Box::new(catalog_index);
+    let index = catalog_index_from_value(&catalog_index);
+    let tools = recompose_and_retrieve_tools(
+        &data,
+        &build_catalog,
+        &index,
+        post_rerank.as_ref(),
+        post_rerank_scored.as_ref(),
+        pinned.as_ref(),
+        &pipeline,
+        ctx_from_napi(scoring_ctx),
+        ctx_from_napi(output_ctx),
+    );
+    Ok(Value::Array(tools))
 }
 
 /// Classify optional chunks and optionally count tool tokens.

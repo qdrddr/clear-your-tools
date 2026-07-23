@@ -9,7 +9,7 @@ use crate::ffi::json_util::{
 use crate::pipeline::{
     CoordinateBm25Options, PruneBm25Options, SearchSkillsOptions, build_skill_node_catalog,
     classify_and_count_catalog, coordinate_bm25_prune, prune_catalog_bm25_and_retrieve,
-    search_skills_and_select,
+    recompose_and_retrieve_tools, search_skills_and_select,
 };
 use crate::policies::PolicyContext;
 use serde_json::{Map, Value, json};
@@ -134,6 +134,79 @@ pub unsafe extern "C" fn cyt_prune_catalog_bm25_and_retrieve(
             CYT_ERR_INVALID_ARG
         })?;
         unsafe { write_json_out(&prune_result_to_json(result), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Recompose pruned catalog survivors and retrieve merged tool schemas in one call.
+///
+/// # Safety
+///
+/// JSON pointer arguments must be valid null-terminated UTF-8 C strings; optional JSON args
+/// may be null; `out` must be non-null.
+pub unsafe extern "C" fn cyt_recompose_and_retrieve_tools(
+    data_json: *const c_char,
+    build_catalog_json: *const c_char,
+    catalog_index_json: *const c_char,
+    post_rerank_json: *const c_char,
+    post_rerank_scored_json: *const c_char,
+    pinned_json: *const c_char,
+    pipeline_json: *const c_char,
+    scoring_ctx_json: *const c_char,
+    output_ctx_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let data = unsafe { parse_json_cstr(data_json, "data_json")? };
+        let build_catalog = unsafe { parse_json_cstr(build_catalog_json, "build_catalog_json")? };
+        let index_val = unsafe { parse_json_cstr(catalog_index_json, "catalog_index_json")? };
+        let post_rerank = if post_rerank_json.is_null() {
+            None
+        } else {
+            Some(unsafe { parse_json_cstr(post_rerank_json, "post_rerank_json")? })
+        };
+        let post_rerank_scored = if post_rerank_scored_json.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                parse_json_cstr(post_rerank_scored_json, "post_rerank_scored_json")?
+            })
+        };
+        let pinned = if pinned_json.is_null() {
+            None
+        } else {
+            Some(unsafe { parse_json_cstr(pinned_json, "pinned_json")? })
+        };
+        let pipeline_val = unsafe { parse_json_cstr(pipeline_json, "pipeline_json")? };
+        let pipeline: Vec<String> = pipeline_val
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let scoring = parse_ctx_json(scoring_ctx_json)?;
+        let output = parse_ctx_json(output_ctx_json)?;
+        let index = catalog_index_from_value(&index_val);
+        let tools = recompose_and_retrieve_tools(
+            &data,
+            &build_catalog,
+            &index,
+            post_rerank.as_ref(),
+            post_rerank_scored.as_ref(),
+            pinned.as_ref(),
+            &pipeline,
+            &scoring,
+            &output,
+        );
+        unsafe { write_json_out(&Value::Array(tools), out)? };
         Ok(())
     })
 }

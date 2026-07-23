@@ -87,7 +87,7 @@ pub use paths::{
 pub use pipeline::{
     CoordinateBm25Options, PruneBm25Options, PruneRetrieveResult, SearchSkillsOptions,
     build_skill_node_catalog, classify_and_count_catalog, coordinate_bm25_prune,
-    prune_catalog_bm25_and_retrieve, search_skills_and_select,
+    prune_catalog_bm25_and_retrieve, recompose_and_retrieve_tools, search_skills_and_select,
 };
 pub use policies::{
     PolicyContext, ToolKind, ToolPolicy, anthropic_tool_is_mcp, anthropic_tool_is_system,
