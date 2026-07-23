@@ -1,0 +1,12 @@
+id: no-chunk-your-tools-rust-path-import
+valid:
+  - |
+    use chunk_your_tools::retrieve::retrieve_tools;
+  - |
+    let path = "../../../chunk-your-tools/foo";
+invalid:
+  - |
+    include!("../../../chunk-your-tools/src/lib.rs");
+  - |
+    #[path = "../../../chunk-your-tools/src/foo.rs"]
+    mod foo;

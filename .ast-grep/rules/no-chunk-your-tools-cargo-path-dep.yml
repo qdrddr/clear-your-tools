@@ -1,0 +1,15 @@
+id: no-chunk-your-tools-cargo-path-dep
+language: html
+severity: error
+message: >-
+  Do not use a path dependency on the chunk-your-tools/ directory tree.
+  Depend on the published chunk-your-tools crate from crates.io instead
+  (e.g. chunk-your-tools = "2.1.0").
+files:
+  - sdk/**/Cargo.toml
+  - Cargo.toml
+ignores:
+  - chunk-your-tools/**
+rule:
+  kind: text
+  regex: chunk-your-tools\s*=\s*\{\s*path

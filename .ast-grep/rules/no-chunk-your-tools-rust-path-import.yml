@@ -1,0 +1,22 @@
+id: no-chunk-your-tools-rust-path-import
+language: rust
+severity: error
+message: >-
+  Do not import source from the chunk-your-tools/ directory tree. Depend on
+  the published chunk-your-tools crate from crates.io instead.
+files:
+  - sdk/rust/**
+ignores:
+  - chunk-your-tools/**
+rule:
+  any:
+    - kind: string_literal
+      regex: chunk-your-tools
+      inside:
+        pattern: include!($$$)
+        stopBy: end
+    - kind: string_literal
+      regex: chunk-your-tools
+      inside:
+        pattern: "#[path = $$$]"
+        stopBy: end

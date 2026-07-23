@@ -1,0 +1,15 @@
+id: no-chunk-your-skills-cargo-path-dep
+language: html
+severity: error
+message: >-
+  Do not use a path dependency on the chunk-your-skills/ directory tree.
+  Depend on the published chunk-your-skills crate from crates.io instead
+  (e.g. chunk-your-skills = "2.0.3").
+files:
+  - sdk/**/Cargo.toml
+  - Cargo.toml
+ignores:
+  - chunk-your-skills/**
+rule:
+  kind: text
+  regex: chunk-your-skills\s*=\s*\{\s*path

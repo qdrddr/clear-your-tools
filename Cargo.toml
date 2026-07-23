@@ -1,3 +1,4 @@
 [workspace]
 members = ["sdk/rust/cyt-indexer"]
+exclude = ["chunk-your-tools"]
 resolver = "2"

@@ -1,0 +1,22 @@
+id: no-chunk-your-skills-rust-path-import
+language: rust
+severity: error
+message: >-
+  Do not import source from the chunk-your-skills/ directory tree. Depend on
+  the published chunk-your-skills crate from crates.io instead.
+files:
+  - sdk/rust/**
+ignores:
+  - chunk-your-skills/**
+rule:
+  any:
+    - kind: string_literal
+      regex: chunk-your-skills
+      inside:
+        pattern: include!($$$)
+        stopBy: end
+    - kind: string_literal
+      regex: chunk-your-skills
+      inside:
+        pattern: "#[path = $$$]"
+        stopBy: end

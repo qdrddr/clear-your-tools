@@ -1,0 +1,12 @@
+id: no-chunk-your-skills-rust-path-import
+valid:
+  - |
+    use chunk_your_skills::paths::default_catalog_dir;
+  - |
+    let path = "../../../chunk-your-skills/foo";
+invalid:
+  - |
+    include!("../../../chunk-your-skills/src/lib.rs");
+  - |
+    #[path = "../../../chunk-your-skills/src/foo.rs"]
+    mod foo;
