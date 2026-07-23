@@ -1,6 +1,6 @@
 ---
 id: TASK-0001
-title: Investigate MCP SPEC
+title: Investigate MCP SPEC 2026-07-28
 status: To Do
 assignee: []
 created_date: '2026-07-23 20:42'
@@ -17,5 +17,5 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Since the previous revision, 2025-11-25.
+Changes since the previous revision, 2025-11-25.
 <!-- SECTION:DESCRIPTION:END -->
