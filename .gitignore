@@ -15,6 +15,7 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.uv-cache/
 .code-review-graph
 .grepai
 .cursor

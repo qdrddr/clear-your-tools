@@ -18,5 +18,7 @@ ordinal: 2000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Tools inputSchema & outputSchema Conform to JSON Schema 2020-12:
-Loosen inputSchema and outputSchema to allow any JSON Schema 2020-12 keywords, and structuredContent to allow any JSON value. Add $ref resolution requirements and composition-keyword resource bounds
+Loosen inputSchema and outputSchema to allow any JSON Schema 2020-12 keywords, and
+structuredContent to allow any JSON value. Add $ref resolution requirements and
+composition-keyword resource bounds
 <!-- SECTION:DESCRIPTION:END -->

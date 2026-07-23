@@ -479,6 +479,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd npm
 		cd "${CYT_REPO_ROOT}/sdk/typescript" || die "cd failed"
 		info "npm ci, build, test"
+		# Avoid ENOTEMPTY when a prior native build left locked @napi-rs artifacts.
+		rm -rf node_modules
 		cyt_run cyt_npm ci
 		cyt_run cyt_npm run build
 		cyt_run cyt_npm test
@@ -622,6 +624,9 @@ PY
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "uv build"
+		# Keep uv's cache outside the repo so local .uv-cache/ never lands in sdists.
+		UV_CACHE_DIR="${UV_CACHE_DIR:-${TMPDIR:-/tmp}/cyt-uv-cache}"
+		export UV_CACHE_DIR
 		cyt_run uv build
 	}
 

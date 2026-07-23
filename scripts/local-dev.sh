@@ -51,8 +51,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/local-dev-lib.sh"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/shorten-paths.sh"
 export SHORTEN_ROOT="${CYT_REPO_ROOT}"
 
 CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
@@ -251,7 +249,7 @@ EOF
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && uv build -o \"${SIM_DIR}/dist-app\""
 
 		info "cargo publish --dry-run"
-		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && cargo publish -p cyt-indexer --dry-run"
+		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && cargo publish -p cyt-indexer --dry-run --allow-dirty"
 
 		info "npm pack"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/typescript\" && npm ci && npm run build && npm pack --pack-destination \"${SIM_DIR}/npm-pack\""
@@ -337,8 +335,8 @@ PY
 }
 
 if [[ -n "${CYT_LOCAL_DEV_SHORT}" ]]; then
-	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths | cyt_filter_short_logs
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/shorten-paths.sh" | cyt_filter_short_logs
 else
-	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | shorten_paths
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/shorten-paths.sh"
 fi
 exit "${PIPESTATUS[0]}"

@@ -22,7 +22,7 @@ node = ["napi", "napi-derive"]
 ffi = []
 
 [dependencies]
-chunk-your-tools = "2.1.0"
+chunk-your-tools = "2.2.0"
 chunk-your-skills = "2.0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

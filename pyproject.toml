@@ -66,10 +66,26 @@ build-backend = "hatchling.build"
 packages = ["src/cyt", "src/cyt_core", "src/cyt_client"]
 
 [tool.hatch.build.targets.sdist]
+only-include = [
+  "/src/cyt",
+  "/src/cyt_core",
+  "/src/cyt_client",
+  "/pyproject.toml",
+  "/README.md",
+  "/LICENSE",
+]
+skip-excluded-dirs = true
 exclude = [
   "/.cursorignore",
   "/.git",
   "/.gitnexus",
+  "/.uv-cache",
+  "/target",
+  "/.build",
+  "/.go-cache",
+  "/.cargo-home",
+  "/chunk-your-tools",
+  "/sdk",
   "/src/nogo",
   "/src/old",
   "/anthropic.log.1",

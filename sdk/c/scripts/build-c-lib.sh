@@ -277,5 +277,5 @@ _cyt_build_c_lib_main() {
 	fi
 }
 
-_cyt_build_c_lib_main "$@" 2>&1 | shorten_paths
+_cyt_build_c_lib_main "$@" 2>&1 | "${REPO_ROOT}/scripts/shorten-paths.sh"
 exit "${PIPESTATUS[0]}"
