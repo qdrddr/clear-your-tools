@@ -919,6 +919,40 @@ func cgoMitigateEmptyOptionalProperties(entriesJSON, catalogIndexJSON, ctxJSON, 
 	return takeJSON(&out)
 }
 
+func cgoEnsureRootJSONForSurvivingTools(entriesJSON, buildCatalogJSON string) (string, error) {
+	cEntries := cString(entriesJSON)
+	defer freeCString(cEntries)
+	cBuild := cString(buildCatalogJSON)
+	defer freeCString(cBuild)
+	var out *C.char
+	if C.cyt_ensure_root_json_for_surviving_tools(cEntries, cBuild, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
+func cgoJSONEntriesForRecompose(dataJSON, pinnedJSON, buildCatalogJSON, postRerankScoredJSON, ctxJSON, catalogIndexJSON, pipelineJSON string) (string, error) {
+	cData := cString(dataJSON)
+	defer freeCString(cData)
+	cPinned := cString(pinnedJSON)
+	defer freeCString(cPinned)
+	cBuild := cString(buildCatalogJSON)
+	defer freeCString(cBuild)
+	cScored := cString(postRerankScoredJSON)
+	defer freeCString(cScored)
+	cCtx := cString(ctxJSON)
+	defer freeCString(cCtx)
+	cIndex := cString(catalogIndexJSON)
+	defer freeCString(cIndex)
+	cPipeline := cString(pipelineJSON)
+	defer freeCString(cPipeline)
+	var out *C.char
+	if C.cyt_json_entries_for_recompose(cData, cPinned, cBuild, cScored, cCtx, cIndex, cPipeline, &out) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoAppendDescriptionReinstateEntries(entriesJSON, buildCatalogJSON, catalogIndexJSON, ctxJSON string) (string, error) {
 	cEntries := cString(entriesJSON)
 	defer freeCString(cEntries)
