@@ -1051,6 +1051,26 @@ def rerank_score_skills(config: dict[str, Any] | None = None) -> float:
     return float(value)
 
 
+def _llm_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
+    return _pipeline_def(config, "llm")
+
+
+def llm_score(config: dict[str, Any] | None = None) -> int:
+    from cyt.common.runtime_constants import LLM_SCORE
+
+    cfg = config or load_config()
+    value = _llm_pruning_settings(cfg).get("score_tool", LLM_SCORE)
+    return int(value)
+
+
+def llm_enum_score(config: dict[str, Any] | None = None) -> int:
+    from cyt.common.runtime_constants import LLM_ENUM_SCORE
+
+    cfg = config or load_config()
+    value = _llm_pruning_settings(cfg).get("score_tool_enum", LLM_ENUM_SCORE)
+    return int(value)
+
+
 def _skills_settings(config: dict[str, Any]) -> dict[str, Any]:
     skills = config.get("skills")
     return skills if isinstance(skills, dict) else {}

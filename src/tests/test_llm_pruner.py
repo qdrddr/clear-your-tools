@@ -22,7 +22,6 @@ from cyt.pruners.llm import (
     filter_selector_selections,
     llm_select_ids,
     normalize_selector_selections,
-    overlay_llm_md_scores,
     tool_selector_system_prompt,
 )
 
@@ -359,7 +358,7 @@ def test_llm_select_ids_merges_bulk_scores_by_max() -> None:
     assert selected == {5: 80}
 
 
-def test_llm_select_ids_drops_scores_below_threshold() -> None:
+def test_llm_select_ids_returns_all_scores_for_prune_step() -> None:
     with patch(
         "cyt.pruners.llm.call_llm",
         return_value=(
@@ -380,7 +379,7 @@ def test_llm_select_ids_drops_scores_below_threshold() -> None:
                 settings_mock.return_value = _settings(responses_api=False)
                 selected, _usage = llm_select_ids("query", "prompt", ["a"])
 
-    assert selected == {2: 30}
+    assert selected == {1: 29, 2: 30}
 
 
 def test_cap_selector_scores_keeps_highest_scores() -> None:
@@ -726,25 +725,5 @@ def test_apply_selector_ids_to_catalog_writes_normalized_llm_md_scores() -> None
     assert md_scores["yaml"] == 0.85
     assert md_scores["csv"] == 0.70
     assert md_scores["json"] == 0.0
-    assert len(result["json"]) == 0
-
-
-def test_overlay_llm_md_scores_updates_matching_enum_content() -> None:
-    base = {
-        "md": [
-            {"content": "yaml", "score": 0.95},
-            {"content": "csv", "score": 0.89},
-            {"content": "json", "score": 0.0005},
-        ],
-    }
-    llm_scored = {
-        "md": [
-            {"content": "yaml", "score": 0.85},
-            {"content": "csv", "score": 0.70},
-        ],
-    }
-    overlay_llm_md_scores(base, llm_scored)
-    scores = {item["content"]: item["score"] for item in base["md"]}
-    assert scores["yaml"] == 0.85
-    assert scores["csv"] == 0.70
-    assert scores["json"] == 0.0005
+    assert len(result["json"]) == 1
+    assert result["json"][0]["score"] == 0.0

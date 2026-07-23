@@ -297,6 +297,41 @@ def mitigate_empty_optional_properties(
     )
 
 
+def ensure_root_json_for_surviving_tools(
+    entries: list[dict[str, Any]],
+    *,
+    build_catalog: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return list(
+        _native.ensure_root_json_for_surviving_tools(
+            entries,
+            build_catalog,
+        ),
+    )
+
+
+def json_entries_for_recompose(
+    data: dict[str, Any],
+    *,
+    pinned: dict[str, Any] | None,
+    build_catalog: dict[str, Any],
+    post_rerank_scored: dict[str, Any] | None,
+    ctx: PolicyContext,
+    catalog_index: CatalogIndex,
+    pipeline: list[str],
+) -> list[dict[str, Any]]:
+    return list(
+        _native.json_entries_for_recompose(
+            data,
+            pinned,
+            build_catalog,
+            post_rerank_scored,
+            ctx,
+            (catalog_index, pipeline),
+        ),
+    )
+
+
 def append_description_reinstate_entries(
     entries: list[dict[str, Any]],
     *,

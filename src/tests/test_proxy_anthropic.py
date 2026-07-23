@@ -785,7 +785,10 @@ def test_run_pipeline_stage_llm_succeeds_without_retry() -> None:
     pruning_token_usage: dict[str, StageTokenUsage] = {}
 
     with (
-        patch("cyt.pruners.tools_filter._run_llm_stage", return_value=(pruned, None)) as mock_llm,
+        patch(
+            "cyt.pruners.tools_filter._run_llm_stage",
+            return_value=(pruned, None, None),
+        ) as mock_llm,
         patch("cyt.pruners.tools_filter._run_rerank_stage") as mock_rerank,
         patch("cyt.pruners.tools_filter._run_bm25_stage") as mock_bm25,
     ):

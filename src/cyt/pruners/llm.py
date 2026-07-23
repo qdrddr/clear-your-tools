@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import (
+    llm_enum_score,
     llm_minimum_tools,
+    llm_score,
     load_config,
     require_proxy_env,
     tools_selector_soft_budget,
@@ -22,6 +24,7 @@ from cyt.pruners.catalog_common import (
     finalize_catalog_result,
     load_pruner_catalog_input,
     prepare_catalog_for_scoring,
+    prune_catalog_lists,
     resolve_policy_context,
 )
 from cyt.pruners.litellm_quiet import configure_litellm_quiet
@@ -64,28 +67,29 @@ LLM_MODEL_EXCLUDED_FIELDS: tuple[str, ...] = (*LLM_TRIM_FIELDS, "id", "token_cou
 LLM_CATALOG_LIST_KEYS: tuple[str, ...] = ("json", "md")
 
 SELECTOR_EMPTY_ID = -1
-LLM_SELECTOR_MIN_SCORE = 30
+LLM_SCORE = 30
+LLM_ENUM_SCORE = 30
 
 SELECTOR_SCORE_INSTRUCTION = (
-    "Return a JSON object with a selections array. Each element must have id (selector chunk id) "
-    "and score (integer 0-100 relevance; higher means stronger match). "
+    "Return a JSON object with a selections array covering every chunk id from the prompt. "
+    "Each element must have id (chunk id) and score (integer 0-100 relevance; "
+    "higher means stronger match). Use score 0 when a chunk is not relevant. "
+    "Missing or invalid id/score defaults to score 0 for that id."
 )
 
 SELECTOR_NO_MATCH_INSTRUCTION = (
-    "If nothing is suitable for the user query, return selections: "
-    f'[{{"id": {SELECTOR_EMPTY_ID}, "score": 0}}] only.'
+    "If nothing is suitable for the user query, return every chunk id with score 0."
 )
 
 SELECTOR_VAGUE_QUERY_INSTRUCTION = (
     "If the user query is a single generic word with no specific technical task "
-    f"(e.g. 'test', 'investigate', 'help'), return selections: "
-    f'[{{"id": {SELECTOR_EMPTY_ID}, "score": 0}}] only unless exactly one tool '
-    "is an obvious exact match."
+    "(e.g. 'test', 'investigate', 'help'), score all chunks 0 unless exactly one tool "
+    "is an obvious exact match (score that chunk highly, others 0)."
 )
 
 _TOOL_SELECTOR_SYSTEM_PROMPT_PREFIX = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
-    "Your task is to select the most relevant tool(s), enums and properties based on the user query. "
+    "Your task is to score every chunk by relevance to the user query. "
     "Later we re-compile MCP tools into their full normal definitions based on your selection. "
     f"{SELECTOR_SCORE_INSTRUCTION}"
     "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
@@ -170,15 +174,14 @@ def selections_to_score_map(selections: list[ChunkSelection]) -> dict[int, int]:
 def filter_selector_selections(
     selections: list[ChunkSelection],
     *,
-    min_score: int = LLM_SELECTOR_MIN_SCORE,
+    min_score: int = LLM_SCORE,
 ) -> dict[int, int]:
-    """Normalize selections and keep ids whose score meets the injection threshold."""
+    """Normalize selections and optionally keep ids whose score meets ``min_score``."""
     normalized = normalize_selector_selections(selections)
-    return {
-        chunk_id: score
-        for chunk_id, score in selections_to_score_map(normalized).items()
-        if score >= min_score
-    }
+    scored = selections_to_score_map(normalized)
+    if min_score <= 0:
+        return scored
+    return {chunk_id: score for chunk_id, score in scored.items() if score >= min_score}
 
 
 def cap_selector_scores(
@@ -629,7 +632,7 @@ def _run_llm_selector_bulk(
             provider_dns_name=bulk_usage.provider_dns_name,
             provider=bulk_usage.provider,
         )
-    return filter_selector_selections(parsed_response.selections), bulk_usage
+    return selections_to_score_map(parsed_response.selections), bulk_usage
 
 
 def _merge_selector_scores(
@@ -747,45 +750,19 @@ def llm_select_ids(
     return cap_selector_scores(selected_scores), total_usage
 
 
-def apply_llm_md_score(item: dict[str, Any], llm_score: int) -> None:
+def apply_llm_chunk_score(item: dict[str, Any], llm_score: int) -> None:
     item["score"] = llm_score / 100.0
 
 
-def apply_llm_scores_via_metadata(
+def apply_llm_md_score(item: dict[str, Any], llm_score: int) -> None:
+    apply_llm_chunk_score(item, llm_score)
+
+
+def build_full_chunk_score_map(
     item_metadata_storage: dict[int, Any],
-    selected_scores: dict[int, int],
-) -> None:
-    """Write normalized LLM selector scores onto md catalog items in place."""
-    for chunk_id, storage in item_metadata_storage.items():
-        if storage["key"] != "md":
-            continue
-        apply_llm_md_score(storage["item"], selected_scores.get(chunk_id, 0))
-
-
-def overlay_llm_md_scores(
-    base: dict[str, Any],
-    llm_scored: dict[str, Any],
-) -> None:
-    """Update base['md'] scores by matching enum content string."""
-    llm_md = llm_scored.get("md")
-    if not isinstance(llm_md, list):
-        return
-    base_md = base.get("md")
-    if not isinstance(base_md, list):
-        return
-    scores_by_content: dict[str, Any] = {}
-    for item in llm_md:
-        if isinstance(item, dict) and "content" in item:
-            scores_by_content[str(item["content"])] = item.get("score")
-    for item in base_md:
-        if not isinstance(item, dict):
-            continue
-        content = item.get("content")
-        if content is None:
-            continue
-        key = str(content)
-        if key in scores_by_content:
-            item["score"] = scores_by_content[key]
+    llm_scores: dict[int, int],
+) -> dict[int, int]:
+    return {chunk_id: llm_scores.get(chunk_id, 0) for chunk_id in item_metadata_storage}
 
 
 def apply_selector_ids_to_catalog(
@@ -794,7 +771,7 @@ def apply_selector_ids_to_catalog(
     selected_scores: dict[int, int],
     list_keys: list[str],
 ) -> dict[str, Any]:
-    """Rebuild catalog lists from selector metadata and chosen chunk ids."""
+    """Rebuild catalog lists from selector metadata with LLM scores on every chunk."""
     new_data_lists: dict[str, list[dict[str, Any]]] = {k: [] for k in list_keys}
 
     for chunk_id, storage in item_metadata_storage.items():
@@ -803,19 +780,33 @@ def apply_selector_ids_to_catalog(
         metadata: dict[str, Any | None] = storage["metadata"]
 
         for k, v in metadata.items():
-            if v is not None:
+            if v is not None and k != "score":
                 item[k] = v
 
-        if target_key == "md":
-            apply_llm_md_score(item, selected_scores.get(chunk_id, 0))
-            new_data_lists[target_key].append(item)
-        elif chunk_id in selected_scores:
-            new_data_lists[target_key].append(item)
+        apply_llm_chunk_score(item, selected_scores.get(chunk_id, 0))
+        new_data_lists[target_key].append(item)
 
     for k, v in new_data_lists.items():
         data[k] = v
 
     return data
+
+
+def prune_llm_catalog(
+    data: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Drop catalog items below LLM_SCORE / LLM_ENUM_SCORE after LLM selector scoring."""
+    if catalog_below_minimum_tools(data, llm_minimum_tools(config), stage="llm"):
+        return data
+
+    return prune_catalog_lists(
+        data,
+        json_threshold=llm_score(config) / 100.0,
+        md_threshold=llm_enum_score(config) / 100.0,
+        prune_enums=True,
+    )
 
 
 def llm_catalog_dict(
@@ -849,7 +840,7 @@ def llm_catalog_dict(
         prepare_catalog_selector_chunks(data)
     )
 
-    selected_scores, total_usage = llm_select_ids(
+    llm_scores, total_usage = llm_select_ids(
         query,
         tool_selector_system_prompt(config),
         formatted_chunks,
@@ -864,16 +855,16 @@ def llm_catalog_dict(
         settings=settings,
     )
 
-    apply_llm_scores_via_metadata(item_metadata_storage, selected_scores)
-    scored_snapshot = copy.deepcopy(data)
-    result = apply_selector_ids_to_catalog(
+    full_scores = build_full_chunk_score_map(item_metadata_storage, llm_scores)
+    scored = apply_selector_ids_to_catalog(
         data,
         item_metadata_storage,
-        selected_scores,
+        full_scores,
         list_keys,
     )
+    scored_snapshot = copy.deepcopy(scored)
     return (
-        finalize_catalog_result(result, pinned, merge_pinned=merge_pinned),
+        finalize_catalog_result(scored, pinned, merge_pinned=merge_pinned),
         scored_snapshot,
         total_usage,
     )
@@ -896,7 +887,8 @@ def main() -> None:
     data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
 
     try:
-        result, _scored, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
+        scored, _scored, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
+        result = prune_llm_catalog(scored, config=config)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
             with open(args.output_json, "w") as f:

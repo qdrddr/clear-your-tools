@@ -180,16 +180,23 @@ class TestMitigateEmptyOptionalProperties(unittest.TestCase):
         schema = tools[0].get("inputSchema") or {}
         self.assertEqual(set(schema.get("properties", {}).keys()), {"alpha", "beta", "gamma"})
 
-    def test_llm_drops_tool_with_no_optional_survivors(self) -> None:
+    def test_llm_adds_top_three_direct_root_optional(self) -> None:
         filtered = filter_recompose_json_entries([self.root], ctx=_PRUNE_CTX)
         result = mitigate_empty_optional_properties(
             filtered,
             ctx=_PRUNE_CTX,
             catalog_index=self.index,
             post_rerank_scored=self.post_rerank_scored,
-            pipeline=["rerank", "llm"],
+            pipeline=["llm"],
         )
-        self.assertEqual(result, [])
+        added = direct_root_optional_chunks_for_tool(result, TOOL_ID)
+        self.assertEqual(len(added), EMPTY_OPTIONAL_FALLBACK_K)
+        names = {
+            rel.split("/")[-1].replace(".json", "")
+            for item in added
+            for rel in [item["file_path"].split(CATALOG_PREFIX + "/")[-1]]
+        }
+        self.assertEqual(names, {"alpha", "beta", "gamma"})
 
     def test_always_include_not_dropped_by_safety_net(self) -> None:
         ctx = policy_context_from_config(per_tool={TOOL_ID: "always_include"})

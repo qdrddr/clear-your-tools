@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from cyt.indexer.build import catalog_tool_count
@@ -116,6 +118,31 @@ def prune_catalog_lists(
             data["md"] = [item for item in md_items if float(item.get("score", 0)) >= md_threshold]
 
     return data
+
+
+@dataclass(frozen=True)
+class StageCatalogResult:
+    """Pruned catalog data plus post-prune and pre-prune scored snapshots."""
+
+    data: dict[str, Any]
+    post_rerank: dict[str, Any]
+    post_rerank_scored: dict[str, Any]
+
+
+def finalize_scored_stage(
+    scored: dict[str, Any],
+    *,
+    prune_fn: Callable[[dict[str, Any]], dict[str, Any]],
+) -> StageCatalogResult:
+    """Snapshot scored catalog, prune thresholds, and capture post-prune state."""
+    post_rerank_scored = copy.deepcopy(scored)
+    data = prune_fn(scored)
+    post_rerank = copy.deepcopy(data)
+    return StageCatalogResult(
+        data=data,
+        post_rerank=post_rerank,
+        post_rerank_scored=post_rerank_scored,
+    )
 
 
 def load_pruner_catalog_input(

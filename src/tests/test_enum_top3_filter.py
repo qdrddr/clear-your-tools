@@ -208,3 +208,48 @@ def test_recompose_and_retrieve_keeps_top_three_enums_with_llm_scores() -> None:
 
     assert format_enum == ["yaml", "csv", "json"]
     assert identity_enum == ["git", "local", "config"]
+
+
+def test_recompose_injects_root_when_optional_json_survives() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "required_field": {"type": "string"},
+            "optional_field": {"type": "string", "description": "opt"},
+        },
+        "required": ["required_field"],
+    }
+    entry = _make_mcp_tool("mcp__test__root_inject", schema)
+    index = build_catalog_index([entry], collect_enums(schema))
+    catalog = index.to_catalog_dict()
+
+    optional_items = [
+        item
+        for item in catalog.get("json", [])
+        if isinstance(item, dict) and "optional_field" in str(item.get("file_path", ""))
+    ]
+    assert optional_items, "expected optional decomposed chunk in catalog"
+    optional = {**optional_items[0], "score": 0.9}
+
+    post_scored = {"json": catalog.get("json", []), "md": []}
+    data = {"json": [optional], "md": []}
+    ctx = policy_context_from_config(system="prune_optional", mcp="prune_all")
+    output_ctx = output_policy_context_from_config(system="prune_optional", mcp="prune_all")
+
+    tools = recompose_and_retrieve_tools(
+        data,
+        catalog,
+        index,
+        None,
+        post_scored,
+        None,
+        ["bm25"],
+        ctx,
+        output_ctx,
+    )
+    assert len(tools) == 1
+    tool = tools[0]
+    assert tool.get("name") == "mcp__test__root_inject"
+    props = (tool.get("inputSchema") or {}).get("properties") or {}
+    assert "required_field" in props
+    assert "optional_field" in props

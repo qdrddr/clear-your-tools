@@ -9,7 +9,6 @@ from typing import Any, TypedDict, cast
 
 from cyt.common.token_usage import StageTokenUsage
 from cyt.config import (
-    DEFAULT_PRUNING_PIPELINE,
     effective_pruning_pipeline,
     llm_minimum_tools,
     load_config,
@@ -17,34 +16,29 @@ from cyt.config import (
     pruning_stage_model_nick,
 )
 from cyt.indexer.build import (
-    CatalogIndex,
     anthropic_tools_to_catalog_entries,
     catalog_tool_count,
 )
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
+from cyt.pruners.catalog_common import finalize_scored_stage
 from cyt.pruners.llm import (
     LLM_PRE_TRIM_TOP_K_JSON,
     llm_catalog_dict,
-    overlay_llm_md_scores,
+    prune_llm_catalog,
     trim_catalog_dict,
 )
 from cyt.pruners.policies import (
     PolicyContext,
     batch_tool_pass_through,
     catalog_needs_partition,
-    catalog_needs_pruned_recompose,
     entries_for_policy,
-    filter_recompose_json_entries,
-    is_decomposed_tool_root_chunk,
     merge_catalog,
     merge_tools_preserving_order,
-    mitigate_empty_optional_properties,
     output_policy_context_from_config,
     partition_catalog,
     policy_context_from_config,
     request_pass_through,
-    root_tool_id_from_chunk,
     tools_for_catalog,
 )
 from cyt.pruners.query import tools_pruning_query
@@ -448,12 +442,11 @@ def _run_llm_stage(
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
     ctx: PolicyContext | None = None,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     if trim_before_llm:
         data = trim_catalog_dict(data, top_k=LLM_PRE_TRIM_TOP_K_JSON)
 
     llm_usage: StageTokenUsage
-    scored_snapshot: dict[str, Any] | None = None
     llm_settings = pruner_settings.for_stage("llm") if pruner_settings else None
     skill_matches_resolved = skill_llm_out is not None and skill_llm_out.get("matches") is not None
     prune_skills_in_parallel = skill_entries is not None and not skill_matches_resolved
@@ -497,13 +490,13 @@ def _run_llm_stage(
                 tuple[list[MatchedSkill], StageTokenUsage],
                 parallel_results["skills"],
             )
-            data, scored_snapshot, llm_usage = tools_result
+            data, _, llm_usage = tools_result
             skill_matches, skill_usage = skills_result
             llm_usage = llm_usage.merge(skill_usage)
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:
-            data, scored_snapshot, llm_usage = llm_catalog_dict(
+            data, _, llm_usage = llm_catalog_dict(
                 data,
                 query,
                 ctx=ctx,
@@ -512,7 +505,7 @@ def _run_llm_stage(
                 settings=llm_settings,
             )
     else:
-        data, scored_snapshot, llm_usage = llm_catalog_dict(
+        data, _, llm_usage = llm_catalog_dict(
             data,
             query,
             ctx=ctx,
@@ -521,12 +514,20 @@ def _run_llm_stage(
             settings=llm_settings,
         )
 
+    stage_result = finalize_scored_stage(
+        data,
+        prune_fn=lambda catalog: prune_llm_catalog(catalog, config=config),
+    )
+    data = stage_result.data
+    post_rerank = stage_result.post_rerank
+    post_rerank_scored = stage_result.post_rerank_scored
+
     pruning_token_usage["llm"] = llm_usage
     decomposed_breakdown["llm"] = _breakdown_entry(data)
     decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
     if capture_catalog and snapshots is not None:
         snapshots["llm"] = _snapshot_catalog(data)
-    return data, scored_snapshot
+    return data, post_rerank, post_rerank_scored
 
 
 def _run_bm25_stage(
@@ -629,12 +630,12 @@ def _run_pipeline_stage(
     if stage == "llm":
         for attempt in range(1, LLM_STAGE_MAX_ATTEMPTS + 1):
             try:
-                updated, scored_snapshot = _run_llm_stage(
+                updated, post_rerank, post_rerank_scored = _run_llm_stage(
                     **stage_kwargs,
                     trim_before_llm=stage_index > 0
                     and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
                 )
-                return updated, None, scored_snapshot
+                return updated, post_rerank, post_rerank_scored
             except Exception as exc:
                 if attempt < LLM_STAGE_MAX_ATTEMPTS:
                     logger.warning(
@@ -740,10 +741,7 @@ def _run_pruning_pipeline(
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
         if stage_post_rerank_scored is not None:
-            if stage == "llm" and post_rerank_scored is not None:
-                overlay_llm_md_scores(post_rerank_scored, stage_post_rerank_scored)
-            else:
-                post_rerank_scored = stage_post_rerank_scored
+            post_rerank_scored = stage_post_rerank_scored
 
     if pinned:
         data = merge_catalog(data, pinned)
@@ -766,162 +764,6 @@ def _run_pruning_pipeline(
         snapshots,
         pruning_token_usage,
     )
-
-
-def _append_unique_json_chunks(
-    entries: list[dict[str, Any]],
-    seen_paths: set[object],
-    items: object,
-) -> None:
-    if not isinstance(items, list):
-        return
-    for item in cast(list[object], items):
-        if not isinstance(item, dict):
-            continue
-        chunk = cast(dict[str, Any], item)
-        file_path = chunk.get("file_path")
-        if file_path in seen_paths:
-            continue
-        seen_paths.add(file_path)
-        entries.append(copy.deepcopy(chunk))
-
-
-def _llm_selection_from_catalog(
-    data: dict[str, Any],
-) -> tuple[list[dict[str, Any]] | None, set[str], set[str]]:
-    llm_json = data.get("json") if isinstance(data.get("json"), list) else None
-    llm_selected_paths = {
-        str(item.get("file_path", ""))
-        for item in (llm_json or [])
-        if isinstance(item, dict) and item.get("file_path")
-    }
-    llm_selected_tool_ids = {
-        root_tool_id_from_chunk(item) for item in (llm_json or []) if isinstance(item, dict)
-    }
-    return llm_json, llm_selected_paths, llm_selected_tool_ids
-
-
-def _append_post_rerank_roots_for_recompose(
-    entries: list[dict[str, Any]],
-    seen_paths: set[object],
-    post_rerank: dict[str, Any],
-    *,
-    terminal_is_llm: bool,
-    llm_selected_tool_ids: set[str],
-) -> None:
-    post_items = post_rerank.get("json")
-    if terminal_is_llm:
-        if not llm_selected_tool_ids or not isinstance(post_items, list):
-            return
-        selected_roots = [
-            cast(dict[str, Any], raw)
-            for raw in post_items
-            if isinstance(raw, dict)
-            and is_decomposed_tool_root_chunk(cast(dict[str, Any], raw))
-            and root_tool_id_from_chunk(cast(dict[str, Any], raw)) in llm_selected_tool_ids
-        ]
-        _append_unique_json_chunks(entries, seen_paths, selected_roots)
-        return
-    _append_unique_json_chunks(entries, seen_paths, post_items)
-
-
-def _json_entries_for_recompose(
-    data: dict[str, Any],
-    post_rerank: dict[str, Any] | None,
-    pinned: dict[str, Any] | None,
-    *,
-    catalog_index: CatalogIndex,
-    build_catalog: dict[str, Any] | None = None,
-    post_rerank_scored: dict[str, Any] | None = None,
-    pruning_pipeline: list[str] | None = None,
-    ctx: PolicyContext | None = None,
-    output_ctx: PolicyContext | None = None,
-    config: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    """Pick json catalog entries for retrieve_tools (same inputs retrieve_catalog.py expects)."""
-    resolved_config = config or load_config()
-    policy_ctx = ctx or policy_context_from_config(resolved_config)
-    prepare_hook_tool_pruning(resolved_config, policy_ctx, output_ctx)
-    entries: list[dict[str, Any]] = []
-    seen_paths: set[object] = set()
-
-    if isinstance(pinned, dict):
-        _append_unique_json_chunks(entries, seen_paths, pinned.get("json"))
-
-    pipeline = pruning_pipeline if pruning_pipeline is not None else DEFAULT_PRUNING_PIPELINE
-    terminal_is_llm = bool(pipeline) and pipeline[-1] == "llm"
-    llm_json, llm_selected_paths, llm_selected_tool_ids = _llm_selection_from_catalog(data)
-
-    if catalog_needs_pruned_recompose(data, policy_ctx) and post_rerank is not None:
-        _append_post_rerank_roots_for_recompose(
-            entries,
-            seen_paths,
-            post_rerank,
-            terminal_is_llm=terminal_is_llm,
-            llm_selected_tool_ids=llm_selected_tool_ids,
-        )
-
-    _append_unique_json_chunks(entries, seen_paths, llm_json)
-
-    filtered = filter_recompose_json_entries(
-        entries,
-        ctx=policy_ctx,
-        llm_selected_paths=llm_selected_paths,
-    )
-    mitigated = mitigate_empty_optional_properties(
-        filtered,
-        ctx=policy_ctx,
-        catalog_index=catalog_index,
-        post_rerank_scored=post_rerank_scored,
-        pipeline=pipeline,
-    )
-    return mitigated
-
-
-def _recompose_catalog_data(
-    data: dict[str, Any],
-    post_rerank: dict[str, Any] | None,
-    pinned: dict[str, Any] | None,
-    *,
-    catalog_index: CatalogIndex,
-    build_catalog: dict[str, Any] | None = None,
-    post_rerank_scored: dict[str, Any] | None = None,
-    pruning_pipeline: list[str] | None = None,
-    ctx: PolicyContext | None = None,
-    output_ctx: PolicyContext | None = None,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build catalog dict for retrieve_tools after pruning.
-
-    Merges pinned roots, post-rerank json (scores), and final pipeline json, then keeps
-    roots plus optional leaves that passed ``optional_leaf_survived_rerank``. Each surviving
-    leaf is climbed unconditionally in ``process_groups``.
-    """
-    recompose: dict[str, Any] = {
-        "json": _json_entries_for_recompose(
-            data,
-            post_rerank,
-            pinned,
-            catalog_index=catalog_index,
-            build_catalog=build_catalog,
-            post_rerank_scored=post_rerank_scored,
-            pruning_pipeline=pruning_pipeline,
-            ctx=ctx,
-            output_ctx=output_ctx,
-            config=config,
-        ),
-        "md": data.get("md", []) if isinstance(data.get("md"), list) else [],
-    }
-    for key in (
-        "system_required_enum_values",
-        "mcp_required_enum_values",
-        "required_enum_values_by_tool",
-    ):
-        if key in data:
-            recompose[key] = data[key]
-        elif isinstance(pinned, dict) and key in pinned:
-            recompose[key] = pinned[key]
-    return recompose
 
 
 def _log_operator_message(msg: str) -> None:
