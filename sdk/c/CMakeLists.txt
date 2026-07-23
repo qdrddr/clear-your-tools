@@ -79,6 +79,29 @@ add_custom_command(
 
 add_custom_target(cyt_indexer_build DEPENDS "${CYT_SHARED_LIB}")
 
+if(APPLE)
+    set(CYT_DEPS_DYLIB "${CYT_ARTIFACT_DIR}/deps/libcyt_indexer.dylib")
+    set(CYT_STAGED_DYLIB "${CMAKE_BINARY_DIR}/libcyt_indexer.dylib")
+    add_custom_command(
+        OUTPUT "${CYT_STAGED_DYLIB}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CYT_DEPS_DYLIB}" "${CYT_STAGED_DYLIB}"
+        DEPENDS cyt_indexer_build
+        COMMENT "Stage libcyt_indexer.dylib beside C examples"
+    )
+    add_custom_target(cyt_stage_dylib DEPENDS "${CYT_STAGED_DYLIB}")
+elseif(WIN32)
+    set(CYT_STAGED_DLL "${CMAKE_BINARY_DIR}/cyt_indexer.dll")
+    add_custom_command(
+        OUTPUT "${CYT_STAGED_DLL}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CYT_SHARED_LIB}" "${CYT_STAGED_DLL}"
+        DEPENDS cyt_indexer_build
+        COMMENT "Stage cyt_indexer.dll beside C examples"
+    )
+    add_custom_target(cyt_stage_dll DEPENDS "${CYT_STAGED_DLL}")
+endif()
+
 if(CYT_BUILD_SHARED)
     add_library(cyt_indexer SHARED IMPORTED GLOBAL)
     set_target_properties(cyt_indexer PROPERTIES
@@ -113,10 +136,13 @@ function(cyt_add_example name source)
     target_link_libraries("${name}" PRIVATE CYT::cyt_indexer)
     add_dependencies("${name}" cyt_indexer_build)
     if(WIN32)
+        add_dependencies("${name}" cyt_stage_dll)
+    elseif(APPLE)
+        add_dependencies("${name}" cyt_stage_dylib)
         add_custom_command(TARGET "${name}" POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CYT_SHARED_LIB}" "$<TARGET_FILE_DIR:${name}>"
-            COMMENT "Copy cyt_indexer.dll beside ${name}"
+            COMMAND install_name_tool -change "${CYT_DEPS_DYLIB}"
+                "@loader_path/libcyt_indexer.dylib" "$<TARGET_FILE:${name}>"
+            COMMENT "Fix ${name} dylib load path"
         )
     endif()
 endfunction()

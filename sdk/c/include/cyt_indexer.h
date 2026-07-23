@@ -728,6 +728,19 @@ int cyt_mitigate_empty_optional_properties(const char *entries_json,
                                            const char *pipeline_json,
                                            char **out);
 
+int cyt_ensure_root_json_for_surviving_tools(const char *entries_json,
+                                             const char *build_catalog_json,
+                                             char **out);
+
+int cyt_json_entries_for_recompose(const char *data_json,
+                                   const char *pinned_json,
+                                   const char *build_catalog_json,
+                                   const char *post_rerank_scored_json,
+                                   const char *ctx_json,
+                                   const char *catalog_index_json,
+                                   const char *pipeline_json,
+                                   char **out);
+
 int cyt_append_description_reinstate_entries(const char *entries_json,
                                              const char *build_catalog_json,
                                              const char *catalog_index_json,
