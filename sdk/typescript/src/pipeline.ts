@@ -5,6 +5,7 @@ import {
   classifyAndCountCatalogNative,
   coordinateBm25PruneNative,
   pruneCatalogBm25AndRetrieveNative,
+  recomposeAndRetrieveToolsNative,
   searchSkillsAndSelectNative,
 } from "./native.js";
 import { PolicyContextNative } from "./native.js";
@@ -92,6 +93,30 @@ export function pruneCatalogBm25AndRetrieve(
     outputCtx,
     pruneOptionsToNative(options),
   ) as JsonRecord;
+}
+
+export function recomposeAndRetrieveTools(
+  data: JsonRecord,
+  buildCatalog: JsonRecord,
+  catalogIndex: JsonRecord,
+  postRerank: JsonRecord | null | undefined,
+  postRerankScored: JsonRecord | null | undefined,
+  pinned: JsonRecord | null | undefined,
+  pipeline: string[],
+  scoringCtx: PolicyContext,
+  outputCtx: PolicyContext,
+): JsonRecord[] {
+  return recomposeAndRetrieveToolsNative(
+    data,
+    buildCatalog,
+    catalogIndex,
+    postRerank ?? undefined,
+    postRerankScored ?? undefined,
+    pinned ?? undefined,
+    pipeline,
+    scoringCtx,
+    outputCtx,
+  ) as JsonRecord[];
 }
 
 export function classifyAndCountCatalog(

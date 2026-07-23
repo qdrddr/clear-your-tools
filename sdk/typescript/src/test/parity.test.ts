@@ -19,6 +19,7 @@ import { tokenCountFromDecomposedFrontmatter } from "../pageindex.js";
 import {
   classifyAndCountCatalog,
   coordinateBm25Prune,
+  recomposeAndRetrieveTools,
   buildSkillNodeCatalog,
 } from "../pipeline.js";
 
@@ -207,6 +208,43 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
     catalog,
     index,
     "hello",
+    ctx,
+    ctx,
+  );
+  assertJsonEqual(got, want);
+});
+
+
+test("parity recomposeAndRetrieveTools matches Python reference", () => {
+  if (skipParity()) {
+    return;
+  }
+  if (!pythonAvailable()) {
+    return;
+  }
+
+  const want = pythonJSON(`
+import json
+from cyt_indexer._native import policy_context_from_values, recompose_and_retrieve_tools
+ctx = policy_context_from_values({})
+data = {"json": [], "md": []}
+catalog = {"json": [], "md": []}
+index = {"tools": [], "files": {}}
+print(json.dumps(recompose_and_retrieve_tools(data, catalog, index, None, None, None, [], ctx, ctx)))
+`);
+
+  const ctx = policyContextFromValues({});
+  const data = { json: [], md: [] };
+  const catalog = { json: [], md: [] };
+  const index = { tools: [], files: {} };
+  const got = recomposeAndRetrieveTools(
+    data,
+    catalog,
+    index,
+    undefined,
+    undefined,
+    undefined,
+    [],
     ctx,
     ctx,
   );

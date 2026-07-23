@@ -137,6 +137,7 @@ export {
 } from "./pageindex.js";
 export {
   pruneCatalogBm25AndRetrieve,
+  recomposeAndRetrieveTools,
   classifyAndCountCatalog,
   searchSkillsAndSelect,
   buildSkillNodeCatalog,
