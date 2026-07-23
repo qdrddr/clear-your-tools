@@ -1,10 +1,10 @@
 ---
 id: TASK-0001
-title: Investigate MCP SPEC changes
+title: Investigate MCP SPEC
 status: To Do
 assignee: []
 created_date: '2026-07-23 20:42'
-updated_date: '2026-07-23 20:46'
+updated_date: '2026-07-23 21:28'
 labels:
   - MCP SPEC
 dependencies: []
