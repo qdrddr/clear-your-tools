@@ -118,6 +118,8 @@ pub const EXPORTS: &[FfiExport] = &[
     // policies — recompose / enums
     export("cyt_filter_recompose_json_entries", "policies"),
     export("cyt_mitigate_empty_optional_properties", "policies"),
+    export("cyt_ensure_root_json_for_surviving_tools", "policies"),
+    export("cyt_json_entries_for_recompose", "policies"),
     export("cyt_append_description_reinstate_entries", "policies"),
     export("cyt_is_description_policy", "policies"),
     export("cyt_scoring_policy", "policies"),

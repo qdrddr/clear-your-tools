@@ -198,6 +198,11 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(filter_recompose_json_entries_py, m)?)?;
     m.add_function(wrap_pyfunction!(mitigate_empty_optional_properties_py, m)?)?;
     m.add_function(wrap_pyfunction!(
+        ensure_root_json_for_surviving_tools_py,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(json_entries_for_recompose_py, m)?)?;
+    m.add_function(wrap_pyfunction!(
         append_description_reinstate_entries_py,
         m
     )?)?;
@@ -425,6 +430,71 @@ fn mitigate_empty_optional_properties_py(
         &pipeline_vec,
     );
     super::value_to_py(py, &Value::Array(result))
+}
+
+#[pyfunction(name = "ensure_root_json_for_surviving_tools")]
+fn ensure_root_json_for_surviving_tools_py(
+    py: Python<'_>,
+    entries: Bound<'_, PyAny>,
+    build_catalog: Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let entries_val = super::py_to_value(entries)?;
+    let arr = entries_val.as_array().cloned().unwrap_or_default();
+    let build = super::py_to_value(build_catalog)?;
+    let result = policies::ensure_root_json_for_surviving_tools(&arr, &build);
+    super::value_to_py(py, &Value::Array(result))
+}
+
+struct JsonEntriesForRecomposeInputs {
+    ctx: PolicyContext,
+    data: Value,
+    pinned: Option<Value>,
+    build_catalog: Value,
+    post_rerank_scored: Option<Value>,
+    catalog_index: crate::build::CatalogIndex,
+    pipeline: Vec<String>,
+}
+
+fn json_entries_for_recompose_impl(
+    py: Python<'_>,
+    inputs: &JsonEntriesForRecomposeInputs,
+) -> PyResult<Py<PyAny>> {
+    let result = policies::json_entries_for_recompose(
+        &inputs.data,
+        inputs.pinned.as_ref(),
+        &inputs.build_catalog,
+        inputs.post_rerank_scored.as_ref(),
+        &inputs.ctx,
+        &inputs.catalog_index,
+        &inputs.pipeline,
+    );
+    super::value_to_py(py, &Value::Array(result))
+}
+
+#[pyfunction(name = "json_entries_for_recompose")]
+fn json_entries_for_recompose_py(
+    py: Python<'_>,
+    data: Bound<'_, PyAny>,
+    pinned: Option<Bound<'_, PyAny>>,
+    build_catalog: Bound<'_, PyAny>,
+    post_rerank_scored: Option<Bound<'_, PyAny>>,
+    ctx: &Bound<'_, PyAny>,
+    catalog_and_pipeline: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let (catalog_index, pipeline): (Bound<'_, PyAny>, Bound<'_, PyAny>) =
+        catalog_and_pipeline.extract()?;
+    json_entries_for_recompose_impl(
+        py,
+        &JsonEntriesForRecomposeInputs {
+            ctx: ctx_from_py_any(ctx)?,
+            data: super::py_to_value(data)?,
+            pinned: pinned.map(super::py_to_value).transpose()?,
+            build_catalog: super::py_to_value(build_catalog)?,
+            post_rerank_scored: post_rerank_scored.map(super::py_to_value).transpose()?,
+            catalog_index: super::catalog_index_from_py(catalog_index)?,
+            pipeline: pipeline.extract::<Vec<String>>()?,
+        },
+    )
 }
 
 #[pyfunction(name = "append_description_reinstate_entries")]

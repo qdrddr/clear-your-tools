@@ -272,6 +272,46 @@ pub fn mitigate_empty_optional_properties(
 
 #[napi]
 #[must_use]
+pub fn ensure_root_json_for_surviving_tools(
+    entries: Vec<Value>,
+    build_catalog: Value,
+) -> Vec<Value> {
+    let entries = entries.into_boxed_slice();
+    let build_catalog = Box::new(build_catalog);
+    policies::ensure_root_json_for_surviving_tools(&entries, &build_catalog)
+}
+
+#[napi]
+#[must_use]
+pub fn json_entries_for_recompose(
+    data: Value,
+    pinned: Option<Value>,
+    build_catalog: Value,
+    post_rerank_scored: Option<Value>,
+    ctx: &PolicyContextNapi,
+    catalog_index: Value,
+    pipeline: Vec<String>,
+) -> Vec<Value> {
+    let data = Box::new(data);
+    let pinned = pinned.map(Box::new);
+    let build_catalog = Box::new(build_catalog);
+    let post_rerank_scored = post_rerank_scored.map(Box::new);
+    let catalog_index = Box::new(catalog_index);
+    let index = catalog_index_from_value(&catalog_index);
+    let pipeline = pipeline.into_boxed_slice();
+    policies::json_entries_for_recompose(
+        &data,
+        pinned.as_deref(),
+        &build_catalog,
+        post_rerank_scored.as_deref(),
+        ctx_from_napi(ctx),
+        &index,
+        &pipeline,
+    )
+}
+
+#[napi]
+#[must_use]
 pub fn append_description_reinstate_entries(
     entries: Vec<Value>,
     build_catalog: Value,

@@ -359,6 +359,77 @@ pub unsafe extern "C" fn cyt_mitigate_empty_optional_properties(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_ensure_root_json_for_surviving_tools(
+    entries_json: *const c_char,
+    build_catalog_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let entries =
+            json_array_or_empty(&unsafe { parse_json_cstr(entries_json, "entries_json")? });
+        let build = unsafe { parse_json_cstr(build_catalog_json, "build_catalog_json")? };
+        let result = policies::ensure_root_json_for_surviving_tools(&entries, &build);
+        unsafe { write_json_out(&Value::Array(result), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cyt_json_entries_for_recompose(
+    data_json: *const c_char,
+    pinned_json: *const c_char,
+    build_catalog_json: *const c_char,
+    post_rerank_scored_json: *const c_char,
+    ctx_json: *const c_char,
+    catalog_index_json: *const c_char,
+    pipeline_json: *const c_char,
+    out: *mut *mut c_char,
+) -> c_int {
+    run_ffi(|| {
+        if out.is_null() {
+            set_error("null pointer: out");
+            return Err(CYT_ERR_NULL_PTR);
+        }
+        let ctx = parse_ctx_json(ctx_json)?;
+        let data = unsafe { parse_json_cstr(data_json, "data_json")? };
+        let pinned = if pinned_json.is_null() {
+            None
+        } else {
+            Some(unsafe { parse_json_cstr(pinned_json, "pinned_json")? })
+        };
+        let build = unsafe { parse_json_cstr(build_catalog_json, "build_catalog_json")? };
+        let scored = if post_rerank_scored_json.is_null() {
+            None
+        } else {
+            Some(unsafe { parse_json_cstr(post_rerank_scored_json, "post_rerank_scored_json")? })
+        };
+        let index = catalog_index_from_json(&unsafe {
+            parse_json_cstr(catalog_index_json, "catalog_index_json")?
+        });
+        let pipeline_val = unsafe { parse_json_cstr(pipeline_json, "pipeline_json")? };
+        let pipeline: Vec<String> = json_array_or_empty(&pipeline_val)
+            .into_iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        let result = policies::json_entries_for_recompose(
+            &data,
+            pinned.as_ref(),
+            &build,
+            scored.as_ref(),
+            &ctx,
+            &index,
+            &pipeline,
+        );
+        unsafe { write_json_out(&Value::Array(result), out)? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn cyt_append_description_reinstate_entries(
     entries_json: *const c_char,
     build_catalog_json: *const c_char,

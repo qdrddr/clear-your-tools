@@ -1,17 +1,15 @@
 //! Composite tool-catalog BM25 prune + recompose + retrieve.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde_json::{Map, Value, json};
 
 use crate::bm25_search::{ScoreCatalogOptions, score_catalog_in_place};
 use crate::build::{CatalogIndex, catalog_tool_count};
 use crate::policies::{
-    PolicyContext, catalog_needs_partition, catalog_needs_pruned_recompose,
-    classify_optional_chunks_batch, classify_optional_chunks_batch_with_ctx,
-    drop_recomposed_tools_with_empty_properties, filter_recompose_json_entries, full_pass_through,
-    is_decomposed_tool_root_chunk, merge_catalog, mitigate_empty_optional_properties,
-    partition_catalog, root_tool_id_from_chunk,
+    PolicyContext, catalog_needs_partition, classify_optional_chunks_batch,
+    classify_optional_chunks_batch_with_ctx, drop_recomposed_tools_with_empty_properties,
+    full_pass_through, json_entries_for_recompose, merge_catalog, partition_catalog,
 };
 use crate::retrieve::{DecomposedCatalog, RetrieveOptions, retrieve_tools_from_catalog};
 use crate::runtime_config;
@@ -79,133 +77,9 @@ fn count_optional_property_chunks(data: &Value, ctx: &PolicyContext) -> usize {
         .count()
 }
 
-fn append_unique_json_entries(
-    entries: &mut Vec<Value>,
-    seen: &mut HashSet<String>,
-    items: Option<&[Value]>,
-) {
-    let Some(items) = items else {
-        return;
-    };
-    for item in items {
-        let Some(obj) = item.as_object() else {
-            continue;
-        };
-        let file_path = obj
-            .get("file_path")
-            .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
-            .unwrap_or_default();
-        if seen.contains(&file_path) {
-            continue;
-        }
-        seen.insert(file_path);
-        entries.push(item.clone());
-    }
-}
-
-fn llm_selected_tool_ids(data: &Value) -> HashSet<String> {
-    let Some(llm_json) = data.get("json").and_then(Value::as_array) else {
-        return HashSet::new();
-    };
-    llm_json
-        .iter()
-        .filter_map(|item| {
-            let obj = item.as_object()?;
-            obj.get("file_path")?;
-            Some(root_tool_id_from_chunk(item))
-        })
-        .collect()
-}
-
-fn append_post_rerank_roots_for_recompose(
-    entries: &mut Vec<Value>,
-    seen: &mut HashSet<String>,
-    post_rerank: &Value,
-    terminal_is_llm: bool,
-    llm_selected_tool_ids: &HashSet<String>,
-) {
-    let Some(post_items) = post_rerank.get("json").and_then(Value::as_array) else {
-        return;
-    };
-    if terminal_is_llm {
-        if llm_selected_tool_ids.is_empty() {
-            return;
-        }
-        let selected_roots: Vec<Value> = post_items
-            .iter()
-            .filter(|item| {
-                is_decomposed_tool_root_chunk(item)
-                    && llm_selected_tool_ids.contains(&root_tool_id_from_chunk(item))
-            })
-            .cloned()
-            .collect();
-        append_unique_json_entries(entries, seen, Some(&selected_roots));
-        return;
-    }
-    append_unique_json_entries(entries, seen, Some(post_items));
-}
-
-fn json_entries_for_recompose(
-    data: &Value,
-    post_rerank: Option<&Value>,
-    pinned: Option<&Value>,
-    catalog_index: &CatalogIndex,
-    post_rerank_scored: Option<&Value>,
-    pipeline: &[String],
-    ctx: &PolicyContext,
-) -> Vec<Value> {
-    let mut entries = Vec::new();
-    let mut seen_paths = HashSet::new();
-    let terminal_is_llm = pipeline.last().is_some_and(|stage| stage == "llm");
-    let llm_selected_tool_ids = llm_selected_tool_ids(data);
-
-    if let Some(pinned_val) = pinned {
-        append_unique_json_entries(
-            &mut entries,
-            &mut seen_paths,
-            pinned_val
-                .get("json")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice),
-        );
-    }
-    if catalog_needs_pruned_recompose(data, ctx)
-        && let Some(pr) = post_rerank
-    {
-        append_post_rerank_roots_for_recompose(
-            &mut entries,
-            &mut seen_paths,
-            pr,
-            terminal_is_llm,
-            &llm_selected_tool_ids,
-        );
-    }
-
-    let llm_json = data.get("json").and_then(Value::as_array);
-    append_unique_json_entries(&mut entries, &mut seen_paths, llm_json.map(Vec::as_slice));
-
-    let llm_selected_paths: HashSet<String> = llm_json
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| {
-                    item.as_object()?
-                        .get("file_path")?
-                        .as_str()
-                        .map(str::to_string)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let rerank_score = runtime_config::rerank_score();
-    let filtered =
-        filter_recompose_json_entries(ctx, &entries, rerank_score, Some(&llm_selected_paths));
-    mitigate_empty_optional_properties(ctx, &filtered, catalog_index, post_rerank_scored, pipeline)
-}
-
 fn recompose_catalog_data(
     data: &Value,
-    post_rerank: Option<&Value>,
+    build_catalog: &Value,
     pinned: Option<&Value>,
     catalog_index: &CatalogIndex,
     post_rerank_scored: Option<&Value>,
@@ -217,12 +91,12 @@ fn recompose_catalog_data(
         "json".into(),
         Value::Array(json_entries_for_recompose(
             data,
-            post_rerank,
             pinned,
-            catalog_index,
+            build_catalog,
             post_rerank_scored,
-            pipeline,
             ctx,
+            catalog_index,
+            pipeline,
         )),
     );
     let md = post_rerank_scored
@@ -310,7 +184,7 @@ pub fn prune_catalog_bm25_and_retrieve(
         json!({})
     };
 
-    let (post_rerank_scored, post_rerank) = if full_pass_through(scoring_ctx) {
+    let (post_rerank_scored, _post_rerank) = if full_pass_through(scoring_ctx) {
         (None, None)
     } else {
         let score_options = ScoreCatalogOptions {
@@ -346,7 +220,7 @@ pub fn prune_catalog_bm25_and_retrieve(
 
     let recompose_data = recompose_catalog_data(
         &data,
-        post_rerank.as_ref(),
+        build_catalog,
         Some(&pinned),
         catalog_index,
         post_rerank_scored.as_ref(),
@@ -401,9 +275,10 @@ pub fn recompose_and_retrieve_tools(
     scoring_ctx: &PolicyContext,
     output_ctx: &PolicyContext,
 ) -> Vec<Value> {
+    let _ = post_rerank;
     let recompose_data = recompose_catalog_data(
         data,
-        post_rerank,
+        build_catalog,
         pinned,
         catalog_index,
         post_rerank_scored,
