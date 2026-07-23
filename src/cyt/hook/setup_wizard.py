@@ -20,6 +20,16 @@ from cyt.config import (
 )
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
+from cyt.hook.cli_invocation import (
+    HookCliInvocation,
+    INSTALLED_CYT_CLIENT_COMMAND,
+    INSTALLED_CYT_DAEMON_START_COMMAND,
+    INSTALLED_CYT_DAEMON_START_COMMAND_BASE,
+    cyt_client_command,
+    cyt_daemon_start_command,
+    detect_hook_cli_invocation,
+    is_dev_cyt_hook_command,
+)
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
@@ -39,9 +49,9 @@ HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60
 USER_PROMPT_TIMEOUT_SECONDS = 60
 CYT_HOOK_COMMAND_PREFIX = "cyt hook"
-CYT_CLIENT_COMMAND = "cyt-client"
-CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
-CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
+CYT_CLIENT_COMMAND = INSTALLED_CYT_CLIENT_COMMAND
+CYT_DAEMON_START_COMMAND = INSTALLED_CYT_DAEMON_START_COMMAND
+CYT_DAEMON_START_COMMAND_BASE = INSTALLED_CYT_DAEMON_START_COMMAND_BASE
 HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
     "session_id": "sess-00000000-0000-4000-8000-000000000001",
     "turn_id": "turn-00000000-0000-4000-8000-000000000001",
@@ -54,9 +64,13 @@ HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
 }
 
 
-def format_hook_stdin_test_command(*, debug: bool = False) -> str:
+def format_hook_stdin_test_command(
+    *,
+    debug: bool = False,
+    invocation: HookCliInvocation | None = None,
+) -> str:
     """Return a copy-paste shell snippet that pipes anonymized hook JSON to ``cyt-client``."""
-    command = "cyt-client"
+    command = cyt_client_command(invocation=invocation)
     if debug:
         command = f"CYT_HOOK_DEBUG=1 {command}"
     payload_json = json.dumps(HOOK_STDIN_TEST_PAYLOAD, indent=2)
@@ -69,10 +83,14 @@ def format_hook_stdin_test_command(*, debug: bool = False) -> str:
     )
 
 
-def _print_hook_stdin_test_example(*, debug: bool) -> None:
+def _print_hook_stdin_test_example(
+    *,
+    debug: bool,
+    invocation: HookCliInvocation | None = None,
+) -> None:
     print("\nTest the hook locally (UserPromptSubmit payload on stdin) like so:")
     print()
-    print(format_hook_stdin_test_command(debug=debug))
+    print(format_hook_stdin_test_command(debug=debug, invocation=invocation))
     print()
     print("Hook JSON output is written to stdout.")
     if debug:
@@ -85,43 +103,62 @@ def cursor_before_submit_entry(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
+    return cyt_client_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
 
 
 def cursor_session_start_entry(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    return cyt_daemon_start_entry(agent=agent, set_launch_agent=set_launch_agent)
+    return cyt_daemon_start_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
 
 
 def cursor_session_end_entry(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
+    return cyt_client_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
 
 
 def cursor_hook_entries(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, dict[str, Any]]:
     return {
         "before_submit": cursor_before_submit_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
+            invocation=invocation,
         ),
         "session_start": cursor_session_start_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
+            invocation=invocation,
         ),
         "session_end": cursor_session_end_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
+            invocation=invocation,
         ),
     }
 
@@ -130,8 +167,13 @@ def cursor_desired_hook_commands(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> list[str]:
-    entries = cursor_hook_entries(agent=agent, set_launch_agent=set_launch_agent)
+    entries = cursor_hook_entries(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
     return [
         str(entries["before_submit"].get("command")),
         str(entries["session_start"].get("command")),
@@ -311,8 +353,9 @@ def cyt_client_entry(
     *,
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    command = CYT_CLIENT_COMMAND
+    command = cyt_client_command(invocation=invocation)
     if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
@@ -322,8 +365,9 @@ def cyt_session_end_entry(
     *,
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    command = CYT_CLIENT_COMMAND
+    command = cyt_client_command(invocation=invocation)
     if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
@@ -333,8 +377,9 @@ def cyt_daemon_start_entry(
     *,
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    command = CYT_DAEMON_START_COMMAND
+    command = cyt_daemon_start_command(invocation=invocation)
     if set_launch_agent and agent is not None:
         command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
     return {"type": "command", "command": command, "timeout": SESSION_START_TIMEOUT_SECONDS}
@@ -345,10 +390,15 @@ def cyt_hook_entry(
     debug: bool = False,
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
     """Back-compat alias; prefer :func:`cyt_client_entry`."""
     del debug
-    return cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
+    return cyt_client_entry(
+        agent=agent,
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
 
 
 def _is_legacy_cyt_hook_stdin_command(command: str) -> bool:
@@ -364,6 +414,8 @@ def _is_cyt_hook_command(command: object) -> bool:
         return False
     normalized = command.strip()
     if normalized == CYT_CLIENT_COMMAND or normalized.endswith(f" {CYT_CLIENT_COMMAND}"):
+        return True
+    if is_dev_cyt_hook_command(normalized):
         return True
     if CYT_DAEMON_START_COMMAND in normalized or CYT_DAEMON_START_COMMAND_BASE in normalized:
         return True
@@ -936,18 +988,25 @@ def _install_nested_hooks_for_targets(
     *,
     debug: bool,
     set_launch_agent: bool,
+    invocation: HookCliInvocation,
 ) -> bool:
     any_changed = False
     action_choices = ("update", "remove", "skip")
     for label, path, agent in targets:
-        user_prompt_entry = cyt_client_entry(agent=agent, set_launch_agent=set_launch_agent)
+        user_prompt_entry = cyt_client_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+            invocation=invocation,
+        )
         session_start_entry = cyt_daemon_start_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
+            invocation=invocation,
         )
         session_end_entry = cyt_session_end_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
+            invocation=invocation,
         )
         hooks_data = _load_json_object(path)
         hooks_section = hooks_data.get("hooks")
@@ -1065,9 +1124,14 @@ def _install_cursor_hooks_for_target(
     *,
     debug: bool,
     set_launch_agent: bool,
+    invocation: HookCliInvocation,
 ) -> bool:
     del debug
-    entries = cursor_hook_entries(agent="cursor", set_launch_agent=set_launch_agent)
+    entries = cursor_hook_entries(
+        agent="cursor",
+        set_launch_agent=set_launch_agent,
+        invocation=invocation,
+    )
     before_submit_entry = entries["before_submit"]
     session_start_entry = entries["session_start"]
     session_end_entry = entries["session_end"]
@@ -1080,6 +1144,7 @@ def _install_cursor_hooks_for_target(
     desired_commands = cursor_desired_hook_commands(
         agent="cursor",
         set_launch_agent=set_launch_agent,
+        invocation=invocation,
     )
     needs_update = set(existing_commands) != set(desired_commands) or len(existing_commands) != len(
         desired_commands,
@@ -1209,6 +1274,12 @@ def run_hook_setup(
     )
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
 
+    invocation = detect_hook_cli_invocation()
+    if invocation.is_dev and invocation.repo_root is not None:
+        print(
+            f"Installing development hook commands via uv run --directory {invocation.repo_root}",
+        )
+
     any_changed = False
     if nested_targets:
         any_changed = (
@@ -1216,6 +1287,7 @@ def run_hook_setup(
                 nested_targets,
                 debug=debug,
                 set_launch_agent=set_launch_agent,
+                invocation=invocation,
             )
             or any_changed
         )
@@ -1226,6 +1298,7 @@ def run_hook_setup(
                 path,
                 debug=debug,
                 set_launch_agent=set_launch_agent,
+                invocation=invocation,
             )
             or any_changed
         )
@@ -1235,7 +1308,7 @@ def run_hook_setup(
     else:
         print("\nNo hook files were modified.")
 
-    _print_hook_stdin_test_example(debug=debug)
+    _print_hook_stdin_test_example(debug=debug, invocation=invocation)
 
 
 def run_hook_uninstall() -> None:

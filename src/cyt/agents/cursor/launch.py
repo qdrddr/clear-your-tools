@@ -14,6 +14,7 @@ from cyt.agents.cursor.hook import (
     upsert_cursor_hooks_into_file,
 )
 from cyt.config import inject_via, load_config, save_user_config
+from cyt.hook.cli_invocation import detect_hook_cli_invocation
 from cyt.proxy.setup_wizard import _prompt_yes_no
 
 _CURSOR_CANDIDATES = (
@@ -73,7 +74,8 @@ def ensure_cursor_inject_via_hook(
 def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:
     """Install or refresh Cursor hooks in ``~/.cursor/hooks.json``."""
     path = CURSOR_HOOKS_PATH.expanduser()
-    entries = cursor_hook_entries(agent="cursor")
+    invocation = detect_hook_cli_invocation()
+    entries = cursor_hook_entries(agent="cursor", invocation=invocation)
     changed = upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=entries["before_submit"],

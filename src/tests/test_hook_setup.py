@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from cyt.hook import setup_wizard as hook_setup
+from cyt.hook.cli_invocation import (
+    HookCliInvocation,
+    build_uv_run_dev_command,
+    cyt_client_command,
+    cyt_daemon_start_command,
+    detect_hook_cli_invocation,
+    invoked_via_proxy_cli_script,
+    is_dev_cyt_hook_command,
+    proxy_cli_script_path,
+    repo_root_from_proxy_cli_script,
+)
 
 
 def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,7 +117,194 @@ def test_is_cyt_hook_command_recognizes_cyt_client_and_daemon() -> None:
     assert hook_setup._is_cyt_hook_command("CYT_LAUNCH_AGENT=claude cyt-client")
     assert hook_setup._is_cyt_hook_command("cyt hook daemon start")
     assert hook_setup._is_cyt_hook_command("CYT_LAUNCH_AGENT=claude cyt hook --stdin")
+    assert hook_setup._is_cyt_hook_command(
+        "uv run --directory /tmp/clear-your-tools src/cyt_client/cli.py",
+    )
+    assert hook_setup._is_cyt_hook_command(
+        "uv run --directory /tmp/clear-your-tools src/cyt/proxy/cli.py hook daemon start --unattended",
+    )
     assert not hook_setup._is_cyt_hook_command("/usr/local/bin/other-hook")
+
+
+def test_detect_hook_cli_invocation_uses_dev_mode_for_proxy_script(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    script = repo_root / "src/cyt/proxy/cli.py"
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.proxy_cli_script_path",
+        lambda: script,
+    )
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.repo_root_from_proxy_cli_script",
+        lambda: repo_root,
+    )
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.invoked_via_proxy_cli_script",
+        lambda: True,
+    )
+
+    invocation = detect_hook_cli_invocation()
+
+    assert invocation.is_dev is True
+    assert invocation.repo_root == repo_root
+
+
+def test_detect_hook_cli_invocation_uses_installed_mode_for_cyt_entrypoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.invoked_via_proxy_cli_script",
+        lambda: False,
+    )
+
+    invocation = detect_hook_cli_invocation()
+
+    assert invocation.is_dev is False
+    assert invocation.repo_root is None
+
+
+def test_dev_hook_commands_use_uv_run_with_detected_repo_root() -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+
+    assert cyt_client_command(invocation=invocation) == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt_client/cli.py",
+    )
+    assert cyt_daemon_start_command(invocation=invocation) == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt/proxy/cli.py",
+        "hook",
+        "daemon",
+        "start",
+        "--unattended",
+    )
+
+
+def test_cyt_client_entry_uses_dev_command_when_invoked_via_script() -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+
+    entry = hook_setup.cyt_client_entry(agent="cursor", invocation=invocation)
+
+    assert entry["command"] == build_uv_run_dev_command(repo_root, "src/cyt_client/cli.py")
+
+
+def test_cyt_daemon_start_entry_uses_dev_command_when_invoked_via_script() -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+
+    entry = hook_setup.cyt_daemon_start_entry(agent="cursor", invocation=invocation)
+
+    assert entry["command"] == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt/proxy/cli.py",
+        "hook",
+        "daemon",
+        "start",
+        "--unattended",
+    )
+
+
+def test_is_dev_cyt_hook_command() -> None:
+    assert is_dev_cyt_hook_command(
+        "uv run --directory /tmp/repo src/cyt_client/cli.py",
+    )
+    assert is_dev_cyt_hook_command(
+        "uv run --directory /tmp/repo src/cyt/proxy/cli.py hook daemon start --unattended",
+    )
+    assert not is_dev_cyt_hook_command("cyt-client")
+    assert not is_dev_cyt_hook_command("uv run --directory /tmp/repo other.py")
+
+
+def test_repo_root_from_proxy_cli_script_resolves_from_package_layout() -> None:
+    script = proxy_cli_script_path()
+    repo_root = repo_root_from_proxy_cli_script()
+
+    assert script.name == "cli.py"
+    assert repo_root is not None
+    assert (repo_root / "pyproject.toml").is_file()
+    assert script == repo_root / "src/cyt/proxy/cli.py"
+
+
+def test_invoked_via_proxy_cli_script_matches_script_argv0(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = proxy_cli_script_path()
+    monkeypatch.setattr(sys, "argv", [str(script), "hook", "cursor"])
+
+    assert invoked_via_proxy_cli_script() is True
+
+
+def test_invoked_via_proxy_cli_script_matches_cli_impl_after_runpy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = proxy_cli_script_path().with_name("cli_impl.py")
+    monkeypatch.setattr(sys, "argv", [str(script), "hook", "cursor"])
+
+    assert invoked_via_proxy_cli_script() is True
+
+
+def test_detect_hook_cli_invocation_after_runpy_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = repo_root_from_proxy_cli_script()
+    assert repo_root is not None
+    script = proxy_cli_script_path().with_name("cli_impl.py")
+    monkeypatch.setattr(sys, "argv", [str(script), "hook", "cursor"])
+
+    invocation = detect_hook_cli_invocation()
+
+    assert invocation.is_dev is True
+    assert invocation.repo_root == repo_root
+
+
+def test_run_hook_setup_installs_dev_cursor_hooks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    cursor_path = tmp_path / "cursor" / "hooks.json"
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(
+        hook_setup,
+        "_configure_hook_skills_directories",
+        lambda **_kwargs: None,
+    )
+    monkeypatch.setattr(hook_setup, "detect_hook_cli_invocation", lambda: invocation)
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        lowered = text.lower()
+        if "cyt_launch_agent" in lowered:
+            return False
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    _stub_tools_hook_wizard(monkeypatch)
+
+    with patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}):
+        hook_setup.run_hook_setup(agents=["cursor"])
+
+    data = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt_client/cli.py",
+    )
+    assert data["hooks"]["sessionStart"][0]["command"] == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt/proxy/cli.py",
+        "hook",
+        "daemon",
+        "start",
+        "--unattended",
+    )
+    assert data["hooks"]["sessionEnd"][0]["command"] == build_uv_run_dev_command(
+        repo_root,
+        "src/cyt_client/cli.py",
+    )
 
 
 def test_merge_cyt_hook_upgrades_env_prefixed_legacy_stdin_command() -> None:
