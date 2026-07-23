@@ -629,6 +629,25 @@ int cyt_prune_catalog_bm25_and_retrieve(const char *catalog_json,
                                         char **out);
 
 /*
+ Recompose pruned catalog survivors and retrieve merged tool schemas in one call.
+
+ # Safety
+
+ JSON pointer arguments must be valid null-terminated UTF-8 C strings; optional JSON args
+ may be null; `out` must be non-null.
+ */
+int cyt_recompose_and_retrieve_tools(const char *data_json,
+                                     const char *build_catalog_json,
+                                     const char *catalog_index_json,
+                                     const char *post_rerank_json,
+                                     const char *post_rerank_scored_json,
+                                     const char *pinned_json,
+                                     const char *pipeline_json,
+                                     const char *scoring_ctx_json,
+                                     const char *output_ctx_json,
+                                     char **out);
+
+/*
  Classify optional catalog chunks and optionally count tool JSON tokens.
 
  # Safety
