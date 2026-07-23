@@ -11,6 +11,7 @@ import {
   dropRecomposedToolsWithEmptyPropertiesNative,
   effectivePolicyNative,
   entriesForPolicyNative,
+  ensureRootJsonForSurvivingToolsNative,
   filterRecomposeJsonEntriesNative,
   fullPassThroughNative,
   isDecomposedOptionalPropertyChunkNative,
@@ -26,6 +27,7 @@ import {
   isSystemOptionalChunkNative,
   isSystemRootChunkNative,
   isSystemToolIdNative,
+  jsonEntriesForRecomposeNative,
   mergeCatalogNative,
   mergeToolsPreservingOrderNative,
   mitigateEmptyOptionalPropertiesNative,
@@ -363,6 +365,36 @@ export function mitigateEmptyOptionalProperties(
     catalogIndex,
     ctx,
     postRerankScored ?? undefined,
+    pipeline,
+  ) as JsonRecord[];
+}
+
+export function ensureRootJsonForSurvivingTools(
+  entries: JsonRecord[],
+  buildCatalog: JsonRecord,
+): JsonRecord[] {
+  return ensureRootJsonForSurvivingToolsNative(
+    entries,
+    buildCatalog,
+  ) as JsonRecord[];
+}
+
+export function jsonEntriesForRecompose(
+  data: JsonRecord,
+  pinned: JsonRecord | null | undefined,
+  buildCatalog: JsonRecord,
+  postRerankScored: JsonRecord | null | undefined,
+  ctx: PolicyContext,
+  catalogIndex: JsonRecord,
+  pipeline: string[],
+): JsonRecord[] {
+  return jsonEntriesForRecomposeNative(
+    data,
+    pinned ?? undefined,
+    buildCatalog,
+    postRerankScored ?? undefined,
+    ctx,
+    catalogIndex,
     pipeline,
   ) as JsonRecord[];
 }

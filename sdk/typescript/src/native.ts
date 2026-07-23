@@ -75,6 +75,9 @@ export const filterRecomposeJsonEntriesNative =
   native.filterRecomposeJsonEntries;
 export const mitigateEmptyOptionalPropertiesNative =
   native.mitigateEmptyOptionalProperties;
+export const ensureRootJsonForSurvivingToolsNative =
+  native.ensureRootJsonForSurvivingTools;
+export const jsonEntriesForRecomposeNative = native.jsonEntriesForRecompose;
 export const appendDescriptionReinstateEntriesNative =
   native.appendDescriptionReinstateEntries;
 export const needsDescriptionReinstateNative = native.needsDescriptionReinstate;
