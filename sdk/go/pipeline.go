@@ -15,6 +15,26 @@ func PruneCatalogBm25AndRetrieve(
 	)
 }
 
+// RecomposeAndRetrieveTools recomposes pruned catalog survivors and retrieves merged tool schemas.
+func RecomposeAndRetrieveTools(
+	dataJSON, buildCatalogJSON, catalogIndexJSON string,
+	postRerankJSON, postRerankScoredJSON, pinnedJSON string,
+	pipelineJSON, scoringCtxJSON, outputCtxJSON string,
+) (string, error) {
+	return cgoRecomposeAndRetrieveTools(
+		dataJSON,
+		buildCatalogJSON,
+		catalogIndexJSON,
+		postRerankJSON,
+		postRerankScoredJSON,
+		pinnedJSON,
+		pipelineJSON,
+		scoringCtxJSON,
+		outputCtxJSON,
+	)
+}
+
+
 // ClassifyAndCountCatalog classifies optional chunks and optionally counts tool tokens.
 func ClassifyAndCountCatalog(catalogJSON, toolsJSON string) (string, error) {
 	return cgoClassifyAndCountCatalog(catalogJSON, toolsJSON)

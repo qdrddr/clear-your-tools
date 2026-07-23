@@ -350,6 +350,36 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
 	assertJSONEqual(t, got, want)
 }
 
+
+func TestParityRecomposeAndRetrieveTools(t *testing.T) {
+	if os.Getenv("CYT_SKIP_PARITY") == "1" {
+		t.Skip("CYT_SKIP_PARITY=1")
+	}
+	if !pythonAvailable(t) {
+		t.Skip("python cyt_indexer not available")
+	}
+
+	want := pythonJSON(t, `
+import json
+from cyt_indexer._native import policy_context_from_values, recompose_and_retrieve_tools
+ctx = policy_context_from_values({})
+data = {"json": [], "md": []}
+catalog = {"json": [], "md": []}
+index = {"tools": [], "files": {}}
+print(json.dumps(recompose_and_retrieve_tools(data, catalog, index, None, None, None, [], ctx, ctx)))
+`)
+
+	ctx := `{}`
+	data := `{"json":[],"md":[]}`
+	catalog := `{"json":[],"md":[]}`
+	index := `{"tools":[],"files":{}}`
+	got, err := RecomposeAndRetrieveTools(data, catalog, index, "", "", "", "[]", ctx, ctx)
+	if err != nil {
+		t.Fatalf("RecomposeAndRetrieveTools: %v", err)
+	}
+	assertJSONEqual(t, got, want)
+}
+
 func TestParityTokenCountFromDecomposedFrontmatter(t *testing.T) {
 	if os.Getenv("CYT_SKIP_PARITY") == "1" {
 		t.Skip("CYT_SKIP_PARITY=1")

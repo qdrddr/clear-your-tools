@@ -721,6 +721,48 @@ func cgoPruneCatalogBm25AndRetrieve(
 	return takeJSON(&out)
 }
 
+
+func cgoRecomposeAndRetrieveTools(
+	dataJSON, buildCatalogJSON, catalogIndexJSON string,
+	postRerankJSON, postRerankScoredJSON, pinnedJSON string,
+	pipelineJSON, scoringCtxJSON, outputCtxJSON string,
+) (string, error) {
+	cData := cString(dataJSON)
+	defer freeCString(cData)
+	cBuild := cString(buildCatalogJSON)
+	defer freeCString(cBuild)
+	cIndex := cString(catalogIndexJSON)
+	defer freeCString(cIndex)
+	var cPostRerank *C.char
+	if postRerankJSON != "" {
+		cPostRerank = cString(postRerankJSON)
+		defer freeCString(cPostRerank)
+	}
+	var cPostRerankScored *C.char
+	if postRerankScoredJSON != "" {
+		cPostRerankScored = cString(postRerankScoredJSON)
+		defer freeCString(cPostRerankScored)
+	}
+	var cPinned *C.char
+	if pinnedJSON != "" {
+		cPinned = cString(pinnedJSON)
+		defer freeCString(cPinned)
+	}
+	cPipeline := cString(pipelineJSON)
+	defer freeCString(cPipeline)
+	cScoring := cString(scoringCtxJSON)
+	defer freeCString(cScoring)
+	cOutput := cString(outputCtxJSON)
+	defer freeCString(cOutput)
+	var out *C.char
+	if C.cyt_recompose_and_retrieve_tools(
+		cData, cBuild, cIndex, cPostRerank, cPostRerankScored, cPinned, cPipeline, cScoring, cOutput, &out,
+	) != ok {
+		return "", lastError()
+	}
+	return takeJSON(&out)
+}
+
 func cgoClassifyAndCountCatalog(catalogJSON, toolsJSON string) (string, error) {
 	cCatalog := cString(catalogJSON)
 	defer freeCString(cCatalog)
