@@ -111,9 +111,7 @@ fn llm_selected_tool_ids(data: &Value) -> HashSet<String> {
         .iter()
         .filter_map(|item| {
             let obj = item.as_object()?;
-            if obj.get("file_path").is_none() {
-                return None;
-            }
+            obj.get("file_path")?;
             Some(root_tool_id_from_chunk(item))
         })
         .collect()
@@ -391,6 +389,7 @@ pub fn prune_catalog_bm25_and_retrieve(
 
 /// Recompose pruned catalog survivors and retrieve merged tool schemas in one call.
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn recompose_and_retrieve_tools(
     data: &Value,
     build_catalog: &Value,

@@ -143,7 +143,7 @@ fn prune_catalog_bm25_and_retrieve_py(
 
 #[pyfunction(name = "recompose_and_retrieve_tools")]
 #[pyo3(signature = (data, build_catalog, catalog_index, post_rerank, post_rerank_scored, pinned, pipeline, scoring_ctx, output_ctx))]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 fn recompose_and_retrieve_tools_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,

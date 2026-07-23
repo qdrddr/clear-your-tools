@@ -696,6 +696,7 @@ def test_trim_catalog_dict_keeps_top_k_by_score() -> None:
     trimmed = trim_catalog_dict(data, top_k=2)
     assert [item["file_path"] for item in trimmed["json"]] == ["a", "b"]
 
+
 def test_apply_selector_ids_to_catalog_writes_normalized_llm_md_scores() -> None:
     catalog = {
         "json": [
@@ -747,4 +748,3 @@ def test_overlay_llm_md_scores_updates_matching_enum_content() -> None:
     assert scores["yaml"] == 0.85
     assert scores["csv"] == 0.70
     assert scores["json"] == 0.0005
-

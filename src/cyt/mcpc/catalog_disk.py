@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -112,7 +113,7 @@ def write_disk_catalog(
     cache_dir = mcpc_catalog_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     path = _catalog_path(slug)
-    tmp_path = path.with_suffix(".json.tmp")
+    tmp_path = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.json.tmp")
     envelope: dict[str, Any] = {
         "mcpc_executable": mcpc_executable,
         "catalog_content_hash": content_hash,
@@ -126,8 +127,14 @@ def write_disk_catalog(
         envelope["sessions_health"] = sessions_health
         envelope["sessions_health_hash"] = next_health_hash
     data = json.dumps(envelope, ensure_ascii=False, indent=2)
-    tmp_path.write_text(data, encoding="utf-8")
-    tmp_path.replace(path)
+    replaced = False
+    try:
+        tmp_path.write_text(data, encoding="utf-8")
+        tmp_path.replace(path)
+        replaced = True
+    finally:
+        if not replaced:
+            tmp_path.unlink(missing_ok=True)
     action = "disk_write_updated" if existing is not None else "disk_write_created"
     logger.info(
         "mcpc catalog %s slug=%s catalog_content_hash=%s tool_count=%d",

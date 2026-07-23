@@ -200,8 +200,7 @@ export const greedySelectSkillItemsNative = native.greedySelectSkillItems;
 export const coordinateBm25PruneNative = native.coordinateBm25Prune;
 export const pruneCatalogBm25AndRetrieveNative =
   native.pruneCatalogBm25AndRetrieve;
-export const recomposeAndRetrieveToolsNative =
-  native.recomposeAndRetrieveTools;
+export const recomposeAndRetrieveToolsNative = native.recomposeAndRetrieveTools;
 export const classifyAndCountCatalogNative = native.classifyAndCountCatalog;
 export const searchSkillsAndSelectNative = native.searchSkillsAndSelect;
 export const buildSkillNodeCatalogNative = native.buildSkillNodeCatalog;

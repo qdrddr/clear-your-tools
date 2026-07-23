@@ -721,7 +721,6 @@ func cgoPruneCatalogBm25AndRetrieve(
 	return takeJSON(&out)
 }
 
-
 func cgoRecomposeAndRetrieveTools(
 	dataJSON, buildCatalogJSON, catalogIndexJSON string,
 	postRerankJSON, postRerankScoredJSON, pinnedJSON string,

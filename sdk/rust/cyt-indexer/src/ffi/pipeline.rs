@@ -173,9 +173,7 @@ pub unsafe extern "C" fn cyt_recompose_and_retrieve_tools(
         let post_rerank_scored = if post_rerank_scored_json.is_null() {
             None
         } else {
-            Some(unsafe {
-                parse_json_cstr(post_rerank_scored_json, "post_rerank_scored_json")?
-            })
+            Some(unsafe { parse_json_cstr(post_rerank_scored_json, "post_rerank_scored_json")? })
         };
         let pinned = if pinned_json.is_null() {
             None

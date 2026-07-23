@@ -130,6 +130,7 @@ def test_recompose_and_retrieve_keeps_top_three_enums_per_property() -> None:
     assert format_enum == ["yaml", "csv", "json"]
     assert identity_enum == ["git", "local", "config"]
 
+
 def test_recompose_and_retrieve_keeps_top_three_enums_with_llm_scores() -> None:
     hedl_schema = {
         "type": "object",
@@ -207,4 +208,3 @@ def test_recompose_and_retrieve_keeps_top_three_enums_with_llm_scores() -> None:
 
     assert format_enum == ["yaml", "csv", "json"]
     assert identity_enum == ["git", "local", "config"]
-

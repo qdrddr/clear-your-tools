@@ -214,7 +214,6 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
   assertJsonEqual(got, want);
 });
 
-
 test("parity recomposeAndRetrieveTools matches Python reference", () => {
   if (skipParity()) {
     return;

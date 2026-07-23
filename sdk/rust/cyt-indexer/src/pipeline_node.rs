@@ -180,7 +180,7 @@ pub fn prune_catalog_bm25_and_retrieve_napi(
 ///
 /// Returns an error when catalog shapes or retrieval fail.
 #[napi(js_name = "recomposeAndRetrieveTools")]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 pub fn recompose_and_retrieve_tools_napi(
     data: Value,
     build_catalog: Value,
@@ -195,14 +195,17 @@ pub fn recompose_and_retrieve_tools_napi(
     let data = Box::new(data);
     let build_catalog = Box::new(build_catalog);
     let catalog_index = Box::new(catalog_index);
+    let post_rerank = post_rerank.map(Box::new);
+    let post_rerank_scored = post_rerank_scored.map(Box::new);
+    let pinned = pinned.map(Box::new);
     let index = catalog_index_from_value(&catalog_index);
     let tools = recompose_and_retrieve_tools(
         &data,
         &build_catalog,
         &index,
-        post_rerank.as_ref(),
-        post_rerank_scored.as_ref(),
-        pinned.as_ref(),
+        post_rerank.as_deref(),
+        post_rerank_scored.as_deref(),
+        pinned.as_deref(),
         &pipeline,
         ctx_from_napi(scoring_ctx),
         ctx_from_napi(output_ctx),

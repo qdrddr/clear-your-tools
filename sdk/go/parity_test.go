@@ -350,7 +350,6 @@ print(json.dumps(coordinate_bm25_prune([], catalog, catalog, index, "hello", ctx
 	assertJSONEqual(t, got, want)
 }
 
-
 func TestParityRecomposeAndRetrieveTools(t *testing.T) {
 	if os.Getenv("CYT_SKIP_PARITY") == "1" {
 		t.Skip("CYT_SKIP_PARITY=1")

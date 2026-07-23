@@ -34,6 +34,19 @@ def _deterministic_indexer_cache() -> Iterator[None]:
     clear_registry_cache()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_hook_catalog_state() -> Iterator[None]:
+    """Stop background catalog schedulers and clear in-memory hook caches."""
+    from cyt.executor.http import clear_executor_catalog_cache
+    from cyt.mcpc.catalog import clear_mcpc_catalog_cache
+
+    clear_executor_catalog_cache()
+    clear_mcpc_catalog_cache()
+    yield
+    clear_executor_catalog_cache()
+    clear_mcpc_catalog_cache()
+
+
 def _integration_tests_enabled(config: pytest.Config) -> bool:
     if config.getoption("--run-integration", default=False):
         return True

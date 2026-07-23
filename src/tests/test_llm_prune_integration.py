@@ -663,7 +663,7 @@ def _format_pruned_tools(catalog: dict[str, Any], selected_ids: set[int]) -> str
     pruned = apply_selector_ids_to_catalog(
         copy.deepcopy(catalog),
         metadata,
-        {chunk_id: 100 for chunk_id in selected_ids},
+        dict.fromkeys(selected_ids, 100),
         list_keys,
     )
     inject_tools = [

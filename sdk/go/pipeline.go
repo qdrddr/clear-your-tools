@@ -34,7 +34,6 @@ func RecomposeAndRetrieveTools(
 	)
 }
 
-
 // ClassifyAndCountCatalog classifies optional chunks and optionally counts tool tokens.
 func ClassifyAndCountCatalog(catalogJSON, toolsJSON string) (string, error) {
 	return cgoClassifyAndCountCatalog(catalogJSON, toolsJSON)

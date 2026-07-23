@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import uuid
 import re
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -190,11 +190,14 @@ def write_disk_catalog(
         envelope["connections_health"] = next_connections_health
         envelope["connections_health_hash"] = next_connections_health_hash
     data = json.dumps(envelope, ensure_ascii=False, indent=2)
+    replaced = False
     try:
         tmp_path.write_text(data, encoding="utf-8")
         tmp_path.replace(path)
+        replaced = True
     finally:
-        tmp_path.unlink(missing_ok=True)
+        if not replaced:
+            tmp_path.unlink(missing_ok=True)
     action = "disk_write_updated" if existing is not None else "disk_write_created"
     logger.info(
         "executor catalog %s slug=%s catalog_content_hash=%s tool_count=%d executor=%s health=%s",
