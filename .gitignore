@@ -156,3 +156,6 @@ graphify-out/cache/
 scripts/mcpc/output/
 scripts/mcpc/payloads/
 sample.*
+.cargo-home/
+.go-cache/
+.build/
