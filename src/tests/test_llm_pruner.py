@@ -16,11 +16,13 @@ from cyt.pruners.llm import (
     LlmPruningSettings,
     RelevantChunkSelections,
     _llm_user_message,
+    apply_selector_ids_to_catalog,
     call_llm,
     cap_selector_scores,
     filter_selector_selections,
     llm_select_ids,
     normalize_selector_selections,
+    overlay_llm_md_scores,
     tool_selector_system_prompt,
 )
 
@@ -693,3 +695,56 @@ def test_trim_catalog_dict_keeps_top_k_by_score() -> None:
     }
     trimmed = trim_catalog_dict(data, top_k=2)
     assert [item["file_path"] for item in trimmed["json"]] == ["a", "b"]
+
+def test_apply_selector_ids_to_catalog_writes_normalized_llm_md_scores() -> None:
+    catalog = {
+        "json": [
+            {
+                "file_path": "catalog/schemas/decomposed/tool-a.json",
+                "content": {"type": "object"},
+            },
+        ],
+        "md": [
+            {"content": "yaml", "score": 0.9},
+            {"content": "csv", "score": 0.8},
+            {"content": "json", "score": 0.7},
+        ],
+    }
+    from cyt.pruners.llm import prepare_catalog_selector_chunks
+
+    chunks, metadata, list_keys, _, _ = prepare_catalog_selector_chunks(catalog)
+    assert len(chunks) == 4
+    selected_scores = {2: 85, 3: 70}
+    result = apply_selector_ids_to_catalog(
+        {"json": [], "md": []},
+        metadata,
+        selected_scores,
+        list_keys,
+    )
+    md_scores = {item["content"]: item["score"] for item in result["md"]}
+    assert md_scores["yaml"] == 0.85
+    assert md_scores["csv"] == 0.70
+    assert md_scores["json"] == 0.0
+    assert len(result["json"]) == 0
+
+
+def test_overlay_llm_md_scores_updates_matching_enum_content() -> None:
+    base = {
+        "md": [
+            {"content": "yaml", "score": 0.95},
+            {"content": "csv", "score": 0.89},
+            {"content": "json", "score": 0.0005},
+        ],
+    }
+    llm_scored = {
+        "md": [
+            {"content": "yaml", "score": 0.85},
+            {"content": "csv", "score": 0.70},
+        ],
+    }
+    overlay_llm_md_scores(base, llm_scored)
+    scores = {item["content"]: item["score"] for item in base["md"]}
+    assert scores["yaml"] == 0.85
+    assert scores["csv"] == 0.70
+    assert scores["json"] == 0.0005
+

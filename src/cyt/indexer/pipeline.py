@@ -17,6 +17,9 @@ from cyt_indexer.pipeline import (
     prune_catalog_bm25_and_retrieve as _prune_catalog_bm25_and_retrieve,
 )
 from cyt_indexer.pipeline import (
+    recompose_and_retrieve_tools as _recompose_and_retrieve_tools,
+)
+from cyt_indexer.pipeline import (
     search_skills_and_select as _search_skills_and_select,
 )
 
@@ -28,6 +31,7 @@ __all__ = [
     "classify_and_count_catalog",
     "coordinate_bm25_prune",
     "prune_catalog_bm25_and_retrieve",
+    "recompose_and_retrieve_tools",
     "search_skills_and_select",
 ]
 
@@ -74,6 +78,31 @@ def prune_catalog_bm25_and_retrieve(
         scoring_ctx,
         output_ctx,
         options=options,
+    )
+
+
+def recompose_and_retrieve_tools(
+    data: dict[str, Any],
+    build_catalog: dict[str, Any],
+    catalog_index: CatalogIndex | dict[str, Any],
+    post_rerank: dict[str, Any] | None,
+    post_rerank_scored: dict[str, Any] | None,
+    pinned: dict[str, Any] | None,
+    pipeline: list[str],
+    scoring_ctx: PolicyContext,
+    output_ctx: PolicyContext,
+) -> list[dict[str, Any]]:
+    """Recompose pruned catalog survivors and retrieve merged tool schemas in one native call."""
+    return _recompose_and_retrieve_tools(
+        data,
+        build_catalog,
+        catalog_index,
+        post_rerank,
+        post_rerank_scored,
+        pinned,
+        pipeline,
+        scoring_ctx,
+        output_ctx,
     )
 
 

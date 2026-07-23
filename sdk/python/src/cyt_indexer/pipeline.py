@@ -13,6 +13,7 @@ __all__ = [
     "classify_and_count_catalog",
     "coordinate_bm25_prune",
     "prune_catalog_bm25_and_retrieve",
+    "recompose_and_retrieve_tools",
     "search_skills_and_select",
 ]
 
@@ -38,6 +39,34 @@ def prune_catalog_bm25_and_retrieve(
         options,
     )
     return dict(result) if isinstance(result, dict) else result
+
+
+def recompose_and_retrieve_tools(
+    data: dict[str, Any],
+    build_catalog: dict[str, Any],
+    catalog_index: CatalogIndex | dict[str, Any],
+    post_rerank: dict[str, Any] | None,
+    post_rerank_scored: dict[str, Any] | None,
+    pinned: dict[str, Any] | None,
+    pipeline: list[str],
+    scoring_ctx: PolicyContext,
+    output_ctx: PolicyContext,
+) -> list[dict[str, Any]]:
+    """Recompose pruned catalog survivors and retrieve merged tool schemas in one native call."""
+    result = _native.recompose_and_retrieve_tools(
+        data,
+        build_catalog,
+        catalog_index,
+        post_rerank,
+        post_rerank_scored,
+        pinned,
+        pipeline,
+        scoring_ctx,
+        output_ctx,
+    )
+    if isinstance(result, list):
+        return [dict(item) if isinstance(item, dict) else item for item in result]
+    return []
 
 
 def classify_and_count_catalog(

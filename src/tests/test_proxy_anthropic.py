@@ -627,7 +627,7 @@ def test_run_llm_stage_skips_skill_selection_when_pipeline_rerank() -> None:
 
     with patch(
         "cyt.pruners.tools_filter.llm_catalog_dict",
-        return_value=(data, {"input": 0, "output": 0}),
+        return_value=(data, data, {"input": 0, "output": 0}),
     ) as mock_tools_only:
         _run_llm_stage(
             data,
@@ -785,7 +785,7 @@ def test_run_pipeline_stage_llm_succeeds_without_retry() -> None:
     pruning_token_usage: dict[str, StageTokenUsage] = {}
 
     with (
-        patch("cyt.pruners.tools_filter._run_llm_stage", return_value=pruned) as mock_llm,
+        patch("cyt.pruners.tools_filter._run_llm_stage", return_value=(pruned, None)) as mock_llm,
         patch("cyt.pruners.tools_filter._run_rerank_stage") as mock_rerank,
         patch("cyt.pruners.tools_filter._run_bm25_stage") as mock_bm25,
     ):

@@ -98,6 +98,7 @@ from cyt_indexer.pipeline import (
     classify_and_count_catalog,
     coordinate_bm25_prune,
     prune_catalog_bm25_and_retrieve,
+    recompose_and_retrieve_tools,
     search_skills_and_select,
 )
 from cyt_indexer.policies import PolicyContext, apply_tool_kind, scoring_policy_context
@@ -215,6 +216,7 @@ __all__ = [
     "policies",
     "prepare_tool_entry",
     "prune_catalog_bm25_and_retrieve",
+    "recompose_and_retrieve_tools",
     "reconstruct_skill_markdown",
     "removed_chunks",
     "repair_skill_chunks",

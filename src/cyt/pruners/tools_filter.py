@@ -21,16 +21,19 @@ from cyt.indexer.build import (
     anthropic_tools_to_catalog_entries,
     catalog_tool_count,
 )
-from cyt.indexer.retrieve import retrieve_tools
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.bm25 import bm25_catalog_dict, prune_bm25_catalog
-from cyt.pruners.llm import LLM_PRE_TRIM_TOP_K_JSON, llm_catalog_dict, trim_catalog_dict
+from cyt.pruners.llm import (
+    LLM_PRE_TRIM_TOP_K_JSON,
+    llm_catalog_dict,
+    overlay_llm_md_scores,
+    trim_catalog_dict,
+)
 from cyt.pruners.policies import (
     PolicyContext,
     batch_tool_pass_through,
     catalog_needs_partition,
     catalog_needs_pruned_recompose,
-    drop_recomposed_tools_with_empty_properties,
     entries_for_policy,
     filter_recompose_json_entries,
     is_decomposed_tool_root_chunk,
@@ -257,25 +260,20 @@ def _run_catalog_pruning(
     )
     tool_properties_count_out = _count_optional_property_chunks(data)
     pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
-    recompose_data = _recompose_catalog_data(
+    from cyt.indexer.pipeline import recompose_and_retrieve_tools
+
+    pinned_for_recompose = pinned if pinned else None
+    merged = recompose_and_retrieve_tools(
         data,
+        build_catalog,
+        index,
         post_rerank,
-        pinned,
-        catalog_index=index,
-        build_catalog=build_catalog,
-        post_rerank_scored=post_rerank_scored,
-        pruning_pipeline=pipeline,
-        ctx=ctx,
-        output_ctx=reinstate_ctx,
-        config=resolved_config,
+        post_rerank_scored,
+        pinned_for_recompose,
+        pipeline,
+        ctx or policy_context_from_config(resolved_config, terminal_stage=terminal_stage),
+        reinstate_ctx,
     )
-    merged = retrieve_tools(
-        recompose_data,
-        catalog=index,
-        apply_decomposed_score_filter=False,
-        ctx=reinstate_ctx,
-    )
-    merged = drop_recomposed_tools_with_empty_properties(merged, index, reinstate_ctx)
     return (
         merged,
         decomposed,
@@ -358,7 +356,7 @@ def _run_rerank_stage(
 
         if skills_pipeline_uses_rerank(config):
 
-            def _rerank_tools() -> tuple[dict[str, Any], StageTokenUsage]:
+            def _rerank_tools() -> tuple[dict[str, Any], dict[str, Any], StageTokenUsage]:
                 scored, usage = rerank_catalog_dict(
                     data,
                     query,
@@ -368,7 +366,11 @@ def _run_rerank_stage(
                     config=config,
                     settings=rerank_settings,
                 )
-                return prune_reranked_catalog(scored), usage
+                return (
+                    prune_reranked_catalog(scored),
+                    copy.deepcopy(scored),
+                    usage,
+                )
 
             def _rerank_skills() -> tuple[list[MatchedSkill], StageTokenUsage]:
                 return rerank_skill_nodes(
@@ -382,20 +384,20 @@ def _run_rerank_stage(
                 {"tools": _rerank_tools, "skills": _rerank_skills},
             )
             tools_result = cast(
-                tuple[dict[str, Any], StageTokenUsage],
+                tuple[dict[str, Any], dict[str, Any], StageTokenUsage],
                 parallel_results["tools"],
             )
             skills_result = cast(
                 tuple[list[MatchedSkill], StageTokenUsage],
                 parallel_results["skills"],
             )
-            data, rerank_usage = tools_result
+            data, post_rerank_scored, rerank_usage = tools_result
             skill_matches, skill_usage = skills_result
             rerank_usage = rerank_usage.merge(skill_usage)
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:
-            data, rerank_usage = rerank_catalog_dict(
+            scored, rerank_usage = rerank_catalog_dict(
                 data,
                 query,
                 ctx=ctx,
@@ -404,9 +406,10 @@ def _run_rerank_stage(
                 config=config,
                 settings=rerank_settings,
             )
-            data = prune_reranked_catalog(data)
+            post_rerank_scored = copy.deepcopy(scored)
+            data = prune_reranked_catalog(scored)
     else:
-        data, rerank_usage = rerank_catalog_dict(
+        scored, rerank_usage = rerank_catalog_dict(
             data,
             query,
             ctx=ctx,
@@ -415,11 +418,11 @@ def _run_rerank_stage(
             config=config,
             settings=rerank_settings,
         )
-        data = prune_reranked_catalog(data)
+        post_rerank_scored = copy.deepcopy(scored)
+        data = prune_reranked_catalog(scored)
     pruning_token_usage["rerank"] = rerank_usage
     if capture_catalog and snapshots is not None:
         snapshots["rerank"] = _snapshot_catalog(data)
-    post_rerank_scored = copy.deepcopy(data)
     if capture_catalog and snapshots is not None:
         snapshots["rerank_pruned"] = _snapshot_catalog(data)
     post_rerank = copy.deepcopy(data)
@@ -445,11 +448,12 @@ def _run_llm_stage(
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
     ctx: PolicyContext | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     if trim_before_llm:
         data = trim_catalog_dict(data, top_k=LLM_PRE_TRIM_TOP_K_JSON)
 
     llm_usage: StageTokenUsage
+    scored_snapshot: dict[str, Any] | None = None
     llm_settings = pruner_settings.for_stage("llm") if pruner_settings else None
     skill_matches_resolved = skill_llm_out is not None and skill_llm_out.get("matches") is not None
     prune_skills_in_parallel = skill_entries is not None and not skill_matches_resolved
@@ -466,7 +470,7 @@ def _run_llm_stage(
         llm_min = llm_minimum_tools(config)
         if skills_pipeline_uses_llm(config) and catalog_count >= llm_min:
 
-            def _llm_tools() -> tuple[dict[str, Any], StageTokenUsage]:
+            def _llm_tools() -> tuple[dict[str, Any], dict[str, Any], StageTokenUsage]:
                 return llm_catalog_dict(
                     data,
                     query,
@@ -486,20 +490,20 @@ def _run_llm_stage(
 
             parallel_results = run_parallel({"tools": _llm_tools, "skills": _llm_skills})
             tools_result = cast(
-                tuple[dict[str, Any], StageTokenUsage],
+                tuple[dict[str, Any], dict[str, Any], StageTokenUsage],
                 parallel_results["tools"],
             )
             skills_result = cast(
                 tuple[list[MatchedSkill], StageTokenUsage],
                 parallel_results["skills"],
             )
-            data, llm_usage = tools_result
+            data, scored_snapshot, llm_usage = tools_result
             skill_matches, skill_usage = skills_result
             llm_usage = llm_usage.merge(skill_usage)
             if skill_llm_out is not None:
                 skill_llm_out["matches"] = skill_matches
         else:
-            data, llm_usage = llm_catalog_dict(
+            data, scored_snapshot, llm_usage = llm_catalog_dict(
                 data,
                 query,
                 ctx=ctx,
@@ -508,7 +512,7 @@ def _run_llm_stage(
                 settings=llm_settings,
             )
     else:
-        data, llm_usage = llm_catalog_dict(
+        data, scored_snapshot, llm_usage = llm_catalog_dict(
             data,
             query,
             ctx=ctx,
@@ -522,7 +526,7 @@ def _run_llm_stage(
     decomposed["llm"] = decomposed_breakdown["llm"]["json"] + decomposed_breakdown["llm"]["md"]
     if capture_catalog and snapshots is not None:
         snapshots["llm"] = _snapshot_catalog(data)
-    return data
+    return data, scored_snapshot
 
 
 def _run_bm25_stage(
@@ -625,12 +629,12 @@ def _run_pipeline_stage(
     if stage == "llm":
         for attempt in range(1, LLM_STAGE_MAX_ATTEMPTS + 1):
             try:
-                updated = _run_llm_stage(
+                updated, scored_snapshot = _run_llm_stage(
                     **stage_kwargs,
                     trim_before_llm=stage_index > 0
                     and pruning_pipeline[stage_index - 1] in ("rerank", "bm25"),
                 )
-                return updated, None, None
+                return updated, None, scored_snapshot
             except Exception as exc:
                 if attempt < LLM_STAGE_MAX_ATTEMPTS:
                     logger.warning(
@@ -736,7 +740,10 @@ def _run_pruning_pipeline(
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
         if stage_post_rerank_scored is not None:
-            post_rerank_scored = stage_post_rerank_scored
+            if stage == "llm" and post_rerank_scored is not None:
+                overlay_llm_md_scores(post_rerank_scored, stage_post_rerank_scored)
+            else:
+                post_rerank_scored = stage_post_rerank_scored
 
     if pinned:
         data = merge_catalog(data, pinned)

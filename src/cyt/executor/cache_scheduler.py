@@ -71,7 +71,7 @@ def stop_executor_cache_scheduler(
     cache_key: _ExecutorCacheKey | None = None,
 ) -> None:
     """Stop one scheduler or all schedulers (for tests)."""
-    threads: list[threading.Thread] = []
+    stopped: list[_SchedulerState] = []
     with _scheduler_lock:
         keys = [cache_key] if cache_key is not None else list(_schedulers)
         for key in keys:
@@ -79,11 +79,24 @@ def stop_executor_cache_scheduler(
             if state is None:
                 continue
             state.stop_event.set()
-            if state.thread is not None:
-                threads.append(state.thread)
-    for thread in threads:
-        if thread.is_alive():
-            thread.join(timeout=2.0)
+            stopped.append(state)
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if all(
+            not state.health_in_progress
+            and not state.list_in_progress
+            and not state.schema_in_progress
+            and not state.disk_in_progress
+            for state in stopped
+        ):
+            break
+        time.sleep(0.01)
+
+    for state in stopped:
+        thread = state.thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
 def clear_executor_cache_schedulers() -> None:

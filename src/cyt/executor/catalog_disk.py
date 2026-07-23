@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import uuid
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -174,7 +175,7 @@ def write_disk_catalog(
     cache_dir = executor_catalog_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     path = _catalog_path(slug)
-    tmp_path = path.with_suffix(".json.tmp")
+    tmp_path = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.json.tmp")
     envelope: dict[str, Any] = {
         "executor_url": executor_url,
         "catalog_content_hash": content_hash,
@@ -189,8 +190,11 @@ def write_disk_catalog(
         envelope["connections_health"] = next_connections_health
         envelope["connections_health_hash"] = next_connections_health_hash
     data = json.dumps(envelope, ensure_ascii=False, indent=2)
-    tmp_path.write_text(data, encoding="utf-8")
-    tmp_path.replace(path)
+    try:
+        tmp_path.write_text(data, encoding="utf-8")
+        tmp_path.replace(path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
     action = "disk_write_updated" if existing is not None else "disk_write_created"
     logger.info(
         "executor catalog %s slug=%s catalog_content_hash=%s tool_count=%d executor=%s health=%s",

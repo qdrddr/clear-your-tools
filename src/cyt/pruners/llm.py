@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import logging
 import sys
@@ -746,29 +747,51 @@ def llm_select_ids(
     return cap_selector_scores(selected_scores), total_usage
 
 
-def score_item(item: dict[str, Any], is_selected: bool) -> None:
-    if "score" not in item or item["score"] is None:
+def apply_llm_md_score(item: dict[str, Any], llm_score: int) -> None:
+    item["score"] = llm_score / 100.0
+
+
+def apply_llm_scores_via_metadata(
+    item_metadata_storage: dict[int, Any],
+    selected_scores: dict[int, int],
+) -> None:
+    """Write normalized LLM selector scores onto md catalog items in place."""
+    for chunk_id, storage in item_metadata_storage.items():
+        if storage["key"] != "md":
+            continue
+        apply_llm_md_score(storage["item"], selected_scores.get(chunk_id, 0))
+
+
+def overlay_llm_md_scores(
+    base: dict[str, Any],
+    llm_scored: dict[str, Any],
+) -> None:
+    """Update base['md'] scores by matching enum content string."""
+    llm_md = llm_scored.get("md")
+    if not isinstance(llm_md, list):
         return
-
-    try:
-        orig_score_val = item["score"]
-        is_str = isinstance(orig_score_val, str)
-        score_float = float(orig_score_val)
-
-        new_score = score_float if is_selected else score_float / 10.0
-
-        if is_str:
-            item["score"] = f"{new_score:.4f}"
-        else:
-            item["score"] = new_score
-    except (ValueError, TypeError):
-        pass
+    base_md = base.get("md")
+    if not isinstance(base_md, list):
+        return
+    scores_by_content: dict[str, Any] = {}
+    for item in llm_md:
+        if isinstance(item, dict) and "content" in item:
+            scores_by_content[str(item["content"])] = item.get("score")
+    for item in base_md:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if content is None:
+            continue
+        key = str(content)
+        if key in scores_by_content:
+            item["score"] = scores_by_content[key]
 
 
 def apply_selector_ids_to_catalog(
     data: dict[str, Any],
     item_metadata_storage: dict[int, Any],
-    selected_ids: set[int],
+    selected_scores: dict[int, int],
     list_keys: list[str],
 ) -> dict[str, Any]:
     """Rebuild catalog lists from selector metadata and chosen chunk ids."""
@@ -783,12 +806,10 @@ def apply_selector_ids_to_catalog(
             if v is not None:
                 item[k] = v
 
-        is_selected = chunk_id in selected_ids
-
         if target_key == "md":
-            score_item(item, is_selected)
+            apply_llm_md_score(item, selected_scores.get(chunk_id, 0))
             new_data_lists[target_key].append(item)
-        elif is_selected:
+        elif chunk_id in selected_scores:
             new_data_lists[target_key].append(item)
 
     for k, v in new_data_lists.items():
@@ -807,7 +828,7 @@ def llm_catalog_dict(
     merge_pinned: bool = True,
     config: dict[str, Any] | None = None,
     settings: LlmPruningSettings | None = None,
-) -> tuple[dict[str, Any], StageTokenUsage]:
+) -> tuple[dict[str, Any], dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     policy_ctx = resolve_policy_context(
         ctx=ctx,
@@ -817,10 +838,12 @@ def llm_catalog_dict(
     )
     data, pinned, skip_scoring = prepare_catalog_for_scoring(data, policy_ctx)
     if skip_scoring:
-        return data, empty_usage()
+        snapshot = copy.deepcopy(data)
+        return data, snapshot, empty_usage()
 
     if catalog_below_minimum_tools(data, llm_minimum_tools(config), stage="llm"):
-        return data, empty_usage()
+        snapshot = copy.deepcopy(data)
+        return data, snapshot, empty_usage()
 
     formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, _token_rows = (
         prepare_catalog_selector_chunks(data)
@@ -841,13 +864,19 @@ def llm_catalog_dict(
         settings=settings,
     )
 
+    apply_llm_scores_via_metadata(item_metadata_storage, selected_scores)
+    scored_snapshot = copy.deepcopy(data)
     result = apply_selector_ids_to_catalog(
         data,
         item_metadata_storage,
-        set(selected_scores),
+        selected_scores,
         list_keys,
     )
-    return finalize_catalog_result(result, pinned, merge_pinned=merge_pinned), total_usage
+    return (
+        finalize_catalog_result(result, pinned, merge_pinned=merge_pinned),
+        scored_snapshot,
+        total_usage,
+    )
 
 
 def main() -> None:
@@ -867,7 +896,7 @@ def main() -> None:
     data = load_pruner_catalog_input(json_path=args.json, dir_path=args.dir)
 
     try:
-        result, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
+        result, _scored, _tokens = llm_catalog_dict(data, args.query, ctx=ctx)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
             with open(args.output_json, "w") as f:
