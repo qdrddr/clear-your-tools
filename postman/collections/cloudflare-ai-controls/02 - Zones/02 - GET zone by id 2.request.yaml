@@ -1,0 +1,13 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/zones/{{cf_zone_id2}}
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (json && json.result && json.result.name) {
+        console.log('Suggested portal_hostname: mcp.' + json.result.name);
+      }
+    language: text/javascript
+examples: .resources/02 - GET zone by id 2.resources/examples
+order: 2002

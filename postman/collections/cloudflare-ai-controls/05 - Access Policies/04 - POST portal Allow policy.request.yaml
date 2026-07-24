@@ -1,0 +1,22 @@
+$kind: http-request
+name: 04 - POST portal Allow policy
+description: |
+  Include email + Require One-time PIN login method.
+  Set otp_identity_provider_id from Zero Trust → Integrations → Identity providers → One-time PIN (UUID).
+  Wrong IdP id in require causes PIN delivery but "That account does not have access" after code entry.
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps/{{portal_access_app_id}}/policies
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "name": "Allow team access",
+      "decision": "allow",
+      "include": [
+        { "email": { "email": "{{allow_email}}" } }
+      ],
+      "require": [
+        { "login_method": { "id": "{{otp_identity_provider_id}}" } }
+      ]
+    }
+order: 5004

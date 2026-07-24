@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/servers/{{deepwiki_server_id}}/sync
+method: POST
+examples: .resources/02 - POST sync DeepWiki server.resources/examples
+order: 3002

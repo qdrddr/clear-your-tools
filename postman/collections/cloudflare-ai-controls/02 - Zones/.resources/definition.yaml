@@ -1,0 +1,10 @@
+$kind: folder
+name: "02 - Zones"
+description: |
+  Resolve zone names and confirm portal_hostname / portal_zone_id.
+
+  Manual steps:
+  1. GET zone by cf_zone_id1 — note zone name
+  2. GET zone by cf_zone_id2 — note zone name
+  3. Confirm portal_hostname = mcp.<chosen-zone-apex> and set portal_zone_id in environment
+order: 2000

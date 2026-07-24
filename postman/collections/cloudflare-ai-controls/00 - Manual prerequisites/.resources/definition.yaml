@@ -1,0 +1,11 @@
+$kind: folder
+name: "00 - Manual prerequisites"
+description: |
+  Checklist only — no HTTP requests in this folder.
+
+  Manual steps:
+  1. Copy `postman/environments/Cloudflare.environment.example.yaml` → `Cloudflare.environment.yaml` (gitignored) and fill from `.env`: cf_account, cf_zone_id1, cf_zone_id2, cfat_token, cf_service_token_client_id, cf_service_token_client_secret, allow_email, otp_identity_provider_id
+  2. Dashboard (optional): create proxied CNAME `mcp` → `gateway.agents.cloudflare.com` on chosen zone
+  3. Set portal_hostname = mcp.<zone-apex> and base_url = https://{{portal_hostname}}
+  4. Set portal_zone_id to the zone ID for portal_hostname
+order: 0

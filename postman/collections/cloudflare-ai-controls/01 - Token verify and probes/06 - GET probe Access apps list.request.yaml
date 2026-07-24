@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps
+method: GET
+examples: .resources/06 - GET probe Access apps list.resources/examples
+order: 1006

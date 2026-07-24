@@ -1,0 +1,20 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/servers
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (!json || !Array.isArray(json.result)) return;
+      json.result.forEach(function (server) {
+        var host = (server.hostname || server.url || '').replace(/\/$/, '');
+        if (host.indexOf('mcp.deepwiki.com/mcp') !== -1) {
+          pm.environment.set('deepwiki_server_id', server.id || server.server_id);
+        }
+        if (host.indexOf('mcp.context7.com/mcp') !== -1) {
+          pm.environment.set('context7_server_id', server.id || server.server_id);
+        }
+      });
+    language: text/javascript
+examples: .resources/01 - GET list MCP servers.resources/examples
+order: 3001

@@ -1,0 +1,11 @@
+$kind: folder
+name: "01 - Token verify and probes"
+description: |
+  Confirm CFAT is active and has MCP/Access API access. Run steps 01 → 06 in order.
+
+  Manual steps:
+  1. GET tokens/verify — saves cfat_token_id from result.id
+  2. GET permission groups (optional; may 403 without Account API Tokens Read)
+  3. GET token assigned policies (optional)
+  4-6. MCP portals, MCP servers, Access apps probes — must return 200 before continuing
+order: 1000

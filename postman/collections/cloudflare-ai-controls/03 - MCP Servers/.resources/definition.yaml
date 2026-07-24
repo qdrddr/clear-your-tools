@@ -1,0 +1,10 @@
+$kind: folder
+name: "03 - MCP Servers"
+description: |
+  List upstream MCP servers and sync until ready.
+
+  Manual steps:
+  1. GET list MCP servers — saves deepwiki_server_id and context7_server_id
+  2. POST sync DeepWiki (only if status ≠ ready)
+  3. POST sync Context7 (only if status ≠ ready)
+order: 3000

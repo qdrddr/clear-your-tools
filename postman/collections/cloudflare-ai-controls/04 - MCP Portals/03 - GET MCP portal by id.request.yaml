@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/portals/{{portal_id}}
+method: GET
+examples: .resources/03 - GET MCP portal by id.resources/examples
+order: 4003

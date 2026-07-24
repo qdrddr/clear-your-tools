@@ -1,0 +1,8 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/zones/{{portal_zone_id}}/dns_records
+method: GET
+queryParams:
+  name: mcp
+  type: CNAME
+examples: .resources/01 - GET verify portal CNAME exists.resources/examples
+order: 6001

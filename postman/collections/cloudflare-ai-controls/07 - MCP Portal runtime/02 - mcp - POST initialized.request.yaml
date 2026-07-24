@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{mcp_url_mcp}}"
+method: POST
+auth:
+  type: noauth
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  CF-Access-Client-Id: "{{cf_service_token_client_id}}"
+  CF-Access-Client-Secret: "{{cf_service_token_client_secret}}"
+  mcp-session-id: "{{mcp_session_id_mcp}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized",
+      "params": {}
+    }
+examples: .resources/02 - mcp - POST initialized.resources/examples
+order: 7002

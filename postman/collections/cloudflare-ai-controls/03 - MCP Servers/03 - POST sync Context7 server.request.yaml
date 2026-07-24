@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/servers/{{context7_server_id}}/sync
+method: POST
+examples: .resources/03 - POST sync Context7 server.resources/examples
+order: 3003

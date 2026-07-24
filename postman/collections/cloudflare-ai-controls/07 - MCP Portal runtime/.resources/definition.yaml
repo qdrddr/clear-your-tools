@@ -1,0 +1,24 @@
+$kind: folder
+name: "07 - MCP Portal runtime"
+description: |
+  Streamable HTTP MCP transport against Cloudflare MCP portals (manual sequence per portal).
+
+  Auth: CF-Access-Client-Id / CF-Access-Client-Secret service token headers on every request.
+  Set cf_service_token_client_id + cf_service_token_client_secret in environment (from .env or folder 05 step 10).
+  Token must exist in account AND have Service Auth policy on portal + MCP server apps (folder 05).
+
+  Troubleshooting invalid_token:
+  - Verify client_id appears in GET /access/service_tokens
+  - Run folder 05 steps 05 + 07 + 09 (Service Auth) after creating/rotating a token
+  - Policies can take ~30s to propagate
+
+  Run one portal block top-to-bottom (initialize → initialized → tools/list → tools/call → GET SSE smoke).
+  Each initialize step saves a portal-specific mcp_session_id_* variable.
+
+  GET smoke (step x5/x10/x15/x20): Streamable HTTP server→client SSE stream. Requires
+  mcp-session-id from initialize AND Accept: application/json, text/event-stream.
+  Response may stream events; use steps 01-04 for JSON-RPC request/response testing.
+
+  Portals (slug in request name → URL env var):
+    - mcp-<portal_hostname> → {{mcp_url_mcp}}
+order: 7000

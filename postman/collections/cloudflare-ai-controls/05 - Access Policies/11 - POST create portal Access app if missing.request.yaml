@@ -1,0 +1,26 @@
+$kind: http-request
+name: 11 - POST create portal Access app if missing
+description: |
+  API portal create may not auto-create an mcp_portal Access app.
+  Run this if step 01 does not find portal_access_app_id for {{portal_hostname}}.
+  Skip if portal_access_app_id is already set.
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "name": "MCP Aggregator",
+      "domain": "{{portal_hostname}}",
+      "type": "mcp_portal",
+      "session_duration": "24h"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (json && json.result && json.result.id) {
+        pm.environment.set('portal_access_app_id', json.result.id);
+      }
+    language: text/javascript
+order: 5011

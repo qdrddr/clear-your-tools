@@ -1,0 +1,18 @@
+$kind: http-request
+description: |
+  Streamable HTTP SSE leg — GET opens the server→client event stream for an existing session.
+  Run after steps 01-02. Requires Accept text/event-stream and mcp-session-id from initialize.
+url: "{{mcp_url_mcp}}"
+method: GET
+auth:
+  type: noauth
+headers:
+  Accept: application/json, text/event-stream
+  CF-Access-Client-Id: "{{cf_service_token_client_id}}"
+  CF-Access-Client-Secret: "{{cf_service_token_client_secret}}"
+  mcp-session-id: "{{mcp_session_id_mcp}}"
+settings:
+  disabledSystemHeaders:
+    - accept
+examples: .resources/05 - mcp - GET smoke.resources/examples
+order: 7005

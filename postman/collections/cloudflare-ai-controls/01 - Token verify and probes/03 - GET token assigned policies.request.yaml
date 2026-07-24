@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/tokens/{{cfat_token_id}}
+method: GET
+examples: .resources/03 - GET token assigned policies.resources/examples
+order: 1003

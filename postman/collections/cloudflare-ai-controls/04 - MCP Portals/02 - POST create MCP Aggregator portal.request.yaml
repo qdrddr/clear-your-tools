@@ -1,0 +1,24 @@
+$kind: http-request
+name: 02 - POST create MCP Aggregator portal
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/portals
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "id": "mcp-aggregator-portal",
+      "name": "MCP Aggregator",
+      "hostname": "{{portal_hostname}}",
+      "allow_code_mode": true,
+      "description": "Aggregates DeepWiki + Context7"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (json && json.result && json.result.id) {
+        pm.environment.set('portal_id', json.result.id);
+        pm.environment.set('base_url', 'https://' + pm.environment.get('portal_hostname'));
+      }
+    language: text/javascript
+order: 4002

@@ -1,0 +1,23 @@
+$kind: http-request
+name: 03 - PUT portal enable managed OAuth
+description: GET portal app first; PUT merged body with oauth_configuration.enabled true.
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps/{{portal_access_app_id}}
+method: PUT
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.sendRequest({
+        url: pm.request.url.toString(),
+        method: 'GET',
+        header: { Authorization: 'Bearer ' + pm.environment.get('cfat_token') }
+      }, function (err, res) {
+        if (err) { console.error(err); return; }
+        var json = res.json();
+        if (!json || !json.result) return;
+        var body = json.result;
+        body.oauth_configuration = body.oauth_configuration || {};
+        body.oauth_configuration.enabled = true;
+        pm.request.body.update(JSON.stringify(body));
+      });
+    language: text/javascript
+order: 5003

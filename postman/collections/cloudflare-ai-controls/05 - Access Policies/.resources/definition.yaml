@@ -1,0 +1,16 @@
+$kind: folder
+name: "05 - Access Policies"
+description: |
+  Wire Allow + Service Auth on portal and both MCP server Access apps.
+
+  Manual steps:
+  1. GET list Access applications — saves portal/deepwiki/context7 access app IDs
+  2. GET portal Access application
+  3. PUT portal enable managed OAuth (skip if already enabled)
+  4-9. POST Allow + Service Auth policies on portal, DeepWiki, Context7 apps
+  10. POST create service token (optional if cf_service_token_id already set)
+  11. POST create portal Access app if missing (API create may not auto-create mcp_portal app)
+
+  Edit allow_email in environment before steps 04, 06, 08.
+  All six policy POSTs (04-09) are required for dual human + M2M access.
+order: 5000

@@ -1,0 +1,25 @@
+$kind: http-request
+url: "{{mcp_url_mcp}}"
+method: POST
+auth:
+  type: noauth
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  CF-Access-Client-Id: "{{cf_service_token_client_id}}"
+  CF-Access-Client-Secret: "{{cf_service_token_client_secret}}"
+  mcp-session-id: "{{mcp_session_id_mcp}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "portal_list_servers",
+        "arguments": {}
+      }
+    }
+examples: .resources/04 - mcp - POST tools call portal_list_servers.resources/examples
+order: 7004

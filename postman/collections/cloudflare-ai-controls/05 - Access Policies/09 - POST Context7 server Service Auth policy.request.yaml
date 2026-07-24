@@ -1,0 +1,15 @@
+$kind: http-request
+name: 09 - POST Context7 server Service Auth policy
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps/{{context7_access_app_id}}/policies
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "name": "M2M service token",
+      "decision": "non_identity",
+      "include": [
+        { "service_token": { "token_id": "{{cf_service_token_id}}" } }
+      ]
+    }
+order: 5009

@@ -1,0 +1,12 @@
+$kind: folder
+name: "06 - DNS"
+description: |
+  Verify or create proxied CNAME for portal hostname.
+
+  Manual steps:
+  1. GET verify portal CNAME exists (name=mcp, type=CNAME)
+  2. POST create portal CNAME only if step 01 shows no proxied CNAME
+
+  Target must be gateway.agents.cloudflare.com with proxied true.
+  Prefer dashboard CNAME from folder 00; use step 02 only with Zone DNS Edit token.
+order: 6000

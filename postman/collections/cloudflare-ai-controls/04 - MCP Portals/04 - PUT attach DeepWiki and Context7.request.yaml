@@ -1,0 +1,27 @@
+$kind: http-request
+description: |
+  GET portal first, then PUT the full response body with servers attached.
+  Edit the pre-request script if you prefer to merge manually.
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/portals/{{portal_id}}
+method: PUT
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.sendRequest({
+        url: pm.request.url.toString(),
+        method: 'GET',
+        header: { Authorization: 'Bearer ' + pm.environment.get('cfat_token') }
+      }, function (err, res) {
+        if (err) { console.error(err); return; }
+        var json = res.json();
+        if (!json || !json.result) return;
+        var body = json.result;
+        body.servers = [
+          { server_id: pm.environment.get('deepwiki_server_id'), on_behalf: false },
+          { server_id: pm.environment.get('context7_server_id'), on_behalf: false }
+        ];
+        pm.request.body.update(JSON.stringify(body));
+      });
+    language: text/javascript
+examples: .resources/04 - PUT attach DeepWiki and Context7.resources/examples
+order: 4004

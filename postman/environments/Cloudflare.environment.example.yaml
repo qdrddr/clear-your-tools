@@ -1,0 +1,50 @@
+# Copy to Cloudflare.environment.yaml (gitignored) and fill from your .env / Cloudflare dashboard.
+# Do not put real account IDs, tokens, emails, or hostnames in this example file.
+name: Cloudflare
+values:
+  - key: cf_account
+    value: ''
+  - key: cfat_token
+    secret: true
+  - key: cfat_token_id
+    value: ''
+  - key: cf_zone_id1
+    value: ''
+  - key: cf_zone_id2
+    value: ''
+  - key: portal_hostname
+    value: mcp.example.com
+  - key: portal_zone_id
+    value: ''
+  - key: portal_id
+    value: mcp-aggregator-portal
+  - key: base_url
+    value: 'https://mcp.example.com'
+  - key: deepwiki_server_id
+    value: deepwiki
+  - key: context7_server_id
+    value: context7
+  - key: portal_access_app_id
+    value: ''
+  - key: deepwiki_access_app_id
+    value: ''
+  - key: context7_access_app_id
+    value: ''
+  - key: cf_service_token_client_id
+    value: ''
+  - key: cf_service_token_client_secret
+    secret: true
+  - key: cf_service_token_id
+    value: ''
+  - key: cf_service_token_expires_at
+    value: ''
+  - key: mcp_session_id
+    value: ''
+  - key: mcp_url_mcp
+    value: 'https://mcp.example.com/mcp'
+  - key: mcp_session_id_mcp
+    value: ''
+  - key: otp_identity_provider_id
+    value: ''
+  - key: allow_email
+    value: you@example.com

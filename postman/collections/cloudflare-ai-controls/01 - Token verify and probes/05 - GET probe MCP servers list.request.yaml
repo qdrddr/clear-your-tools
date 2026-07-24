@@ -1,0 +1,5 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/ai-controls/mcp/servers
+method: GET
+examples: .resources/05 - GET probe MCP servers list.resources/examples
+order: 1005

@@ -161,5 +161,5 @@ sample.*
 .go-cache/
 .build/
 temp_*
-postman/collections/cloudflare-ai-controls/
+postman/collections/cloudflare-ai-controls/**/examples/
 postman/environments/Cloudflare.environment.yaml

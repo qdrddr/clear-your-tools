@@ -1,0 +1,7 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/tokens/permission_groups
+method: GET
+queryParams:
+  scope: com.cloudflare.api.account
+examples: .resources/02 - GET permission groups account scope.resources/examples
+order: 1002

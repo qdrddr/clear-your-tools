@@ -1,0 +1,11 @@
+$kind: folder
+name: "04 - MCP Portals"
+description: |
+  Create MCP Aggregator portal and attach DeepWiki + Context7 servers.
+
+  Manual steps:
+  1. GET list MCP portals
+  2. POST create MCP Aggregator portal (skip if portal_id already exists)
+  3. GET MCP portal by id — poll until servers show status ready
+  4. PUT attach DeepWiki and Context7 with on_behalf false
+order: 4000

@@ -1,0 +1,37 @@
+$kind: http-request
+url: "{{mcp_url_mcp}}"
+method: POST
+auth:
+  type: noauth
+headers:
+  Accept: application/json, text/event-stream
+  Content-Type: application/json
+  CF-Access-Client-Id: "{{cf_service_token_client_id}}"
+  CF-Access-Client-Secret: "{{cf_service_token_client_secret}}"
+body:
+  type: json
+  content: |
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {
+          "name": "postman-cloudflare-mcp",
+          "version": "1.0.0"
+        }
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var sessionId = pm.response.headers.get('mcp-session-id');
+      if (sessionId) {
+        pm.environment.set('mcp_session_id_mcp', sessionId);
+        pm.environment.set('mcp_session_id', sessionId);
+      }
+    language: text/javascript
+examples: .resources/01 - mcp - POST initialize.resources/examples
+order: 7001

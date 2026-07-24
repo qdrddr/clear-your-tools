@@ -1,0 +1,15 @@
+$kind: http-request
+name: 08 - POST Context7 server Allow policy
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps/{{context7_access_app_id}}/policies
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "name": "Allow team access",
+      "decision": "allow",
+      "include": [
+        { "email": { "email": "{{allow_email}}" } }
+      ]
+    }
+order: 5008

@@ -1,0 +1,15 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/zones/{{portal_zone_id}}/dns_records
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "type": "CNAME",
+      "name": "mcp",
+      "content": "gateway.agents.cloudflare.com",
+      "proxied": true,
+      "ttl": 1
+    }
+examples: .resources/02 - POST create portal CNAME.resources/examples
+order: 6002

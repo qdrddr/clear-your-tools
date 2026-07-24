@@ -1,0 +1,25 @@
+$kind: http-request
+name: 01 - GET list Access applications
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (!json || !Array.isArray(json.result)) return;
+      var portalHost = pm.environment.get('portal_hostname');
+      json.result.forEach(function (app) {
+        var domain = app.domain || '';
+        var name = (app.name || '').toLowerCase();
+        if (domain === portalHost) {
+          pm.environment.set('portal_access_app_id', app.id);
+        }
+        if (name === 'deepwiki' || domain.indexOf('deepwiki') !== -1) {
+          pm.environment.set('deepwiki_access_app_id', app.id);
+        }
+        if (name === 'context7' || domain.indexOf('context7') !== -1) {
+          pm.environment.set('context7_access_app_id', app.id);
+        }
+      });
+    language: text/javascript
+order: 5001

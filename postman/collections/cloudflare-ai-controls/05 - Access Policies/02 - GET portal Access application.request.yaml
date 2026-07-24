@@ -1,0 +1,5 @@
+$kind: http-request
+name: 02 - GET portal Access application
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/apps/{{portal_access_app_id}}
+method: GET
+order: 5002

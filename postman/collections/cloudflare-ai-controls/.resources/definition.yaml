@@ -1,0 +1,19 @@
+$kind: collection
+name: cloudflare-ai-controls
+description: |
+  Cloudflare AI Controls MCP Portal setup (manual run only).
+
+  Set Postman environment `Cloudflare` from the gitignored
+  `Cloudflare.environment.yaml` (copy from `Cloudflare.environment.example.yaml` / `.env`):
+    cf_account, cf_zone_id1, cf_zone_id2, cfat_token, service token vars.
+
+  Run folders 00 → 07 top-to-bottom. No Collection Runner / Newman.
+  afterResponse scripts copy IDs into environment variables for the next manual step.
+
+  Runtime MCP endpoint: {{base_url}}/mcp (not the admin API).
+auth:
+  - id: fc374dfc-331d-4a5a-bbba-83357fc06938
+    type: bearer
+    name: Bearer Token
+    credentials:
+      token: "{{cfat_token}}"

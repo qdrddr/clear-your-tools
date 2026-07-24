@@ -1,0 +1,13 @@
+$kind: http-request
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/tokens/verify
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (json && json.result && json.result.id) {
+        pm.environment.set('cfat_token_id', json.result.id);
+      }
+    language: text/javascript
+examples: .resources/01 - GET tokens verify.resources/examples
+order: 1001

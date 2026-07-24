@@ -1,0 +1,24 @@
+$kind: http-request
+name: 10 - POST create service token
+description: Optional if cf_service_token_id is already set in environment.
+url: https://api.cloudflare.com/client/v4/accounts/{{cf_account}}/access/service_tokens
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "name": "MCP Portal M2M token",
+      "duration": "8760h"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var json = pm.response.json();
+      if (json && json.result) {
+        if (json.result.client_secret) pm.environment.set('cf_service_token_client_secret', json.result.client_secret);
+        if (json.result.client_id) pm.environment.set('cf_service_token_client_id', json.result.client_id);
+        if (json.result.expires_at) pm.environment.set('cf_service_token_expires_at', json.result.expires_at);
+        if (json.result.id) pm.environment.set('cf_service_token_id', json.result.id);
+      }
+    language: text/javascript
+order: 5010
