@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import shutil
 import subprocess
-from typing import cast
+import threading
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,67 @@ _LIVE_STATUS = "live"
 
 def _detail_suggests_disconnect(detail: str) -> bool:
     return "not connected" in detail.lower()
+
+
+def _detail_is_method_not_found(detail: str) -> bool:
+    lowered = detail.lower()
+    return "method not found" in lowered or "-32601" in detail
+
+
+_capabilities_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
+_capabilities_cache_lock = threading.Lock()
+
+
+def clear_session_capabilities_cache() -> None:
+    with _capabilities_cache_lock:
+        _capabilities_cache.clear()
+
+
+def session_capabilities(
+    executable: str,
+    session_name: str,
+    *,
+    quiet: bool = True,
+    timeout: float = _DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any] | None:
+    """Return ``capabilities`` from ``mcpc --json @session`` (cached per executable/session)."""
+    name = _normalize_session_name(session_name)
+    if not name:
+        return None
+    exe = str(executable or "mcpc").strip() or "mcpc"
+    cache_key = (exe, name)
+    with _capabilities_cache_lock:
+        if cache_key in _capabilities_cache:
+            cached = _capabilities_cache[cache_key]
+            return copy.deepcopy(cached) if cached is not None else None
+    payload = run_mcpc_json(
+        exe,
+        [name],
+        quiet=quiet,
+        timeout=timeout,
+    )
+    caps: dict[str, Any] | None = None
+    if isinstance(payload, dict):
+        payload_dict = cast(dict[str, Any], payload)
+        raw = payload_dict.get("capabilities")
+        if isinstance(raw, dict):
+            caps = cast(dict[str, Any], raw)
+    with _capabilities_cache_lock:
+        _capabilities_cache[cache_key] = caps
+    return copy.deepcopy(caps) if caps is not None else None
+
+
+def session_supports_capability(
+    executable: str,
+    session_name: str,
+    capability: str,
+    *,
+    quiet: bool = True,
+) -> bool:
+    caps = session_capabilities(executable, session_name, quiet=quiet)
+    if caps is None:
+        return False
+    return capability in caps
 
 
 def _session_status_from_payload(payload: object, session_name: str) -> str | None:
@@ -191,6 +254,7 @@ def run_mcpc_json(
     cwd: str | None = None,
     quiet: bool = False,
     retry_on_disconnect: bool = True,
+    optional_method: bool = False,
 ) -> object | None:
     """Run ``mcpc --json …`` and parse stdout JSON; return None on failure."""
     json_args = ["--json", *args]
@@ -203,6 +267,8 @@ def run_mcpc_json(
     )
     if exit_code != 0:
         detail = (stderr or stdout or "").strip()
+        if optional_method and _detail_is_method_not_found(detail):
+            return None
         session = str(args[0]) if args else ""
         if (
             retry_on_disconnect

@@ -297,7 +297,7 @@ repos:
       - id: markdownlint-cli2
         language_version: lts
         args: [--fix]
-        exclude: ^(CLAUDE|AGENTS|GEMINI|MCPC_RESEARCH)\.md$
+        exclude: ^(CLAUDE|AGENTS|GEMINI|MCPC_RESEARCH)\.md$|^backlog/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.15

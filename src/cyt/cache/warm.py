@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from cyt.cache.memory import configure_memory_cache
@@ -81,3 +82,14 @@ def warm_caches(config: dict[str, Any] | None = None) -> None:
             logger.warning("skills registry cache warm skipped: %s", exc)
 
     _warm_tools_catalog(cfg)
+
+
+def schedule_warm_caches(config: dict[str, Any] | None = None) -> None:
+    """Warm caches in a background thread so hook startup stays non-blocking."""
+    cfg = config or load_config()
+    threading.Thread(
+        target=warm_caches,
+        args=(cfg,),
+        name="cyt-warm-caches",
+        daemon=True,
+    ).start()

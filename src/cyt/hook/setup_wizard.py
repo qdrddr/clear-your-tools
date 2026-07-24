@@ -18,18 +18,18 @@ from cyt.config import (
     save_user_config,
     skills_enabled,
 )
-from cyt.mcpc.readiness import report_mcpc_hook_readiness
-from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.hook.cli_invocation import (
-    HookCliInvocation,
     INSTALLED_CYT_CLIENT_COMMAND,
     INSTALLED_CYT_DAEMON_START_COMMAND,
     INSTALLED_CYT_DAEMON_START_COMMAND_BASE,
+    HookCliInvocation,
     cyt_client_command,
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
 )
+from cyt.mcpc.readiness import report_mcpc_hook_readiness
+from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")

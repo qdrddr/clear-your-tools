@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
-import time
+import threading
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
@@ -229,21 +229,12 @@ def test_executor_skill_not_injected_when_no_survivors() -> None:
         assert "<agent-tools" in context
 
 
-def test_coordinator_runs_parallel_skills_search_for_executor_only(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    overlap = False
-    active = {"count": 0}
-    lock = __import__("threading").Lock()
-    mock_sleep_s = 0.12
+def test_coordinator_runs_parallel_skills_search_for_executor_only() -> None:
+    overlap = threading.Event()
+    gate = threading.Barrier(2, action=overlap.set)
 
     def slow_tools(*_args: object, **_kwargs: object) -> PruneResult:
-        nonlocal overlap
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap = True
-        time.sleep(mock_sleep_s)
+        gate.wait(timeout=2.0)
         return PruneResult(
             tools=[{"name": "tools.demo.tool"}],
             status="applied",
@@ -255,12 +246,7 @@ def test_coordinator_runs_parallel_skills_search_for_executor_only(
         )
 
     def slow_skills(*_args: object, **_kwargs: object) -> list[MatchedSkill]:
-        nonlocal overlap
-        with lock:
-            active["count"] += 1
-            if active["count"] == 2:
-                overlap = True
-        time.sleep(mock_sleep_s)
+        gate.wait(timeout=2.0)
         return [
             MatchedSkill(
                 doc_id="executor",
@@ -298,18 +284,15 @@ def test_coordinator_runs_parallel_skills_search_for_executor_only(
                 return_value=("<agent-tools>tools</agent-tools>", []),
             ),
         ):
-            started = time.perf_counter()
             outcome, _details, _context = skills_cli._handle_user_prompt(
                 payload,
                 config,
                 emit_stdout=False,
                 io_guarded=True,
             )
-            elapsed = time.perf_counter() - started
 
-        assert overlap
+        assert overlap.is_set()
         assert outcome == "user_prompt_injected"
-        assert elapsed < mock_sleep_s * 2.5
 
 
 def test_required_executor_skill_env_var_names_for_llm_pipeline() -> None:

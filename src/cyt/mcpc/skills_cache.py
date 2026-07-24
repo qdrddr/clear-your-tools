@@ -11,7 +11,13 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from cyt.mcpc.catalog import _cache_key_for_config, _McpcCacheKey
-from cyt.mcpc.cli import mcpc_available, run_mcpc, run_mcpc_json
+from cyt.mcpc.cli import (
+    clear_session_capabilities_cache,
+    mcpc_available,
+    run_mcpc,
+    run_mcpc_json,
+    session_supports_capability,
+)
 from cyt.mcpc.runtime import (
     load_config,
     uses_mcpc_tool_catalog,
@@ -36,6 +42,7 @@ _snapshots: dict[_McpcCacheKey, McpcSkillsSnapshot] = {}
 def clear_mcpc_skills_cache() -> None:
     with _snapshot_lock:
         _snapshots.clear()
+    clear_session_capabilities_cache()
 
 
 def _get_snapshot_state(cache_key: _McpcCacheKey) -> McpcSkillsSnapshot:
@@ -176,7 +183,11 @@ def _fetch_session_skills(
     executable: str,
     session: str,
 ) -> list[dict[str, str]]:
-    list_payload = run_mcpc_json(executable, [session, "skills-list"])
+    list_payload = run_mcpc_json(
+        executable,
+        [session, "skills-list"],
+        optional_method=True,
+    )
     if not isinstance(list_payload, list):
         return []
     sources: list[dict[str, str]] = []
@@ -218,7 +229,13 @@ def _fetch_session_resources(
     *,
     allowed_mime_types: set[str],
 ) -> list[dict[str, str]]:
-    list_payload = run_mcpc_json(executable, [session, "resources-list"])
+    if not session_supports_capability(executable, session, "resources"):
+        return []
+    list_payload = run_mcpc_json(
+        executable,
+        [session, "resources-list"],
+        optional_method=True,
+    )
     if not isinstance(list_payload, list):
         return []
     sources: list[dict[str, str]] = []

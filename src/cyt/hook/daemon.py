@@ -239,10 +239,18 @@ def _configure_unattended_quiet() -> None:
     configure_launch_quiet()
 
 
+def _schedule_warm_caches(config: dict[str, Any]) -> None:
+    """Warm caches after the hook server is reachable (never block startup)."""
+    from cyt.cache import schedule_warm_caches
+
+    schedule_warm_caches(config)
+
+
 def _unattended_fallback_result(
     base_port: int,
     *,
     mode: str,
+    config: dict[str, Any],
 ) -> HookDaemonStartResult:
     """Best-effort success for hook sessionStart when spawn/wait fails."""
     reused_port = _find_reusable_hook_port(base_port)
@@ -257,6 +265,7 @@ def _unattended_fallback_result(
             reused=True,
             mode=mode,
         )
+        _schedule_warm_caches(config)
     return HookDaemonStartResult(
         outcome="reused" if reused else "already_running",
         port=port,
@@ -279,9 +288,6 @@ def daemon_start(
         _configure_unattended_quiet()
     config = load_config(config_path)
     report_mcpc_hook_readiness(config, unattended=unattended)
-    from cyt.cache import warm_caches
-
-    warm_caches(config)
     base_port = resolve_reverse_port(config, None)
     mode = _resolve_daemon_mode(config)
     needs_creds = _needs_credential_injection(config)
@@ -329,6 +335,7 @@ def daemon_start(
             mode=mode,
         )
         _log(verbose, f"hook daemon: reusing {hook_url}")
+        _schedule_warm_caches(config)
         result = HookDaemonStartResult(
             outcome="reused",
             port=reused_port,
@@ -365,6 +372,7 @@ def daemon_start(
             mode=mode,
             credentials_injected=bool(extra_env),
         )
+        _schedule_warm_caches(runtime.config)
         _log(verbose, f"hook daemon: serving foreground on port {spawn_port}")
         _emit_start_status(
             HookDaemonStartResult(
@@ -402,7 +410,7 @@ def daemon_start(
     if not _wait_for_hook_server(spawn_port, process=process):
         process.terminate()
         if unattended:
-            return _unattended_fallback_result(base_port, mode=mode)
+            return _unattended_fallback_result(base_port, mode=mode, config=config)
         raise SystemExit(
             f"Timed out waiting for hook server on http://{LOCAL_HOST}:{spawn_port}/health",
         )
@@ -417,6 +425,7 @@ def daemon_start(
         credentials_injected=bool(extra_env),
     )
     _log(verbose, f"hook daemon: started pid={process.pid} port={spawn_port}")
+    _schedule_warm_caches(config)
     result = HookDaemonStartResult(
         outcome="spawned",
         port=spawn_port,

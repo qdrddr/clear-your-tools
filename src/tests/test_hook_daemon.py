@@ -107,7 +107,7 @@ def test_unattended_suppresses_mcpc_logging_warnings(
         patch("cyt.hook.daemon.load_config", return_value=config),
         patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
         patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
-        patch("cyt.cache.warm_caches", side_effect=_warm_with_mcpc_warnings),
+        patch("cyt.cache.schedule_warm_caches", side_effect=_warm_with_mcpc_warnings),
     ):
         hook_daemon.daemon_start(verbose=False, unattended=True)
 

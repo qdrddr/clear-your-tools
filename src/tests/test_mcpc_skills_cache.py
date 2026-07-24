@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from cyt.mcpc.skills_cache import (
     McpcSkillsSnapshot,
+    _fetch_session_resources,
+    _fetch_session_skills,
     clear_mcpc_skills_cache,
     get_mcpc_skills_snapshot,
     refresh_mcpc_skills_snapshot,
@@ -59,3 +61,28 @@ def test_refresh_mcpc_skills_snapshot_updates_memory() -> None:
     assert snapshot is not None
     assert snapshot.own_skill is not None
     assert snapshot.updated_at > 0.0
+
+
+def test_fetch_session_resources_skips_without_resources_capability() -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_mcpc_json(_executable: str, args: list[str], **_kwargs: object) -> object | None:
+        calls.append(list(args))
+        return []
+
+    with (
+        patch("cyt.mcpc.skills_cache.session_supports_capability", return_value=False),
+        patch("cyt.mcpc.skills_cache.run_mcpc_json", side_effect=fake_run_mcpc_json),
+    ):
+        assert _fetch_session_resources("mcpc", "@codebase-memory", allowed_mime_types=set()) == []
+    assert calls == []
+
+
+def test_fetch_session_skills_uses_optional_method_for_list() -> None:
+    with patch("cyt.mcpc.skills_cache.run_mcpc_json", return_value=[]) as run:
+        assert _fetch_session_skills("mcpc", "@fff") == []
+    run.assert_called_once_with(
+        "mcpc",
+        ["@fff", "skills-list"],
+        optional_method=True,
+    )

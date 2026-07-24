@@ -160,3 +160,4 @@ sample.*
 .cargo-home/
 .go-cache/
 .build/
+temp_*

@@ -6,7 +6,14 @@ import json
 from io import StringIO
 from unittest.mock import patch
 
-from cyt.mcpc.cli import mcpc_available, restart_mcpc_session, run_mcpc, run_mcpc_json
+from cyt.mcpc.cli import (
+    clear_session_capabilities_cache,
+    mcpc_available,
+    restart_mcpc_session,
+    run_mcpc,
+    run_mcpc_json,
+    session_supports_capability,
+)
 
 
 def test_run_mcpc_json_parses_stdout() -> None:
@@ -85,6 +92,38 @@ def test_run_mcpc_json_skips_retry_when_session_status_live() -> None:
         ["--json", "@codebase-memory"],
     ]
     assert "restart" not in " ".join(" ".join(call) for call in calls)
+
+
+def test_run_mcpc_json_optional_method_skips_method_not_found_without_warning() -> None:
+    stderr = StringIO()
+    with (
+        patch(
+            "cyt.mcpc.cli.run_mcpc",
+            return_value=(2, "", "MCP error -32601: Method not found"),
+        ),
+        patch("cyt.mcpc.cli.logger") as logger,
+    ):
+        logger.warning.side_effect = lambda msg, *args: stderr.write(str(msg) % args)
+        assert (
+            run_mcpc_json(
+                "mcpc",
+                ["@codebase-memory", "skills-list"],
+                optional_method=True,
+            )
+            is None
+        )
+    assert stderr.getvalue() == ""
+
+
+def test_session_supports_capability_uses_session_payload() -> None:
+    clear_session_capabilities_cache()
+    payload = {
+        "name": "@hedl",
+        "capabilities": {"resources": {}, "tools": {}},
+    }
+    with patch("cyt.mcpc.cli.run_mcpc_json", return_value=payload):
+        assert session_supports_capability("mcpc", "@hedl", "resources") is True
+        assert session_supports_capability("mcpc", "@hedl", "skills") is False
 
 
 def test_run_mcpc_json_quiet_suppresses_warning_logs() -> None:
