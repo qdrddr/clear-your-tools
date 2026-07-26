@@ -29,7 +29,7 @@ def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
         "prompt_tools_hook_config",
         lambda existing, *, context: {
             "hook": {
-                "tools_from": "executor",
+                "tools_from": ["executor"],
                 "executor_url": "http://localhost:4789",
                 "mcp_definitions_file": "~/.config/cyt/mcp-definitions.json",
             },

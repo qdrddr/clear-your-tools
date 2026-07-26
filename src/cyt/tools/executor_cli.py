@@ -78,7 +78,7 @@ def _resolve_executor_url(
         url_text = _prompt("Executor base URL", "http://localhost:4789").strip().rstrip("/")
         if url_text:
             overlay = build_pruning_tools_hook_save_overlay(
-                tools_from="executor",
+                tools_from=["executor"],
                 executor_url=url_text,
                 mcp_definitions_file=str(tools_hook_mcp_definitions_file(config)),
             )
@@ -118,7 +118,7 @@ def run_executor_save(args: argparse.Namespace) -> None:
 
     if str(output_path) != str(tools_hook_mcp_definitions_file(config)):
         overlay = build_pruning_tools_hook_save_overlay(
-            tools_from="executor",
+            tools_from=["executor"],
             executor_url=tools_hook_executor_url(config),
             mcp_definitions_file=str(output_path),
         )

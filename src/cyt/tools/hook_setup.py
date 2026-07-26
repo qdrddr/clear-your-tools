@@ -78,7 +78,7 @@ def _prompt_hook_source_paths(
 
 def build_tools_hook_config_overlay(
     *,
-    tools_from: str | list[str],
+    tools_from: list[str],
     executor_url: str,
     mcp_definitions_file: str,
     executor_token_var: str | None = None,
@@ -96,7 +96,7 @@ def build_tools_hook_config_overlay(
 
 def build_pruning_tools_hook_save_overlay(
     *,
-    tools_from: str | list[str],
+    tools_from: list[str],
     executor_url: str,
     mcp_definitions_file: str,
     executor_token_var: str | None = None,
@@ -114,12 +114,10 @@ def build_pruning_tools_hook_save_overlay(
     }
 
 
-def _tools_from_overlay_value(sources: tuple[str, ...], *, fallback: str) -> str | list[str]:
-    if len(sources) == 1:
-        return sources[0]
+def _tools_from_overlay_value(sources: tuple[str, ...], *, fallback: str) -> list[str]:
     if sources:
         return list(sources)
-    return fallback
+    return [fallback]
 
 
 def prompt_tools_hook_config(
@@ -158,7 +156,7 @@ def prompt_tools_hook_config(
             ",".join(tools_hook_sources(existing) or [from_default]),
         )
         selected = _parse_selected_hook_sources(raw_sources, from_default)
-        tools_from: str | list[str] = selected[0] if len(selected) == 1 else selected
+        tools_from = selected
         executor_default, definitions_default = _prompt_hook_source_paths(
             selected,
             executor_default=executor_default,
