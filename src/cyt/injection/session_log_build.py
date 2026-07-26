@@ -15,7 +15,7 @@ from cyt.skills.search import MatchedSkill
 from cyt.tools.inject import format_tool_item
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _mcpc_injection_schema_body
 
-CatalogKind = Literal["executor", "mcpc"]
+CatalogKind = Literal["executor", "mcpc", "definitions"]
 ItemKind = Literal["tool", "skill", "resource"]
 
 _TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
@@ -109,9 +109,13 @@ def _resolve_tool_for_hash(
         return tool
     name = str(tool.get("tool_name") or tool.get("name") or "").strip()
     session = str(tool.get("mcpc_session") or "").strip()
+    tool_source = str(tool.get("cyt_catalog_source") or catalog).strip()
     for original in catalog_tools:
         orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
         if orig_name != name:
+            continue
+        orig_source = str(original.get("cyt_catalog_source") or "").strip()
+        if tool_source and orig_source and orig_source != tool_source:
             continue
         if (
             catalog == "mcpc"
@@ -176,12 +180,35 @@ def resource_content_hash(match: MatchedResource) -> str:
     return hashlib.sha256(match.markdown.encode("utf-8")).hexdigest()
 
 
-def tool_item_key(tool: dict[str, Any], *, catalog: CatalogKind) -> str:
+def tool_item_key(tool: dict[str, Any], *, catalog: CatalogKind | None = None) -> str:
+    source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
     name = str(tool.get("tool_name") or tool.get("name") or "").strip()
-    if catalog == "mcpc":
+    if source == "mcpc":
         session = str(tool.get("mcpc_session") or "").strip()
-        return f"tool:{session}:{name}"
-    return f"tool:{name}"
+        return f"tool:mcpc:{session}:{name}"
+    if source == "definitions":
+        return f"tool:definitions:{name}"
+    return f"tool:executor:{name}"
+
+
+def tool_item_legacy_keys(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind | None = None,
+) -> tuple[str, ...]:
+    """Pre-multi-source session-log keys for the same tool (lookup aliases only)."""
+    source = str(tool.get("cyt_catalog_source") or catalog or "executor").strip()
+    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    if not name:
+        return ()
+    legacy: list[str] = []
+    if source == "mcpc":
+        session = str(tool.get("mcpc_session") or "").strip()
+        if session:
+            legacy.append(f"tool:{session}:{name}")
+    legacy.append(f"tool:{name}")
+    current = tool_item_key(tool, catalog=catalog)
+    return tuple(key for key in legacy if key != current)
 
 
 def skill_item_key(match: MatchedSkill, *, command: str | None = None) -> str:
@@ -256,7 +283,12 @@ def format_entry_fragment(entry: dict[str, Any]) -> str:
     if kind == "tool":
         tool = _tool_dict_from_log_entry(entry)
         raw_catalog = entry.get("catalog", "executor")
-        catalog: CatalogKind = "mcpc" if raw_catalog == "mcpc" else "executor"
+        if raw_catalog == "mcpc":
+            catalog: CatalogKind = "mcpc"
+        elif raw_catalog == "definitions":
+            catalog = "definitions"
+        else:
+            catalog = "executor"
         include_description = "description" in entry
         return format_tool_fragment(
             tool,

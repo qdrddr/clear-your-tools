@@ -95,6 +95,7 @@ def _apply_catalog_to_state(
     *,
     content_hash: str,
     sessions: dict[str, dict[str, Any]] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> None:
     with _catalog_lock:
         state.tools = tools
@@ -102,6 +103,10 @@ def _apply_catalog_to_state(
         state.catalog_content_hash = content_hash
         if sessions is not None:
             state.sessions = copy.deepcopy(sessions)
+    if config is not None:
+        from cyt.tools.master_cache_scheduler import schedule_master_catalog_refresh
+
+        schedule_master_catalog_refresh(config)
 
 
 def _normalize_tool(
@@ -274,6 +279,7 @@ def _load_catalog_from_disk(
         copy.deepcopy(tools),
         content_hash=content_hash,
         sessions=sessions,
+        config=config,
     )
     load_session_health_from_disk(
         cache_key.slug,
@@ -344,7 +350,7 @@ def _blocking_cli_fetch(
         )
 
     content_hash = raw_catalog_content_hash(tools)
-    _apply_catalog_to_state(state, tools, content_hash=content_hash, sessions=sessions)
+    _apply_catalog_to_state(state, tools, content_hash=content_hash, sessions=sessions, config=cfg)
     _write_catalog_disk(cache_key, tools=tools, sessions=sessions, config=cfg)
     _ensure_scheduler_started(cfg)
     return _return_catalog(
@@ -451,6 +457,23 @@ def mcpc_catalog_health_snapshot(config: dict[str, Any] | None = None) -> dict[s
     return payload
 
 
+def mcpc_catalog_slug(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    if not _mcpc_runtime_active(cfg):
+        return ""
+    return _cache_key_for_config(cfg).slug
+
+
+def mcpc_catalog_fingerprint(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    if not _mcpc_runtime_active(cfg):
+        return ""
+    cache_key = _cache_key_for_config(cfg)
+    state = _get_state(cache_key)
+    with _catalog_lock:
+        return state.catalog_content_hash
+
+
 def apply_fetched_catalog(
     cache_key: _McpcCacheKey,
     tools: list[dict[str, Any]],
@@ -459,6 +482,7 @@ def apply_fetched_catalog(
     config: dict[str, Any] | None = None,
 ) -> None:
     """Apply a freshly fetched catalog to memory (scheduler helper)."""
+    cfg = config or load_config()
     state = _get_state(cache_key)
     content_hash = raw_catalog_content_hash(tools)
-    _apply_catalog_to_state(state, tools, content_hash=content_hash, sessions=sessions)
+    _apply_catalog_to_state(state, tools, content_hash=content_hash, sessions=sessions, config=cfg)

@@ -24,7 +24,6 @@ from cyt.config import (
     required_proxy_env_var_names,
     required_tools_hook_env_var_names,
     tools_enabled,
-    tools_hook_tools_from,
 )
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.config import codex_env_key_name
@@ -393,16 +392,16 @@ def _run_cursor_launch_session(
     else:
         ensure_cursor_hooks_for_launch(quiet=True)
 
+    from cyt.cache import warm_caches
+    from cyt.config import tools_hook_sources
     from cyt.executor.http import schedule_executor_catalog_refresh
 
     if (
         tools_enabled(config)
-        and tools_hook_tools_from(config) == "executor"
+        and "executor" in tools_hook_sources(config)
         and inject_via(config) == "hook"
     ):
         schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
-
-    from cyt.cache import warm_caches
 
     warm_caches(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
@@ -451,16 +450,16 @@ def _run_launch_session(
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
         runtime.config = config
 
+    from cyt.cache import warm_caches
+    from cyt.config import tools_hook_sources
     from cyt.executor.http import schedule_executor_catalog_refresh
 
     if (
         tools_enabled(config)
-        and tools_hook_tools_from(config) == "executor"
+        and "executor" in tools_hook_sources(config)
         and inject_via(config) == "hook"
     ):
         schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
-
-    from cyt.cache import warm_caches
 
     warm_caches(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))

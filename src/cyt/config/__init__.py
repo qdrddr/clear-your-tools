@@ -125,6 +125,8 @@ DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
 DEFAULT_TOOLS_ENABLED: bool = True
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "mcpc"
+DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST: list[str] = ["mcpc"]
+VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset({"executor", "definitions", "mcpc"})
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
@@ -194,7 +196,7 @@ _DEFAULTS: dict[str, Any] = {
         "tools": {
             "enabled": DEFAULT_TOOLS_ENABLED,
             "hook": {
-                "tools_from": DEFAULT_TOOLS_HOOK_TOOLS_FROM,
+                "tools_from": list(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST),
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
                 "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
@@ -1135,12 +1137,7 @@ def inject_into_user_message(config: dict[str, Any] | None = None) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSource:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "tools_from",
-        DEFAULT_TOOLS_HOOK_TOOLS_FROM,
-    )
+def _normalize_tools_hook_source(value: str) -> ToolsHookSource | None:
     mode = str(value).strip().lower()
     if mode == "definitions":
         return "definitions"
@@ -1148,7 +1145,52 @@ def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSour
         return "mcpc"
     if mode in {"executor", "client"}:
         return "executor"
-    return "executor"
+    return None
+
+
+def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookSource, ...]:
+    """Normalized ``pruning.tools.hook.tools_from`` list (scalar or YAML array)."""
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "tools_from",
+        DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST,
+    )
+    raw_items: list[Any]
+    if isinstance(value, str):
+        raw_items = [value]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = list(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST)
+
+    seen: set[ToolsHookSource] = set()
+    normalized: list[ToolsHookSource] = []
+    for item in raw_items:
+        source = _normalize_tools_hook_source(str(item))
+        if source is None or source in seen:
+            continue
+        seen.add(source)
+        normalized.append(source)
+    if not normalized:
+        if any(str(item).strip() for item in raw_items):
+            return ("executor",)
+        return cast(tuple[ToolsHookSource, ...], tuple(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST))
+    return tuple(normalized)
+
+
+def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSource:
+    """Legacy: first configured hook tool source."""
+    sources = tools_hook_sources(config)
+    return sources[0]
+
+
+def uses_definitions_tool_catalog(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return (
+        tools_enabled(cfg)
+        and tools_inject_via(cfg) == "hook"
+        and "definitions" in tools_hook_sources(cfg)
+    )
 
 
 def tools_hook_executor_url(config: dict[str, Any] | None = None) -> str:
@@ -1289,17 +1331,24 @@ def resolved_tools_hook_file(config: dict[str, Any] | None = None) -> Path:
     return tools_hook_mcp_definitions_file(cfg)
 
 
+def _tools_hook_source_usable(source: ToolsHookSource, config: dict[str, Any]) -> bool:
+    if source == "executor":
+        return tools_hook_executor_configured(config)
+    if source == "mcpc":
+        return True
+    return resolved_tools_hook_file(config).is_file()
+
+
 def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     if not tools_enabled(cfg):
         return False
     if tools_inject_via(cfg) != "hook":
         return False
-    if tools_hook_tools_from(cfg) == "executor":
-        return not tools_hook_executor_configured(cfg)
-    if tools_hook_tools_from(cfg) == "mcpc":
-        return False
-    return not resolved_tools_hook_file(cfg).is_file()
+    sources = tools_hook_sources(cfg)
+    if not sources:
+        return True
+    return not any(_tools_hook_source_usable(source, cfg) for source in sources)
 
 
 def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> list[str]:
@@ -1308,7 +1357,7 @@ def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> l
         return []
     if tools_inject_via(cfg) != "hook":
         return []
-    if tools_hook_tools_from(cfg) != "executor":
+    if "executor" not in tools_hook_sources(cfg):
         return []
     return [tools_hook_executor_token_var(cfg)]
 
@@ -1318,16 +1367,14 @@ def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     return (
         tools_enabled(cfg)
         and tools_inject_via(cfg) == "hook"
-        and tools_hook_tools_from(cfg) == "executor"
+        and "executor" in tools_hook_sources(cfg)
     )
 
 
 def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return (
-        tools_enabled(cfg)
-        and tools_inject_via(cfg) == "hook"
-        and tools_hook_tools_from(cfg) == "mcpc"
+        tools_enabled(cfg) and tools_inject_via(cfg) == "hook" and "mcpc" in tools_hook_sources(cfg)
     )
 
 

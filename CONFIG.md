@@ -466,7 +466,7 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
 | Key | Values | Default |
 | --- | ------ | ------- |
 | `pruning.tools.inject_via` | `proxy` \| `hook` | `proxy` |
-| `pruning.tools.hook.tools_from` | `executor` \| `definitions` | `executor` |
+| `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `mcpc` (scalar or YAML list) | `[mcpc]` |
 | `pruning.tools.hook.executor_url` | URL | `http://localhost:4789` |
 | `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
 | `pruning.tools.hook.mcp_definitions_file` | path | `~/.config/cyt/mcp-definitions.json` |
@@ -475,10 +475,12 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
   rerank, and LLM pipelines run on that request catalog only). Executor is **not** used in proxy
   mode — `pruning.tools.hook.executor_*` settings are ignored, and the proxy works without Executor
   running or `EXECUTOR_TOKEN` set.
-- **`hook`**: load a catalog from the definitions file or live executor HTTP API (`tools_from: executor`),
-  run the BM25/rerank/LLM pipeline, inject `<agent-tools>…</agent-tools>` context. Missing catalog
-  files or an unset executor URL are skipped silently at hook time (configure with `cyt hook`, `cyt setup`, or optional
-  `cyt launch` repair prompt).
+- **`hook`**: load tool catalogs from one or more sources listed in `tools_from` (definitions file,
+  live executor HTTP API, and/or local `mcpc` CLI). Sources are concatenated into a master snapshot
+  (each tool tagged with `cyt_catalog_source`), pruned in parallel bulks, and injected as one
+  `<agent-tools>` block with inner `<mcp>`, `<executor>`, and/or `<definitions>` sections. Missing
+  catalogs for individual sources are skipped when other sources are usable (configure with
+  `cyt hook`, `cyt setup`, or optional `cyt launch` repair prompt).
 
 ### Proxy injection placement (`network.proxy.reverse.inject_into_user_message`)
 

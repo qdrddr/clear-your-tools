@@ -244,7 +244,7 @@ executionEnvironments = [
 pythonpath = ["src"]
 testpaths = ["src/tests"]
 markers = [
-    "integration: tests that call real external APIs (skipped unless --run-integration)",
+    "integration: tests that call real external APIs (manual only: pytest -m integration --run-integration)",
 ]
 filterwarnings = [
     "error",
@@ -256,7 +256,7 @@ filterwarnings = [
     "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
 ]
-addopts = "-q"
+addopts = "-q -m 'not integration'"
 asyncio_mode = "auto"
 
 [tool.coverage.run]

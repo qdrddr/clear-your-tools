@@ -39,21 +39,30 @@ class SessionLogIndex:
                 parts.append(fragment.strip())
         return "\n".join(parts)
 
-    def count_key(self, key: str) -> int:
-        return sum(1 for entry in self.entries if str(entry.get("key") or "") == key)
+    def count_key(self, key: str, *, aliases: tuple[str, ...] = ()) -> int:
+        keys = {key, *aliases}
+        return sum(1 for entry in self.entries if str(entry.get("key") or "") in keys)
 
-    def latest_hash(self, key: str) -> str | None:
+    def latest_hash(self, key: str, *, aliases: tuple[str, ...] = ()) -> str | None:
+        keys = {key, *aliases}
         for entry in reversed(self.entries):
-            if str(entry.get("key") or "") != key:
+            if str(entry.get("key") or "") not in keys:
                 continue
             raw = entry.get("hash")
             if isinstance(raw, str) and raw.strip():
                 return raw.strip()
         return None
 
-    def has_satisfied_full(self, key: str, current_hash: str) -> bool:
+    def has_satisfied_full(
+        self,
+        key: str,
+        current_hash: str,
+        *,
+        aliases: tuple[str, ...] = (),
+    ) -> bool:
+        keys = {key, *aliases}
         for entry in reversed(self.entries):
-            if str(entry.get("key") or "") != key:
+            if str(entry.get("key") or "") not in keys:
                 continue
             if not entry.get("full"):
                 continue
@@ -71,24 +80,25 @@ def resolve_injection_mode(
     session_text: str,
     formatted_skinny: str,
     formatted_full: str,
+    key_aliases: tuple[str, ...] = (),
 ) -> InjectionMode:
     corpus = index.verbatim_corpus()
     combined_text = session_text
     if corpus.strip():
         combined_text = f"{session_text}\n{corpus}" if session_text.strip() else corpus
 
-    if index.has_satisfied_full(key, current_hash):
+    if index.has_satisfied_full(key, current_hash, aliases=key_aliases):
         return "skip"
 
     for fragment in (formatted_skinny, formatted_full):
         if fragment.strip() and is_pre_exposed(fragment, combined_text):
             return "skip"
 
-    latest = index.latest_hash(key)
+    latest = index.latest_hash(key, aliases=key_aliases)
     if latest is not None and latest != current_hash:
         return "full"
 
-    if index.count_key(key) >= FULL_PROMOTION_THRESHOLD:
+    if index.count_key(key, aliases=key_aliases) >= FULL_PROMOTION_THRESHOLD:
         return "full"
 
     return "skinny"

@@ -703,6 +703,7 @@ def _append_coordinated_tools_injection(
     model: str,
     prune_result: PruneResult,
     catalog: list[dict[str, Any]],
+    prune_results: dict[str, PruneResult],
     request_tokens: int,
     budget_debug: dict[str, int],
     debug: bool,
@@ -729,6 +730,7 @@ def _append_coordinated_tools_injection(
         payload=payload,
         session_text=session_text,
         catalog_tools=catalog,
+        prune_results=prune_results,
     )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")
@@ -856,7 +858,7 @@ def _run_coordinated_user_prompt_injection(
     stdout_guard = hook_safe_stdout(active=stdio_guarded)
     stderr_guard = hook_quiet_stderr(active=stdio_guarded)
     with stdout_guard, stderr_guard:
-        prune_result, skill_matches, catalog = run_hook_coordinated_prune(
+        prune_result, skill_matches, catalog, prune_results = run_hook_coordinated_prune(
             query,
             config,
             payload=payload,
@@ -895,6 +897,7 @@ def _run_coordinated_user_prompt_injection(
                 model=model,
                 prune_result=prune_result,
                 catalog=catalog,
+                prune_results=prune_results,
                 request_tokens=request_tokens,
                 budget_debug=budget_debug,
                 debug=debug,

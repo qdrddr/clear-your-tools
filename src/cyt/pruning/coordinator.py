@@ -39,6 +39,13 @@ class ToolSource:
     source_id: str
     tools: list[dict[str, Any]]
     merged_to_api_tools: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None
+    tools_to_catalog_entries: (
+        Callable[
+            [list[dict[str, Any]]],
+            tuple[list[dict[str, Any]], list[Any]],
+        ]
+        | None
+    ) = None
 
 
 @dataclass
@@ -352,6 +359,8 @@ def _run_tools_filter(
         config=ctx.config,
         pruner_settings=ctx.pruner_settings,
         for_hook=for_hook,
+        tools_to_catalog_entries=source.tools_to_catalog_entries,
+        catalog_bulk_id=source.source_id if for_hook else None,
     )
 
 

@@ -309,6 +309,7 @@ def _run_catalog_list_refresh(
             catalog_state,
             copy.deepcopy(catalog_state.tools),
             executor_mcp=executor_mcp,
+            config=config,
         )
         with _scheduler_lock:
             state.last_connection_fingerprint = connection_fingerprint_for_slug(cache_key.slug)
@@ -378,6 +379,7 @@ def _run_catalog_schema_refresh(
         _apply_catalog_to_state(
             catalog_state,
             copy.deepcopy(catalog_state.tools),
+            config=config,
         )
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("executor catalog schema refresh failed slug=%s: %s", cache_key.slug, exc)

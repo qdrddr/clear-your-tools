@@ -611,8 +611,8 @@ PY
 	cyt_test_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "pytest src/tests"
-		cyt_run uv run pytest src/tests
+		info "pytest src/tests (unit tests only; integration excluded)"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-unit.sh" src/tests
 	}
 
 	cyt_test_app() {

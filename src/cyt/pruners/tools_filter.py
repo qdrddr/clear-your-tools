@@ -141,6 +141,9 @@ def _run_catalog_pruning(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    *,
+    for_hook: bool = False,
+    catalog_bulk_id: str | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, int],
@@ -158,14 +161,27 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
-    from cyt.tools.catalog_cache import catalog_snapshot_from_cache, ensure_tool_catalog_cached
-
-    cached = ensure_tool_catalog_cached(
-        entries,
-        enums,
-        resolved_config,
-        ctx=ctx,
+    from cyt.tools.catalog_cache import (
+        catalog_snapshot_from_cache,
+        ensure_tool_catalog_cached,
+        get_tool_catalog_cache,
     )
+
+    if for_hook and catalog_bulk_id:
+        cached = get_tool_catalog_cache(
+            catalog_bulk_id,
+            entries,
+            enums,
+            resolved_config,
+            blocking=False,
+        )
+    else:
+        cached = ensure_tool_catalog_cached(
+            entries,
+            enums,
+            resolved_config,
+            bulk_id=catalog_bulk_id or "",
+        )
     catalog_snapshot = catalog_snapshot_from_cache(cached)
     build_catalog = cached.catalog
     data = build_catalog
@@ -803,6 +819,7 @@ def filter_tools_for_query(
     pruner_settings: PrunerSettingsCache | None = None,
     *,
     for_hook: bool = False,
+    catalog_bulk_id: str | None = None,
 ) -> PruneResult:
     tools_in = len(original_tools)
     catalog_tools_in = sum(1 for t in original_tools if t.get("name"))
@@ -951,6 +968,8 @@ def filter_tools_for_query(
             skill_llm_out=skill_llm_out,
             config=config,
             pruner_settings=pruner_settings,
+            for_hook=for_hook,
+            catalog_bulk_id=catalog_bulk_id,
         )
     except Exception as exc:
         logger.warning("tool pruning failed: %s", exc)

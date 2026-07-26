@@ -69,6 +69,9 @@ done
 ROOT="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 cd "$ROOT" || exit 1
 
+# Integration tests call real external APIs; never run them in automated hook loops.
+unset CYT_RUN_INTEGRATION_TESTS
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GROUPS_FILE="$SCRIPT_DIR/prek-hook-groups.yaml"
 export SHORTEN_ROOT="$ROOT"

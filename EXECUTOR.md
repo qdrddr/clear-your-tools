@@ -2,8 +2,10 @@
 
 [Executor](https://github.com/UsefulSoftwareCo/executor) is a local MCP aggregator and
 Code Mode sandbox. Clear Your Tools integrates with Executor **only in hook injection mode**
-(`pruning.inject_via: hook`) when `pruning.tools.hook.tools_from` is `executor` (the default for
-hook injection) in `~/.config/cyt/config.yaml`. Proxy injection does not use Executor.
+(`pruning.inject_via: hook`) when `executor` is listed in `pruning.tools.hook.tools_from`
+(scalar or YAML list; default is `[mcpc]` only) in `~/.config/cyt/config.yaml`. Proxy injection
+does not use Executor. Multiple hook sources can be active at once; executor tools are tagged
+`cyt_catalog_source: executor` in the master catalog.
 
 ---
 

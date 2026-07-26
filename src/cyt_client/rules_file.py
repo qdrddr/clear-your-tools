@@ -23,6 +23,10 @@ _TOOLS_BLOCK_RE = re.compile(
     r"<agent-tools[^>]*>.*?</agent-tools>",
     re.DOTALL,
 )
+_INNER_SOURCE_TAGS = ("mcp", "executor", "definitions")
+_INNER_SOURCE_RE = {
+    tag: re.compile(rf"<{tag}[^>]*>.*?</{tag}>", re.DOTALL) for tag in _INNER_SOURCE_TAGS
+}
 
 
 def set_rules_file_rel_path(path: str | None) -> None:
@@ -102,6 +106,48 @@ def _extract_injection_section(pattern: re.Pattern[str], text: str) -> str:
     return match.group(0).strip() if match else ""
 
 
+def _extract_source_section(tag: str, text: str) -> str:
+    pattern = _INNER_SOURCE_RE.get(tag)
+    if pattern is None:
+        return ""
+    match = pattern.search(text)
+    return match.group(0).strip() if match else ""
+
+
+def _merge_agent_tools_block(prior_block: str, delta_block: str) -> str:
+    prior_block = prior_block.strip()
+    delta_block = delta_block.strip()
+    if not prior_block:
+        return delta_block
+    if not delta_block:
+        return prior_block
+
+    open_match = re.match(r"(<agent-tools[^>]*>)", delta_block) or re.match(
+        r"(<agent-tools[^>]*>)",
+        prior_block,
+    )
+    open_tag = open_match.group(1) if open_match else "<agent-tools>"
+    merged_inner: list[str] = []
+    for tag in _INNER_SOURCE_TAGS:
+        section = _extract_source_section(tag, delta_block) or _extract_source_section(
+            tag,
+            prior_block,
+        )
+        if section:
+            merged_inner.append(section)
+    if merged_inner:
+        return "\n".join([open_tag, *merged_inner, "</agent-tools>"])
+
+    delta_body = re.sub(r"^<agent-tools[^>]*>\s*", "", delta_block)
+    delta_body = re.sub(r"\s*</agent-tools>\s*$", "", delta_body)
+    prior_body = re.sub(r"^<agent-tools[^>]*>\s*", "", prior_block)
+    prior_body = re.sub(r"\s*</agent-tools>\s*$", "", prior_body)
+    body = delta_body.strip() or prior_body.strip()
+    if not body:
+        return delta_block or prior_block
+    return "\n".join([open_tag, body, "</agent-tools>"])
+
+
 def merge_rules_injection(prior: str, delta: str) -> str:
     """Merge prior rules body with hook delta, keeping each tag from the newest source."""
     prior_body = prior.strip()
@@ -115,10 +161,12 @@ def merge_rules_injection(prior: str, delta: str) -> str:
         _SKILLS_BLOCK_RE,
         prior_body,
     )
-    tools = _extract_injection_section(_TOOLS_BLOCK_RE, delta_body) or _extract_injection_section(
-        _TOOLS_BLOCK_RE,
-        prior_body,
-    )
+    delta_tools = _extract_injection_section(_TOOLS_BLOCK_RE, delta_body)
+    prior_tools = _extract_injection_section(_TOOLS_BLOCK_RE, prior_body)
+    if delta_tools or prior_tools:
+        tools = _merge_agent_tools_block(prior_tools, delta_tools)
+    else:
+        tools = ""
 
     parts = [part for part in (skills, tools) if part]
     return "\n\n".join(parts)

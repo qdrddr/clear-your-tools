@@ -10,6 +10,8 @@ from cyt.injection.session_log_build import (
     skill_content_hash,
     tool_content_hash,
     tool_definition_content_hash,
+    tool_item_key,
+    tool_item_legacy_keys,
 )
 from cyt.skills.search import MatchedSkill
 
@@ -123,3 +125,23 @@ def test_tool_hash_stable_for_pruned_schema() -> None:
         catalog_tools=catalog,
     )
     assert skinny_entry["hash"] == full_entry["hash"] == full_hash
+
+
+def test_tool_item_legacy_keys_for_mcpc() -> None:
+    tool = {
+        "name": "@jcodemunch/search_text",
+        "tool_name": "search_text",
+        "mcpc_session": "@jcodemunch",
+        "cyt_catalog_source": "mcpc",
+    }
+    assert tool_item_key(tool, catalog="mcpc") == "tool:mcpc:@jcodemunch:search_text"
+    assert tool_item_legacy_keys(tool, catalog="mcpc") == (
+        "tool:@jcodemunch:search_text",
+        "tool:search_text",
+    )
+
+
+def test_tool_item_legacy_keys_for_executor() -> None:
+    tool = {"name": "Shell", "cyt_catalog_source": "executor"}
+    assert tool_item_key(tool, catalog="executor") == "tool:executor:Shell"
+    assert tool_item_legacy_keys(tool, catalog="executor") == ("tool:Shell",)

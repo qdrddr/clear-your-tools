@@ -65,3 +65,27 @@ def test_three_strikes_promotes_to_full() -> None:
         formatted_full="<skill>full</skill>",
     )
     assert mode == "full"
+
+
+def test_legacy_key_alias_suppresses_reinjection() -> None:
+    index = SessionLogIndex(
+        entries=(
+            {
+                "kind": "tool",
+                "key": "tool:Shell",
+                "hash": "hash-v2",
+                "full": True,
+                "name": "Shell",
+            },
+        ),
+    )
+    mode = resolve_injection_mode(
+        key="tool:executor:Shell",
+        current_hash="hash-v2",
+        index=index,
+        session_text="",
+        formatted_skinny="<tool name='Shell'></tool>",
+        formatted_full="<tool name='Shell'>full</tool>",
+        key_aliases=("tool:Shell",),
+    )
+    assert mode == "skip"

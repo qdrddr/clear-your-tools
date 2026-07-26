@@ -70,9 +70,9 @@ def prepare_hook_tool_pruning(
     from cyt.config import load_config, uses_executor_tool_catalog, uses_mcpc_tool_catalog
 
     cfg = config or load_config()
+    executor_cache: dict[str, Any] | None = None
     if uses_mcpc_tool_catalog(cfg):
         prepare_hook_mcpc_tool_pruning(cfg, *contexts)
-        return None
     if uses_executor_tool_catalog(cfg):
-        return prepare_hook_executor_tool_pruning(cfg, *contexts)
-    return None
+        executor_cache = prepare_hook_executor_tool_pruning(cfg, *contexts)
+    return executor_cache

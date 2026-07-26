@@ -153,7 +153,8 @@ pruning:
     selector_soft_budget: 2000
     enabled: true # false: skip tool pruning/injection (proxy forwards tools verbatim; hook skips tools)
     hook:
-      tools_from: mcpc # executor | definitions | mcpc
+      tools_from:
+        - mcpc # executor | definitions | mcpc — list; cyt_catalog_source tags origin
       mcpc:
         executable: mcpc # or ~/.nvm/versions/node/v24.6.0/bin/mcpc
         cache:

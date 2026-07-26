@@ -3,48 +3,48 @@
 name: Cloudflare
 values:
   - key: cf_account
-    value: ''
+    value: ""
   - key: cfat_token
     secret: true
   - key: cfat_token_id
-    value: ''
+    value: ""
   - key: cf_zone_id1
-    value: ''
+    value: ""
   - key: cf_zone_id2
-    value: ''
+    value: ""
   - key: portal_hostname
     value: mcp.example.com
   - key: portal_zone_id
-    value: ''
+    value: ""
   - key: portal_id
     value: mcp-aggregator-portal
   - key: base_url
-    value: 'https://mcp.example.com'
+    value: "https://mcp.example.com"
   - key: deepwiki_server_id
     value: deepwiki
   - key: context7_server_id
     value: context7
   - key: portal_access_app_id
-    value: ''
+    value: ""
   - key: deepwiki_access_app_id
-    value: ''
+    value: ""
   - key: context7_access_app_id
-    value: ''
+    value: ""
   - key: cf_service_token_client_id
-    value: ''
+    value: ""
   - key: cf_service_token_client_secret
     secret: true
   - key: cf_service_token_id
-    value: ''
+    value: ""
   - key: cf_service_token_expires_at
-    value: ''
+    value: ""
   - key: mcp_session_id
-    value: ''
+    value: ""
   - key: mcp_url_mcp
-    value: 'https://mcp.example.com/mcp'
+    value: "https://mcp.example.com/mcp"
   - key: mcp_session_id_mcp
-    value: ''
+    value: ""
   - key: otp_identity_provider_id
-    value: ''
+    value: ""
   - key: allow_email
     value: you@example.com

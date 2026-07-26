@@ -422,7 +422,10 @@ repos:
       - id: pytest
         name: pytest
         entry: bash scripts/prek-hook.sh
-        args: ['cd "$(git rev-parse --show-toplevel)" && rtk uv run pytest']
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-unit.sh',
+          ]
         pass_filenames: false
         language: system
         # Run when app code or tests change (tests live under src/tests/).

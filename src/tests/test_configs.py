@@ -294,6 +294,31 @@ def test_tools_hook_tools_from_accepts_legacy_client_alias(
     assert configs.tools_hook_tools_from(config) == "executor"
 
 
+def test_tools_hook_sources_parses_scalar_and_list(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["enabled"] = True
+    config["pruning"]["tools"]["hook"]["tools_from"] = "mcpc"
+    assert configs.tools_hook_sources(config) == ("mcpc",)
+
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor", "mcpc"]
+    assert configs.tools_hook_sources(config) == ("mcpc", "executor")
+
+    assert configs.uses_mcpc_tool_catalog(config) is True
+    assert configs.uses_executor_tool_catalog(config) is True
+    assert configs.uses_definitions_tool_catalog(config) is False
+
+
+def test_tools_hook_sources_invalid_explicit_value_falls_back_to_executor(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["tools"]["hook"]["tools_from"] = "not-a-source"
+    assert configs.tools_hook_sources(config) == ("executor",)
+
+
 def test_format_proxy_env_help_lists_alternatives() -> None:
     message = configs.format_proxy_env_help(["DEEPINFRA_API_KEY", "OPENAI_API_KEY"])
 

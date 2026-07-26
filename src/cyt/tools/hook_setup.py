@@ -12,21 +12,73 @@ from cyt.config import (
     DEFAULT_TOOLS_HOOK_TOOLS_FROM,
     inject_via,
     load_config,
-    resolved_tools_hook_file,
     save_user_config,
     tools_hook_file_missing,
-    tools_hook_tools_from,
+    tools_hook_sources,
 )
-from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no
+from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
 _TOOLS_FROM_CHOICES = ("mcpc", "executor", "definitions")
 
 
+def _hook_from_default(current_from: str, *, context: ToolsSetupContext) -> str:
+    if context == "hook":
+        return "mcpc"
+    if current_from in {"client", "executor"}:
+        return "executor"
+    if current_from == "mcpc":
+        return "mcpc"
+    if current_from in _TOOLS_FROM_CHOICES:
+        return current_from
+    return "mcpc"
+
+
+def _parse_selected_hook_sources(raw_sources: str, from_default: str) -> list[str]:
+    selected: list[str] = []
+    for item in raw_sources.split(","):
+        choice = item.strip().lower()
+        if choice in {"client", "executor"}:
+            choice = "executor"
+        if choice in _TOOLS_FROM_CHOICES and choice not in selected:
+            selected.append(choice)
+    if selected:
+        return selected
+    return [from_default if from_default in _TOOLS_FROM_CHOICES else "mcpc"]
+
+
+def _prompt_hook_source_paths(
+    selected: list[str],
+    *,
+    executor_default: str,
+    definitions_default: str,
+) -> tuple[str, str]:
+    executor_url = executor_default
+    definitions_path = definitions_default
+    if "definitions" in selected:
+        path_text = _prompt("MCP definitions file", definitions_default)
+        path_text = str(Path(path_text).expanduser())
+        if not Path(path_text).is_file():
+            print(
+                f"Note: {path_text} does not exist yet; hook will skip that source until it does.",
+                file=sys.stderr,
+            )
+        definitions_path = path_text
+    if "executor" in selected:
+        url_text = _prompt("Executor base URL", executor_default).strip().rstrip("/")
+        if not url_text:
+            print(
+                "Note: executor URL is empty; hook will skip that source until configured.",
+                file=sys.stderr,
+            )
+        executor_url = url_text
+    return executor_url, definitions_path
+
+
 def build_tools_hook_config_overlay(
     *,
-    tools_from: str,
+    tools_from: str | list[str],
     executor_url: str,
     mcp_definitions_file: str,
     executor_token_var: str | None = None,
@@ -44,7 +96,7 @@ def build_tools_hook_config_overlay(
 
 def build_pruning_tools_hook_save_overlay(
     *,
-    tools_from: str,
+    tools_from: str | list[str],
     executor_url: str,
     mcp_definitions_file: str,
     executor_token_var: str | None = None,
@@ -60,6 +112,14 @@ def build_pruning_tools_hook_save_overlay(
             ),
         },
     }
+
+
+def _tools_from_overlay_value(sources: tuple[str, ...], *, fallback: str) -> str | list[str]:
+    if len(sources) == 1:
+        return sources[0]
+    if sources:
+        return list(sources)
+    return fallback
 
 
 def prompt_tools_hook_config(
@@ -82,15 +142,9 @@ def prompt_tools_hook_config(
 
     print("\n--- Tool hook injection ---")
 
-    current_from = str(hook.get("tools_from", DEFAULT_TOOLS_HOOK_TOOLS_FROM)).strip().lower()
-    if context == "hook":
-        from_default = "mcpc"
-    elif current_from in {"client", "executor"}:
-        from_default = "executor"
-    elif current_from == "mcpc":
-        from_default = "mcpc"
-    else:
-        from_default = current_from if current_from in _TOOLS_FROM_CHOICES else "mcpc"
+    existing_sources = tools_hook_sources(existing)
+    current_from = existing_sources[0] if existing_sources else DEFAULT_TOOLS_HOOK_TOOLS_FROM
+    from_default = _hook_from_default(current_from, context=context)
 
     executor_default = str(hook.get("executor_url", DEFAULT_TOOLS_HOOK_EXECUTOR_URL))
     definitions_default = str(
@@ -98,44 +152,25 @@ def prompt_tools_hook_config(
     )
 
     if active_inject == "hook":
-        tools_from = _prompt_choice(
-            "Tool catalog source (mcpc | executor | definitions)",
-            list(_TOOLS_FROM_CHOICES),
-            default_index=_TOOLS_FROM_CHOICES.index(from_default),
+        print("Configure tool catalog sources (comma-separated: mcpc, executor, definitions).")
+        raw_sources = _prompt(
+            "Tool catalog sources",
+            ",".join(tools_hook_sources(existing) or [from_default]),
         )
-        if tools_from == "mcpc":
-            return build_tools_hook_config_overlay(
-                tools_from=tools_from,
-                executor_url=executor_default,
-                mcp_definitions_file=definitions_default,
-            )
-        if tools_from == "definitions":
-            path_text = _prompt("MCP definitions file", definitions_default)
-            path_text = str(Path(path_text).expanduser())
-            if not Path(path_text).is_file():
-                print(
-                    f"Note: {path_text} does not exist yet; hook will skip tool injection until it does.",
-                    file=sys.stderr,
-                )
-            return build_tools_hook_config_overlay(
-                tools_from=tools_from,
-                executor_url=executor_default,
-                mcp_definitions_file=path_text,
-            )
-
-        url_text = _prompt("Executor base URL", executor_default).strip().rstrip("/")
-        if not url_text:
-            print(
-                "Note: executor URL is empty; hook will skip tool injection until configured.",
-                file=sys.stderr,
-            )
+        selected = _parse_selected_hook_sources(raw_sources, from_default)
+        tools_from: str | list[str] = selected[0] if len(selected) == 1 else selected
+        executor_default, definitions_default = _prompt_hook_source_paths(
+            selected,
+            executor_default=executor_default,
+            definitions_default=definitions_default,
+        )
         return build_tools_hook_config_overlay(
             tools_from=tools_from,
-            executor_url=url_text,
+            executor_url=executor_default,
             mcp_definitions_file=definitions_default,
         )
 
-    tools_from = from_default
+    tools_from = _tools_from_overlay_value(existing_sources, fallback=from_default)
     return build_tools_hook_config_overlay(
         tools_from=tools_from,
         executor_url=executor_default,
@@ -153,15 +188,16 @@ def ensure_tools_hook_file_interactive(
     if not sys.stdin.isatty():
         return config
 
-    if tools_hook_tools_from(config) == "executor":
+    sources = tools_hook_sources(config)
+    if len(sources) == 1 and sources[0] == "executor":
         prompt_target = "Executor URL is not configured"
-    elif tools_hook_tools_from(config) == "mcpc":
+    elif len(sources) == 1 and sources[0] == "mcpc":
         from cyt.mcpc.readiness import report_mcpc_hook_readiness
 
         report_mcpc_hook_readiness(config)
         return config
     else:
-        prompt_target = f"Tools definitions file {resolved_tools_hook_file(config)} is missing"
+        prompt_target = "Tools hook sources are not fully configured"
     if not _prompt_yes_no(f"{prompt_target}. Configure now?", default_yes=True):
         return config
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")

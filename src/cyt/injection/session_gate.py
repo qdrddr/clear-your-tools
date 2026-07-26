@@ -5,7 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from cyt.config import uses_mcpc_tool_catalog
 from cyt.injection.session_log import SessionLogIndex, resolve_injection_mode
 from cyt.injection.session_log_build import (
     CatalogKind,
@@ -21,29 +20,49 @@ from cyt.injection.session_log_build import (
     skill_item_key,
     tool_content_hash,
     tool_item_key,
+    tool_item_legacy_keys,
 )
 from cyt.resources.inject import MatchedResource
 from cyt.skills.inject import _resolve_skill_command
 from cyt.skills.search import MatchedSkill
 
 
-def _tool_catalog_kind(config: dict[str, Any]) -> CatalogKind:
+def _tool_catalog_kind(tool: dict[str, Any], config: dict[str, Any]) -> CatalogKind:
+    source = str(tool.get("cyt_catalog_source") or "").strip()
+    if source == "mcpc":
+        return "mcpc"
+    if source == "executor":
+        return "executor"
+    if source == "definitions":
+        return "definitions"
+    from cyt.config import uses_mcpc_tool_catalog
+
     return "mcpc" if uses_mcpc_tool_catalog(config) else "executor"
 
 
 def _full_tool_from_catalog(
     tool: dict[str, Any],
     catalog_tools: list[dict[str, Any]] | None,
+    *,
+    catalog: CatalogKind,
 ) -> dict[str, Any]:
     if not catalog_tools:
         return tool
     name = str(tool.get("tool_name") or tool.get("name") or "").strip()
     session = str(tool.get("mcpc_session") or "").strip()
+    tool_source = str(tool.get("cyt_catalog_source") or catalog).strip()
     for original in catalog_tools:
         orig_name = str(original.get("tool_name") or original.get("name") or "").strip()
         if orig_name != name:
             continue
-        if session and str(original.get("mcpc_session") or "").strip() != session:
+        orig_source = str(original.get("cyt_catalog_source") or "").strip()
+        if tool_source and orig_source and orig_source != tool_source:
+            continue
+        if (
+            catalog == "mcpc"
+            and session
+            and str(original.get("mcpc_session") or "").strip() != session
+        ):
             continue
         return deepcopy(original)
     return tool
@@ -60,15 +79,16 @@ def gate_tools_for_session(
     server_context: dict[tuple[str, str], dict[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, bool]]:
     """Return gated tools, session log entries, and full flags by tool name key."""
-    catalog = _tool_catalog_kind(config)
     kept: list[dict[str, Any]] = []
     log_entries: list[dict[str, Any]] = []
     full_flags: dict[str, bool] = {}
 
     for tool in tools:
         working = deepcopy(tool)
+        catalog = _tool_catalog_kind(working, config)
         key = tool_item_key(working, catalog=catalog)
-        full_source = _full_tool_from_catalog(working, catalog_tools)
+        key_aliases = tool_item_legacy_keys(working, catalog=catalog)
+        full_source = _full_tool_from_catalog(working, catalog_tools, catalog=catalog)
         current_hash = tool_content_hash(full_source, catalog=catalog, catalog_tools=catalog_tools)
         skinny_fragment = format_tool_fragment(
             working,
@@ -89,6 +109,7 @@ def gate_tools_for_session(
             session_text=session_text,
             formatted_skinny=skinny_fragment,
             formatted_full=full_fragment,
+            key_aliases=key_aliases,
         )
         if mode == "skip":
             continue

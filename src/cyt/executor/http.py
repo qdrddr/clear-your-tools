@@ -373,6 +373,7 @@ def _apply_catalog_to_state(
     *,
     content_hash: str | None = None,
     executor_mcp: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> None:
     """Swap in-memory tools; update MCP only when a fresh ``executor_mcp`` is provided."""
     with _catalog_lock:
@@ -381,6 +382,10 @@ def _apply_catalog_to_state(
         state.catalog_content_hash = content_hash or raw_catalog_content_hash(tools)
         if executor_mcp is not None:
             state.executor_mcp = executor_mcp
+    if config is not None:
+        from cyt.tools.master_cache_scheduler import schedule_master_catalog_refresh
+
+        schedule_master_catalog_refresh(config)
 
 
 def _write_catalog_disk(
@@ -424,6 +429,7 @@ def _load_catalog_from_disk(
         copy.deepcopy(tools),
         content_hash=content_hash,
         executor_mcp=executor_mcp,
+        config=config,
     )
     logger.info(
         "executor catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d mcp=%s",
@@ -524,6 +530,7 @@ def _blocking_network_fetch(
         tools,
         content_hash=raw_catalog_content_hash(tools),
         executor_mcp=executor_mcp,
+        config=cfg,
     )
     _write_catalog_disk(
         cache_key,
@@ -638,6 +645,27 @@ def _get_executor_catalog_impl(
         apply_health_filter=apply_health_filter,
         config=cfg,
     )
+
+
+def executor_catalog_slug(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    if not uses_executor_tool_catalog(cfg):
+        return ""
+    return normalize_executor_url_slug(
+        tools_hook_executor_url(cfg),
+        token_var=tools_hook_executor_token_var(cfg),
+    )
+
+
+def executor_catalog_fingerprint(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    if not uses_executor_tool_catalog(cfg):
+        return ""
+    token = _resolve_executor_token(cfg, allow_prompt=False)
+    cache_key = _cache_key_for_config(cfg, token)
+    state = _get_state(cache_key)
+    with _catalog_lock:
+        return state.catalog_content_hash
 
 
 def get_executor_catalog(

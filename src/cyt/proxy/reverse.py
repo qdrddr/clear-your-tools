@@ -1204,12 +1204,12 @@ def create_app(
         app.state.pruner_settings = pruner_settings
         if config is not None:
             app.state.cyt_config = config
-            from cyt.cache import warm_caches
+            from cyt.cache import schedule_warm_caches
             from cyt.executor.cache_scheduler import start_executor_cache_scheduler
             from cyt.executor.connection_health import set_executor_debug_disk
 
             set_executor_debug_disk(debug)
-            warm_caches(config)
+            schedule_warm_caches(config)
             start_executor_cache_scheduler(config, allow_prompt=False)
         try:
             yield

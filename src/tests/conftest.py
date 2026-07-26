@@ -11,7 +11,7 @@ from tests.test_credential_helpers import apply_ci_credential_stubs, install_tes
 
 DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (
-    "integration tests disabled (pass --run-integration or set CYT_RUN_INTEGRATION_TESTS=1)"
+    "integration tests are manual-only (pytest -m integration --run-integration)"
 )
 
 
@@ -35,16 +35,44 @@ def _deterministic_indexer_cache() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_hook_catalog_state() -> Iterator[None]:
+def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.executor.http import clear_executor_catalog_cache
     from cyt.mcpc.catalog import clear_mcpc_catalog_cache
+    from cyt.tools.catalog_cache import clear_decomposed_catalog_cache
+    from cyt.tools.definitions_catalog import clear_definitions_catalog_cache
+    from cyt.tools.master_catalog import clear_master_catalog_cache
 
-    clear_executor_catalog_cache()
-    clear_mcpc_catalog_cache()
+    # Unit tests must not start live executor/MCPC/definitions refresh loops. A local
+    # .env with EXECUTOR_TOKEN otherwise triggers real HTTP to localhost on every hook
+    # catalog touch, and teardown waits on scheduler stop (appearing hung mid-suite).
+    monkeypatch.setattr(
+        "cyt.executor.cache_scheduler.start_executor_cache_scheduler",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "cyt.mcpc.cache_scheduler.start_mcpc_cache_scheduler",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "cyt.tools.master_cache_scheduler.start_master_cache_scheduler",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "cyt.tools.definitions_cache_scheduler.start_definitions_cache_scheduler",
+        lambda *args, **kwargs: None,
+    )
+
+    def _clear_all_hook_catalog_state() -> None:
+        clear_executor_catalog_cache()
+        clear_mcpc_catalog_cache()
+        clear_master_catalog_cache()
+        clear_definitions_catalog_cache()
+        clear_decomposed_catalog_cache()
+
+    _clear_all_hook_catalog_state()
     yield
-    clear_executor_catalog_cache()
-    clear_mcpc_catalog_cache()
+    _clear_all_hook_catalog_state()
 
 
 def _integration_tests_enabled(config: pytest.Config) -> bool:

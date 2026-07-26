@@ -617,6 +617,26 @@ def test_merge_rules_injection_keeps_prior_skills_when_delta_is_tools_only() -> 
     assert "<agent-tools>" in merged
 
 
+def test_merge_rules_injection_updates_one_inner_source_section() -> None:
+    from cyt_client.rules_file import merge_rules_injection
+
+    prior = (
+        "<agent-tools description='x'>"
+        "<executor><tool name='old'>old</tool></executor>"
+        "<definitions><tool name='defs'>defs</tool></definitions>"
+        "</agent-tools>"
+    )
+    delta = (
+        "<agent-tools description='x'>"
+        "<executor><tool name='new'>new</tool></executor>"
+        "</agent-tools>"
+    )
+    merged = merge_rules_injection(prior, delta)
+    assert "name='new'" in merged
+    assert "name='old'" not in merged
+    assert "name='defs'" in merged
+
+
 def test_sync_cursor_rules_file_merges_delta_with_prior_sections() -> None:
     from cyt_client.rules_file import build_rules_mdc, rules_file_path, sync_cursor_rules_file
 
