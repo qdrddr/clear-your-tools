@@ -67,9 +67,8 @@ def _join_section(prompt: str, inner_tag: str, body: str) -> str:
     if not body:
         return ""
     prompt = prompt.strip()
-    if prompt:
-        return f"{prompt}\n<{inner_tag}>\n{body}\n</{inner_tag}>"
-    return f"<{inner_tag}>\n{body}\n</{inner_tag}>"
+    inner = f"{prompt}\n{body}" if prompt else body
+    return f"<{inner_tag}>\n{inner}\n</{inner_tag}>"
 
 
 def format_mcp_source_section(

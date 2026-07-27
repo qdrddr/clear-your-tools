@@ -39,6 +39,7 @@ def test_prompt_tools_hook_config_saves_single_source_as_list_in_hook_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc"]
     monkeypatch.setattr(hook_setup, "_prompt", lambda _label, default: default)
 
     overlay = prompt_tools_hook_config(config, context="hook")
