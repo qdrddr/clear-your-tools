@@ -1,4 +1,4 @@
 package moduleversion
 
 // Version is the Go SDK module semver (synced by scripts/sync-version.sh).
-const Version = "2.4.0"
+const Version = "2.4.1"
