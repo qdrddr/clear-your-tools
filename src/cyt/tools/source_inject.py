@@ -14,6 +14,7 @@ from cyt.tools.inject import (
 )
 from cyt.tools.mcpc_inject import (
     _MCPC_WORKSPACE_NOTE,
+    _format_mcpc_section,
     _format_server_block,
     _group_tools_by_session,
     compute_mcpc_pre_exposure_flags,
@@ -42,7 +43,7 @@ def format_mcp_source_section(
     session_text: str = "",
     surviving_instruction_sessions: set[str] | None = None,
 ) -> str:
-    """Return MCPC prompt + ``<mcp>…</mcp>`` body, or empty string."""
+    """Return ``<mcpc>…</mcpc>`` body with MCPC CLI note, or empty string."""
     if not tools:
         return ""
     pre_exposure = compute_mcpc_pre_exposure_flags(tools, session_text)
@@ -59,14 +60,14 @@ def format_mcp_source_section(
     body = "\n".join(block for block in server_blocks if block)
     if not body.strip():
         return ""
-    prompt = _MCPC_WORKSPACE_NOTE
-    if workspace_paths:
+    prompt = "" if _MCPC_WORKSPACE_NOTE.strip() in session_text else _MCPC_WORKSPACE_NOTE
+    if prompt and workspace_paths:
         paths = [path.strip() for path in workspace_paths if path.strip()]
         if len(paths) > 1:
             roots = _format_workspace_roots_block(paths)
             if roots:
                 prompt = f"{prompt}\n{roots}"
-    return _join_section(prompt, "mcp", body)
+    return _format_mcpc_section(prompt=prompt, body=body)
 
 
 def format_executor_source_section(
@@ -137,7 +138,7 @@ def format_multi_source_agent_tools(
         return ""
     description = (
         f"{_AGENT_TOOLS_DESCRIPTION_BASE} Multiple tool sources are grouped in "
-        "<mcp>, <executor>, and <definitions> sections."
+        "<mcpc>, <executor>, and <definitions> sections."
     )
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     attrs = [f"description='{_xml_single_quoted_attr(description)}'"]

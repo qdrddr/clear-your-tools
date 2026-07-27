@@ -512,7 +512,7 @@ def _prune_hook_tool_catalog(
 ) -> tuple[list[dict[str, Any]], PruneResult, list[dict[str, Any]] | None, dict[str, PruneResult]]:
     stdout_guard = contextlib.nullcontext() if io_guarded else hook_safe_stdout()
     with stdout_guard:
-        result, _, catalog, prune_results = run_hook_coordinated_prune(
+        result, _, catalog, prune_results, _phase_timing = run_hook_coordinated_prune(
             query,
             config,
             skills_allowed=False,

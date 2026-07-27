@@ -12,10 +12,9 @@ from cyt.tools.serialize import minimize_json_single_quotes
 
 _MCPC_WORKSPACE_NOTE = (
     "Use these tools via the MCPC CLI, not the MCP Server. Unless noted otherwise, pass the current project's "
-    "workspace_roots/path as the repository cwd dir. "
-    "Do not call these tools through the MCP protocol. Instead, run "
-    'echo \'{"key":"value"}\' | mcpc @session tools-call {tool_name} '
-    "with JSON matching the provided input schema"
+    "workspace_roots/path as the repository cwd dir. Do not call these tools through the MCP protocol. "
+    'Instead, run echo \'{"key":"value"}\' | mcpc @session tools-call {tool_name} with JSON matching '
+    "the provided input schema"
 )
 
 _AGENT_TOOLS_DESCRIPTION = (
@@ -25,10 +24,18 @@ _AGENT_TOOLS_DESCRIPTION = (
 )
 
 
-def _mcpc_agent_tools_description(*, include_workspace_note: bool) -> str:
-    if include_workspace_note:
-        return f"{_AGENT_TOOLS_DESCRIPTION} {_MCPC_WORKSPACE_NOTE}."
+def _mcpc_agent_tools_description(*, include_workspace_note: bool = False) -> str:
+    del include_workspace_note
     return f"{_AGENT_TOOLS_DESCRIPTION}."
+
+
+def _format_mcpc_section(*, prompt: str, body: str) -> str:
+    body = body.strip()
+    if not body:
+        return ""
+    prompt = prompt.strip()
+    inner = f"{prompt}\n{body}" if prompt else body
+    return f"<mcpc>\n{inner}\n</mcpc>"
 
 
 def _agent_tools_open_tag(
@@ -38,7 +45,7 @@ def _agent_tools_open_tag(
 ) -> str:
     attrs: list[str] = []
     if include_description:
-        intro = _mcpc_agent_tools_description(include_workspace_note=True)
+        intro = _mcpc_agent_tools_description()
         attrs.append(f"description='{_xml_single_quoted_attr(intro)}'")
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) == 1:
@@ -318,12 +325,14 @@ def format_mcpc_agent_tools(
     if not server_blocks:
         return ""
     omit_intro = pre_exposure.omit_agent_tools_description or not include_agent_tools_description
+    mcpc_prompt = "" if _MCPC_WORKSPACE_NOTE.strip() in session_text else _MCPC_WORKSPACE_NOTE
+    mcpc_section = _format_mcpc_section(prompt=mcpc_prompt, body="\n".join(server_blocks))
     lines = [
         _agent_tools_open_tag(
             workspace_paths=workspace_paths,
             include_description=not omit_intro,
         ),
-        *server_blocks,
+        mcpc_section,
         "</agent-tools>",
     ]
     return ensure_agent_tools_starts_on_new_line("\n".join(lines))

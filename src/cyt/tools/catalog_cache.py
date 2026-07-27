@@ -35,6 +35,17 @@ class _DecomposedCacheKey:
 
 
 @dataclass
+class _PreparedSelectorCache:
+    formatted_chunks: list[str]
+    item_metadata_storage: dict[int, Any]
+    list_keys: list[str]
+    chunk_token_counts: list[int]
+    token_rows: list[Any]
+    json_count: int
+    md_count: int
+
+
+@dataclass
 class _DecomposedCatalogState:
     catalog: dict[str, Any] = field(default_factory=dict)
     index: CatalogIndex = field(default_factory=lambda: CatalogIndex(tools=[], files={}))
@@ -43,6 +54,7 @@ class _DecomposedCatalogState:
     updated_at: float = 0.0
     cache_status: str = "empty"
     disk_backed: bool = False
+    prepared_selector: _PreparedSelectorCache | None = None
 
 
 _decomposed_lock = threading.Lock()
@@ -84,6 +96,62 @@ def _get_decomposed_state(cache_key: _DecomposedCacheKey) -> _DecomposedCatalogS
             state = _DecomposedCatalogState(bulk_id=cache_key.bulk_id)
             _decomposed_states[cache_key] = state
         return state
+
+
+def _count_json_md(data: dict[str, Any]) -> tuple[int, int]:
+    json_items = data.get("json")
+    md_items = data.get("md")
+    json_n = len(json_items) if isinstance(json_items, list) else 0
+    md_n = len(md_items) if isinstance(md_items, list) else 0
+    return json_n, md_n
+
+
+def _warm_prepared_selector(state: _DecomposedCatalogState, catalog: dict[str, Any]) -> None:
+    try:
+        from cyt.pruners.llm import prepare_catalog_selector_chunks
+
+        formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, token_rows = (
+            prepare_catalog_selector_chunks(catalog)
+        )
+        json_n, md_n = _count_json_md(catalog)
+        state.prepared_selector = _PreparedSelectorCache(
+            formatted_chunks=formatted_chunks,
+            item_metadata_storage=item_metadata_storage,
+            list_keys=list_keys,
+            chunk_token_counts=chunk_token_counts,
+            token_rows=token_rows,
+            json_count=json_n,
+            md_count=md_n,
+        )
+    except Exception:
+        logger.debug("prepared selector warm skipped bulk=%s", state.bulk_id, exc_info=True)
+
+
+def get_prepared_selector_chunks(
+    data: dict[str, Any],
+    *,
+    bulk_id: BulkId,
+    config: dict[str, Any],
+) -> tuple[list[str], dict[int, Any], list[str], list[int], list[Any]] | None:
+    """Return warm-prepared selector chunks when *data* matches the full cached catalog."""
+    if not bulk_id:
+        return None
+    json_n, md_n = _count_json_md(data)
+    cache_key = _cache_key(bulk_id, config)
+    state = _get_decomposed_state(cache_key)
+    with _decomposed_lock:
+        cached = state.prepared_selector
+        if cached is None:
+            return None
+        if json_n != cached.json_count or md_n != cached.md_count:
+            return None
+        return (
+            list(cached.formatted_chunks),
+            dict(cached.item_metadata_storage),
+            list(cached.list_keys),
+            list(cached.chunk_token_counts),
+            list(cached.token_rows),
+        )
 
 
 def _empty_fallback() -> ToolCatalogCacheResult:
@@ -159,6 +227,8 @@ def _build_and_swap(
         state.updated_at = time.monotonic()
         state.cache_status = str(result.get("cache_status", "memory_fallback"))
         state.disk_backed = bool(result.get("disk_backed"))
+        state.prepared_selector = None
+        _warm_prepared_selector(state, catalog)
     return ToolCatalogCacheResult(
         catalog=catalog,
         index=index,
@@ -181,12 +251,16 @@ def get_tool_catalog_cache(
     state = _get_decomposed_state(cache_key)
     with _decomposed_lock:
         fresh = bool(state.catalog) and state.bulk_fingerprint == fingerprint
+        has_stale = bool(state.catalog)
     if fresh:
         return _snapshot_decomposed(state)
     if not blocking:
-        schedule_decomposed_catalog_refresh(bulk_id, entries, enums, config)
+        if has_stale:
+            schedule_decomposed_catalog_refresh(bulk_id, entries, enums, config)
+            return _snapshot_decomposed(state)
         if entries:
             return _build_and_swap(bulk_id, entries, enums, config, fingerprint)
+        schedule_decomposed_catalog_refresh(bulk_id, entries, enums, config)
         return _empty_fallback()
     return _build_and_swap(bulk_id, entries, enums, config, fingerprint)
 

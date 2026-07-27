@@ -6,9 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from cyt.common.phase_timing import PhaseTimer, merge_phase_timings
 from cyt.config import (
     effective_pruning_pipeline,
     effective_skills_pipeline,
+    max_prune_batch_workers,
     skills_enabled,
 )
 from cyt.pruners.remote import PrunerSettingsCache
@@ -53,6 +55,7 @@ class CoordinateResult:
     prune_results: dict[str, PruneResult] = field(default_factory=dict)
     skill_matches: list[MatchedSkill] | None = None
     mcp_for_inject: list[dict[str, Any]] = field(default_factory=list)
+    phase_timing: dict[str, Any] = field(default_factory=dict)
 
 
 def prepare_prune_context(
@@ -180,143 +183,26 @@ def _plan_both_skills_and_tools(
     ctx: PruneContext,
     source_ids: list[str],
 ) -> list[list[WorkUnit]]:
-    stages: list[list[WorkUnit]] = []
-    tools_eff = ctx.tools_effective
-    skills_eff = ctx.skills_effective
-
-    if tools_eff == ["bm25"] and skills_eff == "bm25" and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="bm25",
-                    pipeline=("bm25",),
-                ),
-                WorkUnit(kind="skills_search", stage="bm25"),
-            ],
-        )
-        return stages
-
-    if tools_eff == ["rerank"] and skills_eff == "rerank" and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="rerank",
-                    pipeline=("rerank",),
-                ),
-                WorkUnit(kind="skills_search", stage="rerank"),
-            ],
-        )
-        return stages
-
-    if tools_eff == ["llm"] and skills_eff == "llm" and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="llm",
-                    pipeline=("llm",),
-                ),
-                WorkUnit(kind="skills_search", stage="llm"),
-            ],
-        )
-        return stages
-
-    if tools_eff == ["bm25"] and skills_eff in ("rerank", "llm") and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="bm25",
-                    pipeline=("bm25",),
-                ),
-                WorkUnit(kind="skills_search", stage=skills_eff),
-            ],
-        )
-        return stages
-
-    if skills_eff == "bm25" and len(tools_eff) == 1 and tools_eff[0] in ("rerank", "llm"):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_pipeline",
-                    pipeline=tuple(tools_eff),
-                ),
-                WorkUnit(kind="skills_search", stage="bm25"),
-            ],
-        )
-        return stages
-
-    if tools_eff == ["bm25", "rerank"] and skills_eff == "rerank" and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="bm25",
-                    pipeline=("bm25",),
-                ),
-                WorkUnit(kind="skills_search", stage="rerank"),
-            ],
-        )
-        stages.append(
-            _tool_units_for_stage(
-                source_ids,
-                kind="tools_stage",
-                stage="rerank",
-                pipeline=("rerank",),
-            ),
-        )
-        return stages
-
-    if tools_eff == ["bm25", "llm"] and skills_eff == "llm" and not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_stage",
-                    stage="bm25",
-                    pipeline=("bm25",),
-                ),
-                WorkUnit(kind="skills_search", stage="llm"),
-            ],
-        )
-        stages.append(
-            _tool_units_for_stage(
-                source_ids,
-                kind="tools_stage",
-                stage="llm",
-                pipeline=("llm",),
-            ),
-        )
-        return stages
-
-    if not _skills_resolved(ctx):
-        stages.append(
-            [
-                *_tool_units_for_stage(
-                    source_ids,
-                    kind="tools_pipeline",
-                    pipeline=tuple(tools_eff),
-                ),
-                WorkUnit(kind="skills_search", stage=skills_eff),
-            ],
-        )
-    else:
-        stages.append(
+    """Run full tools pipeline in parallel with skills search (no cross-domain staging)."""
+    if _skills_resolved(ctx):
+        return [
             _tool_units_for_stage(
                 source_ids,
                 kind="tools_pipeline",
-                pipeline=tuple(tools_eff),
+                pipeline=tuple(ctx.tools_effective),
             ),
-        )
-    return stages
+        ]
+
+    return [
+        [
+            *_tool_units_for_stage(
+                source_ids,
+                kind="tools_pipeline",
+                pipeline=tuple(ctx.tools_effective),
+            ),
+            WorkUnit(kind="skills_search", stage=ctx.skills_effective),
+        ],
+    ]
 
 
 def _source_map(tool_sources: list[ToolSource]) -> dict[str, ToolSource]:
@@ -328,9 +214,21 @@ def _run_skills_search(
     stage: SkillsStage,
     *,
     max_tokens: int | None,
+    phase_timer: PhaseTimer | None = None,
 ) -> list[MatchedSkill]:
     from cyt.skills.proxy_inject import resolve_skills_for_query
 
+    if phase_timer is not None:
+        with phase_timer.measure("skills", stage=stage):
+            return resolve_skills_for_query(
+                ctx.query,
+                ctx.config,
+                max_tokens=max_tokens,
+                upstream_kind=ctx.upstream_kind,
+                pruner_settings=ctx.pruner_settings,
+                entries=ctx.skill_entries or None,
+                skip_frontmatter_gate=bool(ctx.skill_entries),
+            )
     return resolve_skills_for_query(
         ctx.query,
         ctx.config,
@@ -349,7 +247,25 @@ def _run_tools_filter(
     pipeline: list[str],
     for_hook: bool,
     capture_decomposed_catalog: bool,
+    phase_timer: PhaseTimer | None = None,
 ) -> PruneResult:
+    prefix = f"tools:{source.source_id}"
+    if phase_timer is not None:
+        with phase_timer.measure(prefix):
+            return filter_tools_for_query(
+                source.tools,
+                ctx.query,
+                list(pipeline),
+                capture_decomposed_catalog=capture_decomposed_catalog,
+                merged_to_api_tools=source.merged_to_api_tools,
+                config=ctx.config,
+                pruner_settings=ctx.pruner_settings,
+                for_hook=for_hook,
+                tools_to_catalog_entries=source.tools_to_catalog_entries,
+                catalog_bulk_id=source.source_id if for_hook else None,
+                phase_timer=phase_timer,
+                phase_prefix=prefix,
+            )
     return filter_tools_for_query(
         source.tools,
         ctx.query,
@@ -379,13 +295,21 @@ def _register_plan_unit(
     for_hook: bool,
     capture_decomposed_catalog: bool,
     skills_max_tokens: int | None,
+    unit_timers: dict[str, PhaseTimer],
 ) -> None:
     key = _unit_key(unit)
+    unit_timer = PhaseTimer()
+    unit_timers[key] = unit_timer
     if unit.kind == "skills_search":
         skills_stage = unit.stage or ctx.skills_effective
 
         def _skills_fn() -> list[MatchedSkill]:
-            return _run_skills_search(ctx, skills_stage, max_tokens=skills_max_tokens)
+            return _run_skills_search(
+                ctx,
+                skills_stage,
+                max_tokens=skills_max_tokens,
+                phase_timer=unit_timer,
+            )
 
         work[key] = _skills_fn
         return
@@ -401,6 +325,7 @@ def _register_plan_unit(
                 pipeline=pipeline,
                 for_hook=for_hook,
                 capture_decomposed_catalog=capture_decomposed_catalog,
+                phase_timer=unit_timer,
             )
 
         work[key] = _tools_stage_fn
@@ -413,6 +338,7 @@ def _register_plan_unit(
             pipeline=pipeline,
             for_hook=for_hook,
             capture_decomposed_catalog=capture_decomposed_catalog,
+            phase_timer=unit_timer,
         )
 
     work[key] = _tools_pipeline_fn
@@ -450,12 +376,16 @@ def run_prune_plan(
     capture_decomposed_catalog: bool = False,
     skills_max_tokens: int | None = None,
     mcp_from_pruned: Callable[[PruneResult, ToolSource], list[dict[str, Any]]] | None = None,
+    phase_timer: PhaseTimer | None = None,
 ) -> CoordinateResult:
     sources = _source_map(tool_sources)
     result = CoordinateResult()
+    root_timer = phase_timer or PhaseTimer()
+    batch_workers = max_prune_batch_workers(ctx.config)
 
     for stage_units in plan:
         work: dict[str, Callable[[], Any]] = {}
+        unit_timers: dict[str, PhaseTimer] = {}
         for unit in stage_units:
             _register_plan_unit(
                 work,
@@ -465,9 +395,12 @@ def run_prune_plan(
                 for_hook=for_hook,
                 capture_decomposed_catalog=capture_decomposed_catalog,
                 skills_max_tokens=skills_max_tokens,
+                unit_timers=unit_timers,
             )
 
-        stage_results = run_parallel(work, max_workers=MAX_PRUNE_BATCH_WORKERS)
+        stage_results = run_parallel(work, max_workers=batch_workers)
+        for unit_timer in unit_timers.values():
+            root_timer.merge(unit_timer)
         _apply_stage_results(
             stage_units,
             stage_results,
@@ -479,6 +412,7 @@ def run_prune_plan(
 
     if result.skill_matches is None and _skills_resolved(ctx):
         result.skill_matches = cast(list[MatchedSkill], ctx.skill_out.get("matches"))
+    result.phase_timing = merge_phase_timings(root_timer)
     return result
 
 
@@ -498,6 +432,7 @@ def coordinate_skills_tools_prune(
     mcp_from_pruned: Callable[[PruneResult, ToolSource], list[dict[str, Any]]] | None = None,
     tools_pipeline_override: list[str] | None = None,
     skill_out: dict[str, Any] | None = None,
+    phase_timer: PhaseTimer | None = None,
 ) -> CoordinateResult:
     tool_count = max((len(source.tools) for source in tool_sources), default=0)
     eligible_count = len(skill_entries or [])
@@ -534,4 +469,5 @@ def coordinate_skills_tools_prune(
         capture_decomposed_catalog=capture_decomposed_catalog,
         skills_max_tokens=skills_max_tokens,
         mcp_from_pruned=mcp_from_pruned,
+        phase_timer=phase_timer,
     )

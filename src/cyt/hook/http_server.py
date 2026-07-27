@@ -55,6 +55,10 @@ async def hook_inject(request: Request) -> Response:
             debug=debug,
             pruner_settings=pruner_settings,
         )
+    except SystemExit as exc:
+        message = str(exc) or "hook credentials missing"
+        logger.error("hook inject aborted: %s", message)
+        return JSONResponse({"error": message}, status_code=500)
     except Exception as exc:
         logger.exception("hook inject failed")
         return JSONResponse({"error": str(exc)}, status_code=500)

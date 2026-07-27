@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-MAX_PRUNE_BATCH_WORKERS = 5
+from cyt.config import DEFAULT_MAX_PRUNE_BATCH_WORKERS
+
+MAX_PRUNE_BATCH_WORKERS = DEFAULT_MAX_PRUNE_BATCH_WORKERS
 
 SkillsStage = Literal["bm25", "rerank", "llm"]
 WorkUnitKind = Literal[

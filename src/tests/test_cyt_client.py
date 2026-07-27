@@ -13,6 +13,7 @@ import pytest
 
 from cyt_client import port as client_port
 from cyt_client.transcript import enrich_hook_payload
+from cyt_client.transport import post_hook_inject, post_timeout_seconds
 
 
 def test_cyt_client_package_has_no_cyt_imports() -> None:
@@ -40,6 +41,17 @@ def test_is_hook_server_requires_hook_flag() -> None:
     assert client_port.is_hook_server({"name": "cyt", "status": "ok", "hook": True})
     assert not client_port.is_hook_server({"name": "cyt", "status": "ok"})
     assert not client_port.is_hook_server(None)
+
+
+def test_post_hook_inject_timeout_raises_connection_error() -> None:
+    with patch("cyt_client.transport.urlopen", side_effect=TimeoutError("timed out")):
+        with pytest.raises(ConnectionError, match=r"timed out after"):
+            post_hook_inject("http://127.0.0.1:8834/hook/inject", b"{}")
+
+
+def test_post_timeout_seconds_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CYT_HOOK_POST_TIMEOUT_SECONDS", "90")
+    assert post_timeout_seconds() == 90.0
 
 
 def test_resolve_hook_url_prefers_live_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -839,9 +851,54 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
                     main(["--verbose"])
 
         captured = capsys.readouterr()
-        assert not rules_path.is_file()
+        assert rules_path.is_file()
         assert json.loads(captured.out) == {"continue": True}
-        assert "skipping rules file sync" in captured.err
+        assert "pre-exposure skip" in captured.err
+
+
+def test_cli_before_submit_fresh_skips_prior_rules_injection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("existing pruned tools", encoding="utf-8")
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
+        with patch(
+            "cyt_client.cli.resolve_hook_url",
+            return_value="http://127.0.0.1:8834/hook/inject",
+        ):
+            inject_response = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": "<agent-tools>fresh</agent-tools>",
+                    },
+                },
+            ).encode()
+
+            with patch(
+                "cyt_client.cli.post_hook_inject",
+                return_value=(200, inject_response),
+            ) as post:
+                from cyt_client.cli import main
+
+                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                    main(["--fresh"])
+
+        sent = json.loads(post.call_args.args[1])
+        assert "cyt_rules_injection" not in sent
+        assert (
+            json.loads(capsys.readouterr().out)["additional_context"]
+            == "<agent-tools>fresh</agent-tools>"
+        )
 
 
 def test_cli_before_submit_preserves_rules_file_when_hook_unavailable(
@@ -921,12 +978,14 @@ def test_hook_stdout_bytes_for_agent_strips_session_fields() -> None:
             },
             "cytAgent": "cursor",
             "cytSessionLog": [{"kind": "tool", "key": "tool:Shell"}],
+            "cytPhaseTiming": {"total_ms": 10, "phases": []},
         },
     ).encode()
     stripped = hook_stdout_bytes_for_agent(body)
     data = json.loads(stripped)
     assert "cytAgent" not in data
     assert "cytSessionLog" not in data
+    assert "cytPhaseTiming" not in data
     assert data["hookSpecificOutput"]["additionalContext"] == "ctx"
 
 

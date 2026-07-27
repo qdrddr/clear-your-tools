@@ -41,7 +41,7 @@ def test_build_plan_both_bm25_parallel_stage() -> None:
     plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
     assert len(plan) == 1
     kinds = {unit.kind for unit in plan[0]}
-    assert kinds == {"tools_stage", "skills_search"}
+    assert kinds == {"tools_pipeline", "skills_search"}
 
 
 def test_build_plan_both_rerank_parallel_stage() -> None:
@@ -56,7 +56,7 @@ def test_build_plan_both_rerank_parallel_stage() -> None:
     plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
     assert len(plan) == 1
     kinds = {unit.kind for unit in plan[0]}
-    assert kinds == {"tools_stage", "skills_search"}
+    assert kinds == {"tools_pipeline", "skills_search"}
 
 
 def test_build_plan_both_llm_parallel_stage() -> None:
@@ -71,10 +71,10 @@ def test_build_plan_both_llm_parallel_stage() -> None:
     plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
     assert len(plan) == 1
     kinds = {unit.kind for unit in plan[0]}
-    assert kinds == {"tools_stage", "skills_search"}
+    assert kinds == {"tools_pipeline", "skills_search"}
 
 
-def test_build_plan_bm25_tools_rerank_skills_two_stages() -> None:
+def test_build_plan_bm25_tools_rerank_skills_single_parallel_stage() -> None:
     ctx = PruneContext(
         query="find files",
         config={},
@@ -84,9 +84,11 @@ def test_build_plan_bm25_tools_rerank_skills_two_stages() -> None:
         tools_allowed=True,
     )
     plan = build_prune_plan(ctx, tool_sources=[ToolSource("root", [])])
-    assert len(plan) == 2
-    assert plan[0][-1].kind == "skills_search"
-    assert plan[1][0].kind == "tools_stage"
+    assert len(plan) == 1
+    kinds = {unit.kind for unit in plan[0]}
+    assert kinds == {"tools_pipeline", "skills_search"}
+    tool_unit = next(unit for unit in plan[0] if unit.kind == "tools_pipeline")
+    assert tool_unit.pipeline == ("bm25", "rerank")
 
 
 def test_run_parallel_runs_concurrently() -> None:

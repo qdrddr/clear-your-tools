@@ -72,6 +72,57 @@ def split_into_bulks[T](
     return bulks
 
 
+def split_into_bulks_balanced[T](
+    items: list[T],
+    transform_fn: Callable[[T], str],
+    base_tokens: int,
+    max_tokens: int = 32000,
+    *,
+    item_token_counts: list[int] | None = None,
+    separator_tokens: int = 2,
+) -> list[list[T]]:
+    """Split items into bulks minimizing the heaviest bulk (LPT + lightest-bin)."""
+    if not items:
+        return []
+
+    texts = [transform_fn(item) for item in items]
+    token_counts = resolve_item_token_counts(texts, item_token_counts)
+
+    indexed: list[tuple[T, int]] = list(zip(items, token_counts, strict=True))
+    indexed.sort(key=lambda pair: pair[1], reverse=True)
+
+    bulks: list[list[T]] = []
+    bulk_totals: list[int] = []
+
+    for item, item_tokens in indexed:
+        if base_tokens + item_tokens > max_tokens:
+            print(
+                f"Warning: Item tokens ({item_tokens}) + base tokens ({base_tokens}) exceeds max_tokens ({max_tokens}). Skipping item.",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
+
+        best_idx: int | None = None
+        best_total: int | None = None
+        for idx, total in enumerate(bulk_totals):
+            join_tokens = separator_tokens if bulks[idx] else 0
+            next_total = total + join_tokens + item_tokens
+            if next_total <= max_tokens and (best_total is None or total < best_total):
+                best_total = total
+                best_idx = idx
+
+        if best_idx is not None:
+            join_tokens = separator_tokens if bulks[best_idx] else 0
+            bulks[best_idx].append(item)
+            bulk_totals[best_idx] += join_tokens + item_tokens
+        else:
+            bulks.append([item])
+            bulk_totals.append(base_tokens + item_tokens)
+
+    return bulks
+
+
 def split_chunks_into_bulks(
     query: str,
     system_prompt: str,
@@ -98,24 +149,29 @@ def split_chunks_into_bulks(
             f"System prompt and query are too long ({base_tokens} tokens) for max_tokens={max_tokens}",
         )
 
-    token_counts = chunk_token_counts
-    if token_counts is not None and len(token_counts) != len(formatted_chunks):
-        token_counts = None
+    split_base_tokens = base_tokens
+    if wrap_agent_tools:
+        from cyt.indexer.tokens import count_tokens
 
-    # Use the new generic splitter
-    bulks_of_chunks = split_into_bulks(
-        items=list(zip(formatted_chunks, token_counts or [0] * len(formatted_chunks), strict=True)),
-        transform_fn=lambda pair: pair[0],
-        base_tokens=base_tokens,
+        split_base_tokens += count_tokens("<agent-tools total-tokens=0>\n\n</agent-tools>")
+
+    # Split on wrapped formatted chunk bodies; catalog token_count omits XML/agent-tools overhead.
+    bulks_of_chunks = split_into_bulks_balanced(
+        items=formatted_chunks,
+        transform_fn=lambda chunk: chunk,
+        base_tokens=split_base_tokens,
         max_tokens=max_tokens,
-        item_token_counts=token_counts,
+        item_token_counts=None,
     )
 
     result: list[str] = []
     bulk_cached_totals: list[int] = []
     for bulk in bulks_of_chunks:
-        inner = "\n\n".join(chunk for chunk, _count in bulk)
-        total_tokens = sum(count for _chunk, count in bulk)
+        inner = "\n\n".join(bulk)
+        bulk_token_counts = resolve_item_token_counts(bulk, None)
+        total_tokens = sum(bulk_token_counts)
+        if len(bulk) > 1:
+            total_tokens += (len(bulk) - 1) * 2
         bulk_cached_totals.append(total_tokens)
         if wrap_agent_tools:
             wrapped = wrap_agent_tools_bulk(inner, total_tokens=total_tokens)
@@ -123,4 +179,5 @@ def split_chunks_into_bulks(
                 result.append(wrapped)
         else:
             result.append(inner)
+
     return result, bulk_cached_totals

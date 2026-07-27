@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 import traceback
+from pathlib import Path
 
 from cyt_client.cursor import (
     format_cursor_continue,
@@ -13,13 +16,20 @@ from cyt_client.cursor import (
     is_cursor_hook_payload,
     is_session_end_event,
 )
-from cyt_client.port import resolve_hook_url
+from cyt_client.port import (
+    clear_hook_url_cache,
+    find_hook_server_port_excluding,
+    hook_url_for_port,
+    resolve_hook_url,
+)
 from cyt_client.rules_file import (
     delete_cursor_rules_file,
     extract_additional_context,
     extract_cyt_agent,
+    extract_phase_timing,
     extract_rules_merge_sections,
     extract_session_log_entries,
+    format_phase_timing_verbose,
     hook_stdout_bytes_for_agent,
     is_valid_workspace_root,
     read_cursor_rules_injection,
@@ -39,19 +49,31 @@ from cyt_client.transport import post_hook_inject
 
 _verbose = False
 _debug = False
+_fresh_hook = False
 
 
-def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool, str | None]:
+def _parse_client_flags(argv: list[str] | None = None) -> tuple[bool, bool, bool, str | None]:
     parser = argparse.ArgumentParser(prog="cyt-client", add_help=False)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Ignore existing .cursor/rules/cyt-injection.mdc for this hook call (CLI testing)",
+    )
     parser.add_argument(
         "--rule",
         metavar="PATH",
         help="Cursor rules file path (relative to workspace); default: .cursor/rules/cyt-injection.mdc",
     )
     args, _unknown = parser.parse_known_args(argv)
-    return bool(args.verbose), bool(args.debug), args.rule
+    fresh = bool(args.fresh) or os.environ.get("CYT_CLI_FRESH_HOOK", "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return bool(args.verbose), bool(args.debug), fresh, args.rule
 
 
 def _verbose_log(message: str) -> None:
@@ -92,6 +114,57 @@ def _emit_cursor_continue() -> None:
     print(format_cursor_continue(), flush=True)
 
 
+def _emit_cursor_hook_stdout(body: bytes) -> None:
+    print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
+
+
+def _workspace_for_cursor_hook(payload: dict) -> Path | None:
+    workspace = workspace_root_from_payload(payload)
+    if workspace is None:
+        return None
+    if not is_valid_workspace_root(workspace):
+        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+        return None
+    return workspace
+
+
+def _post_hook_inject_resilient(
+    hook_url: str,
+    payload_bytes: bytes,
+) -> tuple[int, bytes, str] | None:
+    try:
+        status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
+    except ConnectionError as exc:
+        _verbose_log(f"cyt-client: hook server connection failed: {exc}")
+        return None
+
+    if status < 400:
+        return status, body, hook_url
+
+    excluded_port = None
+    if match := re.search(r":(\d+)/", hook_url):
+        try:
+            excluded_port = int(match.group(1))
+        except ValueError:
+            excluded_port = None
+    clear_hook_url_cache()
+    fallback_port = find_hook_server_port_excluding(excluded_port)
+    if fallback_port is not None:
+        fallback_url = hook_url_for_port(fallback_port)
+        if fallback_url != hook_url:
+            _verbose_log(
+                f"cyt-client: hook server returned HTTP {status}; retrying {fallback_url}",
+            )
+            try:
+                status, body = post_hook_inject(fallback_url, payload_bytes, debug=_debug)
+                return status, body, fallback_url
+            except ConnectionError as exc:
+                _verbose_log(f"cyt-client: hook server connection failed: {exc}")
+                return None
+
+    return status, body, hook_url
+
+
 def _persist_session_log_response(payload: dict, body: bytes) -> None:
     entries = extract_session_log_entries(body)
     if not entries:
@@ -129,17 +202,12 @@ def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
 
 
 def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
-    workspace = workspace_root_from_payload(payload)
+    workspace = _workspace_for_cursor_hook(payload)
     if workspace is None:
         _emit_cursor_continue()
         return
 
-    if not is_valid_workspace_root(workspace):
-        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
-        _emit_cursor_continue()
-        return
-
-    prior_rules_injection = read_cursor_rules_injection(workspace)
+    prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
     payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
     hook_url = resolve_hook_url()
     if hook_url is None:
@@ -147,25 +215,37 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
-    try:
-        status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
-    except ConnectionError as exc:
-        _verbose_log(f"cyt-client: hook server connection failed: {exc}")
+    result = _post_hook_inject_resilient(hook_url, payload_bytes)
+    if result is None:
         _emit_cursor_continue()
         return
+    status, body, _hook_url = result
 
     if status >= 400:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")
+        error_preview = body[:300].decode(errors="replace") if body else ""
+        if error_preview:
+            _verbose_log(f"cyt-client: hook error body: {error_preview}")
         _emit_cursor_continue()
         return
 
     _persist_session_log_response(payload, body)
 
+    phase_timing = extract_phase_timing(body)
+    if phase_timing:
+        _verbose_log(format_phase_timing_verbose(phase_timing))
+
     injection = extract_additional_context(body)
     if not injection.strip():
-        _verbose_log("cyt-client: hook returned no additionalContext; skipping rules file sync")
-        delete_cursor_rules_file(workspace)
-        print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
+        if prior_rules_injection.strip():
+            _verbose_log(
+                "cyt-client: hook returned no additionalContext; "
+                "tools already present in rules file (pre-exposure skip)",
+            )
+        else:
+            _verbose_log("cyt-client: hook returned no additionalContext; skipping rules file sync")
+            delete_cursor_rules_file(workspace)
+        _emit_cursor_hook_stdout(body)
         return
 
     try:
@@ -179,7 +259,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
         _emit_cursor_continue()
         return
 
-    print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
+    _emit_cursor_hook_stdout(body)
 
 
 def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
@@ -220,8 +300,8 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    global _verbose, _debug
-    _verbose, _debug, rule_path = _parse_client_flags(argv)
+    global _verbose, _debug, _fresh_hook
+    _verbose, _debug, _fresh_hook, rule_path = _parse_client_flags(argv)
 
     cursor_output = False
     try:

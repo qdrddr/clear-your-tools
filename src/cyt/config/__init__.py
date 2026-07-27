@@ -155,6 +155,8 @@ DEFAULT_MCPC_RESOURCES_ENABLED: bool = True
 DEFAULT_MCPC_RESOURCES_MIME_TYPES: list[str] = ["text/markdown"]
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
+DEFAULT_SELECTOR_BULK_MAX_TOKENS: int = 32000
+DEFAULT_MAX_PRUNE_BATCH_WORKERS: int = 5
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
 ToolsHookSource = Literal["executor", "definitions", "mcpc"]
@@ -1884,6 +1886,44 @@ def skills_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
         "selector_soft_budget",
         DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
     )
+    return int(value)
+
+
+def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
+    """Resolve parallel prune worker cap from config or ``CYT_MAX_PRUNE_BATCH_WORKERS``."""
+    import os
+
+    env_raw = os.environ.get("CYT_MAX_PRUNE_BATCH_WORKERS", "").strip()
+    if env_raw:
+        try:
+            return max(1, int(env_raw))
+        except ValueError:
+            pass
+    cfg = config or load_config()
+    raw = cfg.get("pruning", {}).get("max_batch_workers", DEFAULT_MAX_PRUNE_BATCH_WORKERS)
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_PRUNE_BATCH_WORKERS
+
+
+def selector_bulk_max_tokens(
+    config: dict[str, Any] | None = None,
+    *,
+    selector_kind: str = "tools",
+) -> int:
+    """Resolve LLM selector bulk token limit from config."""
+    cfg = config or load_config()
+    if selector_kind == "skills":
+        value = _skills_settings(_merged_config(cfg)).get(
+            "selector_bulk_max_tokens",
+            DEFAULT_SELECTOR_BULK_MAX_TOKENS,
+        )
+    else:
+        value = _tools(_merged_config(cfg)).get(
+            "selector_bulk_max_tokens",
+            DEFAULT_SELECTOR_BULK_MAX_TOKENS,
+        )
     return int(value)
 
 

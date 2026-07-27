@@ -23,7 +23,7 @@ _TOOLS_BLOCK_RE = re.compile(
     r"<agent-tools[^>]*>.*?</agent-tools>",
     re.DOTALL,
 )
-_INNER_SOURCE_TAGS = ("mcp", "executor", "definitions")
+_INNER_SOURCE_TAGS = ("mcpc", "executor", "definitions")
 _INNER_SOURCE_RE = {
     tag: re.compile(rf"<{tag}[^>]*>.*?</{tag}>", re.DOTALL) for tag in _INNER_SOURCE_TAGS
 }
@@ -236,7 +236,7 @@ def extract_cyt_agent(body: bytes) -> str | None:
 
 
 def hook_stdout_bytes_for_agent(body: bytes) -> bytes:
-    """Strip cytSessionLog/cytAgent; return agent-visible hook stdout JSON."""
+    """Strip cytSessionLog/cytAgent/cytPhaseTiming; return agent-visible hook stdout JSON."""
     if not body.strip():
         return body
     try:
@@ -250,6 +250,35 @@ def hook_stdout_bytes_for_agent(body: bytes) -> bytes:
     if hook_output is None:
         return body
     return json.dumps({"hookSpecificOutput": hook_output}, separators=(",", ":")).encode()
+
+
+def extract_phase_timing(body: bytes) -> dict[str, Any] | None:
+    """Return cytPhaseTiming from hook stdout when present."""
+    if not body.strip():
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("cytPhaseTiming")
+    return raw if isinstance(raw, dict) else None
+
+
+def format_phase_timing_verbose(timing: dict[str, Any]) -> str:
+    lines = [f"cyt-client: phase timing total={timing.get('total_ms', 0)}ms"]
+    for phase in timing.get("phases", []):
+        if not isinstance(phase, dict):
+            continue
+        name = phase.get("name", "?")
+        elapsed = phase.get("elapsed_ms", 0)
+        meta = phase.get("meta")
+        if meta:
+            lines.append(f"  - {name}: {elapsed}ms {meta}")
+        else:
+            lines.append(f"  - {name}: {elapsed}ms")
+    return "\n".join(lines)
 
 
 def extract_rules_merge_sections(body: bytes) -> bool:

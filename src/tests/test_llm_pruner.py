@@ -18,7 +18,6 @@ from cyt.pruners.llm import (
     _llm_user_message,
     apply_selector_ids_to_catalog,
     call_llm,
-    cap_selector_scores,
     filter_selector_selections,
     llm_select_ids,
     normalize_selector_selections,
@@ -68,6 +67,33 @@ def test_prepare_catalog_selector_chunks_emits_token_attrs() -> None:
     assert token_rows[0].selector_id == 1 and token_rows[0].tokens == 123
 
 
+def test_split_into_bulks_balanced_evens_load() -> None:
+    from cyt.pruners.split import split_into_bulks, split_into_bulks_balanced
+
+    items = [f"chunk-{index}" for index in range(6)]
+    counts = [100, 100, 100, 100, 100, 100]
+
+    with patch("cyt.pruners.split.count_tokens_batch", side_effect=[counts, counts]):
+        sequential = split_into_bulks(
+            items=items,
+            transform_fn=lambda item: item,
+            base_tokens=10,
+            max_tokens=220,
+            item_token_counts=counts,
+        )
+        balanced = split_into_bulks_balanced(
+            items=items,
+            transform_fn=lambda item: item,
+            base_tokens=10,
+            max_tokens=220,
+            item_token_counts=counts,
+        )
+
+    seq_sizes = [len(bulk) for bulk in sequential]
+    bal_sizes = [len(bulk) for bulk in balanced]
+    assert max(seq_sizes) - min(seq_sizes) >= max(bal_sizes) - min(bal_sizes)
+
+
 def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
     from cyt.pruners.split import split_chunks_into_bulks
 
@@ -81,7 +107,8 @@ def test_split_chunks_into_bulks_wraps_agent_tools_total() -> None:
         max_tokens=32000,
     )
     assert len(bulks) == 1
-    assert "<agent-tools total-tokens=30>" in bulks[0]
+    assert f"<agent-tools total-tokens={_bulk_cached_totals[0]}>" in bulks[0]
+    assert _bulk_cached_totals[0] > 0
     assert "<tool id=1 tokens=10>" in bulks[0]
 
 
@@ -268,8 +295,10 @@ def test_llm_select_ids_uses_per_bulk_soft_budget_in_prompt() -> None:
         *,
         system_prompt: str,
         cached_content_tokens: int | None = None,
+        bulk_index: int = 0,
+        selector_kind: str = "tools",
     ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
-        del cached_content_tokens
+        del cached_content_tokens, bulk_index, selector_kind
         captured_prompts.append(system_prompt)
         return RelevantChunkSelections(selections=[ChunkSelection(id=1, score=80)]), empty_usage()
 
@@ -382,10 +411,19 @@ def test_llm_select_ids_returns_all_scores_for_prune_step() -> None:
     assert selected == {1: 29, 2: 30}
 
 
-def test_cap_selector_scores_keeps_highest_scores() -> None:
-    scored = {index: index for index in range(1, 45)}
-    capped = cap_selector_scores(scored, max_ids=3)
-    assert capped == {44: 44, 43: 43, 42: 42}
+def test_trim_catalog_dict_drops_items_below_min_score() -> None:
+    from cyt.pruners.llm import trim_catalog_dict
+
+    data = {
+        "json": [
+            {"file_path": "a", "score": 0.9},
+            {"file_path": "b", "score": 0.5},
+            {"file_path": "c", "score": 0.2},
+            {"file_path": "d", "score": 0.05},
+        ],
+    }
+    trimmed = trim_catalog_dict(data)
+    assert [item["file_path"] for item in trimmed["json"]] == ["a", "b", "c"]
 
 
 def test_call_llm_uses_completion_for_chat_completions() -> None:
@@ -679,21 +717,6 @@ def test_tool_selector_system_prompt_without_cache_is_base_only() -> None:
         return_value=None,
     ):
         assert tool_selector_system_prompt() == TOOL_SELECTOR_SYSTEM_PROMPT
-
-
-def test_trim_catalog_dict_keeps_top_k_by_score() -> None:
-    from cyt.pruners.llm import trim_catalog_dict
-
-    data = {
-        "json": [
-            {"file_path": "a", "score": 0.9},
-            {"file_path": "b", "score": 0.5},
-            {"file_path": "c", "score": 0.2},
-            {"file_path": "d", "score": 0.05},
-        ],
-    }
-    trimmed = trim_catalog_dict(data, top_k=2)
-    assert [item["file_path"] for item in trimmed["json"]] == ["a", "b"]
 
 
 def test_apply_selector_ids_to_catalog_writes_normalized_llm_md_scores() -> None:

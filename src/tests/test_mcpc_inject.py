@@ -105,6 +105,7 @@ def test_format_mcpc_agent_tools_groups_by_server() -> None:
     ]
     text = format_mcpc_agent_tools(tools, workspace_paths=["/workspace/repo"])
     assert text.startswith("\n<agent-tools description='Pruned MCP tool definitions below")
+    assert "<mcpc>" in text
     assert "MCPC CLI" in text
     assert "mcpc @session tools-call" in text
     assert "schema.." not in text

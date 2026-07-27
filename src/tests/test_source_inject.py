@@ -31,7 +31,7 @@ def test_format_multi_source_agent_tools_omits_empty_sources() -> None:
         },
     )
     assert "<agent-tools" in block
-    assert "<mcp>" in block
+    assert "<mcpc>" in block
     assert "\n<executor>" not in block
     assert "\n<definitions>" not in block
 
@@ -74,4 +74,4 @@ def test_gate_and_format_single_source_section_not_legacy_mcpc() -> None:
         )
     assert "<executor>" in formatted
     assert "Shell" in formatted
-    assert "\n<mcp>" not in formatted
+    assert "\n<mcpc>" not in formatted

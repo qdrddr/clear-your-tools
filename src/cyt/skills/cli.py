@@ -379,6 +379,7 @@ def format_hook_stdout(
     merge_rules_sections: bool = False,
     session_log: list[dict[str, Any]] | None = None,
     cyt_agent: str | None = None,
+    phase_timing: dict[str, Any] | None = None,
 ) -> str:
     if not text and not session_log:
         return ""
@@ -399,6 +400,8 @@ def format_hook_stdout(
             output["cytAgent"] = cyt_agent
         if session_log:
             output["cytSessionLog"] = session_log
+        if phase_timing:
+            output["cytPhaseTiming"] = phase_timing
         return json.dumps(output)
     return text
 
@@ -823,6 +826,7 @@ def _run_coordinated_user_prompt_injection(
     stdio_guarded: bool,
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> tuple[list[str], list[str], dict[str, Any]]:
+    from cyt.common.phase_timing import PhaseTimer, extend_timing_payload
     from cyt.pruning.hook_bridge import run_hook_coordinated_prune
     from cyt.skills.hook_quiet import hook_quiet_stderr
 
@@ -857,55 +861,62 @@ def _run_coordinated_user_prompt_injection(
 
     stdout_guard = hook_safe_stdout(active=stdio_guarded)
     stderr_guard = hook_quiet_stderr(active=stdio_guarded)
+    hook_timer = PhaseTimer()
     with stdout_guard, stderr_guard:
-        prune_result, skill_matches, catalog, prune_results = run_hook_coordinated_prune(
-            query,
-            config,
-            payload=payload,
-            skills_allowed=skills_allowed,
-            tools_allowed=tools_allowed,
-            skills_max_tokens=skills_max_tokens,
-            io_guarded=stdio_guarded,
-            pruner_settings=pruner_settings,
-        )
-
-        parts: list[str] = []
-        outcomes: list[str] = []
-        details: dict[str, Any] = {}
-
-        if skill_matches is not None:
-            _append_coordinated_skills_injection(
-                payload=payload,
-                allow_transcript_file_read=allow_transcript_file_read,
-                skill_matches=skill_matches,
-                prompt=prompt,
-                model=model,
-                request_tokens=request_tokens,
-                config=config,
-                debug=debug,
-                parts=parts,
-                outcomes=outcomes,
-                details=details,
+        with hook_timer.measure("hook:e2e"):
+            prune_result, skill_matches, catalog, prune_results, phase_timing = (
+                run_hook_coordinated_prune(
+                    query,
+                    config,
+                    payload=payload,
+                    skills_allowed=skills_allowed,
+                    tools_allowed=tools_allowed,
+                    skills_max_tokens=skills_max_tokens,
+                    io_guarded=stdio_guarded,
+                    pruner_settings=pruner_settings,
+                )
             )
 
-        if tools_allowed and prune_result is not None and catalog is not None:
-            _append_coordinated_tools_injection(
-                payload=payload,
-                allow_transcript_file_read=allow_transcript_file_read,
-                config=config,
-                query=query,
-                model=model,
-                prune_result=prune_result,
-                catalog=catalog,
-                prune_results=prune_results,
-                request_tokens=request_tokens,
-                budget_debug=budget_debug,
-                debug=debug,
-                parts=parts,
-                outcomes=outcomes,
-                details=details,
-            )
+            parts: list[str] = []
+            outcomes: list[str] = []
+            details: dict[str, Any] = {}
 
+            if skill_matches is not None:
+                with hook_timer.measure("gate:skills-resources"):
+                    _append_coordinated_skills_injection(
+                        payload=payload,
+                        allow_transcript_file_read=allow_transcript_file_read,
+                        skill_matches=skill_matches,
+                        prompt=prompt,
+                        model=model,
+                        request_tokens=request_tokens,
+                        config=config,
+                        debug=debug,
+                        parts=parts,
+                        outcomes=outcomes,
+                        details=details,
+                    )
+
+            if tools_allowed and prune_result is not None and catalog is not None:
+                with hook_timer.measure("gate:tools"):
+                    _append_coordinated_tools_injection(
+                        payload=payload,
+                        allow_transcript_file_read=allow_transcript_file_read,
+                        config=config,
+                        query=query,
+                        model=model,
+                        prune_result=prune_result,
+                        catalog=catalog,
+                        prune_results=prune_results,
+                        request_tokens=request_tokens,
+                        budget_debug=budget_debug,
+                        debug=debug,
+                        parts=parts,
+                        outcomes=outcomes,
+                        details=details,
+                    )
+
+        details["phase_timing"] = extend_timing_payload(phase_timing, hook_timer)
         details["rules_merge_sections"] = True
         return parts, outcomes, details
 
@@ -1168,6 +1179,11 @@ def run_hook_payload(
         if isinstance(raw_log, list):
             session_log = [entry for entry in raw_log if isinstance(entry, dict)]
     cyt_agent = resolve_effective_hook_agent(payload)
+    phase_timing = None
+    if isinstance(details, dict):
+        raw_timing = details.get("phase_timing")
+        if isinstance(raw_timing, dict):
+            phase_timing = raw_timing
     stdout_text = format_hook_stdout(
         injection_text,
         payload,
@@ -1175,6 +1191,7 @@ def run_hook_payload(
         merge_rules_sections=bool(details and details.get("rules_merge_sections")),
         session_log=session_log,
         cyt_agent=cyt_agent,
+        phase_timing=phase_timing,
     )
     debug_details = details
     if debug and details is not None:

@@ -4,11 +4,13 @@ import json
 import logging
 import sys
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any, Literal, TypeVar, cast
 
 from litellm import completion, responses
 from pydantic import BaseModel, Field
 
+from cyt.common.phase_timing import PhaseTimer
 from cyt.common.token_usage import TIKTOKEN_CL100K, StageTokenUsage, empty_usage
 from cyt.config import (
     llm_enum_score,
@@ -54,10 +56,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# After rerank/bm25, cap how many scored json chunks reach the LLM selector.
-LLM_PRE_TRIM_TOP_K_JSON: int = 40
-# Hard cap on chunk ids accepted from the LLM selector (union across bulks).
-LLM_MAX_SELECTED_IDS: int = 40
+# Drop catalog chunks below this normalized score before the LLM selector (after bm25/rerank).
 LLM_TRIM_MIN_JSON_SCORE: float = 0.11
 
 LLM_TRIM_FIELDS: tuple[str, ...] = ("score", "language", "end_line", "start_line")
@@ -71,32 +70,30 @@ LLM_SCORE = 30
 LLM_ENUM_SCORE = 30
 
 SELECTOR_SCORE_INSTRUCTION = (
-    "Return a JSON object with a selections array covering every chunk id from the prompt. "
-    "Each element must have id (chunk id) and score (integer 0-100 relevance; "
-    "higher means stronger match). Use score 0 when a chunk is not relevant. "
-    "Missing or invalid id/score defaults to score 0 for that id."
+    "Return a JSON object with a selections array. "
+    "Include only chunks with score > 0; omitted ids are treated as 0. "
+    "Each element must have id (chunk id) and score (integer 1-100 relevance; "
+    "higher means stronger match)."
 )
 
 SELECTOR_NO_MATCH_INSTRUCTION = (
-    "If nothing is suitable for the user query, return every chunk id with score 0."
+    'If nothing is suitable for the user query, return {"selections": []}.'
 )
 
 SELECTOR_VAGUE_QUERY_INSTRUCTION = (
     "If the user query is a single generic word with no specific technical task "
-    "(e.g. 'test', 'investigate', 'help'), score all chunks 0 unless exactly one tool "
-    "is an obvious exact match (score that chunk highly, others 0)."
+    "(e.g. 'test', 'investigate', 'help'), return {\"selections\": []} unless exactly one "
+    "chunk is an obvious exact match (include only that chunk with a high score)."
 )
 
 _TOOL_SELECTOR_SYSTEM_PROMPT_PREFIX = (
     'These are MCP tools and their enums and optional properties in a "decomposed" state. '
-    "Your task is to score every chunk by relevance to the user query. "
+    "Your task is to score chunks by relevance to the user query. "
     "Later we re-compile MCP tools into their full normal definitions based on your selection. "
-    f"{SELECTOR_SCORE_INSTRUCTION}"
+    f"{SELECTOR_SCORE_INSTRUCTION} "
     "It will be used as a hint for another LLM to use only these relevant tools, enums and optional properties "
     "to save on tokens by removing the irrelevant to user query noise. "
-    "Choose the most relevant pieces of MCP tools, enums and optional properties that could "
-    "potentially be useful for the request. Each tool/chunk tag includes a tokens attribute; "
-    "agent-tools includes total-tokens. "
+    "Each tool/chunk tag includes a tokens attribute; agent-tools includes total-tokens. "
 )
 
 _TOOL_SELECTOR_SYSTEM_PROMPT_SUFFIX = (
@@ -184,22 +181,6 @@ def filter_selector_selections(
     return {chunk_id: score for chunk_id, score in scored.items() if score >= min_score}
 
 
-def cap_selector_scores(
-    scored: dict[int, int],
-    *,
-    max_ids: int = LLM_MAX_SELECTED_IDS,
-) -> dict[int, int]:
-    if len(scored) <= max_ids:
-        return scored
-    logger.warning(
-        "llm selector returned %d chunk ids, capping to %d",
-        len(scored),
-        max_ids,
-    )
-    ranked = sorted(scored.items(), key=lambda item: (-item[1], item[0]))
-    return dict(ranked[:max_ids])
-
-
 def llm_pruning_settings(
     config: dict[str, Any] | None = None,
     *,
@@ -233,7 +214,6 @@ def _trim_scored_catalog_list(
     items: list[Any],
     *,
     min_score: float,
-    top_k: int | None,
 ) -> list[dict[str, Any]]:
     filtered: list[dict[str, Any]] = []
     for item in items:
@@ -243,19 +223,16 @@ def _trim_scored_catalog_list(
             continue
         filtered.append(item)
     filtered.sort(key=_json_item_score, reverse=True)
-    if top_k is not None and len(filtered) > top_k:
-        return filtered[:top_k]
     return filtered
 
 
-def trim_catalog_dict(data: dict[str, Any], *, top_k: int | None = None) -> dict[str, Any]:
-    """Drop low-scoring catalog entries before the LLM selector; optionally keep top-k by score."""
+def trim_catalog_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop low-scoring catalog entries before the LLM selector."""
     json_items = data.get("json")
     if isinstance(json_items, list):
         data["json"] = _trim_scored_catalog_list(
             json_items,
             min_score=LLM_TRIM_MIN_JSON_SCORE,
-            top_k=top_k,
         )
 
     md_items = data.get("md")
@@ -263,7 +240,6 @@ def trim_catalog_dict(data: dict[str, Any], *, top_k: int | None = None) -> dict
         data["md"] = _trim_scored_catalog_list(
             md_items,
             min_score=LLM_TRIM_MIN_JSON_SCORE,
-            top_k=top_k,
         )
 
     return data
@@ -512,7 +488,10 @@ def call_llm(
     *,
     system_prompt: str = TOOL_SELECTOR_SYSTEM_PROMPT,
     cached_content_tokens: int | None = None,
+    bulk_index: int = 0,
+    selector_kind: str = "unknown",
 ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
+    del bulk_index, selector_kind
     configure_litellm_quiet()
     user_message = _llm_user_message(query, chunks_text)
     input_tokens = count_llm_request_tokens(
@@ -607,6 +586,8 @@ def _run_llm_selector_bulk(
     *,
     bulk_system_prompt: str,
     cached_content_tokens: int | None = None,
+    bulk_index: int = 0,
+    selector_kind: str = "unknown",
 ) -> tuple[dict[int, int], StageTokenUsage]:
     bulk_tokens = count_llm_request_tokens(
         query,
@@ -621,6 +602,8 @@ def _run_llm_selector_bulk(
         bulk_text,
         system_prompt=bulk_system_prompt,
         cached_content_tokens=cached_content_tokens,
+        bulk_index=bulk_index,
+        selector_kind=selector_kind,
     )
     if bulk_usage.input_tokens == 0:
         bulk_usage = StageTokenUsage(
@@ -632,6 +615,7 @@ def _run_llm_selector_bulk(
             provider_dns_name=bulk_usage.provider_dns_name,
             provider=bulk_usage.provider,
         )
+
     return selections_to_score_map(parsed_response.selections), bulk_usage
 
 
@@ -651,6 +635,10 @@ def _run_llm_selector_bulks(
     *,
     bulk_system_prompt: str,
     bulk_cached_totals: list[int] | None = None,
+    selector_kind: str = "tools",
+    max_workers: int | None = None,
+    phase_timer: PhaseTimer | None = None,
+    phase_prefix: str = "tools",
 ) -> tuple[dict[int, int], StageTokenUsage]:
     merged_scores: dict[int, int] = {}
     total_usage = empty_usage()
@@ -663,32 +651,52 @@ def _run_llm_selector_bulks(
 
     if len(bulks) <= 1:
         for index, bulk_text in enumerate(bulks):
-            bulk_scores, bulk_usage = _run_llm_selector_bulk(
+            bulk_ctx = (
+                phase_timer.measure(f"{phase_prefix}:llm-bulk-{index}", selector=selector_kind)
+                if phase_timer is not None
+                else nullcontext()
+            )
+            with bulk_ctx:
+                bulk_scores, bulk_usage = _run_llm_selector_bulk(
+                    resolved_settings,
+                    query,
+                    bulk_text,
+                    bulk_system_prompt=bulk_system_prompt,
+                    cached_content_tokens=_cached_for_bulk(index),
+                    bulk_index=index,
+                    selector_kind=selector_kind,
+                )
+            total_usage = total_usage.merge(bulk_usage)
+            _merge_selector_scores(merged_scores, bulk_scores)
+        return merged_scores, total_usage
+
+    from cyt.config import max_prune_batch_workers
+    from cyt.pruning.parallel import run_parallel
+
+    worker_cap = max_workers if max_workers is not None else max_prune_batch_workers()
+
+    def _run_bulk(index: int, bulk_text: str) -> tuple[dict[int, int], StageTokenUsage]:
+        bulk_ctx = (
+            phase_timer.measure(f"{phase_prefix}:llm-bulk-{index}", selector=selector_kind)
+            if phase_timer is not None
+            else nullcontext()
+        )
+        with bulk_ctx:
+            return _run_llm_selector_bulk(
                 resolved_settings,
                 query,
                 bulk_text,
                 bulk_system_prompt=bulk_system_prompt,
                 cached_content_tokens=_cached_for_bulk(index),
+                bulk_index=index,
+                selector_kind=selector_kind,
             )
-            total_usage = total_usage.merge(bulk_usage)
-            _merge_selector_scores(merged_scores, bulk_scores)
-        return merged_scores, total_usage
-
-    from cyt.pruning.parallel import run_parallel
 
     work = {
-        str(index): (
-            lambda bulk_text=bulk_text, bulk_index=index: _run_llm_selector_bulk(
-                resolved_settings,
-                query,
-                bulk_text,
-                bulk_system_prompt=bulk_system_prompt,
-                cached_content_tokens=_cached_for_bulk(bulk_index),
-            )
-        )
+        str(index): (lambda idx=index, text=bulk_text: _run_bulk(idx, text))
         for index, bulk_text in enumerate(bulks)
     }
-    parallel_results = run_parallel(work)
+    parallel_results = run_parallel(work, max_workers=worker_cap)
     for index in range(len(bulks)):
         bulk_scores, bulk_usage = parallel_results[str(index)]
         total_usage = total_usage.merge(bulk_usage)
@@ -708,11 +716,15 @@ def llm_select_ids(
     system_prompt_for_budget: Callable[[int], str] | None = None,
     config: dict[str, Any] | None = None,
     settings: LlmPruningSettings | None = None,
+    selector_kind: str = "tools",
+    phase_timer: PhaseTimer | None = None,
+    phase_prefix: str = "tools",
 ) -> tuple[dict[int, int], StageTokenUsage]:
     """Run LLM selector over formatted chunks; return id→score survivors."""
     if not formatted_items:
         return {}, empty_usage()
 
+    from cyt.config import max_prune_batch_workers, selector_bulk_max_tokens
     from cyt.pruners.split import split_chunks_into_bulks
 
     resolved_settings = llm_pruning_settings(config, settings=settings)
@@ -722,6 +734,7 @@ def llm_select_ids(
         formatted_items,
         chunk_token_counts=chunk_token_counts,
         wrap_agent_tools=wrap_agent_tools,
+        max_tokens=selector_bulk_max_tokens(config, selector_kind=selector_kind),
     )
     per_bulk_budget = per_bulk_soft_budget(
         soft_budget_total,
@@ -739,15 +752,19 @@ def llm_select_ids(
         bulks,
         bulk_system_prompt=bulk_system_prompt,
         bulk_cached_totals=bulk_cached_totals,
+        selector_kind=selector_kind,
+        max_workers=max_prune_batch_workers(config),
+        phase_timer=phase_timer,
+        phase_prefix=phase_prefix,
     )
 
     if total_usage.input_tokens or total_usage.output_tokens:
         log_token_usage(
-            "pruning model tokens (llm)",
+            f"pruning model tokens ({selector_kind})",
             total_usage.input_tokens + total_usage.output_tokens,
         )
 
-    return cap_selector_scores(selected_scores), total_usage
+    return selected_scores, total_usage
 
 
 def apply_llm_chunk_score(item: dict[str, Any], llm_score: int) -> None:
@@ -819,6 +836,9 @@ def llm_catalog_dict(
     merge_pinned: bool = True,
     config: dict[str, Any] | None = None,
     settings: LlmPruningSettings | None = None,
+    catalog_bulk_id: str | None = None,
+    phase_timer: PhaseTimer | None = None,
+    phase_prefix: str = "tools",
 ) -> tuple[dict[str, Any], dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     policy_ctx = resolve_policy_context(
@@ -836,23 +856,53 @@ def llm_catalog_dict(
         snapshot = copy.deepcopy(data)
         return data, snapshot, empty_usage()
 
-    formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, _token_rows = (
-        prepare_catalog_selector_chunks(data)
-    )
+    resolved_config = config or load_config()
+    prepared = None
+    if catalog_bulk_id:
+        from cyt.tools.catalog_cache import get_prepared_selector_chunks
+
+        prepared = get_prepared_selector_chunks(
+            data,
+            bulk_id=catalog_bulk_id,
+            config=resolved_config,
+        )
+
+    if prepared is not None:
+        chunk_ctx = (
+            phase_timer.measure(f"{phase_prefix}:selector-chunks-cache", bulk_id=catalog_bulk_id)
+            if phase_timer is not None
+            else nullcontext()
+        )
+        with chunk_ctx:
+            formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, _token_rows = (
+                prepared
+            )
+    else:
+        chunk_ctx = (
+            phase_timer.measure(f"{phase_prefix}:selector-chunks-prepare")
+            if phase_timer is not None
+            else nullcontext()
+        )
+        with chunk_ctx:
+            formatted_chunks, item_metadata_storage, list_keys, chunk_token_counts, _token_rows = (
+                prepare_catalog_selector_chunks(data)
+            )
 
     llm_scores, total_usage = llm_select_ids(
         query,
-        tool_selector_system_prompt(config),
+        tool_selector_system_prompt(resolved_config),
         formatted_chunks,
         chunk_token_counts=chunk_token_counts,
         wrap_agent_tools=True,
         system_prompt_for_budget=lambda budget: tool_selector_system_prompt(
-            config,
+            resolved_config,
             soft_budget=budget,
         ),
-        soft_budget_total=tools_selector_soft_budget(config),
-        config=config,
+        soft_budget_total=tools_selector_soft_budget(resolved_config),
+        config=resolved_config,
         settings=settings,
+        phase_timer=phase_timer,
+        phase_prefix=phase_prefix,
     )
 
     full_scores = build_full_chunk_score_map(item_metadata_storage, llm_scores)

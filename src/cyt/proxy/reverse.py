@@ -436,6 +436,91 @@ def _next_debug_request_seq() -> int:
     return _debug_request_seq
 
 
+def _debug_request_header_lines(
+    *,
+    request_seq: int,
+    endpoint: str | None = None,
+    request_path: str | None = None,
+) -> list[str]:
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    header_parts = [f"debug request #{request_seq} @ {stamp}"]
+    if endpoint:
+        header_parts.append(f"endpoint={endpoint}")
+    if request_path:
+        header_parts.append(f"path={request_path}")
+    return [
+        "",
+        f"--- {' | '.join(header_parts)} ---",
+        "",
+    ]
+
+
+def _debug_pruning_query_lines(pruning: dict[str, Any] | None) -> list[str]:
+    if pruning is None:
+        return ["user query:", "(none — body was not transformed)", ""]
+    query = pruning.get("query")
+    return [
+        "user query:",
+        "",
+        query if query else "(none extracted)",
+        "",
+    ]
+
+
+def _format_tool_token_line(pruning: dict[str, Any]) -> str | None:
+    tokens_in = pruning.get("tokens_in")
+    if tokens_in is None:
+        return None
+    tokens_out = pruning.get("tokens_out")
+    tokens_saved = pruning.get("tokens_saved")
+    if tokens_out is not None and tokens_saved is not None:
+        pct = (100.0 * tokens_saved / tokens_in) if tokens_in else 0.0
+        return (
+            f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} "
+            f"(saved {tokens_saved}, {pct:.1f}%)"
+        )
+    return f"tool tokens (compact JSON): input={tokens_in}"
+
+
+def _format_pruning_model_tokens_line(pruning_model_tokens: dict[str, Any]) -> str | None:
+    stage_parts: list[str] = []
+    for stage in ("rerank", "bm25", "llm"):
+        in_t = pruning_model_tokens.get(f"{stage}_in")
+        out_t = pruning_model_tokens.get(f"{stage}_out")
+        reasoning_t = pruning_model_tokens.get(f"{stage}_reasoning")
+        if in_t is None and out_t is None and reasoning_t is None:
+            if stage in pruning_model_tokens:
+                stage_parts.append(f"{stage}={pruning_model_tokens[stage]}")
+            continue
+        bits = []
+        if in_t is not None:
+            bits.append(f"in={in_t}")
+        if out_t is not None:
+            bits.append(f"out={out_t}")
+        if reasoning_t is not None:
+            bits.append(f"reasoning={reasoning_t}")
+        stage_parts.append(f"{stage} ({', '.join(bits)})")
+    if not stage_parts:
+        return None
+    return f"pruning model tokens: {', '.join(stage_parts)}"
+
+
+def _format_debug_pruning_detail_lines(pruning: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    if status := pruning.get("status"):
+        tools_in = pruning.get("tools_in")
+        tools_out = pruning.get("tools_out")
+        lines.append(f"pruning status: {status} (tools {tools_in} -> {tools_out})")
+    if token_line := _format_tool_token_line(pruning):
+        lines.append(token_line)
+    if pruning_model_tokens := pruning.get("pruning_model_tokens") or {}:
+        if model_line := _format_pruning_model_tokens_line(pruning_model_tokens):
+            lines.append(model_line)
+    if error := pruning.get("error"):
+        lines.append(f"pruning error: {error}")
+    return lines
+
+
 def _format_debug_pruning_lines(
     pruning: dict[str, Any] | None,
     *,
@@ -444,53 +529,18 @@ def _format_debug_pruning_lines(
     request_path: str | None = None,
     include_paths: bool = True,
 ) -> list[str]:
-    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    header_parts = [f"debug request #{request_seq} @ {stamp}"]
-    if endpoint:
-        header_parts.append(f"endpoint={endpoint}")
-    if request_path:
-        header_parts.append(f"path={request_path}")
-    lines: list[str] = [
-        "",
-        f"--- {' | '.join(header_parts)} ---",
-        "",
-    ]
-    if pruning is None:
-        lines.extend(["user query:", "(none — body was not transformed)", ""])
-    else:
-        query = pruning.get("query")
-        lines.extend(["user query:", ""])
-        lines.append(query if query else "(none extracted)")
-        lines.append("")
+    lines = _debug_request_header_lines(
+        request_seq=request_seq,
+        endpoint=endpoint,
+        request_path=request_path,
+    )
+    lines.extend(_debug_pruning_query_lines(pruning))
+    if pruning is not None:
         lines.extend(_format_decomposed_table_lines(pruning))
         if include_paths:
             lines.extend(_format_decomposed_paths_lines(pruning))
             lines.extend(_format_removed_chunks_lines(pruning))
-        if status := pruning.get("status"):
-            tools_in = pruning.get("tools_in")
-            tools_out = pruning.get("tools_out")
-            lines.append(f"pruning status: {status} (tools {tools_in} -> {tools_out})")
-        tokens_in = pruning.get("tokens_in")
-        if tokens_in is not None:
-            tokens_out = pruning.get("tokens_out")
-            tokens_saved = pruning.get("tokens_saved")
-            if tokens_out is not None and tokens_saved is not None:
-                pct = (100.0 * tokens_saved / tokens_in) if tokens_in else 0.0
-                lines.append(
-                    f"tool tokens (compact JSON): {tokens_in} -> {tokens_out} "
-                    f"(saved {tokens_saved}, {pct:.1f}%)",
-                )
-            else:
-                lines.append(f"tool tokens (compact JSON): input={tokens_in}")
-        if pruning_model_tokens := pruning.get("pruning_model_tokens") or {}:
-            parts = ", ".join(
-                f"{stage}={pruning_model_tokens[stage]}"
-                for stage in ("rerank", "bm25", "llm")
-                if stage in pruning_model_tokens
-            )
-            lines.append(f"pruning model tokens: {parts}")
-        if error := pruning.get("error"):
-            lines.append(f"pruning error: {error}")
+        lines.extend(_format_debug_pruning_detail_lines(pruning))
     lines.append("")
     return lines
 

@@ -224,7 +224,7 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
     assert extra == {OR_KEY: OR_TOKEN}
 
 
-def test_unattended_missing_credentials_reuses_silently(
+def test_unattended_missing_credentials_restarts_uncredentialed_server(
     pidfile_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -243,8 +243,14 @@ def test_unattended_missing_credentials_reuses_silently(
             "cyt.hook.daemon._resolve_spawn_credentials",
             return_value=None,
         ) as resolve,
+        patch("cyt.hook.daemon._hook_daemon_has_credentials", return_value=False),
         patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port") as stop,
+        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
+        patch("cyt.hook.daemon._spawn_hook_server") as spawn,
+        patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
     ):
+        spawn.return_value = MagicMock(pid=12345)
         result = hook_daemon.daemon_start(verbose=True, unattended=True)
 
     resolve.assert_called_once_with(
@@ -252,10 +258,11 @@ def test_unattended_missing_credentials_reuses_silently(
         allow_prompt=False,
         require_all=False,
     )
+    stop.assert_called_once_with(8834, verbose=False)
     err = capsys.readouterr().err
     assert err == ""
-    assert result.reused is True
-    assert result.port == 8834
+    assert result.reused is False
+    assert result.port == 8835
 
 
 def test_unattended_skips_credential_reinjection(
@@ -267,6 +274,7 @@ def test_unattended_skips_credential_reinjection(
             return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
         ),
         patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch("cyt.hook.daemon._hook_daemon_has_credentials", return_value=True),
         patch(
             "cyt.hook.daemon._resolve_spawn_credentials",
             return_value={OR_KEY: OR_TOKEN},

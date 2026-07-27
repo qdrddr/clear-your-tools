@@ -38,7 +38,7 @@ def _plain_or_escaped_attr_pre_exposed(session_text: str, attr_name: str, value:
 def _agent_tools_description_pre_exposed(session_text: str) -> bool:
     from cyt.tools.mcpc_inject import _mcpc_agent_tools_description
 
-    intro = _mcpc_agent_tools_description(include_workspace_note=True)
+    intro = _mcpc_agent_tools_description()
     return _plain_or_escaped_attr_pre_exposed(session_text, "description", intro)
 
 

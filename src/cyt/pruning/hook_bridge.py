@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from cyt.common.phase_timing import PhaseTimer, merge_phase_timings
 from cyt.config import skills_enabled, uses_mcpc_tool_catalog
 from cyt.indexer.build import anthropic_tools_to_catalog_entries
 from cyt.mcpc.help_skill import append_mcpc_help_skill_entries
@@ -152,8 +153,13 @@ def run_hook_coordinated_prune(
     list[MatchedSkill] | None,
     list[dict[str, Any]] | None,
     dict[str, PruneResult],
+    dict[str, Any],
 ]:
-    catalog = load_tool_catalog(config) if tools_allowed else None
+    hook_timer = PhaseTimer()
+    catalog = None
+    if tools_allowed:
+        with hook_timer.measure("hook:catalog-load"):
+            catalog = load_tool_catalog(config)
     if tools_allowed and catalog is None:
         missing = PruneResult(
             tools=None,
@@ -164,19 +170,20 @@ def run_hook_coordinated_prune(
             tools_out=None,
             error="missing catalog",
         )
-        return missing, None, None, {}
+        return missing, None, None, {}, merge_phase_timings(hook_timer)
 
-    base_entries = build_registry_for_hook_payload(config, payload) if skills_allowed else []
-    all_entries = append_executor_skill_entries(base_entries, config)
-    all_entries = _append_mcpc_skill_resource_entries(all_entries, config)
-    skill_entries = (
-        eligible_skills_after_gate(query, all_entries, config=config) if all_entries else []
-    )
+    with hook_timer.measure("hook:skill-registry"):
+        base_entries = build_registry_for_hook_payload(config, payload) if skills_allowed else []
+        all_entries = append_executor_skill_entries(base_entries, config)
+        all_entries = _append_mcpc_skill_resource_entries(all_entries, config)
+        skill_entries = (
+            eligible_skills_after_gate(query, all_entries, config=config) if all_entries else []
+        )
 
     tool_sources = _hook_tool_sources(catalog, config) if tools_allowed and catalog else []
 
     if not tool_sources and not skill_entries:
-        return None, None, catalog, {}
+        return None, None, catalog, {}, merge_phase_timings(hook_timer)
 
     skill_out: dict[str, Any] = {}
     stdout_guard = contextlib.nullcontext() if io_guarded else hook_safe_stdout()
@@ -192,7 +199,14 @@ def run_hook_coordinated_prune(
             skills_max_tokens=skills_max_tokens,
             skill_out=skill_out,
             pruner_settings=pruner_settings,
+            phase_timer=hook_timer,
         )
 
     prune_result = _merge_hook_prune_results(coordinated.prune_results) if tool_sources else None
-    return prune_result, coordinated.skill_matches, catalog, coordinated.prune_results
+    return (
+        prune_result,
+        coordinated.skill_matches,
+        catalog,
+        coordinated.prune_results,
+        merge_phase_timings(hook_timer),
+    )

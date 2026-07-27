@@ -218,6 +218,7 @@ def llm_skill_nodes_with_trace(
         soft_budget_total=skills_soft_budget,
         config=config,
         settings=settings,
+        selector_kind="skills",
     )
     search_rows: list[SearchItemRow] = []
     for selector_id, meta in metadata.items():

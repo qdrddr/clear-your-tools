@@ -22,6 +22,12 @@ HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
 _last_live_hook_url: tuple[str, float] | None = None
 
 
+def clear_hook_url_cache() -> None:
+    """Drop cached hook URL health (e.g. after HTTP 5xx from inject)."""
+    global _last_live_hook_url
+    _last_live_hook_url = None
+
+
 def hook_url_for_port(port: int) -> str:
     return f"http://{LOCAL_HOST}:{port}{HOOK_INJECT_PATH}"
 
@@ -89,12 +95,38 @@ def _base_port_from_env_or_pidfile() -> int:
     return DEFAULT_PORT
 
 
+def _hook_scan_start_ports() -> list[int]:
+    """Prefer DEFAULT_PORT, then env/pidfile hint, when scanning for hook servers."""
+    starts: list[int] = []
+    seen: set[int] = set()
+    for port in (DEFAULT_PORT, _base_port_from_env_or_pidfile()):
+        if port not in seen:
+            seen.add(port)
+            starts.append(port)
+    return starts
+
+
 def find_hook_server_port(*, max_attempts: int = 100) -> int | None:
-    start = _base_port_from_env_or_pidfile()
-    for attempt in range(max_attempts):
-        port = start + attempt
-        if is_hook_server(fetch_cyt_health(port)):
-            return port
+    for start in _hook_scan_start_ports():
+        for attempt in range(max_attempts):
+            port = start + attempt
+            if is_hook_server(fetch_cyt_health(port)):
+                return port
+    return None
+
+
+def find_hook_server_port_excluding(
+    excluded_port: int | None,
+    *,
+    max_attempts: int = 100,
+) -> int | None:
+    for start in _hook_scan_start_ports():
+        for attempt in range(max_attempts):
+            port = start + attempt
+            if excluded_port is not None and port == excluded_port:
+                continue
+            if is_hook_server(fetch_cyt_health(port)):
+                return port
     return None
 
 
