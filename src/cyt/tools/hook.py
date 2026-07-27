@@ -8,7 +8,6 @@ from typing import Any
 
 from cyt.cloudflare.readiness import cloudflare_hook_catalog_usable
 from cyt.config import (
-    tools_hook_cloudflare_url,
     tools_hook_file_missing,
     tools_hook_sources,
     uses_executor_tool_catalog,
@@ -170,7 +169,6 @@ def _format_gated_source_section(
         return format_cloudflare_source_section(
             gated,
             workspace_paths=workspace_paths,
-            portal_url=tools_hook_cloudflare_url(config),
         )
     if source_id == "executor":
         return format_executor_source_section(gated, workspace_paths=workspace_paths)

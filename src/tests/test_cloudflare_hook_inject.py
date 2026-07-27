@@ -17,15 +17,15 @@ def test_format_cloudflare_source_section() -> None:
                 "input_schema": {"type": "object"},
             },
         ],
-        portal_url="https://mcp.example.com",
     )
     assert section.startswith(
-        "<cloudflare>\nThese tools are invoked via the Cloudflare MCP portal.",
+        "<cloudflare>\nListed below are pre-filtered upstream MCP tools and their relevant definitions,",
     )
-    # assert "Portal URL: https://mcp.example.com/mcp" in section
-    # assert section.index("Portal URL:") < section.index("<tool")
+    assert "Portal URL:" not in section
+    assert "code_mode" in section
+    assert "Do not use `portal_list_servers` unless" in section
+    assert "**all available** MCP servers" in section
     assert "context7_query-docs" in section
-    assert "CF-Access-Client-Id" in section
 
 
 def test_format_multi_source_includes_cloudflare() -> None:
@@ -33,7 +33,6 @@ def test_format_multi_source_includes_cloudflare() -> None:
         {
             "cloudflare": format_cloudflare_source_section(
                 [{"name": "context7_query-docs", "input_schema": {}}],
-                portal_url="https://mcp.example.com",
             ),
         },
     )

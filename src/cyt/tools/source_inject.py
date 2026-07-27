@@ -21,9 +21,11 @@ from cyt.tools.mcpc_inject import (
 )
 
 _CLOUDFLARE_WORKSPACE_NOTE = (
-    "Below are the listed **relevant** upstream MCP Servers and their tools, as previously retrieved via `portal_list_servers`."
-    "Use this information to skip any additional `portal_list_servers` call to use the listed tools directly. "
-    "Use `portal_list_servers` to retrive the full list of MCP Servers."
+    "Listed below are pre-filtered upstream MCP tools and their relevant definitions, previously retrieved via `portal_list_servers`. "
+    "Use this information to skip any additional `portal_list_servers` call and jump to using the listed tools directly or with code_mode. "
+    "Do not use `portal_list_servers` unless one of the following is true:\n"
+    "1. The task explicitly requires the full list of **all available** MCP servers.\n"
+    "2. The task requires tool definitions not included in the pre-filtered tool definitions listed below.\n"
 )
 
 
@@ -31,7 +33,6 @@ def format_cloudflare_source_section(
     tools: list[dict[str, Any]],
     *,
     workspace_paths: list[str] | None = None,
-    portal_url: str = "",
     include_tool_description: bool = True,
 ) -> str:
     if not tools:
@@ -45,8 +46,6 @@ def format_cloudflare_source_section(
         return ""
     body = "\n".join(item_lines)
     prompt = _CLOUDFLARE_WORKSPACE_NOTE
-    # if portal_url.strip():
-    #    prompt = f"{prompt}\nPortal URL: {portal_url.strip().rstrip('/')}/mcp"
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:
         roots = _format_workspace_roots_block(paths)
