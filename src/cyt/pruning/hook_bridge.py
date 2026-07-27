@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from cyt.cloudflare.mcp import filter_excluded_cloudflare_tools
 from cyt.common.phase_timing import PhaseTimer, merge_phase_timings
 from cyt.config import skills_enabled, uses_mcpc_tool_catalog
 from cyt.indexer.build import anthropic_tools_to_catalog_entries
@@ -38,7 +39,9 @@ def _append_mcpc_skill_resource_entries(
 def _hook_tool_sources(catalog: list[dict[str, Any]], config: dict[str, Any]) -> list[ToolSource]:
     by_source = {
         "mcpc": [tool for tool in catalog if tool.get("cyt_catalog_source") == "mcpc"],
-        "cloudflare": [tool for tool in catalog if tool.get("cyt_catalog_source") == "cloudflare"],
+        "cloudflare": filter_excluded_cloudflare_tools(
+            [tool for tool in catalog if tool.get("cyt_catalog_source") == "cloudflare"],
+        ),
         "executor": [tool for tool in catalog if tool.get("cyt_catalog_source") == "executor"],
         "definitions": [
             tool for tool in catalog if tool.get("cyt_catalog_source") == "definitions"

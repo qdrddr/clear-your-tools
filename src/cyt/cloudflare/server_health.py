@@ -186,6 +186,8 @@ def eligible_server_ids(slug: str, *, config: dict[str, Any] | None = None) -> s
         snapshot = _health_states.get(slug)
         if snapshot is None or not snapshot.loaded:
             return None
+        if not snapshot.servers:
+            return None
         gated = gated_servers(slug)
         return {key.server_id for key in snapshot.enabled_servers if key not in gated}
 

@@ -66,6 +66,53 @@ def test_disk_catalog_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert envelope["tools"][0]["name"] == "context7_query-docs"
 
 
+def test_load_catalog_from_disk_filters_excluded_portal_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.cloudflare.catalog import (
+        _cache_key_for_config,
+        _get_state,
+        clear_cloudflare_catalog_cache,
+        load_cloudflare_catalog_from_disk,
+    )
+    from cyt.cloudflare.mcp import EXCLUDED_TOOL_NAMES
+
+    monkeypatch.setattr(
+        "cyt.cloudflare.catalog_disk._CLOUDFLARE_CATALOG_CACHE_DIR",
+        tmp_path,
+    )
+    clear_cloudflare_catalog_cache()
+    tools = [
+        {"name": "context7_query-docs", "input_schema": {}},
+        {"name": "portal_list_servers", "input_schema": {}},
+    ]
+    write_disk_catalog(
+        "https___mcp.example.com",
+        portal_url="https://mcp.example.com",
+        tools=tools,
+        content_hash=raw_catalog_content_hash(tools),
+    )
+    config = {
+        "pruning": {
+            "inject_via": "hook",
+            "tools": {
+                "enabled": True,
+                "hook": {
+                    "tools_from": ["cloudflare"],
+                    "cloudflare_url": "https://mcp.example.com/mcp",
+                },
+            },
+        },
+    }
+    assert load_cloudflare_catalog_from_disk(config) is True
+    cache_key = _cache_key_for_config(config)
+    state = _get_state(cache_key)
+    names = {tool["name"] for tool in state.tools}
+    assert names == {"context7_query-docs"}
+    assert not names & EXCLUDED_TOOL_NAMES
+
+
 def test_required_tools_hook_env_var_names_cloudflare() -> None:
     config = {
         "pruning": {

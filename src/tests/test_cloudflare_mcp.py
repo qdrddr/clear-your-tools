@@ -9,6 +9,7 @@ from cyt.cloudflare.mcp import (
     _access_headers,
     cloudflare_portal_base_url,
     fetch_cloudflare_tools_list_async,
+    filter_excluded_cloudflare_tools,
     infer_server_id_from_tool_name,
     normalize_cloudflare_tool,
     normalize_cloudflare_tools,
@@ -44,6 +45,17 @@ def test_normalize_cloudflare_tools_drops_all_excluded() -> None:
     assert tools[0]["name"] == "deepwiki_ask_question"
 
 
+def test_filter_excluded_cloudflare_tools_drops_portal_admin_tools() -> None:
+    tools = filter_excluded_cloudflare_tools(
+        [
+            {"name": "context7_query-docs", "input_schema": {}},
+            {"name": "portal_list_servers", "input_schema": {}},
+            {"name": "portal_codemode_execute", "input_schema": {}},
+        ],
+    )
+    assert [tool["name"] for tool in tools] == ["context7_query-docs"]
+
+
 def test_infer_server_id_from_tool_name() -> None:
     assert infer_server_id_from_tool_name("context7_query-docs") == "context7"
     assert infer_server_id_from_tool_name("single") == ""
@@ -63,6 +75,31 @@ def test_parse_portal_list_servers_result_from_text_content() -> None:
     assert servers[0]["id"] == "context7"
     assert servers[0]["enabled"] is True
     assert servers[1]["enabled"] is False
+
+
+def test_parse_portal_list_servers_result_from_human_readable_text() -> None:
+    result = {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    "Available MCP Servers:\n\n"
+                    "- cloudflare-docs (cloudflare-docs): \u2713 enabled\n"
+                    "- context7 (context7): \u2713 enabled\n"
+                    "- deepwiki (deepwiki): \u2717 disabled\n"
+                ),
+            },
+        ],
+    }
+    servers = parse_portal_list_servers_result(result)
+    assert [server["id"] for server in servers] == [
+        "cloudflare-docs",
+        "context7",
+        "deepwiki",
+    ]
+    assert servers[0]["enabled"] is True
+    assert servers[1]["enabled"] is True
+    assert servers[2]["enabled"] is False
 
 
 def test_access_headers_use_resolved_credential_values() -> None:

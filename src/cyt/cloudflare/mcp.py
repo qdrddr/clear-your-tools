@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -25,6 +26,13 @@ EXCLUDED_TOOL_NAMES = frozenset(
         "agw_reselect_servers",
     },
 )
+
+
+def filter_excluded_cloudflare_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop Cloudflare portal admin tools that must not enter pruning or hook injection."""
+    return [
+        tool for tool in tools if str(tool.get("name") or "").strip() not in EXCLUDED_TOOL_NAMES
+    ]
 
 
 def cloudflare_portal_base_url(portal_url: str) -> str:
@@ -293,6 +301,25 @@ def parse_portal_list_servers_result(result: dict[str, Any]) -> list[dict[str, A
     return _normalize_portal_server_records(servers_raw)
 
 
+_PORTAL_LIST_SERVER_LINE = re.compile(r"^\s*-\s+[^(]+\(([^)]+)\):\s*(.+)$")
+
+
+def _parse_portal_list_servers_text(text: str) -> list[dict[str, Any]]:
+    """Parse human-readable ``portal_list_servers`` text into server records."""
+    servers: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        match = _PORTAL_LIST_SERVER_LINE.match(line.strip())
+        if not match:
+            continue
+        server_id = match.group(1).strip()
+        if not server_id:
+            continue
+        status = match.group(2).strip().lower()
+        enabled = "enabled" in status and "disabled" not in status
+        servers.append({"id": server_id, "enabled": enabled, "name": server_id})
+    return servers
+
+
 def _portal_list_payloads(result: dict[str, Any]) -> list[Any]:
     payloads: list[Any] = []
     content = result.get("content")
@@ -323,6 +350,8 @@ def _portal_list_servers_raw(payloads: list[Any], result: dict[str, Any]) -> lis
                 servers_raw.extend(servers)
         elif isinstance(payload, list):
             servers_raw.extend(payload)
+        elif isinstance(payload, str):
+            servers_raw.extend(_parse_portal_list_servers_text(payload))
     if servers_raw:
         return servers_raw
     servers = result.get("servers")

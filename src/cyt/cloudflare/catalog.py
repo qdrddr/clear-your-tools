@@ -20,6 +20,7 @@ from cyt.cloudflare.mcp import (
     cloudflare_portal_base_url,
     fetch_cloudflare_tools_list_async,
     fetch_portal_list_servers_async,
+    filter_excluded_cloudflare_tools,
 )
 from cyt.cloudflare.runtime import (
     load_config,
@@ -117,15 +118,19 @@ def _apply_catalog_to_state(
     *,
     content_hash: str,
     config: dict[str, Any] | None = None,
-) -> None:
+) -> list[dict[str, Any]]:
+    filtered = filter_excluded_cloudflare_tools(tools)
+    if len(filtered) != len(tools):
+        content_hash = raw_catalog_content_hash(filtered)
     with _catalog_lock:
-        state.tools = tools
+        state.tools = filtered
         state.updated_at = time.monotonic()
         state.catalog_content_hash = content_hash
     if config is not None:
         from cyt.tools.master_cache_scheduler import schedule_master_catalog_refresh
 
         schedule_master_catalog_refresh(config)
+    return filtered
 
 
 def _resolve_access_credentials(
@@ -203,12 +208,11 @@ def _load_catalog_from_disk(
     tools = envelope.get("tools")
     if not isinstance(tools, list):
         return False
-    content_hash = str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(tools))
     state = _get_state(cache_key)
-    _apply_catalog_to_state(
+    filtered = _apply_catalog_to_state(
         state,
         copy.deepcopy(tools),
-        content_hash=content_hash,
+        content_hash=str(envelope.get("catalog_content_hash") or raw_catalog_content_hash(tools)),
         config=config,
     )
     load_server_health_from_disk(
@@ -221,8 +225,8 @@ def _load_catalog_from_disk(
     logger.info(
         "cloudflare catalog disk_hit slug=%s catalog_content_hash=%s tool_count=%d",
         cache_key.slug,
-        content_hash[:12],
-        len(tools),
+        state.catalog_content_hash[:12],
+        len(filtered),
     )
     return True
 
@@ -280,8 +284,8 @@ def _blocking_network_fetch(
             config=cfg,
         )
     content_hash = raw_catalog_content_hash(tools)
-    _apply_catalog_to_state(state, tools, content_hash=content_hash, config=cfg)
-    _write_catalog_disk(cache_key, tools=tools, config=cfg)
+    filtered = _apply_catalog_to_state(state, tools, content_hash=content_hash, config=cfg)
+    _write_catalog_disk(cache_key, tools=filtered, config=cfg)
     _ensure_scheduler_started(cfg)
     return _return_catalog(
         copy.deepcopy(tools),

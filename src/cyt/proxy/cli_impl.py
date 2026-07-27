@@ -756,6 +756,16 @@ def _dispatch_launch_command(args: argparse.Namespace) -> bool:
     return True
 
 
+_HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
+    "skills": ("skills_handler", "usage: cyt skills budget [--config PATH]"),
+    "executor": ("executor_handler", "usage: cyt executor save [--file PATH] [--config PATH]"),
+    "cloudflare": (
+        "cloudflare_handler",
+        "usage: cyt cloudflare save [--file PATH] [--config PATH]",
+    ),
+}
+
+
 def _dispatch_cli_command(args: argparse.Namespace) -> bool:
     """Run a named subcommand. Returns True when handled."""
     if args.command == "stats":
@@ -780,21 +790,16 @@ def _dispatch_cli_command(args: argparse.Namespace) -> bool:
         run_client()
         return True
 
-    if args.command == "skills":
-        handler = getattr(args, "skills_handler", None)
+    handler_command = _HANDLER_COMMANDS.get(args.command or "")
+    if handler_command is not None:
+        handler_attr, usage = handler_command
+        handler = getattr(args, handler_attr, None)
         if handler is None:
-            raise SystemExit("usage: cyt skills budget [--config PATH]")
+            raise SystemExit(usage)
         handler(args)
         return True
 
     if _dispatch_launch_command(args):
-        return True
-
-    if args.command == "executor":
-        handler = getattr(args, "executor_handler", None)
-        if handler is None:
-            raise SystemExit("usage: cyt executor save [--file PATH] [--config PATH]")
-        handler(args)
         return True
 
     return False
