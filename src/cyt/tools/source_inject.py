@@ -21,8 +21,9 @@ from cyt.tools.mcpc_inject import (
 )
 
 _CLOUDFLARE_WORKSPACE_NOTE = (
-    "Below are the listed relevant upstream MCP Servers and their tools using `portal_list_servers` in the Cloudflare MCP portal. "
-    "Use this to skip portal_list_servers call to use the tools directly. "
+    "Below are the listed **relevant** upstream MCP Servers and their tools, as previously retrieved via `portal_list_servers`."
+    "Use this information to skip any additional `portal_list_servers` call to use the listed tools directly. "
+    "Use `portal_list_servers` to retrive the full list of MCP Servers."
 )
 
 
