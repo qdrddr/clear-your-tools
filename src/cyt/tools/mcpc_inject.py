@@ -11,10 +11,11 @@ from cyt.tools.inject import _xml_single_quoted_attr, ensure_agent_tools_starts_
 from cyt.tools.serialize import minimize_json_single_quotes
 
 _MCPC_WORKSPACE_NOTE = (
-    "Use these tools via the MCPC CLI, not the MCP Server. Unless noted otherwise, pass the current project's "
-    "workspace_roots/path as the repository cwd dir. Do not call these tools through the MCP protocol. "
+    "Use these tools via the MCPC CLI, not the MCP Server or MCP protocol. "
     'Instead, run echo \'{"key":"value"}\' | mcpc @session tools-call {tool_name} with JSON matching '
-    "the provided input schema"
+    "the provided input schema. "
+    "Unless noted otherwise, pass the current project's workspace_roots/path as the repository cwd dir. "
+    "You may generate a shell script that runs multiple mcpc commands at once."
 )
 
 _AGENT_TOOLS_DESCRIPTION = (
