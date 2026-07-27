@@ -46,8 +46,8 @@ def format_cloudflare_source_section(
         return ""
     body = "\n".join(item_lines)
     prompt = _CLOUDFLARE_WORKSPACE_NOTE
-    if portal_url.strip():
-        prompt = f"{prompt}\nPortal URL: {portal_url.strip().rstrip('/')}/mcp"
+    # if portal_url.strip():
+    #    prompt = f"{prompt}\nPortal URL: {portal_url.strip().rstrip('/')}/mcp"
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) > 1:
         roots = _format_workspace_roots_block(paths)
