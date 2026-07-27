@@ -1,4 +1,5 @@
 $kind: http-request
+name: 01 - mcp - POST initialize
 url: "{{mcp_url_mcp}}"
 method: POST
 auth:

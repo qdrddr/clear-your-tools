@@ -37,6 +37,7 @@ def _deterministic_indexer_cache() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
+    from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache
     from cyt.executor.http import clear_executor_catalog_cache
     from cyt.mcpc.catalog import clear_mcpc_catalog_cache
     from cyt.tools.catalog_cache import clear_decomposed_catalog_cache
@@ -59,11 +60,16 @@ def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
         lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(
+        "cyt.cloudflare.cache_scheduler.start_cloudflare_cache_scheduler",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
         "cyt.tools.definitions_cache_scheduler.start_definitions_cache_scheduler",
         lambda *args, **kwargs: None,
     )
 
     def _clear_all_hook_catalog_state() -> None:
+        clear_cloudflare_catalog_cache()
         clear_executor_catalog_cache()
         clear_mcpc_catalog_cache()
         clear_master_catalog_cache()

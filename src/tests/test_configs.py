@@ -285,6 +285,86 @@ def test_required_tools_hook_env_var_names_definitions_mode(
     assert configs.required_tools_hook_env_var_names(config) == []
 
 
+def test_required_tools_hook_env_var_names_cloudflare_mode(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
+
+    assert configs.required_tools_hook_env_var_names(config) == [
+        "CF_ACCESS_CLIENT_ID",
+        "CF_ACCESS_CLIENT_SECRET",
+    ]
+
+
+def test_required_tools_hook_env_var_names_cloudflare_custom_var_names(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "MY_CF_ID"
+    config["pruning"]["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
+        "MY_CF_SECRET"  # pragma: allowlist secret
+    )
+
+    assert configs.required_tools_hook_env_var_names(config) == ["MY_CF_ID", "MY_CF_SECRET"]
+
+
+def test_required_tools_hook_env_var_names_executor_and_cloudflare_dedupes(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["executor", "cloudflare"]
+    config["pruning"]["tools"]["hook"]["executor_token_var"] = "SHARED_TOKEN"
+    config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "SHARED_TOKEN"
+    config["pruning"]["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
+        "CF_SECRET"  # pragma: allowlist secret
+    )
+
+    assert configs.required_tools_hook_env_var_names(config) == [
+        "SHARED_TOKEN",
+        "CF_SECRET",
+    ]
+
+
+def test_tools_hook_cloudflare_helpers(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    assert configs.tools_hook_cloudflare_url(config) == ""
+    assert configs.tools_hook_cloudflare_access_client_id_var(config) == "CF_ACCESS_CLIENT_ID"
+    assert (
+        configs.tools_hook_cloudflare_access_client_secret_var(config) == "CF_ACCESS_CLIENT_SECRET"
+    )
+    assert configs.tools_hook_cloudflare_configured(config) is False
+    assert configs.uses_cloudflare_tool_catalog(config) is False
+
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com/mcp/"
+    assert configs.tools_hook_cloudflare_url(config) == "https://mcp.example.com/mcp"
+    assert configs.tools_hook_cloudflare_configured(config) is True
+    assert configs.uses_cloudflare_tool_catalog(config) is True
+
+
+def test_tools_hook_cloudflare_source_usable_without_credentials(
+    isolated_config_paths: dict[str, Path],
+) -> None:
+    config = configs.load_config()
+    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
+
+    assert configs.tools_hook_file_missing(config) is False
+
+    config["pruning"]["tools"]["hook"]["cloudflare_url"] = ""
+    assert configs.tools_hook_file_missing(config) is True
+
+
 def test_tools_hook_tools_from_accepts_legacy_client_alias(
     isolated_config_paths: dict[str, Path],
 ) -> None:

@@ -1220,6 +1220,36 @@ async def _proxy_request(
     )
 
 
+def _configure_proxy_startup(config: dict[str, Any], *, debug: bool) -> None:
+    from cyt.cache import schedule_warm_caches
+    from cyt.config import uses_cloudflare_tool_catalog, uses_executor_tool_catalog
+    from cyt.executor.cache_scheduler import start_executor_cache_scheduler
+    from cyt.executor.connection_health import set_executor_debug_disk
+
+    set_executor_debug_disk(debug)
+    schedule_warm_caches(config)
+    if uses_executor_tool_catalog(config):
+        start_executor_cache_scheduler(config, allow_prompt=False)
+    if uses_cloudflare_tool_catalog(config):
+        from cyt.cloudflare.cache_scheduler import start_cloudflare_cache_scheduler
+
+        start_cloudflare_cache_scheduler(config, allow_prompt=False)
+
+
+def _catalog_health_payload(cyt_config: dict[str, Any]) -> dict[str, Any]:
+    from cyt.config import uses_cloudflare_tool_catalog, uses_executor_tool_catalog
+    from cyt.executor.http import executor_catalog_health_snapshot
+
+    payload: dict[str, Any] = {}
+    if uses_executor_tool_catalog(cyt_config):
+        payload.update(executor_catalog_health_snapshot(cyt_config))
+    if uses_cloudflare_tool_catalog(cyt_config):
+        from cyt.cloudflare.catalog import cloudflare_catalog_health_snapshot
+
+        payload.update(cloudflare_catalog_health_snapshot(cyt_config))
+    return payload
+
+
 def create_app(
     routes: dict[str, tuple[str, str | None]],
     pruning_pipeline: list[str] | None = None,
@@ -1254,13 +1284,7 @@ def create_app(
         app.state.pruner_settings = pruner_settings
         if config is not None:
             app.state.cyt_config = config
-            from cyt.cache import schedule_warm_caches
-            from cyt.executor.cache_scheduler import start_executor_cache_scheduler
-            from cyt.executor.connection_health import set_executor_debug_disk
-
-            set_executor_debug_disk(debug)
-            schedule_warm_caches(config)
-            start_executor_cache_scheduler(config, allow_prompt=False)
+            _configure_proxy_startup(config, debug=debug)
         try:
             yield
         finally:
@@ -1279,11 +1303,7 @@ def create_app(
             payload["agent"] = launch_agent
         cyt_config: dict[str, Any] | None = getattr(request.app.state, "cyt_config", None)
         if cyt_config is not None:
-            from cyt.config import uses_executor_tool_catalog
-            from cyt.executor.http import executor_catalog_health_snapshot
-
-            if uses_executor_tool_catalog(cyt_config):
-                payload.update(executor_catalog_health_snapshot(cyt_config))
+            payload.update(_catalog_health_payload(cyt_config))
         return JSONResponse(payload)
 
     from cyt.hook.http_server import hook_inject

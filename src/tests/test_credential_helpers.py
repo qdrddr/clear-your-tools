@@ -12,6 +12,8 @@ from cyt import config as configs
 CI_CREDENTIAL_STUBS: dict[str, str] = {
     "DEEPINFRA_API_KEY": "test-ci-stub",  # pragma: allowlist secret
     "EXECUTOR_TOKEN": "test-ci-stub",  # pragma: allowlist secret
+    "CF_ACCESS_CLIENT_ID": "test-ci-stub",  # pragma: allowlist secret
+    "CF_ACCESS_CLIENT_SECRET": "test-ci-stub",  # pragma: allowlist secret
     "OPENROUTER_API_KEY": "test-ci-stub",  # pragma: allowlist secret
 }
 

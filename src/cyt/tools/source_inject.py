@@ -20,6 +20,42 @@ from cyt.tools.mcpc_inject import (
     compute_mcpc_pre_exposure_flags,
 )
 
+_CLOUDFLARE_WORKSPACE_NOTE = (
+    "These tools are invoked via the Cloudflare MCP portal. Use JSON-RPC tools/call against "
+    "the configured portal /mcp endpoint with CF-Access-Client-Id and CF-Access-Client-Secret "
+    "headers and an MCP session (initialize, then notifications/initialized, then call with "
+    "mcp-session-id)."
+)
+
+
+def format_cloudflare_source_section(
+    tools: list[dict[str, Any]],
+    *,
+    workspace_paths: list[str] | None = None,
+    portal_url: str = "",
+    include_tool_description: bool = True,
+) -> str:
+    if not tools:
+        return ""
+    item_lines = [
+        line
+        for tool in tools
+        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
+    ]
+    if not item_lines:
+        return ""
+    body = "\n".join(item_lines)
+    prompt = _CLOUDFLARE_WORKSPACE_NOTE
+    if portal_url.strip():
+        prompt = f"{prompt}\nPortal URL: {portal_url.strip().rstrip('/')}/mcp"
+    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    if len(paths) > 1:
+        roots = _format_workspace_roots_block(paths)
+        if roots:
+            prompt = f"{prompt}\n{roots}"
+    return _join_section(prompt, "cloudflare", body)
+
+
 _DEFINITIONS_WORKSPACE_NOTE = (
     "These tools come from the static definitions file configured for hook injection. "
     "Use the current project's workspace_roots as the working directory when relevant."
@@ -130,6 +166,7 @@ def format_multi_source_agent_tools(
     """Join non-empty source sections inside one ``<agent-tools>`` wrapper."""
     ordered = [
         sections.get("mcpc", "").strip(),
+        sections.get("cloudflare", "").strip(),
         sections.get("executor", "").strip(),
         sections.get("definitions", "").strip(),
     ]
@@ -138,7 +175,7 @@ def format_multi_source_agent_tools(
         return ""
     description = (
         f"{_AGENT_TOOLS_DESCRIPTION_BASE} Multiple tool sources are grouped in "
-        "<mcpc>, <executor>, and <definitions> sections."
+        "<mcpc>, <cloudflare>, <executor>, and <definitions> sections."
     )
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     attrs = [f"description='{_xml_single_quoted_attr(description)}'"]

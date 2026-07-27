@@ -126,10 +126,18 @@ DEFAULT_TOOLS_ENABLED: bool = True
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "mcpc"
 DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST: list[str] = ["mcpc"]
-VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset({"executor", "definitions", "mcpc"})
+VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset(
+    {"executor", "definitions", "mcpc", "cloudflare"},
+)
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
+DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL: str = ""
+DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR: str = "CF_ACCESS_CLIENT_ID"
+DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR: str = "CF_ACCESS_CLIENT_SECRET"
 DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
+DEFAULT_CLOUDFLARE_CACHE_CATALOG_REFRESH_SECONDS: float = 120.0
+DEFAULT_CLOUDFLARE_CACHE_SERVER_HEALTH_REFRESH_SECONDS: float = 120.0
+DEFAULT_CLOUDFLARE_CACHE_DISK_FLUSH_SECONDS: float = 900.0
 DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED: bool = True
 DEFAULT_CONNECTION_HEALTH_FLAPPING_WINDOW_SIZE: int = 12
 DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_DEGRADED: int = 1
@@ -159,7 +167,7 @@ DEFAULT_SELECTOR_BULK_MAX_TOKENS: int = 32000
 DEFAULT_MAX_PRUNE_BATCH_WORKERS: int = 5
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
-ToolsHookSource = Literal["executor", "definitions", "mcpc"]
+ToolsHookSource = Literal["executor", "definitions", "mcpc", "cloudflare"]
 
 
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -201,6 +209,13 @@ _DEFAULTS: dict[str, Any] = {
                 "tools_from": list(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST),
                 "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
                 "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
+                "cloudflare_url": DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
+                "cloudflare_access_client_id_var": (
+                    DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR
+                ),
+                "cloudflare_access_client_secret_var": (
+                    DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR
+                ),
                 "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
                 "mcpc": {
                     "executable": DEFAULT_MCPC_EXECUTABLE,
@@ -226,6 +241,13 @@ _DEFAULTS: dict[str, Any] = {
                         DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS
                     ),
                     "disk_flush_seconds": DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS,
+                },
+                "cloudflare_cache": {
+                    "catalog_refresh_seconds": (DEFAULT_CLOUDFLARE_CACHE_CATALOG_REFRESH_SECONDS),
+                    "server_health_refresh_seconds": (
+                        DEFAULT_CLOUDFLARE_CACHE_SERVER_HEALTH_REFRESH_SECONDS
+                    ),
+                    "disk_flush_seconds": DEFAULT_CLOUDFLARE_CACHE_DISK_FLUSH_SECONDS,
                 },
                 "connection_health": {
                     "flapping": {
@@ -1147,6 +1169,8 @@ def _normalize_tools_hook_source(value: str) -> ToolsHookSource | None:
         return "mcpc"
     if mode in {"executor", "client"}:
         return "executor"
+    if mode == "cloudflare":
+        return "cloudflare"
     return None
 
 
@@ -1212,6 +1236,58 @@ def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
     )
     text = str(value).strip()
     return text or DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR
+
+
+def tools_hook_cloudflare_url(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "cloudflare_url",
+        DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
+    )
+    return str(value).strip().rstrip("/")
+
+
+def tools_hook_cloudflare_access_client_id_var(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "cloudflare_access_client_id_var",
+        DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR
+
+
+def tools_hook_cloudflare_access_client_secret_var(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_settings(_merged_config(cfg)).get(
+        "cloudflare_access_client_secret_var",
+        DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR
+
+
+def tools_hook_cloudflare_configured(config: dict[str, Any] | None = None) -> bool:
+    return bool(tools_hook_cloudflare_url(config))
+
+
+def tools_hook_cloudflare_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = config or load_config()
+    hook = _tools_hook_settings(_merged_config(cfg))
+    cache = hook.get("cloudflare_cache")
+    if not isinstance(cache, dict):
+        cache = {}
+    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["cloudflare_cache"]
+    return deep_merge(defaults, cache)
+
+
+def uses_cloudflare_tool_catalog(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return (
+        tools_enabled(cfg)
+        and tools_inject_via(cfg) == "hook"
+        and "cloudflare" in tools_hook_sources(cfg)
+    )
 
 
 def tools_hook_executor_configured(config: dict[str, Any] | None = None) -> bool:
@@ -1338,6 +1414,8 @@ def _tools_hook_source_usable(source: ToolsHookSource, config: dict[str, Any]) -
         return tools_hook_executor_configured(config)
     if source == "mcpc":
         return True
+    if source == "cloudflare":
+        return tools_hook_cloudflare_configured(config)
     return resolved_tools_hook_file(config).is_file()
 
 
@@ -1359,9 +1437,14 @@ def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> l
         return []
     if tools_inject_via(cfg) != "hook":
         return []
-    if "executor" not in tools_hook_sources(cfg):
-        return []
-    return [tools_hook_executor_token_var(cfg)]
+    names: list[str] = []
+    sources = tools_hook_sources(cfg)
+    if "executor" in sources:
+        names.append(tools_hook_executor_token_var(cfg))
+    if "cloudflare" in sources:
+        names.append(tools_hook_cloudflare_access_client_id_var(cfg))
+        names.append(tools_hook_cloudflare_access_client_secret_var(cfg))
+    return list(dict.fromkeys(names))
 
 
 def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from cyt.agents._types import CYT_LAUNCH_AGENT_ENV, AgentName
+from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
 from cyt.config import (
     inject_via,
     load_config,
@@ -1235,6 +1236,7 @@ def run_hook_setup(
     resolved_config_path = resolve_setup_config_path(config_path)
     config = load_config(config_path)
     report_mcpc_hook_readiness(config)
+    report_cloudflare_hook_readiness(config)
     if len(selected_agents) == 1:
         print(f"CYT hook setup ({selected_agents[0]})\n")
     else:

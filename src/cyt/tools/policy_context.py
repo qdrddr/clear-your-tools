@@ -62,17 +62,38 @@ def prepare_hook_executor_tool_pruning(
         return None
 
 
+def prepare_hook_cloudflare_tool_pruning(
+    config: dict[str, Any] | None,
+    *contexts: PolicyContext,
+) -> None:
+    from cyt.config import load_config, uses_cloudflare_tool_catalog
+
+    cfg = config or load_config()
+    if not uses_cloudflare_tool_catalog(cfg):
+        return
+    for ctx in contexts:
+        if ctx is not None:
+            apply_executor_tool_kind(ctx, "mcp")
+
+
 def prepare_hook_tool_pruning(
     config: dict[str, Any] | None,
     *contexts: PolicyContext | None,
 ) -> dict[str, Any] | None:
     """Classify hook catalog tools as MCP; warm executor transport cache when applicable."""
-    from cyt.config import load_config, uses_executor_tool_catalog, uses_mcpc_tool_catalog
+    from cyt.config import (
+        load_config,
+        uses_cloudflare_tool_catalog,
+        uses_executor_tool_catalog,
+        uses_mcpc_tool_catalog,
+    )
 
     cfg = config or load_config()
     executor_cache: dict[str, Any] | None = None
     if uses_mcpc_tool_catalog(cfg):
         prepare_hook_mcpc_tool_pruning(cfg, *contexts)
+    if uses_cloudflare_tool_catalog(cfg):
+        prepare_hook_cloudflare_tool_pruning(cfg, *contexts)
     if uses_executor_tool_catalog(cfg):
         executor_cache = prepare_hook_executor_tool_pruning(cfg, *contexts)
     return executor_cache

@@ -6,7 +6,9 @@ import contextlib
 import logging
 from typing import Any
 
+from cyt.cloudflare.readiness import cloudflare_hook_catalog_usable
 from cyt.config import (
+    tools_hook_cloudflare_url,
     tools_hook_file_missing,
     tools_hook_sources,
     uses_executor_tool_catalog,
@@ -39,6 +41,7 @@ from cyt.tools.inject import format_agent_tools, injection_token_count
 from cyt.tools.mcpc_inject import format_mcpc_agent_tools
 from cyt.tools.mcpc_prune import split_mcpc_prune_result
 from cyt.tools.source_inject import (
+    format_cloudflare_source_section,
     format_definitions_source_section,
     format_executor_source_section,
     format_mcp_source_section,
@@ -52,6 +55,8 @@ logger = logging.getLogger(__name__)
 def _catalog_kind_for_source_id(source_id: str) -> CatalogKind:
     if source_id == "mcpc":
         return "mcpc"
+    if source_id == "cloudflare":
+        return "cloudflare"
     if source_id == "definitions":
         return "definitions"
     return "executor"
@@ -98,6 +103,7 @@ def _partition_tools_by_source(
         return None
     return {
         "mcpc": [tool for tool in tools if tool.get("cyt_catalog_source") == "mcpc"],
+        "cloudflare": [tool for tool in tools if tool.get("cyt_catalog_source") == "cloudflare"],
         "executor": [tool for tool in tools if tool.get("cyt_catalog_source") == "executor"],
         "definitions": [tool for tool in tools if tool.get("cyt_catalog_source") == "definitions"],
     }
@@ -148,6 +154,7 @@ def _format_gated_source_section(
     source_id: str,
     gated: list[dict[str, Any]],
     *,
+    config: dict[str, Any],
     workspace_paths: list[str],
     combined_text: str,
     surviving_instruction_sessions: set[str] | None,
@@ -158,6 +165,12 @@ def _format_gated_source_section(
             workspace_paths=workspace_paths,
             session_text=combined_text,
             surviving_instruction_sessions=surviving_instruction_sessions,
+        )
+    if source_id == "cloudflare":
+        return format_cloudflare_source_section(
+            gated,
+            workspace_paths=workspace_paths,
+            portal_url=tools_hook_cloudflare_url(config),
         )
     if source_id == "executor":
         return format_executor_source_section(gated, workspace_paths=workspace_paths)
@@ -195,6 +208,7 @@ def _gate_and_build_source_sections(
         section = _format_gated_source_section(
             source_id,
             gated,
+            config=config,
             workspace_paths=workspace_paths,
             combined_text=combined_text,
             surviving_instruction_sessions=surviving_sessions,
@@ -330,6 +344,21 @@ def _skipped_mcpc_unavailable_outcome(
     return "skipped_mcpc_unavailable", {}, ""
 
 
+def _skipped_cloudflare_unavailable_outcome(
+    config: dict[str, Any],
+    *,
+    debug: bool,
+) -> tuple[str, dict[str, Any], str] | None:
+    sources = tools_hook_sources(config)
+    if len(sources) != 1 or sources[0] != "cloudflare":
+        return None
+    if cloudflare_hook_catalog_usable(config):
+        return None
+    if debug:
+        return "skipped_cloudflare_unavailable", {"catalog_tool_count": 0}, ""
+    return "skipped_cloudflare_unavailable", {}, ""
+
+
 def _hook_tools_preflight_outcome(
     config: dict[str, Any],
     *,
@@ -343,7 +372,13 @@ def _hook_tools_preflight_outcome(
         if debug:
             return "skipped_missing_tools_catalog", details, ""
         return "skipped_missing_tools_catalog", {}, ""
-    return _skipped_mcpc_unavailable_outcome(config, debug=debug)
+    return _skipped_cloudflare_unavailable_outcome(
+        config,
+        debug=debug,
+    ) or _skipped_mcpc_unavailable_outcome(
+        config,
+        debug=debug,
+    )
 
 
 def handle_user_prompt_tools(

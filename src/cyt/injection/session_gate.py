@@ -31,6 +31,8 @@ def _tool_catalog_kind(tool: dict[str, Any], config: dict[str, Any]) -> CatalogK
     source = str(tool.get("cyt_catalog_source") or "").strip()
     if source == "mcpc":
         return "mcpc"
+    if source == "cloudflare":
+        return "cloudflare"
     if source == "executor":
         return "executor"
     if source == "definitions":

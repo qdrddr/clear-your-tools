@@ -21,7 +21,7 @@ from cyt.skills.search import MatchedSkill, eligible_skills_after_gate
 from cyt.tools.mcpc_prune import mcpc_tools_to_catalog_entries
 from cyt.tools.registry import load_tool_catalog
 
-_SOURCE_ORDER = ("mcpc", "executor", "definitions")
+_SOURCE_ORDER = ("mcpc", "cloudflare", "executor", "definitions")
 
 
 def _append_mcpc_skill_resource_entries(
@@ -38,6 +38,7 @@ def _append_mcpc_skill_resource_entries(
 def _hook_tool_sources(catalog: list[dict[str, Any]], config: dict[str, Any]) -> list[ToolSource]:
     by_source = {
         "mcpc": [tool for tool in catalog if tool.get("cyt_catalog_source") == "mcpc"],
+        "cloudflare": [tool for tool in catalog if tool.get("cyt_catalog_source") == "cloudflare"],
         "executor": [tool for tool in catalog if tool.get("cyt_catalog_source") == "executor"],
         "definitions": [
             tool for tool in catalog if tool.get("cyt_catalog_source") == "definitions"

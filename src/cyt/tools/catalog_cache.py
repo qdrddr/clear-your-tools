@@ -17,7 +17,7 @@ from cyt_core.types import CatalogSnapshot
 
 logger = logging.getLogger(__name__)
 
-BulkId = str  # "mcpc" | "executor" | "definitions"
+BulkId = str  # "mcpc" | "executor" | "definitions" | "cloudflare"
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,10 @@ def bulk_content_fingerprint(bulk_id: BulkId, config: dict[str, Any] | None = No
         from cyt.mcpc.catalog import mcpc_catalog_fingerprint
 
         return mcpc_catalog_fingerprint(cfg)
+    if bulk_id == "cloudflare":
+        from cyt.cloudflare.catalog import cloudflare_catalog_fingerprint
+
+        return cloudflare_catalog_fingerprint(cfg)
     return ""
 
 
@@ -315,6 +319,10 @@ def schedule_decomposed_catalog_refresh_for_sources(
             from cyt.mcpc.catalog import get_mcpc_catalog
 
             tools = get_mcpc_catalog(config, blocking=False)
+        elif source == "cloudflare":
+            from cyt.cloudflare.catalog import get_cloudflare_catalog
+
+            tools = get_cloudflare_catalog(config, blocking=False)
         if not tools:
             continue
         if source == "mcpc":

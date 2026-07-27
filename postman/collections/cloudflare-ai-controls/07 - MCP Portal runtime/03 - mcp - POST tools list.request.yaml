@@ -1,4 +1,5 @@
 $kind: http-request
+name: 03 - mcp - POST tools list
 url: "{{mcp_url_mcp}}"
 method: POST
 auth:

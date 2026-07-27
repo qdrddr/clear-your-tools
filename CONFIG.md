@@ -466,9 +466,12 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
 | Key | Values | Default |
 | --- | ------ | ------- |
 | `pruning.tools.inject_via` | `proxy` \| `hook` | `proxy` |
-| `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `mcpc` (scalar or YAML list) | `[mcpc]` |
+| `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `mcpc` \| `cloudflare` (scalar or YAML list) | `[mcpc]` |
 | `pruning.tools.hook.executor_url` | URL | `http://localhost:4789` |
 | `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
+| `pruning.tools.hook.cloudflare_url` | Cloudflare MCP portal URL (base or `/mcp` suffix) | `""` (user must set) |
+| `pruning.tools.hook.cloudflare_access_client_id_var` | env var name for CF Access client ID | `CF_ACCESS_CLIENT_ID` |
+| `pruning.tools.hook.cloudflare_access_client_secret_var` | env var name for CF Access client secret | `CF_ACCESS_CLIENT_SECRET` |
 | `pruning.tools.hook.mcp_definitions_file` | path | `~/.config/cyt/mcp-definitions.json` |
 
 - **`proxy`**: CYT prunes tools from the upstream request `tools` array via the reverse proxy (BM25,
@@ -514,6 +517,15 @@ Live executor catalog loading requires **hook injection** (`pruning.inject_via: 
 Executor MCP aggregator at `pruning.tools.hook.executor_url`, and a Bearer token in `EXECUTOR_TOKEN`
 (or `pruning.tools.hook.executor_token_var`). Snapshot tools offline with `cyt executor save`.
 Proxy injection does not load Executor catalogs or MCP cache.
+
+Cloudflare portal catalog loading requires **hook injection**, a configured
+`pruning.tools.hook.cloudflare_url` (for example `https://mcp.example.com` or `https://mcp.example.com/mcp`),
+and Cloudflare Access service token credentials in the env vars named by
+`cloudflare_access_client_id_var` / `cloudflare_access_client_secret_var` (defaults
+`CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET`). Values are read from the shell, `./.env`,
+`~/.config/cyt/.env`, or the keyring — never from `config.yaml`. Snapshot tools offline with
+`cyt cloudflare save`. Live integration tests use `CF_MCP_SERVER_URL` plus the same CF Access env vars
+(opt-in: `pytest --run-integration`).
 
 `cyt launch` skips the reverse proxy when **both** tools and skills use hook injection (or skills are
 disabled). Mixed mode (`skills.inject_via: proxy`, `tools.inject_via: hook`) still starts the proxy

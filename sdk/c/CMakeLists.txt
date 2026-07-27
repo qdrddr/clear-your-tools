@@ -48,7 +48,11 @@ else()
     set(CYT_TARGET_DIR "${CYT_REPO_ROOT}/target")
 endif()
 
+get_filename_component(CYT_REPO_ROOT "${CYT_REPO_ROOT}" ABSOLUTE)
+get_filename_component(CYT_TARGET_DIR "${CYT_TARGET_DIR}" ABSOLUTE)
+
 set(CYT_ARTIFACT_DIR "${CYT_TARGET_DIR}/${CYT_RUST_TARGET}/${CYT_LIB_PROFILE}")
+get_filename_component(CYT_ARTIFACT_DIR "${CYT_ARTIFACT_DIR}" ABSOLUTE)
 
 if(CYT_LIB_PROFILE STREQUAL "debug")
     set(_cyt_build_profile_flag --debug)
@@ -85,7 +89,9 @@ if(APPLE)
     add_custom_command(
         OUTPUT "${CYT_STAGED_DYLIB}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CYT_DEPS_DYLIB}" "${CYT_STAGED_DYLIB}"
+            "${CYT_SHARED_LIB}" "${CYT_STAGED_DYLIB}"
+        COMMAND install_name_tool -id "@loader_path/libcyt_indexer.dylib"
+            "${CYT_STAGED_DYLIB}"
         DEPENDS cyt_indexer_build
         COMMENT "Stage libcyt_indexer.dylib beside C examples"
     )
@@ -141,6 +147,8 @@ function(cyt_add_example name source)
         add_dependencies("${name}" cyt_stage_dylib)
         add_custom_command(TARGET "${name}" POST_BUILD
             COMMAND install_name_tool -change "${CYT_DEPS_DYLIB}"
+                "@loader_path/libcyt_indexer.dylib" "$<TARGET_FILE:${name}>"
+            COMMAND install_name_tool -change "${CYT_SHARED_LIB}"
                 "@loader_path/libcyt_indexer.dylib" "$<TARGET_FILE:${name}>"
             COMMENT "Fix ${name} dylib load path"
         )

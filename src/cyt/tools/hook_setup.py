@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.config import (
+    DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
     DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
     DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
     DEFAULT_TOOLS_HOOK_TOOLS_FROM,
     inject_via,
     load_config,
     save_user_config,
+    tools_hook_cloudflare_url,
     tools_hook_file_missing,
     tools_hook_sources,
 )
@@ -20,7 +22,7 @@ from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
-_TOOLS_FROM_CHOICES = ("mcpc", "executor", "definitions")
+_TOOLS_FROM_CHOICES = ("mcpc", "cloudflare", "executor", "definitions")
 
 
 def _hook_from_default(current_from: str, *, context: ToolsSetupContext) -> str:
@@ -53,9 +55,11 @@ def _prompt_hook_source_paths(
     *,
     executor_default: str,
     definitions_default: str,
-) -> tuple[str, str]:
+    cloudflare_default: str,
+) -> tuple[str, str, str]:
     executor_url = executor_default
     definitions_path = definitions_default
+    cloudflare_url = cloudflare_default
     if "definitions" in selected:
         path_text = _prompt("MCP definitions file", definitions_default)
         path_text = str(Path(path_text).expanduser())
@@ -73,7 +77,15 @@ def _prompt_hook_source_paths(
                 file=sys.stderr,
             )
         executor_url = url_text
-    return executor_url, definitions_path
+    if "cloudflare" in selected:
+        url_text = _prompt("Cloudflare MCP portal URL", cloudflare_default).strip().rstrip("/")
+        if not url_text:
+            print(
+                "Note: cloudflare URL is empty; hook will skip that source until configured.",
+                file=sys.stderr,
+            )
+        cloudflare_url = url_text
+    return executor_url, definitions_path, cloudflare_url
 
 
 def build_tools_hook_config_overlay(
@@ -81,6 +93,7 @@ def build_tools_hook_config_overlay(
     tools_from: list[str],
     executor_url: str,
     mcp_definitions_file: str,
+    cloudflare_url: str = "",
     executor_token_var: str | None = None,
 ) -> dict[str, Any]:
     """Return a ``pruning.tools`` overlay fragment (``hook`` settings only)."""
@@ -88,6 +101,7 @@ def build_tools_hook_config_overlay(
         "tools_from": tools_from,
         "executor_url": executor_url,
         "mcp_definitions_file": mcp_definitions_file,
+        "cloudflare_url": cloudflare_url,
     }
     if executor_token_var:
         hook["executor_token_var"] = executor_token_var
@@ -148,24 +162,30 @@ def prompt_tools_hook_config(
     definitions_default = str(
         hook.get("mcp_definitions_file", DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE),
     )
+    cloudflare_default = str(hook.get("cloudflare_url", DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL))
 
     if active_inject == "hook":
-        print("Configure tool catalog sources (comma-separated: mcpc, executor, definitions).")
+        print(
+            "Configure tool catalog sources "
+            "(comma-separated: mcpc, cloudflare, executor, definitions).",
+        )
         raw_sources = _prompt(
             "Tool catalog sources",
             ",".join(tools_hook_sources(existing) or [from_default]),
         )
         selected = _parse_selected_hook_sources(raw_sources, from_default)
         tools_from = selected
-        executor_default, definitions_default = _prompt_hook_source_paths(
+        executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
             selected,
             executor_default=executor_default,
             definitions_default=definitions_default,
+            cloudflare_default=cloudflare_default,
         )
         return build_tools_hook_config_overlay(
             tools_from=tools_from,
             executor_url=executor_default,
             mcp_definitions_file=definitions_default,
+            cloudflare_url=cloudflare_default,
         )
 
     tools_from = _tools_from_overlay_value(existing_sources, fallback=from_default)
@@ -173,6 +193,7 @@ def prompt_tools_hook_config(
         tools_from=tools_from,
         executor_url=executor_default,
         mcp_definitions_file=definitions_default,
+        cloudflare_url=cloudflare_default,
     )
 
 
@@ -187,6 +208,7 @@ def ensure_tools_hook_file_interactive(
         return config
 
     sources = tools_hook_sources(config)
+    prompt_target = "Tools hook sources are not fully configured"
     if len(sources) == 1 and sources[0] == "executor":
         prompt_target = "Executor URL is not configured"
     elif len(sources) == 1 and sources[0] == "mcpc":
@@ -194,8 +216,13 @@ def ensure_tools_hook_file_interactive(
 
         report_mcpc_hook_readiness(config)
         return config
-    else:
-        prompt_target = "Tools hook sources are not fully configured"
+    elif len(sources) == 1 and sources[0] == "cloudflare":
+        if tools_hook_cloudflare_url(config):
+            from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
+
+            report_cloudflare_hook_readiness(config)
+            return config
+        prompt_target = "Cloudflare portal URL is not configured"
     if not _prompt_yes_no(f"{prompt_target}. Configure now?", default_yes=True):
         return config
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")

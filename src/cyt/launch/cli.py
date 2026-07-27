@@ -393,15 +393,16 @@ def _run_cursor_launch_session(
         ensure_cursor_hooks_for_launch(quiet=True)
 
     from cyt.cache import warm_caches
-    from cyt.config import tools_hook_sources
+    from cyt.config import tools_hook_sources, uses_cloudflare_tool_catalog
     from cyt.executor.http import schedule_executor_catalog_refresh
 
-    if (
-        tools_enabled(config)
-        and "executor" in tools_hook_sources(config)
-        and inject_via(config) == "hook"
-    ):
-        schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+    if tools_enabled(config) and inject_via(config) == "hook":
+        if "executor" in tools_hook_sources(config):
+            schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+        if uses_cloudflare_tool_catalog(config):
+            from cyt.cloudflare.cache_scheduler import schedule_cloudflare_catalog_refresh
+
+            schedule_cloudflare_catalog_refresh(config, allow_prompt=False, force=True)
 
     warm_caches(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
@@ -451,15 +452,16 @@ def _run_launch_session(
         runtime.config = config
 
     from cyt.cache import warm_caches
-    from cyt.config import tools_hook_sources
+    from cyt.config import tools_hook_sources, uses_cloudflare_tool_catalog
     from cyt.executor.http import schedule_executor_catalog_refresh
 
-    if (
-        tools_enabled(config)
-        and "executor" in tools_hook_sources(config)
-        and inject_via(config) == "hook"
-    ):
-        schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+    if tools_enabled(config) and inject_via(config) == "hook":
+        if "executor" in tools_hook_sources(config):
+            schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
+        if uses_cloudflare_tool_catalog(config):
+            from cyt.cloudflare.cache_scheduler import schedule_cloudflare_catalog_refresh
+
+            schedule_cloudflare_catalog_refresh(config, allow_prompt=False, force=True)
 
     warm_caches(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))

@@ -132,4 +132,10 @@ def bootstrap(*, config: Bm25SdkConfig | dict | None = None) -> AppContext:
         wire_mcpc_runtime()
     except ImportError:
         pass
+    try:
+        from cyt.integrations.cloudflare import wire_cloudflare_runtime
+
+        wire_cloudflare_runtime()
+    except ImportError:
+        pass
     return AppContext(version=_package_version())

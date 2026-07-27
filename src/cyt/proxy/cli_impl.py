@@ -500,9 +500,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Config path (default: ~/.config/cyt/config.yaml)",
     )
 
+    from cyt.tools.cloudflare_cli import add_cloudflare_parser
     from cyt.tools.executor_cli import add_executor_parser
 
     add_executor_parser(subparsers)
+    add_cloudflare_parser(subparsers)
 
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)

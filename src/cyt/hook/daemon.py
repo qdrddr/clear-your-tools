@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
 from cyt.config import (
     launch_needs_proxy,
     load_config,
@@ -288,6 +289,7 @@ def daemon_start(
         _configure_unattended_quiet()
     config = load_config(config_path)
     report_mcpc_hook_readiness(config, unattended=unattended)
+    report_cloudflare_hook_readiness(config, unattended=unattended)
     base_port = resolve_reverse_port(config, None)
     mode = _resolve_daemon_mode(config)
     needs_creds = _needs_credential_injection(config)
@@ -579,6 +581,7 @@ def daemon_status(*, config_path: Path | None = None) -> None:
     """Print hook daemon status to stderr."""
     config = load_config(config_path)
     report_mcpc_hook_readiness(config)
+    report_cloudflare_hook_readiness(config)
     if _needs_credential_injection(config):
         from cyt.hook.credentials import report_and_ensure_hook_credentials
 

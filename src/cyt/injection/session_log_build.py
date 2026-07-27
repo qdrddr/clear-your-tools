@@ -15,7 +15,7 @@ from cyt.skills.search import MatchedSkill
 from cyt.tools.inject import format_tool_item
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _mcpc_injection_schema_body
 
-CatalogKind = Literal["executor", "mcpc", "definitions"]
+CatalogKind = Literal["executor", "mcpc", "definitions", "cloudflare"]
 ItemKind = Literal["tool", "skill", "resource"]
 
 _TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
@@ -186,6 +186,8 @@ def tool_item_key(tool: dict[str, Any], *, catalog: CatalogKind | None = None) -
     if source == "mcpc":
         session = str(tool.get("mcpc_session") or "").strip()
         return f"tool:mcpc:{session}:{name}"
+    if source == "cloudflare":
+        return f"tool:cloudflare:{name}"
     if source == "definitions":
         return f"tool:definitions:{name}"
     return f"tool:executor:{name}"
@@ -285,6 +287,8 @@ def format_entry_fragment(entry: dict[str, Any]) -> str:
         raw_catalog = entry.get("catalog", "executor")
         if raw_catalog == "mcpc":
             catalog: CatalogKind = "mcpc"
+        elif raw_catalog == "cloudflare":
+            catalog = "cloudflare"
         elif raw_catalog == "definitions":
             catalog = "definitions"
         else:

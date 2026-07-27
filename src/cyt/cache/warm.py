@@ -13,6 +13,7 @@ from cyt.config import (
     load_config,
     skills_enabled,
     tools_hook_sources,
+    uses_cloudflare_tool_catalog,
     uses_definitions_tool_catalog,
     uses_executor_tool_catalog,
     uses_mcpc_tool_catalog,
@@ -22,46 +23,74 @@ from cyt.tools.budget import tools_inject_allowed
 logger = logging.getLogger(__name__)
 
 
+def _bootstrap_definitions_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    from cyt.tools.definitions_cache_scheduler import start_definitions_cache_scheduler
+    from cyt.tools.definitions_catalog import (
+        get_definitions_catalog,
+        load_definitions_catalog_from_disk,
+    )
+
+    load_definitions_catalog_from_disk(cfg)
+    tools = get_definitions_catalog(cfg, blocking=False)
+    if not tools:
+        blocking_tools = get_definitions_catalog(cfg, blocking=True)
+        return blocking_tools or []
+    start_definitions_cache_scheduler(cfg)
+    return tools
+
+
+def _bootstrap_executor_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    from cyt.executor.cache_scheduler import start_executor_cache_scheduler
+    from cyt.executor.http import get_executor_catalog, load_executor_catalog_from_disk
+
+    load_executor_catalog_from_disk(cfg)
+    tools = get_executor_catalog(cfg, allow_prompt=False, blocking=False)
+    if not tools:
+        blocking_tools = get_executor_catalog(cfg, allow_prompt=False, blocking=True)
+        return blocking_tools or []
+    start_executor_cache_scheduler(cfg, allow_prompt=False)
+    return tools
+
+
+def _bootstrap_mcpc_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
+    from cyt.mcpc.cache_scheduler import start_mcpc_cache_scheduler
+    from cyt.mcpc.catalog import get_mcpc_catalog, load_mcpc_catalog_from_disk
+    from cyt.mcpc.readiness import mcpc_hook_catalog_usable
+
+    if not mcpc_hook_catalog_usable(cfg):
+        return None
+    load_mcpc_catalog_from_disk(cfg)
+    tools = get_mcpc_catalog(cfg, blocking=False)
+    if not tools:
+        return get_mcpc_catalog(cfg, blocking=True)
+    start_mcpc_cache_scheduler(cfg)
+    return tools
+
+
+def _bootstrap_cloudflare_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
+    from cyt.cloudflare.cache_scheduler import start_cloudflare_cache_scheduler
+    from cyt.cloudflare.catalog import get_cloudflare_catalog, load_cloudflare_catalog_from_disk
+    from cyt.cloudflare.readiness import cloudflare_hook_catalog_usable
+
+    if not cloudflare_hook_catalog_usable(cfg):
+        return None
+    load_cloudflare_catalog_from_disk(cfg)
+    tools = get_cloudflare_catalog(cfg, blocking=False)
+    if not tools:
+        return get_cloudflare_catalog(cfg, blocking=True)
+    start_cloudflare_cache_scheduler(cfg)
+    return tools
+
+
 def _bootstrap_source_catalog(cfg: dict[str, Any], source: str) -> list[dict[str, Any]] | None:
     if source == "definitions":
-        from cyt.tools.definitions_cache_scheduler import start_definitions_cache_scheduler
-        from cyt.tools.definitions_catalog import (
-            get_definitions_catalog,
-            load_definitions_catalog_from_disk,
-        )
-
-        load_definitions_catalog_from_disk(cfg)
-        tools = get_definitions_catalog(cfg, blocking=False)
-        if not tools:
-            tools = get_definitions_catalog(cfg, blocking=True)
-        else:
-            start_definitions_cache_scheduler(cfg)
-        return tools
+        return _bootstrap_definitions_catalog(cfg)
     if source == "executor":
-        from cyt.executor.cache_scheduler import start_executor_cache_scheduler
-        from cyt.executor.http import get_executor_catalog, load_executor_catalog_from_disk
-
-        load_executor_catalog_from_disk(cfg)
-        tools = get_executor_catalog(cfg, allow_prompt=False, blocking=False)
-        if not tools:
-            tools = get_executor_catalog(cfg, allow_prompt=False, blocking=True)
-        else:
-            start_executor_cache_scheduler(cfg, allow_prompt=False)
-        return tools
+        return _bootstrap_executor_catalog(cfg)
     if source == "mcpc":
-        from cyt.mcpc.cache_scheduler import start_mcpc_cache_scheduler
-        from cyt.mcpc.catalog import get_mcpc_catalog, load_mcpc_catalog_from_disk
-        from cyt.mcpc.readiness import mcpc_hook_catalog_usable
-
-        if not mcpc_hook_catalog_usable(cfg):
-            return None
-        load_mcpc_catalog_from_disk(cfg)
-        tools = get_mcpc_catalog(cfg, blocking=False)
-        if not tools:
-            tools = get_mcpc_catalog(cfg, blocking=True)
-        else:
-            start_mcpc_cache_scheduler(cfg)
-        return tools
+        return _bootstrap_mcpc_catalog(cfg)
+    if source == "cloudflare":
+        return _bootstrap_cloudflare_catalog(cfg)
     return None
 
 
@@ -73,6 +102,8 @@ def _bootstrap_configured_sources(cfg: dict[str, Any], sources: tuple[str, ...])
             _bootstrap_source_catalog(cfg, "executor")
         elif source == "mcpc" and uses_mcpc_tool_catalog(cfg):
             _bootstrap_source_catalog(cfg, "mcpc")
+        elif source == "cloudflare" and uses_cloudflare_tool_catalog(cfg):
+            _bootstrap_source_catalog(cfg, "cloudflare")
 
 
 def _warm_decomposed_bulks(
