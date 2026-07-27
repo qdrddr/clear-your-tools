@@ -21,10 +21,8 @@ from cyt.tools.mcpc_inject import (
 )
 
 _CLOUDFLARE_WORKSPACE_NOTE = (
-    "These tools are invoked via the Cloudflare MCP portal. Use JSON-RPC tools/call against "
-    "the configured portal /mcp endpoint with CF-Access-Client-Id and CF-Access-Client-Secret "
-    "headers and an MCP session (initialize, then notifications/initialized, then call with "
-    "mcp-session-id)."
+    "Below are the listed relevant upstream MCP Servers and their tools using `portal_list_servers` in the Cloudflare MCP portal. "
+    "Use this to skip portal_list_servers call to use the tools directly. "
 )
 
 
