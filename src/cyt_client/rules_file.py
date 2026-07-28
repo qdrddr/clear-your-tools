@@ -90,6 +90,11 @@ def build_rules_mdc(injection: str) -> str:
     return f"---\ndescription: {_RULES_DESCRIPTION}\nalwaysApply: true\n---\n\n{body}\n"
 
 
+def build_rules_mdc_placeholder() -> str:
+    """Frontmatter-only rules file (no pruned skills/tools body)."""
+    return build_rules_mdc("")
+
+
 def _strip_rules_mdc_frontmatter(content: str) -> str:
     text = content.lstrip()
     if not text.startswith("---"):
@@ -334,6 +339,26 @@ def delete_cursor_rules_file(workspace: Path) -> bool:
     if not path.is_file():
         return False
     path.unlink()
+    return True
+
+
+def reset_cursor_rules_file_to_placeholder(workspace: Path) -> bool:
+    """Write frontmatter-only placeholder; return True when disk state changed."""
+    if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
+        return False
+
+    path = rules_file_path(workspace)
+    new_content = build_rules_mdc_placeholder()
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8")
+        if existing == new_content:
+            return False
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    path.write_text(new_content, encoding="utf-8")
+    if gitignore_entry := _gitignore_entry_for_rules_path(workspace, path):
+        ensure_gitignore_entry(workspace, rel_path=gitignore_entry)
     return True
 
 

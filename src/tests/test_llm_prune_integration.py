@@ -9,6 +9,8 @@ Two paths, both without a running hook daemon or ``cyt-client`` HTTP:
    ``run_hook_payload`` (same entry as ``POST /hook/inject``) with patched minimal
    tool/skill catalogs.
 
+Gherkin equivalents: ``src/tests/gherkin/features/llm_prune.feature``.
+
 Run integration scenarios (requires configured pruning LLM + API keys):
     OPENROUTER_API_KEY="$(security find-generic-password -s "nono" -a "OPENROUTER_API_KEY" -w)"
 

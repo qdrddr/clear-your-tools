@@ -1,4 +1,7 @@
-"""Tests for cyt-client harness detection."""
+"""Tests for cyt-client harness detection.
+
+Gherkin equivalents: ``src/tests/gherkin/features/harness_detection.feature``.
+"""
 
 from __future__ import annotations
 
@@ -69,6 +72,13 @@ def test_session_end_does_not_infer_cursor(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_session_end_still_routes_cursor_cli() -> None:
     assert is_cursor_hook_payload({"hook_event_name": "sessionEnd"})
+
+
+def test_session_start_still_routes_cursor_cli() -> None:
+    from cyt_client.cursor import is_session_start_event
+
+    assert is_cursor_hook_payload({"hook_event_name": "sessionStart"})
+    assert is_session_start_event({"hook_event_name": "sessionStart"})
 
 
 def test_workspace_roots_alone_does_not_infer_cursor(monkeypatch: pytest.MonkeyPatch) -> None:

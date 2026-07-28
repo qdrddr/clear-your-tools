@@ -1,4 +1,7 @@
-"""Tests for cyt-client hook HTTP forwarding."""
+"""Tests for cyt-client hook HTTP forwarding.
+
+Gherkin equivalents: ``src/tests/gherkin/features/cyt_client.feature``.
+"""
 
 from __future__ import annotations
 
@@ -927,9 +930,11 @@ def test_cli_before_submit_preserves_rules_file_when_hook_unavailable(
         assert json.loads(capsys.readouterr().out) == {"continue": True}
 
 
-def test_cli_session_end_deletes_rules_file_without_http(
+def test_cli_session_end_resets_rules_file_to_placeholder_without_http(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    from cyt_client.rules_file import build_rules_mdc_placeholder
+
     with tempfile.TemporaryDirectory() as tmp:
         workspace = Path(tmp) / "project"
         rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
@@ -948,8 +953,53 @@ def test_cli_session_end_deletes_rules_file_without_http(
                 main()
 
         post.assert_not_called()
-        assert not rules_path.is_file()
+        assert rules_path.is_file()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
         assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_cli_session_start_resets_rules_file_to_placeholder_without_http(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cyt_client.rules_file import build_rules_mdc_placeholder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text("stale", encoding="utf-8")
+        payload = json.dumps(
+            {
+                "hook_event_name": "sessionStart",
+                "workspace_roots": [str(workspace)],
+            },
+        ).encode()
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=payload):
+                main()
+
+        post.assert_not_called()
+        assert rules_path.is_file()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_reset_cursor_rules_file_to_placeholder_creates_file_when_absent() -> None:
+    from cyt_client.rules_file import (
+        build_rules_mdc_placeholder,
+        reset_cursor_rules_file_to_placeholder,
+        rules_file_path,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        path = rules_file_path(workspace)
+        assert reset_cursor_rules_file_to_placeholder(workspace) is True
+        assert path.is_file()
+        assert path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert reset_cursor_rules_file_to_placeholder(workspace) is False
 
 
 def test_cli_passes_debug_header_to_hook_server() -> None:

@@ -15,6 +15,7 @@ from cyt_client.cursor import (
     format_cursor_stdout,
     is_cursor_hook_payload,
     is_session_end_event,
+    is_session_start_event,
 )
 from cyt_client.port import (
     clear_hook_url_cache,
@@ -33,6 +34,7 @@ from cyt_client.rules_file import (
     hook_stdout_bytes_for_agent,
     is_valid_workspace_root,
     read_cursor_rules_injection,
+    reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,
     sync_cursor_rules_file,
     workspace_root_from_payload,
@@ -179,14 +181,25 @@ def _persist_session_log_response(payload: dict, body: bytes) -> None:
         _verbose_log(f"cyt-client: failed to append session log: {exc}")
 
 
+def _reset_cursor_rules_file_for_session_lifecycle(payload: dict) -> None:
+    workspace = workspace_root_from_payload(payload)
+    if workspace is None:
+        return
+    if is_valid_workspace_root(workspace):
+        reset_cursor_rules_file_to_placeholder(workspace)
+    else:
+        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+
+
+def _handle_session_start(payload: dict, *, cursor_output: bool) -> None:
+    if cursor_output:
+        _reset_cursor_rules_file_for_session_lifecycle(payload)
+        _emit_cursor_continue()
+
+
 def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
     if cursor_output:
-        workspace = workspace_root_from_payload(payload)
-        if workspace is not None:
-            if is_valid_workspace_root(workspace):
-                delete_cursor_rules_file(workspace)
-            else:
-                _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+        _reset_cursor_rules_file_for_session_lifecycle(payload)
 
     sessions_dir = sessions_dir_for_payload(payload)
     current_session_id = session_id_from_payload(payload)
@@ -270,6 +283,10 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
     if is_session_end_event(payload):
         _handle_session_end(payload, cursor_output=cursor_output)
+        return
+
+    if is_session_start_event(payload):
+        _handle_session_start(payload, cursor_output=cursor_output)
         return
 
     if cursor_output:

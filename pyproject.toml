@@ -133,6 +133,7 @@ test = [
     "h2==4.3.0",
     "uuid7==0.1.0",
     "litellm==1.83.14",
+    "pytest-bdd>=8.1.0",
 ]
 
 [tool.uv]
@@ -245,6 +246,7 @@ pythonpath = ["src"]
 testpaths = ["src/tests"]
 markers = [
     "integration: tests that call real external APIs (manual only: pytest -m integration --run-integration)",
+    "gherkin: BDD scenarios under src/tests/gherkin/ (see features/*.feature)",
 ]
 filterwarnings = [
     "error",

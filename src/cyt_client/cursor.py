@@ -11,6 +11,7 @@ _CURSOR_ROUTING_EVENTS = frozenset({"sessionStart", "sessionEnd"})
 _CURSOR_RULES_LIFECYCLE_EVENTS = frozenset({"beforeSubmitPrompt", "sessionStart", "sessionEnd"})
 _CURSOR_RULES_CLEANUP_EVENTS = frozenset({"sessionEnd"})
 _SESSION_END_EVENTS = frozenset({"sessionEnd", "SessionEnd"})
+_SESSION_START_EVENTS = frozenset({"sessionStart", "SessionStart"})
 
 
 def hook_event_name(payload: dict[str, Any]) -> str | None:
@@ -20,6 +21,11 @@ def hook_event_name(payload: dict[str, Any]) -> str | None:
 def is_session_end_event(payload: dict[str, Any]) -> bool:
     event = hook_event_name(payload)
     return event in _SESSION_END_EVENTS if event is not None else False
+
+
+def is_session_start_event(payload: dict[str, Any]) -> bool:
+    event = hook_event_name(payload)
+    return event in _SESSION_START_EVENTS if event is not None else False
 
 
 def cursor_hook_event_name(payload: dict[str, Any]) -> str | None:
