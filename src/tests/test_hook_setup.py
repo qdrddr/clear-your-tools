@@ -337,6 +337,10 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         "start",
         "--unattended",
     )
+    assert data["hooks"]["sessionStart"][1]["command"] == build_uv_run_dev_command(
+        repo_root,
+        client_rel,
+    )
     assert data["hooks"]["sessionEnd"][0]["command"] == build_uv_run_dev_command(
         repo_root,
         client_rel,
@@ -940,7 +944,7 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     changed = hook_setup.upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=entries["before_submit"],
-        session_start_entry=entries["session_start"],
+        session_start_entries=entries["session_start"],
         session_end_entry=entries["session_end"],
     )
 
@@ -949,10 +953,12 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert data["version"] == 1
     assert isinstance(data["hooks"], dict)
     assert data["hooks"]["beforeSubmitPrompt"] == [entries["before_submit"]]
-    assert data["hooks"]["sessionStart"] == [entries["session_start"]]
+    assert data["hooks"]["sessionStart"] == entries["session_start"]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
     assert entries["before_submit"]["command"] == "cyt-client"
-    assert entries["session_start"]["command"] == "cyt hook daemon start --unattended"
+    assert len(entries["session_start"]) == 2
+    assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
+    assert entries["session_start"][1]["command"] == "cyt-client"
 
 
 def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:
@@ -978,7 +984,7 @@ def test_upsert_cursor_hooks_into_file_repairs_non_object_hooks(tmp_path: Path) 
     changed = hook_setup.upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=hook_setup.cursor_before_submit_entry(agent="cursor"),
-        session_start_entry=hook_setup.cursor_session_start_entry(agent="cursor"),
+        session_start_entries=hook_setup.cursor_session_start_entries(agent="cursor"),
         session_end_entry=hook_setup.cursor_session_end_entry(agent="cursor"),
     )
 
@@ -1022,6 +1028,7 @@ def test_run_hook_setup_installs_cursor_hooks(
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "cyt-client"
     assert data["hooks"]["sessionStart"][0]["command"] == "cyt hook daemon start --unattended"
+    assert data["hooks"]["sessionStart"][1]["command"] == "cyt-client"
     assert data["hooks"]["sessionEnd"][0]["command"] == "cyt-client"
 
     output = capsys.readouterr().out

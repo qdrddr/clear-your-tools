@@ -7,7 +7,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypedDict, cast
 
 from cyt.agents._types import CYT_LAUNCH_AGENT_ENV, AgentName
 from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
@@ -135,17 +135,39 @@ def cursor_before_submit_entry(
     )
 
 
+def cursor_session_start_entries(
+    *,
+    agent: AgentName = "cursor",
+    set_launch_agent: bool = False,
+    invocation: HookCliInvocation | None = None,
+) -> list[dict[str, Any]]:
+    """sessionStart: start hook daemon, then reset rules file to lifecycle placeholder."""
+    return [
+        cyt_daemon_start_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+            invocation=invocation,
+        ),
+        cyt_session_end_entry(
+            agent=agent,
+            set_launch_agent=set_launch_agent,
+            invocation=invocation,
+        ),
+    ]
+
+
 def cursor_session_start_entry(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
 ) -> dict[str, Any]:
-    return cyt_daemon_start_entry(
+    """Back-compat alias; prefer :func:`cursor_session_start_entries`."""
+    return cursor_session_start_entries(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
-    )
+    )[0]
 
 
 def cursor_session_end_entry(
@@ -161,19 +183,25 @@ def cursor_session_end_entry(
     )
 
 
+class CursorHookEntries(TypedDict):
+    before_submit: dict[str, Any]
+    session_start: list[dict[str, Any]]
+    session_end: dict[str, Any]
+
+
 def cursor_hook_entries(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> CursorHookEntries:
     return {
         "before_submit": cursor_before_submit_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
         ),
-        "session_start": cursor_session_start_entry(
+        "session_start": cursor_session_start_entries(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
@@ -197,9 +225,12 @@ def cursor_desired_hook_commands(
         set_launch_agent=set_launch_agent,
         invocation=invocation,
     )
+    session_start_commands = [
+        str(entry.get("command")) for entry in entries["session_start"] if isinstance(entry, dict)
+    ]
     return [
         str(entries["before_submit"].get("command")),
-        str(entries["session_start"].get("command")),
+        *session_start_commands,
         str(entries["session_end"].get("command")),
     ]
 
@@ -575,7 +606,7 @@ def upsert_cursor_hooks(
     hooks_section: dict[str, Any],
     *,
     before_submit_entry: dict[str, Any],
-    session_start_entry: dict[str, Any],
+    session_start_entries: list[dict[str, Any]],
     session_end_entry: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     merged = copy.deepcopy(hooks_section) if hooks_section else {}
@@ -583,7 +614,7 @@ def upsert_cursor_hooks(
 
     for event_name, entries in (
         (CURSOR_BEFORE_SUBMIT_EVENT, [before_submit_entry]),
-        (CURSOR_SESSION_START_EVENT, [session_start_entry]),
+        (CURSOR_SESSION_START_EVENT, session_start_entries),
         (CURSOR_SESSION_END_EVENT, [session_end_entry]),
     ):
         merged, event_changed = _upsert_cursor_flat_event(merged, event_name, entries)
@@ -596,7 +627,7 @@ def upsert_cursor_hooks_into_file(
     path: Path,
     *,
     before_submit_entry: dict[str, Any],
-    session_start_entry: dict[str, Any],
+    session_start_entries: list[dict[str, Any]],
     session_end_entry: dict[str, Any],
 ) -> bool:
     existing = _load_json_object(path)
@@ -604,7 +635,7 @@ def upsert_cursor_hooks_into_file(
     merged_hooks, changed = upsert_cursor_hooks(
         hooks_section,
         before_submit_entry=before_submit_entry,
-        session_start_entry=session_start_entry,
+        session_start_entries=session_start_entries,
         session_end_entry=session_end_entry,
     )
     if not changed:
@@ -1099,7 +1130,7 @@ def _handle_existing_cursor_hooks(
     *,
     needs_update: bool,
     before_submit_entry: dict[str, Any],
-    session_start_entry: dict[str, Any],
+    session_start_entries: list[dict[str, Any]],
     session_end_entry: dict[str, Any],
 ) -> bool:
     """Prompt for update/remove/skip when CYT hooks already exist; return whether file changed."""
@@ -1132,7 +1163,7 @@ def _handle_existing_cursor_hooks(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
-        session_start_entry=session_start_entry,
+        session_start_entries=session_start_entries,
         session_end_entry=session_end_entry,
     ):
         print(f"{label}: updated CYT hooks in {path}")
@@ -1156,7 +1187,7 @@ def _install_cursor_hooks_for_target(
         invocation=invocation,
     )
     before_submit_entry = entries["before_submit"]
-    session_start_entry = entries["session_start"]
+    session_start_entries = entries["session_start"]
     session_end_entry = entries["session_end"]
     hooks_data = _load_json_object(path)
     hooks_section = hooks_data.get("hooks")
@@ -1181,7 +1212,7 @@ def _install_cursor_hooks_for_target(
             hooks_section,
             needs_update=needs_update,
             before_submit_entry=before_submit_entry,
-            session_start_entry=session_start_entry,
+            session_start_entries=session_start_entries,
             session_end_entry=session_end_entry,
         )
 
@@ -1191,7 +1222,7 @@ def _install_cursor_hooks_for_target(
     if upsert_cursor_hooks_into_file(
         path,
         before_submit_entry=before_submit_entry,
-        session_start_entry=session_start_entry,
+        session_start_entries=session_start_entries,
         session_end_entry=session_end_entry,
     ):
         print(f"{label}: added CYT hooks to {path}")
