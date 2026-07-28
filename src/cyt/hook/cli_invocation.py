@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-CYT_PROXY_CLI_REL = "src/cyt/proxy/cli.py"
-CYT_CLIENT_CLI_REL = "src/cyt_client/cli.py"
 CYT_DAEMON_START_ARGS = ("hook", "daemon", "start", "--unattended")
+CYT_DAEMON_RESTART_ARGS = ("hook", "daemon", "restart")
 INSTALLED_CYT_CLIENT_COMMAND = "cyt-client"
 INSTALLED_CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
 INSTALLED_CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
+INSTALLED_CYT_DAEMON_RESTART_COMMAND = "cyt hook daemon restart"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,12 +32,38 @@ def proxy_cli_script_path() -> Path:
     return Path(cli_mod.__file__).resolve()
 
 
+def cyt_client_cli_script_path() -> Path:
+    from cyt_client import cli as cli_mod
+
+    return Path(cli_mod.__file__).resolve()
+
+
 def repo_root_from_proxy_cli_script() -> Path | None:
     script = proxy_cli_script_path()
     candidate = script.parents[3]
     if (candidate / "pyproject.toml").is_file() and script.is_file():
         return candidate
     return None
+
+
+def _canonical_repo_root() -> Path:
+    repo_root = repo_root_from_proxy_cli_script()
+    if repo_root is None:
+        msg = "Could not resolve CYT repo root from proxy CLI script path"
+        raise RuntimeError(msg)
+    return repo_root
+
+
+def script_relpath_from_repo(script: Path, repo_root: Path) -> str:
+    return script.relative_to(repo_root.resolve()).as_posix()
+
+
+def cyt_client_cli_script_relpath() -> str:
+    return script_relpath_from_repo(cyt_client_cli_script_path(), _canonical_repo_root())
+
+
+def proxy_cli_script_relpath() -> str:
+    return script_relpath_from_repo(proxy_cli_script_path(), _canonical_repo_root())
 
 
 def proxy_cli_impl_script_path() -> Path:
@@ -73,7 +99,10 @@ def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> st
 def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     invocation = invocation or detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
-        return build_uv_run_dev_command(invocation.repo_root, CYT_CLIENT_CLI_REL)
+        return build_uv_run_dev_command(
+            invocation.repo_root,
+            cyt_client_cli_script_relpath(),
+        )
     return INSTALLED_CYT_CLIENT_COMMAND
 
 
@@ -82,16 +111,31 @@ def cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> 
     if invocation.is_dev and invocation.repo_root is not None:
         return build_uv_run_dev_command(
             invocation.repo_root,
-            CYT_PROXY_CLI_REL,
+            proxy_cli_script_relpath(),
             *CYT_DAEMON_START_ARGS,
         )
     return INSTALLED_CYT_DAEMON_START_COMMAND
+
+
+def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -> str:
+    invocation = invocation or detect_hook_cli_invocation()
+    if invocation.is_dev and invocation.repo_root is not None:
+        return build_uv_run_dev_command(
+            invocation.repo_root,
+            proxy_cli_script_relpath(),
+            *CYT_DAEMON_RESTART_ARGS,
+        )
+    return INSTALLED_CYT_DAEMON_RESTART_COMMAND
 
 
 def is_dev_cyt_hook_command(command: str) -> bool:
     normalized = command.strip()
     if not normalized.startswith("uv run "):
         return False
-    if CYT_CLIENT_CLI_REL in normalized:
+    client_rel = cyt_client_cli_script_relpath()
+    proxy_rel = proxy_cli_script_relpath()
+    if client_rel in normalized:
         return True
-    return CYT_PROXY_CLI_REL in normalized and " hook daemon start" in normalized
+    return proxy_rel in normalized and (
+        " hook daemon start" in normalized or " hook daemon restart" in normalized
+    )

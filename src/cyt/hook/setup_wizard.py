@@ -25,6 +25,7 @@ from cyt.hook.cli_invocation import (
     INSTALLED_CYT_DAEMON_START_COMMAND_BASE,
     HookCliInvocation,
     cyt_client_command,
+    cyt_daemon_restart_command,
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
@@ -98,6 +99,27 @@ def _print_hook_stdin_test_example(
         print("Set CYT_HOOK_DEBUG=1 to enable extra diagnostics on the hook server.")
     print("\nTo remove installed agent hooks later, run:")
     print("  cyt hook --uninstall")
+
+
+def _propose_cursor_daemon_restart(
+    *,
+    config_path: Path | None = None,
+    invocation: HookCliInvocation | None = None,
+) -> None:
+    from cyt.hook.daemon import daemon_restart
+
+    resolved_invocation = invocation or detect_hook_cli_invocation()
+    command = cyt_daemon_restart_command(invocation=resolved_invocation)
+    print()
+    if not _prompt_yes_no(
+        "Restart the hook daemon so Cursor session hooks pick up the new configuration?",
+        default_yes=True,
+    ):
+        print(f"Skipped. Run manually when ready:\n  {command}")
+        return
+    mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
+    print(f"Restarting hook daemon via {mode}:\n  {command}")
+    daemon_restart(config_path=config_path, unattended=False)
 
 
 def cursor_before_submit_entry(
@@ -1311,6 +1333,12 @@ def run_hook_setup(
         print("\nNo hook files were modified.")
 
     _print_hook_stdin_test_example(debug=debug, invocation=invocation)
+
+    if include_cursor:
+        _propose_cursor_daemon_restart(
+            config_path=config_path,
+            invocation=invocation,
+        )
 
 
 def run_hook_uninstall() -> None:
