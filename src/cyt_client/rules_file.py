@@ -13,6 +13,7 @@ from cyt_client.config import skills_hook_cursor_rule_file_enabled
 RULES_REL_PATH = Path(".cursor/rules/cyt-injection.mdc")
 GITIGNORE_ENTRY = ".cursor/rules/cyt-injection.mdc"
 _RULES_DESCRIPTION = "CYT pruned skills and tools for this prompt"
+_RULES_PLACEHOLDER_BODY = "Re-read this file as it constantly updates."
 _custom_rules_rel_path: Path | None = None
 
 _SKILLS_BLOCK_RE = re.compile(
@@ -91,8 +92,8 @@ def build_rules_mdc(injection: str) -> str:
 
 
 def build_rules_mdc_placeholder() -> str:
-    """Frontmatter-only rules file (no pruned skills/tools body)."""
-    return build_rules_mdc("")
+    """Session lifecycle rules file (frontmatter + re-read reminder, no pruned injection)."""
+    return build_rules_mdc(_RULES_PLACEHOLDER_BODY)
 
 
 def _strip_rules_mdc_frontmatter(content: str) -> str:

@@ -22,12 +22,12 @@ Feature: cyt-client hook forwarding
     Then cyt-client stdout should be Cursor beforeSubmitPrompt JSON
     And a Cursor rules file should contain the injected context
 
-  Scenario Outline: session lifecycle resets rules file to frontmatter placeholder
+  Scenario Outline: session lifecycle resets rules file to session placeholder
     Given a Cursor workspace with a stale rules file
     And a <event> hook payload for that workspace
     When cyt-client runs for session lifecycle
     Then cyt-client stdout should be Cursor continue JSON
-    And the Cursor rules file should be a frontmatter-only placeholder
+    And the Cursor rules file should be a session lifecycle placeholder
     And the hook server should not have been called
 
     Examples:

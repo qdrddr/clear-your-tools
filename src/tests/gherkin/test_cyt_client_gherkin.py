@@ -171,8 +171,8 @@ def then_stdout_continue(gherkin_context: GherkinContext) -> None:
     assert json.loads(gherkin_context.stdout) == {"continue": True}
 
 
-@then("the Cursor rules file should be a frontmatter-only placeholder")
-def then_rules_file_placeholder(gherkin_context: GherkinContext) -> None:
+@then("the Cursor rules file should be a session lifecycle placeholder")
+def then_rules_file_session_placeholder(gherkin_context: GherkinContext) -> None:
     rules_path = gherkin_context.payload["_rules_path"]
     assert rules_path.is_file()
     assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
