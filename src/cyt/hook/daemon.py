@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -22,11 +20,9 @@ from cyt.config import (
     resolve_reverse_port,
 )
 from cyt.hook.port import (
-    HOOK_DAEMON_PIDFILE,
     fetch_cyt_health,
     hook_url_for_port,
     is_hook_server,
-    read_hook_daemon_pidfile,
 )
 from cyt.launch.proxy_guard import (
     LOCAL_HOST,
@@ -37,6 +33,15 @@ from cyt.launch.proxy_guard import (
 )
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, resolve_hook_daemon_child_env
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
+from cyt.runtime_registry import (
+    find_hook_daemon_entry_for_port,
+    read_hook_daemon_entries,
+    read_hook_daemon_pidfile,
+    remove_hook_daemon_entries,
+    remove_proxy_entries,
+    upsert_hook_daemon_entry,
+    upsert_proxy_entry,
+)
 
 HookDaemonOutcome = Literal["reused", "spawned", "already_running"]
 
@@ -93,13 +98,11 @@ def record_spawned_proxy_pidfile(
     credentials_injected: bool,
 ) -> None:
     """Record a launch-spawned proxy so hook ``sessionStart`` reuse won't restart it."""
-    config = load_config(config_path)
-    _write_pidfile(
+    upsert_proxy_entry(
         port=port,
-        hook_url=hook_url_for_port(port),
         pid=pid,
-        reused=False,
-        mode=_resolve_daemon_mode(config),
+        owner="cyt-launch",
+        config_path=config_path,
         credentials_injected=credentials_injected,
     )
 
@@ -113,25 +116,18 @@ def _write_pidfile(
     mode: str,
     credentials_injected: bool = False,
 ) -> None:
-    payload = {
-        "pid": pid,
-        "port": port,
-        "hook_url": hook_url,
-        "mode": mode,
-        "owner": "cyt-hook-daemon",
-        "started_at": datetime.now(tz=UTC).isoformat(),
-        "reused": reused,
-        "credentials_injected": credentials_injected,
-    }
-    path = HOOK_DAEMON_PIDFILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    upsert_hook_daemon_entry(
+        port=port,
+        hook_url=hook_url,
+        pid=pid,
+        reused=reused,
+        mode=mode,
+        credentials_injected=credentials_injected,
+    )
 
 
 def _remove_pidfile() -> None:
-    path = HOOK_DAEMON_PIDFILE
-    if path.is_file():
-        path.unlink(missing_ok=True)
+    remove_hook_daemon_entries()
 
 
 def _resolve_daemon_mode(config: dict[str, Any]) -> str:
@@ -147,12 +143,10 @@ def _needs_credential_injection(config: dict[str, Any]) -> bool:
 
 def _hook_daemon_has_credentials(reused_port: int) -> bool:
     """True when the running cyt-managed daemon on ``reused_port`` already has creds."""
-    pidfile = read_hook_daemon_pidfile()
+    pidfile = find_hook_daemon_entry_for_port(reused_port)
     if pidfile is None:
         return False
     if pidfile.get("owner") != "cyt-hook-daemon":
-        return False
-    if pidfile.get("port") != reused_port:
         return False
     if pidfile.get("reused"):
         return False
@@ -510,7 +504,39 @@ def _terminate_pid(pid: int) -> None:
         return
 
 
-def _stop_hook_server_on_port(port: int, *, verbose: bool) -> bool:
+def _stop_registry_entry(
+    entry: dict[str, Any],
+    *,
+    verbose: bool,
+    label: str,
+) -> bool:
+    target_pid: int | None = None
+    if not entry.get("reused"):
+        pid_value = entry.get("pid")
+        if pid_value is not None:
+            target_pid = int(pid_value)
+
+    stopped = False
+    if target_pid is not None:
+        if _pid_alive(target_pid) and _process_matches_cyt_proxy(target_pid):
+            _terminate_pid(target_pid)
+            stopped = True
+            _log(verbose, f"{label}: stopped pid={target_pid}")
+        elif not _pid_alive(target_pid):
+            _log(verbose, f"{label}: pid {target_pid} not running")
+        else:
+            _log(
+                verbose,
+                f"{label}: pid {target_pid} is not a cyt proxy; leaving process alone",
+            )
+
+    port_value = entry.get("port")
+    if not stopped and isinstance(port_value, int):
+        stopped = _stop_hook_server_on_port(port_value, verbose=verbose, label=label)
+    return stopped
+
+
+def _stop_hook_server_on_port(port: int, *, verbose: bool, label: str = "hook daemon") -> bool:
     """Stop a CYT hook server listening on *port* when one is present."""
     health = fetch_cyt_health(port)
     if not is_hook_server(health):
@@ -518,33 +544,40 @@ def _stop_hook_server_on_port(port: int, *, verbose: bool) -> bool:
 
     pid = _find_listen_pid(port)
     if pid is None:
-        _log(verbose, f"hook daemon: hook server on port {port} but no listener pid found")
+        _log(verbose, f"{label}: hook server on port {port} but no listener pid found")
         return False
     if not _process_matches_cyt_proxy(pid):
         _log(
             verbose,
-            f"hook daemon: port {port} listener pid {pid} is not a cyt proxy; leaving process alone",
+            f"{label}: port {port} listener pid {pid} is not a cyt proxy; leaving process alone",
         )
         return False
 
     _terminate_pid(pid)
-    _log(verbose, f"hook daemon: stopped pid={pid} port={port}")
+    _log(verbose, f"{label}: stopped pid={pid} port={port}")
     return True
 
 
-def _resolve_stop_port(
-    pidfile: dict[str, Any] | None,
+def _resolve_stop_ports(
+    entries: list[dict[str, Any]],
     *,
     config_path: Path | None,
-) -> int | None:
-    if pidfile is not None:
-        port_value = pidfile.get("port")
-        if isinstance(port_value, int):
-            return port_value
+) -> list[int]:
+    ports: list[int] = []
+    seen: set[int] = set()
+    for entry in entries:
+        port_value = entry.get("port")
+        if isinstance(port_value, int) and port_value not in seen:
+            seen.add(port_value)
+            ports.append(port_value)
+
+    if ports:
+        return ports
 
     config = load_config(config_path)
     base_port = resolve_reverse_port(config, None)
-    return _find_reusable_hook_port(base_port)
+    reusable_port = _find_reusable_hook_port(base_port)
+    return [reusable_port] if reusable_port is not None else []
 
 
 def daemon_restart(
@@ -564,36 +597,38 @@ def daemon_restart(
 
 
 def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> None:
-    """Stop a hook daemon process and clear pidfile state."""
-    pidfile = read_hook_daemon_pidfile()
-    target_port = _resolve_stop_port(pidfile, config_path=config_path)
-    target_pid: int | None = None
-    if pidfile is not None and not pidfile.get("reused"):
-        pid_value = pidfile.get("pid")
-        if pid_value is not None:
-            target_pid = int(pid_value)
-
+    """Stop hook daemon processes and clear registry state."""
+    entries = read_hook_daemon_entries()
+    stop_ports = _resolve_stop_ports(entries, config_path=config_path)
     stopped = False
-    if target_pid is not None:
-        if _pid_alive(target_pid) and _process_matches_cyt_proxy(target_pid):
-            _terminate_pid(target_pid)
-            stopped = True
-            _log(verbose, f"hook daemon: stopped pid={target_pid}")
-        elif not _pid_alive(target_pid):
-            _log(verbose, f"hook daemon: pid {target_pid} not running")
-        else:
-            _log(
-                verbose,
-                f"hook daemon: pid {target_pid} is not a cyt proxy; leaving process alone",
-            )
 
-    if not stopped and target_port is not None:
-        stopped = _stop_hook_server_on_port(target_port, verbose=verbose)
+    for entry in entries:
+        if _stop_registry_entry(entry, verbose=verbose, label="hook daemon"):
+            stopped = True
+
+    for port in stop_ports:
+        if any(entry.get("port") == port for entry in entries):
+            continue
+        if _stop_hook_server_on_port(port, verbose=verbose):
+            stopped = True
 
     if not stopped:
         _log(verbose, "hook daemon: no daemon recorded")
 
     _remove_pidfile()
+
+
+def stop_tracked_proxies(*, verbose: bool = False) -> bool:
+    """Stop reverse proxies recorded in ``~/.config/cyt/proxy.json``."""
+    from cyt.runtime_registry import read_proxy_entries
+
+    entries = read_proxy_entries()
+    stopped = False
+    for entry in entries:
+        if _stop_registry_entry(entry, verbose=verbose, label="cyt stop"):
+            stopped = True
+    remove_proxy_entries()
+    return stopped
 
 
 def daemon_status(*, config_path: Path | None = None) -> None:
@@ -607,16 +642,19 @@ def daemon_status(*, config_path: Path | None = None) -> None:
         report_and_ensure_hook_credentials(config, exit_on_missing_non_tty=False)
 
     pidfile = read_hook_daemon_pidfile()
+    entries = read_hook_daemon_entries()
     port = _find_reusable_hook_port(resolve_reverse_port(config, None))
     if port is not None:
         hook_url = hook_url_for_port(port)
+        matching = find_hook_daemon_entry_for_port(port)
         pid: int | None = None
         reused = False
-        if pidfile is not None:
-            pid_value = pidfile.get("pid")
+        source = matching if matching is not None else pidfile
+        if source is not None:
+            pid_value = source.get("pid")
             if pid_value is not None:
                 pid = int(pid_value)
-            reused = bool(pidfile.get("reused"))
+            reused = bool(source.get("reused"))
         print(
             _running_status_line(
                 port=port,
@@ -626,5 +664,24 @@ def daemon_status(*, config_path: Path | None = None) -> None:
             ),
             file=sys.stderr,
         )
+        for entry in entries:
+            entry_port = entry.get("port")
+            if entry_port == port:
+                continue
+            if not isinstance(entry_port, int):
+                continue
+            entry_hook_url = entry.get("hook_url")
+            if not isinstance(entry_hook_url, str):
+                entry_hook_url = hook_url_for_port(entry_port)
+            entry_pid = entry.get("pid")
+            print(
+                _running_status_line(
+                    port=entry_port,
+                    hook_url=entry_hook_url,
+                    pid=int(entry_pid) if entry_pid is not None else None,
+                    reused=bool(entry.get("reused")),
+                ),
+                file=sys.stderr,
+            )
         return
     print("hook daemon: not running", file=sys.stderr)

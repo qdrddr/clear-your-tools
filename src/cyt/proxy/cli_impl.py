@@ -500,6 +500,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Config path (default: ~/.config/cyt/config.yaml)",
     )
 
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop running cyt proxies and hook daemons",
+    )
+    stop_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    stop_parser.add_argument("--verbose", action="store_true")
+
     from cyt.tools.cloudflare_cli import add_cloudflare_parser
     from cyt.tools.executor_cli import add_executor_parser
 
@@ -554,6 +566,28 @@ def _apply_proxy_skills_agent_filter(upstream_kind: str | None) -> None:
     agent = agent_from_upstream_kind(upstream_kind)
     if agent is not None:
         os.environ.update(launch_agent_env(agent))
+
+
+def _register_foreground_proxy(
+    *,
+    port: int,
+    config_path: Path | None,
+    debug: bool,
+    debug_dry_run: bool,
+) -> None:
+    import atexit
+
+    from cyt.runtime_registry import remove_proxy_entries, upsert_proxy_entry
+
+    upsert_proxy_entry(
+        port=port,
+        pid=os.getpid(),
+        owner="cyt-proxy",
+        config_path=config_path,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+    )
+    atexit.register(remove_proxy_entries, ports={port})
 
 
 def _run_proxy_command(args: argparse.Namespace) -> None:
@@ -634,6 +668,13 @@ def _run_proxy_command(args: argparse.Namespace) -> None:
     )
     ssl_certfile = (
         str(args.ssl_certfile) if args.ssl_certfile is not None else http2_settings["ssl_certfile"]
+    )
+
+    _register_foreground_proxy(
+        port=runtime.port,
+        config_path=args.config,
+        debug=bool(args.debug or args.debug_dry_run),
+        debug_dry_run=bool(args.debug_dry_run),
     )
 
     run_async_cli(
@@ -778,6 +819,15 @@ def _dispatch_cli_command(args: argparse.Namespace) -> bool:
         from cyt.proxy.setup_wizard import run_setup
 
         run_setup(resolve_setup_config_path(getattr(args, "config", None)))
+        return True
+
+    if args.command == "stop":
+        from cyt.stop import stop_all
+
+        stop_all(
+            verbose=bool(getattr(args, "verbose", False)),
+            config_path=getattr(args, "config", None),
+        )
         return True
 
     if args.command == "hook":

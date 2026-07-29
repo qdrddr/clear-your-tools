@@ -18,8 +18,8 @@ OR_TOKEN = "or-" + "token"
 @pytest.fixture
 def pidfile_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "hook-daemon.json"
-    monkeypatch.setattr(hook_daemon, "HOOK_DAEMON_PIDFILE", path)
-    monkeypatch.setattr("cyt.hook.port.HOOK_DAEMON_PIDFILE", path)
+    monkeypatch.setattr("cyt.runtime_registry.HOOK_DAEMON_REGISTRY", path)
+    monkeypatch.setattr("cyt.runtime_registry.HOOK_DAEMON_PIDFILE", path)
     return path
 
 
@@ -37,8 +37,9 @@ def test_daemon_start_reuses_existing_server(pidfile_path: Path) -> None:
     assert result.reused is True
     assert result.port == 8834
     payload = json.loads(pidfile_path.read_text(encoding="utf-8"))
-    assert payload["reused"] is True
-    assert payload["pid"] is None
+    assert isinstance(payload, list)
+    assert payload[-1]["reused"] is True
+    assert payload[-1]["pid"] is None
 
 
 def test_daemon_start_prints_status_when_not_unattended(
@@ -150,14 +151,16 @@ def test_daemon_start_reuses_cyt_spawned_server_with_credentials(
 ) -> None:
     pidfile_path.write_text(
         json.dumps(
-            {
-                "pid": 12345,
-                "port": 8834,
-                "hook_url": "http://127.0.0.1:8834/hook/inject",
-                "owner": "cyt-hook-daemon",
-                "reused": False,
-                "credentials_injected": True,
-            },
+            [
+                {
+                    "pid": 12345,
+                    "port": 8834,
+                    "hook_url": "http://127.0.0.1:8834/hook/inject",
+                    "owner": "cyt-hook-daemon",
+                    "reused": False,
+                    "credentials_injected": True,
+                },
+            ],
         ),
         encoding="utf-8",
     )
@@ -349,12 +352,14 @@ def test_interactive_tty_passes_allow_prompt_to_credential_resolution(
 def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
     pidfile_path.write_text(
         json.dumps(
-            {
-                "pid": None,
-                "port": 8834,
-                "hook_url": "http://127.0.0.1:8834/hook/inject",
-                "reused": True,
-            },
+            [
+                {
+                    "pid": None,
+                    "port": 8834,
+                    "hook_url": "http://127.0.0.1:8834/hook/inject",
+                    "reused": True,
+                },
+            ],
         ),
         encoding="utf-8",
     )
@@ -365,12 +370,12 @@ def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
 
 def test_daemon_stop_kills_reused_hook_server_on_port(pidfile_path: Path) -> None:
     pidfile_path.write_text(
-        json.dumps({"pid": None, "reused": True, "port": 8834}),
+        json.dumps([{"pid": None, "reused": True, "port": 8834}]),
         encoding="utf-8",
     )
     with patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop:
         hook_daemon.daemon_stop(verbose=True)
-        stop.assert_called_once_with(8834, verbose=True)
+        stop.assert_called_once_with(8834, verbose=True, label="hook daemon")
     assert not pidfile_path.exists()
 
 
@@ -424,8 +429,8 @@ def test_daemon_restart_prints_status_when_not_unattended(
 
 def test_daemon_stop_without_pidfile_scans_config_port() -> None:
     with (
-        patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=None),
-        patch("cyt.hook.daemon._resolve_stop_port", return_value=8834),
+        patch("cyt.hook.daemon.read_hook_daemon_entries", return_value=[]),
+        patch("cyt.hook.daemon._resolve_stop_ports", return_value=[8834]),
         patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop,
     ):
         hook_daemon.daemon_stop(verbose=True)

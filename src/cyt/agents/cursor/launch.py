@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +12,7 @@ from cyt.agents.cursor.hook import (
     cursor_hook_entries,
     upsert_cursor_hooks_into_file,
 )
-from cyt.config import inject_via, load_config, save_user_config
 from cyt.hook.cli_invocation import detect_hook_cli_invocation
-from cyt.proxy.setup_wizard import _prompt_yes_no
 
 _CURSOR_CANDIDATES = (
     Path("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
@@ -41,34 +38,6 @@ def find_cursor() -> str:
         "Cursor CLI not found. Install it from Cursor (Shell Command: Install 'cursor' command) "
         "or add `cursor` to PATH.",
     )
-
-
-def ensure_cursor_inject_via_hook(
-    config_path: Path,
-    config: dict[str, Any],
-) -> dict[str, Any]:
-    """Ensure ``pruning.inject_via`` is ``hook``; prompt interactively when set to ``proxy``."""
-    if inject_via(config) == "hook":
-        return config
-
-    if not sys.stdin.isatty():
-        raise SystemExit(
-            "Cursor only supports hook injection (pruning.inject_via: hook). "
-            "Update your CYT config and retry.",
-        )
-
-    if not _prompt_yes_no(
-        "Cursor only supports hook injection. Switch pruning.inject_via to hook?",
-        default_yes=True,
-    ):
-        raise SystemExit("Cursor launch requires pruning.inject_via: hook.")
-
-    save_user_config(
-        config_path,
-        {"pruning": {"inject_via": "hook"}},
-        apply_bundled_sections=False,
-    )
-    return load_config(config_path)
 
 
 def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:

@@ -1274,7 +1274,7 @@ class TestEnsureProxy:
             base_port=8834,
             required_endpoint="openrouter",
             config_path=config_path,
-            extra_env={"OPENROUTER_API_KEY": "test-token"},
+            extra_env={"OPENROUTER_API_KEY": "test-token"},  # pragma: allowlist secret
         )
 
         assert guard.port == 8834

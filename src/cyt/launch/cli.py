@@ -11,10 +11,7 @@ from typing import Any
 from cyt.agents._registry import get_agent
 from cyt.agents.claude.launch import build_claude_env
 from cyt.agents.codex.launch import configure_provider, restore_provider
-from cyt.agents.cursor.launch import (
-    ensure_cursor_hooks_for_launch,
-    ensure_cursor_inject_via_hook,
-)
+from cyt.agents.cursor.launch import ensure_cursor_hooks_for_launch
 from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
@@ -29,6 +26,10 @@ from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream
 from cyt.launch.config import codex_env_key_name
 from cyt.launch.endpoints import resolve_agent_endpoint
 from cyt.launch.env_report import print_runtime_env_report
+from cyt.launch.inject_via_prompt import (
+    CURSOR_PROXY_UNSUPPORTED_MESSAGE,
+    ensure_launch_inject_via_proxy,
+)
 from cyt.launch.proxy_guard import (
     ProxyGuard,
     ensure_proxy,
@@ -381,30 +382,7 @@ def _ensure_hook_server(
     runtime.port = result.port
 
 
-def _run_cursor_launch_session(
-    *,
-    args: argparse.Namespace,
-    agent_args: list[str],
-    runtime: RuntimeContext,
-) -> int:
-    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
-    if debug or debug_dry_run or debug_strict:
-        raise SystemExit("Cursor launch does not support --debug flags.")
-
-    config = runtime.config
-    if sys.stdin.isatty():
-        config = ensure_tools_hook_file_interactive(runtime.config_path, config)
-        config = ensure_cursor_inject_via_hook(runtime.config_path, config)
-        ensure_cursor_hooks_for_launch()
-        runtime.config = config
-    elif inject_via(config) != "hook":
-        raise SystemExit(
-            "Cursor only supports hook injection (pruning.inject_via: hook). "
-            "Update your CYT config and retry.",
-        )
-    else:
-        ensure_cursor_hooks_for_launch(quiet=True)
-
+def _warm_launch_tool_catalogs(config: dict[str, Any]) -> None:
     from cyt.cache import warm_caches
     from cyt.config import tools_hook_sources, uses_cloudflare_tool_catalog
     from cyt.executor.http import schedule_executor_catalog_refresh
@@ -418,6 +396,104 @@ def _run_cursor_launch_session(
             schedule_cloudflare_catalog_refresh(config, allow_prompt=False, force=True)
 
     warm_caches(config)
+
+
+def _apply_interactive_launch_config(
+    runtime: RuntimeContext,
+    *,
+    agent: AgentName,
+) -> dict[str, Any]:
+    config = runtime.config
+    if not sys.stdin.isatty():
+        return config
+    config = ensure_tools_hook_file_interactive(runtime.config_path, config)
+    if agent in ("claude", "codex"):
+        previous_mode = inject_via(config)
+        config = ensure_launch_inject_via_proxy(runtime.config_path, config)
+        if inject_via(config) != previous_mode:
+            from cyt.proxy.bootstrap import refresh_runtime_config
+
+            refresh_runtime_config(runtime)
+    runtime.config = config
+    return config
+
+
+def _validate_launch_proxy_flags(
+    *,
+    inject_via_hook: bool,
+    switch_provider: bool,
+    force_proxy: bool,
+) -> None:
+    if switch_provider and not inject_via_hook:
+        raise SystemExit("--switch-provider is only supported when pruning.inject_via is hook.")
+    if force_proxy and switch_provider:
+        raise SystemExit("Pass either --proxy or --switch-provider, not both.")
+    if force_proxy and not inject_via_hook:
+        raise SystemExit("--proxy is only supported when pruning.inject_via is hook.")
+
+
+def _ensure_launch_proxy_guard(
+    *,
+    runtime: RuntimeContext,
+    agent: AgentName,
+    endpoint: str,
+    use_proxy: bool,
+    auth_binding: AgentAuthBinding | None,
+    debug: bool,
+    debug_dry_run: bool,
+    debug_strict: bool,
+) -> ProxyGuard:
+    if use_proxy:
+        proxy_extra_env = _proxy_spawn_extra_env(
+            config=runtime.config,
+            credential_sources=runtime.credential_sources,
+            auth_binding=auth_binding,
+        )
+        proxy_guard = ensure_proxy(
+            base_port=runtime.port,
+            required_endpoint=endpoint,
+            config_path=runtime.config_path,
+            quiet=True,
+            agent=agent,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+            debug_strict=debug_strict,
+            extra_env=proxy_extra_env,
+        )
+        runtime.port = proxy_guard.port
+        require_healthy_proxy(
+            port=runtime.port,
+            debug=debug,
+            debug_dry_run=debug_dry_run,
+        )
+        return proxy_guard
+
+    _ensure_hook_server(runtime=runtime)
+    return ProxyGuard(process=None, started_by_launch=False, port=runtime.port)
+
+
+def _run_cursor_launch_session(
+    *,
+    args: argparse.Namespace,
+    agent_args: list[str],
+    runtime: RuntimeContext,
+) -> int:
+    debug, debug_dry_run, debug_strict = _launch_debug_flags(args)
+    if debug or debug_dry_run or debug_strict:
+        raise SystemExit("Cursor launch does not support --debug flags.")
+
+    config = runtime.config
+    if inject_via(config) != "hook":
+        raise SystemExit(CURSOR_PROXY_UNSUPPORTED_MESSAGE)
+
+    if sys.stdin.isatty():
+        config = ensure_tools_hook_file_interactive(runtime.config_path, config)
+        ensure_cursor_hooks_for_launch()
+        runtime.config = config
+    else:
+        ensure_cursor_hooks_for_launch(quiet=True)
+
+    _warm_launch_tool_catalogs(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
     os.environ.update(launch_agent_env("cursor"))
@@ -459,33 +535,16 @@ def _run_launch_session(
     switch_provider = _launch_switch_provider(args)
     force_proxy = _launch_force_proxy(args)
 
-    config = runtime.config
-    if sys.stdin.isatty():
-        config = ensure_tools_hook_file_interactive(runtime.config_path, config)
-        runtime.config = config
-
-    from cyt.cache import warm_caches
-    from cyt.config import tools_hook_sources, uses_cloudflare_tool_catalog
-    from cyt.executor.http import schedule_executor_catalog_refresh
-
-    if tools_enabled(config) and inject_via(config) == "hook":
-        if "executor" in tools_hook_sources(config):
-            schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
-        if uses_cloudflare_tool_catalog(config):
-            from cyt.cloudflare.cache_scheduler import schedule_cloudflare_catalog_refresh
-
-            schedule_cloudflare_catalog_refresh(config, allow_prompt=False, force=True)
-
-    warm_caches(config)
+    config = _apply_interactive_launch_config(runtime, agent=agent)
+    _warm_launch_tool_catalogs(config)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
     inject_via_hook = not launch_needs_proxy(config)
-    if switch_provider and not inject_via_hook:
-        raise SystemExit("--switch-provider is only supported when pruning.inject_via is hook.")
-    if force_proxy and switch_provider:
-        raise SystemExit("Pass either --proxy or --switch-provider, not both.")
-    if force_proxy and not inject_via_hook:
-        raise SystemExit("--proxy is only supported when pruning.inject_via is hook.")
+    _validate_launch_proxy_flags(
+        inject_via_hook=inject_via_hook,
+        switch_provider=switch_provider,
+        force_proxy=force_proxy,
+    )
 
     use_proxy = launch_needs_proxy(config) or force_proxy
     hook_mode = inject_via_hook and not force_proxy
@@ -502,32 +561,16 @@ def _run_launch_session(
             launch_before_env=launch_before_env,
         )
 
-    if use_proxy:
-        proxy_extra_env = _proxy_spawn_extra_env(
-            config=runtime.config,
-            credential_sources=runtime.credential_sources,
-            auth_binding=auth_binding,
-        )
-        proxy_guard = ensure_proxy(
-            base_port=runtime.port,
-            required_endpoint=endpoint,
-            config_path=runtime.config_path,
-            quiet=True,
-            agent=agent,
-            debug=debug,
-            debug_dry_run=debug_dry_run,
-            debug_strict=debug_strict,
-            extra_env=proxy_extra_env,
-        )
-        runtime.port = proxy_guard.port
-        require_healthy_proxy(
-            port=runtime.port,
-            debug=debug,
-            debug_dry_run=debug_dry_run,
-        )
-    else:
-        proxy_guard = ProxyGuard(process=None, started_by_launch=False, port=runtime.port)
-        _ensure_hook_server(runtime=runtime)
+    proxy_guard = _ensure_launch_proxy_guard(
+        runtime=runtime,
+        agent=agent,
+        endpoint=endpoint,
+        use_proxy=use_proxy,
+        auth_binding=auth_binding,
+        debug=debug,
+        debug_dry_run=debug_dry_run,
+        debug_strict=debug_strict,
+    )
 
     print_runtime_env_report(
         quiet=False,

@@ -30,6 +30,7 @@ from cyt.hook.cli_invocation import (
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
 )
+from cyt.launch.inject_via_prompt import ensure_hook_inject_via
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
@@ -1288,6 +1289,8 @@ def run_hook_setup(
     selected_agents = _resolve_hook_setup_agents(agents)
     resolved_config_path = resolve_setup_config_path(config_path)
     config = load_config(config_path)
+    if sys.stdin.isatty():
+        config = ensure_hook_inject_via(resolved_config_path, config)
     report_mcpc_hook_readiness(config)
     report_cloudflare_hook_readiness(config)
     if len(selected_agents) == 1:
@@ -1370,6 +1373,21 @@ def run_hook_setup(
             config_path=config_path,
             invocation=invocation,
         )
+
+
+def cyt_hooks_installed() -> bool:
+    """Return True when any agent config file contains CYT hooks."""
+    for path in (
+        _agent_config_path(CLAUDE_SETTINGS_PATH),
+        _agent_config_path(CODEX_HOOKS_PATH),
+        _agent_config_path(CURSOR_HOOKS_PATH),
+    ):
+        if not path.is_file():
+            continue
+        hooks_section = _load_json_object(path).get("hooks")
+        if isinstance(hooks_section, dict) and cyt_hook_command_exists(hooks_section):
+            return True
+    return False
 
 
 def run_hook_uninstall() -> None:

@@ -12,9 +12,11 @@ from urllib.request import urlopen
 
 from cyt.config import DEFAULT_REVERSE_PORT, load_config, resolve_reverse_port
 from cyt.launch.proxy_guard import HEALTH_TIMEOUT_SECONDS, LOCAL_HOST
+from cyt.runtime_registry import (
+    read_hook_daemon_entries,
+)
 
 HOOK_INJECT_PATH = "/hook/inject"
-HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
 
 
@@ -45,18 +47,6 @@ def is_hook_server(health: dict[str, Any] | None) -> bool:
     )
 
 
-def read_hook_daemon_pidfile() -> dict[str, Any] | None:
-    """Return parsed pidfile contents when present."""
-    path = HOOK_DAEMON_PIDFILE
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
 def _port_from_hook_url(url: str) -> int | None:
     match = re.search(r":(\d+)/", url)
     if not match:
@@ -75,8 +65,7 @@ def resolve_hook_base_port(*, config_path: Path | None = None) -> int:
         if port is not None:
             return port
 
-    pidfile = read_hook_daemon_pidfile()
-    if pidfile is not None:
+    for pidfile in reversed(read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str):
             port = _port_from_hook_url(hook_url)
@@ -118,8 +107,7 @@ def resolve_hook_url(*, config_path: Path | None = None) -> str | None:
             else f"{env_url.rstrip('/')}{HOOK_INJECT_PATH}"
         )
 
-    pidfile = read_hook_daemon_pidfile()
-    if pidfile is not None:
+    for pidfile in reversed(read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str) and hook_url.strip():
             return hook_url.strip()

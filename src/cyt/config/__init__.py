@@ -573,6 +573,14 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     return _config_with_bundled_defaults(user_config)
 
 
+def sync_config_in_place(target: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    """Reload config from disk into *target* so existing references stay current."""
+    reloaded = load_config(path)
+    target.clear()
+    target.update(copy.deepcopy(reloaded))
+    return target
+
+
 def load_user_config_overlay(path: Path | None = None) -> dict[str, Any]:
     """Load on-disk ``config.yaml`` without merging bundled or built-in defaults."""
     config_path = resolve_config_path(path)

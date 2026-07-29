@@ -73,6 +73,16 @@ class RuntimeContext:
     pruner_settings: PrunerSettingsCache | None = None
 
 
+def refresh_runtime_config(runtime: RuntimeContext) -> None:
+    """Reload ``runtime.config`` from disk after an interactive config change."""
+    from cyt.config import sync_config_in_place
+    from cyt.launch.secrets import build_pruner_settings_cache
+
+    sync_config_in_place(runtime.config, runtime.config_path)
+    if runtime.pruner_settings is not None:
+        runtime.pruner_settings = build_pruner_settings_cache(runtime.config)
+
+
 def prepare_runtime(
     *,
     agent: AgentName | None,

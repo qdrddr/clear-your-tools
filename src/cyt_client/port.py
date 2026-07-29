@@ -54,15 +54,26 @@ def is_hook_server(health: dict[str, Any] | None) -> bool:
     )
 
 
-def read_hook_daemon_pidfile() -> dict[str, Any] | None:
+def _read_hook_daemon_entries() -> list[dict[str, Any]]:
     path = HOOK_DAEMON_PIDFILE
     if not path.is_file():
-        return None
+        return []
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return []
+    if isinstance(payload, list):
+        return [entry for entry in payload if isinstance(entry, dict)]
+    if isinstance(payload, dict):
+        return [payload]
+    return []
+
+
+def read_hook_daemon_pidfile() -> dict[str, Any] | None:
+    entries = _read_hook_daemon_entries()
+    if not entries:
         return None
-    return payload if isinstance(payload, dict) else None
+    return entries[-1]
 
 
 def _port_from_hook_url(url: str) -> int | None:
@@ -82,8 +93,7 @@ def _base_port_from_env_or_pidfile() -> int:
         if port is not None:
             return port
 
-    pidfile = read_hook_daemon_pidfile()
-    if pidfile is not None:
+    for pidfile in reversed(_read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str):
             port = _port_from_hook_url(hook_url)
@@ -159,8 +169,7 @@ def resolve_hook_url() -> str | None:
         if _hook_url_is_live(resolved):
             return resolved
 
-    pidfile = read_hook_daemon_pidfile()
-    if pidfile is not None:
+    for pidfile in reversed(_read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str) and hook_url.strip():
             resolved = hook_url.strip()
