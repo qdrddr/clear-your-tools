@@ -102,7 +102,7 @@ tasks:
   prek:
     desc: Run Python pre-commit hooks
     cmds:
-      - rtk uv run prek run ty-check mypy pytest basedpyright ruff ruff-format --all-files
+      - rtk uv run prek run ty-check mypy pytest-unit pytest-gherkin-unit pytest-quality-metrics basedpyright ruff ruff-format --all-files
 
   ci:
     desc: Mirror CI Python checks

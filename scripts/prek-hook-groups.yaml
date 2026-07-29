@@ -23,7 +23,9 @@ groups:
     - python-check-blanket-type-ignore
     - python-check-mock-methods
     - pyupgrade
-    - pytest
+    - pytest-unit
+    - pytest-gherkin-unit
+    - pytest-quality-metrics
     - ruff
     - ruff-format
     - ty-check
@@ -39,7 +41,10 @@ groups:
     - cargo-clippy
     - cargo-deny
     - cargo-fmt
-    - cargo-ffi-smoke
+    - cargo-test-cucumber
+    - cargo-test-ffi
+    - cargo-test-integration
+    - cargo-test-unit
     - cargo-sort
     - cargo-udeps
     - cbindgen-header-drift
@@ -61,7 +66,7 @@ groups:
 
   c:
     - build-c-lib-for-go
-    - cargo-ffi-smoke
+    - cargo-test-ffi
     - c-header-sync
     - cbindgen-header-drift
     - clang-format

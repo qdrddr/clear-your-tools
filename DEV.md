@@ -65,7 +65,7 @@ task ci                     # Python checks mirroring CI (sync, ast-grep, import
 
 TypeScript-only hooks: `task -d sdk prek` or `cd sdk/typescript && npm test`.
 
-Skip one hook: `SKIP=<hook-id> git commit …` (for example `SKIP=pytest`). Registry E2E against live packages: [`sdk/e2e/scripts/run-local.sh`](sdk/e2e/scripts/run-local.sh).
+Skip one hook: `SKIP=<hook-id> git commit …` (for example `SKIP=pytest-unit`). Registry E2E against live packages: [`sdk/e2e/scripts/run-local.sh`](sdk/e2e/scripts/run-local.sh).
 
 ### C SDK (for clang-tidy pre-commit hook)
 
@@ -203,6 +203,18 @@ Python tests live under [`src/tests/`](src/tests/) in category subfolders:
 | `quality_metrics/` | Import boundaries, pricing/timing/stats gates |
 | `qa/` | Manual harness scripts |
 | `mutation/`, `coverage/` | Scaffold for future workflows |
+
+Prek runs each category as a separate hook (failures name the type):
+
+| Hook | Command |
+| ---- | ------- |
+| `pytest-unit` | `scripts/pytest-category.sh unit` |
+| `pytest-gherkin-unit` | `scripts/pytest-category.sh gherkin-unit` |
+| `pytest-quality-metrics` | `scripts/pytest-category.sh quality_metrics` |
+| `cargo-test-unit` | `scripts/cargo-test-category.sh unit` |
+| `cargo-test-integration` | `scripts/cargo-test-category.sh integration` |
+| `cargo-test-cucumber` | `scripts/cargo-test-category.sh cucumber` |
+| `cargo-test-ffi` | `scripts/cargo-test-category.sh ffi` |
 
 Run commands:
 

@@ -1,5 +1,5 @@
-# SKIP=pytest,mypy,basedpyright uv run prek run -a
-# prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
+# SKIP=pytest-unit,mypy,basedpyright uv run prek run -a
+# prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest-unit pytest-gherkin-unit pytest-quality-metrics ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
 fail_fast: false
 default_language_version:
   python: "3.13"
@@ -419,17 +419,38 @@ repos:
         pass_filenames: false
         language: system
         files: ^(src/cyt/agents/.*\.py|src/cyt/skills/.*\.py|src/cyt/proxy/reverse\.py|scripts/check_agent_imports\.py)$
-      - id: pytest
-        name: pytest
+      - id: pytest-unit
+        name: pytest (unit)
         entry: bash scripts/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-unit.sh',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh unit',
           ]
         pass_filenames: false
         language: system
-        # Run when app code or tests change (tests live under src/tests/).
-        files: ^(src/.*\.py|src/tests/.*)$
+        files: ^(src/.*\.py|src/tests/unit/.*)$
+
+      - id: pytest-gherkin-unit
+        name: pytest (gherkin unit)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh gherkin-unit',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/unit/gherkin/.*)$
+
+      - id: pytest-quality-metrics
+        name: pytest (quality_metrics)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh quality_metrics',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/quality_metrics/.*)$
 
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
     rev: 1.39.6
@@ -517,11 +538,38 @@ repos:
         files: ^sdk/(rust/cyt-indexer/cyt_indexer\.h|c/include/cyt_indexer\.h)
         pass_filenames: false
 
-      - id: cargo-ffi-smoke
-        name: cargo test ffi_smoke
+      - id: cargo-test-unit
+        name: cargo test (unit)
         entry: bash scripts/prek-hook.sh
         args:
-          - rtk cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
+          - rtk bash scripts/cargo-test-category.sh unit
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
+        pass_filenames: false
+
+      - id: cargo-test-integration
+        name: cargo test (integration)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh integration
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/integration/)
+        pass_filenames: false
+
+      - id: cargo-test-cucumber
+        name: cargo test (cucumber)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh cucumber
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/integration/features/|tests/integration/cucumber/)
+        pass_filenames: false
+
+      - id: cargo-test-ffi
+        name: cargo test (ffi)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh ffi
         language: system
         files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi/|cyt_indexer\.h)
         pass_filenames: false
@@ -617,11 +665,11 @@ repos:
         pass_filenames: false
 
       - id: local-dev-core-rust
-        name: local-dev core-rust
+        name: local-dev core-rust (indexer build smoke)
         entry: bash scripts/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh core-rust',
+            'cd "$(git rev-parse --show-toplevel)" && rtk cargo build -p cyt-indexer --release && rtk bash scripts/local-dev.sh indexer build tools',
           ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|debug/full_example\.json)
@@ -676,7 +724,7 @@ repos:
         entry: bash scripts/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh app-all',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh app-build',
           ]
         language: system
         files: ^(src/|pyproject\.toml|uv\.lock)$
