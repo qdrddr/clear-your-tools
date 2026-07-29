@@ -156,7 +156,7 @@ tasks:
     desc: Run Rust FFI integration tests
     dir: "{{.REPO_ROOT}}"
     cmds:
-      - cargo test -p cyt-indexer --no-default-features --features ffi
+      - cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
 
   _tsc:
     internal: true

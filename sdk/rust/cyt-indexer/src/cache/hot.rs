@@ -220,7 +220,8 @@ pub fn get_tool_catalog(content_hash: &str) -> Option<CatalogIndex> {
     with_tools_hot(|hot| hot.tool_catalogs.get_cloned(&key))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
+#[must_use]
 pub fn hot_cache_len(kind: &str) -> usize {
     match kind {
         "chunk_bodies" | "merged_documents" | "skills_indices" => {

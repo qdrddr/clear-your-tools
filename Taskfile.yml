@@ -53,6 +53,27 @@ tasks:
     cmds:
       - rtk uv run pytest src/tests
 
+  test-gherkin:
+    desc: Run unit Gherkin BDD scenarios (pytest-bdd)
+    cmds:
+      - rtk uv run pytest src/tests/unit/gherkin -m gherkin
+
+  test-gherkin-integration:
+    desc: Run integration Gherkin scenarios (requires --run-integration)
+    cmds:
+      - rtk uv run pytest src/tests/integration/gherkin -m "integration and gherkin" --run-integration
+
+  test-cucumber:
+    desc: Run Rust cucumber BDD (cyt-indexer bm25 cohesion)
+    cmds:
+      - cargo test -p cyt-indexer --features testing --test cucumber_bm25_cohesion
+
+  test-mutation:
+    desc: Show mutation-testing scaffold docs (manual; not CI)
+    cmds:
+      - cat src/tests/mutation/README.md
+      - cat sdk/rust/cyt-indexer/tests/mutation/README.md
+
   ast-test:
     desc: Test ast-grep lint rules
     cmds:

@@ -462,8 +462,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_build_rust() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "cargo test -p cyt-indexer"
-		cyt_run env -u CARGO_TARGET_DIR cargo test -p cyt-indexer
+		info "cargo test -p cyt-indexer --features testing,ffi"
+		cyt_run env -u CARGO_TARGET_DIR cargo test -p cyt-indexer --features testing,ffi
 		cyt_test_indexer_build
 	}
 
@@ -611,8 +611,8 @@ PY
 	cyt_test_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "pytest src/tests (unit tests only; integration excluded)"
-		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-unit.sh" src/tests
+		info "pytest unit + quality_metrics (integration excluded)"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-unit.sh"
 	}
 
 	cyt_test_app() {

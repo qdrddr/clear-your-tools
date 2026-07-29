@@ -168,11 +168,12 @@ clear-your-tools (PyPI) →  cyt, cyt_core, cyt_client
 
 Application code (proxy, pruners, tools, skills, config, …) must use `cyt.indexer` or `cyt_core`
 facades. Tests may import `cyt_indexer` only in documented SDK parity tests (for example
-`src/tests/test_removed_chunks.py`).
+[`src/tests/quality_metrics/test_removed_chunks.py`](src/tests/quality_metrics/test_removed_chunks.py)).
 
 Enforcement:
 
-- `src/tests/test_import_boundaries.py` — AST check on every CI run (via pytest)
+- [`src/tests/quality_metrics/test_import_boundaries.py`](src/tests/quality_metrics/test_import_boundaries.py)
+  — AST check on every CI run (via pytest)
 - `.ast-grep/rules/python-no-direct-cyt-indexer-import.yml` — `ast-grep scan` in CI and prek
 - `scripts/check_agent_imports.py` and `scripts/check_cyt_client_imports.py` — import smoke checks in CI and prek
 
@@ -187,8 +188,41 @@ Local workflow: [`scripts/local-dev.sh`](scripts/local-dev.sh) (`app-setup`, `sd
 Registry isolation smoke: `./scripts/local-dev.sh simulate-registry` (installs built wheels in a temp venv).
 Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md).
 
-Optional publish check: `CYT_ENFORCE_INSTALLED_SDK=1 uv run pytest src/tests/test_import_boundaries.py`
+Optional publish check: `CYT_ENFORCE_INSTALLED_SDK=1 uv run pytest src/tests/quality_metrics/test_import_boundaries.py`
 asserts `cyt_indexer` resolves from site-packages, not `sdk/python`.
+
+## Test layout
+
+Python tests live under [`src/tests/`](src/tests/) in category subfolders:
+
+| Folder | Purpose |
+| ------ | ------- |
+| `unit/` | Default CI pytest (mocked/isolated) |
+| `integration/` | Live API tests (`pytest -m integration --run-integration`) |
+| `unit/gherkin/`, `integration/gherkin/` | BDD via pytest-bdd (feature files first, then step definitions) |
+| `quality_metrics/` | Import boundaries, pricing/timing/stats gates |
+| `qa/` | Manual harness scripts |
+| `mutation/`, `coverage/` | Scaffold for future workflows |
+
+Run commands:
+
+```bash
+./scripts/pytest-unit.sh                    # unit + quality_metrics (excludes integration)
+./scripts/pytest-unit.sh src/tests          # explicit full tree (still excludes integration marker)
+task test-gherkin                           # unit BDD only
+task test-gherkin-integration             # manual LLM prune gherkin
+cargo test -p cyt-indexer --features testing,ffi   # Rust unit + integration + cucumber
+task test-cucumber                          # Rust bm25 cohesion .feature
+```
+
+Gherkin workflow: write or edit `.feature` under `features/`, then implement matching
+`@given`/`@when`/`@then` steps and bind with `scenarios(...)`. Step files stay co-located
+with their feature directory.
+
+Rust cyt-indexer tests: [`sdk/rust/cyt-indexer/tests/`](sdk/rust/cyt-indexer/tests/) —
+`unit/`, `integration/` (+ cucumber), `ffi/`, and scaffold folders (`qa/`, `quality_metrics/`,
+`mutation/`, `coverage/`). Inline `#[test]` blocks were extracted to `tests/unit/`; enable
+with `--features testing`.
 
 ## Library usage
 

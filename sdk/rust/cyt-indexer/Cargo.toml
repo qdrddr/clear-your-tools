@@ -17,6 +17,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [features]
 default = ["cli"]
 cli = []
+testing = []
 python = ["pyo3", "pythonize"]
 node = ["napi", "napi-derive"]
 ffi = []
@@ -42,6 +43,10 @@ hex = "0.4.3"
 napi-build = "2"
 cbindgen = "0.29"
 
+[dev-dependencies]
+cucumber = "0.21"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+
 [[bin]]
 name = "cyt-indexer"
 path = "src/bin/cyt-indexer.rs"
@@ -49,15 +54,164 @@ required-features = ["cli"]
 
 [[test]]
 name = "ffi_smoke"
-path = "tests/ffi_smoke.rs"
+path = "tests/ffi/smoke.rs"
 required-features = ["ffi"]
 
 [[test]]
 name = "ffi_policies"
-path = "tests/ffi_policies.rs"
+path = "tests/ffi/policies.rs"
 required-features = ["ffi"]
 
 [[test]]
 name = "ffi_pipeline"
-path = "tests/ffi_pipeline.rs"
+path = "tests/ffi/pipeline.rs"
 required-features = ["ffi"]
+
+[[test]]
+name = "unit_analyzer"
+path = "tests/unit/analyzer.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_bindings_manifest"
+path = "tests/unit/bindings_manifest.rs"
+required-features = ["testing", "ffi"]
+
+[[test]]
+name = "unit_bm25_cohesion"
+path = "tests/unit/bm25_cohesion.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_bm25_cohesion_config"
+path = "tests/unit/bm25_cohesion_config.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_bm25_cohesion_token_counter"
+path = "tests/unit/bm25_cohesion_token_counter.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_bm25_search_catalog"
+path = "tests/unit/bm25_search_catalog.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_bm25_search_tantivy_score"
+path = "tests/unit/bm25_search_tantivy_score.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_cache_config"
+path = "tests/unit/cache_config.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_cache_fallback"
+path = "tests/unit/cache_fallback.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_cache_materialize"
+path = "tests/unit/cache_materialize.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_cache_memory"
+path = "tests/unit/cache_memory.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_cache_tools_catalog"
+path = "tests/unit/cache_tools_catalog.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_build"
+path = "tests/unit/pageindex_build.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_cache_layout"
+path = "tests/unit/pageindex_cache_layout.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_chunk_id"
+path = "tests/unit/pageindex_chunk_id.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_config"
+path = "tests/unit/pageindex_config.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_document_json"
+path = "tests/unit/pageindex_document_json.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_index"
+path = "tests/unit/pageindex_index.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_parse"
+path = "tests/unit/pageindex_parse.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_reconstruct"
+path = "tests/unit/pageindex_reconstruct.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_retrieve_parse"
+path = "tests/unit/pageindex_retrieve_parse.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pageindex_tree"
+path = "tests/unit/pageindex_tree.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_paths"
+path = "tests/unit/paths.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pipeline_coordinate"
+path = "tests/unit/pipeline_coordinate.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_pipeline_recompose"
+path = "tests/unit/pipeline_recompose.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_skills_io"
+path = "tests/unit/skills_io.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "unit_tiktoken"
+path = "tests/unit/tiktoken.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "integration_catalog_build"
+path = "tests/integration/catalog_build.rs"
+
+[[test]]
+name = "integration_skills"
+path = "tests/integration/skills.rs"
+
+[[test]]
+name = "cucumber_bm25_cohesion"
+path = "tests/integration/cucumber/bm25_cohesion.rs"
+harness = false
+required-features = ["testing"]

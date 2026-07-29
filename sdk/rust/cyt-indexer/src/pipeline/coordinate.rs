@@ -98,29 +98,3 @@ pub fn coordinate_bm25_prune(
         }))
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::build::catalog_index_from_value;
-    use crate::policies::policy_context_from_values;
-
-    #[test]
-    fn coordinate_bm25_prune_empty_inputs() -> Result<(), String> {
-        let index = catalog_index_from_value(&json!({"tools": [], "files": {}}));
-        let ctx = policy_context_from_values(&json!({}));
-        let result = coordinate_bm25_prune(
-            &[],
-            &json!({"json": [], "md": []}),
-            &json!({"json": [], "md": []}),
-            &index,
-            "hello",
-            &ctx,
-            &ctx,
-            &CoordinateBm25Options::default(),
-        )?;
-        assert!(result.get("skills").is_some());
-        assert!(result.get("tools").is_some());
-        Ok(())
-    }
-}

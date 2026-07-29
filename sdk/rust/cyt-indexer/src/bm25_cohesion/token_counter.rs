@@ -60,20 +60,3 @@ pub fn token_counter_for_kind(kind: TokenCounterKind) -> Box<dyn TokenCounter> {
         TokenCounterKind::Character => Box::new(CharacterTokenCounter),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn approximate_matches_legacy_formula() {
-        assert_eq!(approximate_token_count(""), 1);
-        assert_eq!(approximate_token_count("hello"), 3);
-    }
-
-    #[test]
-    fn tiktoken_counts_nonzero() {
-        let counter = TiktokenCounter;
-        assert!(counter.count("hello world") >= 1);
-    }
-}

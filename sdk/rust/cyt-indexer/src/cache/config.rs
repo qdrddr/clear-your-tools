@@ -52,7 +52,12 @@ impl MemoryCacheConfig {
         cfg
     }
 
-    fn apply_json(&mut self, value: &Value) {
+    #[cfg(any(test, feature = "testing"))]
+    pub fn apply_json(&mut self, value: &Value) {
+        self.apply_json_impl(value);
+    }
+
+    fn apply_json_impl(&mut self, value: &Value) {
         if let Some(v) = value.get("lazy_registry").and_then(Value::as_bool) {
             self.lazy_registry = v;
         }
@@ -118,23 +123,6 @@ pub fn set_memory_cache_config(cfg: MemoryCacheConfig) {
 /// Apply JSON config from Python (`cache.memory` block).
 pub fn configure_memory_cache(value: &Value) {
     let mut cfg = MemoryCacheConfig::from_env();
-    cfg.apply_json(value);
+    cfg.apply_json_impl(value);
     set_memory_cache_config(cfg);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn apply_json_nested_lru() {
-        let mut cfg = MemoryCacheConfig::default();
-        cfg.apply_json(&json!({
-            "lazy_registry": false,
-            "lru": { "chunk_bodies": 64 }
-        }));
-        assert!(!cfg.lazy_registry);
-        assert_eq!(cfg.lru_chunk_bodies, 64);
-    }
 }

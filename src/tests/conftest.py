@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from tests.test_credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
+from tests.support.credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
 
 DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (

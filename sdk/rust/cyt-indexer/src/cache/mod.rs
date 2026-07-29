@@ -5,41 +5,52 @@ mod config;
 mod disk_writer;
 mod hot;
 mod lock;
+#[cfg(not(any(test, feature = "testing")))]
 mod lru;
 mod manifest;
 mod materialize;
 mod skills_registry;
 mod tools_catalog;
 
-#[cfg(test)]
-mod fallback_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_guard;
 
-#[cfg(test)]
-mod memory_tests;
-
-#[cfg(test)]
-mod test_guard;
+#[cfg(any(test, feature = "testing"))]
+pub mod lru;
 
 pub use bm25_index::{Bm25IndexHandle, build_or_open_bm25_index};
 pub use config::{MemoryCacheConfig, configure_memory_cache, memory_cache_config};
+#[cfg(any(test, feature = "testing"))]
+pub use hot::hot_cache_len;
 pub use hot::{
     get_merged_document, get_skills_index, get_tantivy_handle, get_tool_catalog, read_chunk_body,
     reset_hot_caches, store_merged_document, store_skills_index, store_tantivy_handle,
     store_tool_catalog,
 };
 pub use manifest::CacheStatus;
-pub use materialize::{ensure_entry_materialized, materialize_skill_entry};
+pub use materialize::{
+    ensure_entry_materialized, extract_frontmatter_from_markdown, materialize_skill_entry,
+};
 #[cfg(any(feature = "ffi", feature = "python", feature = "node"))]
 pub(crate) use skills_registry::parse_skill_sources;
 pub use skills_registry::{SkillEntryRef, ensure_skills_registry};
-#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
-pub(crate) use skills_registry::{
-    ensure_skills_registry_from_specs, parse_skill_source_specs_json,
-};
+#[cfg(any(
+    feature = "ffi",
+    feature = "python",
+    feature = "node",
+    feature = "testing",
+    test
+))]
+pub use skills_registry::{ensure_skills_registry_from_specs, parse_skill_source_specs_json};
 pub use tools_catalog::{
     ToolCatalogHandle, ensure_tool_catalog, ensure_tool_catalog_from_entries,
     tool_definition_content_hash, tools_content_hash,
 };
+#[cfg(any(test, feature = "testing"))]
+#[must_use]
+pub fn original_definition_for_entry(entry: &serde_json::Value) -> Option<serde_json::Value> {
+    tools_catalog::original_definition_for_entry_impl(entry)
+}
 
 use std::path::{Path, PathBuf};
 

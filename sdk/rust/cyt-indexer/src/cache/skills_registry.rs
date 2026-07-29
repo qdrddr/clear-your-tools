@@ -40,7 +40,13 @@ pub fn parse_skill_sources(source_paths: &[PathBuf]) -> Vec<SkillSourceSpec> {
         .collect()
 }
 
-#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
+#[cfg(any(
+    feature = "ffi",
+    feature = "python",
+    feature = "node",
+    feature = "testing",
+    test
+))]
 fn parse_skill_sources_json(values: &[serde_json::Value]) -> Result<Vec<SkillSourceSpec>, String> {
     let mut specs = Vec::new();
     for value in values {
@@ -349,7 +355,13 @@ pub fn ensure_skills_registry_from_specs(
 /// # Errors
 ///
 /// Returns an error when an object entry is missing required fields.
-#[cfg(any(feature = "ffi", feature = "python", feature = "node", test))]
+#[cfg(any(
+    feature = "ffi",
+    feature = "python",
+    feature = "node",
+    feature = "testing",
+    test
+))]
 pub fn parse_skill_source_specs_json(
     values: &[serde_json::Value],
 ) -> Result<Vec<SkillSourceSpec>, String> {

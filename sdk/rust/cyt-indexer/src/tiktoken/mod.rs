@@ -175,23 +175,3 @@ pub fn truncate_description(description: &str, max_tokens: usize) -> Result<Stri
 pub fn truncate_description_or_passthrough(description: &str, max_tokens: usize) -> String {
     truncate_description(description, max_tokens).unwrap_or_else(|_| description.to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn count_hello_world() -> Result<(), String> {
-        let n = count_tokens("hello world")?;
-        assert!((1..=4).contains(&n));
-        Ok(())
-    }
-
-    #[test]
-    fn truncate_respects_budget() -> Result<(), String> {
-        let long = "word ".repeat(200);
-        let out = truncate_description(&long, 10)?;
-        assert!(count_tokens(&out)? <= 10);
-        Ok(())
-    }
-}

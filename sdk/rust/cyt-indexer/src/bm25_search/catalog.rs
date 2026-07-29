@@ -247,31 +247,3 @@ pub fn legacy_hash_id(data: &Value) -> u64 {
     let joined: Vec<String> = docs.iter().map(|d| d.text.clone()).collect();
     legacy_hash_u64(&joined.iter().map(String::as_str).collect::<Vec<_>>())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn scores_catalog_items() -> Result<(), String> {
-        let mut data = json!({
-            "json": [
-                {"content": "alpha beta tool", "score": "0"},
-                {"content": "unrelated finance news", "score": "0"}
-            ],
-            "md": []
-        });
-        score_catalog_in_place(&mut data, "alpha beta", &ScoreCatalogOptions::default())?;
-        let first = data["json"][0]["score"]
-            .as_str()
-            .ok_or_else(|| "missing first score".to_string())?;
-        let second = data["json"][1]["score"]
-            .as_str()
-            .ok_or_else(|| "missing second score".to_string())?;
-        let first_score = first.parse::<f64>().map_err(|err| err.to_string())?;
-        let second_score = second.parse::<f64>().map_err(|err| err.to_string())?;
-        assert!(first_score > second_score);
-        Ok(())
-    }
-}

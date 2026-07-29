@@ -93,15 +93,3 @@ pub fn term_frequencies(text: &str) -> std::collections::HashMap<String, u32> {
     }
     freqs
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn english_stopwords_removed() {
-        let tokens = analyze_text("the fox is crafty");
-        assert!(tokens.iter().any(|t| t.starts_with("fox") || t == "fox"));
-        assert!(!tokens.contains(&"the".to_string()));
-    }
-}

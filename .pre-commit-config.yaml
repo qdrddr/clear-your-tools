@@ -355,7 +355,7 @@ repos:
       #      - id: double-quote-string-fixer
       - id: name-tests-test
         args: [--pytest-test-first]
-        exclude: ^sdk/e2e/python/tests/(.*)\.py$
+        exclude: ^(sdk/e2e/python/tests/(.*)\.py$|src/tests/support/.*\.py$|src/tests/qa/.*\.py$)
 
   - repo: local
     hooks:
@@ -523,7 +523,7 @@ repos:
         args:
           - rtk cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
         language: system
-        files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi_smoke\.rs|cyt_indexer\.h)
+        files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi/|cyt_indexer\.h)
         pass_filenames: false
 
       - id: cmake-compile-db

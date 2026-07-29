@@ -14,7 +14,7 @@
 #
 # Commands:
 #   Core (Rust):
-#     core-rust | rust     cargo test -p cyt-indexer + release CLI catalog build
+#     core-rust | rust     cargo test -p cyt-indexer --features testing,ffi + release CLI catalog build
 #     indexer [subcmd]     cyt-indexer build tools|skills / retrieve (see help)
 #
 #   SDKs:
@@ -28,7 +28,7 @@
 #   Main app (src/):
 #     app-setup | setup    uv sync workspace (editable sdk/python via pyproject.toml)
 #     app-verify           verify main app (src/) re-exports local cyt-indexer-sdk
-#     app-test | test      app-verify + pytest src/tests (unit tests; integration excluded)
+#     app-test | test      app-verify + pytest unit/quality_metrics (integration excluded)
 #     app-build | build-wheels
 #                          uv build clear-your-tools wheel/sdist
 #     app-all              app-setup → app-verify → app-test → app-build

@@ -75,7 +75,7 @@ jobs:
           cargo set-version "$VERSION"
 
       - name: Test crate
-        run: cargo test -p cyt-indexer
+        run: cargo test -p cyt-indexer --features testing,ffi
 
       - name: Authenticate with crates.io
         id: auth

@@ -246,7 +246,9 @@ pythonpath = ["src"]
 testpaths = ["src/tests"]
 markers = [
     "integration: tests that call real external APIs (manual only: pytest -m integration --run-integration)",
-    "gherkin: BDD scenarios under src/tests/gherkin/ (see features/*.feature)",
+    "gherkin: BDD scenarios (pytest-bdd; see src/tests/unit/gherkin and src/tests/integration/gherkin)",
+    "qa: manual harness scripts under src/tests/qa/",
+    "quality_metrics: architectural gates and metrics validation under src/tests/quality_metrics/",
 ]
 filterwarnings = [
     "error",

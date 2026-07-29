@@ -252,26 +252,3 @@ pub const CBINDGEN_STUB_SYMBOLS: &[&str] = &[
     "cyt_path_catalog_prefix",
     "cyt_path_default_catalog_dir",
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn exports_are_unique() {
-        let mut seen = std::collections::HashSet::new();
-        for exp in EXPORTS {
-            assert!(seen.insert(exp.name), "duplicate export: {}", exp.name);
-        }
-    }
-
-    #[test]
-    fn cbindgen_stubs_listed_in_exports() {
-        for name in CBINDGEN_STUB_SYMBOLS {
-            assert!(
-                EXPORTS.iter().any(|e| e.name == *name),
-                "stub symbol missing from EXPORTS: {name}"
-            );
-        }
-    }
-}

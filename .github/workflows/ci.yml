@@ -57,7 +57,7 @@ jobs:
         run: uv run pytest src/tests
 
       - name: Rust tests (cyt-indexer)
-        run: cargo test -p cyt-indexer
+        run: cargo test -p cyt-indexer --features testing,ffi
 
       - name: Rust fmt
         run: cargo fmt --all -- --check
@@ -67,6 +67,9 @@ jobs:
 
       - name: Rust FFI smoke test
         run: cargo test -p cyt-indexer --no-default-features --features ffi --test ffi_smoke
+
+      - name: Rust cucumber (bm25 cohesion)
+        run: cargo test -p cyt-indexer --features testing --test cucumber_bm25_cohesion
 
       - name: Build package
         run: uv build

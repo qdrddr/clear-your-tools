@@ -45,6 +45,8 @@ pub use bm25_cohesion::{
     ApproximateTokenCounter, Bm25CohesionChunker, Bm25CohesionConfig, CharacterTokenCounter,
     CohesionChunk, TokenCounter, TokenCounterKind, WindowMode, approximate_token_count,
 };
+#[cfg(feature = "testing")]
+pub use bm25_cohesion::{testing_concat_chunks, testing_word_count};
 pub use bm25_search::{
     Bm25SearchConfig, CatalogDocument, NormalizeMode, ScoreCatalogOptions, bm25_frontmatter_gate,
     bm25_search_skill_chunks, catalog_fingerprint, collect_catalog_documents,
