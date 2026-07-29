@@ -1242,13 +1242,13 @@ class TestPrintProxyUrls:
     def test_prints_endpoints(self, capsys: pytest.CaptureFixture[str]) -> None:
         print_proxy_urls(8834, ["anthropic", "openai"])
         out = capsys.readouterr().out
-        assert "http://localhost:8834/anthropic" in out
-        assert "http://localhost:8834/openai" in out
+        assert "http://127.0.0.1:8834/anthropic" in out
+        assert "http://127.0.0.1:8834/openai" in out
 
-    def test_default_localhost(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_default_local_host(self, capsys: pytest.CaptureFixture[str]) -> None:
         print_proxy_urls(8834, ["openrouter"])
         out = capsys.readouterr().out
-        assert out.strip() == "http://localhost:8834/openrouter"
+        assert out.strip() == "http://127.0.0.1:8834/openrouter"
 
 
 class TestPromptUpstreams:

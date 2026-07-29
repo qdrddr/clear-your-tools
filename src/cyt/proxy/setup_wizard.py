@@ -33,6 +33,8 @@ from cyt.config import (
 )
 from cyt.proxy.model_names import is_syncable_model_name
 
+LOCAL_SERVE_HOST = "127.0.0.1"
+
 PipelineChoice = Literal["rerank", "llm", "both", "bm25"]
 SKILLS_PIPELINE_CHOICES: tuple[str, ...] = ("bm25", "rerank", "llm")
 SKILLS_PIPELINE_DEFAULT = "bm25"
@@ -1054,7 +1056,7 @@ def build_setup_overlay(
     }
 
 
-def print_proxy_urls(port: int, endpoints: list[str], *, host: str = "localhost") -> None:
+def print_proxy_urls(port: int, endpoints: list[str], *, host: str = LOCAL_SERVE_HOST) -> None:
     for endpoint in endpoints:
         print(f"http://{host}:{port}/{endpoint}")
 

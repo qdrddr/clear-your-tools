@@ -9,6 +9,7 @@ from typing import Any, Literal
 from cyt.config import reverse_debug_log_dir
 from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.config import codex_env_key_name
+from cyt.launch.proxy_guard import LOCAL_HOST
 from cyt.launch.upstream import AgentName, direct_upstream_base_url
 
 AgentRecipe = Literal["claude", "codex", "cursor"]
@@ -40,10 +41,10 @@ def _server_summary_lines(
     lines = [f"  port: {port}", f"  mode: {title}"]
     if agent is not None:
         lines.append(f"  agent: {agent}")
-    lines.append(f"  health: http://localhost:{port}/health")
+    lines.append(f"  health: http://{LOCAL_HOST}:{port}/health")
     lines.append(f"  hook: {hook_url_for_port(port)}")
     if endpoint is not None and not hook_mode:
-        lines.append(f"  endpoint: http://localhost:{port}/{endpoint}")
+        lines.append(f"  endpoint: http://{LOCAL_HOST}:{port}/{endpoint}")
     return lines
 
 
@@ -99,9 +100,9 @@ def _proxy_recipe_lines(
         if debug_strict:
             proxy_cmd += " --debug-strict"
     lines.append(proxy_cmd)
-    lines.append(f"curl -s http://localhost:{port}/health")
+    lines.append(f"curl -s http://{LOCAL_HOST}:{port}/health")
     if endpoint is not None:
-        lines.append(f"# Proxy endpoint: http://localhost:{port}/{endpoint}")
+        lines.append(f"# Proxy endpoint: http://{LOCAL_HOST}:{port}/{endpoint}")
     return lines
 
 
@@ -115,7 +116,7 @@ def _hook_recipe_lines(
     if config_path is not None:
         hook_cmd += f" --config {config_path}"
     lines.append(hook_cmd)
-    lines.append(f"curl -s http://localhost:{port}/health")
+    lines.append(f"curl -s http://{LOCAL_HOST}:{port}/health")
     lines.append("# Agent LLM traffic uses the configured upstream directly (no reverse proxy)")
     return lines
 
@@ -149,7 +150,7 @@ def _claude_recipe_lines(
         base_url = direct_upstream_base_url(config, endpoint)
         lines.append(f'export ANTHROPIC_BASE_URL="{base_url}"')
     else:
-        lines.append(f'export ANTHROPIC_BASE_URL="http://localhost:{port}/{endpoint}"')
+        lines.append(f'export ANTHROPIC_BASE_URL="http://{LOCAL_HOST}:{port}/{endpoint}"')
     lines.append('claude --model haiku -p "say hi"')
     return lines
 

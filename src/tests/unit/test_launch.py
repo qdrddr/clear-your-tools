@@ -434,7 +434,7 @@ class TestEnvReport:
         assert f"{key_var}: env: shell" in err
         assert "Proxy:" in err
         assert "  port: 8834" in err
-        assert "  endpoint: http://localhost:8834/anthropic" in err
+        assert "  endpoint: http://127.0.0.1:8834/anthropic" in err
         assert f"export {key_var}=...  # env: shell" in err
         assert "cyt proxy --port 8834 --upstream https://api.anthropic.com" in err
         assert "Manual proxy recipe" in err
@@ -516,7 +516,7 @@ class TestEnvReport:
         )
         err = capsys.readouterr().err
         assert "  port: 8836" in err
-        assert "http://localhost:8836/openai" in err
+        assert "http://127.0.0.1:8836/openai" in err
         assert "cyt proxy --port 8836" in err
         assert 'model_providers.cyt.base_url="http://127.0.0.1:8836/openai/v1"' in err
 
@@ -1201,6 +1201,19 @@ class TestResolveLaunchProxyPort:
 
 
 class TestEnsureProxy:
+    @pytest.fixture(autouse=True)
+    def _stub_record_spawned_proxy_pidfile(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        request: pytest.FixtureRequest,
+    ) -> None:
+        if request.node.name == "test_spawn_records_hook_daemon_pidfile_when_credentials_present":
+            return
+        monkeypatch.setattr(
+            "cyt.hook.daemon.record_spawned_proxy_pidfile",
+            lambda **kwargs: None,
+        )
+
     def test_spawns_when_health_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1226,6 +1239,51 @@ class TestEnsureProxy:
         assert guard.started_by_launch is True
         assert guard.process is process
         assert guard.port == 8834
+
+    def test_spawn_records_hook_daemon_pidfile_when_credentials_present(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            "network:\n  proxy:\n    reverse:\n      port: 8834\n",
+            encoding="utf-8",
+        )
+        process = MagicMock()
+        process.pid = 4242
+        process.poll.return_value = None
+        recorded: dict[str, object] = {}
+
+        def fake_record(**kwargs: object) -> None:
+            recorded.update(kwargs)
+
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard.is_port_in_use",
+            lambda port: False,
+        )
+        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: True)
+        monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", lambda **kwargs: process)
+        monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)
+        monkeypatch.setattr(
+            "cyt.hook.daemon.record_spawned_proxy_pidfile",
+            fake_record,
+        )
+
+        guard = ensure_proxy(
+            base_port=8834,
+            required_endpoint="openrouter",
+            config_path=config_path,
+            extra_env={"OPENROUTER_API_KEY": "test-token"},
+        )
+
+        assert guard.port == 8834
+        assert recorded == {
+            "port": 8834,
+            "pid": 4242,
+            "config_path": config_path,
+            "credentials_injected": True,
+        }
 
     def test_reuses_existing_proxy_on_base_port(
         self,
@@ -1443,7 +1501,7 @@ class TestLaunchRun:
         err = capsys.readouterr().err
         assert "Proxy:" in err
         assert "  port: 8835" in err
-        assert "  endpoint: http://localhost:8835/anthropic" in err
+        assert "  endpoint: http://127.0.0.1:8835/anthropic" in err
         assert "Vars used this run:" in err
         assert "Manual proxy recipe" in err
         assert "cyt proxy --port 8835" in err

@@ -85,6 +85,25 @@ def _emit_start_status(result: HookDaemonStartResult, *, unattended: bool) -> No
     )
 
 
+def record_spawned_proxy_pidfile(
+    *,
+    port: int,
+    pid: int,
+    config_path: Path | None,
+    credentials_injected: bool,
+) -> None:
+    """Record a launch-spawned proxy so hook ``sessionStart`` reuse won't restart it."""
+    config = load_config(config_path)
+    _write_pidfile(
+        port=port,
+        hook_url=hook_url_for_port(port),
+        pid=pid,
+        reused=False,
+        mode=_resolve_daemon_mode(config),
+        credentials_injected=credentials_injected,
+    )
+
+
 def _write_pidfile(
     *,
     port: int,

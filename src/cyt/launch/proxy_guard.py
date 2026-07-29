@@ -304,6 +304,14 @@ def _spawn_and_wait_for_healthy_proxy(
                 return None
             guard = ProxyGuard(process=process, started_by_launch=True, port=port)
             atexit.register(guard.terminate_if_started)
+            from cyt.hook.daemon import record_spawned_proxy_pidfile
+
+            record_spawned_proxy_pidfile(
+                port=port,
+                pid=process.pid,
+                config_path=config_path,
+                credentials_injected=bool(extra_env),
+            )
             return guard
         time.sleep(STARTUP_POLL_SECONDS)
 
