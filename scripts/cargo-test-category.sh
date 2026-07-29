@@ -2,18 +2,18 @@
 # Run cyt-indexer tests for one category (separate prek hooks per type).
 #
 # Usage:
-#   ./scripts/cargo-test-category.sh unit|integration|cucumber|ffi
+#   ./scripts/cargo-test-category.sh unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 
-category="${1:?usage: $0 unit|integration|cucumber|ffi}"
+category="${1:?usage: $0 unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa}"
 case "${category}" in
-unit | integration | cucumber | ffi) ;;
+unit | integration | cucumber | ffi | coverage | mutation | quality_metrics | qa) ;;
 *)
-	echo "unknown category: ${category} (expected unit|integration|cucumber|ffi)" >&2
+	echo "unknown category: ${category} (expected unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa)" >&2
 	exit 1
 	;;
 esac
@@ -36,9 +36,9 @@ done
 
 feature_args=()
 case "${category}" in
-unit) feature_args=(--features testing,ffi) ;;
-integration) feature_args=() ;;
-cucumber) feature_args=(--features testing) ;;
+unit) feature_args=(--no-default-features --features "testing,ffi") ;;
+integration) feature_args=(--no-default-features) ;;
+cucumber | coverage | mutation | quality_metrics | qa) feature_args=(--no-default-features --features testing) ;;
 ffi) feature_args=(--no-default-features --features ffi) ;;
 esac
 

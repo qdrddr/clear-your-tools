@@ -18,7 +18,7 @@
 #     indexer [subcmd]     cyt-indexer build tools|skills / retrieve (see help)
 #
 #   SDKs:
-#     sdk-python           maturin develop --release + verify sdk/python
+#     sdk-python           maturin develop --release + pytest tests/unit + verify
 #     sdk-verify           verify sdk/python install + native import
 #     sdk-typescript       npm ci, build, test (sdk/typescript)
 #     sdk-c                cmake build + ctest (sdk/c)
@@ -28,7 +28,7 @@
 #   Main app (src/):
 #     app-setup | setup    uv sync workspace (editable sdk/python via pyproject.toml)
 #     app-verify           verify main app (src/) re-exports local cyt-indexer-sdk
-#     app-test | test      app-verify + pytest unit/quality_metrics (integration excluded)
+#     app-test | test      app-verify + pytest categories (integration/qa excluded)
 #     app-build | build-wheels
 #                          uv build clear-your-tools wheel/sdist
 #     app-all              app-setup → app-verify → app-test → app-build
@@ -36,7 +36,7 @@
 #   Other:
 #     proxy [args...]      verify + uv run src/cyt/proxy/cli.py proxy ...
 #     simulate-registry    isolated venv: install built wheels + cargo/npm dry-run checks
-#     ci                   app-setup → app-verify → ast-grep scan → import checks → ruff → pytest → app-build (no rust/other sdks)
+#     ci                   app-setup → app-verify → ast-grep → import checks → ruff → pytest categories → app-build
 #     all                  core-rust → all SDKs → app-all (full monorepo check)
 #
 # Examples:

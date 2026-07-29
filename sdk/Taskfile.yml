@@ -76,7 +76,7 @@ tasks:
     desc: Run TypeScript SDK pre-commit hooks
     dir: "{{.REPO_ROOT}}"
     cmds:
-      - uv run prek run typescript-typecheck typescript-test typescript-npm-audit typescript-sort-package-json typescript-ast-scan --all-files
+      - uv run prek run typescript-typecheck typescript-test-unit typescript-test-parity typescript-npm-audit typescript-sort-package-json typescript-ast-scan --all-files
 
   fallow-dupes:
     cmds:

@@ -13,5 +13,6 @@ exec env -u CYT_RUN_INTEGRATION_TESTS uv run pytest \
 	--cov=src/cyt \
 	--cov-report=term-missing \
 	src/tests/unit \
+	src/tests/coverage \
 	src/tests/quality_metrics \
 	"$@"

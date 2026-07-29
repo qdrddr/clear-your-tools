@@ -49,9 +49,19 @@ tasks:
       - rtk uv run mypy -p cyt
 
   pytest:
-    desc: Run tests
+    desc: Run all automated app pytest categories (mirrors CI/prek)
     cmds:
-      - rtk uv run pytest src/tests
+      - rtk bash scripts/pytest-app-ci.sh
+
+  pytest-unit:
+    desc: Run fast app unit + quality_metrics only
+    cmds:
+      - rtk bash scripts/pytest-unit.sh
+
+  pytest-sdk-python:
+    desc: Run sdk/python binding tests
+    cmds:
+      - rtk bash scripts/pytest-sdk-python.sh
 
   test-gherkin:
     desc: Run unit Gherkin BDD scenarios (pytest-bdd)
@@ -102,7 +112,12 @@ tasks:
   prek:
     desc: Run Python pre-commit hooks
     cmds:
-      - rtk uv run prek run ty-check mypy pytest-unit pytest-gherkin-unit pytest-quality-metrics basedpyright ruff ruff-format --all-files
+      - rtk uv run prek run ty-check mypy pytest-unit pytest-gherkin-unit pytest-quality-metrics pytest-coverage pytest-mutation pytest-sdk-python basedpyright ruff ruff-format --all-files
+
+  simulate-registry:
+    desc: Pre-publish wheel/npm smoke (manual prek hook)
+    cmds:
+      - uv run prek run simulate-registry --stage manual --all-files
 
   ci:
     desc: Mirror CI Python checks
@@ -116,6 +131,7 @@ tasks:
       - task: format-check
       - task: mypy
       - task: pytest
+      - task: pytest-sdk-python
       - task: build
 
   all-tests:

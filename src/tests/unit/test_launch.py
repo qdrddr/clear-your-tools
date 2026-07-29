@@ -138,6 +138,23 @@ class TestFilterUpstreamsByAgent:
         assert names == ["openai"]
 
 
+class TestFilterUpstreamsForLaunch:
+    def test_claude_includes_openrouter_with_openai_kind(self) -> None:
+        upstreams = [
+            {"endpoint": "openai", "kind": "openai", "url": "https://api.openai.com"},
+            {"endpoint": "anthropic", "kind": "anthropic", "url": "https://api.anthropic.com"},
+            {
+                "endpoint": "openrouter",
+                "kind": "openai",
+                "url": "https://openrouter.ai/api",
+            },
+        ]
+        from cyt.launch.upstream import filter_upstreams_for_launch
+
+        names = [entry["endpoint"] for entry in filter_upstreams_for_launch(upstreams, "claude")]
+        assert names == ["anthropic", "openrouter"]
+
+
 class TestSelectUpstreamEndpoint:
     def test_auto_selects_single_match(
         self,
@@ -595,7 +612,16 @@ class TestEnvReport:
             token="agent-" + "token",
             upstream_key_var=or_key,
         )
+        monkeypatch.setattr(
+            "cyt.launch.secrets.resolve_hook_daemon_child_env",
+            lambda _config, **kwargs: {
+                or_key: "or-" + "token",
+                deep_key: "deep-" + "token",
+                "ANTHROPIC_AUTH_TOKEN": "agent-" + "token",
+            },
+        )
         extra = _proxy_spawn_extra_env(
+            config={},
             credential_sources={
                 or_key: "keyring",
                 deep_key: "keyring",
@@ -1181,6 +1207,36 @@ class TestEnsureProxy:
         assert guard.process is None
         assert guard.port == 8834
 
+    def test_launch_skips_reuse_when_disabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        process = MagicMock()
+        process.poll.return_value = None
+        calls: list[int] = []
+
+        def fake_port_in_use(port: int) -> bool:
+            calls.append(port)
+            return port == 8834
+
+        monkeypatch.setattr("cyt.launch.proxy_guard.is_port_in_use", fake_port_in_use)
+        monkeypatch.setattr(
+            "cyt.launch.proxy_guard._proxy_health",
+            lambda port: _anthropic_health_payload() if port == 8834 else None,
+        )
+        monkeypatch.setattr("cyt.launch.proxy_guard._health_ok", lambda port: port == 8835)
+        monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", lambda **kwargs: process)
+        monkeypatch.setattr("cyt.launch.proxy_guard.time.sleep", lambda _: None)
+
+        guard = ensure_proxy(
+            base_port=8834,
+            required_endpoint="anthropic",
+            allow_reuse=False,
+        )
+        assert guard.started_by_launch is True
+        assert guard.port == 8835
+        assert calls[:2] == [8834, 8835]
+
     def test_require_healthy_proxy_rejects_missing_debug(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1324,6 +1380,7 @@ class TestLaunchRun:
             lambda **kwargs: MagicMock(port=8835),
         )
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.proxy_guard.require_healthy_proxy", lambda **kwargs: None)
         monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
@@ -1374,6 +1431,7 @@ class TestLaunchRun:
             lambda **kwargs: MagicMock(port=8835),
         )
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.proxy_guard.require_healthy_proxy", lambda **kwargs: None)
         monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
@@ -1416,6 +1474,7 @@ class TestLaunchRun:
 
         monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.proxy_guard.require_healthy_proxy", lambda **kwargs: None)
         monkeypatch.setattr("cyt.agents.claude.launch.run", lambda **kwargs: 0)
 
         args = MagicMock(
@@ -1466,6 +1525,7 @@ class TestLaunchRun:
 
         monkeypatch.setattr("cyt.launch.cli.ensure_proxy", fake_ensure_proxy)
         monkeypatch.setattr("cyt.launch.cli.require_healthy_proxy", lambda **kwargs: None)
+        monkeypatch.setattr("cyt.launch.proxy_guard.require_healthy_proxy", lambda **kwargs: None)
         monkeypatch.setattr("cyt.agents.claude.launch.run", fake_run_claude)
 
         args = MagicMock(

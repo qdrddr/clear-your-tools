@@ -12,18 +12,24 @@ import {
   effectivePolicy,
   policyContextFromValues,
   scoringPolicyContext,
-} from "../policies.js";
-import { buildCatalogIndex, catalogIndexToolSchemaMetadata } from "../build.js";
-import { getVersion } from "../core.js";
-import { tokenCountFromDecomposedFrontmatter } from "../pageindex.js";
+} from "../../policies.js";
+import {
+  buildCatalogIndex,
+  catalogIndexToolSchemaMetadata,
+} from "../../build.js";
+import { getVersion } from "../../core.js";
+import { tokenCountFromDecomposedFrontmatter } from "../../pageindex.js";
 import {
   classifyAndCountCatalog,
   coordinateBm25Prune,
   recomposeAndRetrieveTools,
   buildSkillNodeCatalog,
-} from "../pipeline.js";
+} from "../../pipeline.js";
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const repoRoot = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../../..",
+);
 
 function skipParity(): boolean {
   return process.env.CYT_SKIP_PARITY === "1";

@@ -4,11 +4,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { bm25CohesionChunk, bm25ScoreCatalog, countTokens } from "../index.js";
+import {
+  bm25CohesionChunk,
+  bm25ScoreCatalog,
+  countTokens,
+} from "../../index.js";
 
 const fixturesDir = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../e2e/fixtures",
+  "../../../../e2e/fixtures",
 );
 
 test("countTokens smoke", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { collectEnums } from "../build.js";
+import { collectEnums } from "../../build.js";
 import {
   decomposedPrefix,
   getRootToolKey,
@@ -9,7 +9,7 @@ import {
   mdExt,
   toDecomposedKey,
   toolIdFromDecomposedRel,
-} from "../paths.js";
+} from "../../paths.js";
 
 test("path constants are stable", () => {
   assert.equal(jsonExt(), ".json");

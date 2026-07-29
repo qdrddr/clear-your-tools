@@ -260,7 +260,7 @@ filterwarnings = [
     "ignore:.*Use BaseMetaSerializer.*:DeprecationWarning",
     "ignore:.*Using `@model_validator` with mode='after' on a classmethod is deprecated.*:pydantic.warnings.PydanticDeprecatedSince212",
 ]
-addopts = "-q -m 'not integration'"
+addopts = "-q -m 'not integration and not qa'"
 asyncio_mode = "auto"
 
 [tool.coverage.run]

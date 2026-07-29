@@ -6,7 +6,7 @@ import {
   buildCatalogIndex,
   CatalogIndex,
   catalogToolCount,
-} from "../build.js";
+} from "../../build.js";
 
 test("catalogToolCount counts tools in catalog dict", () => {
   const dict = {

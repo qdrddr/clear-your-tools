@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { SkillsBuilder } from "../pageindex.js";
+import { SkillsBuilder } from "../../pageindex.js";
 
 async function createSkillDir(): Promise<string> {
   const tmp = await mkdtemp(join(tmpdir(), "cyt-skills-"));

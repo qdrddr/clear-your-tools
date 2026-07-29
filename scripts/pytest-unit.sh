@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Run unit tests only (excludes @pytest.mark.integration).
+# Run unit + quality_metrics app tests (fast local default; excludes gherkin/coverage/mutation/qa).
 #
 # Integration tests call real external APIs and are intended for manual runs:
 #   uv run pytest -m integration --run-integration
+#
+# Full CI parity (all automated categories):
+#   ./scripts/pytest-app-ci.sh
 #
 # Usage:
 #   ./scripts/pytest-unit.sh [pytest args...]
@@ -13,9 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
-DEFAULT_PATHS=(src/tests/unit src/tests/quality_metrics)
-if [ "$#" -eq 0 ]; then
-	set -- "${DEFAULT_PATHS[@]}"
+if [ "$#" -gt 0 ]; then
+	exec env -u CYT_RUN_INTEGRATION_TESTS uv run pytest -m "not integration and not qa" "$@"
 fi
 
-exec env -u CYT_RUN_INTEGRATION_TESTS uv run pytest -m "not integration" "$@"
+bash "${SCRIPT_DIR}/pytest-category.sh" unit
+bash "${SCRIPT_DIR}/pytest-category.sh" quality_metrics

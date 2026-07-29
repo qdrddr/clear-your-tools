@@ -67,6 +67,15 @@ TypeScript-only hooks: `task -d sdk prek` or `cd sdk/typescript && npm test`.
 
 Skip one hook: `SKIP=<hook-id> git commit …` (for example `SKIP=pytest-unit`). Registry E2E against live packages: [`sdk/e2e/scripts/run-local.sh`](sdk/e2e/scripts/run-local.sh).
 
+Pre-publish packaged-artifact smoke (manual — not part of `prek run -a`):
+
+```bash
+uv run prek run simulate-registry --stage manual --all-files
+task simulate-registry   # same via Taskfile
+./scripts/local-dev.sh simulate-registry
+KEEP_SIM_DIR=1 ./scripts/local-dev.sh simulate-registry   # keep temp dir for inspection
+```
+
 ### C SDK (for clang-tidy pre-commit hook)
 
 Generate `compile_commands.json` once after clone (re-run when `sdk/c/CMakeLists.txt` changes):
@@ -185,8 +194,12 @@ Enforcement:
 | Published `clear-your-tools` wheel | PyPI pin: `cyt-indexer-sdk==X.Y.Z` in `[project.dependencies]` |
 
 Local workflow: [`scripts/local-dev.sh`](scripts/local-dev.sh) (`app-setup`, `sdk-python`, `app-verify`).
-Registry isolation smoke: `./scripts/local-dev.sh simulate-registry` (installs built wheels in a temp venv).
-Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md).
+
+Pre-publish smoke: `prek run simulate-registry --stage manual --all-files` or
+`./scripts/local-dev.sh simulate-registry` (builds wheels, isolated venv install).
+
+Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md) (post-publish registry isolation only;
+the name **e2e** is reserved for that tree).
 
 Optional publish check: `CYT_ENFORCE_INSTALLED_SDK=1 uv run pytest src/tests/quality_metrics/test_import_boundaries.py`
 asserts `cyt_indexer` resolves from site-packages, not `sdk/python`.
@@ -211,21 +224,44 @@ Prek runs each category as a separate hook (failures name the type):
 | `pytest-unit` | `scripts/pytest-category.sh unit` |
 | `pytest-gherkin-unit` | `scripts/pytest-category.sh gherkin-unit` |
 | `pytest-quality-metrics` | `scripts/pytest-category.sh quality_metrics` |
+| `pytest-coverage` | `scripts/pytest-category.sh coverage` |
+| `pytest-mutation` | `scripts/pytest-category.sh mutation` |
+| `pytest-qa` | `scripts/pytest-category.sh qa` (manual) |
+| `pytest-sdk-python` | `scripts/pytest-sdk-python.sh` |
+| `typescript-test-unit` | `npm run test:unit` in `sdk/typescript` |
+| `typescript-test-parity` | `npm run test:parity` in `sdk/typescript` |
 | `cargo-test-unit` | `scripts/cargo-test-category.sh unit` |
 | `cargo-test-integration` | `scripts/cargo-test-category.sh integration` |
 | `cargo-test-cucumber` | `scripts/cargo-test-category.sh cucumber` |
 | `cargo-test-ffi` | `scripts/cargo-test-category.sh ffi` |
+| `cargo-test-coverage` | `scripts/cargo-test-category.sh coverage` |
+| `cargo-test-mutation` | `scripts/cargo-test-category.sh mutation` |
+| `cargo-test-quality-metrics` | `scripts/cargo-test-category.sh quality_metrics` |
+| `cargo-test-qa` | `scripts/cargo-test-category.sh qa` |
 
 Run commands:
 
 ```bash
-./scripts/pytest-unit.sh                    # unit + quality_metrics (excludes integration)
-./scripts/pytest-unit.sh src/tests          # explicit full tree (still excludes integration marker)
+./scripts/pytest-app-ci.sh                # all automated app categories (CI/prek parity)
+./scripts/pytest-unit.sh                  # fast: unit + quality_metrics only
+./scripts/pytest-sdk-python.sh            # sdk/python/tests/unit
+./scripts/pytest-category.sh qa           # manual QA harnesses
 task test-gherkin                           # unit BDD only
 task test-gherkin-integration             # manual LLM prune gherkin
 cargo test -p cyt-indexer --features testing,ffi   # Rust unit + integration + cucumber
 task test-cucumber                          # Rust bm25 cohesion .feature
 ```
+
+SDK test layout:
+
+| Path | Layout |
+| ---- | ------ |
+| [`sdk/python/tests/unit/`](sdk/python/tests/unit/) | Python binding unit tests |
+| [`sdk/typescript/src/test/unit/`](sdk/typescript/src/test/unit/) | TS smoke + pure-JS helpers |
+| [`sdk/typescript/src/test/parity/`](sdk/typescript/src/test/parity/) | Cross-language parity vs Python |
+| [`sdk/c/examples/`](sdk/c/examples/) | User samples + CTest smoke |
+| [`sdk/c/tests/`](sdk/c/tests/) | Scaffold for C/CMake-only regressions |
+| [`sdk/go/`](sdk/go/) | Colocated `*_test.go` (unchanged) |
 
 Gherkin workflow: write or edit `.feature` under `features/`, then implement matching
 `@given`/`@when`/`@then` steps and bind with `scenarios(...)`. Step files stay co-located

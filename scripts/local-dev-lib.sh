@@ -473,6 +473,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "maturin develop --release"
 		cyt_run uv run maturin develop --release
+		info "pytest sdk/python/tests/unit"
+		cyt_run env SKIP_MATURIN_DEVELOP=1 bash "${CYT_REPO_ROOT}/scripts/pytest-sdk-python.sh"
 	}
 
 	cyt_build_sdk_typescript() {
@@ -611,8 +613,8 @@ PY
 	cyt_test_app_python() {
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "pytest unit + quality_metrics (integration excluded)"
-		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-unit.sh"
+		info "pytest app categories (unit, gherkin-unit, quality_metrics, coverage, mutation)"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-app-ci.sh"
 	}
 
 	cyt_test_app() {

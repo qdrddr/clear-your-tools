@@ -45,6 +45,7 @@ def _isolate_credential_resolution(
     isolate_credential_env_paths(monkeypatch, tmp_path)
     install_test_pre_dotenv(monkeypatch)
     monkeypatch.setattr("cyt.launch.secrets._read_keyring", lambda _name: None)
+    monkeypatch.setattr("cyt.launch.proxy_guard.require_healthy_proxy", lambda **kwargs: None)
     yield
     clear_keyring_cache()
 
@@ -90,10 +91,13 @@ class TestUpstreamClassification:
 
 
 class TestLookupUpstreamKeyVar:
-    def test_openrouter_requires_explicit_provider_link(self, isolated_config_paths: dict) -> None:
+    def test_openrouter_resolves_via_domain_match_when_unlinked(
+        self,
+        isolated_config_paths: dict,
+    ) -> None:
         config = load_config(isolated_config_paths["user_config"])
         key_var = lookup_upstream_key_var(config, _openrouter_upstream(linked=False))
-        assert key_var is None
+        assert key_var == "OPENROUTER_" + "API_KEY"
 
     def test_openrouter_uses_registry_when_linked(self, isolated_config_paths: dict) -> None:
         config = load_config(isolated_config_paths["user_config"])
@@ -144,7 +148,10 @@ class TestDescribeUpstreamKeyVarResolution:
         assert resolution.provider_nick == "openrouter-ai"
         assert resolution.provider_nick_source == "from config.yaml upstream provider_nick"
 
-    def test_unlinked_openrouter_is_unresolved(self, isolated_config_paths: dict) -> None:
+    def test_unlinked_openrouter_resolves_via_domain_match(
+        self,
+        isolated_config_paths: dict,
+    ) -> None:
         config = load_config(isolated_config_paths["user_config"])
         resolution = describe_upstream_key_var_resolution(
             config,
@@ -152,9 +159,9 @@ class TestDescribeUpstreamKeyVarResolution:
         )
 
         assert resolution is not None
-        assert resolution.key_var_name is None
-        assert resolution.provider_nick is None
-        assert "no provider_nick on upstream entry" in resolution.provider_nick_source
+        assert resolution.key_var_name == "OPENROUTER_" + "API_KEY"
+        assert resolution.provider_nick == "openrouter-ai"
+        assert "domain_match" in resolution.provider_nick_source
 
 
 class TestBuildClaudeEnv:
@@ -194,7 +201,7 @@ class TestBuildClaudeEnv:
             auth_binding=None,
         )
         assert env["ANTHROPIC_AUTH_TOKEN"] == "user-token"
-        assert env["ANTHROPIC_BASE_URL"] == "http://localhost:8835/openrouter"
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8835/openrouter"
 
     def test_prefers_shell_auth_token_over_openrouter_key(
         self,

@@ -4,11 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { buildSkillNodeCatalog, classifyAndCountCatalog } from "../pipeline.js";
+import {
+  buildSkillNodeCatalog,
+  classifyAndCountCatalog,
+} from "../../pipeline.js";
 
 const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../e2e/fixtures/bm25_catalog.json",
+  "../../../../e2e/fixtures/bm25_catalog.json",
 );
 
 test("classifyAndCountCatalog reports optional chunk counts from fixture", () => {

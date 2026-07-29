@@ -1,5 +1,5 @@
 # SKIP=pytest-unit,mypy,basedpyright uv run prek run -a
-# prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest-unit pytest-gherkin-unit pytest-quality-metrics ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
+# prek run -a prettier typos committed detect-secrets add-trailing-comma uv-export uv-lock uv-sync pyupgrade markdownlint-cli2 ruff-format pytest-unit pytest-gherkin-unit pytest-quality-metrics pytest-coverage pytest-mutation pytest-sdk-python ty-check trailing-whitespace check-yaml check-json check-toml end-of-file-fixer detect-private-key check-case-conflict check-builtin-literals check-merge-conflict check-docstring-first debug-statements  name-tests-test codespell check-filenames
 fail_fast: false
 default_language_version:
   python: "3.13"
@@ -452,6 +452,50 @@ repos:
         language: system
         files: ^(src/.*\.py|src/tests/quality_metrics/.*)$
 
+      - id: pytest-coverage
+        name: pytest (coverage)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh coverage',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/coverage/.*|sdk/e2e/fixtures/bm25_catalog\.json)$
+
+      - id: pytest-mutation
+        name: pytest (mutation)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh mutation',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/mutation/.*)$
+
+      - id: pytest-qa
+        name: pytest (qa)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh qa',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/qa/.*|sdk/e2e/fixtures/bm25_catalog\.json)$
+
+      - id: pytest-sdk-python
+        name: pytest (sdk/python unit)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-sdk-python.sh',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(sdk/python/|sdk/rust/cyt-indexer/)
+
   - repo: https://github.com/DetachHead/basedpyright-pre-commit-mirror
     rev: 1.39.6
     hooks:
@@ -574,6 +618,42 @@ repos:
         files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi/|cyt_indexer\.h)
         pass_filenames: false
 
+      - id: cargo-test-coverage
+        name: cargo test (coverage)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh coverage
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/coverage/)|sdk/e2e/fixtures/(cohesion_sample\.md|cohesion_config\.json|bm25_catalog\.json)
+        pass_filenames: false
+
+      - id: cargo-test-mutation
+        name: cargo test (mutation)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh mutation
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/mutation/)
+        pass_filenames: false
+
+      - id: cargo-test-quality-metrics
+        name: cargo test (quality_metrics)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh quality_metrics
+        language: system
+        files: ^(sdk/rust/cyt-indexer/(src/|tests/quality_metrics/)|sdk/(python/pyproject\.toml|typescript/package\.json|rust/cyt-indexer/Cargo\.toml))
+        pass_filenames: false
+
+      - id: cargo-test-qa
+        name: cargo test (qa)
+        entry: bash scripts/prek-hook.sh
+        args:
+          - rtk bash scripts/cargo-test-category.sh qa
+        language: system
+        files: ^sdk/rust/cyt-indexer/(src/|tests/qa/)|sdk/e2e/fixtures/bm25_catalog\.json
+        pass_filenames: false
+
       - id: cmake-compile-db
         name: Generate sdk/c compile_commands.json
         entry: bash scripts/prek-hook.sh
@@ -602,12 +682,22 @@ repos:
         files: ^sdk/(typescript|e2e/typescript)/
         pass_filenames: false
 
-      - id: typescript-test
-        name: TypeScript SDK test
+      - id: typescript-test-unit
+        name: TypeScript SDK test (unit)
         entry: bash scripts/prek-hook.sh
-        args: ["cd sdk/typescript && rtk npm test"]
+        args:
+          ["cd sdk/typescript && rtk npm run build && rtk npm run test:unit"]
         language: system
-        files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
+        files: ^(sdk/typescript/|sdk/rust/cyt-indexer/|sdk/e2e/fixtures/)
+        pass_filenames: false
+
+      - id: typescript-test-parity
+        name: TypeScript SDK test (parity)
+        entry: bash scripts/prek-hook.sh
+        args:
+          ["cd sdk/typescript && rtk npm run build && rtk npm run test:parity"]
+        language: system
+        files: ^(sdk/typescript/|sdk/python/|sdk/rust/cyt-indexer/|sdk/e2e/fixtures/)
         pass_filenames: false
 
       - id: typescript-build
@@ -728,6 +818,18 @@ repos:
           ]
         language: system
         files: ^(src/|pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+      - id: simulate-registry
+        name: simulate-registry (pre-publish smoke)
+        entry: bash scripts/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh simulate-registry',
+          ]
+        language: system
+        stages: [manual]
+        always_run: true
         pass_filenames: false
 
       # Keep `suggestion` last

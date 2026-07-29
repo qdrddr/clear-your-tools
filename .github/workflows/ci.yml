@@ -53,8 +53,23 @@ jobs:
       - name: Mypy
         run: uv run mypy -p cyt
 
-      - name: Pytest
-        run: uv run pytest src/tests
+      - name: Pytest (unit)
+        run: bash scripts/pytest-category.sh unit
+
+      - name: Pytest (gherkin unit)
+        run: bash scripts/pytest-category.sh gherkin-unit
+
+      - name: Pytest (quality_metrics)
+        run: bash scripts/pytest-category.sh quality_metrics
+
+      - name: Pytest (coverage)
+        run: bash scripts/pytest-category.sh coverage
+
+      - name: Pytest (mutation)
+        run: bash scripts/pytest-category.sh mutation
+
+      - name: Pytest (sdk/python unit)
+        run: bash scripts/pytest-sdk-python.sh
 
       - name: Rust tests (cyt-indexer)
         run: cargo test -p cyt-indexer --features testing,ffi
@@ -108,6 +123,10 @@ jobs:
         working-directory: sdk/typescript
         run: npm run build
 
-      - name: Test TypeScript SDK
+      - name: Test TypeScript SDK (unit)
         working-directory: sdk/typescript
-        run: npm test
+        run: npm run build && npm run test:unit
+
+      - name: Test TypeScript SDK (parity)
+        working-directory: sdk/typescript
+        run: npm run test:parity

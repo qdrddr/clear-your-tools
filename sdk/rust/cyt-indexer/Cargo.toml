@@ -215,3 +215,39 @@ name = "cucumber_bm25_cohesion"
 path = "tests/integration/cucumber/bm25_cohesion.rs"
 harness = false
 required-features = ["testing"]
+
+[[test]]
+name = "coverage_catalog_retrieve_pipeline"
+path = "tests/coverage/catalog_retrieve_pipeline.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "coverage_cohesion_e2e_fixture"
+path = "tests/coverage/cohesion_e2e_fixture.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "mutation_resolve_build_catalog"
+path = "tests/mutation/resolve_build_catalog.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "mutation_cohesion_invariants"
+path = "tests/mutation/cohesion_invariants.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "quality_metrics_removed_chunks_parity"
+path = "tests/quality_metrics/removed_chunks_parity.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "quality_metrics_sdk_version_sync"
+path = "tests/quality_metrics/sdk_version_sync.rs"
+required-features = ["testing"]
+
+[[test]]
+name = "qa_bm25_scratch"
+path = "tests/qa/bm25_scratch.rs"
+harness = false
+required-features = ["testing"]

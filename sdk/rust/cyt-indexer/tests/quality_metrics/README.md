@@ -1,3 +1,7 @@
 # quality_metrics (Rust cyt-indexer)
 
-See repo test reorganization plan. Scaffold for future quality_metrics workflows.
+SDK parity and cross-language version gates.
+
+```bash
+./scripts/cargo-test-category.sh quality_metrics
+```

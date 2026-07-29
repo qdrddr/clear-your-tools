@@ -8,7 +8,7 @@ import {
   needsDescriptionReinstate,
   scoringPolicy,
   toolPolicies,
-} from "../policies.js";
+} from "../../policies.js";
 
 test("toolPolicies includes description variants", () => {
   const policies = toolPolicies();

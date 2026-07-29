@@ -13,6 +13,9 @@ DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (
     "integration tests are manual-only (pytest -m integration --run-integration)"
 )
+QA_SKIP_REASON = (
+    "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/pytest-category.sh qa)"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -88,6 +91,13 @@ def _integration_tests_enabled(config: pytest.Config) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _qa_tests_enabled(config: pytest.Config) -> bool:
+    if config.getoption("--run-qa", default=False):
+        return True
+    value = os.environ.get("CYT_RUN_QA_TESTS", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--agent",
@@ -108,12 +118,22 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="run tests marked integration that call real external APIs",
     )
+    parser.addoption(
+        "--run-qa",
+        action="store_true",
+        default=False,
+        help="run tests marked qa (manual BM25 smoke harnesses)",
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    if _integration_tests_enabled(config):
-        return
-    skip = pytest.mark.skip(reason=INTEGRATION_SKIP_REASON)
-    for item in items:
-        if item.get_closest_marker("integration"):
-            item.add_marker(skip)
+    if not _integration_tests_enabled(config):
+        skip = pytest.mark.skip(reason=INTEGRATION_SKIP_REASON)
+        for item in items:
+            if item.get_closest_marker("integration"):
+                item.add_marker(skip)
+    if not _qa_tests_enabled(config):
+        skip = pytest.mark.skip(reason=QA_SKIP_REASON)
+        for item in items:
+            if item.get_closest_marker("qa"):
+                item.add_marker(skip)

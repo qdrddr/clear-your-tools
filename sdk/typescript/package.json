@@ -36,7 +36,9 @@
     "build": "npm run build:native && npm run build:js",
     "build:js": "tsc",
     "build:native": "npx napi build --platform --release --manifest-path ../rust/cyt-indexer/Cargo.toml -p cyt-indexer --features node --no-default-features --output-dir . --js native.cjs --dts native.d.ts",
-    "test": "npm run build && node --test dist/test/*.test.js"
+    "test": "npm run build && npm run test:unit && npm run test:parity",
+    "test:parity": "node --test 'dist/test/parity/**/*.test.js'",
+    "test:unit": "node --test 'dist/test/unit/**/*.test.js'"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.7.0",

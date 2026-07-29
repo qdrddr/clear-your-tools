@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CatalogIndex } from "../build.js";
-import { DecomposedCatalog } from "../decomposed-catalog.js";
+import { CatalogIndex } from "../../build.js";
+import { DecomposedCatalog } from "../../decomposed-catalog.js";
 import {
   configureRuntimeDefaults,
   decomposedScore,
   enumScore,
-} from "../runtime-defaults.js";
-import { chunkSurvivorKey, removedChunks, retrieveTools } from "../retrieve.js";
-import { decomposedPrefix } from "../paths.js";
+} from "../../runtime-defaults.js";
+import {
+  chunkSurvivorKey,
+  removedChunks,
+  retrieveTools,
+} from "../../retrieve.js";
+import { decomposedPrefix } from "../../paths.js";
 
 test("score constants match Python SDK defaults", () => {
   configureRuntimeDefaults({
