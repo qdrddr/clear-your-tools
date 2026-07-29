@@ -120,12 +120,42 @@ def filter_upstreams_by_agent(
     return result
 
 
+def _is_non_canonical_upstream_entry(entry: dict[str, Any]) -> bool:
+    url = str(entry.get("url") or entry.get("host_url") or entry.get("base_url") or "")
+    if not url.strip():
+        return True
+    return infer_upstream_kind_from_url(normalize_upstream_url(url)) is None
+
+
+def filter_upstreams_for_launch(
+    upstreams: list[dict[str, Any]],
+    agent: AgentName,
+) -> list[dict[str, Any]]:
+    """Return upstream entries selectable for *agent* launch (includes compatible gateways)."""
+    expected = infer_upstream_kind_from_agent(agent)
+    result: list[dict[str, Any]] = []
+    for entry in upstreams:
+        kind_raw = entry.get("kind")
+        if kind_raw is None:
+            continue
+        try:
+            kind = normalize_upstream_kind(str(kind_raw))
+        except ValueError:
+            continue
+        if kind == expected:
+            result.append(entry)
+        elif agent == "claude" and kind == "openai" and _is_non_canonical_upstream_entry(entry):
+            # Gateways such as OpenRouter use openai kind but serve Claude via the proxy.
+            result.append(entry)
+    return result
+
+
 def compatible_upstreams(
     config: dict[str, Any],
     agent: AgentName,
 ) -> list[dict[str, Any]]:
     """Return upstream entries compatible with *agent*."""
-    return filter_upstreams_by_agent(list_upstreams(config), agent)
+    return filter_upstreams_for_launch(list_upstreams(config), agent)
 
 
 def upstream_endpoint_name(entry: dict[str, Any]) -> str:
@@ -156,7 +186,7 @@ def select_upstream_endpoint(
     label: str,
 ) -> str:
     """Pick an upstream endpoint, auto-selecting when only one matches *agent*."""
-    compatible = filter_upstreams_by_agent(upstreams, agent)
+    compatible = filter_upstreams_for_launch(upstreams, agent)
     if len(compatible) == 1:
         log_auto_selected_upstream(compatible[0], agent=agent)
         return upstream_endpoint_name(compatible[0])

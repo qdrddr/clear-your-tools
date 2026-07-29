@@ -462,6 +462,8 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_build_rust() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		info "cargo build -p cyt-indexer --features testing,ffi"
+		cyt_run env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --features testing,ffi
 		info "cargo test -p cyt-indexer --features testing,ffi"
 		cyt_run env -u CARGO_TARGET_DIR cargo test -p cyt-indexer --features testing,ffi
 		cyt_test_indexer_build

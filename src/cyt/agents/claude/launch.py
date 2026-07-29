@@ -65,7 +65,9 @@ def build_claude_env(
         return env, reportable
 
     if use_proxy:
-        base_url = f"http://localhost:{port}/{endpoint}"
+        from cyt.launch.proxy_guard import LOCAL_HOST
+
+        base_url = f"http://{LOCAL_HOST}:{port}/{endpoint}"
     else:
         base_url = direct_upstream_base_url(config, endpoint)
     env["ANTHROPIC_BASE_URL"] = base_url

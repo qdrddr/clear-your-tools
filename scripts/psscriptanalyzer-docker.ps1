@@ -23,6 +23,10 @@ if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
 
 Import-Module PSScriptAnalyzer
 
+if (-not $Path -or $Path.Count -eq 0) {
+    exit 0
+}
+
 if ($Check) {
     $params = @{
         EnableExit = $true

@@ -147,10 +147,11 @@ def _evaluate_launch_port(
     required_endpoint: str,
     debug: bool,
     debug_dry_run: bool,
+    allow_reuse: bool = True,
 ) -> LaunchPortAction:
     if is_port_in_use(port):
         health = _proxy_health(port)
-        if _is_reusable_cyt_proxy(
+        if allow_reuse and _is_reusable_cyt_proxy(
             health,
             endpoint=required_endpoint,
             debug=debug,
@@ -321,6 +322,7 @@ def ensure_proxy(
     debug_strict: bool = False,
     max_attempts: int = 100,
     extra_env: dict[str, str] | None = None,
+    allow_reuse: bool = True,
 ) -> ProxyGuard:
     """Reuse or spawn a CYT reverse proxy for this launch."""
     preferred_spawn = base_port + LAUNCH_PORT_OFFSET
@@ -332,6 +334,7 @@ def ensure_proxy(
             required_endpoint=required_endpoint,
             debug=debug,
             debug_dry_run=debug_dry_run,
+            allow_reuse=allow_reuse,
         )
         if action == "reuse":
             if not quiet and port != preferred_spawn:

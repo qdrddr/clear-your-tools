@@ -12,6 +12,7 @@ from typing import Any
 from cyt.config import (
     load_config,
     load_user_config_overlay,
+    provider_nick_for_dns,
     provider_registry,
     resolve_config_path,
     save_user_config,
@@ -50,16 +51,35 @@ def is_canonical_upstream(entry: dict[str, Any]) -> bool:
     return bool(url) and infer_upstream_kind_from_url(url) is not None
 
 
-def _provider_nick_from_upstream_entry(
-    config: dict[str, Any],
-    entry: dict[str, Any],
-) -> str | None:
+def _explicit_provider_nick_from_upstream_entry(entry: dict[str, Any]) -> str | None:
     """Return ``provider_nick`` only when explicitly set on the upstream entry."""
-    del config  # registry heuristics require an explicit upstream link
     raw = entry.get("provider_nick")
     if raw is not None and str(raw).strip():
         return str(raw).strip()
     return None
+
+
+def _provider_nick_from_domain_match(
+    config: dict[str, Any],
+    entry: dict[str, Any],
+) -> str | None:
+    url = upstream_entry_url(entry)
+    if not url:
+        return None
+    hostname = _extract_hostname(url)
+    if not hostname:
+        return None
+    return provider_nick_for_dns(config, hostname)
+
+
+def _provider_nick_from_upstream_entry(
+    config: dict[str, Any],
+    entry: dict[str, Any],
+) -> str | None:
+    """Return resolved ``provider_nick`` from the entry or bundled registry domain_match."""
+    if nick := _explicit_provider_nick_from_upstream_entry(entry):
+        return nick
+    return _provider_nick_from_domain_match(config, entry)
 
 
 def _key_var_from_provider_nick(config: dict[str, Any], provider_nick: str) -> str | None:
@@ -116,7 +136,7 @@ def describe_upstream_key_var_resolution(
         return None
 
     key_var = lookup_upstream_key_var(config, entry)
-    explicit_nick = _provider_nick_from_upstream_entry(config, entry)
+    explicit_nick = _explicit_provider_nick_from_upstream_entry(entry)
     if explicit_nick:
         return UpstreamKeyVarResolution(
             key_var_name=key_var,
@@ -140,6 +160,17 @@ def describe_upstream_key_var_resolution(
             key_var_name=key_var,
             provider_nick=registry_nick,
             provider_nick_source=source,
+        )
+
+    if domain_nick := _provider_nick_from_domain_match(config, entry):
+        url = upstream_entry_url(entry)
+        hostname = _extract_hostname(url) if url else "?"
+        return UpstreamKeyVarResolution(
+            key_var_name=key_var,
+            provider_nick=domain_nick,
+            provider_nick_source=(
+                f"inferred via domain_match on {hostname} → models.providers.{domain_nick}"
+            ),
         )
 
     return UpstreamKeyVarResolution(

@@ -52,37 +52,34 @@ repos:
     rev: v3.13.1-1
     hooks:
       - id: shfmt
-  - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
-    rev: v2.0.0
+  - repo: local
     hooks:
-      # brew install --cask powershell@preview
-      # ln -sf /usr/local/microsoft/powershell/7-preview/pwsh /opt/homebrew/bin/pwsh
-      # Check PowerShell code
       - id: psscriptanalyzer-check
+        name: check PowerShell code using PSScriptAnalyzer
+        language: system
+        entry: bash scripts/psscriptanalyzer-docker.sh
+        files: \.ps[dm]?1$
         args:
+          - -Check
           - -ExcludeRule
           - PSAvoidUsingWriteHost
           - -Fix
-      # Format PowerShell code
       - id: psscriptanalyzer-format
+        name: format PowerShell code using PSScriptAnalyzer
+        language: system
+        entry: bash scripts/psscriptanalyzer-docker.sh
+        files: \.ps[dm]?1$
+        args:
+          - -Format
+
+  # Legacy ophiosdev hook (null Path crash with --all-files); kept for reference.
+  # - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
+  #   rev: v2.0.0
+  #   hooks:
+  #     - id: psscriptanalyzer-check
+  #     - id: psscriptanalyzer-format
 
   # export PSSA_DOCKER_IMAGE=mcr.microsoft.com/powershell:7.5-debian-12
-  # - repo: local
-  #   hooks:
-  #     - id: psscriptanalyzer-check-docker
-  #       name: check PowerShell code using PSScriptAnalyzer (docker)
-  #       language: system
-  #       entry: bash scripts/psscriptanalyzer-docker.sh -Check
-  #       files: \.ps[dm]?1$
-  #       args:
-  #         - -ExcludeRule
-  #         - PSAvoidUsingWriteHost
-  #         - -Fix
-  #     - id: psscriptanalyzer-format-docker
-  #       name: format PowerShell code using PSScriptAnalyzer (docker)
-  #       language: system
-  #       entry: bash scripts/psscriptanalyzer-docker.sh -Format
-  #       files: \.ps[dm]?1$
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
@@ -658,7 +655,7 @@ repos:
         name: Generate sdk/c compile_commands.json
         entry: bash scripts/prek-hook.sh
         args:
-          - cmake -S sdk/c -B sdk/c/build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release
+          - bash scripts/cmake-compile-db.sh
         language: system
         files: ^sdk/c/
         pass_filenames: false

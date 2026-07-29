@@ -146,11 +146,9 @@ function(cyt_add_example name source)
     elseif(APPLE)
         add_dependencies("${name}" cyt_stage_dylib)
         add_custom_command(TARGET "${name}" POST_BUILD
-            COMMAND install_name_tool -change "${CYT_DEPS_DYLIB}"
-                "@loader_path/libcyt_indexer.dylib" "$<TARGET_FILE:${name}>"
-            COMMAND install_name_tool -change "${CYT_SHARED_LIB}"
-                "@loader_path/libcyt_indexer.dylib" "$<TARGET_FILE:${name}>"
+            COMMAND bash -c "set -euo pipefail; bin=\"$<TARGET_FILE:${name}>\"; for old in \"${CYT_DEPS_DYLIB}\" \"${CYT_SHARED_LIB}\"; do install_name_tool -change \"$old\" \"@loader_path/libcyt_indexer.dylib\" \"$bin\" || true; done"
             COMMENT "Fix ${name} dylib load path"
+            VERBATIM
         )
     endif()
 endfunction()
