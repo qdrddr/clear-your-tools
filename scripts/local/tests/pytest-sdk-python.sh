@@ -2,11 +2,11 @@
 # Run cyt-indexer-sdk Python binding tests (sdk/python/tests/unit).
 #
 # Usage:
-#   ./scripts/pytest-sdk-python.sh [pytest args...]
+#   ./scripts/local/tests/pytest-sdk-python.sh [pytest args...]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 SDK="${ROOT}/sdk/python"
 
 if [[ "${SKIP_MATURIN_DEVELOP:-}" != 1 ]]; then

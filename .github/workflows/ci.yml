@@ -39,10 +39,10 @@ jobs:
         run: uv run ast-grep scan src/ sdk/
 
       - name: Check agent imports
-        run: uv run python scripts/check_agent_imports.py
+        run: uv run python scripts/pre-commit-hooks/check_agent_imports.py
 
       - name: Check cyt_client imports
-        run: uv run python scripts/check_cyt_client_imports.py
+        run: uv run python scripts/pre-commit-hooks/check_cyt_client_imports.py
 
       - name: Ruff lint
         run: uv run ruff check src/cyt src/tests
@@ -54,22 +54,22 @@ jobs:
         run: uv run mypy -p cyt
 
       - name: Pytest (unit)
-        run: bash scripts/pytest-category.sh unit
+        run: bash scripts/local/tests/pytest-category.sh unit
 
       - name: Pytest (gherkin unit)
-        run: bash scripts/pytest-category.sh gherkin-unit
+        run: bash scripts/local/tests/pytest-category.sh gherkin-unit
 
       - name: Pytest (quality_metrics)
-        run: bash scripts/pytest-category.sh quality_metrics
+        run: bash scripts/local/tests/pytest-category.sh quality_metrics
 
       - name: Pytest (coverage)
-        run: bash scripts/pytest-category.sh coverage
+        run: bash scripts/local/tests/pytest-category.sh coverage
 
       - name: Pytest (mutation)
-        run: bash scripts/pytest-category.sh mutation
+        run: bash scripts/local/tests/pytest-category.sh mutation
 
       - name: Pytest (sdk/python unit)
-        run: bash scripts/pytest-sdk-python.sh
+        run: bash scripts/local/tests/pytest-sdk-python.sh
 
       - name: Rust tests (cyt-indexer)
         run: cargo test -p cyt-indexer --features testing,ffi

@@ -4,5 +4,5 @@ Precise regression tests for [cargo-mutants](https://mutants.rs/) (`mutants.toml
 
 ```bash
 cargo mutants -p cyt-indexer
-./scripts/cargo-test-category.sh mutation
+./scripts/local/tests/cargo-test-category.sh mutation
 ```

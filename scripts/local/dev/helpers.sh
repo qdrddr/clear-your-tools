@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Shared helpers for local monorepo development (source scripts/local-dev-lib.sh).
+# Shared helpers for local monorepo development (source scripts/local/dev/helpers.sh).
 # Not meant to be executed directly.
 
 if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	CYT_LOCAL_DEV_LIB_SOURCED=1
 
-	CYT_REPO_ROOT="${CYT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+	CYT_REPO_ROOT="${CYT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 	export CYT_REPO_ROOT
 
 	CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/bin"
@@ -476,7 +476,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		info "maturin develop --release"
 		cyt_run uv run maturin develop --release
 		info "pytest sdk/python/tests/unit"
-		cyt_run env SKIP_MATURIN_DEVELOP=1 bash "${CYT_REPO_ROOT}/scripts/pytest-sdk-python.sh"
+		cyt_run env SKIP_MATURIN_DEVELOP=1 bash "${CYT_REPO_ROOT}/scripts/local/tests/pytest-sdk-python.sh"
 	}
 
 	cyt_build_sdk_typescript() {
@@ -551,7 +551,7 @@ sdk_root = (root / "sdk" / "python").resolve()
 try:
     dist = metadata.distribution("cyt-indexer-sdk")
 except metadata.PackageNotFoundError:
-    sys.exit("cyt-indexer-sdk is not installed; run: ./scripts/local-dev.sh sdk-python")
+    sys.exit("cyt-indexer-sdk is not installed; run: ./scripts/local/dev/workflow.sh sdk-python")
 
 install_kind = "editable"
 try:
@@ -570,7 +570,7 @@ except FileNotFoundError:
             "cyt-indexer-sdk is not loaded from sdk/python\n"
             f"  package file: {pkg_dir}\n"
             f"  expected under: {sdk_root}\n"
-            "Use this repo's pyproject.toml [tool.uv.sources] and run ./scripts/local-dev.sh app-setup"
+            "Use this repo's pyproject.toml [tool.uv.sources] and run ./scripts/local/dev/workflow.sh app-setup"
         )
     install_kind = "path"
 
@@ -616,7 +616,7 @@ PY
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
 		info "pytest app categories (unit, gherkin-unit, quality_metrics, coverage, mutation)"
-		cyt_run bash "${CYT_REPO_ROOT}/scripts/pytest-app-ci.sh"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/local/tests/pytest-app-ci.sh"
 	}
 
 	cyt_test_app() {
@@ -667,7 +667,7 @@ PY
 	# Expected .env locations (same order as src/cyt/config load_proxy_env):
 	#   1. ${CYT_REPO_ROOT}/.env          e.g. .../tool-attention/.env
 	#   2. ${HOME}/.config/cyt/.env
-	# If a key is still unset, fall back to macOS Keychain (scripts/proxy.sh).
+	# If a key is still unset, fall back to macOS Keychain (scripts/local/dev/proxy.sh).
 	CYT_ENV_PATHS=(
 		"${CYT_REPO_ROOT}/.env"
 		"${HOME}/.config/cyt/.env"

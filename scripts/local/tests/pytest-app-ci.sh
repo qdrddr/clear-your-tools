@@ -2,7 +2,7 @@
 # Run all automated app pytest categories (mirrors prek hooks; excludes manual qa).
 #
 # Usage:
-#   ./scripts/pytest-app-ci.sh [extra pytest args forwarded to each category]
+#   ./scripts/local/tests/pytest-app-ci.sh [extra pytest args forwarded to each category]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

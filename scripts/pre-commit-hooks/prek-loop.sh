@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
+# Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
-# Groups are optional; see scripts/prek-hook-groups.yaml:
+# Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
 #   py, rust, go, c, ts, uni
 #
 # Examples:
-#   ./scripts/prek-loop.sh -g py
-#   ./scripts/prek-loop.sh --group py ts
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g py
+#   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
 #
 # If prek-hook-groups.yaml is missing, all hooks run regardless of --group.
 # Examples:
 # Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
 
-# ./scripts/prek-loop.sh --short --one-run --group py rust ts uni
-# ./scripts/prek-loop.sh --short --one-run --group rust go c uni
+# ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --group py rust ts uni
+# ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --group rust go c uni
 
 set -uo pipefail
 
@@ -50,7 +50,7 @@ while (($#)); do
 		;;
 	-h | --help)
 		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
-		echo "Groups: py rust go c ts uni (see scripts/prek-hook-groups.yaml)" >&2
+		echo "Groups: py rust go c ts uni (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
 		exit 0
 		;;
 	-*)
@@ -304,7 +304,7 @@ while true; do
 		else
 			echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
 		fi
-		[[ -n $PREK_DETAILS ]] && printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/shorten-paths.sh"
+		[[ -n $PREK_DETAILS ]] && printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh"
 		if ! $NO_GIT_ADD; then
 			rtk git add -A >/dev/null 2>&1 || true
 		fi

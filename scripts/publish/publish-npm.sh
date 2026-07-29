@@ -5,20 +5,20 @@
 # .github/workflows/publish-npm-sdk.yml after publish-crates.yml succeeds.
 #
 # Usage:
-#   ./scripts/publish-npm.sh
+#   ./scripts/publish/publish-npm.sh
 #
 # Prerequisites:
-#   - Version already synced (./scripts/sync-version.sh or publish-git.sh)
+#   - Version already synced (./scripts/publish/sync-version.sh or publish-git.sh)
 #   - npm login (one-time; OIDC cannot create a brand-new package)
 #   - Every cyt-indexer-sdk.*.node for all six platforms in sdk/typescript/
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SDK_DIR="${ROOT}/sdk/typescript"
 
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/shorten-paths.sh"
+source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
 export SHORTEN_ROOT="${ROOT}"
 
 usage() {

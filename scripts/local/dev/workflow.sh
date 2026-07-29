@@ -7,7 +7,7 @@
 # Production installs (pip install clear-your-tools) pull cyt-indexer-sdk from PyPI instead.
 #
 # Usage:
-#   ./scripts/local-dev.sh [--short|--silent] <command> [args...]
+#   ./scripts/local/dev/workflow.sh [--short|--silent] <command> [args...]
 #
 # Options:
 #   --short | --silent   Only print error/warning lines (hide info/success noise)
@@ -40,17 +40,17 @@
 #     all                  core-rust → all SDKs → app-all (full monorepo check)
 #
 # Examples:
-#   ./scripts/local-dev.sh all
-#   ./scripts/local-dev.sh --silent sdk-go
-#   ./scripts/local-dev.sh sdk-go
-#   ./scripts/local-dev.sh proxy --port 8834
-#   KEEP_SIM_DIR=1 ./scripts/local-dev.sh simulate-registry
+#   ./scripts/local/dev/workflow.sh all
+#   ./scripts/local/dev/workflow.sh --silent sdk-go
+#   ./scripts/local/dev/workflow.sh sdk-go
+#   ./scripts/local/dev/workflow.sh proxy --port 8834
+#   KEEP_SIM_DIR=1 ./scripts/local/dev/workflow.sh simulate-registry
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/local-dev-lib.sh"
+source "${SCRIPT_DIR}/helpers.sh"
 export SHORTEN_ROOT="${CYT_REPO_ROOT}"
 
 CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
@@ -130,7 +130,7 @@ _cyt_local_dev_main() {
 			;;
 		-h | --help | help)
 			cat <<EOF
-Usage: ./scripts/local-dev.sh indexer [build|survivors|retrieve|all] [args...]
+Usage: ./scripts/local/dev/workflow.sh indexer [build|survivors|retrieve|all] [args...]
 
   build tools   jq '.body.tools' debug/full_example.json -> cyt-indexer build tools -> .catalog/
   build skills  cyt-indexer build skills --skills DIR [--output DIR]
@@ -150,11 +150,11 @@ Override via env:
   CYT_INDEXER_TOOL_POLICIES='AskUserQuestion=always_include Agent=prune_optional'
 
 Examples:
-  ./scripts/local-dev.sh indexer
-  ./scripts/local-dev.sh indexer build
-  ./scripts/local-dev.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
-  ./scripts/local-dev.sh indexer retrieve --tool-policy Bash=always_include
-  ./scripts/local-dev.sh indexer retrieve skills --catalog ./.catalog --doc-id lean-ctx__skill --query content --line_num 15
+  ./scripts/local/dev/workflow.sh indexer
+  ./scripts/local/dev/workflow.sh indexer build
+  ./scripts/local/dev/workflow.sh indexer build skills --skills ~/.claude/skills --output ./.catalog
+  ./scripts/local/dev/workflow.sh indexer retrieve --tool-policy Bash=always_include
+  ./scripts/local/dev/workflow.sh indexer retrieve skills --catalog ./.catalog --doc-id lean-ctx__skill --query content --line_num 15
 EOF
 			;;
 		*)
@@ -308,8 +308,8 @@ PY
 		else
 			info "skip ast-grep (not on PATH)"
 		fi
-		cyt_run uv run python scripts/check_agent_imports.py
-		cyt_run uv run python scripts/check_cyt_client_imports.py
+		cyt_run uv run python scripts/pre-commit-hooks/check_agent_imports.py
+		cyt_run uv run python scripts/pre-commit-hooks/check_cyt_client_imports.py
 		if command -v ruff >/dev/null 2>&1 || [[ -x "${CYT_VENV_BIN}/ruff" ]]; then
 			info "ruff check"
 			cyt_run uv run ruff check src/cyt src/tests
@@ -335,8 +335,8 @@ PY
 }
 
 if [[ -n "${CYT_LOCAL_DEV_SHORT}" ]]; then
-	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/shorten-paths.sh" | cyt_filter_short_logs
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/../../lib/shorten-paths.sh" | cyt_filter_short_logs
 else
-	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/shorten-paths.sh"
+	_cyt_local_dev_main "${LOCAL_DEV_ARGS[@]}" 2>&1 | "${SCRIPT_DIR}/../../lib/shorten-paths.sh"
 fi
 exit "${PIPESTATUS[0]}"

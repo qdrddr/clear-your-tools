@@ -2,7 +2,7 @@
 
 Run:
   uv run pytest src/tests/qa -m qa --run-qa -v
-  ./scripts/pytest-category.sh qa -- "read files from disk"
+  ./scripts/local/tests/pytest-category.sh qa -- "read files from disk"
 """
 
 from __future__ import annotations

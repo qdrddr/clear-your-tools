@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # update pyproject.toml version first
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export ROOT
 version="$(
 	grep -E '^version[[:space:]]*=' "${ROOT}/pyproject.toml" |
@@ -23,7 +23,7 @@ git push origin "sdk/go/v${version}"
 # git tag -f cyt-indexer-rust-v0.1.6
 # git push -f origin cyt-indexer-rust-v0.1.6
 
-# bash scripts/sync-version.sh
+# bash scripts/publish/sync-version.sh
 # export CARGO_REGISTRY_TOKEN="$(security find-generic-password -s "cyt" -a "CARGO_REGISTRY_TOKEN" -w)"
 # cargo build -p cyt-indexer
 # cargo test -p cyt-indexer

@@ -1,5 +1,5 @@
 # Run PSScriptAnalyzer inside an official Microsoft PowerShell container.
-# Invoked by scripts/psscriptanalyzer-docker.sh (pre-commit docker hooks).
+# Invoked by scripts/pre-commit-hooks/psscriptanalyzer-docker.sh (pre-commit docker hooks).
 [CmdletBinding(DefaultParameterSetName = 'Check')]
 param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Check', Position = 0)]

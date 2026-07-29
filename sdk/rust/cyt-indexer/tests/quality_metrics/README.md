@@ -3,5 +3,5 @@
 SDK parity and cross-language version gates.
 
 ```bash
-./scripts/cargo-test-category.sh quality_metrics
+./scripts/local/tests/cargo-test-category.sh quality_metrics
 ```

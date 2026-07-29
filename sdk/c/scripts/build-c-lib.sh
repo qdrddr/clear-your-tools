@@ -9,7 +9,7 @@ CRATE_DIR="${REPO_ROOT}/sdk/rust/cyt-indexer"
 INCLUDE_DIR="${REPO_ROOT}/sdk/c/include"
 
 # shellcheck disable=SC1091
-source "${REPO_ROOT}/scripts/shorten-paths.sh"
+source "${REPO_ROOT}/scripts/lib/shorten-paths.sh"
 export SHORTEN_ROOT="${REPO_ROOT}"
 
 SUPPORTED_TARGETS=(
@@ -277,5 +277,5 @@ _cyt_build_c_lib_main() {
 	fi
 }
 
-_cyt_build_c_lib_main "$@" 2>&1 | "${REPO_ROOT}/scripts/shorten-paths.sh"
+_cyt_build_c_lib_main "$@" 2>&1 | "${REPO_ROOT}/scripts/lib/shorten-paths.sh"
 exit "${PIPESTATUS[0]}"

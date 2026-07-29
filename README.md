@@ -166,7 +166,7 @@ Clear Your Tools and the `cyt-indexer` SDKs support **Windows**, **macOS**, and 
 <summary><strong>SDK & CLI</strong></summary>
 
 All language bindings wrap the same Rust core: decompose tool schemas into searchable catalog
-chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./scripts/cyt-indexer-cli.sh)
+chunks, then recompose tools from a survivor list. See [cyt-indexer-cli.sh](./scripts/local/dev/cyt-indexer-cli.sh)
 <!-- markdownlint-disable MD013 -->
 <table border="0">
   <tr>

@@ -13,9 +13,7 @@ DEFAULT_LLM_PRUNE_AGENT = "cursor"
 INTEGRATION_SKIP_REASON = (
     "integration tests are manual-only (pytest -m integration --run-integration)"
 )
-QA_SKIP_REASON = (
-    "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/pytest-category.sh qa)"
-)
+QA_SKIP_REASON = "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/local/tests/pytest-category.sh qa)"
 
 
 @pytest.fixture(autouse=True)

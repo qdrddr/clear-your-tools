@@ -6,21 +6,21 @@
 # The clear-your-tools app package is published separately by publish-pypi.yml.
 #
 # Usage:
-#   ./scripts/publish-pypi.sh
+#   ./scripts/publish/publish-pypi.sh
 #
 # Prerequisites:
-#   - Version already synced (./scripts/sync-version.sh or publish-git.sh)
+#   - Version already synced (./scripts/publish/sync-version.sh or publish-git.sh)
 #   - uv, maturin, Rust toolchain
 #   - PyPI credentials (~/.pypirc or UV_PUBLISH_TOKEN)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SDK_DIR="${ROOT}/sdk/python"
 DIST_DIR="${ROOT}/dist"
 
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/shorten-paths.sh"
+source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
 export SHORTEN_ROOT="${ROOT}"
 
 usage() {

@@ -2,16 +2,16 @@
 # Propagate a single semver to all package manifests and lockfiles.
 #
 # Usage:
-#   ./scripts/sync-version.sh [VERSION]
+#   ./scripts/publish/sync-version.sh [VERSION]
 #
 # If VERSION is omitted, read it from the root pyproject.toml.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/shorten-paths.sh"
+source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
 export SHORTEN_ROOT="${ROOT}"
 ROOT_PYPROJECT="${ROOT}/pyproject.toml"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"

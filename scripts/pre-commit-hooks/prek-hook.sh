@@ -11,5 +11,5 @@ ROOT="$(cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && pwd -P)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export SHORTEN_ROOT="$ROOT"
 
-bash -c "$*" 2>&1 | "$SCRIPT_DIR/shorten-paths.sh"
+bash -c "$*" 2>&1 | "$SCRIPT_DIR/../lib/shorten-paths.sh"
 exit "${PIPESTATUS[0]}"

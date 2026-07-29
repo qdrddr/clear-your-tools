@@ -45,7 +45,7 @@ repos:
     hooks:
       - id: shellcheck
         name: ShellCheck v0.11.0
-        entry: bash scripts/shellcheck-precommit.sh
+        entry: bash scripts/pre-commit-hooks/shellcheck-precommit.sh
         language: system
         types: [shell]
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -57,7 +57,7 @@ repos:
       - id: psscriptanalyzer-check
         name: check PowerShell code using PSScriptAnalyzer
         language: system
-        entry: bash scripts/psscriptanalyzer-docker.sh
+        entry: bash scripts/pre-commit-hooks/psscriptanalyzer-docker.sh
         files: \.ps[dm]?1$
         args:
           - -Check
@@ -67,7 +67,7 @@ repos:
       - id: psscriptanalyzer-format
         name: format PowerShell code using PSScriptAnalyzer
         language: system
-        entry: bash scripts/psscriptanalyzer-docker.sh
+        entry: bash scripts/pre-commit-hooks/psscriptanalyzer-docker.sh
         files: \.ps[dm]?1$
         args:
           - -Format
@@ -171,21 +171,21 @@ repos:
     hooks:
       - id: clang-format
         name: clang-format (sdk/c)
-        entry: bash scripts/c-sdk-precommit.sh clang-format
+        entry: bash scripts/pre-commit-hooks/c-sdk-precommit.sh clang-format
         language: system
         files: ^sdk/c/.*\.(c|h)$
         exclude: ^sdk/c/include/cyt_indexer\.h$
         args: ["-i", "--style=file"]
       - id: cppcheck
         name: cppcheck (sdk/c)
-        entry: bash scripts/c-sdk-precommit.sh cppcheck
+        entry: bash scripts/pre-commit-hooks/c-sdk-precommit.sh cppcheck
         language: system
         files: ^sdk/c/.*\.(c|h)$
         exclude: ^sdk/c/include/cyt_indexer\.h$
         args: ["--suppress=missingIncludeSystem", "--error-exitcode=1"]
       - id: clang-tidy
         name: clang-tidy (sdk/c)
-        entry: bash scripts/c-sdk-precommit.sh clang-tidy
+        entry: bash scripts/pre-commit-hooks/c-sdk-precommit.sh clang-tidy
         language: system
         files: ^sdk/c/.*\.(c|h)$
         exclude: ^sdk/c/include/cyt_indexer\.h$
@@ -194,52 +194,52 @@ repos:
           - "--warnings-as-errors=*"
       - id: cpplint
         name: cpplint (sdk/c examples)
-        entry: bash scripts/c-sdk-precommit.sh cpplint
+        entry: bash scripts/pre-commit-hooks/c-sdk-precommit.sh cpplint
         language: system
         files: ^sdk/c/examples/.*\.c$
         args: ["--filter=-legal/copyright"]
       - id: go-fumpt
         name: go-fumpt (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh fumpt
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh fumpt
         language: system
         files: ^sdk/go/.*\.go$
       - id: go-imports
         name: go-imports (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh imports
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh imports
         language: system
         files: ^sdk/go/.*\.go$
       - id: go-mod-tidy-repo
         name: go-mod-tidy (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh tidy
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh tidy
         language: system
         files: ^sdk/go/
         pass_filenames: false
       - id: go-staticcheck-repo-mod
         name: go-staticcheck (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh staticcheck
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh staticcheck
         language: system
         files: ^sdk/go/
         pass_filenames: false
       - id: go-critic
         name: go-critic (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh critic
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh critic
         language: system
         files: ^sdk/go/.*\.go$
       - id: go-sec-repo-mod
         name: go-sec (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh sec
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh sec
         language: system
         files: ^sdk/go/
         pass_filenames: false
       - id: go-build-repo-mod
         name: go-build (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh build
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh build
         language: system
         files: ^sdk/go/
         pass_filenames: false
       - id: go-test-repo-mod
         name: go-test (sdk/go)
-        entry: bash scripts/go-sdk-precommit.sh test
+        entry: bash scripts/pre-commit-hooks/go-sdk-precommit.sh test
         language: system
         files: ^sdk/go/
         pass_filenames: false
@@ -255,8 +255,8 @@ repos:
     hooks:
       - id: sync-version
         name: sync-version
-        entry: bash scripts/prek-hook.sh
-        args: ["rtk bash scripts/sync-version.sh"]
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args: ["rtk bash scripts/publish/sync-version.sh"]
         language: system
         verbose: true
         pass_filenames: false
@@ -358,7 +358,7 @@ repos:
     hooks:
       - id: ty-check
         name: Ty type checker
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             "source .venv/bin/activate && rtk uv run ty check src/ --project . --output-format concise",
@@ -378,7 +378,7 @@ repos:
           )
       - id: check-filenames
         name: Check for spaces in all filenames
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           - |
             rtk git ls-files \
@@ -391,37 +391,37 @@ repos:
         pass_filenames: false
       - id: mypy
         name: mypy
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ["source .venv/bin/activate && cd src && rtk mypy ."]
         pass_filenames: false
         language: system
         files: '^src/.*\.py$'
       - id: check-cyt-client-imports
         name: check-cyt-client-imports
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/check_cyt_client_imports.py',
+            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/pre-commit-hooks/check_cyt_client_imports.py',
           ]
         pass_filenames: false
         language: system
-        files: ^(src/cyt_client/.*\.py|scripts/check_cyt_client_imports\.py)$
+        files: ^(src/cyt_client/.*\.py|scripts/pre-commit-hooks/check_cyt_client_imports\.py)$
       - id: check-agent-imports
         name: check-agent-imports
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/check_agent_imports.py',
+            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/pre-commit-hooks/check_agent_imports.py',
           ]
         pass_filenames: false
         language: system
-        files: ^(src/cyt/agents/.*\.py|src/cyt/skills/.*\.py|src/cyt/proxy/reverse\.py|scripts/check_agent_imports\.py)$
+        files: ^(src/cyt/agents/.*\.py|src/cyt/skills/.*\.py|src/cyt/proxy/reverse\.py|scripts/pre-commit-hooks/check_agent_imports\.py)$
       - id: pytest-unit
         name: pytest (unit)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh unit',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh unit',
           ]
         pass_filenames: false
         language: system
@@ -429,10 +429,10 @@ repos:
 
       - id: pytest-gherkin-unit
         name: pytest (gherkin unit)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh gherkin-unit',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh gherkin-unit',
           ]
         pass_filenames: false
         language: system
@@ -440,10 +440,10 @@ repos:
 
       - id: pytest-quality-metrics
         name: pytest (quality_metrics)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh quality_metrics',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh quality_metrics',
           ]
         pass_filenames: false
         language: system
@@ -451,10 +451,10 @@ repos:
 
       - id: pytest-coverage
         name: pytest (coverage)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh coverage',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh coverage',
           ]
         pass_filenames: false
         language: system
@@ -462,10 +462,10 @@ repos:
 
       - id: pytest-mutation
         name: pytest (mutation)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh mutation',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh mutation',
           ]
         pass_filenames: false
         language: system
@@ -473,10 +473,10 @@ repos:
 
       - id: pytest-qa
         name: pytest (qa)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-category.sh qa',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-category.sh qa',
           ]
         pass_filenames: false
         language: system
@@ -484,10 +484,10 @@ repos:
 
       - id: pytest-sdk-python
         name: pytest (sdk/python unit)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/pytest-sdk-python.sh',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/tests/pytest-sdk-python.sh',
           ]
         pass_filenames: false
         language: system
@@ -498,7 +498,7 @@ repos:
     hooks:
       - id: basedpyright
         name: basedpyright
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           ["source .venv/bin/activate && rtk basedpyright src sdk/python/src"]
         language: system
@@ -509,7 +509,7 @@ repos:
     hooks:
       - id: ast-test
         name: ast-grep rule tests
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ["rtk ast-grep test --skip-snapshot-tests"]
         language: system
         files: ^\.ast-grep/
@@ -517,7 +517,7 @@ repos:
 
       - id: uv-build
         name: Python package build
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ['cd "$(git rev-parse --show-toplevel)" && rtk uv build']
         language: system
         files: ^(pyproject\.toml|src/)
@@ -525,7 +525,7 @@ repos:
 
       - id: verify-sdk
         name: Verify cyt-indexer-sdk native import
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             'cd "$(git rev-parse --show-toplevel)" && rtk uv run python -c "from cyt_indexer._native import build_catalog_index; assert callable(build_catalog_index)"',
@@ -536,7 +536,7 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy (cyt-indexer)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             'cd "$(git rev-parse --show-toplevel)" && rtk cargo clippy -p cyt-indexer --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -W clippy::perf -W clippy::unwrap_used -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::dbg_macro -W clippy::missing_const_for_fn -W clippy::missing_panics_doc -W clippy::missing_errors_doc -W clippy::missing_safety_doc -W clippy::wildcard_imports -W clippy::enum_glob_use -W clippy::module_name_repetitions -W clippy::pub_use -W clippy::bool_comparison -W clippy::match_bool -W clippy::match_same_arms -W clippy::match_wild_err_arm -W clippy::needless_borrow -W clippy::needless_lifetimes -W clippy::inefficient_to_string -W clippy::large_enum_variant -W clippy::large_stack_arrays -W clippy::map_clone -W unused -W dead_code',
@@ -547,7 +547,7 @@ repos:
 
       - id: cargo-fmt
         name: cargo fmt (cyt-indexer)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             'cd "$(git rev-parse --show-toplevel)" && rtk cargo fmt --all -- --check',
@@ -558,7 +558,7 @@ repos:
 
       - id: cbindgen-header-drift
         name: cbindgen header drift check
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           - |
             set -euo pipefail
@@ -572,7 +572,7 @@ repos:
 
       - id: c-header-sync
         name: sdk/c header sync check
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           - cmp sdk/rust/cyt-indexer/cyt_indexer.h sdk/c/include/cyt_indexer.h
         language: system
@@ -581,88 +581,88 @@ repos:
 
       - id: cargo-test-unit
         name: cargo test (unit)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh unit
+          - rtk bash scripts/local/tests/cargo-test-category.sh unit
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/unit/)
         pass_filenames: false
 
       - id: cargo-test-integration
         name: cargo test (integration)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh integration
+          - rtk bash scripts/local/tests/cargo-test-category.sh integration
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/integration/)
         pass_filenames: false
 
       - id: cargo-test-cucumber
         name: cargo test (cucumber)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh cucumber
+          - rtk bash scripts/local/tests/cargo-test-category.sh cucumber
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/integration/features/|tests/integration/cucumber/)
         pass_filenames: false
 
       - id: cargo-test-ffi
         name: cargo test (ffi)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh ffi
+          - rtk bash scripts/local/tests/cargo-test-category.sh ffi
         language: system
         files: ^sdk/rust/cyt-indexer/(src/ffi/|tests/ffi/|cyt_indexer\.h)
         pass_filenames: false
 
       - id: cargo-test-coverage
         name: cargo test (coverage)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh coverage
+          - rtk bash scripts/local/tests/cargo-test-category.sh coverage
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/coverage/)|sdk/e2e/fixtures/(cohesion_sample\.md|cohesion_config\.json|bm25_catalog\.json)
         pass_filenames: false
 
       - id: cargo-test-mutation
         name: cargo test (mutation)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh mutation
+          - rtk bash scripts/local/tests/cargo-test-category.sh mutation
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/mutation/)
         pass_filenames: false
 
       - id: cargo-test-quality-metrics
         name: cargo test (quality_metrics)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh quality_metrics
+          - rtk bash scripts/local/tests/cargo-test-category.sh quality_metrics
         language: system
         files: ^(sdk/rust/cyt-indexer/(src/|tests/quality_metrics/)|sdk/(python/pyproject\.toml|typescript/package\.json|rust/cyt-indexer/Cargo\.toml))
         pass_filenames: false
 
       - id: cargo-test-qa
         name: cargo test (qa)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - rtk bash scripts/cargo-test-category.sh qa
+          - rtk bash scripts/local/tests/cargo-test-category.sh qa
         language: system
         files: ^sdk/rust/cyt-indexer/(src/|tests/qa/)|sdk/e2e/fixtures/bm25_catalog\.json
         pass_filenames: false
 
       - id: cmake-compile-db
         name: Generate sdk/c compile_commands.json
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          - bash scripts/cmake-compile-db.sh
+          - bash scripts/pre-commit-hooks/cmake-compile-db.sh
         language: system
         files: ^sdk/c/
         pass_filenames: false
 
       - id: build-c-lib-for-go
         name: build C lib for Go CGO
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ["bash sdk/c/scripts/build-c-lib.sh --no-sync-header"]
         language: system
         files: ^(sdk/(go/|rust/cyt-indexer/src/ffi/)|sdk/c/include/)
@@ -670,7 +670,7 @@ repos:
 
       - id: typescript-typecheck
         name: TypeScript SDK typecheck
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             "cd sdk/typescript && rtk npx tsc --noEmit && rtk npx tsc --noEmit -p ../e2e/typescript",
@@ -681,7 +681,7 @@ repos:
 
       - id: typescript-test-unit
         name: TypeScript SDK test (unit)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           ["cd sdk/typescript && rtk npm run build && rtk npm run test:unit"]
         language: system
@@ -690,7 +690,7 @@ repos:
 
       - id: typescript-test-parity
         name: TypeScript SDK test (parity)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           ["cd sdk/typescript && rtk npm run build && rtk npm run test:parity"]
         language: system
@@ -699,7 +699,7 @@ repos:
 
       - id: typescript-build
         name: TypeScript SDK build
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ["cd sdk/typescript && rtk npm run build"]
         language: system
         files: ^sdk/typescript/
@@ -707,7 +707,7 @@ repos:
 
       - id: typescript-npm-audit
         name: TypeScript SDK npm audit
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           - "set -euo pipefail; audit_if_locked() { if [[ -f package-lock.json ]]; then rtk npm audit --audit-level=high; fi; }; (cd sdk/typescript && audit_if_locked); (cd sdk/e2e/typescript && audit_if_locked)"
         language: system
@@ -716,7 +716,7 @@ repos:
 
       - id: typescript-sort-package-json
         name: TypeScript SDK sort-package-json
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             "cd sdk/typescript && rtk npx --yes sort-package-json package.json && cd ../e2e/typescript && rtk npx --yes sort-package-json package.json.in",
@@ -727,14 +727,14 @@ repos:
 
       - id: ast-scan
         name: Ast rule scan
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args: ["rtk ast-grep scan src/ sdk/"]
         language: system
         pass_filenames: false
 
       - id: typescript-ast-scan
         name: TypeScript SDK ast-scan
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
             'rtk ast-grep scan sdk/typescript sdk/e2e/typescript --globs "!sdk/typescript/src/test/**"',
@@ -745,18 +745,18 @@ repos:
 
       - id: all-fallow
         name: fallow checks (ui all-fallow)
-        entry: bash scripts/prek-hook.sh
-        args: ["rtk bash scripts/all-fallow.sh"]
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args: ["rtk bash scripts/pre-commit-hooks/all-fallow.sh"]
         language: system
         files: ^(ui/|sdk/(typescript|e2e/typescript)/|package\.json|package-lock\.json)
         pass_filenames: false
 
       - id: local-dev-core-rust
         name: local-dev core-rust (indexer build smoke)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk cargo build -p cyt-indexer --release && rtk bash scripts/local-dev.sh indexer build tools',
+            'cd "$(git rev-parse --show-toplevel)" && rtk cargo build -p cyt-indexer --release && rtk bash scripts/local/dev/workflow.sh indexer build tools',
           ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|debug/full_example\.json)
@@ -764,10 +764,10 @@ repos:
 
       - id: local-dev-sdk-python
         name: local-dev sdk-python
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-python',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh sdk-python',
           ]
         language: system
         files: ^(sdk/python/|sdk/rust/cyt-indexer/)
@@ -775,10 +775,10 @@ repos:
 
       - id: local-dev-sdk-typescript
         name: local-dev sdk-typescript
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-typescript',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh sdk-typescript',
           ]
         language: system
         files: ^(sdk/typescript/|sdk/rust/cyt-indexer/)
@@ -786,10 +786,10 @@ repos:
 
       - id: local-dev-sdk-c
         name: local-dev sdk-c
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-c',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh sdk-c',
           ]
         language: system
         files: ^(sdk/c/|sdk/rust/cyt-indexer/src/ffi/)
@@ -797,10 +797,10 @@ repos:
 
       - id: local-dev-sdk-go
         name: local-dev sdk-go
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh sdk-go',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh sdk-go',
           ]
         language: system
         files: ^(sdk/go/|sdk/c/|sdk/rust/cyt-indexer/src/ffi/)
@@ -808,10 +808,10 @@ repos:
 
       - id: local-dev-app
         name: local-dev app (src/)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh app-build',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh app-build',
           ]
         language: system
         files: ^(src/|pyproject\.toml|uv\.lock)$
@@ -819,10 +819,10 @@ repos:
 
       - id: simulate-registry
         name: simulate-registry (pre-publish smoke)
-        entry: bash scripts/prek-hook.sh
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local-dev.sh simulate-registry',
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/workflow.sh simulate-registry',
           ]
         language: system
         stages: [manual]

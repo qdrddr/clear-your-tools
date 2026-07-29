@@ -72,8 +72,8 @@ Pre-publish packaged-artifact smoke (manual — not part of `prek run -a`):
 ```bash
 uv run prek run simulate-registry --stage manual --all-files
 task simulate-registry   # same via Taskfile
-./scripts/local-dev.sh simulate-registry
-KEEP_SIM_DIR=1 ./scripts/local-dev.sh simulate-registry   # keep temp dir for inspection
+./scripts/local/dev/workflow.sh simulate-registry
+KEEP_SIM_DIR=1 ./scripts/local/dev/workflow.sh simulate-registry   # keep temp dir for inspection
 ```
 
 ### C SDK (for clang-tidy pre-commit hook)
@@ -184,7 +184,8 @@ Enforcement:
 - [`src/tests/quality_metrics/test_import_boundaries.py`](src/tests/quality_metrics/test_import_boundaries.py)
   — AST check on every CI run (via pytest)
 - `.ast-grep/rules/python-no-direct-cyt-indexer-import.yml` — `ast-grep scan` in CI and prek
-- `scripts/check_agent_imports.py` and `scripts/check_cyt_client_imports.py` — import smoke checks in CI and prek
+- `scripts/pre-commit-hooks/check_agent_imports.py` and
+`scripts/pre-commit-hooks/check_cyt_client_imports.py` — import smoke checks in CI and prek
 
 ### Dev vs production dependency resolution
 
@@ -193,10 +194,10 @@ Enforcement:
 | Monorepo dev (`uv sync`) | Editable path: `[tool.uv.sources] cyt-indexer-sdk = { path = "sdk/python", editable = true }` |
 | Published `clear-your-tools` wheel | PyPI pin: `cyt-indexer-sdk==X.Y.Z` in `[project.dependencies]` |
 
-Local workflow: [`scripts/local-dev.sh`](scripts/local-dev.sh) (`app-setup`, `sdk-python`, `app-verify`).
+Local workflow: [`scripts/local/dev/workflow.sh`](scripts/local/dev/workflow.sh) (`app-setup`, `sdk-python`, `app-verify`).
 
 Pre-publish smoke: `prek run simulate-registry --stage manual --all-files` or
-`./scripts/local-dev.sh simulate-registry` (builds wheels, isolated venv install).
+`./scripts/local/dev/workflow.sh simulate-registry` (builds wheels, isolated venv install).
 
 Published-package E2E: [`sdk/e2e/README.md`](sdk/e2e/README.md) (post-publish registry isolation only;
 the name **e2e** is reserved for that tree).
@@ -221,31 +222,31 @@ Prek runs each category as a separate hook (failures name the type):
 
 | Hook | Command |
 | ---- | ------- |
-| `pytest-unit` | `scripts/pytest-category.sh unit` |
-| `pytest-gherkin-unit` | `scripts/pytest-category.sh gherkin-unit` |
-| `pytest-quality-metrics` | `scripts/pytest-category.sh quality_metrics` |
-| `pytest-coverage` | `scripts/pytest-category.sh coverage` |
-| `pytest-mutation` | `scripts/pytest-category.sh mutation` |
-| `pytest-qa` | `scripts/pytest-category.sh qa` (manual) |
-| `pytest-sdk-python` | `scripts/pytest-sdk-python.sh` |
+| `pytest-unit` | `scripts/local/tests/pytest-category.sh unit` |
+| `pytest-gherkin-unit` | `scripts/local/tests/pytest-category.sh gherkin-unit` |
+| `pytest-quality-metrics` | `scripts/local/tests/pytest-category.sh quality_metrics` |
+| `pytest-coverage` | `scripts/local/tests/pytest-category.sh coverage` |
+| `pytest-mutation` | `scripts/local/tests/pytest-category.sh mutation` |
+| `pytest-qa` | `scripts/local/tests/pytest-category.sh qa` (manual) |
+| `pytest-sdk-python` | `scripts/local/tests/pytest-sdk-python.sh` |
 | `typescript-test-unit` | `npm run test:unit` in `sdk/typescript` |
 | `typescript-test-parity` | `npm run test:parity` in `sdk/typescript` |
-| `cargo-test-unit` | `scripts/cargo-test-category.sh unit` |
-| `cargo-test-integration` | `scripts/cargo-test-category.sh integration` |
-| `cargo-test-cucumber` | `scripts/cargo-test-category.sh cucumber` |
-| `cargo-test-ffi` | `scripts/cargo-test-category.sh ffi` |
-| `cargo-test-coverage` | `scripts/cargo-test-category.sh coverage` |
-| `cargo-test-mutation` | `scripts/cargo-test-category.sh mutation` |
-| `cargo-test-quality-metrics` | `scripts/cargo-test-category.sh quality_metrics` |
-| `cargo-test-qa` | `scripts/cargo-test-category.sh qa` |
+| `cargo-test-unit` | `scripts/local/tests/cargo-test-category.sh unit` |
+| `cargo-test-integration` | `scripts/local/tests/cargo-test-category.sh integration` |
+| `cargo-test-cucumber` | `scripts/local/tests/cargo-test-category.sh cucumber` |
+| `cargo-test-ffi` | `scripts/local/tests/cargo-test-category.sh ffi` |
+| `cargo-test-coverage` | `scripts/local/tests/cargo-test-category.sh coverage` |
+| `cargo-test-mutation` | `scripts/local/tests/cargo-test-category.sh mutation` |
+| `cargo-test-quality-metrics` | `scripts/local/tests/cargo-test-category.sh quality_metrics` |
+| `cargo-test-qa` | `scripts/local/tests/cargo-test-category.sh qa` |
 
 Run commands:
 
 ```bash
-./scripts/pytest-app-ci.sh                # all automated app categories (CI/prek parity)
-./scripts/pytest-unit.sh                  # fast: unit + quality_metrics only
-./scripts/pytest-sdk-python.sh            # sdk/python/tests/unit
-./scripts/pytest-category.sh qa           # manual QA harnesses
+./scripts/local/tests/pytest-app-ci.sh                # all automated app categories (CI/prek parity)
+./scripts/local/tests/pytest-unit.sh                  # fast: unit + quality_metrics only
+./scripts/local/tests/pytest-sdk-python.sh            # sdk/python/tests/unit
+./scripts/local/tests/pytest-category.sh qa           # manual QA harnesses
 task test-gherkin                           # unit BDD only
 task test-gherkin-integration             # manual LLM prune gherkin
 cargo test -p cyt-indexer --features testing,ffi   # Rust unit + integration + cucumber

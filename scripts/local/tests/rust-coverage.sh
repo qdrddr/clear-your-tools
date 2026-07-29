@@ -4,11 +4,11 @@
 # Install: cargo install cargo-llvm-cov
 #
 # Usage:
-#   ./scripts/rust-coverage.sh
+#   ./scripts/local/tests/rust-coverage.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${ROOT}"
 
 if ! command -v cargo-llvm-cov >/dev/null 2>&1; then

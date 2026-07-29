@@ -205,7 +205,7 @@ tasks:
     cmds:
       - |
         rtk fallow audit --format markdown --gate all 2>&1 \
-          | SHORTEN_ROOT="{{.REPO_ROOT}}" "{{.REPO_ROOT}}/scripts/shorten-paths.sh"
+          | SHORTEN_ROOT="{{.REPO_ROOT}}" "{{.REPO_ROOT}}/scripts/lib/shorten-paths.sh"
 
   all-tests:
     desc: Run all checks, continue on failure

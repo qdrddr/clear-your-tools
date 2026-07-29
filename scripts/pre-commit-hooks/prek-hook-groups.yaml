@@ -1,12 +1,12 @@
-# Language groups for scripts/prek-loop.sh
+# Language groups for scripts/pre-commit-hooks/prek-loop.sh
 #
 # Hooks may appear in more than one group. The `suggestion` hook is omitted
 # intentionally (informational only).
 #
 # Usage:
-#   ./scripts/prek-loop.sh -g py
-#   ./scripts/prek-loop.sh --group py ts
-#   ./scripts/prek-loop.sh -g release   # pre-publish simulate-registry only
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g py
+#   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g release   # pre-publish simulate-registry only
 #
 groups:
   py:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shorten absolute paths on stdin: repo root -> ./, home -> ~/
-# Usage: ... | ./scripts/shorten-paths.sh
-#    or: source ./scripts/shorten-paths.sh && ... | shorten_paths
+# Usage: ... | ./scripts/lib/shorten-paths.sh
+#    or: source ./scripts/lib/shorten-paths.sh && ... | shorten_paths
 set -uo pipefail
 
 sed_escape() { printf '%s' "$1" | sed 's/[\/&]/\\&/g'; }

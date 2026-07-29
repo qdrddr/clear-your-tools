@@ -2,11 +2,11 @@
 # Run one Python test category (separate prek hooks per type).
 #
 # Usage:
-#   ./scripts/pytest-category.sh unit|gherkin-unit|quality_metrics|coverage|mutation|qa
+#   ./scripts/local/tests/pytest-category.sh unit|gherkin-unit|quality_metrics|coverage|mutation|qa
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${ROOT}"
 
 category="${1:?usage: $0 unit|gherkin-unit|quality_metrics|coverage|mutation|qa}"

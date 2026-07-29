@@ -51,17 +51,17 @@ tasks:
   pytest:
     desc: Run all automated app pytest categories (mirrors CI/prek)
     cmds:
-      - rtk bash scripts/pytest-app-ci.sh
+      - rtk bash scripts/local/tests/pytest-app-ci.sh
 
   pytest-unit:
     desc: Run fast app unit + quality_metrics only
     cmds:
-      - rtk bash scripts/pytest-unit.sh
+      - rtk bash scripts/local/tests/pytest-unit.sh
 
   pytest-sdk-python:
     desc: Run sdk/python binding tests
     cmds:
-      - rtk bash scripts/pytest-sdk-python.sh
+      - rtk bash scripts/local/tests/pytest-sdk-python.sh
 
   test-gherkin:
     desc: Run unit Gherkin BDD scenarios (pytest-bdd)
@@ -125,8 +125,8 @@ tasks:
       - task: sync
       - task: verify-sdk
       - task: ast-scan
-      - cmd: uv run python scripts/check_agent_imports.py
-      - cmd: uv run python scripts/check_cyt_client_imports.py
+      - cmd: uv run python scripts/pre-commit-hooks/check_agent_imports.py
+      - cmd: uv run python scripts/pre-commit-hooks/check_cyt_client_imports.py
       - task: ruff-check
       - task: format-check
       - task: mypy

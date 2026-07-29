@@ -3,6 +3,6 @@
 Integration-style tests that exercise multi-module paths for `pytest-cov`.
 
 ```bash
-./scripts/pytest-coverage.sh
-./scripts/pytest-category.sh coverage
+./scripts/local/tests/pytest-coverage.sh
+./scripts/local/tests/pytest-category.sh coverage
 ```

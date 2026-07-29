@@ -2,11 +2,11 @@
 # Run cyt-indexer tests for one category (separate prek hooks per type).
 #
 # Usage:
-#   ./scripts/cargo-test-category.sh unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa
+#   ./scripts/local/tests/cargo-test-category.sh unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 
 category="${1:?usage: $0 unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa}"
