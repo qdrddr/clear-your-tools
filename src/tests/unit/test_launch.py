@@ -634,6 +634,44 @@ class TestEnvReport:
             deep_key: "deep-" + "token",
         }
 
+    def test_proxy_spawn_extra_env_falls_back_to_launch_credential_sources(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        or_key = _openrouter_api_key_var()
+        monkeypatch.setenv(or_key, "or-" + "token")
+        monkeypatch.setattr(
+            "cyt.launch.secrets.resolve_hook_daemon_child_env",
+            lambda _config, **kwargs: {},
+        )
+        extra = _proxy_spawn_extra_env(
+            config={},
+            credential_sources={or_key: "keyring"},
+            auth_binding=None,
+        )
+        assert extra == {or_key: "or-" + "token"}
+
+    def test_proxy_spawn_extra_env_resolves_keyring_when_not_in_os_environ(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        or_key = _openrouter_api_key_var()
+        monkeypatch.delenv(or_key, raising=False)
+        monkeypatch.setattr(
+            "cyt.launch.secrets.resolve_hook_daemon_child_env",
+            lambda _config, **kwargs: {},
+        )
+        monkeypatch.setattr(
+            "cyt.launch.secrets.resolve_credential",
+            lambda name, **kwargs: ("or-" + "token", "keyring") if name == or_key else (None, None),
+        )
+        extra = _proxy_spawn_extra_env(
+            config={},
+            credential_sources={or_key: "keyring"},
+            auth_binding=None,
+        )
+        assert extra == {or_key: "or-" + "token"}
+
 
 class TestPrepareRuntime:
     def test_launch_confirm_writes_config(

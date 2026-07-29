@@ -239,7 +239,7 @@ def _spawn_proxy(
     cmd = [
         sys.executable,
         "-m",
-        "cyt.proxy.cli",
+        "cyt.proxy.cli_impl",
         "proxy",
         "--port",
         str(port),
@@ -298,6 +298,9 @@ def _spawn_and_wait_for_healthy_proxy(
             return None
         if _health_ok(port):
             if process.poll() is not None:
+                return None
+            time.sleep(0.3)
+            if process.poll() is not None or not _health_ok(port):
                 return None
             guard = ProxyGuard(process=process, started_by_launch=True, port=port)
             atexit.register(guard.terminate_if_started)

@@ -279,20 +279,25 @@ def _proxy_spawn_extra_env(
     auth_binding: AgentAuthBinding | None,
 ) -> dict[str, str] | None:
     """Credential env vars for a launch-spawned proxy child (never agent auth)."""
-    from cyt.launch.secrets import resolve_hook_daemon_child_env
+    from cyt.launch.secrets import resolve_credential, resolve_hook_daemon_child_env
 
-    del credential_sources  # resolved from config; launch tracks sources separately
     resolved = resolve_hook_daemon_child_env(
         config,
         allow_prompt=False,
         require_all=False,
     )
-    extra: dict[str, str] = {}
+    extra: dict[str, str] = dict(resolved)
     agent_var = auth_binding.agent_env_var if auth_binding is not None else None
-    for name, value in resolved.items():
-        if name == agent_var:
+    for name in credential_sources:
+        if name == agent_var or name in extra:
             continue
-        extra[name] = value
+        value, _ = resolve_credential(name, allow_prompt=False)
+        if value:
+            extra[name] = value
+        elif value := os.environ.get(name):
+            extra[name] = value
+    if agent_var is not None:
+        extra.pop(agent_var, None)
     return extra or None
 
 
