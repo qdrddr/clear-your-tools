@@ -1,0 +1,142 @@
+cyt-indexer-sdk
+Copyright 2026 Damien Berezenko
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes the following third-party components:
+
+Dependency graph (Rust, cyt-indexer v2.7.0; built into this package's native extension):
+
+  cyt-indexer  (sdk/rust/cyt-indexer/)
+  ├── tantivy ──────────► byteorder, tantivy-fst, utf8-ranges, htmlescape, aho-corasick, memchr, …
+  ├── tiktoken-rs ──────► memchr, aho-corasick, bstr, regex, regex-automata
+  ├── chunk-your-tools ─► serde_json ─► memchr
+  ├── chunk ────────────► memchr
+  └── [build] cbindgen ─► MPL-2.0 (header generation)
+
+================================================================================
+Runtime dependencies (included in distributed binaries and libraries)
+================================================================================
+
+---
+
+tantivy 0.26.1 (direct dependency; sdk/rust/cyt-indexer/Cargo.toml)
+Full-text search engine. Licensed under MIT.
+
+- https://github.com/quickwit-oss/tantivy/blob/main/LICENSE
+
+---
+
+tiktoken-rs 0.12.0 (direct dependency; sdk/rust/cyt-indexer/Cargo.toml)
+Token encoding for LLM tokenizers. Licensed under MIT.
+
+- https://github.com/zurawiki/tiktoken-rs/blob/main/LICENSE
+
+---
+
+chunk 0.10.2 (direct dependency; sdk/rust/cyt-indexer/Cargo.toml)
+Semantic text chunking. Licensed under Apache-2.0 OR MIT.
+
+- https://github.com/chonkie-inc/chunk/blob/main/LICENSE
+
+---
+
+serde_json 1.0.150 (direct dependency and via chunk-your-tools)
+JSON serialization. Licensed under Apache-2.0 OR MIT.
+
+- https://github.com/serde-rs/json/blob/master/LICENSE-APACHE
+- https://github.com/serde-rs/json/blob/master/LICENSE-MIT
+
+---
+
+memchr 2.8.1
+Pulled in by: chunk, serde_json (chunk-your-tools), tantivy, tiktoken-rs.
+Dual-licensed under Unlicense and MIT; either license may apply.
+
+- https://github.com/BurntSushi/memchr/blob/master/COPYING
+- https://github.com/BurntSushi/memchr/blob/master/UNLICENSE
+- https://github.com/BurntSushi/memchr/blob/master/LICENSE-MIT
+
+---
+
+aho-corasick 1.1.4
+Pulled in by: tantivy, tiktoken-rs (via regex / bstr).
+Dual-licensed under Unlicense and MIT; either license may apply.
+
+- https://github.com/BurntSushi/aho-corasick/blob/master/UNLICENSE
+- https://github.com/BurntSushi/aho-corasick/blob/master/LICENSE-MIT
+
+---
+
+byteorder 1.5.0
+Pulled in by: tantivy.
+Dual-licensed under Unlicense and MIT; either license may apply.
+
+- https://github.com/BurntSushi/byteorder/blob/master/UNLICENSE
+- https://github.com/BurntSushi/byteorder/blob/master/LICENSE-MIT
+
+---
+
+tantivy-fst 0.5.0
+Pulled in by: tantivy.
+Dual-licensed under Unlicense and MIT; either license may apply.
+
+- https://github.com/quickwit-inc/fst/blob/main/UNLICENSE
+- https://github.com/quickwit-inc/fst/blob/main/LICENSE-MIT
+
+---
+
+utf8-ranges 1.0.5
+Pulled in by: tantivy-fst → tantivy.
+Dual-licensed under Unlicense and MIT; either license may apply.
+
+- https://github.com/BurntSushi/utf8-ranges/blob/master/UNLICENSE
+- https://github.com/BurntSushi/utf8-ranges/blob/master/LICENSE-MIT
+
+---
+
+htmlescape 0.3.1
+Pulled in by: tantivy.
+Licensed under Apache-2.0 OR MIT OR MPL-2.0; any one license may apply.
+
+- https://github.com/veddan/rust-htmlescape
+
+---
+
+bstr 1.12.3
+Pulled in by: tiktoken-rs (via regex-automata / globset paths).
+Licensed under Apache-2.0 OR MIT.
+
+- https://github.com/BurntSushi/bstr/blob/master/LICENSE-MIT
+- https://github.com/BurntSushi/bstr/blob/master/LICENSE-APACHE
+
+---
+
+regex 1.12.4
+Pulled in by: tiktoken-rs, tantivy.
+Licensed under Apache-2.0 OR MIT.
+
+- https://github.com/rust-lang/regex/blob/master/LICENSE-APACHE
+- https://github.com/rust-lang/regex/blob/master/LICENSE-MIT
+
+---
+
+regex-automata 0.4.14
+Pulled in by: tiktoken-rs, tantivy (via bstr / regex).
+Licensed under Apache-2.0 OR MIT.
+
+- https://github.com/rust-lang/regex/blob/master/LICENSE-APACHE
+- https://github.com/rust-lang/regex/blob/master/LICENSE-MIT
+
+================================================================================
+Build dependencies (compile time only; not linked into runtime binaries)
+================================================================================
+
+---
+
+cbindgen 0.29.4 (build dependency; sdk/rust/cyt-indexer/Cargo.toml)
+Used at compile time to generate C bindings (cyt_indexer.h). Licensed under MPL-2.0.
+MPL obligations apply only if you modify and distribute cbindgen itself; using the
+generated header or linked binary does not extend MPL to this project.
+
+- https://github.com/mozilla/cbindgen/blob/main/LICENSE

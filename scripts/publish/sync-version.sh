@@ -111,6 +111,12 @@ submodule_at_tag() {
 	[[ -n "${current}" && "${current}" == "${target}" ]]
 }
 
+submodule_has_local_changes() {
+	local dir="$1"
+	! submodule_git "${dir}" diff-index --quiet HEAD -- 2>/dev/null ||
+		! submodule_git "${dir}" diff-index --quiet --cached HEAD -- 2>/dev/null
+}
+
 sync_chunk_submodule() {
 	local name="$1"
 	local dir="$2"
@@ -137,6 +143,12 @@ sync_chunk_submodule() {
 	if ! submodule_git "${dir}" rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
 		printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
 		return 1
+	fi
+
+	if submodule_has_local_changes "${dir}"; then
+		printf 'warning: submodule %s has local changes; skipping checkout to %s\n' \
+			"${name}" "${tag}" | shorten_paths >&2
+		return 0
 	fi
 
 	if ! submodule_git "${dir}" fetch origin --tags 2>/dev/null; then

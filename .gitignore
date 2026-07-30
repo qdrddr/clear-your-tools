@@ -155,6 +155,8 @@ graphify-out/cache/
 .codebase-memory/
 ~/.config/lean-ctx/
 scripts/mcpc/output/
+scripts/legal/output/
+scripts/deps/output/
 scripts/mcpc/payloads/
 sample.*
 .cargo-home/

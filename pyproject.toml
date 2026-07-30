@@ -13,6 +13,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 readme = "README.md"
+license = { text = "Apache-2.0" }
 authors = [
   { name = "Damien Berezenko", linkedin = "https://www.linkedin.com/in/damien-e" },
 ]
@@ -31,6 +32,7 @@ dependencies = [
 Homepage = "https://github.com/qdrddr/clear-your-tools"
 Repository = "https://github.com/qdrddr/clear-your-tools"
 Issues = "https://github.com/qdrddr/clear-your-tools/issues"
+PyPI = "https://pypi.org/project/clear-your-tools/"
 
 [project.optional-dependencies]
 claude = []
@@ -73,6 +75,7 @@ only-include = [
   "/pyproject.toml",
   "/README.md",
   "/LICENSE",
+  "/NOTICE",
 ]
 skip-excluded-dirs = true
 exclude = [
@@ -94,6 +97,7 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel.force-include]
+"NOTICE" = "NOTICE"
 "src/cyt/config/defaults.yaml" = "cyt/config/defaults.yaml"
 "src/cyt/py.typed" = "cyt/py.typed"
 "src/cyt_core/py.typed" = "cyt_core/py.typed"

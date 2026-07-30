@@ -1,0 +1,16 @@
+clear-your-tools
+Copyright 2026 Damien Berezenko
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes the following third-party components:
+
+---
+
+cyt-indexer-sdk (runtime dependency)
+Python package with a native extension built from cyt-indexer (Rust). Third-party
+components statically linked into that extension are attributed in the cyt-indexer-sdk
+NOTICE shipped with that package.
+
+- https://pypi.org/project/cyt-indexer-sdk/
+- https://github.com/qdrddr/clear-your-tools/tree/main/sdk/python
