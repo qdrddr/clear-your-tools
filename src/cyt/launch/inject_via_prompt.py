@@ -14,9 +14,9 @@ InjectViaMode = Literal["hook", "proxy"]
 
 def _stop_for_inject_via_mode(mode: InjectViaMode, *, verbose: bool = False) -> None:
     if mode == "hook":
-        from cyt.stop import stop_proxies_only
+        from cyt.stop import stop_proxies_for_hook_setup
 
-        stop_proxies_only(verbose=verbose)
+        stop_proxies_for_hook_setup(verbose=verbose)
         return
 
     from cyt.hook.daemon import daemon_stop
@@ -135,18 +135,43 @@ def ensure_launch_inject_via_proxy(
     return config
 
 
+def _prompt_stop_running_proxies_if_needed(config_path: Path) -> None:
+    from cyt.hook.daemon import daemon_start
+    from cyt.stop import proxies_conflicting_with_hook_setup, stop_proxies_for_hook_setup
+
+    if not proxies_conflicting_with_hook_setup():
+        return
+    if not sys.stdin.isatty():
+        return
+    if not _prompt_yes_no(
+        "A CYT reverse proxy is still running. Stop it to avoid conflicts with hook injection?",
+        default_yes=True,
+    ):
+        return
+    stop_proxies_for_hook_setup(verbose=False)
+    daemon_start(
+        config_path=config_path,
+        verbose=False,
+        unattended=not sys.stdin.isatty(),
+    )
+
+
 def ensure_hook_inject_via(
     config_path: Path,
     config: dict[str, Any],
 ) -> dict[str, Any]:
     """Ensure hook injection before installing agent hooks."""
-    return _ensure_inject_via(
+    already_hook = inject_via(config) == "hook"
+    config = _ensure_inject_via(
         config_path,
         config,
         target="hook",
         prompt=("This installation uses hook injection. Switch pruning.inject_via to hook?"),
         start_runtime=True,
     )
+    if already_hook:
+        _prompt_stop_running_proxies_if_needed(config_path)
+    return config
 
 
 CURSOR_PROXY_UNSUPPORTED_MESSAGE = (

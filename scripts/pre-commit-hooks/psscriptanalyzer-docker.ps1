@@ -41,8 +41,19 @@ if ($Check) {
 }
 elseif ($Format) {
     foreach ($file in $Path) {
-        $content = (Get-Content -Raw -Path $file).Trim()
-        Invoke-Formatter -ScriptDefinition $content | Out-File -FilePath $file
+        $content = Get-Content -Raw -Path $file
+        if ($null -eq $content) {
+            continue
+        }
+        $normalized = $content.TrimEnd("`r", "`n")
+        if ([string]::IsNullOrEmpty($normalized)) {
+            continue
+        }
+        $formatted = (Invoke-Formatter -ScriptDefinition $normalized).TrimEnd("`r", "`n")
+        if ($formatted -ceq $normalized) {
+            continue
+        }
+        [System.IO.File]::WriteAllText($file, "${formatted}`n")
     }
 }
 else {

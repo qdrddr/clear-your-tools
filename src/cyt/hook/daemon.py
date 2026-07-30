@@ -38,7 +38,6 @@ from cyt.runtime_registry import (
     read_hook_daemon_entries,
     read_hook_daemon_pidfile,
     remove_hook_daemon_entries,
-    remove_proxy_entries,
     upsert_hook_daemon_entry,
     upsert_proxy_entry,
 )
@@ -464,8 +463,9 @@ def _process_matches_cyt_proxy(pid: int) -> bool:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except OSError:
         return False
-    text = result.stdout.strip()
-    return "cyt.proxy.cli" in text and " proxy " in text
+    from cyt.stop import is_cyt_proxy_command
+
+    return is_cyt_proxy_command(result.stdout.strip())
 
 
 def _find_listen_pid(port: int) -> int | None:
@@ -609,7 +609,7 @@ def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> No
     for port in stop_ports:
         if any(entry.get("port") == port for entry in entries):
             continue
-        if _stop_hook_server_on_port(port, verbose=verbose):
+        if _stop_hook_server_on_port(port, verbose=verbose, label="hook daemon"):
             stopped = True
 
     if not stopped:
@@ -619,16 +619,10 @@ def daemon_stop(*, verbose: bool = False, config_path: Path | None = None) -> No
 
 
 def stop_tracked_proxies(*, verbose: bool = False) -> bool:
-    """Stop reverse proxies recorded in ``~/.config/cyt/proxy.json``."""
-    from cyt.runtime_registry import read_proxy_entries
+    """Stop reverse proxies recorded in ``~/.config/cyt/pid.json``."""
+    from cyt.stop import stop_tracked_proxies as _stop_tracked_proxies
 
-    entries = read_proxy_entries()
-    stopped = False
-    for entry in entries:
-        if _stop_registry_entry(entry, verbose=verbose, label="cyt stop"):
-            stopped = True
-    remove_proxy_entries()
-    return stopped
+    return _stop_tracked_proxies(verbose=verbose)
 
 
 def daemon_status(*, config_path: Path | None = None) -> None:

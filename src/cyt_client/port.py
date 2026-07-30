@@ -17,7 +17,9 @@ HEALTH_TIMEOUT_SECONDS = 1.5
 HEALTH_TTL_SECONDS = 30.0
 HOOK_INJECT_PATH = "/hook/inject"
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
-HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
+HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/pid.json").expanduser()
+LEGACY_HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
+OWNER_HOOK_DAEMON = "cyt-hook-daemon"
 
 _last_live_hook_url: tuple[str, float] | None = None
 
@@ -55,17 +57,26 @@ def is_hook_server(health: dict[str, Any] | None) -> bool:
 
 
 def _read_hook_daemon_entries() -> list[dict[str, Any]]:
-    path = HOOK_DAEMON_PIDFILE
-    if not path.is_file():
-        return []
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return []
-    if isinstance(payload, list):
-        return [entry for entry in payload if isinstance(entry, dict)]
-    if isinstance(payload, dict):
-        return [payload]
+    for path in (HOOK_DAEMON_PIDFILE, LEGACY_HOOK_DAEMON_PIDFILE):
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(payload, list):
+            entries = [entry for entry in payload if isinstance(entry, dict)]
+        elif isinstance(payload, dict):
+            entries = [payload]
+        else:
+            entries = []
+        hook_entries = [
+            entry
+            for entry in entries
+            if entry.get("owner") == OWNER_HOOK_DAEMON or entry.get("hook_url") is not None
+        ]
+        if hook_entries:
+            return hook_entries
     return []
 
 

@@ -12,5 +12,4 @@ SDK="${ROOT}/sdk/python"
 if [[ "${SKIP_MATURIN_DEVELOP:-}" != 1 ]]; then
 	env -u CARGO_TARGET_DIR uv run --directory "${SDK}" maturin develop --release
 fi
-cd "${ROOT}"
-exec env -u CARGO_TARGET_DIR uv run pytest sdk/python/tests/unit "$@"
+exec env -u CARGO_TARGET_DIR uv run --directory "${SDK}" pytest tests/unit "$@"

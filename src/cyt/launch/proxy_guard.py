@@ -62,6 +62,9 @@ class ProxyGuard:
             except OSError:
                 pass
         finally:
+            from cyt.runtime_registry import remove_proxy_entries
+
+            remove_proxy_entries(ports={self.port})
             self.process = None
             self.started_by_launch = False
 

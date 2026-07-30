@@ -17,9 +17,15 @@ OR_TOKEN = "or-" + "token"
 
 @pytest.fixture
 def pidfile_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    path = tmp_path / "hook-daemon.json"
+    path = tmp_path / "pid.json"
+    legacy_hook = tmp_path / "hook-daemon.json"
+    legacy_proxy = tmp_path / "proxy.json"
+    monkeypatch.setattr("cyt.runtime_registry.PID_REGISTRY", path)
     monkeypatch.setattr("cyt.runtime_registry.HOOK_DAEMON_REGISTRY", path)
+    monkeypatch.setattr("cyt.runtime_registry.PROXY_REGISTRY", path)
     monkeypatch.setattr("cyt.runtime_registry.HOOK_DAEMON_PIDFILE", path)
+    monkeypatch.setattr("cyt.runtime_registry.LEGACY_HOOK_DAEMON_REGISTRY", legacy_hook)
+    monkeypatch.setattr("cyt.runtime_registry.LEGACY_PROXY_REGISTRY", legacy_proxy)
     return path
 
 
@@ -434,7 +440,7 @@ def test_daemon_stop_without_pidfile_scans_config_port() -> None:
         patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop,
     ):
         hook_daemon.daemon_stop(verbose=True)
-        stop.assert_called_once_with(8834, verbose=True)
+        stop.assert_called_once_with(8834, verbose=True, label="hook daemon")
 
 
 def test_needs_credential_injection_includes_executor_token() -> None:
