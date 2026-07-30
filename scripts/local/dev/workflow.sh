@@ -248,8 +248,7 @@ EOF
 		info "build clear-your-tools wheel"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && uv build -o \"${SIM_DIR}/dist-app\""
 
-		info "cargo publish --dry-run"
-		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && cargo publish -p cyt-indexer --dry-run --allow-dirty"
+		cyt_cargo_publish_dry_run
 
 		info "npm pack"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/typescript\" && npm ci && npm run build && npm pack --pack-destination \"${SIM_DIR}/npm-pack\""

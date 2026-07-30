@@ -169,3 +169,5 @@ sample.*
 temp_*
 postman/collections/cloudflare-ai-controls/**/examples/
 postman/environments/Cloudflare.environment.yaml
+chunk-your-skills/
+chunk-your-tools/

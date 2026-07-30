@@ -35,6 +35,7 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
 [![version][version-shield]][release-link]
 [![discord][discord-shield]][discord-link]
+[![FOSSA Status][fossa-shield]][fossa-link]
 
 ![Shell][shell-shield]
 ![Python][python-tech-shield]
@@ -614,5 +615,7 @@ See [`LICENSE`](LICENSE).
 [telemetry-shield]: https://img.shields.io/badge/No_Telemetry-none-green?style=for-the-badge
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
+[fossa-shield]: https://app.fossa.com/api/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools.svg?type=shield&issueType=security
+[fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield&issueType=security
 [c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
 [go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white

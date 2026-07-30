@@ -22,7 +22,7 @@ Documentation = "https://github.com/qdrddr/clear-your-tools/tree/main/sdk/python
 PyPI = "https://pypi.org/project/cyt-indexer-sdk/"
 
 [build-system]
-requires = ["maturin>=1.7,<2.0"]
+requires = ["maturin==1.13.3"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -34,7 +34,7 @@ include = ["NOTICE", "LICENSE"]
 
 [dependency-groups]
 dev = [
-    "maturin>=1.7,<2.0",
+    "maturin==1.13.3",
 ]
 
 [tool.uv]

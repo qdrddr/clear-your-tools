@@ -469,6 +469,28 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		cyt_test_indexer_build
 	}
 
+	# cargo publish --dry-run must resolve chunk-your-* from crates.io, not local
+	# [patch.crates-io] worktrees; path patches duplicate serde_json and fail verify.
+	cyt_cargo_publish_dry_run() {
+		require_cmd cargo
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		local patch_config="${CYT_REPO_ROOT}/.cargo/config.toml"
+		local patch_backup=""
+		local publish_status=0
+		if [[ -f "${patch_config}" ]]; then
+			patch_backup="$(mktemp "${TMPDIR:-/tmp}/cyt-cargo-config.XXXXXX")"
+			mv "${patch_config}" "${patch_backup}"
+		fi
+		info "cargo publish --dry-run"
+		if ! cyt_run env -u CARGO_TARGET_DIR cargo publish -p cyt-indexer --dry-run --allow-dirty; then
+			publish_status=$?
+		fi
+		if [[ -n "${patch_backup}" && -f "${patch_backup}" ]]; then
+			mv "${patch_backup}" "${patch_config}"
+		fi
+		return "${publish_status}"
+	}
+
 	cyt_build_sdk_python() {
 		require_cmd uv
 		cyt_sync_sdk_python

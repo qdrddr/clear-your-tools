@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/deps/verify-pins.sh
-#   ./scripts/deps/verify-pins.sh --no-manifest-lint
+#   ./scripts/deps/verify-pins.sh --short
 #   ./scripts/deps/verify-pins.sh --skip rust --skip npm
 #   ./scripts/deps/verify-pins.sh --output-dir /tmp/pin-audit
 #
@@ -13,30 +13,64 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+CYT_INDEXER_CARGO="${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 
-# shellcheck source=scripts/lib/chunk-worktree.sh
-source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
+# shellcheck source=scripts/lib/shorten-paths.sh
+source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
+export SHORTEN_ROOT="${REPO_ROOT}"
 
 DO_MANIFEST_LINT=1
 DO_REPORT=1
 OUTPUT_DIR=""
+SHORT=false
 SKIP_PYTHON=0
 SKIP_RUST=0
 SKIP_NPM=0
 SKIP_GO=0
+SKIP_C=0
 
 DEPS_OUTPUT_DIR=""
 DEPS_SUMMARY_FILE=""
 MANIFEST_LINT_FILE=""
 FAILURES=0
 
+emit_out() {
+	shorten_paths
+}
+
+emit_err() {
+	shorten_paths >&2
+}
+
+filter_errors_warnings() {
+	awk 'BEGIN { IGNORECASE = 1 }
+		/error|warning|warn:|fail|mismatch|out of sync|missing |loose / { print }'
+}
+
+emit_check_output() {
+	local file="$1"
+	[[ -s "${file}" ]] || return 0
+	if [[ "${SHORT}" == true ]]; then
+		if grep -E -i 'error|warning|warn:|fail|mismatch|out of sync|missing|loose' "${file}" >/dev/null 2>&1; then
+			grep -E -i 'error|warning|warn:|fail|mismatch|out of sync|missing|loose' "${file}" |
+				filter_errors_warnings |
+				emit_err
+		else
+			tail -n 15 "${file}" | emit_err
+		fi
+	else
+		cat "${file}" | emit_err
+	fi
+}
+
 die() {
-	echo "error: $*" >&2
+	printf 'error: %s\n' "$*" | emit_err
 	exit 1
 }
 
 info() {
-	echo "==> $*"
+	[[ "${SHORT}" == true ]] && return 0
+	printf '==> %s\n' "$*" | emit_out
 }
 
 run_cmd() {
@@ -45,6 +79,10 @@ run_cmd() {
 	else
 		"$@"
 	fi
+}
+
+run_cmd_quiet() {
+	run_cmd "$@" >/dev/null
 }
 
 slug() {
@@ -92,37 +130,55 @@ append_manifest_lint() {
 	if [[ -n "${MANIFEST_LINT_FILE}" ]]; then
 		printf '%s\n' "${line}" >>"${MANIFEST_LINT_FILE}"
 	fi
-	echo "${line}" >&2
+	printf '%s\n' "${line}" | emit_err
 }
 
 require_repo_root() {
 	[[ -f "${REPO_ROOT}/pyproject.toml" ]] ||
-		die "not a repo root: ${REPO_ROOT}"
+		die "not a repo root: ${REPO_ROOT} (expected pyproject.toml)"
+	[[ -f "${REPO_ROOT}/Cargo.toml" ]] ||
+		die "not a repo root: ${REPO_ROOT} (expected Cargo.toml)"
+	[[ -f "${REPO_ROOT}/sdk/c/CMakeLists.txt" ]] ||
+		die "not a repo root: ${REPO_ROOT} (expected sdk/c/CMakeLists.txt)"
+}
+
+read_cargo_version() {
+	grep -E '^version[[:space:]]*=' "${CYT_INDEXER_CARGO}" |
+		head -1 |
+		sed -E 's/^version[[:space:]]*=[[:space:]]*"(.*)".*/\1/'
+}
+
+read_cmake_project_version() {
+	grep -E '^project\(cyt-indexer-c VERSION ' "${REPO_ROOT}/sdk/c/CMakeLists.txt" |
+		head -1 |
+		sed -E 's/^project\(cyt-indexer-c VERSION ([^ ]+) .*/\1/'
 }
 
 record_failure() {
 	local name="$1"
 	local detail="$2"
-	echo "FAIL: ${name}: ${detail}" >&2
+	printf 'FAIL: %s: %s\n' "${name}" "${detail}" | emit_err
 	write_summary_line "${name}: failed (${detail})"
 	FAILURES=$((FAILURES + 1))
 }
 
 record_ok() {
 	local name="$1"
-	echo "ok: ${name}"
+	[[ "${SHORT}" != true ]] && printf 'ok: %s\n' "${name}" | emit_out
 	write_summary_line "${name}: ok"
 }
 
 run_step() {
 	local name="$1"
 	shift
-	info "=== ${name} ==="
+	[[ "${SHORT}" != true ]] && info "=== ${name} ==="
 	if "$@"; then
 		record_ok "${name}"
 	else
 		local status=$?
+		[[ "${SHORT}" == true ]] && info "=== ${name} ==="
 		record_failure "${name}" "exit ${status}"
+		return "${status}"
 	fi
 }
 
@@ -153,14 +209,19 @@ while [[ $# -gt 0 ]]; do
 		DO_MANIFEST_LINT=1
 		shift
 		;;
+	--short)
+		SHORT=true
+		shift
+		;;
 	--skip)
-		[[ $# -ge 2 ]] || die "--skip requires python|rust|npm|go"
+		[[ $# -ge 2 ]] || die "--skip requires python|rust|npm|go|c"
 		case "$2" in
 		python) SKIP_PYTHON=1 ;;
 		rust) SKIP_RUST=1 ;;
 		npm) SKIP_NPM=1 ;;
 		go) SKIP_GO=1 ;;
-		*) die "unknown --skip target: $2 (expected python|rust|npm|go)" ;;
+		c) SKIP_C=1 ;;
+		*) die "unknown --skip target: $2 (expected python|rust|npm|go|c)" ;;
 		esac
 		shift 2
 		;;
@@ -170,6 +231,7 @@ while [[ $# -gt 0 ]]; do
 		rust) SKIP_RUST=1 ;;
 		npm) SKIP_NPM=1 ;;
 		go) SKIP_GO=1 ;;
+		c) SKIP_C=1 ;;
 		*) die "unknown --skip target: ${1#*=}" ;;
 		esac
 		shift
@@ -179,21 +241,40 @@ while [[ $# -gt 0 ]]; do
 Usage: verify-pins.sh [options]
 
 Verify lockfiles are in sync with manifests and (by default) flag loose direct
-dependency ranges in pyproject.toml, package.json, and Cargo.toml.
+dependency ranges in pyproject.toml and package.json.
+
+Rust exact versions live in Cargo.lock; the rust lock step runs
+cargo metadata --locked (manifest semver ranges in Cargo.toml are not linted).
+
+Only checks manifests and lockfiles in this repository (not git submodules or
+tag-pinned worktrees such as chunk-your-tools-v*).
 
 Writes pinned-version inventory and check results under:
   scripts/deps/output/audit-YYYYMMDD-HHMMSS/
+
+Checked targets:
+  pyproject.toml   uv.lock (repo root + sdk/python)
+  Cargo.toml       Cargo.lock (workspace; cargo metadata --locked)
+  sdk/c            CMakeLists.txt VERSION + synced cyt_indexer.h
+  sdk/go           go.sum
+  package.json     package-lock.json (root + sdk/typescript)
+
+Manifest lint (when enabled):
+  pyproject.toml, package.json — exact pins required in manifests
+  Cargo.toml — skipped; Cargo.lock is the pin (see rust lock step)
 
 Options:
   --output-dir DIR      Directory for generated reports (default: timestamped)
   --report              Write audit reports (default)
   --no-report           Skip report files; console output only
-  --manifest-lint       Check manifests for loose ranges (default)
+  --short               Only print errors and warnings (hide passing steps)
+  --manifest-lint       Check pyproject/package.json for loose ranges (default)
   --no-manifest-lint    Skip manifest range checks; lockfiles only
-  --skip TARGET         Skip python, rust, npm, or go (repeatable)
+  --skip TARGET         Skip python, rust, npm, go, or c (repeatable)
 
 Examples:
   ./scripts/deps/verify-pins.sh
+  ./scripts/deps/verify-pins.sh --short
   ./scripts/deps/verify-pins.sh --no-manifest-lint
   ./scripts/deps/verify-pins.sh --output-dir /tmp/pin-audit
   ./scripts/deps/verify-pins.sh --skip go
@@ -216,7 +297,18 @@ run_checked() {
 		if "$@" >"${out_file}" 2>&1; then
 			return 0
 		fi
-		cat "${out_file}" >&2
+		emit_check_output "${out_file}"
+		return 1
+	fi
+	if [[ "${SHORT}" == true ]]; then
+		local err_file
+		err_file="$(mktemp "${TMPDIR:-/tmp}/verify-pins.XXXXXX")"
+		if "$@" >"${err_file}" 2>&1; then
+			rm -f "${err_file}"
+			return 0
+		fi
+		emit_check_output "${err_file}"
+		rm -f "${err_file}"
 		return 1
 	fi
 	"$@"
@@ -240,17 +332,17 @@ report_python_inventory() {
 	require_cmd uv
 	slug_name="$(slug "${label}")"
 	out_req="$(report_path "python-${slug_name}-requirements.txt")"
-	out_pylock="$(report_path "python-${slug_name}-pylock.toml")"
+	out_pylock="$(report_path "pylock.${slug_name}.toml")"
 
 	info "python ${label}: export pinned versions"
 	(
 		cd "${project_dir}"
-		run_cmd uv export --frozen --all-extras --group dev --group test \
+		run_cmd_quiet uv export --frozen --all-extras --group dev --group test \
 			--format requirements.txt --output-file "${out_req}"
-		run_cmd uv export --frozen --all-extras --group dev --group test \
+		run_cmd_quiet uv export --frozen --all-extras --group dev --group test \
 			--format pylock.toml --output-file "${out_pylock}"
 	)
-	write_summary_line "python ${label}: inventory -> python-${slug_name}-requirements.txt, python-${slug_name}-pylock.toml"
+	write_summary_line "python ${label}: inventory -> python-${slug_name}-requirements.txt, pylock.${slug_name}.toml"
 }
 
 verify_python_lock() {
@@ -434,6 +526,111 @@ verify_npm_lock() {
 	return 1
 }
 
+report_c_inventory() {
+	local c_dir="${REPO_ROOT}/sdk/c"
+	local out_manifest out_version
+	local cargo_version cmake_version cmake_min
+
+	out_manifest="$(report_path "c-sdk-manifest.txt")"
+	out_version="$(report_path "c-sdk-version.txt")"
+	cargo_version="$(read_cargo_version)"
+	cmake_version="$(read_cmake_project_version)"
+	cmake_min="$(grep -E '^cmake_minimum_required\(VERSION ' "${c_dir}/CMakeLists.txt" |
+		head -1 |
+		sed -E 's/^cmake_minimum_required\(VERSION ([^)]+)\).*/\1/')"
+
+	info "c sdk: export manifest inventory"
+	{
+		printf 'workspace_version=%s\n' "${cargo_version}"
+		printf 'cmake_project_version=%s\n' "${cmake_version}"
+		printf 'cmake_minimum_required=%s\n' "${cmake_min}"
+		printf 'dependency_lockfile=Cargo.lock\n'
+		printf 'build_script=sdk/c/scripts/build-c-lib.sh\n'
+		printf 'public_header=sdk/c/include/cyt_indexer.h\n'
+		printf 'supported_targets=\n'
+		awk '
+			/^_cyt_supported_targets/ { in_list=1; next }
+			in_list && /^[[:space:]]*[a-z0-9_]+-/ { gsub(/^[[:space:]]+/, ""); print "  " $0 }
+			in_list && /^\)/ { in_list=0 }
+		' "${c_dir}/CMakeLists.txt"
+	} >"${out_version}"
+	cp "${c_dir}/CMakeLists.txt" "${out_manifest}"
+	write_summary_line "c sdk: inventory -> c-sdk-version.txt, c-sdk-manifest.txt"
+}
+
+verify_c_sdk() {
+	local c_dir="${REPO_ROOT}/sdk/c"
+	local cmake_file="${c_dir}/CMakeLists.txt"
+	local build_script="${c_dir}/scripts/build-c-lib.sh"
+	local header_src="${REPO_ROOT}/sdk/rust/cyt-indexer/cyt_indexer.h"
+	local header_dest="${c_dir}/include/cyt_indexer.h"
+	local cargo_version cmake_version out_check slug_name
+
+	slug_name="$(slug "sdk-c")"
+	out_check=""
+	[[ "${DO_REPORT}" -eq 1 ]] && out_check="$(report_path "c-${slug_name}-check.txt")"
+
+	[[ -f "${cmake_file}" ]] ||
+		die "c sdk: missing CMakeLists.txt"
+	[[ -f "${build_script}" ]] ||
+		die "c sdk: missing scripts/build-c-lib.sh"
+	[[ -x "${build_script}" ]] ||
+		die "c sdk: build script not executable: ${build_script}"
+	[[ -f "${header_dest}" ]] ||
+		die "c sdk: missing include/cyt_indexer.h"
+	[[ -f "${header_src}" ]] ||
+		die "c sdk: missing sdk/rust/cyt-indexer/cyt_indexer.h (run: cargo build -p cyt-indexer --features ffi)"
+
+	cargo_version="$(read_cargo_version)"
+	cmake_version="$(read_cmake_project_version)"
+	[[ -n "${cargo_version}" ]] ||
+		die "c sdk: could not read sdk/rust/cyt-indexer/Cargo.toml version"
+	[[ -n "${cmake_version}" ]] ||
+		die "c sdk: could not read CMake project VERSION"
+
+	info "c sdk: verify version sync and header"
+	if [[ "${DO_REPORT}" -eq 1 ]]; then
+		if ! {
+			echo "cargo_version=${cargo_version}"
+			echo "cmake_version=${cmake_version}"
+			[[ "${cargo_version}" == "${cmake_version}" ]] ||
+				{
+					echo "version mismatch: sync with ./scripts/publish/sync-version.sh"
+					exit 1
+				}
+			cmp -s "${header_src}" "${header_dest}" ||
+				{
+					echo "header out of sync: run bash sdk/c/scripts/build-c-lib.sh --sync-header"
+					exit 1
+				}
+			echo "header synced"
+			echo "ffi dependency lockfile: Cargo.lock (checked via rust lock step)"
+		} >"${out_check}" 2>&1; then
+			emit_check_output "${out_check}"
+			return 1
+		fi
+	else
+		[[ "${cargo_version}" == "${cmake_version}" ]] ||
+			{
+				printf 'c sdk: version mismatch: Cargo.toml=%s CMakeLists.txt=%s\n' \
+					"${cargo_version}" "${cmake_version}" | emit_err
+				return 1
+			}
+		cmp -s "${header_src}" "${header_dest}" ||
+			{
+				printf '%s\n' \
+					"c sdk: header out of sync (run: bash sdk/c/scripts/build-c-lib.sh --sync-header)" |
+					emit_err
+				return 1
+			}
+	fi
+
+	[[ "${DO_REPORT}" -eq 1 ]] &&
+		write_summary_line "c sdk: check -> c-${slug_name}-check.txt"
+	[[ "${DO_REPORT}" -eq 1 ]] && report_c_inventory
+	return 0
+}
+
 lint_pyproject_ranges() {
 	local label="$1"
 	local file="$2"
@@ -507,36 +704,23 @@ lint_package_json_ranges() {
 	record_ok "manifest ${label}"
 }
 
-lint_cargo_toml_ranges() {
+lint_cmake_project_version() {
 	local label="$1"
 	local file="$2"
-	local lineno content
-	local issues=0
+	local cargo_version cmake_version
 
 	[[ -f "${file}" ]] || return 0
 
-	while IFS= read -r content; do
-		lineno="${content%%:*}"
-		content="${content#*:}"
-		if [[ "${content}" =~ version[[:space:]]*=[[:space:]]*\"[0-9]+\" ]]; then
-			append_manifest_lint "${file}:${lineno}: loose Cargo version (major only)"
-			issues=$((issues + 1))
-			continue
-		fi
-		if [[ "${content}" =~ ^[[:space:]]*[a-zA-Z0-9_-]+[[:space:]]*=[[:space:]]*\"[0-9]+\"[[:space:]]*$ ]]; then
-			append_manifest_lint "${file}:${lineno}: loose Cargo dependency (major only)"
-			issues=$((issues + 1))
-		fi
-	done < <(
-		awk '
-			/^\[(dependencies|dev-dependencies|build-dependencies)\]/ { in_deps=1; next }
-			/^\[/ { in_deps=0; next }
-			in_deps { print NR ":" $0 }
-		' "${file}"
-	)
-
-	if [[ "${issues}" -gt 0 ]]; then
-		record_failure "manifest ${label}" "${issues} loose Cargo constraint(s)"
+	cargo_version="$(read_cargo_version)"
+	cmake_version="$(read_cmake_project_version)"
+	if [[ -z "${cmake_version}" ]]; then
+		append_manifest_lint "${file}: missing project(cyt-indexer-c VERSION ...)"
+		record_failure "manifest ${label}" "missing project VERSION"
+		return 1
+	fi
+	if [[ "${cargo_version}" != "${cmake_version}" ]]; then
+		append_manifest_lint "${file}: VERSION ${cmake_version} != cyt-indexer Cargo.toml ${cargo_version}"
+		record_failure "manifest ${label}" "version out of sync with cyt-indexer Cargo.toml"
 		return 1
 	fi
 	record_ok "manifest ${label}"
@@ -544,31 +728,18 @@ lint_cargo_toml_ranges() {
 
 verify_manifests() {
 	local had_failure=0
-	local chunk_tools_dir=""
-
-	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)"; then
-		:
-	fi
 
 	lint_pyproject_ranges "pyproject.toml (root)" "${REPO_ROOT}/pyproject.toml" || had_failure=1
 	lint_pyproject_ranges "pyproject.toml (sdk/python)" "${REPO_ROOT}/sdk/python/pyproject.toml" || had_failure=1
-	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/sdk/python/pyproject.toml" ]]; then
-		lint_pyproject_ranges "pyproject.toml (chunk-your-tools/sdk/python)" \
-			"${chunk_tools_dir}/sdk/python/pyproject.toml" || had_failure=1
-	fi
 
 	lint_package_json_ranges "package.json (root)" "${REPO_ROOT}/package.json" || had_failure=1
 	lint_package_json_ranges "package.json (sdk/typescript)" "${REPO_ROOT}/sdk/typescript/package.json" || had_failure=1
-	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/sdk/typescript/package.json" ]]; then
-		lint_package_json_ranges "package.json (chunk-your-tools/sdk/typescript)" \
-			"${chunk_tools_dir}/sdk/typescript/package.json" || had_failure=1
-	fi
 
-	lint_cargo_toml_ranges "Cargo.toml (cyt-indexer)" "${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml" || had_failure=1
-	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/Cargo.toml" ]]; then
-		lint_cargo_toml_ranges "Cargo.toml (chunk-your-tools)" \
-			"${chunk_tools_dir}/Cargo.toml" || had_failure=1
-	fi
+	# Cargo.toml semver ranges are intentional; exact pins are in Cargo.lock
+	# (verified by verify_rust_lock / cargo metadata --locked).
+	record_ok "manifest Cargo.toml (cyt-indexer, pinned via Cargo.lock)"
+
+	lint_cmake_project_version "CMakeLists.txt (sdk/c)" "${REPO_ROOT}/sdk/c/CMakeLists.txt" || had_failure=1
 
 	if [[ "${DO_REPORT}" -eq 1 && -s "${MANIFEST_LINT_FILE}" ]]; then
 		write_summary_line "manifest lint findings -> manifest-lint.txt"
@@ -585,11 +756,10 @@ fi
 
 if [[ "${SKIP_RUST}" -eq 0 ]]; then
 	run_step "rust lock (workspace)" verify_rust_lock "workspace" "${REPO_ROOT}"
-	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)" &&
-		[[ -f "${chunk_tools_dir}/Cargo.toml" ]]; then
-		run_step "rust lock (chunk-your-tools)" verify_rust_lock "chunk-your-tools" \
-			"${chunk_tools_dir}"
-	fi
+fi
+
+if [[ "${SKIP_C}" -eq 0 ]]; then
+	run_step "c sdk (sdk/c)" verify_c_sdk
 fi
 
 if [[ "${SKIP_GO}" -eq 0 ]]; then
@@ -599,28 +769,25 @@ fi
 if [[ "${SKIP_NPM}" -eq 0 ]]; then
 	run_step "npm lock (root)" verify_npm_lock "root" "${REPO_ROOT}"
 	run_step "npm lock (sdk/typescript)" verify_npm_lock "sdk/typescript" "${REPO_ROOT}/sdk/typescript"
-	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)" &&
-		[[ -f "${chunk_tools_dir}/sdk/typescript/package.json" ]]; then
-		chunk_tools_rel="${chunk_tools_dir#"${REPO_ROOT}"/}"
-		run_step "npm lock (chunk-your-tools/sdk/typescript)" verify_npm_lock \
-			"${chunk_tools_rel}/sdk/typescript" "${chunk_tools_dir}/sdk/typescript"
-	fi
 fi
 
 if [[ "${DO_MANIFEST_LINT}" -eq 1 ]]; then
 	run_step "manifest lint" verify_manifests
 fi
 
-echo ""
+if [[ "${SHORT}" != true ]]; then
+	echo ""
+fi
 if [[ "${DO_REPORT}" -eq 1 ]]; then
 	write_summary_line ""
 	write_summary_line "finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	write_summary_line "failures: ${FAILURES}"
-	info "summary: ${DEPS_SUMMARY_FILE}"
+	[[ "${SHORT}" != true || "${FAILURES}" -gt 0 ]] &&
+		info "summary: ${DEPS_OUTPUT_DIR}/summary.txt"
 fi
 
 if [[ "${FAILURES}" -gt 0 ]]; then
 	die "${FAILURES} check(s) failed"
 fi
 
-info "all pin checks passed"
+printf '%s\n' "all pin checks passed" | emit_out
