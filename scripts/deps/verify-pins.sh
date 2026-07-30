@@ -14,6 +14,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
+
 DO_MANIFEST_LINT=1
 DO_REPORT=1
 OUTPUT_DIR=""
@@ -541,25 +544,30 @@ lint_cargo_toml_ranges() {
 
 verify_manifests() {
 	local had_failure=0
+	local chunk_tools_dir=""
+
+	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)"; then
+		:
+	fi
 
 	lint_pyproject_ranges "pyproject.toml (root)" "${REPO_ROOT}/pyproject.toml" || had_failure=1
 	lint_pyproject_ranges "pyproject.toml (sdk/python)" "${REPO_ROOT}/sdk/python/pyproject.toml" || had_failure=1
-	if [[ -f "${REPO_ROOT}/chunk-your-tools/sdk/python/pyproject.toml" ]]; then
+	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/sdk/python/pyproject.toml" ]]; then
 		lint_pyproject_ranges "pyproject.toml (chunk-your-tools/sdk/python)" \
-			"${REPO_ROOT}/chunk-your-tools/sdk/python/pyproject.toml" || had_failure=1
+			"${chunk_tools_dir}/sdk/python/pyproject.toml" || had_failure=1
 	fi
 
 	lint_package_json_ranges "package.json (root)" "${REPO_ROOT}/package.json" || had_failure=1
 	lint_package_json_ranges "package.json (sdk/typescript)" "${REPO_ROOT}/sdk/typescript/package.json" || had_failure=1
-	if [[ -f "${REPO_ROOT}/chunk-your-tools/sdk/typescript/package.json" ]]; then
+	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/sdk/typescript/package.json" ]]; then
 		lint_package_json_ranges "package.json (chunk-your-tools/sdk/typescript)" \
-			"${REPO_ROOT}/chunk-your-tools/sdk/typescript/package.json" || had_failure=1
+			"${chunk_tools_dir}/sdk/typescript/package.json" || had_failure=1
 	fi
 
 	lint_cargo_toml_ranges "Cargo.toml (cyt-indexer)" "${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml" || had_failure=1
-	if [[ -f "${REPO_ROOT}/chunk-your-tools/Cargo.toml" ]]; then
+	if [[ -n "${chunk_tools_dir}" && -f "${chunk_tools_dir}/Cargo.toml" ]]; then
 		lint_cargo_toml_ranges "Cargo.toml (chunk-your-tools)" \
-			"${REPO_ROOT}/chunk-your-tools/Cargo.toml" || had_failure=1
+			"${chunk_tools_dir}/Cargo.toml" || had_failure=1
 	fi
 
 	if [[ "${DO_REPORT}" -eq 1 && -s "${MANIFEST_LINT_FILE}" ]]; then
@@ -577,9 +585,10 @@ fi
 
 if [[ "${SKIP_RUST}" -eq 0 ]]; then
 	run_step "rust lock (workspace)" verify_rust_lock "workspace" "${REPO_ROOT}"
-	if [[ -f "${REPO_ROOT}/chunk-your-tools/Cargo.toml" ]]; then
+	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)" &&
+		[[ -f "${chunk_tools_dir}/Cargo.toml" ]]; then
 		run_step "rust lock (chunk-your-tools)" verify_rust_lock "chunk-your-tools" \
-			"${REPO_ROOT}/chunk-your-tools"
+			"${chunk_tools_dir}"
 	fi
 fi
 
@@ -590,9 +599,11 @@ fi
 if [[ "${SKIP_NPM}" -eq 0 ]]; then
 	run_step "npm lock (root)" verify_npm_lock "root" "${REPO_ROOT}"
 	run_step "npm lock (sdk/typescript)" verify_npm_lock "sdk/typescript" "${REPO_ROOT}/sdk/typescript"
-	if [[ -f "${REPO_ROOT}/chunk-your-tools/sdk/typescript/package.json" ]]; then
+	if chunk_tools_dir="$(resolve_chunk_pin_dir "${REPO_ROOT}" "chunk-your-tools" 2>/dev/null)" &&
+		[[ -f "${chunk_tools_dir}/sdk/typescript/package.json" ]]; then
+		chunk_tools_rel="${chunk_tools_dir#"${REPO_ROOT}"/}"
 		run_step "npm lock (chunk-your-tools/sdk/typescript)" verify_npm_lock \
-			"chunk-your-tools/sdk/typescript" "${REPO_ROOT}/chunk-your-tools/sdk/typescript"
+			"${chunk_tools_rel}/sdk/typescript" "${chunk_tools_dir}/sdk/typescript"
 	fi
 fi
 

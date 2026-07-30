@@ -111,6 +111,7 @@ request.json
 tools_accepted.json
 tools_final.json
 search/.publish-tag
+search/.chunk-worktrees
 Untitled
 .codex
 .debug/
@@ -160,6 +161,9 @@ scripts/deps/output/
 scripts/mcpc/payloads/
 sample.*
 .cargo-home/
+.cargo/config.toml
+/chunk-your-tools-v*/
+/chunk-your-skills-v*/
 .go-cache/
 .build/
 temp_*

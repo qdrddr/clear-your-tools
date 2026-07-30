@@ -9,7 +9,6 @@
 #
 # Targets:
 #   - sdk/c/
-#   - chunk-your-tools/sdk/c/ (when present)
 
 set -euo pipefail
 
@@ -78,7 +77,7 @@ if [[ "${DO_REPORT}" -eq 1 ]]; then
 	legal_require_cmd python3
 	python3 "${SCRIPT_DIR}/lib/report-c-sdk.py" \
 		"${LEGAL_REPO_ROOT}" "${LEGAL_OUTPUT_DIR}"
-	legal_write_summary_line "sdk-c: report -> c-sdk-c.{json,md} (+ chunk-your-tools when present)"
+	legal_write_summary_line "sdk-c: report -> c-sdk-c.{json,md}"
 fi
 
 if [[ "${DO_CHECK}" -eq 1 ]]; then
@@ -91,10 +90,7 @@ from pathlib import Path
 
 repo_root = Path(sys.argv[1])
 allowed = {item.strip() for item in sys.argv[2].split(";") if item.strip()}
-targets = [
-    repo_root / "sdk" / "c",
-    repo_root / "chunk-your-tools" / "sdk" / "c",
-]
+targets = [repo_root / "sdk" / "c"]
 
 checked = 0
 for sdk_dir in targets:

@@ -9,7 +9,6 @@
 # Targets:
 #   - repo root (clear-your-tools app; uv.lock)
 #   - sdk/python (cyt-indexer-sdk dev env)
-#   - chunk-your-tools/sdk/python (when present)
 
 set -euo pipefail
 
@@ -221,7 +220,3 @@ PY
 
 legal_audit_python_project "root" "${LEGAL_REPO_ROOT}"
 legal_audit_python_project "sdk-python" "${LEGAL_REPO_ROOT}/sdk/python"
-
-if [[ -f "${LEGAL_REPO_ROOT}/chunk-your-tools/sdk/python/pyproject.toml" ]]; then
-	legal_audit_python_project "chunk-your-tools-sdk-python" "${LEGAL_REPO_ROOT}/chunk-your-tools/sdk/python"
-fi

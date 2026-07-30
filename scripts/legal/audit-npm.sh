@@ -7,7 +7,7 @@
 # Scans package trees that have package-lock.json:
 #   - ./
 #   - sdk/typescript/
-#   - chunk-your-tools/sdk/typescript/
+#   - sdk/typescript/
 
 set -euo pipefail
 
@@ -80,7 +80,6 @@ fi
 NPM_PROJECTS=(
 	"."
 	"sdk/typescript"
-	"chunk-your-tools/sdk/typescript"
 )
 
 legal_audit_npm_project() {

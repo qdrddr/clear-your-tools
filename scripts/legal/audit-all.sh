@@ -7,7 +7,7 @@
 #   ./scripts/legal/audit-all.sh --with-dev
 #   ./scripts/legal/audit-all.sh --skip sdk-c
 #
-# Ecosystems: rust, python, npm, go, sdk-c (sdk/c CMake wrapper + chunk-your-tools/sdk/c)
+# Ecosystems: rust, python, npm, go, sdk-c (sdk/c CMake wrapper)
 #
 # Writes reports under scripts/legal/output/audit-YYYYMMDD-HHMMSS/ by default.
 

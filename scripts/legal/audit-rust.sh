@@ -6,7 +6,6 @@
 #
 # Targets:
 #   - sdk/rust/cyt-indexer (workspace root)
-#   - chunk-your-tools/ (standalone crate)
 
 set -euo pipefail
 
@@ -117,6 +116,3 @@ legal_audit_rust_crate() {
 }
 
 legal_audit_rust_crate "cyt-indexer" "${LEGAL_REPO_ROOT}"
-if [[ -f "${LEGAL_REPO_ROOT}/chunk-your-tools/Cargo.toml" ]]; then
-	legal_audit_rust_crate "chunk-your-tools" "${LEGAL_REPO_ROOT}/chunk-your-tools"
-fi

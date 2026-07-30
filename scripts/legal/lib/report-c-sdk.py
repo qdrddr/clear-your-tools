@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write first-party license reports for C SDK directories (sdk/c, chunk-your-tools/sdk/c)."""
+"""Write first-party license reports for C SDK directories (sdk/c)."""
 
 from __future__ import annotations
 
@@ -20,13 +20,6 @@ TARGETS = (
         "cargo_toml": "sdk/rust/cyt-indexer/Cargo.toml",
         "default_name": "cyt-indexer-c",
         "repository": "https://github.com/qdrddr/clear-your-tools",
-    },
-    {
-        "rel_dir": "chunk-your-tools/sdk/c",
-        "slug": "chunk-your-tools-sdk-c",
-        "cargo_toml": "chunk-your-tools/Cargo.toml",
-        "default_name": "chunk-your-tools-c",
-        "repository": "https://github.com/qdrddr/chunk-your-tools",
     },
 )
 

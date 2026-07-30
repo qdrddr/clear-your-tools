@@ -12,12 +12,12 @@ ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
 export SHORTEN_ROOT="${ROOT}"
 ROOT_PYPROJECT="${ROOT}/pyproject.toml"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 CARGO_LOCK="${ROOT}/Cargo.lock"
-CHUNK_YOUR_TOOLS_DIR="${ROOT}/chunk-your-tools"
-CHUNK_YOUR_SKILLS_DIR="${ROOT}/chunk-your-skills"
 SDK_PYPROJECT="${ROOT}/sdk/python/pyproject.toml"
 PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
 PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
@@ -44,8 +44,11 @@ Propagate VERSION to all manifests and lockfiles:
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
 
 When ${CARGO_TOML} declares chunk-your-tools and/or chunk-your-skills
-versions under [dependencies], checkout the matching vX.Y.Z tags in the
-respective git submodules after fetching/pulling.
+versions under [dependencies], create or refresh tag-pinned git worktrees:
+  chunk-your-tools-vX.Y.Z/
+  chunk-your-skills-vX.Y.Z/
+Submodule directories (chunk-your-tools/, chunk-your-skills/) stay on main
+for day-to-day editing; Cargo [patch.crates-io] points at the worktrees.
 EOF
 }
 
@@ -60,123 +63,6 @@ validate_version() {
 	if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
 		echo "error: invalid semver: ${version}" >&2
 		exit 1
-	fi
-}
-
-read_cargo_dep_version() {
-	local crate="$1"
-	local line version=""
-
-	if [[ ! -f "${CARGO_TOML}" ]]; then
-		return 0
-	fi
-
-	line="$(
-		grep -E "^[[:space:]]*${crate}[[:space:]]*=" "${CARGO_TOML}" |
-			head -1 ||
-			true
-	)"
-	if [[ -z "${line}" ]]; then
-		return 0
-	fi
-
-	if [[ "${line}" =~ version[[:space:]]*=[[:space:]]*\"([^\"]+)\" ]]; then
-		version="${BASH_REMATCH[1]}"
-	elif [[ "${line}" =~ =[[:space:]]*\"([^\"]+)\" ]]; then
-		version="${BASH_REMATCH[1]}"
-	fi
-
-	if [[ -n "${version}" ]]; then
-		printf '%s\n' "${version}"
-	fi
-}
-
-submodule_git() {
-	local dir="$1"
-	shift
-	env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE git -C "${dir}" "$@"
-}
-
-submodule_at_tag() {
-	local dir="$1"
-	local tag="$2"
-	local target current
-
-	if ! submodule_git "${dir}" rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
-		return 1
-	fi
-
-	target="$(submodule_git "${dir}" rev-parse "${tag}^{commit}")"
-	current="$(submodule_git "${dir}" rev-parse 'HEAD^{commit}' 2>/dev/null || true)"
-	[[ -n "${current}" && "${current}" == "${target}" ]]
-}
-
-submodule_has_local_changes() {
-	local dir="$1"
-	! submodule_git "${dir}" diff-index --quiet HEAD -- 2>/dev/null ||
-		! submodule_git "${dir}" diff-index --quiet --cached HEAD -- 2>/dev/null
-}
-
-sync_chunk_submodule() {
-	local name="$1"
-	local dir="$2"
-	local version="$3"
-	local tag="v${version}"
-
-	if [[ -z "${version}" ]]; then
-		return 0
-	fi
-
-	validate_version "${version}"
-
-	if [[ ! -e "${dir}/.git" ]]; then
-		printf 'warning: submodule %s not initialized; skipping %s\n' \
-			"${name}" "${tag}" | shorten_paths >&2
-		return 0
-	fi
-
-	if submodule_at_tag "${dir}" "${tag}"; then
-		printf 'submodule %s already at %s\n' "${name}" "${tag}" | shorten_paths
-		return 0
-	fi
-
-	if ! submodule_git "${dir}" rev-parse --verify "${tag}^{commit}" >/dev/null 2>&1; then
-		printf 'error: %s missing tag %s\n' "${name}" "${tag}" | shorten_paths >&2
-		return 1
-	fi
-
-	if submodule_has_local_changes "${dir}"; then
-		printf 'warning: submodule %s has local changes; skipping checkout to %s\n' \
-			"${name}" "${tag}" | shorten_paths >&2
-		return 0
-	fi
-
-	if ! submodule_git "${dir}" fetch origin --tags 2>/dev/null; then
-		printf 'warning: %s git fetch failed; using local tags only\n' \
-			"${name}" | shorten_paths >&2
-	fi
-	submodule_git "${dir}" pull --ff-only 2>/dev/null ||
-		submodule_git "${dir}" pull --ff-only origin 2>/dev/null || true
-	submodule_git "${dir}" checkout "${tag}"
-
-	printf 'synced submodule %s to %s\n' "${name}" "${tag}" | shorten_paths
-}
-
-sync_chunk_submodules_from_cargo() {
-	local tools_version skills_version
-
-	tools_version="$(read_cargo_dep_version "chunk-your-tools")"
-	skills_version="$(read_cargo_dep_version "chunk-your-skills")"
-
-	if [[ -z "${tools_version}" && -z "${skills_version}" ]]; then
-		return 0
-	fi
-
-	if [[ -n "${tools_version}" ]]; then
-		sync_chunk_submodule "chunk-your-tools" "${CHUNK_YOUR_TOOLS_DIR}" "${tools_version}"
-	fi
-	if [[ -n "${skills_version}" ]]; then
-		sync_chunk_submodule "chunk-your-skills" "${CHUNK_YOUR_SKILLS_DIR}" "${skills_version}"
 	fi
 }
 
@@ -305,6 +191,10 @@ update_go_module_version() {
 print_sync_summary() {
 	local version="$1"
 	local tag="$2"
+	local tools_version skills_version
+
+	tools_version="$(read_cargo_dep_version "chunk-your-tools" "${CARGO_TOML}")"
+	skills_version="$(read_cargo_dep_version "chunk-your-skills" "${CARGO_TOML}")"
 
 	cat <<EOF | shorten_paths
 synced version ${version} to:
@@ -319,6 +209,19 @@ synced version ${version} to:
   ${GO_VERSION} (Version)
   ${TAG_FILE} (tag=${tag})
 EOF
+	if [[ -n "${tools_version}" ]]; then
+		printf '  %s (chunk-your-tools tag v%s)\n' \
+			"$(chunk_worktree_dir "${ROOT}" "chunk-your-tools" "${tools_version}")" \
+			"${tools_version}" | shorten_paths
+	fi
+	if [[ -n "${skills_version}" ]]; then
+		printf '  %s (chunk-your-skills tag v%s)\n' \
+			"$(chunk_worktree_dir "${ROOT}" "chunk-your-skills" "${skills_version}")" \
+			"${skills_version}" | shorten_paths
+	fi
+	if [[ -f "${ROOT}/.cargo/config.toml" ]]; then
+		printf '  %s (Cargo patch -> worktrees)\n' "${ROOT}/.cargo/config.toml" | shorten_paths
+	fi
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -362,7 +265,7 @@ done
 tag="v${version}"
 current_version="$(read_root_pyproject_version)"
 if [[ "${version}" == "${current_version}" ]]; then
-	sync_chunk_submodules_from_cargo
+	chunk_sync_worktrees_from_cargo "${ROOT}"
 	print_sync_summary "${version}" "${tag}"
 	exit 0
 fi
@@ -379,6 +282,6 @@ update_package_lock_version "${version}"
 update_cmake_project_version "${version}"
 update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
-sync_chunk_submodules_from_cargo
+chunk_sync_worktrees_from_cargo "${ROOT}"
 
 print_sync_summary "${version}" "${tag}"
