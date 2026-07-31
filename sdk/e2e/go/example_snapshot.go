@@ -55,24 +55,25 @@ func ParseTestArgs() (file *string, output *string) {
 }
 
 func ResolveSnapshotPath(path string) string {
-	if _, err := os.Stat(path); err == nil {
-		return path
+	resolved, err := resolveUnderRepo(path)
+	if err != nil {
+		panic(err.Error())
 	}
-	fromRepo := filepath.Join(repoRoot(), path)
-	if _, err := os.Stat(fromRepo); err == nil {
-		return fromRepo
-	}
-	panic("snapshot file not found: " + path + " (also tried " + fromRepo + ")")
+	return resolved
 }
 
 func LoadSnapshot(path string) map[string]any {
-	raw, err := os.ReadFile(path)
+	resolved, err := resolveUnderRepo(path)
 	if err != nil {
-		panic("read " + path + ": " + err.Error())
+		panic(err.Error())
+	}
+	raw, err := os.ReadFile(resolved)
+	if err != nil {
+		panic("read " + resolved + ": " + err.Error())
 	}
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {
-		panic("parse " + path + ": " + err.Error())
+		panic("parse " + resolved + ": " + err.Error())
 	}
 	return data
 }
@@ -198,8 +199,12 @@ func WriteOutput(catalog map[string]any, outputPath *string) error {
 		_, err = os.Stdout.Write(payload)
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(*outputPath), 0o755); err != nil && !os.IsExist(err) {
+	resolved, err := resolveOutputUnderRepo(*outputPath)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(*outputPath, payload, 0o644)
+	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return os.WriteFile(resolved, payload, 0o644)
 }

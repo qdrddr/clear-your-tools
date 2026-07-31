@@ -231,41 +231,58 @@ EOF
 		require_cmd uv
 		require_cmd cargo
 		require_cmd npm
-		cyt_sync_app
-		cyt_build_sdk_python
-		cyt_build_rust
 
+		local sim_label="simulate-registry" sim_total=10
+
+		cyt_step "${sim_label}" 1 "${sim_total}" "sync app"
+		cyt_sync_app
+		cyt_step_done "${sim_label}"
+
+		cyt_step "${sim_label}" 2 "${sim_total}" "build SDK Python (maturin + pytest)"
+		cyt_build_sdk_python
+		cyt_step_done "${sim_label}"
+
+		cyt_step "${sim_label}" 3 "${sim_total}" "build Rust indexer (cargo build/test + catalog smoke)"
+		cyt_build_rust
+		cyt_step_done "${sim_label}"
+
+		cyt_step "${sim_label}" 4 "${sim_total}" "prepare isolated install workspace"
 		SIM_DIR="${CYT_SIM_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/cyt-local-dev.XXXXXX")}"
 		KEEP_SIM_DIR="${KEEP_SIM_DIR:-}"
 		trap '[[ -n "${KEEP_SIM_DIR}" ]] || rm -rf "${SIM_DIR}"' EXIT
-
-		info "simulate registry install"
 		mkdir -p "${SIM_DIR}/dist-sdk" "${SIM_DIR}/dist-app" "${SIM_DIR}/npm-pack"
+		cyt_step_done "${sim_label}"
 
-		info "build cyt-indexer-sdk wheel"
+		cyt_step "${sim_label}" 5 "${sim_total}" "build cyt-indexer-sdk wheel"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/python\" && uv build -o \"${SIM_DIR}/dist-sdk\""
+		cyt_step_done "${sim_label}"
 
-		info "build clear-your-tools wheel"
+		cyt_step "${sim_label}" 6 "${sim_total}" "build clear-your-tools wheel"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}\" && uv build -o \"${SIM_DIR}/dist-app\""
+		cyt_step_done "${sim_label}"
 
+		cyt_step "${sim_label}" 7 "${sim_total}" "cargo publish --dry-run"
 		cyt_cargo_publish_dry_run
+		cyt_step_done "${sim_label}"
 
-		info "npm pack"
+		cyt_step "${sim_label}" 8 "${sim_total}" "npm pack TypeScript SDK"
 		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/typescript\" && npm ci && npm run build && npm pack --pack-destination \"${SIM_DIR}/npm-pack\""
+		cyt_step_done "${sim_label}"
 
+		cyt_step "${sim_label}" 9 "${sim_total}" "install wheels in isolated venv"
 		SIM_VENV="${SIM_DIR}/venv"
 		cyt_run uv venv "${SIM_VENV}"
 		# shellcheck disable=SC1091
 		source "${SIM_VENV}/bin/activate"
-		info "install wheels in isolated venv"
 		SDK_WHL=("${SIM_DIR}"/dist-sdk/cyt_indexer_sdk-*.whl)
 		APP_WHL=("${SIM_DIR}"/dist-app/clear_your_tools-*.whl)
 		[[ -f "${SDK_WHL[0]}" ]] || die "SDK wheel not found under ${SIM_DIR}/dist-sdk"
 		[[ -f "${APP_WHL[0]}" ]] || die "app wheel not found under ${SIM_DIR}/dist-app"
 		cyt_run uv pip install "${SDK_WHL[0]}"
 		cyt_run uv pip install "${APP_WHL[0]}[all]"
+		cyt_step_done "${sim_label}"
 
-		info "smoke imports"
+		cyt_step "${sim_label}" 10 "${sim_total}" "smoke imports"
 		cyt_run python - <<'PY'
 from importlib import metadata
 
@@ -283,8 +300,11 @@ print("  cyt-indexer-sdk:", metadata.version("cyt-indexer-sdk"))
 PY
 
 		deactivate 2>/dev/null || true
+		cyt_step_done "${sim_label}"
 
-		info "simulate-registry done (${SIM_DIR})"
+		if [[ -z "${CYT_LOCAL_DEV_SHORT:-}" ]]; then
+			info "simulate-registry done (${SIM_DIR})"
+		fi
 		if [[ -n "${KEEP_SIM_DIR}" ]]; then
 			trap - EXIT
 			info "KEEP_SIM_DIR=1 — directory kept"

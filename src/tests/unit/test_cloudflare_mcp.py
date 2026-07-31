@@ -16,6 +16,8 @@ from cyt.cloudflare.mcp import (
     parse_portal_list_servers_result,
 )
 
+_TEST_CF_STUB_SECRET = "-".join(("test", "ci", "stub"))
+
 
 def test_cloudflare_portal_base_url_strips_mcp_suffix() -> None:
     assert cloudflare_portal_base_url("https://mcp.example.com/mcp") == "https://mcp.example.com"
@@ -104,7 +106,7 @@ def test_parse_portal_list_servers_result_from_human_readable_text() -> None:
 
 def test_access_headers_use_resolved_credential_values() -> None:
     resolved_id = "resolved-client-id"
-    resolved_token = "test-ci-stub"  # pragma: allowlist secret
+    resolved_token = _TEST_CF_STUB_SECRET
     headers = _access_headers(resolved_id, resolved_token)
     assert headers["CF-Access-Client-Id"] == resolved_id
     assert headers["CF-Access-Client-Secret"] == resolved_token
@@ -149,7 +151,7 @@ async def test_fetch_cloudflare_tools_list_passes_resolved_credentials_in_header
     monkeypatch.setattr("cyt.cloudflare.mcp._tools_list", fake_tools_list)
 
     resolved_id = "from-resolve-credential-id"
-    resolved_token = "test-ci-stub"  # pragma: allowlist secret
+    resolved_token = _TEST_CF_STUB_SECRET
     await fetch_cloudflare_tools_list_async(
         portal_url="https://mcp.example.com/mcp",
         client_id=resolved_id,

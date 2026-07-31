@@ -9,6 +9,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+_src = Path(__file__).resolve().parents[2] / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
+from cyt.safe_path import (  # noqa: E402
+    default_cli_base,
+    require_existing_under,
+    require_output_under,
+)
+
 
 def _enum_key(value: Any) -> str:
     """Stable key for deduplicating enum values (JSON-compatible)."""
@@ -66,10 +76,8 @@ def main() -> None:
     parser.add_argument("-o", "--output", help="Write TSV to this file (default: stdout)")
     args = parser.parse_args()
 
-    path = Path(args.catalog)
-    if not path.is_file():
-        print(f"catalog not found: {path}", file=sys.stderr)
-        sys.exit(1)
+    cli_base = default_cli_base()
+    path = require_existing_under(args.catalog, cli_base, label="catalog")
 
     rows: list[tuple[int, int, int, int, str, str]] = []
     with path.open(encoding="utf-8") as f:
@@ -104,7 +112,15 @@ def main() -> None:
     rows.sort(key=lambda r: (r[key_idx], r[0], r[2]), reverse=True)
     top = rows[: args.top]
 
-    out = open(args.output, "w", encoding="utf-8") if args.output else sys.stdout
+    out = (
+        open(
+            require_output_under(args.output, cli_base, label="output"),
+            "w",
+            encoding="utf-8",
+        )
+        if args.output
+        else sys.stdout
+    )
     try:
         out.write(
             "rank\tmax_enum\ttotal_enums\tunique_enums\tenum_fields\tserver_slug\tname\n",

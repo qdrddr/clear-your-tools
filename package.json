@@ -3,6 +3,7 @@
     "fallow": "2.66.0"
   },
   "dependencies": {
+    "mhtml-to-html": "^2.1.0",
     "typescript": "6.0.3"
   }
 }

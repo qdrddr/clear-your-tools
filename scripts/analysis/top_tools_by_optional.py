@@ -10,6 +10,16 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, TextIO
 
+_src = Path(__file__).resolve().parents[2] / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
+from cyt.safe_path import (  # noqa: E402
+    default_cli_base,
+    require_existing_under,
+    require_output_under,
+)
+
 
 def optional_property_count(schema: Any) -> int:
     """Count schema nodes whose description contains 'Optional.'."""
@@ -68,10 +78,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    path = Path(args.catalog)
-    if not path.is_file():
-        print(f"catalog not found: {path}", file=sys.stderr)
-        sys.exit(1)
+    cli_base = default_cli_base()
+    path = require_existing_under(args.catalog, cli_base, label="catalog")
 
     rows: list[tuple[int, str, str]] = []
     slug_totals: dict[str, int] = defaultdict(int)
@@ -108,7 +116,15 @@ def main() -> None:
     write_tools_to_stdout = args.output is None
     write_slugs_to_stdout = slugs_output is None
 
-    tool_out = sys.stdout if write_tools_to_stdout else open(args.output, "w", encoding="utf-8")
+    tool_out = (
+        sys.stdout
+        if write_tools_to_stdout
+        else open(
+            require_output_under(args.output, cli_base, label="output"),
+            "w",
+            encoding="utf-8",
+        )
+    )
     try:
         tool_out.write("rank\toptional_properties\tserver_slug\tname\n")
         for i, (n_optional, slug, name) in enumerate(top, 1):
@@ -123,7 +139,11 @@ def main() -> None:
     slug_out = (
         sys.stdout
         if write_slugs_to_stdout
-        else open(slugs_output, "w", encoding="utf-8")
+        else open(
+            require_output_under(slugs_output, cli_base, label="slugs output"),
+            "w",
+            encoding="utf-8",
+        )
     )
     try:
         write_slug_rows(slug_out, slug_totals, slug_tool_counts, args.top)

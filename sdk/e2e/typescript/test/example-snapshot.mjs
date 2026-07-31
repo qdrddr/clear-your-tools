@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildCatalogIndex } from "cyt-indexer-sdk";
@@ -16,6 +16,50 @@ const REPO_ROOT = resolve(
   "..",
   "..",
 );
+
+/** @param {string} path @param {string} root */
+function isUnderRoot(path, root) {
+  const rel = path.startsWith(`${root}${sep}`)
+    ? path.slice(root.length + 1)
+    : path === root
+      ? ""
+      : null;
+  if (rel === null) {
+    return false;
+  }
+  return rel === "" || (!rel.startsWith("..") && !rel.includes(`/..${sep}`));
+}
+
+/** @param {string} path */
+function resolveUnderRepo(path) {
+  const candidates = [resolve(path), join(REPO_ROOT, path)];
+  for (const candidate of candidates) {
+    const normalized = resolve(candidate);
+    if (!isUnderRoot(normalized, REPO_ROOT)) {
+      continue;
+    }
+    try {
+      readFileSync(normalized);
+      return normalized;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(
+    `snapshot file not found under repo root ${REPO_ROOT}: ${path}`,
+  );
+}
+
+/** @param {string} path */
+function resolveOutputUnderRepo(path) {
+  const normalized = resolve(path);
+  if (!isUnderRoot(normalized, REPO_ROOT)) {
+    throw new Error(
+      `output path must stay under repo root ${REPO_ROOT}, got ${normalized}`,
+    );
+  }
+  return normalized;
+}
 
 /** @returns {{ file: string | null; output: string | null }} */
 function readEnvArgs() {
@@ -80,15 +124,7 @@ export function parseTestArgs(argv = process.argv) {
  * @returns {string}
  */
 export function resolveSnapshotPath(path) {
-  const candidate = isAbsolute(path) ? path : resolve(path);
-  try {
-    readFileSync(candidate);
-    return candidate;
-  } catch {
-    const fromRepo = join(REPO_ROOT, path);
-    readFileSync(fromRepo);
-    return fromRepo;
-  }
+  return resolveUnderRepo(path);
 }
 
 /**
@@ -96,10 +132,11 @@ export function resolveSnapshotPath(path) {
  * @returns {SnapshotData}
  */
 export function loadSnapshot(path) {
-  const raw = readFileSync(path, "utf8");
+  const resolved = resolveUnderRepo(path);
+  const raw = readFileSync(resolved, "utf8");
   const data = JSON.parse(raw);
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new TypeError(`expected JSON object in ${path}`);
+    throw new TypeError(`expected JSON object in ${resolved}`);
   }
   return data;
 }
@@ -220,8 +257,9 @@ export function catalogDictFromSnapshot(data) {
 export function writeOutput(catalog, outputPath) {
   const payload = `${JSON.stringify(catalog, null, 2)}\n`;
   if (outputPath) {
-    mkdirSync(dirname(outputPath), { recursive: true });
-    writeFileSync(outputPath, payload, "utf8");
+    const resolved = resolveOutputUnderRepo(outputPath);
+    mkdirSync(dirname(resolved), { recursive: true });
+    writeFileSync(resolved, payload, "utf8");
     return;
   }
   process.stdout.write(payload);

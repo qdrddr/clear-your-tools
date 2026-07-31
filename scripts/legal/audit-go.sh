@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/legal/audit-go.sh [--output-dir DIR] [--check] [--report]
 #
-# Target: sdk/go/
+# Target: sdk/go/ and sdk/go/tools/
 
 set -euo pipefail
 
@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
 		cat <<'EOF'
 Usage: audit-go.sh [--output-dir DIR] [--check] [--no-check] [--report] [--no-report]
 
-Downloads Go modules and writes a CSV license report for sdk/go.
+Downloads Go modules and writes CSV license reports for sdk/go and sdk/go/tools.
 First-party module metadata is taken from sdk/go/LICENSE (go-licenses ignores it).
 EOF
 		exit 0
@@ -61,9 +61,6 @@ done
 legal_require_repo_root
 legal_require_cmd go
 
-GO_MODULE_DIR="${LEGAL_REPO_ROOT}/sdk/go"
-[[ -f "${GO_MODULE_DIR}/go.mod" ]] || legal_die "missing ${GO_MODULE_DIR}/go.mod"
-
 if [[ -n "${LEGAL_OUTPUT_DIR:-}" ]]; then
 	:
 elif [[ -n "${OUTPUT_DIR}" ]]; then
@@ -71,11 +68,6 @@ elif [[ -n "${OUTPUT_DIR}" ]]; then
 else
 	legal_init_output_dir ""
 fi
-
-GO_MODULE_PATH="$(
-	awk '/^module / { print $2; exit }' "${GO_MODULE_DIR}/go.mod"
-)"
-[[ -n "${GO_MODULE_PATH}" ]] || legal_die "could not parse module path from ${GO_MODULE_DIR}/go.mod"
 
 legal_go_licenses() {
 	if command -v go-licenses >/dev/null 2>&1; then
@@ -87,40 +79,55 @@ legal_go_licenses() {
 	fi
 }
 
-legal_info "go sdk/go: go mod download"
-(
-	cd "${GO_MODULE_DIR}"
-	legal_run go mod download
-)
+audit_go_module() {
+	local label="$1"
+	local mod_dir="$2"
+	local csv_basename="$3"
 
-if [[ "${DO_REPORT}" -eq 1 ]]; then
-	legal_info "go sdk/go: go-licenses report (third-party deps)"
+	[[ -f "${mod_dir}/go.mod" ]] || legal_die "missing ${mod_dir}/go.mod"
+
+	local module_path
+	module_path="$(
+		awk '/^module / { print $2; exit }' "${mod_dir}/go.mod"
+	)"
+	[[ -n "${module_path}" ]] || legal_die "could not parse module path from ${mod_dir}/go.mod"
+
+	legal_info "go ${label}: go mod download"
 	(
-		cd "${GO_MODULE_DIR}"
-		set +e
-		legal_go_licenses report ./... \
-			--ignore="${GO_MODULE_PATH}" \
-			>"${LEGAL_OUTPUT_DIR}/go-sdk.raw.csv" \
-			2>"${LEGAL_OUTPUT_DIR}/go-sdk.stderr"
-		go_status=$?
-		set -e
-		if [[ "${go_status}" -ne 0 ]] && [[ ! -s "${LEGAL_OUTPUT_DIR}/go-sdk.raw.csv" ]]; then
-			: >"${LEGAL_OUTPUT_DIR}/go-sdk.raw.csv"
-			legal_info "go sdk/go: go-licenses exited ${go_status}; continuing with first-party LICENSE"
-		fi
+		cd "${mod_dir}"
+		legal_run go mod download
 	)
 
-	legal_info "go sdk/go: enrich first-party LICENSE"
-	legal_require_cmd python3
-	python3 "${SCRIPT_DIR}/lib/enrich-go-licenses.py" \
-		"${GO_MODULE_DIR}" "${LEGAL_REPO_ROOT}" "${LEGAL_OUTPUT_DIR}"
-	legal_write_summary_line "go sdk/go: go-licenses -> go-sdk.csv (+ go-sdk-first-party.json)"
-fi
+	if [[ "${DO_REPORT}" -eq 1 ]]; then
+		legal_info "go ${label}: go-licenses report (third-party deps)"
+		(
+			cd "${mod_dir}"
+			set +e
+			legal_go_licenses report ./... \
+				--ignore="${module_path}" \
+				>"${LEGAL_OUTPUT_DIR}/${csv_basename}.raw.csv" \
+				2>"${LEGAL_OUTPUT_DIR}/${csv_basename}.stderr"
+			go_status=$?
+			set -e
+			if [[ "${go_status}" -ne 0 ]] && [[ ! -s "${LEGAL_OUTPUT_DIR}/${csv_basename}.raw.csv" ]]; then
+				: >"${LEGAL_OUTPUT_DIR}/${csv_basename}.raw.csv"
+				legal_info "go ${label}: go-licenses exited ${go_status}; continuing with first-party LICENSE"
+			fi
+		)
 
-if [[ "${DO_CHECK}" -eq 1 ]]; then
-	legal_info "go sdk/go: license policy check"
-	legal_require_cmd python3
-	python3 - "${GO_MODULE_DIR}" "${LEGAL_ALLOWED_LICENSES}" <<'PY'
+		if [[ "${label}" == "sdk/go" ]]; then
+			legal_info "go ${label}: enrich first-party LICENSE"
+			legal_require_cmd python3
+			python3 "${SCRIPT_DIR}/lib/enrich-go-licenses.py" \
+				"${mod_dir}" "${LEGAL_REPO_ROOT}" "${LEGAL_OUTPUT_DIR}"
+		fi
+		legal_write_summary_line "go ${label}: go-licenses -> ${csv_basename}.csv"
+	fi
+
+	if [[ "${DO_CHECK}" -eq 1 && "${label}" == "sdk/go" ]]; then
+		legal_info "go ${label}: license policy check"
+		legal_require_cmd python3
+		python3 - "${mod_dir}" "${LEGAL_ALLOWED_LICENSES}" <<'PY'
 import sys
 from pathlib import Path
 
@@ -147,5 +154,12 @@ if license_id not in allowed:
 
 print(f"sdk/go: {license_id} ({license_file})")
 PY
-	legal_write_summary_line "go sdk/go: LICENSE present and allowed"
-fi
+		legal_write_summary_line "go ${label}: LICENSE present and allowed"
+	fi
+}
+
+GO_MODULE_DIR="${LEGAL_REPO_ROOT}/sdk/go"
+GO_TOOLS_MODULE_DIR="${LEGAL_REPO_ROOT}/sdk/go/tools"
+
+audit_go_module "sdk/go" "${GO_MODULE_DIR}" "go-sdk"
+audit_go_module "sdk/go/tools" "${GO_TOOLS_MODULE_DIR}" "go-sdk-tools"

@@ -12,6 +12,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
+from cyt.safe_path import require_under
+
 FIRST_PARTY = {
     "clear-your-tools",
     "cyt-indexer-sdk",
@@ -207,9 +209,12 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    project_dir = Path(argv[1]).resolve()
     repo_root = Path(argv[2]).resolve()
-    json_path = Path(argv[3]).resolve()
+    if not (repo_root / "pyproject.toml").is_file():
+        raise SystemExit(f"repo root not found: {repo_root}")
+
+    project_dir = require_under(Path(argv[1]).resolve(), repo_root, label="project dir")
+    json_path = require_under(Path(argv[3]).resolve(), repo_root, label="json path")
     json_only = len(argv) == 5 and argv[4] == "--json-only"
 
     rows = json.loads(json_path.read_text(encoding="utf-8"))

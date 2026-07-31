@@ -48,6 +48,15 @@ func main() {
 	)
 	flag.Parse()
 
+	cacheRoot, err := resolveOptionalDir(*cacheDir, "-cache-dir")
+	if err != nil {
+		fatal(err)
+	}
+	nativeRoot, err := resolveOptionalDir(*nativeDir, "-native-dir")
+	if err != nil {
+		fatal(err)
+	}
+
 	ver := resolveVersion(*version)
 	triplet, err := resolveTriplet()
 	if err != nil {
@@ -61,8 +70,8 @@ func main() {
 		version:    ver,
 		repo:       *repo,
 		triplet:    triplet,
-		cacheRoot:  *cacheDir,
-		nativeDir:  *nativeDir,
+		cacheRoot:  cacheRoot,
+		nativeDir:  nativeRoot,
 		staticOnly: *staticOnly,
 		force:      *force,
 	})
@@ -284,8 +293,62 @@ func copyArtifacts(srcDir, destDir, triplet string, staticOnly bool) error {
 	return nil
 }
 
+func isPathUnder(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func allowedWritableRoots() ([]string, error) {
+	roots := make([]string, 0, 4)
+	if cache, err := os.UserCacheDir(); err == nil {
+		roots = append(roots, filepath.Clean(cache))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, filepath.Clean(home))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		roots = append(roots, filepath.Clean(cwd))
+	}
+	if root := repoRootFromCwd(); root != "" {
+		roots = append(roots, filepath.Clean(root))
+	}
+	if len(roots) == 0 {
+		return nil, fmt.Errorf("could not determine allowed writable roots")
+	}
+	return roots, nil
+}
+
+func resolveOptionalDir(path, purpose string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", purpose, err)
+	}
+	abs = filepath.Clean(abs)
+	roots, err := allowedWritableRoots()
+	if err != nil {
+		return "", err
+	}
+	for _, root := range roots {
+		if isPathUnder(abs, root) {
+			return abs, nil
+		}
+	}
+	return "", fmt.Errorf("%s must stay under user cache, home, cwd, or repo root, got %s", purpose, abs)
+}
+
 func removeSharedLib(dir, triplet string) {
-	_ = os.Remove(filepath.Join(dir, sharedLibName(triplet)))
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	_ = root.Remove(sharedLibName(triplet))
 }
 
 func copyFile(src, dest string) error {

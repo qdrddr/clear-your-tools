@@ -28,10 +28,38 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		echo "$*"
 	}
 
-	# Run a command; suppress stdout in short/silent mode (stderr still visible).
+	# Numbered step banner for long workflows (suppressed when CYT_LOCAL_DEV_SHORT is set).
+	cyt_step() {
+		local label="$1" cur="$2" total="$3"
+		shift 3
+		[[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]] && return 0
+		CYT_STEP_START=$SECONDS
+		echo ""
+		echo "── ${label} [${cur}/${total}] $*"
+	}
+
+	cyt_step_done() {
+		local label="${1:-step}"
+		[[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]] && return 0
+		echo "── ${label} done ($((SECONDS - CYT_STEP_START))s)"
+	}
+
+	# Run a command; suppress success noise in short/silent mode when stdout is a TTY.
+	# When stdout is redirected or piped (e.g. cyt_run jq ... >file, prek-loop), pass output
+	# through so callers still receive it. On failure, always print captured output to stderr.
 	cyt_run() {
 		if [[ -n "${CYT_LOCAL_DEV_SHORT:-}" ]]; then
-			"$@" >/dev/null
+			local log
+			log="$(mktemp "${TMPDIR:-/tmp}/cyt-run.XXXXXX")"
+			if ! "$@" >"$log" 2>&1; then
+				cat "$log" >&2
+				rm -f "$log"
+				return 1
+			fi
+			if [[ ! -t 1 ]]; then
+				cat "$log"
+			fi
+			rm -f "$log"
 		else
 			"$@"
 		fi

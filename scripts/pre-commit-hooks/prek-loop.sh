@@ -2,6 +2,8 @@
 # Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
+# Without --short, each hook streams live output plus start/done progress lines.
+# With --short, hooks run silently unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
 # Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
 #   py, rust, go, c, ts, uni
 #
@@ -72,6 +74,13 @@ cd "$ROOT" || exit 1
 # Integration tests call real external APIs; never run them in automated hook loops.
 unset CYT_RUN_INTEGRATION_TESTS
 unset CYT_RUN_QA_TESTS
+
+# Propagate short mode to workflow.sh hooks (e.g. simulate-registry).
+if $SHORT; then
+	export CYT_LOCAL_DEV_SHORT=1
+else
+	export CYT_LOCAL_DEV_SHORT=
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GROUPS_FILE="$SCRIPT_DIR/prek-hook-groups.yaml"
@@ -252,8 +261,23 @@ parse_prek_output() {
 }
 
 run_hook() {
-	local output exit_code=0
-	output=$(rtk uv run prek run "$1" --all-files 2>&1) || exit_code=$?
+	local hook="$1"
+	local index="$2"
+	local output exit_code=0 tmp streamed=false start
+
+	if $SHORT; then
+		output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
+	else
+		streamed=true
+		tmp="$(mktemp "${TMPDIR:-/tmp}/prek-loop.XXXXXX")"
+		echo ">>> [$index/$total] Running $hook ..."
+		start=$SECONDS
+		rtk uv run prek run "$hook" --all-files 2>&1 | tee "$tmp" || exit_code=$?
+		output=$(<"$tmp")
+		rm -f "$tmp"
+		echo ">>> [$index/$total] Done $hook ($((SECONDS - start))s)"
+	fi
+	PREK_HOOK_STREAMED=$streamed
 	parse_prek_output "$output"
 	return "$exit_code"
 }
@@ -277,7 +301,7 @@ while true; do
 	for hook in "${HOOKS[@]}"; do
 		n=$((passed + failed + 1))
 		hook_failed=false
-		if run_hook "$hook"; then
+		if run_hook "$hook" "$n"; then
 			passed=$((passed + 1))
 			result="Passed"
 		else
@@ -304,7 +328,9 @@ while true; do
 		else
 			echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
 		fi
-		[[ -n $PREK_DETAILS ]] && printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh"
+		if [[ -n $PREK_DETAILS ]] && ! $PREK_HOOK_STREAMED; then
+			printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh"
+		fi
 		if ! $NO_GIT_ADD; then
 			rtk git add -A >/dev/null 2>&1 || true
 		fi

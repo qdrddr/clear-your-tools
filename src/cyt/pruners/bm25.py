@@ -218,9 +218,16 @@ def main() -> None:
 
     output_data = json.dumps(data, indent=2)
     if args.output_json:
-        with open(args.output_json, "w") as f:
+        from cyt.safe_path import default_cli_base, require_output_under
+
+        output_path = require_output_under(
+            args.output_json,
+            default_cli_base(),
+            label="output JSON",
+        )
+        with open(output_path, "w") as f:
             f.write(output_data)
-        print(f"Results saved to {args.output_json}")
+        print(f"Results saved to {output_path}")
     else:
         print(output_data)
 

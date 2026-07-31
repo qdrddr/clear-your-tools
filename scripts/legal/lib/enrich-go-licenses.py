@@ -8,6 +8,8 @@ import re
 import sys
 from pathlib import Path
 
+from cyt.safe_path import require_under
+
 REPOSITORY = "https://github.com/qdrddr/clear-your-tools"
 
 
@@ -131,9 +133,12 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    go_dir = Path(argv[1]).resolve()
     repo_root = Path(argv[2]).resolve()
-    output_dir = Path(argv[3]).resolve()
+    if not (repo_root / "pyproject.toml").is_file():
+        raise SystemExit(f"repo root not found: {repo_root}")
+
+    go_dir = require_under(Path(argv[1]).resolve(), repo_root, label="go module dir")
+    output_dir = require_under(Path(argv[3]).resolve(), repo_root, label="output dir")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_csv = output_dir / "go-sdk.raw.csv"

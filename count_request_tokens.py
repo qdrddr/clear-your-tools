@@ -16,13 +16,19 @@ import argparse
 import json
 
 from cyt.indexer.tokens import count_json_tokens
+from cyt.safe_path import default_cli_base, require_existing_under
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--requestfile", required=True, help="Path to the request JSON file")
 parser.add_argument("--tool-savings-percent", type=float, default=None)
 args = parser.parse_args()
 
-with open(args.requestfile) as f:
+request_path = require_existing_under(
+    args.requestfile,
+    default_cli_base(),
+    label="request file",
+)
+with open(request_path) as f:
     data = json.load(f)
 
 tokens = count_json_tokens(data)

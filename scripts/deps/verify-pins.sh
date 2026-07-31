@@ -257,6 +257,7 @@ Checked targets:
   Cargo.toml       Cargo.lock (workspace; cargo metadata --locked)
   sdk/c            CMakeLists.txt VERSION + synced cyt_indexer.h
   sdk/go           go.sum
+  sdk/go/tools     go.sum
   package.json     package-lock.json (root + sdk/typescript)
 
 Manifest lint (when enabled):
@@ -423,39 +424,43 @@ verify_rust_lock() {
 }
 
 report_go_inventory() {
-	local mod_dir="${REPO_ROOT}/sdk/go"
-	local out_mods out_sum
+	local label="$1"
+	local mod_dir="$2"
+	local slug_name out_mods out_sum
 
-	out_mods="$(report_path "go-modules.txt")"
-	out_sum="$(report_path "go-sum.txt")"
+	slug_name="$(slug "${label}")"
+	out_mods="$(report_path "go-${slug_name}-modules.txt")"
+	out_sum="$(report_path "go-${slug_name}-sum.txt")"
 
-	info "go: export pinned modules"
+	info "go ${label}: export pinned modules"
 	(
 		cd "${mod_dir}"
 		run_cmd go list -m all | sort >"${out_mods}"
 		cp go.sum "${out_sum}"
 	)
-	write_summary_line "go: inventory -> go-modules.txt, go-sum.txt"
+	write_summary_line "go ${label}: inventory -> go-${slug_name}-modules.txt, go-${slug_name}-sum.txt"
 }
 
 verify_go_lock() {
-	local mod_dir="${REPO_ROOT}/sdk/go"
-	local out_check
+	local label="$1"
+	local mod_dir="$2"
+	local slug_name out_check
 
+	slug_name="$(slug "${label}")"
 	require_cmd go
 	[[ -f "${mod_dir}/go.mod" ]] ||
-		die "go: missing go.mod"
+		die "go ${label}: missing go.mod"
 	[[ -f "${mod_dir}/go.sum" ]] ||
-		die "go: missing go.sum (run: go mod tidy in sdk/go)"
+		die "go ${label}: missing go.sum (run: go mod tidy in ${mod_dir#"${REPO_ROOT}"/})"
 
 	out_check=""
-	[[ "${DO_REPORT}" -eq 1 ]] && out_check="$(report_path "go-lock-check.txt")"
+	[[ "${DO_REPORT}" -eq 1 ]] && out_check="$(report_path "go-${slug_name}-lock-check.txt")"
 
-	info "go: go mod verify"
+	info "go ${label}: go mod verify"
 	if run_checked "${out_check}" run_in_dir "${mod_dir}" go mod verify; then
 		[[ "${DO_REPORT}" -eq 1 ]] &&
-			write_summary_line "go: lock check -> go-lock-check.txt"
-		[[ "${DO_REPORT}" -eq 1 ]] && report_go_inventory
+			write_summary_line "go ${label}: lock check -> go-${slug_name}-lock-check.txt"
+		[[ "${DO_REPORT}" -eq 1 ]] && report_go_inventory "${label}" "${mod_dir}"
 		return 0
 	fi
 	return 1
@@ -763,7 +768,8 @@ if [[ "${SKIP_C}" -eq 0 ]]; then
 fi
 
 if [[ "${SKIP_GO}" -eq 0 ]]; then
-	run_step "go lock (sdk/go)" verify_go_lock
+	run_step "go lock (sdk/go)" verify_go_lock "sdk-go" "${REPO_ROOT}/sdk/go"
+	run_step "go lock (sdk/go/tools)" verify_go_lock "sdk-go-tools" "${REPO_ROOT}/sdk/go/tools"
 fi
 
 if [[ "${SKIP_NPM}" -eq 0 ]]; then

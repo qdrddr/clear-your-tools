@@ -13,6 +13,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
+from cyt.safe_path import require_under
+
 TARGETS = (
     {
         "rel_dir": "sdk/c",
@@ -144,7 +146,10 @@ def main(argv: list[str]) -> int:
         return 2
 
     repo_root = Path(argv[1]).resolve()
-    output_dir = Path(argv[2]).resolve()
+    if not (repo_root / "pyproject.toml").is_file():
+        raise SystemExit(f"repo root not found: {repo_root}")
+
+    output_dir = require_under(Path(argv[2]).resolve(), repo_root, label="output dir")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     reports = build_reports(repo_root)
