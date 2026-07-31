@@ -63,9 +63,12 @@ function resolveOutputUnderRepo(path) {
 
 /** @returns {{ file: string | null; output: string | null }} */
 function readEnvArgs() {
+  const file = process.env.CYT_E2E_FILE ?? process.env.npm_config_file ?? null;
+  const output =
+    process.env.CYT_E2E_OUTPUT ?? process.env.npm_config_output ?? null;
   return {
-    file: process.env.CYT_E2E_FILE ?? process.env.npm_config_file ?? null,
-    output: process.env.CYT_E2E_OUTPUT ?? process.env.npm_config_output ?? null,
+    file: file ? resolveUnderRepo(file) : null,
+    output: output ? resolveOutputUnderRepo(output) : null,
   };
 }
 
@@ -116,7 +119,10 @@ export function parseTestArgs(argv = process.argv) {
     }
   }
 
-  return { file, output };
+  return {
+    file: file ? resolveUnderRepo(file) : null,
+    output: output ? resolveOutputUnderRepo(output) : null,
+  };
 }
 
 /**
@@ -128,17 +134,29 @@ export function resolveSnapshotPath(path) {
 }
 
 /**
+ * @param {string} resolvedPath
+ * @returns {SnapshotData}
+ */
+export function loadSnapshotAt(resolvedPath) {
+  if (!isUnderRoot(resolvedPath, REPO_ROOT)) {
+    throw new Error(
+      `snapshot path must stay under repo root ${REPO_ROOT}, got ${resolvedPath}`,
+    );
+  }
+  const raw = readFileSync(resolvedPath, "utf8");
+  const data = JSON.parse(raw);
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new TypeError(`expected JSON object in ${resolvedPath}`);
+  }
+  return data;
+}
+
+/**
  * @param {string} path
  * @returns {SnapshotData}
  */
 export function loadSnapshot(path) {
-  const resolved = resolveUnderRepo(path);
-  const raw = readFileSync(resolved, "utf8");
-  const data = JSON.parse(raw);
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new TypeError(`expected JSON object in ${resolved}`);
-  }
-  return data;
+  return loadSnapshotAt(resolveUnderRepo(path));
 }
 
 /**
@@ -252,15 +270,27 @@ export function catalogDictFromSnapshot(data) {
 
 /**
  * @param {{ md: JsonRecord[]; json: JsonRecord[]; tools: JsonRecord[] }} catalog
+ * @param {string} resolvedOutputPath
+ */
+export function writeOutputAt(catalog, resolvedOutputPath) {
+  const payload = `${JSON.stringify(catalog, null, 2)}\n`;
+  if (!isUnderRoot(resolvedOutputPath, REPO_ROOT)) {
+    throw new Error(
+      `output path must stay under repo root ${REPO_ROOT}, got ${resolvedOutputPath}`,
+    );
+  }
+  mkdirSync(dirname(resolvedOutputPath), { recursive: true });
+  writeFileSync(resolvedOutputPath, payload, "utf8");
+}
+
+/**
+ * @param {{ md: JsonRecord[]; json: JsonRecord[]; tools: JsonRecord[] }} catalog
  * @param {string | null | undefined} outputPath
  */
 export function writeOutput(catalog, outputPath) {
-  const payload = `${JSON.stringify(catalog, null, 2)}\n`;
   if (outputPath) {
-    const resolved = resolveOutputUnderRepo(outputPath);
-    mkdirSync(dirname(resolved), { recursive: true });
-    writeFileSync(resolved, payload, "utf8");
+    writeOutputAt(catalog, resolveOutputUnderRepo(outputPath));
     return;
   }
-  process.stdout.write(payload);
+  process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
 }

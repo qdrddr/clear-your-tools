@@ -24,11 +24,13 @@ from cyt.pruners.llm import (
     tool_selector_system_prompt,
 )
 
+_FAKE_LLM_KEY = "test-" + "ci-stub"
+
 
 def _settings(*, responses_api: bool) -> LlmPruningSettings:
     return LlmPruningSettings(
         model_name="openai/gpt-5.5",
-        api_key="unit-test-fake-api-key-not-real",  # pragma: allowlist secret
+        api_key=_FAKE_LLM_KEY,
         base_url=None,
         provider="openai",
         provider_dns="api.openai.com",
@@ -545,7 +547,7 @@ def test_call_llm_invalid_structured_content_returns_zero_selections() -> None:
 def test_call_llm_openrouter_requests_no_reasoning_effort() -> None:
     settings = LlmPruningSettings(
         model_name="openrouter/inception/mercury-2",
-        api_key="unit-test-fake-api-key-not-real",  # pragma: allowlist secret
+        api_key=_FAKE_LLM_KEY,
         base_url="https://openrouter.ai/api",
         provider="openrouter",
         provider_dns="openrouter",
@@ -570,7 +572,7 @@ def test_call_llm_openrouter_requests_no_reasoning_effort() -> None:
 def test_call_llm_openrouter_gpt_oss_requests_low_reasoning_effort() -> None:
     settings = LlmPruningSettings(
         model_name="openrouter/openai/gpt-oss-120b",
-        api_key="unit-test-fake-api-key-not-real",  # pragma: allowlist secret
+        api_key=_FAKE_LLM_KEY,
         base_url="https://openrouter.ai/api",
         provider="openrouter",
         provider_dns="openrouter",

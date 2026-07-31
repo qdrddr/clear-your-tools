@@ -16,8 +16,8 @@ if str(_src) not in sys.path:
 
 from cyt.safe_path import (  # noqa: E402
     default_cli_base,
+    open_output_under,
     require_existing_under,
-    require_output_under,
 )
 
 
@@ -119,11 +119,7 @@ def main() -> None:
     tool_out = (
         sys.stdout
         if write_tools_to_stdout
-        else open(
-            require_output_under(args.output, cli_base, label="output"),
-            "w",
-            encoding="utf-8",
-        )
+        else open_output_under(args.output, cli_base, label="output")
     )
     try:
         tool_out.write("rank\toptional_properties\tserver_slug\tname\n")
@@ -139,11 +135,7 @@ def main() -> None:
     slug_out = (
         sys.stdout
         if write_slugs_to_stdout
-        else open(
-            require_output_under(slugs_output, cli_base, label="slugs output"),
-            "w",
-            encoding="utf-8",
-        )
+        else open_output_under(slugs_output, cli_base, label="slugs output")
     )
     try:
         write_slug_rows(slug_out, slug_totals, slug_tool_counts, args.top)

@@ -12,8 +12,8 @@ tool (
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.2
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8
-	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/yuin/goldmark v1.7.17
 	google.golang.org/grpc v1.82.1

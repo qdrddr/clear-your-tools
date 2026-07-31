@@ -2,6 +2,7 @@ package e2esupport
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +30,7 @@ func ParseTestArgs() (file *string, output *string) {
 		output = &v
 	}
 	if file != nil || output != nil {
-		return file, output
+		return resolveTestArgs(file, output)
 	}
 
 	args := os.Args
@@ -51,6 +52,24 @@ func ParseTestArgs() (file *string, output *string) {
 			output = &v
 		}
 	}
+	return resolveTestArgs(file, output)
+}
+
+func resolveTestArgs(file *string, output *string) (*string, *string) {
+	if file != nil {
+		resolved, err := resolveUnderRepo(*file)
+		if err != nil {
+			panic(err.Error())
+		}
+		file = &resolved
+	}
+	if output != nil {
+		resolved, err := resolveOutputUnderRepo(*output)
+		if err != nil {
+			panic(err.Error())
+		}
+		output = &resolved
+	}
 	return file, output
 }
 
@@ -62,20 +81,23 @@ func ResolveSnapshotPath(path string) string {
 	return resolved
 }
 
-func LoadSnapshot(path string) map[string]any {
-	resolved, err := resolveUnderRepo(path)
-	if err != nil {
-		panic(err.Error())
+func LoadSnapshotAt(path string) map[string]any {
+	if !isUnderRoot(path, repoRoot()) {
+		panic("snapshot path must stay under repo root: " + path)
 	}
-	raw, err := os.ReadFile(resolved)
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		panic("read " + resolved + ": " + err.Error())
+		panic("read " + path + ": " + err.Error())
 	}
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {
-		panic("parse " + resolved + ": " + err.Error())
+		panic("parse " + path + ": " + err.Error())
 	}
 	return data
+}
+
+func LoadSnapshot(path string) map[string]any {
+	return LoadSnapshotAt(ResolveSnapshotPath(path))
 }
 
 func enumsFromMD(mdEntries []any) []string {
@@ -189,6 +211,21 @@ func CatalogDictFromSnapshot(data map[string]any) (map[string]any, error) {
 	return catalog, nil
 }
 
+func WriteOutputAt(catalog map[string]any, outputPath string) error {
+	payload, err := json.MarshalIndent(catalog, "", "  ")
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+	if !isUnderRoot(outputPath, repoRoot()) {
+		return fmt.Errorf("output path must stay under repo root, got %s", outputPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return os.WriteFile(outputPath, payload, 0o644)
+}
+
 func WriteOutput(catalog map[string]any, outputPath *string) error {
 	payload, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
@@ -203,8 +240,5 @@ func WriteOutput(catalog map[string]any, outputPath *string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil && !os.IsExist(err) {
-		return err
-	}
-	return os.WriteFile(resolved, payload, 0o644)
+	return WriteOutputAt(catalog, resolved)
 }

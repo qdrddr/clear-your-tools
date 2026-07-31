@@ -48,13 +48,12 @@ func TestBuildCatalogIndexFromReleaseModule(t *testing.T) {
 }
 
 func TestDecomposeFromExampleFile(t *testing.T) {
-	exampleFile, outputFile := e2esupport.ParseTestArgs()
-	if exampleFile == nil {
+	snapshotPath, outputFile := e2esupport.ParseTestArgs()
+	if snapshotPath == nil {
 		t.Skip("set CYT_E2E_FILE or pass --file after go test --")
 	}
 
-	snapshotPath := e2esupport.ResolveSnapshotPath(*exampleFile)
-	data := e2esupport.LoadSnapshot(snapshotPath)
+	data := e2esupport.LoadSnapshotAt(*snapshotPath)
 	_, _, _ = e2esupport.ExtractSnapshotParts(data)
 
 	catalog, err := e2esupport.CatalogDictFromSnapshot(data)
@@ -87,7 +86,11 @@ func TestDecomposeFromExampleFile(t *testing.T) {
 		t.Fatal("expected per-property decomposed json chunks")
 	}
 
-	if err := e2esupport.WriteOutput(catalog, outputFile); err != nil {
+	if outputFile != nil {
+		if err := e2esupport.WriteOutputAt(catalog, *outputFile); err != nil {
+			t.Fatalf("write output: %v", err)
+		}
+	} else if err := e2esupport.WriteOutput(catalog, nil); err != nil {
 		t.Fatalf("write output: %v", err)
 	}
 }

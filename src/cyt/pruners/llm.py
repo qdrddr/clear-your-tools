@@ -941,15 +941,14 @@ def main() -> None:
         result = prune_llm_catalog(scored, config=config)
         output_data = json.dumps(result, indent=2)
         if args.output_json:
-            from cyt.safe_path import default_cli_base, require_output_under
+            from cyt.safe_path import default_cli_base, write_text_under
 
-            output_path = require_output_under(
+            output_path = write_text_under(
                 args.output_json,
                 default_cli_base(),
+                output_data,
                 label="output JSON",
             )
-            with open(output_path, "w") as f:
-                f.write(output_data)
             print(f"Results saved to {output_path}")
         else:
             print(output_data)

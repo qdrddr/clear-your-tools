@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
-from cyt.safe_path import require_under
+from cyt.safe_path import join_under, require_repo_root, require_under
 
 TARGETS = (
     {
@@ -99,7 +99,7 @@ def rows_to_markdown(rows: list[dict]) -> str:
 def build_reports(repo_root: Path) -> dict[str, list[dict]]:
     reports: dict[str, list[dict]] = {}
     for target in TARGETS:
-        sdk_dir = repo_root / target["rel_dir"]
+        sdk_dir = join_under(repo_root, target["rel_dir"], label="sdk dir")
         cmake_file = sdk_dir / "CMakeLists.txt"
         if not cmake_file.is_file():
             continue
@@ -109,7 +109,7 @@ def build_reports(repo_root: Path) -> dict[str, list[dict]]:
         if license_file is None:
             raise SystemExit(f"missing LICENSE under {sdk_dir}")
 
-        cargo_path = repo_root / target["cargo_toml"]
+        cargo_path = join_under(repo_root, target["cargo_toml"], label="cargo toml")
         license_id = cargo_license(cargo_path)
         repository = target["repository"]
         if cargo_path.is_file():
@@ -145,9 +145,7 @@ def main(argv: list[str]) -> int:
         print("usage: report-c-sdk.py REPO_ROOT OUTPUT_DIR", file=sys.stderr)
         return 2
 
-    repo_root = Path(argv[1]).resolve()
-    if not (repo_root / "pyproject.toml").is_file():
-        raise SystemExit(f"repo root not found: {repo_root}")
+    repo_root = require_repo_root(argv[1])
 
     output_dir = require_under(Path(argv[2]).resolve(), repo_root, label="output dir")
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -15,8 +15,8 @@ if str(_src) not in sys.path:
 
 from cyt.safe_path import (  # noqa: E402
     default_cli_base,
+    open_output_under,
     require_existing_under,
-    require_output_under,
 )
 
 
@@ -113,11 +113,7 @@ def main() -> None:
     top = rows[: args.top]
 
     out = (
-        open(
-            require_output_under(args.output, cli_base, label="output"),
-            "w",
-            encoding="utf-8",
-        )
+        open_output_under(args.output, cli_base, label="output")
         if args.output
         else sys.stdout
     )

@@ -4,27 +4,25 @@ import test from "node:test";
 import {
   catalogDictFromSnapshot,
   extractSnapshotParts,
-  loadSnapshot,
+  loadSnapshotAt,
   parseTestArgs,
-  resolveSnapshotPath,
-  writeOutput,
+  writeOutputAt,
 } from "./example-snapshot.mjs";
 
-const { file: exampleFile, output: outputFile } = parseTestArgs();
+const { file: snapshotPath, output: outputFile } = parseTestArgs();
 
 test(
   "decompose from example file",
   {
-    skip: exampleFile
+    skip: snapshotPath
       ? false
       : "pass --file to run against a local debug snapshot",
   },
   () => {
-    if (!exampleFile) {
+    if (!snapshotPath) {
       return;
     }
-    const snapshotPath = resolveSnapshotPath(exampleFile);
-    const data = loadSnapshot(snapshotPath);
+    const data = loadSnapshotAt(snapshotPath);
     extractSnapshotParts(data);
 
     const catalog = catalogDictFromSnapshot(data);
@@ -49,6 +47,10 @@ test(
       "expected per-property decomposed json chunks",
     );
 
-    writeOutput(catalog, outputFile);
+    if (outputFile) {
+      writeOutputAt(catalog, outputFile);
+    } else {
+      process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
+    }
   },
 );
