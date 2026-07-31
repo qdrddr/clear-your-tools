@@ -2,8 +2,8 @@
 # Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
-# Without --short, each hook streams live output plus start/done progress lines.
-# With --short, hooks run silently unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
+# Without --short, each hook prints a one-line Passed/Failed summary; details on failure only.
+# With --short, passing hooks are silent unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
 # Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
 #   py, rust, go, c, ts, uni
 #
@@ -262,22 +262,10 @@ parse_prek_output() {
 
 run_hook() {
 	local hook="$1"
-	local index="$2"
-	local output exit_code=0 tmp streamed=false start
+	local output exit_code=0
 
-	if $SHORT; then
-		output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
-	else
-		streamed=true
-		tmp="$(mktemp "${TMPDIR:-/tmp}/prek-loop.XXXXXX")"
-		echo ">>> [$index/$total] Running $hook ..."
-		start=$SECONDS
-		rtk uv run prek run "$hook" --all-files 2>&1 | tee "$tmp" || exit_code=$?
-		output=$(<"$tmp")
-		rm -f "$tmp"
-		echo ">>> [$index/$total] Done $hook ($((SECONDS - start))s)"
-	fi
-	PREK_HOOK_STREAMED=$streamed
+	output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
+	PREK_HOOK_STREAMED=false
 	parse_prek_output "$output"
 	return "$exit_code"
 }
@@ -301,7 +289,7 @@ while true; do
 	for hook in "${HOOKS[@]}"; do
 		n=$((passed + failed + 1))
 		hook_failed=false
-		if run_hook "$hook" "$n"; then
+		if run_hook "$hook"; then
 			passed=$((passed + 1))
 			result="Passed"
 		else
