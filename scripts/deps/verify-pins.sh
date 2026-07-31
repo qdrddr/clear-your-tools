@@ -420,6 +420,10 @@ verify_rust_lock() {
 		[[ "${DO_REPORT}" -eq 1 ]] && report_rust_inventory "${label}" "${crate_dir}"
 		return 0
 	fi
+	if [[ -s "${out_check}" ]] &&
+		grep -q 'cannot update the lock file' "${out_check}"; then
+		echo "hint: Cargo.lock is out of sync with Cargo.toml/.cargo/config.toml patches; run: cargo update --workspace" >&2
+	fi
 	return 1
 }
 
@@ -791,6 +795,7 @@ info "repo: ${REPO_ROOT}"
 
 if [[ "${SKIP_PYTHON}" -eq 0 ]]; then
 	run_step "python lock (root)" verify_python_lock "root" "${REPO_ROOT}"
+	run_step "python requirements export" bash "${SCRIPT_DIR}/export-requirements.sh" --check
 fi
 
 if [[ "${SKIP_RUST}" -eq 0 ]]; then

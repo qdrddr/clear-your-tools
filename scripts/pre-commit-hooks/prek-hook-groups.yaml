@@ -35,7 +35,7 @@ groups:
     - ruff-format
     - ty-check
     - uv-build
-    - uv-export
+    - export-requirements
     - uv-lock
     - uv-sync
     - verify-sdk
