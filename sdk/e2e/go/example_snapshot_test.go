@@ -1,4 +1,4 @@
-package e2esupport_test
+package e2esupport
 
 import (
 	"encoding/json"
@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	cytindexer "github.com/qdrddr/clear-your-tools/sdk/go/v2"
-
-	e2esupport "cyt-indexer-go-registry-e2e"
 )
 
 func TestBuildCatalogIndexFromReleaseModule(t *testing.T) {
@@ -48,49 +46,11 @@ func TestBuildCatalogIndexFromReleaseModule(t *testing.T) {
 }
 
 func TestDecomposeFromExampleFile(t *testing.T) {
-	snapshotPath, outputFile := e2esupport.ParseTestArgs()
-	if snapshotPath == nil {
+	skipped, err := DecomposeFromExampleFile()
+	if skipped {
 		t.Skip("set CYT_E2E_FILE or pass --file after go test --")
 	}
-
-	data := e2esupport.LoadSnapshotAt(*snapshotPath)
-	_, _, _ = e2esupport.ExtractSnapshotParts(data)
-
-	catalog, err := e2esupport.CatalogDictFromSnapshot(data)
 	if err != nil {
-		t.Fatalf("catalog from snapshot: %v", err)
-	}
-
-	jsonChunks, _ := catalog["json"].([]any)
-	mdChunks, _ := catalog["md"].([]any)
-	if len(jsonChunks) == 0 {
-		t.Fatal("build_catalog_index produced no json chunks")
-	}
-	if len(mdChunks) == 0 {
-		t.Fatal("build_catalog_index produced no md enum chunks")
-	}
-
-	foundDecomposed := false
-	for _, entry := range jsonChunks {
-		obj, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		path, _ := obj["file_path"].(string)
-		if strings.Contains(path, "/schemas/decomposed/") && strings.HasSuffix(path, ".json") {
-			foundDecomposed = true
-			break
-		}
-	}
-	if !foundDecomposed {
-		t.Fatal("expected per-property decomposed json chunks")
-	}
-
-	if outputFile != nil {
-		if err := e2esupport.WriteOutputAt(catalog, *outputFile); err != nil {
-			t.Fatalf("write output: %v", err)
-		}
-	} else if err := e2esupport.WriteOutput(catalog, nil); err != nil {
-		t.Fatalf("write output: %v", err)
+		t.Fatal(err)
 	}
 }

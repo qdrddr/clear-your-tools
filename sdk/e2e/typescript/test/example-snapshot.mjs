@@ -1,4 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,35 +36,56 @@ function isUnderRoot(path, root) {
   return rel === "" || (!rel.startsWith("..") && !rel.includes(`/..${sep}`));
 }
 
-/** @param {string} path */
-function resolveUnderRepo(path) {
-  const candidates = [resolve(path), join(REPO_ROOT, path)];
+/**
+ * Resolve path under REPO_ROOT and rebuild via join(root, rel) so traversal
+ * outside the repo is rejected before any file I/O.
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+function safePathUnderRoot(path) {
+  const root = REPO_ROOT;
+  const prefix = `${root}${sep}`;
+  const candidates = [path, join(root, path)];
+
   for (const candidate of candidates) {
-    const normalized = resolve(candidate);
-    if (!isUnderRoot(normalized, REPO_ROOT)) {
+    const abs = resolve(candidate);
+    if (abs !== root && !abs.startsWith(prefix)) {
       continue;
     }
-    try {
-      readFileSync(normalized);
-      return normalized;
-    } catch {
-      // try next candidate
+
+    const rel =
+      abs === root
+        ? ""
+        : abs.startsWith(prefix)
+          ? abs.slice(prefix.length)
+          : null;
+    if (rel === null || rel.includes("..") || rel.includes(`/..${sep}`)) {
+      continue;
     }
+
+    return rel === "" ? root : join(root, rel);
   }
-  throw new Error(
-    `snapshot file not found under repo root ${REPO_ROOT}: ${path}`,
-  );
+
+  throw new Error(`path must stay under repo root ${REPO_ROOT}: ${path}`);
+}
+
+/** @param {string} path */
+function resolveUnderRepo(path) {
+  const safe = safePathUnderRoot(path);
+  try {
+    accessSync(safe, constants.R_OK);
+    return safe;
+  } catch {
+    throw new Error(
+      `snapshot file not found under repo root ${REPO_ROOT}: ${path}`,
+    );
+  }
 }
 
 /** @param {string} path */
 function resolveOutputUnderRepo(path) {
-  const normalized = resolve(path);
-  if (!isUnderRoot(normalized, REPO_ROOT)) {
-    throw new Error(
-      `output path must stay under repo root ${REPO_ROOT}, got ${normalized}`,
-    );
-  }
-  return normalized;
+  return safePathUnderRoot(path);
 }
 
 /** @returns {{ file: string | null; output: string | null }} */
@@ -138,15 +165,16 @@ export function resolveSnapshotPath(path) {
  * @returns {SnapshotData}
  */
 export function loadSnapshotAt(resolvedPath) {
-  if (!isUnderRoot(resolvedPath, REPO_ROOT)) {
+  const safe = safePathUnderRoot(resolvedPath);
+  if (!isUnderRoot(safe, REPO_ROOT)) {
     throw new Error(
-      `snapshot path must stay under repo root ${REPO_ROOT}, got ${resolvedPath}`,
+      `snapshot path must stay under repo root ${REPO_ROOT}, got ${safe}`,
     );
   }
-  const raw = readFileSync(resolvedPath, "utf8");
+  const raw = readFileSync(safe, "utf8");
   const data = JSON.parse(raw);
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new TypeError(`expected JSON object in ${resolvedPath}`);
+    throw new TypeError(`expected JSON object in ${safe}`);
   }
   return data;
 }
@@ -273,14 +301,15 @@ export function catalogDictFromSnapshot(data) {
  * @param {string} resolvedOutputPath
  */
 export function writeOutputAt(catalog, resolvedOutputPath) {
-  const payload = `${JSON.stringify(catalog, null, 2)}\n`;
-  if (!isUnderRoot(resolvedOutputPath, REPO_ROOT)) {
+  const safe = safePathUnderRoot(resolvedOutputPath);
+  if (!isUnderRoot(safe, REPO_ROOT)) {
     throw new Error(
-      `output path must stay under repo root ${REPO_ROOT}, got ${resolvedOutputPath}`,
+      `output path must stay under repo root ${REPO_ROOT}, got ${safe}`,
     );
   }
-  mkdirSync(dirname(resolvedOutputPath), { recursive: true });
-  writeFileSync(resolvedOutputPath, payload, "utf8");
+  const payload = `${JSON.stringify(catalog, null, 2)}\n`;
+  mkdirSync(dirname(safe), { recursive: true });
+  writeFileSync(safe, payload, "utf8");
 }
 
 /**
@@ -293,4 +322,41 @@ export function writeOutput(catalog, outputPath) {
     return;
   }
   process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
+}
+
+/** Run the example-file e2e decomposition flow (parse args, load, assert, write). */
+export function runExampleFileTest() {
+  const { file: snapshotPath, output: outputFile } = parseTestArgs();
+  if (!snapshotPath) {
+    return;
+  }
+
+  const data = loadSnapshotAt(snapshotPath);
+  extractSnapshotParts(data);
+
+  const catalog = catalogDictFromSnapshot(data);
+  const jsonChunks = catalog.json ?? [];
+  const mdChunks = catalog.md ?? [];
+
+  if (jsonChunks.length === 0) {
+    throw new Error("buildCatalogIndex produced no json chunks");
+  }
+  if (mdChunks.length === 0) {
+    throw new Error("buildCatalogIndex produced no md enum chunks");
+  }
+  const hasDecomposed = jsonChunks.some(
+    (/** @type {{ file_path?: string }} */ entry) =>
+      typeof entry.file_path === "string" &&
+      entry.file_path.includes("/schemas/decomposed/") &&
+      entry.file_path.endsWith(".json"),
+  );
+  if (!hasDecomposed) {
+    throw new Error("expected per-property decomposed json chunks");
+  }
+
+  if (outputFile) {
+    writeOutputAt(catalog, outputFile);
+  } else {
+    process.stdout.write(`${JSON.stringify(catalog, null, 2)}\n`);
+  }
 }

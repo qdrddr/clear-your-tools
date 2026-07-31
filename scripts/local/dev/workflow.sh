@@ -318,6 +318,7 @@ PY
 	ci)
 		require_repo_root
 		cyt_section "CI"
+		cyt_verify_dependency_pins
 		cyt_sync_app
 		cyt_verify_app_python
 		cyt_verify_sdk_import

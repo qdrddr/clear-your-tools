@@ -270,6 +270,16 @@ repos:
         files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
 
+  - repo: local
+    hooks:
+      - id: verify-pins
+        name: verify-pins
+        entry: bash scripts/deps/verify-pins.sh
+        args: ["--short", "--no-report"]
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock|requirements(-dev)?\.txt|Cargo\.toml|Cargo\.lock|sdk/c/CMakeLists\.txt|sdk/go/go\.(mod|sum)|sdk/typescript/package(-lock)?\.json|package(-lock)?\.json|scripts/pre-commit-hooks/go-sdk-tools\.sh)$
+
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
     rev: 0.11.17

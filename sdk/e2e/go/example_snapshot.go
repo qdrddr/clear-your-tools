@@ -82,16 +82,17 @@ func ResolveSnapshotPath(path string) string {
 }
 
 func LoadSnapshotAt(path string) map[string]any {
-	if !isUnderRoot(path, repoRoot()) {
-		panic("snapshot path must stay under repo root: " + path)
-	}
-	raw, err := os.ReadFile(path)
+	safe, err := resolveUnderRepo(path)
 	if err != nil {
-		panic("read " + path + ": " + err.Error())
+		panic(err.Error())
+	}
+	raw, err := os.ReadFile(safe)
+	if err != nil {
+		panic("read " + safe + ": " + err.Error())
 	}
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {
-		panic("parse " + path + ": " + err.Error())
+		panic("parse " + safe + ": " + err.Error())
 	}
 	return data
 }
@@ -212,18 +213,19 @@ func CatalogDictFromSnapshot(data map[string]any) (map[string]any, error) {
 }
 
 func WriteOutputAt(catalog map[string]any, outputPath string) error {
+	safe, err := resolveOutputUnderRepo(outputPath)
+	if err != nil {
+		return err
+	}
 	payload, err := json.MarshalIndent(catalog, "", "  ")
 	if err != nil {
 		return err
 	}
 	payload = append(payload, '\n')
-	if !isUnderRoot(outputPath, repoRoot()) {
-		return fmt.Errorf("output path must stay under repo root, got %s", outputPath)
-	}
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil && !os.IsExist(err) {
+	if err := os.MkdirAll(filepath.Dir(safe), 0o755); err != nil && !os.IsExist(err) {
 		return err
 	}
-	return os.WriteFile(outputPath, payload, 0o644)
+	return os.WriteFile(safe, payload, 0o644)
 }
 
 func WriteOutput(catalog map[string]any, outputPath *string) error {
@@ -241,4 +243,55 @@ func WriteOutput(catalog map[string]any, outputPath *string) error {
 		return err
 	}
 	return WriteOutputAt(catalog, resolved)
+}
+
+// DecomposeFromExampleFile runs the example-file e2e flow. When no snapshot path is
+// configured it reports skipped=true with a nil error.
+func DecomposeFromExampleFile() (skipped bool, err error) {
+	snapshotPath, outputFile := ParseTestArgs()
+	if snapshotPath == nil {
+		return true, nil
+	}
+
+	data := LoadSnapshotAt(*snapshotPath)
+	_, _, _ = ExtractSnapshotParts(data)
+
+	catalog, err := CatalogDictFromSnapshot(data)
+	if err != nil {
+		return false, err
+	}
+
+	jsonChunks, _ := catalog["json"].([]any)
+	mdChunks, _ := catalog["md"].([]any)
+	if len(jsonChunks) == 0 {
+		return false, fmt.Errorf("build_catalog_index produced no json chunks")
+	}
+	if len(mdChunks) == 0 {
+		return false, fmt.Errorf("build_catalog_index produced no md enum chunks")
+	}
+
+	foundDecomposed := false
+	for _, entry := range jsonChunks {
+		obj, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		path, _ := obj["file_path"].(string)
+		if strings.Contains(path, "/schemas/decomposed/") && strings.HasSuffix(path, ".json") {
+			foundDecomposed = true
+			break
+		}
+	}
+	if !foundDecomposed {
+		return false, fmt.Errorf("expected per-property decomposed json chunks")
+	}
+
+	if outputFile != nil {
+		if err := WriteOutputAt(catalog, *outputFile); err != nil {
+			return false, err
+		}
+	} else if err := WriteOutput(catalog, nil); err != nil {
+		return false, err
+	}
+	return false, nil
 }

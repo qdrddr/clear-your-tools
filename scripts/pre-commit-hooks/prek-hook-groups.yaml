@@ -36,6 +36,7 @@ groups:
     - ty-check
     - uv-build
     - export-requirements
+    - verify-pins
     - uv-lock
     - uv-sync
     - verify-sdk
@@ -127,8 +128,10 @@ groups:
     - trailing-whitespace
     - trufflehog
     - typos
+    - verify-pins
     - psscriptanalyzer-check
     - psscriptanalyzer-format
 
   release:
     - simulate-registry
+    - verify-pins

@@ -7,16 +7,12 @@ import (
 	"strings"
 )
 
-func isUnderRoot(path, root string) bool {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func resolveUnderRepo(path string) (string, error) {
+// safePathUnderRoot resolves path under repoRoot and returns a path rebuilt from
+// root + relative segment so traversal outside the repo is rejected.
+func safePathUnderRoot(path string) (string, error) {
 	root := repoRoot()
+	prefix := root + string(filepath.Separator)
+
 	candidates := []string{path}
 	if !filepath.IsAbs(path) {
 		candidates = append(candidates, filepath.Join(root, path))
@@ -28,30 +24,39 @@ func resolveUnderRepo(path string) (string, error) {
 			continue
 		}
 		abs = filepath.Clean(abs)
-		if !isUnderRoot(abs, root) {
+		if abs != root && !strings.HasPrefix(abs, prefix) {
 			continue
 		}
-		if _, err := os.Stat(abs); err == nil {
-			return abs, nil
+
+		rel, err := filepath.Rel(root, abs)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
 		}
+
+		if rel == "." {
+			return root, nil
+		}
+		return filepath.Join(root, rel), nil
 	}
 
-	return "", fmt.Errorf(
-		"snapshot file not found under repo root %s: %s",
-		root,
-		path,
-	)
+	return "", fmt.Errorf("path must stay under repo root %s: %s", root, path)
 }
 
-func resolveOutputUnderRepo(path string) (string, error) {
-	root := repoRoot()
-	abs, err := filepath.Abs(path)
+func resolveUnderRepo(path string) (string, error) {
+	safe, err := safePathUnderRoot(path)
 	if err != nil {
 		return "", err
 	}
-	abs = filepath.Clean(abs)
-	if !isUnderRoot(abs, root) {
-		return "", fmt.Errorf("output path must stay under repo root %s, got %s", root, abs)
+	if _, err := os.Stat(safe); err != nil {
+		return "", fmt.Errorf(
+			"snapshot file not found under repo root %s: %s",
+			repoRoot(),
+			path,
+		)
 	}
-	return abs, nil
+	return safe, nil
+}
+
+func resolveOutputUnderRepo(path string) (string, error) {
+	return safePathUnderRoot(path)
 }

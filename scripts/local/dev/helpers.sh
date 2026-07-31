@@ -691,7 +691,15 @@ PY
 		cyt_build_app_wheel
 	}
 
+	cyt_verify_dependency_pins() {
+		info "verify dependency pins"
+		cyt_run bash scripts/deps/verify-pins.sh --short --no-report
+	}
+
 	cyt_run_all() {
+		cyt_section "Dependency pins"
+		cyt_verify_dependency_pins
+
 		cyt_section "Core (Rust)"
 		cyt_build_rust
 
