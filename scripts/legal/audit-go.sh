@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/legal/audit-go.sh [--output-dir DIR] [--check] [--report]
 #
-# Target: sdk/go/ and sdk/go/tools/
+# Target: sdk/go/ (runtime module; dev linters use go install via go-sdk-tools.sh)
 
 set -euo pipefail
 
@@ -47,8 +47,10 @@ while [[ $# -gt 0 ]]; do
 		cat <<'EOF'
 Usage: audit-go.sh [--output-dir DIR] [--check] [--no-check] [--report] [--no-report]
 
-Downloads Go modules and writes CSV license reports for sdk/go and sdk/go/tools.
+Downloads Go modules and writes CSV license reports for sdk/go.
 First-party module metadata is taken from sdk/go/LICENSE (go-licenses ignores it).
+Dev linters (staticcheck, gosec, etc.) are installed via scripts/pre-commit-hooks/go-sdk-tools.sh
+and are not part of the audited runtime module.
 EOF
 		exit 0
 		;;
@@ -159,7 +161,5 @@ PY
 }
 
 GO_MODULE_DIR="${LEGAL_REPO_ROOT}/sdk/go"
-GO_TOOLS_MODULE_DIR="${LEGAL_REPO_ROOT}/sdk/go/tools"
 
 audit_go_module "sdk/go" "${GO_MODULE_DIR}" "go-sdk"
-audit_go_module "sdk/go/tools" "${GO_TOOLS_MODULE_DIR}" "go-sdk-tools"

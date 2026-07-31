@@ -23,6 +23,7 @@ PACKAGE_JSON="${ROOT}/sdk/typescript/package.json"
 PACKAGE_LOCK="${ROOT}/sdk/typescript/package-lock.json"
 C_CMAKE="${ROOT}/sdk/c/CMakeLists.txt"
 GO_VERSION="${ROOT}/sdk/go/moduleversion/version.go"
+GO_DEVTOOLS="${ROOT}/scripts/pre-commit-hooks/go-sdk-tools.sh"
 UV_LOCK="${ROOT}/uv.lock"
 TAG_FILE="${ROOT}/search/.publish-tag"
 
@@ -40,6 +41,7 @@ Propagate VERSION to all manifests and lockfiles:
   - sdk/typescript/package-lock.json
   - sdk/c/CMakeLists.txt (project VERSION)
   - sdk/go/moduleversion/version.go (Version)
+  - scripts/pre-commit-hooks/go-sdk-tools.sh (Go dev-tool pins; not tied to app semver)
 
 If VERSION is omitted, read it from ${ROOT_PYPROJECT}.
 
@@ -207,6 +209,7 @@ synced version ${version} to:
   ${PACKAGE_LOCK}
   ${C_CMAKE} (project VERSION)
   ${GO_VERSION} (Version)
+  ${GO_DEVTOOLS} (Go dev-tool pins; unchanged unless refreshed manually)
   ${TAG_FILE} (tag=${tag})
 EOF
 	if [[ -n "${tools_version}" ]]; then
@@ -261,6 +264,14 @@ for file in \
 		exit 1
 	fi
 done
+if [[ ! -f "${GO_DEVTOOLS}" ]]; then
+	printf 'error: missing %s\n' "${GO_DEVTOOLS}" | shorten_paths >&2
+	exit 1
+fi
+if [[ -d "${ROOT}/sdk/go/tools" ]]; then
+	printf 'error: sdk/go/tools/ was removed; delete the leftover directory\n' >&2
+	exit 1
+fi
 
 tag="v${version}"
 current_version="$(read_root_pyproject_version)"

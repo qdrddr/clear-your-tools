@@ -257,7 +257,7 @@ Checked targets:
   Cargo.toml       Cargo.lock (workspace; cargo metadata --locked)
   sdk/c            CMakeLists.txt VERSION + synced cyt_indexer.h
   sdk/go           go.sum
-  sdk/go/tools     go.sum
+  scripts/pre-commit-hooks/go-sdk-tools.sh (Go dev-tool pins via go install)
   package.json     package-lock.json (root + sdk/typescript)
 
 Manifest lint (when enabled):
@@ -464,6 +464,40 @@ verify_go_lock() {
 		return 0
 	fi
 	return 1
+}
+
+verify_go_devtool_pins() {
+	local pins_file="${REPO_ROOT}/scripts/pre-commit-hooks/go-sdk-tools.sh"
+	local -a required=(
+		GO_SDK_TOOL_GOFUMPT
+		GO_SDK_TOOL_GOIMPORTS
+		GO_SDK_TOOL_STATICCHECK
+		GO_SDK_TOOL_GOCRITIC
+		GO_SDK_TOOL_GOSEC
+	)
+	local var pattern
+
+	require_cmd go
+	[[ -f "${pins_file}" ]] ||
+		die "go dev-tool pins: missing ${pins_file#"${REPO_ROOT}"/}"
+
+	# shellcheck disable=SC1090
+	source "${pins_file}"
+
+	for var in "${required[@]}"; do
+		pattern="${!var:-}"
+		[[ -n "${pattern}" ]] ||
+			die "go dev-tool pins: ${var} is unset in go-sdk-tools.sh"
+		if [[ ! "${pattern}" =~ @v ]]; then
+			die "go dev-tool pins: ${var} must pin an explicit @version (${pattern})"
+		fi
+	done
+
+	if [[ -d "${REPO_ROOT}/sdk/go/tools" ]]; then
+		die "go dev-tool pins: sdk/go/tools/ was removed; delete the leftover directory"
+	fi
+
+	record_ok "go dev-tool pins (go-sdk-tools.sh)"
 }
 
 report_npm_inventory() {
@@ -769,7 +803,7 @@ fi
 
 if [[ "${SKIP_GO}" -eq 0 ]]; then
 	run_step "go lock (sdk/go)" verify_go_lock "sdk-go" "${REPO_ROOT}/sdk/go"
-	run_step "go lock (sdk/go/tools)" verify_go_lock "sdk-go-tools" "${REPO_ROOT}/sdk/go/tools"
+	run_step "go dev-tool pins" verify_go_devtool_pins
 fi
 
 if [[ "${SKIP_NPM}" -eq 0 ]]; then

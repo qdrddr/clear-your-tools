@@ -11,7 +11,7 @@ Install on your machine before the setup steps below:
 | [`uv`](https://docs.astral.sh/uv/) | Python deps, `prek`, `uv run` |
 | Python **3.13+** | App and SDK (see [`pyproject.toml`](pyproject.toml)) |
 | **Rust** (stable) | Editable `cyt-indexer-sdk` (maturin), `cargo` prek hooks, TypeScript native build |
-| **Go 1.25+** | [`sdk/go/`](sdk/go/) cgo bindings; pre-commit uses `go tool` from `sdk/go/go.mod` |
+| **Go 1.25+** | [`sdk/go/`](sdk/go/) cgo bindings; dev linters via `go install` ([`go-sdk-tools.sh`](scripts/pre-commit-hooks/go-sdk-tools.sh)) |
 | **Node.js ≥20** | TypeScript SDK build and prek hooks under `sdk/typescript/` |
 | **`ast-grep`** CLI | `ast-grep` / `ast-scan` prek hooks ([install](https://ast-grep.github.io/guide/quick-start.html#install)) |
 | **C toolchain** | [`sdk/c/`](sdk/c/) examples and cgo; same as Rust FFI build |
