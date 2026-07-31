@@ -2,8 +2,8 @@ id: no-chunk-your-skills-cargo-path-dep
 valid:
   - |
     [dependencies]
-    chunk-your-skills = "2.1.3"
+    chunk-your-skills = "0.0.1"
 invalid:
   - |
     [dependencies]
-    chunk-your-skills = { path = "../../../chunk-your-skills", version = "2.1.3" }
+    chunk-your-skills = { path = "../../../chunk-your-skills" }

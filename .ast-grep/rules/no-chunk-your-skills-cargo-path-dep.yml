@@ -4,7 +4,7 @@ severity: error
 message: >-
   Do not use a path dependency on the chunk-your-skills/ directory tree.
   Depend on the published chunk-your-skills crate from crates.io instead
-  (e.g. chunk-your-skills = "2.1.3").
+  (registry version pin, not path =).
 files:
   - sdk/**/Cargo.toml
   - Cargo.toml

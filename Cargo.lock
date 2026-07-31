@@ -253,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "chunk-your-skills"
-version = "2.1.3"
+version = "2.1.4"
 dependencies = [
  "cbindgen",
  "clap",
@@ -267,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "chunk-your-tools"
-version = "2.3.4"
+version = "2.3.5"
 dependencies = [
  "cbindgen",
  "clap",

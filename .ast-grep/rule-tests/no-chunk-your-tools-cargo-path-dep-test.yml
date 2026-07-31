@@ -2,8 +2,8 @@ id: no-chunk-your-tools-cargo-path-dep
 valid:
   - |
     [dependencies]
-    chunk-your-tools = "2.1.0"
+    chunk-your-tools = "0.0.1"
 invalid:
   - |
     [dependencies]
-    chunk-your-tools = { path = "../../../chunk-your-tools", version = "2.1.0" }
+    chunk-your-tools = { path = "../../../chunk-your-tools" }

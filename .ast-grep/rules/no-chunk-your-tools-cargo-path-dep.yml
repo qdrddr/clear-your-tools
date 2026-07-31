@@ -4,7 +4,7 @@ severity: error
 message: >-
   Do not use a path dependency on the chunk-your-tools/ directory tree.
   Depend on the published chunk-your-tools crate from crates.io instead
-  (e.g. chunk-your-tools = "2.1.0").
+  (registry version pin, not path =).
 files:
   - sdk/**/Cargo.toml
   - Cargo.toml
