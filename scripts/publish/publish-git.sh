@@ -217,7 +217,7 @@ if git diff --cached --quiet; then
 else
 	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
 	# re-touch those files while the index is locked for commit.
-	SKIP=sync-version,heal-cargo-lock git commit -m "version bump to ${tag}"
+	SKIP=sync-version,heal-cargo-lock,cargo-sort git commit -m "version bump to ${tag}"
 fi
 
 git push origin HEAD
