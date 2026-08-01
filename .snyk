@@ -1,0 +1,9 @@
+# Snyk policy — https://docs.snyk.io/scan-fix-and-prevent/prevent/policies/the-.snyk-file
+version: v1.25.0
+language-settings:
+  python: "3.13"
+# Snyk Code (SAST) only — does not affect Open Source (pip/npm/go) project imports.
+# https://docs.snyk.io/scan-fix-and-prevent/scan-with-snyk/snyk-projects/import-project-repository/exclude-directories-and-files-from-project-import
+exclude:
+  global:
+    - "chunk-your-*/**"
