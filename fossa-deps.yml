@@ -119,7 +119,7 @@ referenced-dependencies:
     version: "25.6.0"
   - type: pypi
     name: litellm
-    version: "1.84.0"
+    version: "1.94.0"
   - type: pypi
     name: markdown-it-py
     version: "4.2.0"

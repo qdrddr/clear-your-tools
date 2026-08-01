@@ -3,6 +3,12 @@
 fail_fast: false
 default_language_version:
   python: "3.13"
+# Generated SBOM artifacts (scripts/deps/export-rust-sbom.sh):
+#   sdk/rust/cyt-indexer/cyt-indexer.cdx.json
+#   sdk/rust/cyt-indexer/cyt-indexer.snyk.json
+# Exclude pattern (auto-fix / spell / secret scanners / verify-pins trigger):
+#   ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
+# Only export-rust-sbom may rewrite these files (on Cargo.toml/Cargo.lock changes).
 repos:
   # 1year old
   #  - repo: https://github.com/backplane/pre-commit-rust-hooks
@@ -86,7 +92,7 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, json5, bash, javascript, ts, tsx]
-        exclude: ^\.github/workflows/.*\.ya?ml$
+        exclude: ^(\.github/workflows/.*\.ya?ml$|sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json)$
       - id: prettier
         name: prettier github workflow yaml
         files: ^\.github/workflows/.*\.ya?ml$
@@ -107,6 +113,7 @@ repos:
     rev: v1.1.11
     hooks:
       - id: committed
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
 
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
@@ -117,24 +124,27 @@ repos:
             "--baseline",
             ".secrets.baseline",
             "--exclude-files",
-            "app/migrations/versions/.*|ast-grep/rule-tests/.*|app/tests/test_bm25_migration.py|.env.example|.ast-grep/.*|.talismanrc",
+            "app/migrations/versions/.*|ast-grep/rule-tests/.*|app/tests/test_bm25_migration.py|.env.example|.ast-grep/.*|.talismanrc|sdk/rust/cyt-indexer/cyt-indexer\\.cdx\\.json|sdk/rust/cyt-indexer/cyt-indexer\\.snyk\\.json",
           ]
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.0
     hooks:
       - id: gitleaks
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
 
   - repo: https://github.com/trufflesecurity/trufflehog
     rev: v3.92.3
     hooks:
       - id: trufflehog
         args: ["--only-verified"]
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
 
   - repo: https://github.com/thoughtworks/talisman
     rev: v1.37.0
     hooks:
       - id: talisman-commit
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.10
@@ -283,6 +293,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: export-rust-sbom
+        name: export-rust-sbom
+        entry: bash scripts/deps/export-rust-sbom.sh
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: verify-pins
         name: verify-pins
         entry: bash scripts/deps/verify-pins.sh
@@ -348,6 +368,7 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=1024"]
       - id: trailing-whitespace
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
       - id: check-yaml
         exclude: ^(.ast-grep/rules/.*|\.github/workflows/.*)$
       - id: check-yaml
@@ -357,7 +378,9 @@ repos:
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
       - id: mixed-line-ending
+        exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
       - id: detect-private-key
       - id: check-case-conflict
       - id: check-merge-conflict

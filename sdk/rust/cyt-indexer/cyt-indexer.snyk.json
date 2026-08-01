@@ -1,0 +1,29 @@
+{
+  "dependencyCount": 167,
+  "displayTargetFile": "sdk/rust/cyt-indexer/cyt-indexer.cdx.json",
+  "filesystemPolicy": false,
+  "filtered": {
+    "ignore": [],
+    "patch": []
+  },
+  "hasUnknownVersions": false,
+  "ignoreSettings": {
+    "adminOnly": false,
+    "autoApproveIgnores": false,
+    "disregardFilesystemIgnores": false,
+    "reasonRequired": false
+  },
+  "isPrivate": true,
+  "licensesPolicy": {
+    "orgLicenseRules": null,
+    "severities": null
+  },
+  "ok": true,
+  "org": "qdrddr",
+  "path": "sdk/rust/cyt-indexer",
+  "policy": "",
+  "summary": "No known vulnerabilities",
+  "targetFile": "sdk/rust/cyt-indexer/cyt-indexer.cdx.json",
+  "uniqueCount": 0,
+  "vulnerabilities": []
+}

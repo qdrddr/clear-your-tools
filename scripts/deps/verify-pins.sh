@@ -61,7 +61,7 @@ emit_check_output() {
 			tail -n 15 "${file}" | emit_err
 		fi
 	else
-		cat "${file}" | emit_err
+		emit_err <"${file}"
 	fi
 }
 

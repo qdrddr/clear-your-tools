@@ -1,7 +1,12 @@
 [files]
-extend-exclude = ["ui/src/components/creative-tim/blocks/*.tsx"]
+extend-exclude = [
+  "ui/src/components/creative-tim/blocks/*.tsx",
+  "sdk/rust/cyt-indexer/cyt-indexer.cdx.json",
+  "sdk/rust/cyt-indexer/cyt-indexer.snyk.json",
+]
 
 [default.extend-words]
 # Don't correct the surname "EIN"
 Bui = "Bui"
 certifi = "certifi"
+Provices = "Provices"

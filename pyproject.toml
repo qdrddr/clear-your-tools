@@ -49,7 +49,7 @@ proxy = [
     "h2==4.3.0",
 ]
 pruners = [
-    "litellm==1.84.0",
+    "litellm==1.94.0",
 ]
 all = [
     "clear-your-tools[agents,proxy,pruners]",
@@ -141,7 +141,7 @@ test = [
     "hypercorn==0.18.0",
     "h2==4.3.0",
     "uuid7==0.1.0",
-    "litellm==1.84.0",
+    "litellm==1.94.0",
     "pytest-bdd==8.1.0",
     "gherkin-official==40.0.0",
 ]
@@ -301,9 +301,10 @@ exclude_lines = [
 ]
 
 [tool.codespell]
-skip = "sdk/typescript/package-lock.json,postman/**"
+skip = "sdk/typescript/package-lock.json,postman/**,sdk/rust/cyt-indexer/cyt-indexer.cdx.json,sdk/rust/cyt-indexer/cyt-indexer.snyk.json"
 ignore-words-list = [
     "fallow",
     "Bui",
     "te",
+    "Provices",
 ]

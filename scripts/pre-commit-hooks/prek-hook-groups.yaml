@@ -60,6 +60,7 @@ groups:
     - cargo-udeps
     - cbindgen-header-drift
     - c-header-sync
+    - export-rust-sbom
     - local-dev-core-rust
     - verify-sdk
 

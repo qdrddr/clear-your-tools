@@ -36,6 +36,7 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 [![version][version-shield]][release-link]
 [![discord][discord-shield]][discord-link]
 [![FOSSA Status][fossa-shield]][fossa-link]
+[![Skyk Vulnerabilities][snyk-shield]][snyk-link]
 
 ![Shell][shell-shield]
 ![Python][python-tech-shield]
@@ -619,3 +620,5 @@ See [`LICENSE`](LICENSE).
 [fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield&issueType=security
 [c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
 [go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white
+[snyk-shield]: https://snyk.io/test/github/qdrddr/clear-your-tools/badge.svg
+[snyk-link]: https://snyk.io/test/github/qdrddr/clear-your-tools
