@@ -215,9 +215,9 @@ stage_version_files
 if git diff --cached --quiet; then
 	echo "version manifests already at ${semver}; skipping commit"
 else
-	# sync-version already ran above; skip the hook here so submodule git
-	# operations do not run while git commit holds the parent index lock.
-	SKIP=sync-version git commit -m "version bump to ${tag}"
+	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
+	# re-touch those files while the index is locked for commit.
+	SKIP=sync-version,heal-cargo-lock git commit -m "version bump to ${tag}"
 fi
 
 git push origin HEAD
