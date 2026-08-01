@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# Build the cyt-indexer release binary locally
-env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
+# Build the cyt-indexer release binary locally (nopatch; keeps Cargo.lock registry pins).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+env -u CARGO_TARGET_DIR "${ROOT}/scripts/local/dev/cargo-locked.sh" build -p cyt-indexer --release --locked
 
 mkdir -p ./.catalog
 # Extract the tools from the full example JSON

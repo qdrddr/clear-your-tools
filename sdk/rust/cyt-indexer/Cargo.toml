@@ -10,6 +10,9 @@ repository = "https://github.com/qdrddr/clear-your-tools"
 keywords = ["mcp", "json-schema", "tool-gating"]
 categories = ["command-line-utilities", "development-tools"]
 
+[package.metadata.authors]
+main = { name = "Damien Berezenko", linkedin = "https://www.linkedin.com/in/damien-e" }
+
 [lib]
 name = "cyt_indexer"
 crate-type = ["rlib", "cdylib", "staticlib"]
@@ -22,9 +25,10 @@ python = ["pyo3", "pythonize"]
 node = ["napi", "napi-derive"]
 ffi = []
 
+# Centralized place to update chunk-your-tools && chunk-your-skills versions:
 [dependencies]
-chunk-your-tools = "2.3.5"
-chunk-your-skills = "2.1.4"
+chunk-your-tools = "2.3.7"
+chunk-your-skills = "2.1.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chunk = { version = "0.10", default-features = false }

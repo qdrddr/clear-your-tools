@@ -9,8 +9,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 SDK="${ROOT}/sdk/python"
 
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${ROOT}/scripts/lib/chunk-worktree.sh"
+
 if [[ "${SKIP_MATURIN_DEVELOP:-}" != 1 ]]; then
-	env -u CARGO_TARGET_DIR uv run --directory "${SDK}" maturin develop --release
+	chunk_run_maturin_develop "${ROOT}" "${SDK}"
 fi
 cd "${SDK}"
 exec env -u CARGO_TARGET_DIR uv run --no-sync --with pytest pytest tests/unit "$@"

@@ -15,7 +15,7 @@ classifiers = [
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [
-  { name = "Damien Berezenko", linkedin = "https://www.linkedin.com/in/damien-e" },
+  { name = "Damien Berezenko" },
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
@@ -33,6 +33,7 @@ Homepage = "https://github.com/qdrddr/clear-your-tools"
 Repository = "https://github.com/qdrddr/clear-your-tools"
 Issues = "https://github.com/qdrddr/clear-your-tools/issues"
 PyPI = "https://pypi.org/project/clear-your-tools/"
+LinkedIn = "https://www.linkedin.com/in/damien-e"
 
 [project.optional-dependencies]
 claude = []

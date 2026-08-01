@@ -254,7 +254,8 @@ EOF
 		cyt_step_done "${sim_label}"
 
 		cyt_step "${sim_label}" 5 "${sim_total}" "build cyt-indexer-sdk wheel"
-		cyt_run bash -c "cd \"${CYT_REPO_ROOT}/sdk/python\" && uv build -o \"${SIM_DIR}/dist-sdk\""
+		cyt_run chunk_run_without_worktree_patches "${CYT_REPO_ROOT}" \
+			bash -c "cd \"${CYT_REPO_ROOT}/sdk/python\" && uv build -o \"${SIM_DIR}/dist-sdk\""
 		cyt_step_done "${sim_label}"
 
 		cyt_step "${sim_label}" 6 "${sim_total}" "build clear-your-tools wheel"

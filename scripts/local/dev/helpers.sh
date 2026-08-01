@@ -9,6 +9,9 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	CYT_REPO_ROOT="${CYT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 	export CYT_REPO_ROOT
 
+	# shellcheck source=scripts/lib/chunk-worktree.sh
+	source "${CYT_REPO_ROOT}/scripts/lib/chunk-worktree.sh"
+
 	CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/bin"
 	export PATH="${CYT_VENV_BIN}:${PATH}"
 
@@ -229,14 +232,19 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "uv sync sdk/python"
-		cyt_run uv sync
+		cyt_run uv sync --locked
+	}
+
+	cyt_cargo_locked() {
+		require_cmd cargo
+		chunk_cargo_locked "${CYT_REPO_ROOT}" "$@"
 	}
 
 	cyt_indexer_release() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "cargo build -p cyt-indexer --release"
-		cyt_run env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --release
+		info "cargo build -p cyt-indexer --release --locked"
+		cyt_run cyt_cargo_locked build -p cyt-indexer --release --locked
 	}
 
 	cyt_indexer_paths() {
@@ -490,10 +498,10 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_build_rust() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		info "cargo build -p cyt-indexer --features testing,ffi"
-		cyt_run env -u CARGO_TARGET_DIR cargo build -p cyt-indexer --features testing,ffi
-		info "cargo test -p cyt-indexer --features testing,ffi"
-		cyt_run env -u CARGO_TARGET_DIR cargo test -p cyt-indexer --features testing,ffi
+		info "cargo build -p cyt-indexer --features testing,ffi --locked"
+		cyt_run cyt_cargo_locked build -p cyt-indexer --features testing,ffi --locked
+		info "cargo test -p cyt-indexer --features testing,ffi --locked"
+		cyt_run cyt_cargo_locked test -p cyt-indexer --features testing,ffi --locked
 		cyt_test_indexer_build
 	}
 
@@ -502,29 +510,23 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	cyt_cargo_publish_dry_run() {
 		require_cmd cargo
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		local patch_config="${CYT_REPO_ROOT}/.cargo/config.toml"
-		local patch_backup=""
-		local publish_status=0
-		if [[ -f "${patch_config}" ]]; then
-			patch_backup="$(mktemp "${TMPDIR:-/tmp}/cyt-cargo-config.XXXXXX")"
-			mv "${patch_config}" "${patch_backup}"
-		fi
 		info "cargo publish --dry-run"
-		if ! cyt_run env -u CARGO_TARGET_DIR cargo publish -p cyt-indexer --dry-run --allow-dirty; then
-			publish_status=$?
+		if ! cyt_run chunk_run_without_worktree_patches "${CYT_REPO_ROOT}" \
+			env CARGO_TARGET_DIR="${CYT_REPO_ROOT}/target" \
+			cargo publish -p cyt-indexer --dry-run --allow-dirty --locked; then
+			return $?
 		fi
-		if [[ -n "${patch_backup}" && -f "${patch_backup}" ]]; then
-			mv "${patch_backup}" "${patch_config}"
-		fi
-		return "${publish_status}"
 	}
 
 	cyt_build_sdk_python() {
 		require_cmd uv
 		cyt_sync_sdk_python
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
-		info "maturin develop --release"
-		cyt_run uv run maturin develop --release
+		if [[ "${SKIP_MATURIN_DEVELOP:-}" != 1 ]]; then
+			info "maturin develop --release"
+			cyt_run chunk_run_maturin_develop "${CYT_REPO_ROOT}" \
+				"${CYT_REPO_ROOT}/sdk/python"
+		fi
 		info "pytest sdk/python/tests/unit"
 		cyt_run env SKIP_MATURIN_DEVELOP=1 bash "${CYT_REPO_ROOT}/scripts/local/tests/pytest-sdk-python.sh"
 	}

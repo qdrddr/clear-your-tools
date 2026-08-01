@@ -34,6 +34,7 @@ include = ["NOTICE", "LICENSE"]
 
 [dependency-groups]
 dev = [
+    "cffi==2.0.0",
     "maturin==1.13.3",
 ]
 

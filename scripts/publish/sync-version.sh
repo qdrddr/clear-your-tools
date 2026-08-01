@@ -50,7 +50,16 @@ versions under [dependencies], create or refresh tag-pinned git worktrees:
   chunk-your-tools-vX.Y.Z/
   chunk-your-skills-vX.Y.Z/
 Submodule directories (chunk-your-tools/, chunk-your-skills/) stay on main
-for day-to-day editing; Cargo [patch.crates-io] points at the worktrees.
+for day-to-day editing. This script only generates worktrees and repo-level
+metadata (Cargo.toml [patch.crates-io], search/.chunk-worktrees); it does not read from
+or modify files inside submodule or worktree checkouts.
+
+Workspace [patch.crates-io] (when generated) points at worktrees for optional local
+Cargo builds. verify-pins and other repo scripts ignore those patches and use
+crates.io pins from Cargo.lock instead.
+
+After syncing worktrees, Cargo.lock is refreshed for chunk-your-tools and
+chunk-your-skills via cargo update --precise (nopatch workspace; no [[patch.unused]]).
 EOF
 }
 
@@ -222,8 +231,8 @@ EOF
 			"$(chunk_worktree_dir "${ROOT}" "chunk-your-skills" "${skills_version}")" \
 			"${skills_version}" | shorten_paths
 	fi
-	if [[ -f "${ROOT}/.cargo/config.toml" ]]; then
-		printf '  %s (Cargo patch -> worktrees)\n' "${ROOT}/.cargo/config.toml" | shorten_paths
+	if grep -q '^\[patch\.crates-io\]' "${ROOT}/Cargo.toml" 2>/dev/null; then
+		printf '  %s ([patch.crates-io] -> worktrees)\n' "${ROOT}/Cargo.toml" | shorten_paths
 	fi
 }
 
@@ -277,6 +286,7 @@ tag="v${version}"
 current_version="$(read_root_pyproject_version)"
 if [[ "${version}" == "${current_version}" ]]; then
 	chunk_sync_worktrees_from_cargo "${ROOT}"
+	chunk_refresh_workspace_cargo_lock "${ROOT}"
 	print_sync_summary "${version}" "${tag}"
 	exit 0
 fi
@@ -294,5 +304,6 @@ update_cmake_project_version "${version}"
 update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 chunk_sync_worktrees_from_cargo "${ROOT}"
+chunk_refresh_workspace_cargo_lock "${ROOT}"
 
 print_sync_summary "${version}" "${tag}"

@@ -10,6 +10,8 @@ INCLUDE_DIR="${REPO_ROOT}/sdk/c/include"
 
 # shellcheck disable=SC1091
 source "${REPO_ROOT}/scripts/lib/shorten-paths.sh"
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${REPO_ROOT}/scripts/lib/chunk-worktree.sh"
 export SHORTEN_ROOT="${REPO_ROOT}"
 
 SUPPORTED_TARGETS=(
@@ -170,11 +172,10 @@ build_one() {
 	rustup target add "$triplet" >/dev/null 2>&1 || true
 
 	info "cargo build -p cyt-indexer --no-default-features --features ffi --target ${triplet} (${prof})"
-	(
-		cd "${REPO_ROOT}" || die "cd failed"
-		cargo build -p cyt-indexer --no-default-features --features ffi \
-			--target "$triplet" "${release_flag[@]}"
-	)
+	local saved_cargo_target_dir="${CARGO_TARGET_DIR:-}"
+	export CARGO_TARGET_DIR="${REPO_ROOT}/target"
+	chunk_cargo_locked "${REPO_ROOT}" build -p cyt-indexer --no-default-features --features ffi \
+		--target "$triplet" "${release_flag[@]}" --locked
 
 	if [[ "${triplet}" == *-apple-darwin ]]; then
 		local release_dylib deps_dylib
@@ -199,6 +200,12 @@ build_one() {
 
 	if [[ -n "$PACKAGE_DIR" ]]; then
 		package_artifacts "$triplet" "$prof" "$PACKAGE_DIR"
+	fi
+
+	if [[ -n "${saved_cargo_target_dir}" ]]; then
+		export CARGO_TARGET_DIR="${saved_cargo_target_dir}"
+	else
+		unset CARGO_TARGET_DIR
 	fi
 }
 

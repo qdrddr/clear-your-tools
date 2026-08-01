@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 CARGO_TOML="${ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${ROOT}/scripts/lib/chunk-worktree.sh"
+
 category="${1:?usage: $0 unit|integration|cucumber|ffi|coverage|mutation|quality_metrics|qa}"
 case "${category}" in
 unit | integration | cucumber | ffi | coverage | mutation | quality_metrics | qa) ;;
@@ -42,5 +45,4 @@ cucumber | coverage | mutation | quality_metrics | qa) feature_args=(--no-defaul
 ffi) feature_args=(--no-default-features --features ffi) ;;
 esac
 
-cd "${ROOT}"
-exec env -u CARGO_TARGET_DIR cargo test -p cyt-indexer "${feature_args[@]}" "${args[@]}"
+chunk_cargo_locked "${ROOT}" test -p cyt-indexer --locked "${feature_args[@]}" "${args[@]}"

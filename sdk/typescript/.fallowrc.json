@@ -1,5 +1,8 @@
 {
   "entry": [
     "src/test/**/*.test.ts"
+  ],
+  "ignoreDependencies": [
+    "@napi-rs/cli"
   ]
 }

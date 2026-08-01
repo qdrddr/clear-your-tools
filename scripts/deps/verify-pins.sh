@@ -17,6 +17,8 @@ CYT_INDEXER_CARGO="${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 
 # shellcheck source=scripts/lib/shorten-paths.sh
 source "${SCRIPT_DIR}/../lib/shorten-paths.sh"
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
 export SHORTEN_ROOT="${REPO_ROOT}"
 
 DO_MANIFEST_LINT=1
@@ -154,6 +156,40 @@ read_cmake_project_version() {
 		sed -E 's/^project\(cyt-indexer-c VERSION ([^ ]+) .*/\1/'
 }
 
+read_root_pyproject_version() {
+	grep -E '^version[[:space:]]*=' "${REPO_ROOT}/pyproject.toml" |
+		head -1 |
+		sed -E 's/^version[[:space:]]*=[[:space:]]*"(.*)".*/\1/'
+}
+
+read_sdk_python_version() {
+	grep -E '^version[[:space:]]*=' "${REPO_ROOT}/sdk/python/pyproject.toml" |
+		head -1 |
+		sed -E 's/^version[[:space:]]*=[[:space:]]*"(.*)".*/\1/'
+}
+
+read_root_cyt_indexer_sdk_pin() {
+	grep -E 'cyt-indexer-sdk==' "${REPO_ROOT}/pyproject.toml" |
+		head -1 |
+		sed -E 's/.*cyt-indexer-sdk==([^"]+)".*/\1/'
+}
+
+read_lock_package_versions() {
+	local crate="$1"
+	local lock_file="$2"
+	awk -v crate="${crate}" '
+		/^\[\[package\]\]/ { in_pkg = 1; next }
+		/^\[\[/ { in_pkg = 0 }
+		in_pkg && $0 == "name = \"" crate "\"" {
+			if (getline && $0 ~ /^version = /) {
+				gsub(/^version = "/, "")
+				gsub(/"$/, "")
+				print
+			}
+		}
+	' "${lock_file}" | sort -u
+}
+
 record_failure() {
 	local name="$1"
 	local detail="$2"
@@ -253,7 +289,7 @@ Writes pinned-version inventory and check results under:
   scripts/deps/output/audit-YYYYMMDD-HHMMSS/
 
 Checked targets:
-  pyproject.toml   uv.lock (repo root + sdk/python)
+  pyproject.toml   uv.lock (repo root; sdk/python via workspace path source)
   Cargo.toml       Cargo.lock (workspace; cargo metadata --locked)
   sdk/c            CMakeLists.txt VERSION + synced cyt_indexer.h
   sdk/go           go.sum
@@ -263,6 +299,8 @@ Checked targets:
 Manifest lint (when enabled):
   pyproject.toml, package.json — exact pins required in manifests
   Cargo.toml — skipped; Cargo.lock is the pin (see rust lock step)
+  cyt-indexer-sdk — root pyproject pin must match sdk/python version
+  chunk-your-* — cyt-indexer Cargo.toml versions must match Cargo.lock
 
 Options:
   --output-dir DIR      Directory for generated reports (default: timestamped)
@@ -325,6 +363,18 @@ run_in_dir() {
 	(cd "${dir}" && run_cmd "$@")
 }
 
+# Run cargo from the nopatch shadow workspace when checking the repo root lockfile
+# so [patch.crates-io] in committed Cargo.toml is left untouched on disk.
+run_rust_cargo() {
+	local crate_dir="$1"
+	shift
+	if [[ "$(cd "${crate_dir}" && pwd -P)" == "$(cd "${REPO_ROOT}" && pwd -P)" ]]; then
+		chunk_run_in_nopatch_workspace "${REPO_ROOT}" run_cmd "$@"
+	else
+		run_in_dir "${crate_dir}" "$@"
+	fi
+}
+
 report_python_inventory() {
 	local label="$1"
 	local project_dir="$2"
@@ -383,8 +433,7 @@ report_rust_inventory() {
 
 	info "rust ${label}: export pinned packages"
 	(
-		cd "${crate_dir}"
-		run_cmd cargo metadata --locked --format-version 1 --quiet \
+		run_rust_cargo "${crate_dir}" cargo metadata --locked --format-version 1 --quiet \
 			>"${out_json}.raw" 2>/dev/null
 		if command -v jq >/dev/null 2>&1; then
 			jq '[.packages[] | {name, version, source}] | sort_by(.name)' \
@@ -393,7 +442,7 @@ report_rust_inventory() {
 		else
 			mv "${out_json}.raw" "${out_json}"
 		fi
-		run_cmd cargo tree --locked --prefix none >"${out_tree}" 2>/dev/null || true
+		run_rust_cargo "${crate_dir}" cargo tree --locked --prefix none >"${out_tree}" 2>/dev/null || true
 	)
 	write_summary_line "rust ${label}: inventory -> rust-${slug_name}-packages.json, rust-${slug_name}-tree.txt"
 }
@@ -413,16 +462,38 @@ verify_rust_lock() {
 	out_check=""
 	[[ "${DO_REPORT}" -eq 1 ]] && out_check="$(report_path "rust-${slug_name}-lock-check.txt")"
 
-	info "rust ${label}: cargo metadata --locked"
-	if run_checked "${out_check}" run_in_dir "${crate_dir}" cargo metadata --locked --format-version 1 --quiet; then
+	if [[ "$(cd "${crate_dir}" && pwd -P)" == "$(cd "${REPO_ROOT}" && pwd -P)" ]]; then
+		chunk_ensure_nopatch_workspace "${REPO_ROOT}"
+		if ! chunk_ensure_workspace_cargo_lock "${REPO_ROOT}"; then
+			printf '%s\n' \
+				"Cargo.lock chunk-your-* registry pins could not be refreshed; run: scripts/publish/sync-version.sh" |
+				emit_err
+			return 1
+		fi
+		verify_cargo_lock_no_stale_patches || return 1
+		if chunk_lock_chunk_deps_need_generate_lockfile "${REPO_ROOT}/Cargo.lock"; then
+			printf '%s\n' \
+				"Cargo.lock chunk-your-* entries still lack registry pins after refresh; run: scripts/publish/sync-version.sh" |
+				emit_err
+			return 1
+		fi
+		verify_chunk_dep_lock_pins || return 1
+	fi
+
+	info "rust ${label}: cargo metadata --locked (crates.io; ignoring worktree patches)"
+	if run_checked "${out_check}" run_rust_cargo "${crate_dir}" cargo metadata --locked --format-version 1 --quiet; then
 		[[ "${DO_REPORT}" -eq 1 ]] &&
 			write_summary_line "rust ${label}: lock check -> rust-${slug_name}-lock-check.txt"
 		[[ "${DO_REPORT}" -eq 1 ]] && report_rust_inventory "${label}" "${crate_dir}"
+		if [[ "$(cd "${crate_dir}" && pwd -P)" != "$(cd "${REPO_ROOT}" && pwd -P)" ]]; then
+			verify_cargo_lock_no_stale_patches || return 1
+			verify_chunk_dep_lock_pins || return 1
+		fi
 		return 0
 	fi
 	if [[ -s "${out_check}" ]] &&
 		grep -q 'cannot update the lock file' "${out_check}"; then
-		echo "hint: Cargo.lock is out of sync with Cargo.toml/.cargo/config.toml patches; run: cargo update --workspace" >&2
+		echo "hint: Cargo.lock is out of sync with Cargo.toml; run: scripts/publish/sync-version.sh" >&2
 	fi
 	return 1
 }
@@ -502,6 +573,72 @@ verify_go_devtool_pins() {
 	fi
 
 	record_ok "go dev-tool pins (go-sdk-tools.sh)"
+}
+
+verify_cargo_lock_no_stale_patches() {
+	if grep -q '^\[\[patch\.unused\]\]' "${REPO_ROOT}/Cargo.lock"; then
+		printf '%s\n' \
+			"Cargo.lock contains [[patch.unused]] entries from stale worktree patches; run: scripts/publish/sync-version.sh" |
+			emit_err
+		return 1
+	fi
+	return 0
+}
+
+verify_workspace_python_sdk_pins() {
+	local app_version sdk_version sdk_pin
+
+	app_version="$(read_root_pyproject_version)"
+	sdk_version="$(read_sdk_python_version)"
+	sdk_pin="$(read_root_cyt_indexer_sdk_pin)"
+
+	[[ -n "${app_version}" ]] ||
+		die "python workspace: could not read root pyproject.toml version"
+	[[ -n "${sdk_version}" ]] ||
+		die "python workspace: could not read sdk/python/pyproject.toml version"
+	[[ -n "${sdk_pin}" ]] ||
+		die "python workspace: could not read cyt-indexer-sdk pin in root pyproject.toml"
+
+	if [[ "${app_version}" != "${sdk_version}" ]]; then
+		printf 'python workspace: root version %s != sdk/python %s (run sync-version.sh)\n' \
+			"${app_version}" "${sdk_version}" | emit_err
+		return 1
+	fi
+	if [[ "${sdk_pin}" != "${sdk_version}" ]]; then
+		printf 'python workspace: cyt-indexer-sdk pin %s != sdk/python %s (run sync-version.sh)\n' \
+			"${sdk_pin}" "${sdk_version}" | emit_err
+		return 1
+	fi
+	return 0
+}
+
+verify_chunk_dep_lock_pins() {
+	local cargo_toml="${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
+	local lock_file="${REPO_ROOT}/Cargo.lock"
+	local crate manifest_version
+	local -a lock_versions=()
+
+	for crate in chunk-your-tools chunk-your-skills; do
+		manifest_version="$(read_cargo_dep_version "${crate}" "${cargo_toml}")"
+		[[ -n "${manifest_version}" ]] || continue
+
+		mapfile -t lock_versions < <(read_lock_package_versions "${crate}" "${lock_file}")
+		if ((${#lock_versions[@]} == 0)); then
+			printf 'rust chunk deps: %s missing from Cargo.lock\n' "${crate}" | emit_err
+			return 1
+		fi
+		if ((${#lock_versions[@]} > 1)); then
+			printf 'rust chunk deps: %s has multiple lock versions: %s\n' \
+				"${crate}" "${lock_versions[*]}" | emit_err
+			return 1
+		fi
+		if [[ "${lock_versions[0]}" != "${manifest_version}" ]]; then
+			printf 'rust chunk deps: %s Cargo.toml %s != Cargo.lock %s (run scripts/publish/sync-version.sh)\n' \
+				"${crate}" "${manifest_version}" "${lock_versions[0]}" | emit_err
+			return 1
+		fi
+	done
+	return 0
 }
 
 report_npm_inventory() {
@@ -795,6 +932,7 @@ info "repo: ${REPO_ROOT}"
 
 if [[ "${SKIP_PYTHON}" -eq 0 ]]; then
 	run_step "python lock (root)" verify_python_lock "root" "${REPO_ROOT}"
+	run_step "python workspace sdk pins" verify_workspace_python_sdk_pins
 	run_step "python requirements export" bash "${SCRIPT_DIR}/export-requirements.sh" --check
 fi
 

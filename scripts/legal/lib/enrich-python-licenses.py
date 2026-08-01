@@ -17,8 +17,6 @@ from cyt.safe_path import require_under
 FIRST_PARTY = {
     "clear-your-tools",
     "cyt-indexer-sdk",
-    "chunk-your-tools",
-    "chunk-your-skills",
 }
 
 

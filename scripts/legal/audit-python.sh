@@ -176,8 +176,6 @@ import sys
 FIRST_PARTY = {
     "clear-your-tools",
     "cyt-indexer-sdk",
-    "chunk-your-tools",
-    "chunk-your-skills",
 }
 
 
