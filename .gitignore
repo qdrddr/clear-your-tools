@@ -171,3 +171,5 @@ postman/collections/cloudflare-ai-controls/**/examples/
 postman/environments/Cloudflare.environment.yaml
 chunk-your-skills/
 chunk-your-tools/
+fossa-deps.yml.example
+.fossa.yml.example

@@ -1,13 +1,24 @@
 # FOSSA: scan production Python deps only (see legal/POLICY.md).
-# requirements-dev.txt and uv.lock are excluded so dev/CI copyleft (e.g. LGPL) does not fail the release gate.
+# paths.exclude prunes directories; uv/setuptools targets are narrowed in targets.exclude.
+# Production Python graph comes from fossa-deps.yml (generated from requirements.txt).
 
 version: 3
 
 paths:
   exclude:
-    - requirements-dev.txt
+    - uv.lock
+    - "**/uv.lock"
+    - "**/requirements-dev.txt"
+    - "**/scripts/deps/output/**"
+    - target/**
+    - .uv-cache/**
+    - chunk-your-*/**
+    - sdk/e2e/**
 
 targets:
   exclude:
+    # uv.lock carries dev/test groups; production Python deps are in fossa-deps.yml.
     - type: uv
+    # setuptools globs all requirements*.txt at repo root; cannot exclude files via paths.
+    - type: setuptools
       path: .
