@@ -192,12 +192,81 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		tools_version="$(read_cargo_dep_version "chunk-your-tools" "${cargo_toml}")"
 		skills_version="$(read_cargo_dep_version "chunk-your-skills" "${cargo_toml}")"
 
+		local tmp="${manifest_file}.next"
 		{
 			[[ -n "${tools_version}" ]] &&
 				printf 'chunk-your-tools=%s\n' "chunk-your-tools-v${tools_version}"
 			[[ -n "${skills_version}" ]] &&
 				printf 'chunk-your-skills=%s\n' "chunk-your-skills-v${skills_version}"
-		} >"${manifest_file}"
+		} >"${tmp}"
+		if [[ -f "${manifest_file}" ]] && cmp -s "${manifest_file}" "${tmp}"; then
+			rm -f "${tmp}"
+		else
+			mv "${tmp}" "${manifest_file}"
+		fi
+	}
+
+	chunk_workspace_patches_are_current() {
+		local root="$1"
+		local cargo_toml="${root}/${CARGO_INDEXER_TOML_REL}"
+		local workspace_toml="${root}/${WORKSPACE_CARGO_TOML_REL}"
+		local tools_version skills_version tmp
+
+		[[ -f "${workspace_toml}" ]] || return 0
+
+		tools_version="$(read_cargo_dep_version "chunk-your-tools" "${cargo_toml}")"
+		skills_version="$(read_cargo_dep_version "chunk-your-skills" "${cargo_toml}")"
+
+		tmp="$(mktemp)"
+		chunk_strip_workspace_patches "${workspace_toml}" >"${tmp}"
+		if [[ -n "${tools_version}" || -n "${skills_version}" ]]; then
+			{
+				cat "${tmp}"
+				echo ""
+				echo "[patch.crates-io]"
+				if [[ -n "${skills_version}" ]]; then
+					echo "chunk-your-skills = { path = \"chunk-your-skills-v${skills_version}\" }"
+				fi
+				if [[ -n "${tools_version}" ]]; then
+					echo "chunk-your-tools = { path = \"chunk-your-tools-v${tools_version}\" }"
+				fi
+			} >"${workspace_toml}.next"
+		else
+			cp "${tmp}" "${workspace_toml}.next"
+		fi
+		rm -f "${tmp}"
+		if cmp -s "${workspace_toml}" "${workspace_toml}.next"; then
+			rm -f "${workspace_toml}.next"
+			return 0
+		fi
+		rm -f "${workspace_toml}.next"
+		return 1
+	}
+
+	chunk_worktrees_are_current() {
+		local root="$1"
+		local cargo_toml="${root}/${CARGO_INDEXER_TOML_REL}"
+		local name version tag worktree_dir submodule_dir
+
+		for name in chunk-your-tools chunk-your-skills; do
+			version="$(read_cargo_dep_version "${name}" "${cargo_toml}")"
+			[[ -n "${version}" ]] || continue
+			submodule_dir="$(chunk_submodule_dir "${root}" "${name}")"
+			[[ -e "${submodule_dir}/.git" ]] || continue
+			tag="v${version}"
+			worktree_dir="$(chunk_worktree_dir "${root}" "${name}" "${version}")"
+			chunk_worktree_registered_at_tag "${worktree_dir}" "${submodule_dir}" "${tag}" || return 1
+		done
+
+		return 0
+	}
+
+	chunk_workspace_is_fully_synced() {
+		local root="$1"
+
+		chunk_workspace_cargo_lock_is_current "${root}" &&
+			chunk_workspace_patches_are_current "${root}" &&
+			chunk_worktrees_are_current "${root}"
 	}
 
 	WORKSPACE_CARGO_TOML_REL="Cargo.toml"

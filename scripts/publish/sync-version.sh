@@ -285,6 +285,10 @@ fi
 tag="v${version}"
 current_version="$(read_root_pyproject_version)"
 if [[ "${version}" == "${current_version}" ]]; then
+	if chunk_workspace_is_fully_synced "${ROOT}"; then
+		print_sync_summary "${version}" "${tag}"
+		exit 0
+	fi
 	chunk_sync_worktrees_from_cargo "${ROOT}"
 	chunk_refresh_workspace_cargo_lock "${ROOT}"
 	print_sync_summary "${version}" "${tag}"

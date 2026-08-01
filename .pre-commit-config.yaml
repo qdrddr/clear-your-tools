@@ -253,6 +253,17 @@ repos:
 
   - repo: local
     hooks:
+      - id: heal-cargo-lock
+        name: heal Cargo.lock chunk registry pins
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/heal-cargo-lock.sh',
+          ]
+        language: system
+        files: ^Cargo\.(toml|lock)$
+        pass_filenames: false
+
       - id: sync-version
         name: sync-version
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
@@ -791,17 +802,6 @@ repos:
         args: ["rtk bash scripts/pre-commit-hooks/all-fallow.sh"]
         language: system
         files: ^(ui/|sdk/(typescript|e2e/typescript)/|package\.json|package-lock\.json)
-        pass_filenames: false
-
-      - id: heal-cargo-lock
-        name: heal Cargo.lock chunk registry pins
-        entry: bash scripts/pre-commit-hooks/prek-hook.sh
-        args:
-          [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/heal-cargo-lock.sh',
-          ]
-        language: system
-        files: ^Cargo\.lock$
         pass_filenames: false
 
       - id: local-dev-core-rust

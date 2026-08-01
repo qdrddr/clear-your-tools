@@ -301,6 +301,7 @@ while true; do
 
 		if $SHORT && ! $hook_failed; then
 			if ! $NO_GIT_ADD; then
+				rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
 				rtk git add -A >/dev/null 2>&1 || true
 			fi
 			continue
@@ -320,6 +321,7 @@ while true; do
 			printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh"
 		fi
 		if ! $NO_GIT_ADD; then
+			rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
 			rtk git add -A >/dev/null 2>&1 || true
 		fi
 	done

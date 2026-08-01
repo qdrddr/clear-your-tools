@@ -123,6 +123,7 @@ groups:
     - prettier
     - shellcheck
     - shfmt
+    - heal-cargo-lock
     - sync-version
     - talisman-commit
     - trailing-whitespace
