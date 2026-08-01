@@ -309,6 +309,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typing-extensions" },
     { name = "uuid7" },
+    { name = "zipp" },
 ]
 
 [package.optional-dependencies]
@@ -385,6 +386,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = "==4.15.0" },
     { name = "uuid7", specifier = "==0.1.0" },
     { name = "uvicorn", marker = "extra == 'proxy'", specifier = "==0.48.0" },
+    { name = "zipp", specifier = "==4.1.0" },
 ]
 provides-extras = ["claude", "codex", "cursor", "agents", "proxy", "pruners", "all"]
 

@@ -26,6 +26,7 @@ dependencies = [
     "pyyaml==6.0.3",
     "keyring==25.6.0",
     "uuid7==0.1.0",
+    "zipp==4.1.0",
 ]
 
 [project.urls]

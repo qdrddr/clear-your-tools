@@ -218,7 +218,7 @@ if git diff --cached --quiet; then
 else
 	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
 	# re-touch those files or rebuild native artifacts during the version commit.
-	SKIP=sync-version,heal-cargo-lock,cargo-sort,verify-pins,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go \
+	SKIP=sync-version,heal-cargo-lock,cargo-sort,cargo-build-sdk-release,verify-pins,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-test-unit,typescript-test-parity \
 		git commit -m "version bump to ${tag}"
 fi
 
