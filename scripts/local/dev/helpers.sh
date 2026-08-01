@@ -505,6 +505,12 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		cyt_test_indexer_build
 	}
 
+	cyt_build_sdk_rust_release() {
+		require_cmd cargo
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/local/dev/cargo-build-sdk-release.sh"
+	}
+
 	# cargo publish --dry-run must resolve chunk-your-* from crates.io, not local
 	# [patch.crates-io] worktrees; path patches duplicate serde_json and fail verify.
 	cyt_cargo_publish_dry_run() {

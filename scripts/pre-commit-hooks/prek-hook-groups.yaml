@@ -44,6 +44,7 @@ groups:
   rust:
     - build-c-lib-for-go
     - cargo-audit
+    - cargo-build-sdk-release
     - cargo-clippy
     - cargo-deny
     - cargo-fmt
@@ -134,5 +135,6 @@ groups:
     - psscriptanalyzer-format
 
   release:
+    - cargo-build-sdk-release
     - simulate-registry
     - verify-pins

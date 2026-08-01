@@ -173,3 +173,4 @@ chunk-your-skills/
 chunk-your-tools/
 fossa-deps.yml.example
 .fossa.yml.example
+fossa.debug.zip

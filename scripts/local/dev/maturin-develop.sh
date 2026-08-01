@@ -10,7 +10,9 @@ source "${ROOT}/scripts/lib/chunk-worktree.sh"
 
 run_maturin_develop() {
 	# Root workflow hooks may export VIRTUAL_ENV=./.venv; force sdk/python project.
-	exec env -u VIRTUAL_ENV -u CARGO_TARGET_DIR \
+	# Do not exec: chunk_run_without_worktree_patches must restore [patch.crates-io]
+	# after maturin returns.
+	env -u VIRTUAL_ENV -u CARGO_TARGET_DIR \
 		CARGO_TARGET_DIR="${ROOT}/target" \
 		uv run --directory "${SDK_DIR}" maturin develop --release "$@"
 }

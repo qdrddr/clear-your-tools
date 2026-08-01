@@ -19,6 +19,7 @@
 #
 #   SDKs:
 #     sdk-python           maturin develop --release + pytest tests/unit + verify
+#     sdk-rust-release     cyt-indexer python+node release build + fossa-deps cargo entries
 #     sdk-verify           verify sdk/python install + native import
 #     sdk-typescript       npm ci, build, test (sdk/typescript)
 #     sdk-c                cmake build + ctest (sdk/c)
@@ -166,6 +167,10 @@ EOF
 		require_repo_root
 		cyt_build_sdk_python
 		cyt_verify_sdk_python
+		;;
+	sdk-rust-release)
+		require_repo_root
+		cyt_build_sdk_rust_release
 		;;
 	sdk-verify)
 		require_repo_root

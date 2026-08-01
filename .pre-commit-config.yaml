@@ -289,7 +289,7 @@ repos:
         args: ["--short", "--no-report"]
         language: system
         pass_filenames: false
-        files: ^(pyproject\.toml|uv\.lock|requirements(-dev)?\.txt|Cargo\.toml|Cargo\.lock|sdk/c/CMakeLists\.txt|sdk/go/go\.(mod|sum)|sdk/typescript/package(-lock)?\.json|package(-lock)?\.json|scripts/pre-commit-hooks/go-sdk-tools\.sh)$
+        files: ^(pyproject\.toml|uv\.lock|requirements(-dev)?\.txt|fossa-deps\.yml|Cargo\.toml|Cargo\.lock|sdk/c/CMakeLists\.txt|sdk/go/go\.(mod|sum)|sdk/typescript/package(-lock)?\.json|package(-lock)?\.json|scripts/pre-commit-hooks/go-sdk-tools\.sh)$
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
@@ -813,6 +813,17 @@ repos:
           ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|debug/full_example\.json)
+        pass_filenames: false
+
+      - id: cargo-build-sdk-release
+        name: cargo-build-sdk-release (cyt-indexer python+node)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-build-sdk-release.sh',
+          ]
+        language: system
+        files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
         pass_filenames: false
 
       - id: local-dev-sdk-python

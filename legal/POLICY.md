@@ -46,19 +46,23 @@ belong in `requirements-dev.txt` only.
 FOSSA compliance for releases and the public badge is evaluated against
 **production / distributed dependencies only** (see `.fossa.yml` and `fossa-deps.yml`).
 
-- `fossa-deps.yml` — Python runtime graph (generated from `requirements.txt`)
+- `fossa-deps.yml` — Python runtime graph (from `requirements.txt`) plus Rust SDK
+  binding crates for `cyt-indexer` (`python`/`node` features; FOSSA `cargo@.` uses
+  default `cli` only — see [FOSSA Rust docs](https://docs.fossa.com/docs/project-setup/supported-languages/rust))
 - `requirements.txt` — runtime / distributed deps (all published optional extras)
 - `requirements-dev.txt` — dev + test groups (excluded via `.fossa.yml`)
 - `uv.lock` — developer lockfile (excluded from FOSSA; source for exports)
-- `cargo@.` — Rust runtime graph for `cyt-indexer` (build/dev crates such as
-  `cbindgen`, `cucumber`, and `tokio` are not shipped; mark in FOSSA if flagged)
+- `cargo@.` — Rust runtime graph for `cyt-indexer` default features (`cli`);
+  SDK binding crates (`pyo3`, `napi`, …) are listed in `fossa-deps.yml` instead.
+  Build/dev crates such as `cbindgen`, `cucumber`, and `tokio` are not shipped.
 - `npm@sdk/typescript` — published TypeScript SDK (root `npm@.` is excluded; CI-only)
 - `gomod@sdk/go` — Go SDK runtime module (no third-party runtime deps)
 
-Regenerate committed requirements after lockfile changes:
+Regenerate committed requirements and FOSSA referenced-deps after lockfile changes:
 
 ```bash
 ./scripts/deps/export-requirements.sh
+./scripts/local/dev/cargo-build-sdk-release.sh   # cyt-indexer python+node release build
 ```
 
 Local verification:
