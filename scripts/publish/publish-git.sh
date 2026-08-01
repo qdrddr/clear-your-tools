@@ -210,14 +210,16 @@ if [[ -z "${branch}" ]]; then
 fi
 
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
+"${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
 
 stage_version_files
 if git diff --cached --quiet; then
 	echo "version manifests already at ${semver}; skipping commit"
 else
 	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
-	# re-touch those files while the index is locked for commit.
-	SKIP=sync-version,heal-cargo-lock,cargo-sort git commit -m "version bump to ${tag}"
+	# re-touch those files or rebuild native artifacts during the version commit.
+	SKIP=sync-version,heal-cargo-lock,cargo-sort,verify-pins,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go \
+		git commit -m "version bump to ${tag}"
 fi
 
 git push origin HEAD
