@@ -161,7 +161,7 @@ write_fossa_deps() {
 				sub(/[[:space:]].*/, "", version)
 				sub(/\[.*\]$/, "", name)
 				if (name == "" || version == "") next
-				printf("- type: pypi\n  name: %s\n  version: \"%s\"\n", name, version)
+				printf("  - type: pypi\n    name: %s\n    version: \"%s\"\n", name, version)
 			}
 		' "${req_file}"
 	} >"${out_file}"

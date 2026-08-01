@@ -44,11 +44,16 @@ belong in `requirements-dev.txt` only.
 ## FOSSA release gate
 
 FOSSA compliance for releases and the public badge is evaluated against
-**`requirements.txt` (production)** only.
+**production / distributed dependencies only** (see `.fossa.yml` and `fossa-deps.yml`).
 
+- `fossa-deps.yml` — Python runtime graph (generated from `requirements.txt`)
 - `requirements.txt` — runtime / distributed deps (all published optional extras)
 - `requirements-dev.txt` — dev + test groups (excluded via `.fossa.yml`)
 - `uv.lock` — developer lockfile (excluded from FOSSA; source for exports)
+- `cargo@.` — Rust runtime graph for `cyt-indexer` (build/dev crates such as
+  `cbindgen`, `cucumber`, and `tokio` are not shipped; mark in FOSSA if flagged)
+- `npm@sdk/typescript` — published TypeScript SDK (root `npm@.` is excluded; CI-only)
+- `gomod@sdk/go` — Go SDK runtime module (no third-party runtime deps)
 
 Regenerate committed requirements after lockfile changes:
 

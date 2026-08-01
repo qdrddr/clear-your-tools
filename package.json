@@ -1,8 +1,6 @@
 {
   "devDependencies": {
-    "fallow": "2.66.0"
-  },
-  "dependencies": {
+    "fallow": "2.66.0",
     "typescript": "6.0.3"
   }
 }

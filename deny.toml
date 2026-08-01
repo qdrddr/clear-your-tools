@@ -1,4 +1,7 @@
 # Workspace cargo-deny policy (Apache-2.0 cyt-indexer + common Rust deps).
+# MPL-2.0 is allowed here for build-only crates (e.g. cbindgen) and dual-licensed
+# runtime deps where a permissive option applies (e.g. htmlescape via tantivy).
+# Distributed policy: see legal/POLICY.md (permissive licenses only in release artifacts).
 
 [advisories]
 version = 2

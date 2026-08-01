@@ -22,3 +22,6 @@ targets:
     # setuptools globs all requirements*.txt at repo root; cannot exclude files via paths.
     - type: setuptools
       path: .
+    # Root package.json is repo CI tooling (fallow, typescript); published npm is sdk/typescript.
+    - type: npm
+      path: .
