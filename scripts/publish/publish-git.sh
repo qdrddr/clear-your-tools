@@ -63,6 +63,7 @@ require_command() {
 version_files() {
 	cat <<EOF
 ${ROOT}/pyproject.toml
+${ROOT}/Cargo.toml
 ${ROOT}/sdk/rust/cyt-indexer/Cargo.toml
 ${ROOT}/Cargo.lock
 ${ROOT}/sdk/python/pyproject.toml

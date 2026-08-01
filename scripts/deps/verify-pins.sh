@@ -464,16 +464,10 @@ verify_rust_lock() {
 
 	if [[ "$(cd "${crate_dir}" && pwd -P)" == "$(cd "${REPO_ROOT}" && pwd -P)" ]]; then
 		chunk_ensure_nopatch_workspace "${REPO_ROOT}"
-		if ! chunk_ensure_workspace_cargo_lock "${REPO_ROOT}"; then
-			printf '%s\n' \
-				"Cargo.lock chunk-your-* registry pins could not be refreshed; run: scripts/publish/sync-version.sh" |
-				emit_err
-			return 1
-		fi
 		verify_cargo_lock_no_stale_patches || return 1
 		if chunk_lock_chunk_deps_need_generate_lockfile "${REPO_ROOT}/Cargo.lock"; then
 			printf '%s\n' \
-				"Cargo.lock chunk-your-* entries still lack registry pins after refresh; run: scripts/publish/sync-version.sh" |
+				"Cargo.lock chunk-your-* entries need registry refresh; run: scripts/publish/sync-version.sh" |
 				emit_err
 			return 1
 		fi
