@@ -18,15 +18,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${REPO_ROOT}/scripts/lib/chunk-worktree.sh"
+
 MANIFEST="${REPO_ROOT}/sdk/rust/cyt-indexer/Cargo.toml"
 CDX_FILE="${REPO_ROOT}/sdk/rust/cyt-indexer/cyt-indexer.cdx.json"
 SNYK_FILE="${REPO_ROOT}/sdk/rust/cyt-indexer/cyt-indexer.snyk.json"
 DO_CHECK=0
+OUTPUT_DIR=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--check)
 		DO_CHECK=1
+		shift
+		;;
+	--output-dir)
+		shift
+		OUTPUT_DIR="${1:-}"
+		[[ -n "${OUTPUT_DIR}" ]] || {
+			echo "error: --output-dir requires a path" >&2
+			exit 1
+		}
 		shift
 		;;
 	-h | --help)
@@ -35,6 +48,7 @@ Usage: export-rust-sbom.sh [--check]
 
 Writes sdk/rust/cyt-indexer/cyt-indexer.cdx.json and cyt-indexer.snyk.json.
 With --check, fails if committed files differ from a fresh export.
+With --output-dir DIR, writes generated files under DIR instead of the repo.
 EOF
 		exit 0
 		;;
@@ -99,11 +113,13 @@ sanitize_snyk() {
 	local repo_root="$1"
 
 	jq --arg root "${repo_root}" '
-		walk(
+		.displayTargetFile = "sdk/rust/cyt-indexer/cyt-indexer.cdx.json"
+		| .targetFile = "sdk/rust/cyt-indexer/cyt-indexer.cdx.json"
+		| .path = "sdk/rust/cyt-indexer"
+		| walk(
 			if type == "string" then
 				gsub("^" + $root + "/"; "")
 				| gsub("^" + $root + "$"; ".")
-				| gsub("^/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)+$"; ".")
 			else
 				.
 			end
@@ -111,10 +127,20 @@ sanitize_snyk() {
 	'
 }
 
+install_if_changed() {
+	local src="$1"
+	local dst="$2"
+
+	if [[ -f "${dst}" ]] && cmp -s "${src}" "${dst}"; then
+		return 0
+	fi
+	cp "${src}" "${dst}"
+}
+
 export_rust_sbom() {
 	local cdx_out="$1"
 	local snyk_out="$2"
-	local cdx_tmp snyk_tmp snyk_status cdx_backup=""
+	local cdx_tmp snyk_tmp snyk_status cdx_raw cdx_for_snyk cdx_backup="" snyk_backup=""
 
 	require_cmd cargo
 	require_cmd jq
@@ -126,35 +152,46 @@ export_rust_sbom() {
 
 	cdx_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx.XXXXXX")"
 	snyk_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk.XXXXXX")"
-	trap 'rm -f "${cdx_tmp}" "${snyk_tmp}" "${cdx_backup}"' RETURN
+	cdx_raw="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-raw.XXXXXX")"
+	trap 'rm -f "${cdx_tmp}" "${snyk_tmp}" "${cdx_raw}" "${cdx_backup}" "${snyk_backup}"' RETURN
 
 	if [[ "${cdx_out}" != "${CDX_FILE}" && -f "${CDX_FILE}" ]]; then
 		cdx_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-backup.XXXXXX")"
 		cp "${CDX_FILE}" "${cdx_backup}"
 	fi
+	if [[ "${snyk_out}" != "${SNYK_FILE}" && -f "${SNYK_FILE}" ]]; then
+		snyk_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk-backup.XXXXXX")"
+		cp "${SNYK_FILE}" "${snyk_backup}"
+	fi
 
-	(
-		cd "${REPO_ROOT}"
+	# Use the nopatch workspace so [patch.crates-io] does not rewrite Cargo.lock.
+	chunk_run_in_nopatch_workspace "${REPO_ROOT}" \
 		run_cmd cargo cyclonedx --manifest-path sdk/rust/cyt-indexer/Cargo.toml --format json
-	)
 
 	[[ -f "${CDX_FILE}" ]] || {
 		echo "error: cargo cyclonedx did not write ${CDX_FILE}" >&2
 		exit 1
 	}
 
-	sanitize_cdx "${CDX_FILE}" "${REPO_ROOT}" | jq '.' >"${cdx_tmp}"
+	cp "${CDX_FILE}" "${cdx_raw}"
+
+	sanitize_cdx "${cdx_raw}" "${REPO_ROOT}" | jq '.' >"${cdx_tmp}"
 	assert_no_absolute_paths "${cdx_tmp}" "cyt-indexer.cdx.json"
-	cp "${cdx_tmp}" "${cdx_out}"
+	install_if_changed "${cdx_tmp}" "${cdx_out}"
 
 	if [[ -n "${cdx_backup}" ]]; then
 		cp "${cdx_backup}" "${CDX_FILE}"
 	fi
 
+	cdx_for_snyk="${cdx_out}"
+	if [[ ! -f "${cdx_for_snyk}" ]]; then
+		cdx_for_snyk="${cdx_tmp}"
+	fi
+
 	(
 		cd "${REPO_ROOT}"
 		run_cmd snyk sbom test \
-			--file="sdk/rust/cyt-indexer/cyt-indexer.cdx.json" \
+			--file="${cdx_for_snyk}" \
 			--include-ignores \
 			--json >"${snyk_tmp}" 2>/dev/null
 	)
@@ -169,8 +206,13 @@ export_rust_sbom() {
 		exit 1
 	fi
 
-	jq -S '.' "${snyk_tmp}" | sanitize_snyk "${REPO_ROOT}" >"${snyk_out}"
-	assert_no_absolute_paths "${snyk_out}" "cyt-indexer.snyk.json"
+	jq -S '.' "${snyk_tmp}" | sanitize_snyk "${REPO_ROOT}" >"${snyk_tmp}.sorted"
+	assert_no_absolute_paths "${snyk_tmp}.sorted" "cyt-indexer.snyk.json"
+	install_if_changed "${snyk_tmp}.sorted" "${snyk_out}"
+
+	if [[ -n "${snyk_backup}" ]]; then
+		cp "${snyk_backup}" "${SNYK_FILE}"
+	fi
 }
 
 files_match() {
@@ -199,6 +241,12 @@ if [[ "${DO_CHECK}" -eq 1 ]]; then
 		fi
 	done
 	exit "${status}"
+fi
+
+if [[ -n "${OUTPUT_DIR}" ]]; then
+	mkdir -p "${OUTPUT_DIR}"
+	export_rust_sbom "${OUTPUT_DIR}/cyt-indexer.cdx.json" "${OUTPUT_DIR}/cyt-indexer.snyk.json"
+	exit 0
 fi
 
 export_rust_sbom "${CDX_FILE}" "${SNYK_FILE}"

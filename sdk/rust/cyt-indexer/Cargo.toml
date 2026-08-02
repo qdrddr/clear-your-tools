@@ -27,8 +27,8 @@ ffi = []
 
 # Centralized place to update chunk-your-tools && chunk-your-skills versions:
 [dependencies]
-chunk-your-tools = "2.3.7"
-chunk-your-skills = "2.1.7"
+chunk-your-tools = "2.3.9"
+chunk-your-skills = "2.1.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chunk = { version = "0.10", default-features = false }

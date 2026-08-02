@@ -16,15 +16,28 @@ require_cmd cmake
 require_cmd rustc
 
 BUILD_DIR="${ROOT}/sdk/c/build"
-mkdir -p "${BUILD_DIR}"
-
 TRIPLET="$(rustc -vV | sed -n 's/^host: //p')"
 [[ -n ${TRIPLET} ]] || {
 	echo "error: could not detect Rust host triplet from rustc -vV" >&2
 	exit 1
 }
 
-exec cmake -S "${ROOT}/sdk/c" -B "${BUILD_DIR}" \
-	-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-	-DCMAKE_BUILD_TYPE=Release \
-	-DCYT_RUST_TARGET="${TRIPLET}"
+configure_compile_db() {
+	rm -rf "${BUILD_DIR}"
+	mkdir -p "${BUILD_DIR}"
+	cmake -S "${ROOT}/sdk/c" -B "${BUILD_DIR}" \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCYT_RUST_TARGET="${TRIPLET}" \
+		-DCYT_INSTALL=OFF
+}
+
+if ! configure_compile_db; then
+	echo "cmake configure failed; retrying with a clean build directory" >&2
+	configure_compile_db
+fi
+
+[[ -f "${BUILD_DIR}/compile_commands.json" ]] || {
+	echo "error: ${BUILD_DIR}/compile_commands.json was not generated" >&2
+	exit 1
+}

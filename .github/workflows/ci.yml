@@ -17,6 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
       - name: Install uv
         uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
         with:
@@ -95,6 +98,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
 
       - name: Install Node.js
         uses: actions/setup-node@v6

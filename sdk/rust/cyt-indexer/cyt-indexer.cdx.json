@@ -59,48 +59,6 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "path+file://chunk-your-skills-v2.1.7#chunk-your-skills@2.1.7",
-      "author": "Damien Berezenko",
-      "name": "chunk-your-skills",
-      "version": "2.1.7",
-      "description": "Decompose agent SKILL.md files into page-indexed nodes and recompose skinny skills",
-      "scope": "required",
-      "licenses": [
-        {
-          "expression": "Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/chunk-your-skills@2.1.7?download_url=file://../../../chunk-your-skills-v2.1.7",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/qdrddr/chunk-your-skills"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "path+file://chunk-your-tools-v2.3.7#chunk-your-tools@2.3.7",
-      "author": "Damien Berezenko",
-      "name": "chunk-your-tools",
-      "version": "2.3.7",
-      "description": "MCP tool schema decomposition and recomposition",
-      "scope": "required",
-      "licenses": [
-        {
-          "expression": "Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/chunk-your-tools@2.3.7?download_url=file://../../../chunk-your-tools-v2.3.7",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/qdrddr/chunk-your-tools"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#aho-corasick@1.1.4",
       "author": "Andrew Gallant <jamslam@gmail.com>",
       "name": "aho-corasick",
@@ -838,6 +796,60 @@
         {
           "type": "vcs",
           "url": "https://github.com/rust-lang/cfg-if"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-skills@2.1.9",
+      "author": "Damien Berezenko",
+      "name": "chunk-your-skills",
+      "version": "2.1.9",
+      "description": "Decompose agent SKILL.md files into page-indexed nodes and recompose skinny skills",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "0ab05438c0942c77ec0a909540a81a8dccf7c9fa17a2a2eb389f00f2906fbaf5"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/chunk-your-skills@2.1.9",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/qdrddr/chunk-your-skills"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-tools@2.3.9",
+      "author": "Damien Berezenko",
+      "name": "chunk-your-tools",
+      "version": "2.3.9",
+      "description": "MCP tool schema decomposition and recomposition",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a2021c7ad789212a15023449b1f86667c30846f6dd36692616bf074fd59ba5a6"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/chunk-your-tools@2.3.9",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/qdrddr/chunk-your-tools"
         }
       ]
     },
@@ -5088,35 +5100,12 @@
   ],
   "dependencies": [
     {
-      "ref": "path+file://chunk-your-skills-v2.1.7#chunk-your-skills@2.1.7",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
-        "registry+https://github.com/rust-lang/crates.io-index#hex@0.4.3",
-        "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
-        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
-      ]
-    },
-    {
-      "ref": "path+file://chunk-your-tools-v2.3.7#chunk-your-tools@2.3.7",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
-        "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151"
-      ]
-    },
-    {
       "ref": "path+file://cyt-indexer#2.8.8",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
         "registry+https://github.com/rust-lang/crates.io-index#chunk@0.10.2",
-        "path+file://chunk-your-skills-v2.1.7#chunk-your-skills@2.1.7",
-        "path+file://chunk-your-tools-v2.3.7#chunk-your-tools@2.3.7",
+        "registry+https://github.com/rust-lang/crates.io-index#chunk-your-skills@2.1.9",
+        "registry+https://github.com/rust-lang/crates.io-index#chunk-your-tools@2.3.9",
         "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
         "registry+https://github.com/rust-lang/crates.io-index#hex@0.4.3",
         "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
@@ -5267,6 +5256,29 @@
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#cfg-if@1.0.4"
+    },
+    {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-skills@2.1.9",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#hex@0.4.3",
+        "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
+        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
+      ]
+    },
+    {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-tools@2.3.9",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151"
+      ]
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#chunk@0.10.2",

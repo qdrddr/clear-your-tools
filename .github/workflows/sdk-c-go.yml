@@ -58,6 +58,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:

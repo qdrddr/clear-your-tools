@@ -295,7 +295,7 @@ repos:
     hooks:
       - id: export-rust-sbom
         name: export-rust-sbom
-        entry: bash scripts/deps/export-rust-sbom.sh
+        entry: bash scripts/deps/export-rust-sbom-precommit.sh
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/)
         exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$

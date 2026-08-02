@@ -101,6 +101,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
       # Do not pin python-version here: setup-uv sets UV_PYTHON, which breaks
       # cibuildwheel 4.x abi3audit (uv pip install in the audit venv).
       - name: Install uv

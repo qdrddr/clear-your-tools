@@ -123,6 +123,9 @@ jobs:
         with:
           ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
 
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:

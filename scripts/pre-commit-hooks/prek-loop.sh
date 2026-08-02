@@ -264,6 +264,18 @@ run_hook() {
 	local hook="$1"
 	local output exit_code=0
 
+	if [[ "${hook}" == "export-rust-sbom" ]]; then
+		output=$(rtk bash scripts/deps/export-rust-sbom-precommit.sh 2>&1) || exit_code=$?
+		PREK_HOOK_STREAMED=false
+		if ((exit_code == 0)); then
+			PREK_STATUSES="Passed"
+		else
+			PREK_STATUSES="Failed"
+		fi
+		PREK_DETAILS="${output}"
+		return "${exit_code}"
+	fi
+
 	output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
 	PREK_HOOK_STREAMED=false
 	parse_prek_output "$output"

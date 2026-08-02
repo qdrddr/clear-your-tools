@@ -557,7 +557,7 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		triplet="$(rustc -vV | sed -n 's/^host: //p')"
 		make_prog="$(cyt_cmake_make_program)"
 		info "build C FFI (sdk/c, ${triplet})"
-		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}"
+		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}" --no-sync-header
 		info "cmake configure + build"
 		cyt_run env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
 			-DCMAKE_BUILD_TYPE=Release \
