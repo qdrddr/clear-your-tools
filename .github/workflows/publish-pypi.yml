@@ -64,6 +64,12 @@ jobs:
           CYT_RELEASE_VERSION: ${{ steps.parse.outputs.version }}
         run: sdk/e2e/scripts/wait-registry.sh pypi-sdk
 
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install uv
         uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
         with:
