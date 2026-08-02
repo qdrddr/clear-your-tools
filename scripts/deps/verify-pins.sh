@@ -300,6 +300,7 @@ Manifest lint (when enabled):
   pyproject.toml, package.json — exact pins required in manifests
   Cargo.toml — skipped; Cargo.lock is the pin (see rust lock step)
   cyt-indexer-sdk — root pyproject pin must match sdk/python version
+  Rust SBOM — cyt-indexer.cdx.json / cyt-indexer.snyk.json (export-rust-sbom --check)
   chunk-your-* — cyt-indexer Cargo.toml versions must match Cargo.lock
 
 Options:
@@ -836,7 +837,19 @@ lint_pyproject_ranges() {
 			; then
 			append_manifest_lint "${file}:${lineno}: loose build-system requires"
 			issues=$((issues + 1))
+			continue
 		fi
+		[[ "${content}" == *"requires"* ]] || continue
+		local spec
+		while IFS= read -r spec; do
+			[[ -z "${spec}" ]] && continue
+			[[ "${spec}" == *"=="* ]] && continue
+			[[ "${spec}" == *"@"* ]] && continue
+			if [[ "${spec}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+				append_manifest_lint "${file}:${lineno}: unpinned build-system requires: \"${spec}\""
+				issues=$((issues + 1))
+			fi
+		done < <(grep -oE '"[^"]+"' <<<"${content}" | tr -d '"' || true)
 	done < <(grep -En 'requires\s*=' "${file}" || true)
 
 	if [[ "${issues}" -gt 0 ]]; then
@@ -932,6 +945,7 @@ fi
 
 if [[ "${SKIP_RUST}" -eq 0 ]]; then
 	run_step "rust lock (workspace)" verify_rust_lock "workspace" "${REPO_ROOT}"
+	run_step "rust sbom export" bash "${SCRIPT_DIR}/export-rust-sbom.sh" --check
 fi
 
 if [[ "${SKIP_C}" -eq 0 ]]; then

@@ -284,5 +284,11 @@ _cyt_build_c_lib_main() {
 	fi
 }
 
-_cyt_build_c_lib_main "$@" 2>&1 | "${REPO_ROOT}/scripts/lib/shorten-paths.sh"
-exit "${PIPESTATUS[0]}"
+_build_log="$(mktemp)"
+trap 'rm -f "${_build_log}"' EXIT
+set +e
+_cyt_build_c_lib_main "$@" >"${_build_log}" 2>&1
+_build_rc=$?
+set -e
+shorten_paths <"${_build_log}"
+exit "${_build_rc}"

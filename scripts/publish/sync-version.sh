@@ -199,6 +199,15 @@ update_go_module_version() {
 	mv "${tmp}" "${GO_VERSION}"
 }
 
+refresh_sdk_python_uv_lock() {
+	command -v uv >/dev/null 2>&1 || return 0
+	[[ -f "${SDK_PYPROJECT}" ]] || return 0
+	(
+		cd "${ROOT}/sdk/python"
+		uv lock
+	) || true
+}
+
 print_sync_summary() {
 	local version="$1"
 	local tag="$2"
@@ -286,11 +295,13 @@ tag="v${version}"
 current_version="$(read_root_pyproject_version)"
 if [[ "${version}" == "${current_version}" ]]; then
 	if chunk_workspace_is_fully_synced "${ROOT}"; then
+		refresh_sdk_python_uv_lock
 		print_sync_summary "${version}" "${tag}"
 		exit 0
 	fi
 	chunk_sync_worktrees_from_cargo "${ROOT}"
 	chunk_refresh_workspace_cargo_lock "${ROOT}"
+	refresh_sdk_python_uv_lock
 	print_sync_summary "${version}" "${tag}"
 	exit 0
 fi
@@ -309,5 +320,6 @@ update_go_module_version "${version}"
 printf 'tag=%s\n' "${tag}" >"${TAG_FILE}"
 chunk_sync_worktrees_from_cargo "${ROOT}"
 chunk_refresh_workspace_cargo_lock "${ROOT}"
+refresh_sdk_python_uv_lock
 
 print_sync_summary "${version}" "${tag}"

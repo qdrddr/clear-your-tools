@@ -232,6 +232,10 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "uv sync sdk/python"
+		if ! uv lock --check >/dev/null 2>&1; then
+			info "refreshing sdk/python uv.lock"
+			cyt_run uv lock
+		fi
 		cyt_run uv sync --locked
 	}
 
