@@ -10,9 +10,10 @@ import sys
 import traceback
 from pathlib import Path
 
-from cyt_client.agent import infer_harness_agent
+from cyt_client.agent import infer_harness_agent, looks_like_cursor_payload
 from cyt_client.cursor import (
     format_cursor_continue,
+    format_cursor_post_tool_stdout,
     format_cursor_stdout,
     is_cursor_hook_payload,
     is_session_end_event,
@@ -41,6 +42,12 @@ from cyt_client.rules_file import (
     sync_cursor_rules_file,
     workspace_root_from_payload,
 )
+from cyt_client.session_capture import (
+    is_post_tool_capture_event,
+    is_prompt_submit_event,
+    persist_cyt_mcp_search_result,
+    persist_turn_to_session_log,
+)
 from cyt_client.sessions import (
     append_session_log,
     cleanup_stale_session_logs,
@@ -48,6 +55,7 @@ from cyt_client.sessions import (
     session_log_path,
     sessions_dir_for_payload,
 )
+from cyt_client.skip import hook_skip_enabled
 from cyt_client.tool_gate import (
     format_claude_deny,
     format_codex_deny,
@@ -125,6 +133,18 @@ def _emit_cursor_continue() -> None:
     print(format_cursor_continue(), flush=True)
 
 
+def _should_emit_cursor_continue_on_skip(
+    payload: dict | None,
+    *,
+    cursor_output: bool,
+) -> bool:
+    if cursor_output:
+        return True
+    if os.environ.get("CYT_LAUNCH_AGENT", "").strip().lower() == "cursor":
+        return True
+    return payload is not None and looks_like_cursor_payload(payload)
+
+
 def _emit_cursor_hook_stdout(body: bytes) -> None:
     print(format_cursor_stdout(hook_stdout_bytes_for_agent(body).decode()), flush=True)
 
@@ -200,6 +220,15 @@ def _reset_cursor_rules_file_for_session_lifecycle(payload: dict) -> None:
         _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
 
 
+def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
+    try:
+        persist_cyt_mcp_search_result(payload)
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to persist search result: {exc}")
+    if cursor_output:
+        print(format_cursor_post_tool_stdout(), flush=True)
+
+
 def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
     allowed, reason = validate_pre_tool_call(payload)
     if allowed:
@@ -242,7 +271,7 @@ def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
         _emit_cursor_continue()
 
 
-def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
+def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C901
     workspace = _workspace_for_cursor_hook(payload)
     if workspace is None:
         _emit_cursor_continue()
@@ -250,6 +279,13 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
 
     prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
     payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
+    if is_prompt_submit_event(payload):
+        try:
+            enriched = json.loads(payload_bytes)
+            if isinstance(enriched, dict):
+                persist_turn_to_session_log(enriched)
+        except (json.JSONDecodeError, OSError) as exc:
+            _verbose_log(f"cyt-client: failed to persist turn: {exc}")
     hook_url = resolve_hook_url()
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")
@@ -308,6 +344,13 @@ def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
         return
 
     payload_bytes = enrich_hook_payload(raw)
+    if is_prompt_submit_event(payload):
+        try:
+            enriched = json.loads(payload_bytes)
+            if isinstance(enriched, dict):
+                persist_turn_to_session_log(enriched)
+        except (json.JSONDecodeError, OSError) as exc:
+            _verbose_log(f"cyt-client: failed to persist turn: {exc}")
     hook_url = resolve_hook_url()
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")
@@ -331,6 +374,10 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
     if payload is None:
         if cursor_output:
             _emit_cursor_continue()
+        return
+
+    if is_post_tool_capture_event(payload):
+        _handle_post_tool_capture(payload, cursor_output=cursor_output)
         return
 
     if is_pre_tool_event(payload):
@@ -361,6 +408,11 @@ def main(argv: list[str] | None = None) -> None:
         raw = sys.stdin.buffer.read()
         payload = _parse_payload(raw)
         cursor_output = payload is not None and is_cursor_hook_payload(payload)
+        if hook_skip_enabled(payload):
+            _verbose_log("cyt-client: skip.txt present; hook disabled")
+            if _should_emit_cursor_continue_on_skip(payload, cursor_output=cursor_output):
+                _emit_cursor_continue()
+            return
         if cursor_output and rule_path:
             set_rules_file_rel_path(rule_path)
         _run_hook(raw, payload, cursor_output=cursor_output)

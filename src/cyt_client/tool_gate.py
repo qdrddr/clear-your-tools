@@ -12,10 +12,12 @@ from cyt_client.sessions import read_session_log_file, session_log_path
 _PRE_TOOL_EVENTS = frozenset(
     {
         "preToolUse",
-        "beforeMCPExecution",
         "PreToolUse",
     },
 )
+
+_CYT_MCP_SEARCH_TOOL = "cyt-mcp_search"
+_CYT_MCP_SERVER_NAMES = frozenset({"cyt-mcp", "cyt_mcp"})
 
 
 def is_pre_tool_event(payload: dict[str, Any]) -> bool:
@@ -114,6 +116,70 @@ def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, A
     return normalized or None, _extract_tool_args(payload)
 
 
+def is_cyt_mcp_search_tool(tool_name: str, *, agent: str | None = None) -> bool:
+    return normalize_mcp_tool_name(tool_name, agent=agent) == _CYT_MCP_SEARCH_TOOL
+
+
+def _raw_routes_through_cyt_mcp_server(raw_name: str) -> bool:
+    name = raw_name.strip()
+    if not name:
+        return False
+    if name.startswith("mcp__"):
+        parts = [part for part in name.split("__") if part]
+        if len(parts) >= 2 and parts[1] in _CYT_MCP_SERVER_NAMES:
+            return True
+    if name.upper().startswith("MCP:"):
+        rest = name[4:].strip()
+        server_part = rest.split("_", 1)[0]
+        if server_part in _CYT_MCP_SERVER_NAMES or rest.startswith("cyt-mcp"):
+            return True
+    return False
+
+
+def _shares_server_prefix(tool_name: str, other: str) -> bool:
+    if "_" not in tool_name or "_" not in other:
+        return False
+    return tool_name.split("_", 1)[0] == other.split("_", 1)[0]
+
+
+def _cyt_mcp_tool_names_from_session(path: Path) -> set[str]:
+    _agent, entries = read_session_log_file(path)
+    names: set[str] = set()
+    for entry in entries:
+        if entry.get("kind") != "tool":
+            continue
+        key = str(entry.get("key") or "")
+        catalog = str(entry.get("catalog") or "")
+        if catalog != "cyt_mcp" and not key.startswith("tool:cyt_mcp:"):
+            continue
+        name = str(entry.get("name") or "").strip()
+        if name:
+            names.add(name)
+    return names
+
+
+def is_cyt_mcp_gated_tool(
+    tool_name: str,
+    payload: dict[str, Any],
+    *,
+    agent: str | None = None,
+) -> bool:
+    """Return True when pre-tool validation should apply cyt-mcp session rules."""
+    if is_cyt_mcp_search_tool(tool_name, agent=agent):
+        return True
+    if "-mcp_" in tool_name:
+        return True
+    raw = _first_str(payload, "tool_name", "toolName", "tool", "name") or tool_name
+    if _raw_routes_through_cyt_mcp_server(raw):
+        return True
+    path = session_log_path(payload)
+    if path is not None and path.is_file():
+        for session_name in _cyt_mcp_tool_names_from_session(path):
+            if _shares_server_prefix(tool_name, session_name):
+                return True
+    return False
+
+
 def _allowed_tools_from_session(path: Path) -> dict[str, dict[str, Any]]:
     _agent, entries = read_session_log_file(path)
     allowed: dict[str, dict[str, Any]] = {}
@@ -157,18 +223,25 @@ def _property_violation(schema: dict[str, Any], args: dict[str, Any]) -> str | N
 
 
 def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
-    """Return (allow, reason). Fail open when session log is missing."""
+    """Return (allow, reason). Only cyt-mcp tools are gated against the session log."""
     tool_name, args = _extract_tool_call(payload)
     if not tool_name:
         return True, ""
 
+    agent = infer_harness_agent(payload)
+    if not is_cyt_mcp_gated_tool(tool_name, payload, agent=agent):
+        return True, ""
+
+    if is_cyt_mcp_search_tool(tool_name, agent=agent):
+        return True, ""
+
     path = session_log_path(payload)
     if path is None or not path.is_file():
-        return True, ""
+        return False, f"tool {tool_name!r} was not injected in this session"
 
     allowed = _allowed_tools_from_session(path)
     if not allowed:
-        return True, ""
+        return False, f"tool {tool_name!r} was not injected in this session"
 
     schema = allowed.get(tool_name)
     if schema is None:

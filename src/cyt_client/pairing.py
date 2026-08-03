@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.config import resolve_config_path, tools_from_includes_cyt_mcp
+from cyt_client.hook_invocation import (
+    cursor_pairing_hooks,
+    hooks_use_launch_agent_prefix,
+    resolve_pairing_dev_context,
+    runtime_dev_repo_from_client,
+    runtime_dev_repo_from_mcp,
+    strip_cyt_hook_entries,
+)
+from cyt_client.mcp_entry import (
+    CYT_MCP_SERVER_KEY,
+    build_cyt_mcp_mcp_server_entry,
+    codex_cyt_mcp_toml_block,
+    load_aggregator_transport_settings,
+    mcp_entries_equivalent,
+)
+from cyt_client.skip import hook_skip_enabled
 
 _AGENT_MCP_PATHS: dict[str, Path] = {
     "cursor": Path("~/.cursor/mcp.json"),
@@ -23,7 +40,6 @@ _AGENT_HOOK_PATHS: dict[str, Path] = {
     "codex": Path("~/.codex/hooks.json"),
 }
 
-_CYT_MCP_SERVER_KEY = "cyt-mcp"
 _REPAIRED_SESSIONS: set[tuple[str, str]] = set()
 
 
@@ -40,14 +56,49 @@ def _atomic_write_text(path: Path, text: str) -> None:
             tmp.unlink(missing_ok=True)
 
 
-def _canonical_cyt_mcp_entry(agent: str) -> dict[str, Any]:
-    return {
-        "command": "cyt-mcp",
-        "args": ["--agent", agent],
-    }
+def _resolve_dev_context(
+    agent: str,
+    *,
+    runtime_repo: Path | None = None,
+) -> tuple[bool, Path | None]:
+    hooks_path = _AGENT_HOOK_PATHS.get(agent)
+    mcp_path = _AGENT_MCP_PATHS.get(agent)
+    return resolve_pairing_dev_context(
+        agent,
+        hooks_path=hooks_path.expanduser() if hooks_path is not None else None,
+        mcp_path=mcp_path.expanduser() if mcp_path is not None else None,
+        runtime_repo=runtime_repo,
+    )
 
 
-def _ensure_json_mcp_server(path: Path, agent: str, *, verbose: bool) -> bool:
+def _canonical_cyt_mcp_entry(
+    agent: str,
+    *,
+    runtime_repo: Path | None = None,
+) -> dict[str, Any]:
+    transport, host, port, mcp_path, _catalog_path = load_aggregator_transport_settings()
+    use_dev, dev_repo_root = _resolve_dev_context(agent, runtime_repo=runtime_repo)
+    dev_script_rel: str | None = None
+    if use_dev and dev_repo_root is not None:
+        dev_script_rel = "src/cyt_mcp/cli.py"
+    return build_cyt_mcp_mcp_server_entry(
+        agent,
+        transport=transport,
+        dev_repo_root=dev_repo_root,
+        dev_script_rel=dev_script_rel,
+        http_host=host,
+        http_port=port,
+        http_mcp_path=mcp_path,
+    )
+
+
+def _ensure_json_mcp_server(
+    path: Path,
+    agent: str,
+    *,
+    verbose: bool,
+    runtime_repo: Path | None = None,
+) -> bool:
     if not path.parent.exists():
         return False
     if path.is_file():
@@ -62,90 +113,114 @@ def _ensure_json_mcp_server(path: Path, agent: str, *, verbose: bool) -> bool:
     servers = raw.get("mcpServers")
     if not isinstance(servers, dict):
         servers = {}
-    if _CYT_MCP_SERVER_KEY in servers:
+    desired = _canonical_cyt_mcp_entry(agent, runtime_repo=runtime_repo)
+    existing = servers.get(CYT_MCP_SERVER_KEY)
+    if mcp_entries_equivalent(existing, desired):
         return False
-    servers[_CYT_MCP_SERVER_KEY] = _canonical_cyt_mcp_entry(agent)
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    merged.update(desired)
+    servers[CYT_MCP_SERVER_KEY] = merged
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
     if verbose:
-        print(f"cyt-client pairing: added {_CYT_MCP_SERVER_KEY} to {path}", flush=True)
+        print(f"cyt-client pairing: updated {CYT_MCP_SERVER_KEY} in {path}", flush=True)
     return True
 
 
-def _ensure_codex_mcp_server(path: Path, agent: str, *, verbose: bool) -> bool:
+def _ensure_codex_mcp_server(
+    path: Path,
+    agent: str,
+    *,
+    verbose: bool,
+    runtime_repo: Path | None = None,
+) -> bool:
     if not path.parent.exists():
         return False
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     marker = "[mcp_servers.cyt-mcp]"
-    if marker in text or "cyt-mcp" in text:
+    desired = _canonical_cyt_mcp_entry(agent, runtime_repo=runtime_repo)
+    block = codex_cyt_mcp_toml_block(agent, desired)
+    if marker in text:
+        before, _, after = text.partition(marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
+    elif "cyt-mcp" in text and block.strip() in text:
         return False
-    block = f'\n[mcp_servers.cyt-mcp]\ncommand = "cyt-mcp"\nargs = ["--agent", "{agent}"]\n'
     _atomic_write_text(path, text.rstrip() + block)
     if verbose:
         print(f"cyt-client pairing: added cyt-mcp to {path}", flush=True)
     return True
 
 
-def _cursor_hooks_template(agent: str) -> dict[str, Any]:
-    return {
-        "version": 1,
-        "hooks": {
-            "sessionStart": [
-                {
-                    "command": f"CYT_LAUNCH_AGENT={agent} cyt hook daemon start --unattended",
-                    "timeout": 60,
-                },
-                {"command": f"CYT_LAUNCH_AGENT={agent} cyt-client", "timeout": 60},
-            ],
-            "sessionEnd": [{"command": f"CYT_LAUNCH_AGENT={agent} cyt-client", "timeout": 60}],
-            "beforeSubmitPrompt": [
-                {"command": f"CYT_LAUNCH_AGENT={agent} cyt-client", "timeout": 60},
-            ],
-            "preToolUse": [{"command": f"CYT_LAUNCH_AGENT={agent} cyt-client", "timeout": 60}],
-            "beforeMCPExecution": [
-                {"command": f"CYT_LAUNCH_AGENT={agent} cyt-client", "timeout": 60},
-            ],
-        },
-    }
+_LEGACY_CURSOR_TOOL_HOOK_EVENTS = ("beforeMCPExecution", "afterMCPExecution")
 
 
-def _merge_hook_commands(
-    existing: dict[str, Any],
-    required: dict[str, Any],
+def _strip_legacy_cursor_tool_hook_events(
+    merged_hooks: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
     changed = False
+    for event_name in _LEGACY_CURSOR_TOOL_HOOK_EVENTS:
+        current = merged_hooks.get(event_name)
+        if not isinstance(current, list):
+            continue
+        stripped = strip_cyt_hook_entries(current)
+        if stripped == current:
+            continue
+        if stripped:
+            merged_hooks[event_name] = stripped
+        else:
+            del merged_hooks[event_name]
+        changed = True
+    return merged_hooks, changed
+
+
+def _upsert_pairing_hooks(
+    existing: dict[str, Any],
+    required_events: dict[str, list[dict[str, Any]]],
+) -> tuple[dict[str, Any], bool]:
     hooks = existing.get("hooks")
     if not isinstance(hooks, dict):
         hooks = {}
-        changed = True
-    req_hooks = required.get("hooks")
-    if not isinstance(req_hooks, dict):
-        return existing, changed
-    for event, commands in req_hooks.items():
-        if not isinstance(commands, list):
-            continue
-        current = hooks.get(event)
+    changed = False
+    merged_hooks = dict(hooks)
+    for event_name, required_entries in required_events.items():
+        current = merged_hooks.get(event_name)
         if not isinstance(current, list):
-            hooks[event] = list(commands)
+            current = []
+        stripped = strip_cyt_hook_entries(current)
+        next_entries = stripped + [dict(entry) for entry in required_entries]
+        if next_entries != current:
+            merged_hooks[event_name] = next_entries
             changed = True
-            continue
-        known = {json.dumps(item, sort_keys=True) for item in current if isinstance(item, dict)}
-        for command in commands:
-            if not isinstance(command, dict):
-                continue
-            key = json.dumps(command, sort_keys=True)
-            if key not in known:
-                current.append(command)
-                changed = True
+    merged_hooks, legacy_changed = _strip_legacy_cursor_tool_hook_events(merged_hooks)
+    changed = changed or legacy_changed
     if changed:
-        existing["hooks"] = hooks
+        existing["hooks"] = merged_hooks
+        if "version" not in existing:
+            existing["version"] = 1
     return existing, changed
 
 
-def _ensure_hooks_file(path: Path, agent: str, *, verbose: bool) -> bool:
+def _ensure_hooks_file(
+    path: Path,
+    agent: str,
+    *,
+    verbose: bool,
+    runtime_repo: Path | None = None,
+) -> bool:
     if not path.parent.exists():
         return False
-    required = _cursor_hooks_template(agent)
+    use_dev, dev_repo_root = _resolve_dev_context(agent, runtime_repo=runtime_repo)
+    set_launch_agent = hooks_use_launch_agent_prefix(path)
+    required_events = cursor_pairing_hooks(
+        agent,
+        use_dev=use_dev,
+        dev_repo_root=dev_repo_root,
+        set_launch_agent=set_launch_agent,
+    )
     if path.is_file():
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
@@ -155,7 +230,7 @@ def _ensure_hooks_file(path: Path, agent: str, *, verbose: bool) -> bool:
         existing = {}
     if not isinstance(existing, dict):
         existing = {}
-    merged, changed = _merge_hook_commands(existing, required)
+    merged, changed = _upsert_pairing_hooks(existing, required_events)
     if not changed:
         return False
     _atomic_write_text(path, json.dumps(merged, indent=2) + "\n")
@@ -183,7 +258,12 @@ def repair_pairing(
     *,
     verbose: bool = False,
     session_start: bool = True,
+    runtime_repo: Path | None = None,
 ) -> None:
+    if hook_skip_enabled(payload):
+        if verbose:
+            print("cyt-client: skip.txt present; pairing disabled", file=sys.stderr)
+        return
     if not tools_from_includes_cyt_mcp():
         return
     agent = (
@@ -196,16 +276,50 @@ def repair_pairing(
             return
         _REPAIRED_SESSIONS.add(key)
 
+    resolved_runtime = runtime_repo or runtime_dev_repo_from_client()
+
     mcp_path = _AGENT_MCP_PATHS.get(agent)
     if mcp_path is not None:
         expanded = mcp_path.expanduser()
         if agent == "codex":
-            _ensure_codex_mcp_server(expanded, agent, verbose=verbose)
+            _ensure_codex_mcp_server(
+                expanded,
+                agent,
+                verbose=verbose,
+                runtime_repo=resolved_runtime,
+            )
         else:
-            _ensure_json_mcp_server(expanded, agent, verbose=verbose)
+            _ensure_json_mcp_server(
+                expanded,
+                agent,
+                verbose=verbose,
+                runtime_repo=resolved_runtime,
+            )
 
     hooks_path = _AGENT_HOOK_PATHS.get(agent)
     if hooks_path is not None:
-        _ensure_hooks_file(hooks_path.expanduser(), agent, verbose=verbose)
+        _ensure_hooks_file(
+            hooks_path.expanduser(),
+            agent,
+            verbose=verbose,
+            runtime_repo=resolved_runtime,
+        )
 
     _ = resolve_config_path()
+
+
+def repair_pairing_from_mcp_runtime(*, agent: str | None = None, verbose: bool = False) -> None:
+    """Repair hooks/MCP pairing when cyt-mcp starts (dev or prod runtime)."""
+    resolved_agent = (agent or "cursor").strip() or "cursor"
+    runtime_repo = runtime_dev_repo_from_mcp()
+    repair_pairing(
+        {
+            "hook_event_name": "sessionStart",
+            "session_id": "cyt-mcp-startup",
+            "cyt_agent": resolved_agent,
+            "cwd": str(Path.cwd()),
+        },
+        verbose=verbose,
+        session_start=False,
+        runtime_repo=runtime_repo,
+    )

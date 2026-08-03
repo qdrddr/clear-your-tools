@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
+import sys
 from pathlib import Path
+from typing import Any, cast
 
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog import catalog_json
 from cyt_mcp.config import AggregatorConfig, load_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.transport import refresh_runtime_cache, run_stdio
+from cyt_mcp.search import lookup_tool_definition
+from cyt_mcp.transport import refresh_runtime_cache
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +40,26 @@ def _build_parser() -> argparse.ArgumentParser:
     catalog.add_argument("--agent", help="Agent harness")
     catalog.add_argument("--json", action="store_true", help="Print JSON to stdout")
     catalog.add_argument("--config", type=Path, default=None)
+
+    search = sub.add_parser("search", help="Look up a full backend tool definition")
+    search.add_argument("tool_name", help="Backend cyt-mcp tool name")
+    search.add_argument("--agent", help="Agent harness")
+    search.add_argument("--json", action="store_true", help="Print JSON to stdout")
+    search.add_argument("--config", type=Path, default=None)
     return parser
+
+
+async def _run_search(config: AggregatorConfig, tool_name: str) -> int:
+    cache = RuntimeToolCache()
+    server = build_aggregator(config, cache)
+    await refresh_runtime_cache(server, cache, config)
+    try:
+        definition = lookup_tool_definition(cache, tool_name)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(definition, ensure_ascii=False, indent=2))
+    return 0
 
 
 async def _run_catalog(config: AggregatorConfig) -> int:
@@ -48,14 +71,26 @@ async def _run_catalog(config: AggregatorConfig) -> int:
 
 
 async def _run_server(config: AggregatorConfig) -> int:
+    from cyt_client.pairing import repair_pairing_from_mcp_runtime
+    from cyt_client.skip import hook_skip_enabled
+
+    startup_payload = {
+        "hook_event_name": "sessionStart",
+        "session_id": "cyt-mcp-startup",
+        "cyt_agent": config.agent,
+        "cwd": str(Path.cwd()),
+    }
+    if not hook_skip_enabled(startup_payload):
+        repair_pairing_from_mcp_runtime(agent=config.agent, verbose=False)
     cache = RuntimeToolCache()
     server = build_aggregator(config, cache)
+    await refresh_runtime_cache(server, cache, config)
     if config.transport == "http":
         from cyt_mcp.transport import run_http
 
         await run_http(server, cache, config)
     else:
-        run_stdio(server)
+        await cast(Any, server).run_async("stdio", show_banner=False)
     return 0
 
 
@@ -63,11 +98,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "catalog":
-        config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
-        return asyncio.run(_run_catalog(config))
+    try:
+        if args.command == "catalog":
+            config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+            return asyncio.run(_run_catalog(config))
 
-    config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+        if args.command == "search":
+            if not args.json:
+                print("cyt-mcp search requires --json", file=sys.stderr)
+                return 1
+            config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+            return asyncio.run(_run_search(config, args.tool_name))
+
+        config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     if args.transport:
         config = AggregatorConfig(
             agent=config.agent,

@@ -52,6 +52,11 @@ def is_cursor_rules_cleanup_event(payload: dict[str, Any]) -> bool:
     return event in _CURSOR_RULES_CLEANUP_EVENTS if event is not None else False
 
 
+def format_cursor_post_tool_stdout() -> str:
+    """Empty postToolUse response when no additional_context or MCP output rewrite."""
+    return "{}"
+
+
 def format_cursor_continue() -> str:
     return json.dumps({"continue": True})
 

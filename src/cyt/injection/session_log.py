@@ -39,6 +39,19 @@ class SessionLogIndex:
                 parts.append(fragment.strip())
         return "\n".join(parts)
 
+    def turn_corpus(self) -> str:
+        parts: list[str] = []
+        for entry in self.entries:
+            if entry.get("kind") != "turn":
+                continue
+            prompt = str(entry.get("prompt") or "").strip()
+            assistant = str(entry.get("assistant") or "").strip()
+            if prompt:
+                parts.append(prompt)
+            if assistant:
+                parts.append(assistant)
+        return "\n".join(parts)
+
     def count_key(self, key: str, *, aliases: tuple[str, ...] = ()) -> int:
         keys = {key, *aliases}
         return sum(1 for entry in self.entries if str(entry.get("key") or "") in keys)
@@ -105,9 +118,5 @@ def resolve_injection_mode(
 
 
 def combined_session_text(session_text: str, index: SessionLogIndex) -> str:
-    corpus = index.verbatim_corpus()
-    if not corpus.strip():
-        return session_text
-    if not session_text.strip():
-        return corpus
-    return f"{session_text}\n{corpus}"
+    parts = [session_text, index.verbatim_corpus(), index.turn_corpus()]
+    return "\n".join(part for part in parts if part.strip())

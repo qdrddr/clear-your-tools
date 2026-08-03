@@ -98,6 +98,7 @@ def build_tools_hook_config_overlay(
     mcp_definitions_file: str,
     cloudflare_url: str = "",
     executor_token_var: str | None = None,
+    cyt_mcp: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a ``pruning.tools`` overlay fragment (``hook`` settings only)."""
     hook: dict[str, Any] = {
@@ -108,6 +109,8 @@ def build_tools_hook_config_overlay(
     }
     if executor_token_var:
         hook["executor_token_var"] = executor_token_var
+    if cyt_mcp:
+        hook["cyt_mcp"] = cyt_mcp
     return {"hook": hook}
 
 
@@ -177,12 +180,45 @@ def prompt_tools_hook_config(
             ",".join(tools_hook_sources(existing) or [from_default]),
         )
         selected = _parse_selected_hook_sources(raw_sources, from_default)
+        cyt_mcp_overlay: dict[str, Any] | None = None
         if "cyt_mcp" in selected:
-            from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent
+            from cyt.hook.cli_invocation import detect_hook_cli_invocation
+            from cyt.tools.cyt_mcp_setup import (
+                cyt_mcp_hook_settings_overlay,
+                prompt_cyt_mcp_transport,
+                setup_cyt_mcp_for_agent,
+                write_agent_cyt_mcp_entry,
+            )
 
             launch_agent = os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+            transport = prompt_cyt_mcp_transport()
+            cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
+                transport=transport,
+                agent=launch_agent,
+            )
+            invocation = detect_hook_cli_invocation()
+            if invocation.is_dev and invocation.repo_root is not None:
+                print(
+                    f"Installing development cyt-mcp via uv run --directory {invocation.repo_root}",
+                    file=sys.stderr,
+                )
+                write_agent_cyt_mcp_entry(
+                    launch_agent,
+                    invocation=invocation,
+                    transport=transport,
+                )
             if _prompt_yes_no("Migrate agent MCP config to cyt-mcp aggregator?", default_yes=True):
-                setup_cyt_mcp_for_agent(launch_agent)
+                setup_cyt_mcp_for_agent(
+                    launch_agent,
+                    invocation=invocation,
+                    transport=transport,
+                )
+            elif not (invocation.is_dev and invocation.repo_root is not None):
+                write_agent_cyt_mcp_entry(
+                    launch_agent,
+                    invocation=invocation,
+                    transport=transport,
+                )
         tools_from = selected
         executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
             selected,
@@ -195,6 +231,7 @@ def prompt_tools_hook_config(
             executor_url=executor_default,
             mcp_definitions_file=definitions_default,
             cloudflare_url=cloudflare_default,
+            cyt_mcp=cyt_mcp_overlay,
         )
 
     tools_from = _tools_from_overlay_value(existing_sources, fallback=from_default)

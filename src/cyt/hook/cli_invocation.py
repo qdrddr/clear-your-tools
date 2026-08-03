@@ -6,7 +6,7 @@ import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 CYT_DAEMON_START_ARGS = ("hook", "daemon", "start", "--unattended")
 CYT_DAEMON_RESTART_ARGS = ("hook", "daemon", "restart")
@@ -14,6 +14,7 @@ INSTALLED_CYT_CLIENT_COMMAND = "cyt-client"
 INSTALLED_CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
 INSTALLED_CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
 INSTALLED_CYT_DAEMON_RESTART_COMMAND = "cyt hook daemon restart"
+INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,12 @@ def proxy_cli_script_path() -> Path:
 
 def cyt_client_cli_script_path() -> Path:
     from cyt_client import cli as cli_mod
+
+    return Path(cli_mod.__file__).resolve()
+
+
+def cyt_mcp_cli_script_path() -> Path:
+    from cyt_mcp import cli as cli_mod
 
     return Path(cli_mod.__file__).resolve()
 
@@ -64,6 +71,10 @@ def cyt_client_cli_script_relpath() -> str:
 
 def proxy_cli_script_relpath() -> str:
     return script_relpath_from_repo(proxy_cli_script_path(), _canonical_repo_root())
+
+
+def cyt_mcp_cli_script_relpath() -> str:
+    return script_relpath_from_repo(cyt_mcp_cli_script_path(), _canonical_repo_root())
 
 
 def proxy_cli_impl_script_path() -> Path:
@@ -126,6 +137,38 @@ def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -
             *CYT_DAEMON_RESTART_ARGS,
         )
     return INSTALLED_CYT_DAEMON_RESTART_COMMAND
+
+
+def cyt_mcp_mcp_server_entry(
+    agent: str,
+    *,
+    invocation: HookCliInvocation | None = None,
+    transport: str = "stdio",
+    http_host: str = "127.0.0.1",
+    http_port: int = 8765,
+    http_mcp_path: str = "/mcp",
+) -> dict[str, Any]:
+    from cyt_client.mcp_entry import build_cyt_mcp_mcp_server_entry, normalize_cyt_mcp_transport
+
+    resolved_transport = normalize_cyt_mcp_transport(transport)
+    invocation = invocation or detect_hook_cli_invocation()
+    if invocation.is_dev and invocation.repo_root is not None:
+        return build_cyt_mcp_mcp_server_entry(
+            agent,
+            transport=resolved_transport,
+            dev_repo_root=invocation.repo_root,
+            dev_script_rel=cyt_mcp_cli_script_relpath(),
+            http_host=http_host,
+            http_port=http_port,
+            http_mcp_path=http_mcp_path,
+        )
+    return build_cyt_mcp_mcp_server_entry(
+        agent,
+        transport=resolved_transport,
+        http_host=http_host,
+        http_port=http_port,
+        http_mcp_path=http_mcp_path,
+    )
 
 
 def is_dev_cyt_hook_command(command: str) -> bool:

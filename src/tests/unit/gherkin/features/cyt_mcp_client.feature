@@ -54,3 +54,83 @@ Feature: cyt-mcp cyt-client gate and pairing
     And cursor MCP config has no cyt-mcp entry
     When cyt-client handles UserPromptSubmit
     Then cursor mcp.json should not be modified
+
+  Scenario Outline: cyt-mcp_search normalizes across agents
+    Given agent <agent>
+    When MCP tool name <raw_name> is normalized
+    Then normalized name should be cyt-mcp_search
+
+    Examples:
+      | agent  | raw_name             |
+      | codex  | mcp__cyt-mcp__search |
+      | cursor | MCP:cyt-mcp_search   |
+      | claude | cyt-mcp_search       |
+
+  Scenario: Pre-tool gate always allows cyt-mcp_search without session log file
+    Given no session log file
+    And a preToolUse payload calling cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: Pre-tool gate always allows cyt-mcp_search with empty session log
+    Given an empty session log
+    And a preToolUse payload calling cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: Pre-tool gate denies cyt-mcp backend when no session log file
+    Given no session log file
+    And a preToolUse payload calling codebase-memory-mcp_query_graph
+    When pre-tool validation runs
+    Then pre-tool validation should deny the call
+
+  Scenario: Pre-tool gate allows non-cyt-mcp tools when no session log file
+    Given no session log file
+    And a preToolUse payload calling Shell
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: Pre-tool gate denies cyt-mcp backend when session log has turn only
+    Given a session log with turn entry only
+    And a preToolUse payload calling codebase-memory-mcp_query_graph
+    When pre-tool validation runs
+    Then pre-tool validation should deny the call
+
+  Scenario: search-resolved tool entry unlocks tool gate
+    Given a session log with only a search-resolved cyt_mcp tool entry
+    And a preToolUse payload calling codebase-memory-mcp_search_graph
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: non-resolved backend cyt_mcp tool remains denied
+    Given an empty session log
+    And a preToolUse payload calling codebase-memory-mcp_query_graph
+    When pre-tool validation runs
+    Then pre-tool validation should deny the call
+
+  Scenario Outline: post-tool hook persists cyt-mcp_search result as full tool entry
+    Given agent <agent>
+    And an empty session log
+    And a <hook_event> payload for cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    When cyt-client handles post-tool capture
+    Then session log should contain a tool entry for codebase-memory-mcp_search_graph
+    And tool entry catalog should be cyt_mcp
+    And tool entry full should be true
+    And tool entry source should be cyt-mcp_search
+
+    Examples:
+      | agent  | hook_event        |
+      | cursor | postToolUse       |
+      | claude | PostToolUse       |
+      | codex  | PostToolUse       |
+
+  Scenario: beforeSubmitPrompt persists turn with prompt and assistant
+    Given an empty session log
+    And a beforeSubmitPrompt payload with prompt and transcript
+    When cyt-client persists turn to session log
+    Then session log should contain a turn entry with matching prompt
+
+  Scenario: combined session text includes turn corpus for pre-exposed gate
+    Given a session log with a turn entry and a full cyt_mcp tool entry
+    When combined session text is built
+    Then corpus should include turn prompt text

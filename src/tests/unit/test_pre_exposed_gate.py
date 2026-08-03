@@ -11,6 +11,7 @@ from cyt.injection.pre_exposed import (
     filter_pre_exposed_tools,
     is_pre_exposed,
 )
+from cyt.injection.session_log import SessionLogIndex, combined_session_text
 from cyt.injection.session_text import (
     session_text_from_hook_payload,
     session_text_from_proxy_body,
@@ -188,3 +189,28 @@ def test_session_text_from_hook_payload_reads_transcript_file_when_allowed() -> 
         session_text = session_text_from_hook_payload(payload, allow_file_read=True)
         filtered = filter_pre_exposed_tools([dropped, _tool("mcp__file__fresh")], session_text)
         assert [tool["name"] for tool in filtered] == ["mcp__file__fresh"]
+
+
+def test_search_enriched_cyt_mcp_tool_skips_reinjection() -> None:
+    tool = {
+        "name": "codebase-memory-mcp_search_graph",
+        "description": "graph search",
+        "input_schema": {
+            "type": "object",
+            "properties": {"project": {"type": "string"}},
+        },
+    }
+    entry = {
+        "kind": "tool",
+        "key": "tool:cyt_mcp:codebase-memory-mcp_search_graph",
+        "name": "codebase-memory-mcp_search_graph",
+        "catalog": "cyt_mcp",
+        "full": True,
+        "source": "cyt-mcp_search",
+        "input_schema": tool["input_schema"],
+        "description": tool["description"],
+    }
+    index = SessionLogIndex(entries=(entry,))
+    session_text = combined_session_text("", index)
+    filtered = filter_pre_exposed_tools([tool], session_text)
+    assert filtered == []

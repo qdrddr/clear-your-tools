@@ -156,8 +156,15 @@ def format_definitions_source_section(
 
 
 _CYT_MCP_WORKSPACE_NOTE = (
-    "Definitions of MCP tools for the cyt-mcp server. "
-    "Tool names match the stub MCP tools registered with your agent client."
+    "Matched cyt-mcp tools below are the relevant pruned subset for this prompt "
+    "(optional properties only). Missing tools were excluded by the pruning pipeline "
+    "as not relevant — not a full server catalog. Use `cyt-mcp_search` for full "
+    "on-demand definitions."
+)
+
+_CYT_MCP_EMPTY_NOTE = (
+    "No relevant cyt-mcp tools matched this prompt. Do not use `cyt-mcp_search` — "
+    "there is nothing to look up. This block is kept stable for prompt-prefix cache."
 )
 
 
@@ -168,7 +175,7 @@ def format_cyt_mcp_source_section(
     include_tool_description: bool = True,
 ) -> str:
     if not tools:
-        return ""
+        return f"<cyt-mcp>\n{_CYT_MCP_EMPTY_NOTE}\n</cyt-mcp>"
     item_lines = [
         line
         for tool in tools

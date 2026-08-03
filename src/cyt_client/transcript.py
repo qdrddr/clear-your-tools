@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.rules_file import rules_file_path, workspace_root_from_payload
@@ -147,3 +147,100 @@ def _attach_cyt_session_log(data: dict[str, Any]) -> None:
         data[CYT_SESSION_LOG_FIELD] = items
     if agent:
         data[CYT_SESSION_AGENT_FIELD] = agent
+
+
+def prompt_from_payload(payload: dict[str, Any]) -> str | None:
+    for layer in (
+        payload,
+        payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
+    ):
+        if not isinstance(layer, dict):
+            continue
+        prompt = layer.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+    return None
+
+
+def _text_blocks_from_content(content: object) -> str | None:
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        block_dict = cast(dict[str, Any], block)
+        block_type = block_dict.get("type")
+        if block_type not in ("text", "output_text", "input_text"):
+            continue
+        text = block_dict.get("text")
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n".join(parts) if parts else None
+
+
+def _cursor_assistant_from_record(record: dict[str, Any]) -> str | None:
+    if record.get("role") != "assistant":
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    return _text_blocks_from_content(message.get("content"))
+
+
+def _claude_assistant_from_record(record: dict[str, Any]) -> str | None:
+    message = record.get("message")
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return None
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    return _text_blocks_from_content(content)
+
+
+def _codex_assistant_from_record(record: dict[str, Any]) -> str | None:
+    if record.get("type") != "response_item":
+        return None
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("type") != "message" or payload.get("role") != "assistant":
+        return None
+    return _text_blocks_from_content(payload.get("content"))
+
+
+def last_assistant_from_records(
+    records: list[Any],
+    *,
+    agent: str | None = None,
+) -> str | None:
+    parser = {
+        "cursor": _cursor_assistant_from_record,
+        "claude": _claude_assistant_from_record,
+        "codex": _codex_assistant_from_record,
+    }.get(agent or "")
+    for record in reversed(records):
+        if not isinstance(record, dict):
+            continue
+        if parser is not None:
+            if text := parser(record):
+                return text
+            continue
+        for fallback in (
+            _codex_assistant_from_record,
+            _claude_assistant_from_record,
+            _cursor_assistant_from_record,
+        ):
+            if text := fallback(record):
+                return text
+    return None
+
+
+def last_assistant_from_payload(payload: dict[str, Any]) -> str | None:
+    records = payload.get("cyt_transcript")
+    if not isinstance(records, list) or not records:
+        return None
+    agent = infer_harness_agent(payload)
+    return last_assistant_from_records(records, agent=agent)

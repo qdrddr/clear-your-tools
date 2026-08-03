@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cyt.injection.session_log import SessionLogIndex, resolve_injection_mode
+from cyt.injection.session_log import SessionLogIndex, combined_session_text, resolve_injection_mode
 
 
 def test_satisfied_full_suppresses_reinjection() -> None:
@@ -89,3 +89,28 @@ def test_legacy_key_alias_suppresses_reinjection() -> None:
         key_aliases=("tool:Shell",),
     )
     assert mode == "skip"
+
+
+def test_combined_session_text_includes_turn_corpus() -> None:
+    index = SessionLogIndex(
+        entries=(
+            {
+                "kind": "turn",
+                "key": "turn:1",
+                "prompt": "analyze graph",
+                "assistant": "checking",
+            },
+            {
+                "kind": "tool",
+                "key": "tool:cyt_mcp:codebase-memory-mcp_search_graph",
+                "name": "codebase-memory-mcp_search_graph",
+                "catalog": "cyt_mcp",
+                "full": True,
+                "input_schema": {"type": "object", "properties": {"project": {"type": "string"}}},
+                "description": "graph search",
+            },
+        ),
+    )
+    combined = combined_session_text("", index)
+    assert "analyze graph" in combined
+    assert "codebase-memory-mcp_search_graph" in combined

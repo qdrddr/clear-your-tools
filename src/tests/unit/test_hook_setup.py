@@ -848,6 +848,77 @@ def test_uninstall_hooks_from_file_preserves_other_settings(tmp_path: Path) -> N
     assert "hooks" not in data
 
 
+def test_uninstall_cursor_hooks_preserves_minimum_structure(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+    hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+    )
+
+    changed = hook_setup.uninstall_hooks_from_file(path, preserve_empty_hooks_object=True)
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data == {"version": 1, "hooks": {}}
+
+
+def test_uninstall_cursor_hooks_preserves_non_cyt_hooks(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+    hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["hooks"]["beforeShellExecution"] = [{"command": ".cursor/hooks/approve-network.sh"}]
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    changed = hook_setup.uninstall_hooks_from_file(path, preserve_empty_hooks_object=True)
+
+    assert changed is True
+    remaining = json.loads(path.read_text(encoding="utf-8"))
+    assert remaining["version"] == 1
+    assert remaining["hooks"] == {
+        "beforeShellExecution": [{"command": ".cursor/hooks/approve-network.sh"}],
+    }
+
+
+def test_run_hook_uninstall_preserves_cursor_minimum_structure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor_path = tmp_path / "cursor" / "hooks.json"
+    cursor_path.parent.mkdir(parents=True)
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+    hook_setup.upsert_cursor_hooks_into_file(
+        cursor_path,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+    )
+    missing_claude = tmp_path / "missing-claude" / "settings.json"
+    missing_codex = tmp_path / "missing-codex" / "hooks.json"
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", missing_claude)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", missing_codex)
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+
+    hook_setup.run_hook_uninstall()
+
+    data = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert data == {"version": 1, "hooks": {}}
+
+
 def test_run_hook_uninstall_removes_hooks_from_agent_configs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -946,6 +1017,8 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
         before_submit_entry=entries["before_submit"],
         session_start_entries=entries["session_start"],
         session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
     )
 
     assert changed is True
@@ -955,10 +1028,51 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert data["hooks"]["beforeSubmitPrompt"] == [entries["before_submit"]]
     assert data["hooks"]["sessionStart"] == entries["session_start"]
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
+    assert data["hooks"]["preToolUse"] == [entries["pre_tool"]]
+    assert data["hooks"]["postToolUse"] == [entries["post_tool"]]
     assert entries["before_submit"]["command"] == "cyt-client"
     assert len(entries["session_start"]) == 2
     assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
     assert entries["session_start"][1]["command"] == "cyt-client"
+
+
+def test_upsert_cursor_hooks_removes_legacy_mcp_tool_hook_events(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "preToolUse": [{"command": "cyt-client", "timeout": 60}],
+                    "beforeMCPExecution": [{"command": "cyt-client", "timeout": 60}],
+                    "afterMCPExecution": [
+                        {
+                            "command": "cyt-client",
+                            "matcher": "cyt-mcp_search|mcp__cyt-mcp__search",
+                            "timeout": 60,
+                        },
+                    ],
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+    )
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "beforeMCPExecution" not in data["hooks"]
+    assert "afterMCPExecution" not in data["hooks"]
+    assert data["hooks"]["postToolUse"] == [entries["post_tool"]]
 
 
 def test_normalize_cursor_hooks_section_drops_claude_nested_shape() -> None:
@@ -986,6 +1100,8 @@ def test_upsert_cursor_hooks_into_file_repairs_non_object_hooks(tmp_path: Path) 
         before_submit_entry=hook_setup.cursor_before_submit_entry(agent="cursor"),
         session_start_entries=hook_setup.cursor_session_start_entries(agent="cursor"),
         session_end_entry=hook_setup.cursor_session_end_entry(agent="cursor"),
+        pre_tool_entry=hook_setup.cursor_before_submit_entry(agent="cursor"),
+        post_tool_entry=hook_setup.cursor_hook_entries(agent="cursor")["post_tool"],
     )
 
     assert changed is True

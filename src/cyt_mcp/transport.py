@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from cyt_mcp.catalog import catalog_payload
+from cyt_mcp.catalog_build import refresh_catalog_cache
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
@@ -16,6 +17,7 @@ async def refresh_runtime_cache(
     cache: RuntimeToolCache,
     config: AggregatorConfig,
 ) -> None:
+    await refresh_catalog_cache(server, cache)
     await server.list_tools()
 
 
@@ -48,4 +50,5 @@ async def run_http(
 
 
 def run_stdio(server: FastMCP) -> None:
+    """Run stdio transport synchronously (standalone CLI only, not inside asyncio.run)."""
     server.run("stdio")

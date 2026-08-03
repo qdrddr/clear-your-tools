@@ -50,6 +50,8 @@ def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:
         before_submit_entry=entries["before_submit"],
         session_start_entries=entries["session_start"],
         session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
     )
     if changed and not quiet:
         print(f"Updated CYT hooks in {path}")

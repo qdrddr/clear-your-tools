@@ -14,6 +14,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog import catalog_payload
+from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.config import AggregatorConfig, HttpSettings
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.stubs import StubListTransform
@@ -46,6 +47,8 @@ def _sample_config(*, mcp_servers: dict[str, Any] | None = None) -> AggregatorCo
 def given_cached_tool(name: str, gherkin_context: GherkinContext) -> None:
     tool = Tool.from_function(lambda path: path, name=name)
     cache = RuntimeToolCache()
+    catalog, search_index = build_catalog_from_tools([tool])
+    cache.replace(catalog, search_index=search_index)
     transform = StubListTransform(cache, include_description=False)
     gherkin_context.payload = {
         "cache": cache,

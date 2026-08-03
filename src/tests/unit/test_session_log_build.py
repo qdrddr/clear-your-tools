@@ -145,3 +145,36 @@ def test_tool_item_legacy_keys_for_executor() -> None:
     tool = {"name": "Shell", "cyt_catalog_source": "executor"}
     assert tool_item_key(tool, catalog="executor") == "tool:executor:Shell"
     assert tool_item_legacy_keys(tool, catalog="executor") == ("tool:Shell",)
+
+
+def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:
+    tool = {
+        "name": "codebase-memory-mcp_search_graph",
+        "description": "graph search",
+        "input_schema": {"type": "object", "properties": {"project": {"type": "string"}}},
+    }
+    entry = build_tool_log_entry(tool, catalog="cyt_mcp", full=False)
+    assert entry["source"] == "hook_injection"
+    fragment = format_entry_fragment(entry)
+    assert "codebase-memory-mcp_search_graph" in fragment
+
+
+def test_search_persisted_tool_entry_round_trip() -> None:
+    from cyt_client.session_capture import build_cyt_mcp_tool_entry_from_search
+
+    definition = {
+        "name": "codebase-memory-mcp_search_graph",
+        "description": "graph search",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"project": {"type": "string"}},
+            "required": ["project"],
+        },
+        "outputSchema": {"type": "object"},
+    }
+    entry = build_cyt_mcp_tool_entry_from_search("codebase-memory-mcp_search_graph", definition)
+    assert entry["source"] == "cyt-mcp_search"
+    assert entry["full"] is True
+    fragment = format_entry_fragment(entry)
+    assert "codebase-memory-mcp_search_graph" in fragment
+    assert "project" in fragment

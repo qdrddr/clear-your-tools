@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,50 @@ INTEGRATION_SKIP_REASON = (
     "integration tests are manual-only (pytest -m integration --run-integration)"
 )
 QA_SKIP_REASON = "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/local/tests/pytest-category.sh qa)"
+
+_SKIP_TXT_TEST_MARKERS = (
+    "hook_skip_enabled",
+    "skip_txt",
+    "skips_hook_work_when_skip",
+    "skip_emits_cursor",
+    "skip_verbose_logs",
+    "repair_pairing_skips_when_skip",
+    "repair_pairing_from_mcp_runtime_skips_when_skip",
+    "run_server_skips_pairing_when_skip",
+)
+
+_REPO_SKIP_TXT = Path(__file__).resolve().parents[2] / ".cursor" / "cyt" / "skip.txt"
+
+
+def _test_exercises_skip_txt(test_name: str) -> bool:
+    return any(marker in test_name for marker in _SKIP_TXT_TEST_MARKERS)
+
+
+@pytest.fixture(autouse=True)
+def _ignore_repo_skip_txt(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Developer ``skip.txt`` files must not disable unrelated unit tests."""
+    from cyt_client import skip as skip_mod
+
+    real_hook_skip = skip_mod.hook_skip_enabled
+    real_paths = skip_mod.skip_hook_paths_for_payload
+    exercises_skip = _test_exercises_skip_txt(request.node.name)
+    ignored_skip_paths = {
+        _REPO_SKIP_TXT.resolve(),
+        skip_mod.GLOBAL_SKIP_PATH.resolve(),
+    }
+
+    def hook_skip(payload: dict | None = None) -> bool:
+        if exercises_skip:
+            return real_hook_skip(payload)
+        return any(
+            path.is_file()
+            for path in real_paths(payload)
+            if path.resolve() not in ignored_skip_paths
+        )
+
+    monkeypatch.setattr("cyt_client.skip.hook_skip_enabled", hook_skip)
+    monkeypatch.setattr("cyt_client.cli.hook_skip_enabled", hook_skip)
+    monkeypatch.setattr("cyt_client.pairing.hook_skip_enabled", hook_skip)
 
 
 @pytest.fixture(autouse=True)

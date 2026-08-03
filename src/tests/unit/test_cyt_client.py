@@ -1063,3 +1063,188 @@ def test_codex_session_end_runs_cleanup_without_http() -> None:
         resolve.return_value = None
         main([])
     cleanup.assert_called_once()
+
+
+def test_hook_skip_enabled_global(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cyt_client.skip import hook_skip_enabled
+
+    config_dir = tmp_path / "config" / "cyt"
+    config_dir.mkdir(parents=True)
+    skip_file = config_dir / "skip.txt"
+    skip_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.skip.GLOBAL_SKIP_PATH", skip_file)
+
+    assert hook_skip_enabled({"hook_event_name": "UserPromptSubmit", "cwd": str(tmp_path)})
+
+
+def test_hook_skip_enabled_agent_project(tmp_path: Path) -> None:
+    from cyt_client.skip import hook_skip_enabled
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / ".cursor" / "cyt").mkdir(parents=True)
+    (workspace / ".cursor" / "cyt" / "skip.txt").write_text("", encoding="utf-8")
+
+    payload = {
+        "hook_event_name": "beforeSubmitPrompt",
+        "cwd": str(workspace),
+        "cursor_version": "1.0",
+    }
+    assert hook_skip_enabled(payload)
+
+
+def test_hook_skip_enabled_agent_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cyt_client.skip import hook_skip_enabled
+
+    home = tmp_path / "home"
+    home.mkdir()
+    cursor_cyt = home / ".cursor" / "cyt"
+    cursor_cyt.mkdir(parents=True)
+    (cursor_cyt / "skip.txt").write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CYT_LAUNCH_AGENT", "cursor")
+
+    payload = {"hook_event_name": "preToolUse", "cwd": str(tmp_path / "project")}
+    assert hook_skip_enabled(payload)
+
+
+def test_cli_skips_hook_work_when_skip_txt_present(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config" / "cyt"
+    config_dir.mkdir(parents=True)
+    (config_dir / "skip.txt").write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.skip.GLOBAL_SKIP_PATH", config_dir / "skip.txt")
+
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "hello",
+        "cwd": str(tmp_path),
+    }
+    with patch("cyt_client.cli.resolve_hook_url") as resolve:
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                main()
+
+    resolve.assert_not_called()
+    post.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_cli_skip_emits_cursor_continue_for_cursor_hooks(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config" / "cyt"
+    config_dir.mkdir(parents=True)
+    (config_dir / "skip.txt").write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.skip.GLOBAL_SKIP_PATH", config_dir / "skip.txt")
+    monkeypatch.setenv("CYT_LAUNCH_AGENT", "cursor")
+
+    payload = {
+        "hook_event_name": "preToolUse",
+        "cwd": str(tmp_path),
+        "tool_name": "Shell",
+    }
+    with patch("cyt_client.cli.resolve_hook_url") as resolve:
+        with patch("cyt_client.cli.post_hook_inject") as post:
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                main()
+
+    resolve.assert_not_called()
+    post.assert_not_called()
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"continue": True}
+
+
+def test_cli_skip_verbose_logs_disabled_hook(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config" / "cyt"
+    config_dir.mkdir(parents=True)
+    (config_dir / "skip.txt").write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.skip.GLOBAL_SKIP_PATH", config_dir / "skip.txt")
+
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "hello", "cwd": str(tmp_path)}
+    with patch("cyt_client.cli.resolve_hook_url"):
+        from cyt_client.cli import main
+
+        with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+            main(["--verbose"])
+
+    captured = capsys.readouterr()
+    assert "skip.txt present; hook disabled" in captured.err
+
+
+def test_repair_pairing_skips_when_skip_txt_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.pairing import repair_pairing
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / ".cursor" / "cyt").mkdir(parents=True)
+    (workspace / ".cursor" / "cyt" / "skip.txt").write_text("", encoding="utf-8")
+
+    mcp_path = tmp_path / "mcp.json"
+    mcp_path.write_text(json.dumps({"mcpServers": {}}) + "\n", encoding="utf-8")
+    hooks_path = tmp_path / "hooks.json"
+    hooks_path.write_text(json.dumps({"version": 1, "hooks": {}}) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": mcp_path})
+    monkeypatch.setattr("cyt_client.pairing._AGENT_HOOK_PATHS", {"cursor": hooks_path})
+    monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
+
+    repair_pairing(
+        {
+            "hook_event_name": "sessionStart",
+            "session_id": "skip-test",
+            "cwd": str(workspace),
+            "cyt_agent": "cursor",
+        },
+        verbose=False,
+        session_start=False,
+    )
+
+    assert json.loads(mcp_path.read_text(encoding="utf-8"))["mcpServers"] == {}
+    assert json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"] == {}
+
+
+def test_repair_pairing_from_mcp_runtime_skips_when_skip_txt_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.pairing import repair_pairing_from_mcp_runtime
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / ".cursor" / "cyt").mkdir(parents=True)
+    (workspace / ".cursor" / "cyt" / "skip.txt").write_text("", encoding="utf-8")
+
+    mcp_path = tmp_path / "mcp.json"
+    mcp_path.write_text(json.dumps({"mcpServers": {}}) + "\n", encoding="utf-8")
+    hooks_path = tmp_path / "hooks.json"
+    hooks_path.write_text(json.dumps({"version": 1, "hooks": {}}) + "\n", encoding="utf-8")
+
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": mcp_path})
+    monkeypatch.setattr("cyt_client.pairing._AGENT_HOOK_PATHS", {"cursor": hooks_path})
+    monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
+    monkeypatch.setattr("cyt_client.pairing.runtime_dev_repo_from_mcp", lambda: None)
+
+    repair_pairing_from_mcp_runtime(agent="cursor", verbose=False)
+
+    assert json.loads(mcp_path.read_text(encoding="utf-8"))["mcpServers"] == {}
+    assert json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"] == {}

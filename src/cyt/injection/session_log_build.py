@@ -293,6 +293,8 @@ def format_entry_fragment(entry: dict[str, Any]) -> str:
             catalog = "cloudflare"
         elif raw_catalog == "definitions":
             catalog = "definitions"
+        elif raw_catalog == "cyt_mcp":
+            catalog = "cyt_mcp"
         else:
             catalog = "executor"
         include_description = "description" in entry
@@ -344,6 +346,14 @@ def build_tool_log_entry(
                 entry["description"] = description
         if server:
             entry["server"] = {k: v for k, v in server.items() if v}
+    elif catalog == "cyt_mcp":
+        schema = tool.get("input_schema") or tool.get("parameters") or {}
+        entry["input_schema"] = deepcopy(schema if isinstance(schema, dict) else {})
+        entry["source"] = "hook_injection"
+        if include_tool_description:
+            description = str(tool.get("description") or "").strip()
+            if description:
+                entry["description"] = description
     else:
         schema = tool.get("input_schema") or tool.get("parameters") or {}
         entry["input_schema"] = deepcopy(schema if isinstance(schema, dict) else {})

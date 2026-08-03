@@ -22,6 +22,28 @@ def test_format_cyt_mcp_source_section_wraps_tools() -> None:
     assert "path" in section
 
 
+def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
+    section = format_cyt_mcp_source_section([])
+    assert "<cyt-mcp>" in section
+    assert "Do not use `cyt-mcp_search`" in section
+
+
+def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
+    tools = [
+        {
+            "name": "codebase-memory-mcp_query_graph",
+            "description": "Query graph",
+            "input_schema": {
+                "type": "object",
+                "properties": {"project": {"type": "string"}},
+            },
+        },
+    ]
+    section = format_cyt_mcp_source_section(tools)
+    assert "not a full server catalog" in section
+    assert "cyt-mcp_search" in section
+
+
 def test_multi_source_orders_cyt_mcp_first() -> None:
     wrapped = format_multi_source_agent_tools(
         {

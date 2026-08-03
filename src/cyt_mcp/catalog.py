@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.search import SEARCH_TOOL_NAME
 
 
 def catalog_payload(cache: RuntimeToolCache, *, agent: str) -> dict[str, Any]:
@@ -13,7 +14,7 @@ def catalog_payload(cache: RuntimeToolCache, *, agent: str) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     for tool in tools:
         name = str(tool.get("name") or "").strip()
-        if not name:
+        if not name or name == SEARCH_TOOL_NAME:
             continue
         schema = tool.get("inputSchema")
         if not isinstance(schema, dict):
