@@ -14,6 +14,7 @@ from cyt.config import (
     skills_enabled,
     tools_hook_sources,
     uses_cloudflare_tool_catalog,
+    uses_cyt_mcp_tool_catalog,
     uses_definitions_tool_catalog,
     uses_executor_tool_catalog,
     uses_mcpc_tool_catalog,
@@ -67,6 +68,25 @@ def _bootstrap_mcpc_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
     return tools
 
 
+def _bootstrap_cyt_mcp_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
+    from cyt.cyt_mcp.cache_scheduler import start_cyt_mcp_cache_scheduler
+    from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog, load_cyt_mcp_catalog_from_disk
+    from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
+
+    if not cyt_mcp_hook_catalog_usable(cfg):
+        load_cyt_mcp_catalog_from_disk(cfg)
+        tools = get_cyt_mcp_catalog(cfg, blocking=False)
+        if tools:
+            start_cyt_mcp_cache_scheduler(cfg)
+        return tools
+    load_cyt_mcp_catalog_from_disk(cfg)
+    tools = get_cyt_mcp_catalog(cfg, blocking=False)
+    if not tools:
+        return get_cyt_mcp_catalog(cfg, blocking=True)
+    start_cyt_mcp_cache_scheduler(cfg)
+    return tools
+
+
 def _bootstrap_cloudflare_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
     from cyt.cloudflare.cache_scheduler import start_cloudflare_cache_scheduler
     from cyt.cloudflare.catalog import get_cloudflare_catalog, load_cloudflare_catalog_from_disk
@@ -89,6 +109,8 @@ def _bootstrap_source_catalog(cfg: dict[str, Any], source: str) -> list[dict[str
         return _bootstrap_executor_catalog(cfg)
     if source == "mcpc":
         return _bootstrap_mcpc_catalog(cfg)
+    if source == "cyt_mcp":
+        return _bootstrap_cyt_mcp_catalog(cfg)
     if source == "cloudflare":
         return _bootstrap_cloudflare_catalog(cfg)
     return None
@@ -102,6 +124,8 @@ def _bootstrap_configured_sources(cfg: dict[str, Any], sources: tuple[str, ...])
             _bootstrap_source_catalog(cfg, "executor")
         elif source == "mcpc" and uses_mcpc_tool_catalog(cfg):
             _bootstrap_source_catalog(cfg, "mcpc")
+        elif source == "cyt_mcp" and uses_cyt_mcp_tool_catalog(cfg):
+            _bootstrap_source_catalog(cfg, "cyt_mcp")
         elif source == "cloudflare" and uses_cloudflare_tool_catalog(cfg):
             _bootstrap_source_catalog(cfg, "cloudflare")
 

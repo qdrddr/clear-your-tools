@@ -7,6 +7,11 @@
             "type": "command",
             "command": "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "CYT_LAUNCH_AGENT=claude cyt-client",
+            "timeout": 60
           }
         ]
       }
@@ -29,6 +34,18 @@
             "type": "command",
             "command": "CYT_LAUNCH_AGENT=claude cyt-client",
             "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CYT_LAUNCH_AGENT=claude cyt-client",
+            "timeout": 30
           }
         ]
       }

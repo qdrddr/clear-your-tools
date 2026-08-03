@@ -10,6 +10,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from cyt_client.agent import infer_harness_agent
 from cyt_client.cursor import (
     format_cursor_continue,
     format_cursor_stdout,
@@ -17,6 +18,7 @@ from cyt_client.cursor import (
     is_session_end_event,
     is_session_start_event,
 )
+from cyt_client.pairing import repair_pairing
 from cyt_client.port import (
     clear_hook_url_cache,
     find_hook_server_port_excluding,
@@ -45,6 +47,13 @@ from cyt_client.sessions import (
     session_id_from_payload,
     session_log_path,
     sessions_dir_for_payload,
+)
+from cyt_client.tool_gate import (
+    format_claude_deny,
+    format_codex_deny,
+    format_cursor_deny,
+    is_pre_tool_event,
+    validate_pre_tool_call,
 )
 from cyt_client.transcript import enrich_hook_payload
 from cyt_client.transport import post_hook_inject
@@ -191,13 +200,32 @@ def _reset_cursor_rules_file_for_session_lifecycle(payload: dict) -> None:
         _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
 
 
+def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
+    allowed, reason = validate_pre_tool_call(payload)
+    if allowed:
+        if cursor_output:
+            print(format_cursor_continue(), flush=True)
+        return
+    agent = infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip()
+    if cursor_output or agent == "cursor":
+        print(format_cursor_deny(reason), flush=True)
+        raise SystemExit(2)
+    if agent == "codex":
+        print(format_codex_deny(reason), flush=True)
+        raise SystemExit(2)
+    print(format_claude_deny(reason), flush=True)
+    raise SystemExit(2)
+
+
 def _handle_session_start(payload: dict, *, cursor_output: bool) -> None:
+    repair_pairing(payload, verbose=_verbose, session_start=True)
     if cursor_output:
         _reset_cursor_rules_file_for_session_lifecycle(payload)
         _emit_cursor_continue()
 
 
 def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
+    repair_pairing(payload, verbose=_verbose, session_start=False)
     if cursor_output:
         _reset_cursor_rules_file_for_session_lifecycle(payload)
 
@@ -275,24 +303,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:
     _emit_cursor_hook_stdout(body)
 
 
-def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
-    if payload is None:
-        if cursor_output:
-            _emit_cursor_continue()
-        return
-
-    if is_session_end_event(payload):
-        _handle_session_end(payload, cursor_output=cursor_output)
-        return
-
-    if is_session_start_event(payload):
-        _handle_session_start(payload, cursor_output=cursor_output)
-        return
-
-    if cursor_output:
-        _handle_cursor_before_submit(raw, payload)
-        return
-
+def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
     if not raw.strip():
         return
 
@@ -314,6 +325,31 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
     _persist_session_log_response(payload, body)
     _write_hook_stdout(body, cursor_output=False)
+
+
+def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
+    if payload is None:
+        if cursor_output:
+            _emit_cursor_continue()
+        return
+
+    if is_pre_tool_event(payload):
+        _handle_pre_tool(payload, cursor_output=cursor_output)
+        return
+
+    if is_session_end_event(payload):
+        _handle_session_end(payload, cursor_output=cursor_output)
+        return
+
+    if is_session_start_event(payload):
+        _handle_session_start(payload, cursor_output=cursor_output)
+        return
+
+    if cursor_output:
+        _handle_cursor_before_submit(raw, payload)
+        return
+
+    _handle_non_cursor_hook(raw, payload)
 
 
 def main(argv: list[str] | None = None) -> None:

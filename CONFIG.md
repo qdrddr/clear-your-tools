@@ -466,7 +466,10 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
 | Key | Values | Default |
 | --- | ------ | ------- |
 | `pruning.tools.inject_via` | `proxy` \| `hook` | `proxy` |
-| `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `mcpc` \| `cloudflare` (scalar or YAML list) | `[mcpc]` |
+| `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `cyt_mcp` \| `mcpc` \| `cloudflare` (scalar or YAML list) | `[cyt_mcp]` |
+| `pruning.tools.hook.cyt_mcp.executable` | CLI on PATH | `cyt-mcp` |
+| `pruning.tools.hook.cyt_mcp.agent` | harness for `cyt-mcp catalog --agent` | `cursor` |
+| `pruning.tools.hook.cyt_mcp.catalog_url` | optional HTTP catalog URL (hook daemon only) | `""` |
 | `pruning.tools.hook.executor_url` | URL | `http://localhost:4789` |
 | `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
 | `pruning.tools.hook.cloudflare_url` | Cloudflare MCP portal URL (base or `/mcp` suffix) | `""` (user must set) |
@@ -479,7 +482,8 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
   mode — `pruning.tools.hook.executor_*` settings are ignored, and the proxy works without Executor
   running or `EXECUTOR_TOKEN` set.
 - **`hook`**: load tool catalogs from one or more sources listed in `tools_from` (definitions file,
-  live executor HTTP API, and/or local `mcpc` CLI). Sources are concatenated into a master snapshot
+  live executor HTTP API, **cyt-mcp aggregator** (`cyt-mcp catalog --json` / HTTP `/catalog`), and/or
+  legacy local `mcpc` CLI). Sources are concatenated into a master snapshot
   (each tool tagged with `cyt_catalog_source`), pruned in parallel bulks, and injected as one
   `<agent-tools>` block with inner `<mcp>`, `<executor>`, and/or `<definitions>` sections. Missing
   catalogs for individual sources are skipped when other sources are usable (configure with

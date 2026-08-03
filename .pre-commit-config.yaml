@@ -449,6 +449,16 @@ repos:
         pass_filenames: false
         language: system
         files: ^(src/cyt_client/.*\.py|scripts/pre-commit-hooks/check_cyt_client_imports\.py)$
+      - id: check-cyt-mcp-imports
+        name: check-cyt-mcp-imports
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && uv run python scripts/pre-commit-hooks/check_cyt_mcp_imports.py',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/cyt_mcp/.*\.py|scripts/pre-commit-hooks/check_cyt_mcp_imports\.py)$
       - id: check-agent-imports
         name: check-agent-imports
         entry: bash scripts/pre-commit-hooks/prek-hook.sh

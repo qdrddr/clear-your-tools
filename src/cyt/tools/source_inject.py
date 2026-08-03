@@ -155,6 +155,37 @@ def format_definitions_source_section(
     return _join_section(prompt, "definitions", body)
 
 
+_CYT_MCP_WORKSPACE_NOTE = (
+    "Definitions of MCP tools for the cyt-mcp server. "
+    "Tool names match the stub MCP tools registered with your agent client."
+)
+
+
+def format_cyt_mcp_source_section(
+    tools: list[dict[str, Any]],
+    *,
+    workspace_paths: list[str] | None = None,
+    include_tool_description: bool = True,
+) -> str:
+    if not tools:
+        return ""
+    item_lines = [
+        line
+        for tool in tools
+        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
+    ]
+    if not item_lines:
+        return ""
+    body = "\n".join(item_lines)
+    prompt = _CYT_MCP_WORKSPACE_NOTE
+    paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    if len(paths) > 1:
+        roots = _format_workspace_roots_block(paths)
+        if roots:
+            prompt = f"{prompt}\n{roots}"
+    return _join_section(prompt, "cyt-mcp", body)
+
+
 def format_multi_source_agent_tools(
     sections: dict[str, str],
     *,
@@ -162,6 +193,7 @@ def format_multi_source_agent_tools(
 ) -> str:
     """Join non-empty source sections inside one ``<agent-tools>`` wrapper."""
     ordered = [
+        sections.get("cyt_mcp", "").strip(),
         sections.get("mcpc", "").strip(),
         sections.get("cloudflare", "").strip(),
         sections.get("executor", "").strip(),
@@ -172,7 +204,7 @@ def format_multi_source_agent_tools(
         return ""
     description = (
         f"{_AGENT_TOOLS_DESCRIPTION_BASE} Multiple tool sources are grouped in "
-        "<mcpc>, <cloudflare>, <executor>, and <definitions> sections."
+        "<mcpc>, <cyt-mcp>, <cloudflare>, <executor>, and <definitions> sections."
     )
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     attrs = [f"description='{_xml_single_quoted_attr(description)}'"]

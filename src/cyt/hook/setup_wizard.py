@@ -19,6 +19,7 @@ from cyt.config import (
     save_user_config,
     skills_enabled,
 )
+from cyt.cyt_mcp.readiness import report_cyt_mcp_hook_readiness
 from cyt.hook.cli_invocation import (
     INSTALLED_CYT_CLIENT_COMMAND,
     INSTALLED_CYT_DAEMON_START_COMMAND,
@@ -1291,6 +1292,7 @@ def run_hook_setup(
     config = load_config(config_path)
     if sys.stdin.isatty():
         config = ensure_hook_inject_via(resolved_config_path, config)
+    report_cyt_mcp_hook_readiness(config)
     report_mcpc_hook_readiness(config)
     report_cloudflare_hook_readiness(config)
     if len(selected_agents) == 1:

@@ -156,7 +156,14 @@ pruning:
     enabled: true # false: skip tool pruning/injection (proxy forwards tools verbatim; hook skips tools)
     hook:
       tools_from:
-        - mcpc # executor | definitions | mcpc — list; cyt_catalog_source tags origin
+        - cyt_mcp # executor | definitions | mcpc | cyt_mcp — list; cyt_catalog_source tags origin
+      cyt_mcp:
+        executable: cyt-mcp
+        agent: cursor
+        catalog_url: ""
+        cache:
+          tools_refresh_seconds: 120
+          disk_flush_seconds: 900
       mcpc:
         executable: mcpc # or ~/.nvm/versions/node/v24.6.0/bin/mcpc
         cache:

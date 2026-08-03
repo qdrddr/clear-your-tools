@@ -53,27 +53,29 @@ out of Cursor and into an MCP aggregator.
 **MCPC** is that aggregator. It hosts your servers; CYT dynamically exposes only the relevant
 subset back to Cursor via project rules.
 
-### Install & Configure
+### Install & Configure (cyt-mcp — recommended)
 
-Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and
-[NVM](https://github.com/nvm-sh/nvm), then
+Install [UV](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```bash
-# 1. Install CYT and MCPC
+uv tool install 'clear-your-tools[cyt-mcp]'
+cyt hook cursor
+```
+
+The wizard migrates backend MCP servers to `~/.config/cyt/mcp/<agent>.json`, writes
+`~/.config/cyt/mcp-aggregator.yaml`, and registers a single **cyt-mcp** entry in `~/.cursor/mcp.json`.
+CYT injects full tool schemas via hooks while the agent sees minimal MCP stubs from cyt-mcp.
+
+**Cursor MCP allowlist:** hooks can **deny** bad tool calls but returning `allow` does not bypass
+Cursor's separate MCP approval UI. Add the `cyt-mcp` server (or individual stub tool names) under
+**Settings → Tools & MCP → allowlist** to avoid per-call approval prompts.
+
+**Legacy MCPC path** (optional): install `@apify/mcpc` and set `pruning.tools.hook.tools_from: [mcpc]`.
+
+```bash
 uv tool install 'clear-your-tools[all]'
 npm install -g @apify/mcpc
-
-# 2. Add the hooks
 cyt hook cursor
-
-# 3. Backup your Cursor MCP config, then clear it
-cp ~/.cursor/mcp.json ~/.mcpc/cursor.json
-jq '. + {mcpServers: {}}' ~/.mcpc/cursor.json > ~/.cursor/mcp.json
-
-# 4. Re-connect servers via MCPC instead
-mcpc connect ~/.mcpc/cursor.json:servername @servername
-# Or if all are STDIO:
-mcpc connect ~/.mcpc/cursor.json --stdio
 ```
 
 CYT will now create and update `.cursor/rules/cyt-indexer.mdc` automatically as you submit prompts,

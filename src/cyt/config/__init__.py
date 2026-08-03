@@ -124,10 +124,10 @@ DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
 DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
 DEFAULT_TOOLS_ENABLED: bool = True
 DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "mcpc"
-DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST: list[str] = ["mcpc"]
+DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "cyt_mcp"
+DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST: list[str] = ["cyt_mcp"]
 VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset(
-    {"executor", "definitions", "mcpc", "cloudflare"},
+    {"executor", "definitions", "mcpc", "cloudflare", "cyt_mcp"},
 )
 DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
 DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
@@ -161,13 +161,18 @@ DEFAULT_MCPC_SKILLS_OWN_ENABLED: bool = True
 DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED: bool = True
 DEFAULT_MCPC_RESOURCES_ENABLED: bool = True
 DEFAULT_MCPC_RESOURCES_MIME_TYPES: list[str] = ["text/markdown"]
+DEFAULT_CYT_MCP_EXECUTABLE: str = "cyt-mcp"
+DEFAULT_CYT_MCP_AGENT: str = "cursor"
+DEFAULT_CYT_MCP_CATALOG_URL: str = ""
+DEFAULT_CYT_MCP_CACHE_TOOLS_REFRESH_SECONDS: float = 120.0
+DEFAULT_CYT_MCP_CACHE_DISK_FLUSH_SECONDS: float = 900.0
 DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
 DEFAULT_SELECTOR_BULK_MAX_TOKENS: int = 32000
 DEFAULT_MAX_PRUNE_BATCH_WORKERS: int = 5
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
-ToolsHookSource = Literal["executor", "definitions", "mcpc", "cloudflare"]
+ToolsHookSource = Literal["executor", "definitions", "mcpc", "cloudflare", "cyt_mcp"]
 
 
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -232,6 +237,15 @@ _DEFAULTS: dict[str, Any] = {
                     "resources": {
                         "enabled": DEFAULT_MCPC_RESOURCES_ENABLED,
                         "mimeType": list(DEFAULT_MCPC_RESOURCES_MIME_TYPES),
+                    },
+                },
+                "cyt_mcp": {
+                    "executable": DEFAULT_CYT_MCP_EXECUTABLE,
+                    "agent": DEFAULT_CYT_MCP_AGENT,
+                    "catalog_url": DEFAULT_CYT_MCP_CATALOG_URL,
+                    "cache": {
+                        "tools_refresh_seconds": DEFAULT_CYT_MCP_CACHE_TOOLS_REFRESH_SECONDS,
+                        "disk_flush_seconds": DEFAULT_CYT_MCP_CACHE_DISK_FLUSH_SECONDS,
                     },
                 },
                 "executor_cache": {
@@ -1175,6 +1189,8 @@ def _normalize_tools_hook_source(value: str) -> ToolsHookSource | None:
         return "definitions"
     if mode == "mcpc":
         return "mcpc"
+    if mode in {"cyt_mcp", "cyt-mcp"}:
+        return "cyt_mcp"
     if mode in {"executor", "client"}:
         return "executor"
     if mode == "cloudflare":
@@ -1378,6 +1394,53 @@ def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
     return float(cache.get("skills_refresh_seconds") or DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS)
 
 
+def _tools_hook_cyt_mcp_settings(config: dict[str, Any]) -> dict[str, Any]:
+    hook = _tools_hook_settings(config)
+    cyt_mcp = hook.get("cyt_mcp")
+    if isinstance(cyt_mcp, dict):
+        return cyt_mcp
+    return {}
+
+
+def tools_hook_cyt_mcp_executable(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
+        "executable",
+        DEFAULT_CYT_MCP_EXECUTABLE,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_CYT_MCP_EXECUTABLE
+
+
+def tools_hook_cyt_mcp_agent(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
+        "agent",
+        DEFAULT_CYT_MCP_AGENT,
+    )
+    text = str(value).strip()
+    return text or DEFAULT_CYT_MCP_AGENT
+
+
+def tools_hook_cyt_mcp_catalog_url(config: dict[str, Any] | None = None) -> str:
+    cfg = config or load_config()
+    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
+        "catalog_url",
+        DEFAULT_CYT_MCP_CATALOG_URL,
+    )
+    return str(value).strip().rstrip("/")
+
+
+def tools_hook_cyt_mcp_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = config or load_config()
+    cyt_mcp = _tools_hook_cyt_mcp_settings(_merged_config(cfg))
+    cache = cyt_mcp.get("cache")
+    if not isinstance(cache, dict):
+        cache = {}
+    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["cyt_mcp"]["cache"]
+    return deep_merge(defaults, cache)
+
+
 def connection_health_flapping_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Merged ``pruning.tools.hook.connection_health.flapping`` settings."""
     cfg = config or load_config()
@@ -1421,6 +1484,8 @@ def _tools_hook_source_usable(source: ToolsHookSource, config: dict[str, Any]) -
     if source == "executor":
         return tools_hook_executor_configured(config)
     if source == "mcpc":
+        return True
+    if source == "cyt_mcp":
         return True
     if source == "cloudflare":
         return tools_hook_cloudflare_configured(config)
@@ -1468,6 +1533,15 @@ def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return (
         tools_enabled(cfg) and tools_inject_via(cfg) == "hook" and "mcpc" in tools_hook_sources(cfg)
+    )
+
+
+def uses_cyt_mcp_tool_catalog(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return (
+        tools_enabled(cfg)
+        and tools_inject_via(cfg) == "hook"
+        and "cyt_mcp" in tools_hook_sources(cfg)
     )
 
 

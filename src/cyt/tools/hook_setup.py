@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -22,19 +23,21 @@ from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
-_TOOLS_FROM_CHOICES = ("mcpc", "cloudflare", "executor", "definitions")
+_TOOLS_FROM_CHOICES = ("cyt_mcp", "mcpc", "cloudflare", "executor", "definitions")
 
 
 def _hook_from_default(current_from: str, *, context: ToolsSetupContext) -> str:
     if context == "hook":
-        return "mcpc"
+        return "cyt_mcp"
     if current_from in {"client", "executor"}:
         return "executor"
+    if current_from == "cyt_mcp":
+        return "cyt_mcp"
     if current_from == "mcpc":
         return "mcpc"
     if current_from in _TOOLS_FROM_CHOICES:
         return current_from
-    return "mcpc"
+    return "cyt_mcp"
 
 
 def _parse_selected_hook_sources(raw_sources: str, from_default: str) -> list[str]:
@@ -47,7 +50,7 @@ def _parse_selected_hook_sources(raw_sources: str, from_default: str) -> list[st
             selected.append(choice)
     if selected:
         return selected
-    return [from_default if from_default in _TOOLS_FROM_CHOICES else "mcpc"]
+    return [from_default if from_default in _TOOLS_FROM_CHOICES else "cyt_mcp"]
 
 
 def _prompt_hook_source_paths(
@@ -167,13 +170,19 @@ def prompt_tools_hook_config(
     if active_inject == "hook":
         print(
             "Configure tool catalog sources "
-            "(comma-separated: mcpc, cloudflare, executor, definitions).",
+            "(comma-separated: cyt_mcp, mcpc, cloudflare, executor, definitions).",
         )
         raw_sources = _prompt(
             "Tool catalog sources",
             ",".join(tools_hook_sources(existing) or [from_default]),
         )
         selected = _parse_selected_hook_sources(raw_sources, from_default)
+        if "cyt_mcp" in selected:
+            from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent
+
+            launch_agent = os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+            if _prompt_yes_no("Migrate agent MCP config to cyt-mcp aggregator?", default_yes=True):
+                setup_cyt_mcp_for_agent(launch_agent)
         tools_from = selected
         executor_default, definitions_default, cloudflare_default = _prompt_hook_source_paths(
             selected,
@@ -211,6 +220,11 @@ def ensure_tools_hook_file_interactive(
     prompt_target = "Tools hook sources are not fully configured"
     if len(sources) == 1 and sources[0] == "executor":
         prompt_target = "Executor URL is not configured"
+    elif len(sources) == 1 and sources[0] == "cyt_mcp":
+        from cyt.cyt_mcp.readiness import report_cyt_mcp_hook_readiness
+
+        report_cyt_mcp_hook_readiness(config)
+        return config
     elif len(sources) == 1 and sources[0] == "mcpc":
         from cyt.mcpc.readiness import report_mcpc_hook_readiness
 

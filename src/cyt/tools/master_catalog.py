@@ -14,6 +14,7 @@ from cyt.config import (
     resolved_tools_hook_file,
     tools_hook_sources,
     uses_cloudflare_tool_catalog,
+    uses_cyt_mcp_tool_catalog,
     uses_definitions_tool_catalog,
     uses_executor_tool_catalog,
     uses_mcpc_tool_catalog,
@@ -21,7 +22,7 @@ from cyt.config import (
 
 logger = logging.getLogger(__name__)
 
-CatalogSource = str  # "definitions" | "executor" | "mcpc" | "cloudflare"
+CatalogSource = str  # "definitions" | "executor" | "mcpc" | "cloudflare" | "cyt_mcp"
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class _MasterCacheKey:
     sources: tuple[str, ...]
     executor_slug: str
     mcpc_slug: str
+    cyt_mcp_slug: str
     cloudflare_slug: str
     definitions_path: str
 
@@ -83,6 +85,14 @@ def _mcpc_slug(config: dict[str, Any]) -> str:
     return mcpc_catalog_slug(config)
 
 
+def _cyt_mcp_slug(config: dict[str, Any]) -> str:
+    if not uses_cyt_mcp_tool_catalog(config):
+        return ""
+    from cyt.cyt_mcp.catalog import cyt_mcp_catalog_slug
+
+    return cyt_mcp_catalog_slug(config)
+
+
 def _cloudflare_slug(config: dict[str, Any]) -> str:
     if not uses_cloudflare_tool_catalog(config):
         return ""
@@ -97,6 +107,7 @@ def _cache_key_for_config(config: dict[str, Any]) -> _MasterCacheKey:
         sources=tools_hook_sources(cfg),
         executor_slug=_executor_slug(cfg),
         mcpc_slug=_mcpc_slug(cfg),
+        cyt_mcp_slug=_cyt_mcp_slug(cfg),
         cloudflare_slug=_cloudflare_slug(cfg),
         definitions_path=str(resolved_tools_hook_file(cfg).expanduser()),
     )
@@ -125,6 +136,10 @@ def _current_source_fingerprints(config: dict[str, Any]) -> dict[str, str]:
         from cyt.mcpc.catalog import mcpc_catalog_fingerprint
 
         fps["mcpc"] = mcpc_catalog_fingerprint(config)
+    if uses_cyt_mcp_tool_catalog(config):
+        from cyt.cyt_mcp.catalog import cyt_mcp_catalog_fingerprint
+
+        fps["cyt_mcp"] = cyt_mcp_catalog_fingerprint(config)
     if uses_cloudflare_tool_catalog(config):
         from cyt.cloudflare.catalog import cloudflare_catalog_fingerprint
 
@@ -184,6 +199,10 @@ def _load_source_tools(
         from cyt.mcpc.catalog import get_mcpc_catalog
 
         return get_mcpc_catalog(config, blocking=blocking) or []
+    if source == "cyt_mcp":
+        from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog
+
+        return get_cyt_mcp_catalog(config, blocking=blocking) or []
     if source == "cloudflare":
         from cyt.cloudflare.catalog import get_cloudflare_catalog
 
@@ -207,6 +226,10 @@ def _hydrate_master_from_disk_if_empty(config: dict[str, Any], state: _MasterCat
         from cyt.mcpc.catalog import load_mcpc_catalog_from_disk
 
         load_mcpc_catalog_from_disk(config)
+    if uses_cyt_mcp_tool_catalog(config):
+        from cyt.cyt_mcp.catalog import load_cyt_mcp_catalog_from_disk
+
+        load_cyt_mcp_catalog_from_disk(config)
     if uses_cloudflare_tool_catalog(config):
         from cyt.cloudflare.catalog import load_cloudflare_catalog_from_disk
 

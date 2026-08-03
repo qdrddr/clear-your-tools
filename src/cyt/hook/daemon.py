@@ -19,6 +19,7 @@ from cyt.config import (
     required_tools_hook_env_var_names,
     resolve_reverse_port,
 )
+from cyt.cyt_mcp.readiness import report_cyt_mcp_hook_readiness
 from cyt.hook.port import (
     fetch_cyt_health,
     hook_url_for_port,
@@ -300,6 +301,7 @@ def daemon_start(
         verbose = False
         _configure_unattended_quiet()
     config = load_config(config_path)
+    report_cyt_mcp_hook_readiness(config, unattended=unattended)
     report_mcpc_hook_readiness(config, unattended=unattended)
     report_cloudflare_hook_readiness(config, unattended=unattended)
     base_port = resolve_reverse_port(config, None)
@@ -628,6 +630,7 @@ def stop_tracked_proxies(*, verbose: bool = False) -> bool:
 def daemon_status(*, config_path: Path | None = None) -> None:
     """Print hook daemon status to stderr."""
     config = load_config(config_path)
+    report_cyt_mcp_hook_readiness(config)
     report_mcpc_hook_readiness(config)
     report_cloudflare_hook_readiness(config)
     if _needs_credential_injection(config):

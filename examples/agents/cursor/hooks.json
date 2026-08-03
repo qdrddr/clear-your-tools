@@ -22,6 +22,18 @@
         "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
         "timeout": 60
       }
+    ],
+    "preToolUse": [
+      {
+        "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
+        "timeout": 60
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
+        "timeout": 60
+      }
     ]
   }
 }

@@ -51,8 +51,15 @@ proxy = [
 pruners = [
     "litellm==1.94.0",
 ]
+cyt-mcp = [
+    "fastmcp==3.4.5",
+    "httpx==0.28.1",
+    "uvicorn==0.48.0",
+    "starlette==1.3.1",
+    "pyyaml==6.0.3",
+]
 all = [
-    "clear-your-tools[agents,proxy,pruners]",
+    "clear-your-tools[agents,proxy,pruners,cyt-mcp]",
 ]
 
 [project.scripts]
@@ -61,19 +68,21 @@ cyt-client = "cyt_client.cli:main"
 cyt-rerank = "cyt.pruners.rerank:main"
 cyt-llm-prune = "cyt.pruners.llm:main"
 cyt-bm25-prune = "cyt.pruners.bm25:main"
+cyt-mcp = "cyt_mcp.cli:main"
 
 [build-system]
 requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cyt", "src/cyt_core", "src/cyt_client"]
+packages = ["src/cyt", "src/cyt_core", "src/cyt_client", "src/cyt_mcp"]
 
 [tool.hatch.build.targets.sdist]
 only-include = [
   "/src/cyt",
   "/src/cyt_core",
   "/src/cyt_client",
+  "/src/cyt_mcp",
   "/pyproject.toml",
   "/README.md",
   "/LICENSE",
@@ -142,6 +151,7 @@ test = [
     "h2==4.3.0",
     "uuid7==0.1.0",
     "litellm==1.94.0",
+    "fastmcp==3.4.5",
     "pytest-bdd==8.1.0",
     "gherkin-official==40.0.0",
 ]
@@ -248,6 +258,7 @@ module = [
     "yaml.*",
     "pandas.*",
     "litellm.*",
+    "fastmcp.*",
     "google.*",
     "uuid_extensions.*",
     "cyt_indexer.*",

@@ -13,6 +13,7 @@ from cyt.config import (
     uses_executor_tool_catalog,
     uses_mcpc_tool_catalog,
 )
+from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
 from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.mcpc_pre_exposed import filter_pre_exposed_mcpc_tools
 from cyt.injection.pre_exposed import filter_pre_exposed_tools
@@ -41,6 +42,7 @@ from cyt.tools.mcpc_inject import format_mcpc_agent_tools
 from cyt.tools.mcpc_prune import split_mcpc_prune_result
 from cyt.tools.source_inject import (
     format_cloudflare_source_section,
+    format_cyt_mcp_source_section,
     format_definitions_source_section,
     format_executor_source_section,
     format_mcp_source_section,
@@ -54,6 +56,8 @@ logger = logging.getLogger(__name__)
 def _catalog_kind_for_source_id(source_id: str) -> CatalogKind:
     if source_id == "mcpc":
         return "mcpc"
+    if source_id == "cyt_mcp":
+        return "cyt_mcp"
     if source_id == "cloudflare":
         return "cloudflare"
     if source_id == "definitions":
@@ -101,6 +105,7 @@ def _partition_tools_by_source(
     if not any(tool.get("cyt_catalog_source") for tool in tools):
         return None
     return {
+        "cyt_mcp": [tool for tool in tools if tool.get("cyt_catalog_source") == "cyt_mcp"],
         "mcpc": [tool for tool in tools if tool.get("cyt_catalog_source") == "mcpc"],
         "cloudflare": [tool for tool in tools if tool.get("cyt_catalog_source") == "cloudflare"],
         "executor": [tool for tool in tools if tool.get("cyt_catalog_source") == "executor"],
@@ -165,6 +170,8 @@ def _format_gated_source_section(
             session_text=combined_text,
             surviving_instruction_sessions=surviving_instruction_sessions,
         )
+    if source_id == "cyt_mcp":
+        return format_cyt_mcp_source_section(gated, workspace_paths=workspace_paths)
     if source_id == "cloudflare":
         return format_cloudflare_source_section(
             gated,
@@ -370,13 +377,35 @@ def _hook_tools_preflight_outcome(
         if debug:
             return "skipped_missing_tools_catalog", details, ""
         return "skipped_missing_tools_catalog", {}, ""
-    return _skipped_cloudflare_unavailable_outcome(
-        config,
-        debug=debug,
-    ) or _skipped_mcpc_unavailable_outcome(
-        config,
-        debug=debug,
+    return (
+        _skipped_cloudflare_unavailable_outcome(
+            config,
+            debug=debug,
+        )
+        or _skipped_cyt_mcp_unavailable_outcome(
+            config,
+            debug=debug,
+        )
+        or _skipped_mcpc_unavailable_outcome(
+            config,
+            debug=debug,
+        )
     )
+
+
+def _skipped_cyt_mcp_unavailable_outcome(
+    config: dict[str, Any],
+    *,
+    debug: bool,
+) -> tuple[str, dict[str, Any], str] | None:
+    sources = tools_hook_sources(config)
+    if len(sources) != 1 or sources[0] != "cyt_mcp":
+        return None
+    if cyt_mcp_hook_catalog_usable(config):
+        return None
+    if debug:
+        return "skipped_cyt_mcp_unavailable", {"catalog_tool_count": 0}, ""
+    return "skipped_cyt_mcp_unavailable", {}, ""
 
 
 def handle_user_prompt_tools(
