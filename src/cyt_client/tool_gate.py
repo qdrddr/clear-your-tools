@@ -16,7 +16,7 @@ _PRE_TOOL_EVENTS = frozenset(
     },
 )
 
-_CYT_MCP_SEARCH_TOOL = "cyt-mcp_search"
+_CYT_MCP_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 _CYT_MCP_SERVER_NAMES = frozenset({"cyt-mcp", "cyt_mcp"})
 
 
@@ -68,8 +68,8 @@ def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
         _, server, tool = name.split("__", 2)
         if server and tool:
             return f"{server}_{tool}"
-    if name == "search":
-        return _CYT_MCP_SEARCH_TOOL
+    if name == "get-tool-definitions":
+        return _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
     return name
 
 
@@ -118,8 +118,22 @@ def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, A
     return normalized or None, _extract_tool_args(payload)
 
 
+def is_cyt_mcp_get_tool_definitions_tool(tool_name: str, *, agent: str | None = None) -> bool:
+    return normalize_mcp_tool_name(tool_name, agent=agent) == _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL
+
+
 def is_cyt_mcp_search_tool(tool_name: str, *, agent: str | None = None) -> bool:
-    return normalize_mcp_tool_name(tool_name, agent=agent) == _CYT_MCP_SEARCH_TOOL
+    """Deprecated alias for :func:`is_cyt_mcp_get_tool_definitions_tool`."""
+    return is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent)
+
+
+def _validate_get_tool_definitions_args(args: dict[str, Any] | None) -> str | None:
+    if args is None:
+        return "tool_name is required"
+    nested = args.get("tool_name") or args.get("toolName")
+    if not isinstance(nested, str) or not nested.strip():
+        return "tool_name is required"
+    return None
 
 
 def _raw_routes_through_cyt_mcp_server(raw_name: str) -> bool:
@@ -167,7 +181,7 @@ def is_cyt_mcp_gated_tool(
     agent: str | None = None,
 ) -> bool:
     """Return True when pre-tool validation should apply cyt-mcp session rules."""
-    if is_cyt_mcp_search_tool(tool_name, agent=agent):
+    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent):
         return True
     if "-mcp_" in tool_name:
         return True
@@ -224,19 +238,11 @@ def _property_violation(schema: dict[str, Any], args: dict[str, Any]) -> str | N
     return None
 
 
-def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
-    """Return (allow, reason). Only cyt-mcp tools are gated against the session log."""
-    tool_name, args = _extract_tool_call(payload)
-    if not tool_name:
-        return True, ""
-
-    agent = infer_harness_agent(payload)
-    if not is_cyt_mcp_gated_tool(tool_name, payload, agent=agent):
-        return True, ""
-
-    if is_cyt_mcp_search_tool(tool_name, agent=agent):
-        return True, ""
-
+def _validate_cyt_mcp_session_tool(
+    tool_name: str,
+    args: dict[str, Any] | None,
+    payload: dict[str, Any],
+) -> tuple[bool, str]:
     path = session_log_path(payload)
     if path is None or not path.is_file():
         return False, f"tool {tool_name!r} was not injected in this session"
@@ -259,6 +265,25 @@ def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
     if enum_error:
         return False, enum_error
     return True, ""
+
+
+def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
+    """Return (allow, reason). Only cyt-mcp tools are gated against the session log."""
+    tool_name, args = _extract_tool_call(payload)
+    if not tool_name:
+        return True, ""
+
+    agent = infer_harness_agent(payload)
+    if not is_cyt_mcp_gated_tool(tool_name, payload, agent=agent):
+        return True, ""
+
+    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent):
+        error = _validate_get_tool_definitions_args(args)
+        if error:
+            return False, error
+        return True, ""
+
+    return _validate_cyt_mcp_session_tool(tool_name, args, payload)
 
 
 def format_cursor_deny(reason: str) -> str:

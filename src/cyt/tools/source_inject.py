@@ -31,13 +31,13 @@ _CLOUDFLARE_WORKSPACE_NOTE = (
 _CYT_MCP_WORKSPACE_NOTE = (
     "Listed below are the pre-filtered tool definitions and relevant optional properties for this request. "
     "Use the listed definitions directly without retrieving the full tool definitions. "
-    "Do not use `search` unless one of the following is true:\n"
+    "Do not use `get-tool-definitions` unless one of the following is true:\n"
     "1. The task requires a tool that is not included in the pre-filtered definitions below.\n"
     "2. The task requires optional properties or complete tool definitions that were omitted by the pruning pipeline.\n"
 )
 
 _CYT_MCP_EMPTY_NOTE = (
-    "No relevant cyt-mcp tools matched this prompt. Do not use `cyt-mcp_search` — "
+    "No relevant cyt-mcp tools matched this prompt. Do not use `get-tool-definitions` — "
     "there is nothing to look up. This block is kept stable for prompt-prefix cache."
 )
 

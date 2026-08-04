@@ -1062,7 +1062,7 @@ def test_upsert_cursor_hooks_removes_legacy_mcp_tool_hook_events(tmp_path: Path)
                     "afterMCPExecution": [
                         {
                             "command": "cyt-client",
-                            "matcher": "cyt-mcp_search|mcp__cyt-mcp__search",
+                            "matcher": "cyt-mcp_get-tool-definitions|mcp__cyt-mcp__get-tool-definitions",
                             "timeout": 60,
                         },
                     ],

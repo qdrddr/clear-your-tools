@@ -27,7 +27,7 @@ def _stub_from_tool(tool: Tool, *, include_description: bool) -> Tool:
 
 
 class StubListTransform(Transform):
-    """Expose minimal backend stubs and full cyt-mcp_search to MCP clients."""
+    """Expose minimal backend stubs and full get-tool-definitions to MCP clients."""
 
     def __init__(self, cache: RuntimeToolCache, *, include_description: bool = False) -> None:
         self._cache = cache

@@ -54,7 +54,7 @@ CURSOR_POST_TOOL_EVENT = "postToolUse"
 # Legacy Cursor MCP-only hook events removed in favor of preToolUse/postToolUse.
 _LEGACY_CURSOR_TOOL_HOOK_EVENTS = ("beforeMCPExecution", "afterMCPExecution")
 POST_TOOL_USE_EVENT = "PostToolUse"
-POST_TOOL_USE_MATCHER = "mcp__cyt-mcp__search"
+POST_TOOL_USE_MATCHER = "mcp__cyt-mcp__get-tool-definitions"
 HookAgentName = Literal["claude", "codex", "cursor"]
 HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60

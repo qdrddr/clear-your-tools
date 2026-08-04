@@ -55,29 +55,41 @@ Feature: cyt-mcp cyt-client gate and pairing
     When cyt-client handles UserPromptSubmit
     Then cursor mcp.json should not be modified
 
-  Scenario Outline: cyt-mcp_search normalizes across agents
+  Scenario Outline: get-tool-definitions normalizes across agents
     Given agent <agent>
     When MCP tool name <raw_name> is normalized
-    Then normalized name should be cyt-mcp_search
+    Then normalized name should be cyt-mcp_get-tool-definitions
 
     Examples:
-      | agent  | raw_name             |
-      | codex  | mcp__cyt-mcp__search |
-      | cursor | MCP:search           |
-      | cursor | MCP:cyt-mcp_search   |
-      | claude | cyt-mcp_search       |
+      | agent  | raw_name                                  |
+      | codex  | mcp__cyt-mcp__get-tool-definitions        |
+      | cursor | MCP:get-tool-definitions                  |
+      | cursor | MCP:cyt-mcp_get-tool-definitions          |
+      | claude | cyt-mcp_get-tool-definitions              |
 
-  Scenario: Pre-tool gate always allows cyt-mcp_search without session log file
+  Scenario: Pre-tool gate allows get-tool-definitions with tool_name and no session log
     Given no session log file
-    And a preToolUse payload calling cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    And a preToolUse payload calling get-tool-definitions with tool_name codebase-memory-mcp_search_graph
     When pre-tool validation runs
     Then pre-tool validation should allow the call
 
-  Scenario: Pre-tool gate always allows cyt-mcp_search with empty session log
+  Scenario: Pre-tool gate allows get-tool-definitions with tool_name and empty session log
     Given an empty session log
-    And a preToolUse payload calling cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    And a preToolUse payload calling get-tool-definitions with tool_name codebase-memory-mcp_search_graph
     When pre-tool validation runs
     Then pre-tool validation should allow the call
+
+  Scenario: Pre-tool gate denies get-tool-definitions without tool_name
+    Given no session log file
+    And a preToolUse payload calling get-tool-definitions without tool_name
+    When pre-tool validation runs
+    Then pre-tool validation should deny the call
+
+  Scenario: Pre-tool gate denies get-tool-definitions with empty tool_name
+    Given no session log file
+    And a preToolUse payload calling get-tool-definitions with empty tool_name
+    When pre-tool validation runs
+    Then pre-tool validation should deny the call
 
   Scenario: Pre-tool gate denies cyt-mcp backend when no session log file
     Given no session log file
@@ -97,8 +109,8 @@ Feature: cyt-mcp cyt-client gate and pairing
     When pre-tool validation runs
     Then pre-tool validation should deny the call
 
-  Scenario: search-resolved tool entry unlocks tool gate
-    Given a session log with only a search-resolved cyt_mcp tool entry
+  Scenario: get-tool-definitions-resolved tool entry unlocks tool gate
+    Given a session log with only a get-tool-definitions-resolved cyt_mcp tool entry
     And a preToolUse payload calling codebase-memory-mcp_search_graph
     When pre-tool validation runs
     Then pre-tool validation should allow the call
@@ -109,15 +121,15 @@ Feature: cyt-mcp cyt-client gate and pairing
     When pre-tool validation runs
     Then pre-tool validation should deny the call
 
-  Scenario Outline: post-tool hook persists cyt-mcp_search result as full tool entry
+  Scenario Outline: post-tool hook persists get-tool-definitions result as full tool entry
     Given agent <agent>
     And an empty session log
-    And a <hook_event> payload for cyt-mcp_search with tool_name codebase-memory-mcp_search_graph
+    And a <hook_event> payload for get-tool-definitions with tool_name codebase-memory-mcp_search_graph
     When cyt-client handles post-tool capture
     Then session log should contain a tool entry for codebase-memory-mcp_search_graph
     And tool entry catalog should be cyt_mcp
     And tool entry full should be true
-    And tool entry source should be cyt-mcp_search
+    And tool entry source should be cyt-mcp_get-tool-definitions
 
     Examples:
       | agent  | hook_event        |

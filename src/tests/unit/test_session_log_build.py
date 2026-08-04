@@ -173,7 +173,7 @@ def test_search_persisted_tool_entry_round_trip() -> None:
         "outputSchema": {"type": "object"},
     }
     entry = build_cyt_mcp_tool_entry_from_search("codebase-memory-mcp_search_graph", definition)
-    assert entry["source"] == "cyt-mcp_search"
+    assert entry["source"] == "cyt-mcp_get-tool-definitions"
     assert entry["full"] is True
     fragment = format_entry_fragment(entry)
     assert "codebase-memory-mcp_search_graph" in fragment

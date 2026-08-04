@@ -299,20 +299,45 @@ def given_empty_session_log(gherkin_context: GherkinContext, tmp_path: Path) -> 
     }
 
 
+_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
+
+
 @given(
-    "a preToolUse payload calling cyt-mcp_search with tool_name codebase-memory-mcp_search_graph",
+    "a preToolUse payload calling get-tool-definitions with tool_name codebase-memory-mcp_search_graph",
 )
-def given_search_tool_payload(gherkin_context: GherkinContext) -> None:
+def given_get_tool_definitions_payload(gherkin_context: GherkinContext) -> None:
     gherkin_context.payload["hook_payload"] = {
         "hook_event_name": "preToolUse",
         "session_id": gherkin_context.payload["session_id"],
-        "tool_name": "cyt-mcp_search",
+        "tool_name": _GET_TOOL_DEFINITIONS_TOOL,
         "tool_input": {"tool_name": "codebase-memory-mcp_search_graph"},
     }
 
 
-@given("a session log with only a search-resolved cyt_mcp tool entry")
-def given_search_resolved_session(gherkin_context: GherkinContext, tmp_path: Path) -> None:
+@given("a preToolUse payload calling get-tool-definitions without tool_name")
+def given_get_tool_definitions_without_tool_name(gherkin_context: GherkinContext) -> None:
+    gherkin_context.payload["hook_payload"] = {
+        "hook_event_name": "preToolUse",
+        "session_id": gherkin_context.payload.get("session_id", "session-1"),
+        "tool_name": _GET_TOOL_DEFINITIONS_TOOL,
+    }
+
+
+@given("a preToolUse payload calling get-tool-definitions with empty tool_name")
+def given_get_tool_definitions_empty_tool_name(gherkin_context: GherkinContext) -> None:
+    gherkin_context.payload["hook_payload"] = {
+        "hook_event_name": "preToolUse",
+        "session_id": gherkin_context.payload.get("session_id", "session-1"),
+        "tool_name": _GET_TOOL_DEFINITIONS_TOOL,
+        "tool_input": {"tool_name": ""},
+    }
+
+
+@given("a session log with only a get-tool-definitions-resolved cyt_mcp tool entry")
+def given_get_tool_definitions_resolved_session(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+) -> None:
     log_path = tmp_path / "session.jsonl"
     _write_session_log(
         log_path,
@@ -323,7 +348,7 @@ def given_search_resolved_session(gherkin_context: GherkinContext, tmp_path: Pat
                 "name": "codebase-memory-mcp_search_graph",
                 "catalog": "cyt_mcp",
                 "full": True,
-                "source": "cyt-mcp_search",
+                "source": "cyt-mcp_get-tool-definitions",
                 "input_schema": {
                     "type": "object",
                     "properties": {"project": {"type": "string"}},
@@ -357,7 +382,7 @@ def given_backend_query_graph_payload(gherkin_context: GherkinContext) -> None:
     }
 
 
-@given(parsers.parse("a {hook_event} payload for cyt-mcp_search with tool_name {tool_name}"))
+@given(parsers.parse("a {hook_event} payload for get-tool-definitions with tool_name {tool_name}"))
 def given_post_tool_payload(
     hook_event: str,
     tool_name: str,
@@ -375,7 +400,7 @@ def given_post_tool_payload(
     gherkin_context.payload["hook_payload"] = {
         "hook_event_name": hook_event,
         "session_id": gherkin_context.payload["session_id"],
-        "tool_name": "cyt-mcp_search",
+        "tool_name": _GET_TOOL_DEFINITIONS_TOOL,
         "tool_input": {"tool_name": tool_name},
         "tool_result": json.dumps(definition),
     }
@@ -415,9 +440,9 @@ def then_tool_full(gherkin_context: GherkinContext) -> None:
     assert gherkin_context.payload["session_entries"]["full"] is True
 
 
-@then("tool entry source should be cyt-mcp_search")
-def then_tool_source_search(gherkin_context: GherkinContext) -> None:
-    assert gherkin_context.payload["session_entries"]["source"] == "cyt-mcp_search"
+@then("tool entry source should be cyt-mcp_get-tool-definitions")
+def then_tool_source_get_tool_definitions(gherkin_context: GherkinContext) -> None:
+    assert gherkin_context.payload["session_entries"]["source"] == "cyt-mcp_get-tool-definitions"
 
 
 @given("a beforeSubmitPrompt payload with prompt and transcript")

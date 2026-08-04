@@ -29,7 +29,7 @@ def test_extract_cursor_post_tool_payload() -> None:
     }
     payload = {
         "hook_event_name": "postToolUse",
-        "tool_name": "MCP:cyt-mcp_search",
+        "tool_name": "MCP:cyt-mcp_get-tool-definitions",
         "tool_input": {"tool_name": "codebase-memory-mcp_search_graph"},
         "tool_output": json.dumps(definition),
     }
@@ -47,7 +47,7 @@ def test_build_tool_entry_from_search() -> None:
     entry = build_cyt_mcp_tool_entry_from_search("codebase-memory-mcp_search_graph", definition)
     assert entry["kind"] == "tool"
     assert entry["catalog"] == "cyt_mcp"
-    assert entry["source"] == "cyt-mcp_search"
+    assert entry["source"] == "cyt-mcp_get-tool-definitions"
     assert entry["full"] is True
     assert entry["input_schema"] == definition["inputSchema"]
 
@@ -61,7 +61,7 @@ def test_persist_search_result_dedupes(tmp_path: Path, monkeypatch: pytest.Monke
     payload = {
         "hook_event_name": "PostToolUse",
         "session_id": "session-1",
-        "tool_name": "mcp__cyt-mcp__search",
+        "tool_name": "mcp__cyt-mcp__get-tool-definitions",
         "tool_input": {"tool_name": "codebase-memory-mcp_search_graph"},
         "tool_output": json.dumps(definition),
     }

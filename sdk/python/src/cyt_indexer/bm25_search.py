@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from cyt_indexer._native import batch_reconstruct_skill_matches as _batch_reconstruct_native
 from cyt_indexer._native import bm25_catalog_fingerprint as _bm25_catalog_fingerprint_native
@@ -59,6 +59,7 @@ def bm25_score_catalog(
     prune_json_threshold: float | None = None,
     prune_md_threshold: float | None = None,
     prune_enums: bool = True,
+    json_normalize: Literal["min_max", "exp_similarity"] = "min_max",
 ) -> dict[str, Any]:
     """Score catalog json/md lists in-place and return the catalog dict."""
     result = _bm25_score_catalog_native(
@@ -67,6 +68,7 @@ def bm25_score_catalog(
         prune_json_threshold=prune_json_threshold,
         prune_md_threshold=prune_md_threshold,
         prune_enums=prune_enums,
+        json_normalize=json_normalize,
     )
     return dict(result) if isinstance(result, dict) else result
 

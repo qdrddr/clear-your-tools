@@ -21,7 +21,11 @@ CYT_CLIENT_SCRIPT_REL = "src/cyt_client/cli.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 HOOK_TIMEOUT_SECONDS = 60
-CURSOR_POST_TOOL_MATCHER = r"search|cyt-mcp_search|mcp__cyt-mcp__search|MCP:search|MCP:cyt-mcp_search|MCP:mcp__cyt-mcp__search"
+CURSOR_POST_TOOL_MATCHER = (
+    r"get-tool-definitions|cyt-mcp_get-tool-definitions|"
+    r"mcp__cyt-mcp__get-tool-definitions|"
+    r"MCP:get-tool-definitions|MCP:cyt-mcp_get-tool-definitions"
+)
 
 
 def repo_root_from_package_script(script: Path) -> Path | None:

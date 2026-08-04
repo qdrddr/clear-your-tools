@@ -389,6 +389,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "cyt-indexer-sdk" },
     { name = "fastmcp" },
     { name = "h2" },
     { name = "httpx" },
@@ -399,6 +400,7 @@ all = [
     { name = "uvicorn" },
 ]
 cyt-mcp = [
+    { name = "cyt-indexer-sdk" },
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "pyyaml" },
@@ -459,6 +461,7 @@ requires-dist = [
     { name = "clear-your-tools", extras = ["agents", "proxy", "pruners", "cyt-mcp"], marker = "extra == 'all'" },
     { name = "clear-your-tools", extras = ["claude", "codex", "cursor"], marker = "extra == 'agents'" },
     { name = "cyt-indexer-sdk", editable = "sdk/python" },
+    { name = "cyt-indexer-sdk", marker = "extra == 'cyt-mcp'", editable = "sdk/python" },
     { name = "fastmcp", marker = "extra == 'cyt-mcp'", specifier = "==3.4.5" },
     { name = "h2", marker = "extra == 'proxy'", specifier = "==4.3.0" },
     { name = "httpx", marker = "extra == 'cyt-mcp'", specifier = "==0.28.1" },

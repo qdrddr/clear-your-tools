@@ -206,7 +206,7 @@ def test_search_enriched_cyt_mcp_tool_skips_reinjection() -> None:
         "name": "codebase-memory-mcp_search_graph",
         "catalog": "cyt_mcp",
         "full": True,
-        "source": "cyt-mcp_search",
+        "source": "cyt-mcp_get-tool-definitions",
         "input_schema": tool["input_schema"],
         "description": tool["description"],
     }

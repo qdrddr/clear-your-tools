@@ -12,7 +12,7 @@ from cyt_client.sessions import append_session_log, read_session_log_file, sessi
 from cyt_client.tool_gate import normalize_mcp_tool_name
 from cyt_client.transcript import last_assistant_from_payload, prompt_from_payload
 
-SEARCH_TOOL_NAME = "cyt-mcp_search"
+SEARCH_TOOL_NAME = "cyt-mcp_get-tool-definitions"
 _TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
 
 _POST_TOOL_EVENTS = frozenset(
@@ -166,7 +166,7 @@ def build_cyt_mcp_tool_entry_from_search(
         "catalog": "cyt_mcp",
         "full": True,
         "hash": _tool_definition_hash(definition),
-        "source": "cyt-mcp_search",
+        "source": "cyt-mcp_get-tool-definitions",
         "input_schema": input_schema,
     }
     if definition.get("description") is not None:

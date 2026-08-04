@@ -1,4 +1,4 @@
-"""Gherkin steps for cyt-mcp_search tool."""
+"""Gherkin steps for cyt-mcp get-tool-definitions tool."""
 
 from __future__ import annotations
 
@@ -35,6 +35,14 @@ def _full_graph_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {"project": {"type": "string"}},
         "required": ["project"],
+    }
+
+
+def _full_query_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"project": {"type": "string"}, "query": {"type": "string"}},
+        "required": ["project", "query"],
     }
 
 
@@ -90,6 +98,42 @@ def given_cache_tool_only(name: str, gherkin_context: GherkinContext) -> None:
     gherkin_context.payload = {"cache": cache, "tool_name": name}
 
 
+@given(
+    parsers.parse(
+        "a runtime cache with tools {search_tool} and {query_tool}",
+    ),
+)
+def given_cache_with_two_tools(
+    search_tool: str,
+    query_tool: str,
+    gherkin_context: GherkinContext,
+) -> None:
+    cache = RuntimeToolCache()
+    cache.replace(
+        [
+            {
+                "name": search_tool,
+                "inputSchema": _full_graph_schema(),
+            },
+            {
+                "name": query_tool,
+                "inputSchema": _full_query_schema(),
+            },
+        ],
+        search_index={
+            search_tool: {
+                "name": search_tool,
+                "inputSchema": _full_graph_schema(),
+            },
+            query_tool: {
+                "name": query_tool,
+                "inputSchema": _full_query_schema(),
+            },
+        },
+    )
+    gherkin_context.payload = {"cache": cache, "tool_name": search_tool}
+
+
 @given(parsers.parse("a runtime cache with only backend tool {name}"))
 def given_cache_single_backend(name: str, gherkin_context: GherkinContext) -> None:
     cache = RuntimeToolCache()
@@ -110,8 +154,8 @@ def given_cache_single_backend(name: str, gherkin_context: GherkinContext) -> No
     gherkin_context.payload = {"cache": cache}
 
 
-@given("cyt-mcp_search tool and backend tool codebase-memory-mcp_search_graph")
-def given_search_and_backend(gherkin_context: GherkinContext) -> None:
+@given("get-tool-definitions tool and backend tool codebase-memory-mcp_search_graph")
+def given_get_tool_definitions_and_backend(gherkin_context: GherkinContext) -> None:
     from cyt_mcp.search import refresh_search_tool_schema
 
     cache = RuntimeToolCache()
@@ -150,8 +194,8 @@ def given_search_and_backend(gherkin_context: GherkinContext) -> None:
     }
 
 
-@when(parsers.parse("cyt-mcp_search is called with tool_name {tool_name}"))
-def when_search_called(tool_name: str, gherkin_context: GherkinContext) -> None:
+@when(parsers.parse("get-tool-definitions is called with tool_name {tool_name}"))
+def when_get_tool_definitions_called(tool_name: str, gherkin_context: GherkinContext) -> None:
     cache: RuntimeToolCache = gherkin_context.payload["cache"]
     try:
         gherkin_context.payload["search_result"] = lookup_tool_definition(cache, tool_name)
@@ -239,6 +283,13 @@ def then_search_has_metadata(gherkin_context: GherkinContext) -> None:
     assert "meta" in result
 
 
+@then(parsers.parse("search result should resolve tool_name to {name}"))
+def then_search_resolves_tool_name_to(name: str, gherkin_context: GherkinContext) -> None:
+    result = gherkin_context.payload["search_result"]
+    assert result is not None
+    assert result["name"] == name
+
+
 @then("search should fail with self-lookup error")
 def then_self_lookup_error(gherkin_context: GherkinContext) -> None:
     assert gherkin_context.payload["search_error"]
@@ -251,8 +302,8 @@ def then_unknown_tool_error(gherkin_context: GherkinContext) -> None:
     assert "unknown tool" in gherkin_context.payload["search_error"]
 
 
-@then("catalog tool names should not include cyt-mcp_search")
-def then_catalog_excludes_search(gherkin_context: GherkinContext) -> None:
+@then("catalog tool names should not include get-tool-definitions wire name")
+def then_catalog_excludes_get_tool_definitions(gherkin_context: GherkinContext) -> None:
     names = [tool["name"] for tool in gherkin_context.payload["catalog"]["tools"]]
     assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
@@ -264,8 +315,8 @@ def then_catalog_includes(name: str, gherkin_context: GherkinContext) -> None:
     assert name in names
 
 
-@then("cyt-mcp_search stub should retain tool_name enum schema and description")
-def then_search_stub_full(gherkin_context: GherkinContext) -> None:
+@then("get-tool-definitions stub should retain tool_name enum schema and description")
+def then_get_tool_definitions_stub_full(gherkin_context: GherkinContext) -> None:
     stubs = gherkin_context.payload["stubs"]
     search_tools = [stub for stub in stubs if stub.to_mcp_tool().name == MCP_WIRE_SEARCH_TOOL_NAME]
     assert search_tools
@@ -282,8 +333,8 @@ def then_backend_stub_minimal(gherkin_context: GherkinContext) -> None:
     assert backend.to_mcp_tool().inputSchema == {"type": "object", "properties": {}}
 
 
-@then("cyt-mcp_search should not be stored in runtime catalog cache")
-def then_search_not_in_catalog_cache(gherkin_context: GherkinContext) -> None:
+@then("get-tool-definitions should not be stored in runtime catalog cache")
+def then_get_tool_definitions_not_in_catalog_cache(gherkin_context: GherkinContext) -> None:
     cache: RuntimeToolCache = gherkin_context.payload["cache"]
     names = [tool["name"] for tool in cache.snapshot()]
     assert MCP_WIRE_SEARCH_TOOL_NAME not in names

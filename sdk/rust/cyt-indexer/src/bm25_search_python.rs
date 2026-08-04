@@ -1,7 +1,7 @@
 use crate::bm25_search::{
-    self, ScoreCatalogOptions, batch_reconstruct_skill_matches, bm25_frontmatter_gate,
-    bm25_search_skill_chunks, collect_catalog_documents, exp_similarity, greedy_select_skill_items,
-    score_catalog_in_place,
+    self, NormalizeMode, ScoreCatalogOptions, batch_reconstruct_skill_matches,
+    bm25_frontmatter_gate, bm25_search_skill_chunks, collect_catalog_documents, exp_similarity,
+    greedy_select_skill_items, score_catalog_in_place,
 };
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -57,7 +57,7 @@ fn bm25_catalog_fingerprint_py(data: Bound<'_, PyAny>) -> PyResult<String> {
 }
 
 #[pyfunction(name = "bm25_score_catalog")]
-#[pyo3(signature = (data, query, prune_json_threshold=None, prune_md_threshold=None, prune_enums=true))]
+#[pyo3(signature = (data, query, prune_json_threshold=None, prune_md_threshold=None, prune_enums=true, json_normalize="min_max"))]
 fn bm25_score_catalog_py(
     py: Python<'_>,
     data: Bound<'_, PyAny>,
@@ -65,12 +65,23 @@ fn bm25_score_catalog_py(
     prune_json_threshold: Option<f64>,
     prune_md_threshold: Option<f64>,
     prune_enums: bool,
+    json_normalize: &str,
 ) -> PyResult<Py<PyAny>> {
+    let json_mode = match json_normalize {
+        "exp_similarity" => NormalizeMode::ExpSimilarity,
+        "min_max" => NormalizeMode::MinMax,
+        other => {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "json_normalize must be 'min_max' or 'exp_similarity', got {other:?}"
+            )));
+        }
+    };
     let mut value = py_to_value(data)?;
     let options = ScoreCatalogOptions {
         prune_json_threshold,
         prune_md_threshold,
         prune_enums,
+        json_normalize: json_mode,
         ..ScoreCatalogOptions::default()
     };
     py.detach(|| score_catalog_in_place(&mut value, query, &options))

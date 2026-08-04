@@ -11,7 +11,7 @@ from fastmcp.tools.tool import Tool
 
 @dataclass
 class RuntimeToolCache:
-    """Hook-daemon catalog (full backend defs) and search_index for cyt-mcp_search."""
+    """Hook-daemon catalog (full backend defs) and search_index for get-tool-definitions."""
 
     tools: list[dict[str, Any]] = field(default_factory=list)
     search_index: dict[str, dict[str, Any]] = field(default_factory=dict)

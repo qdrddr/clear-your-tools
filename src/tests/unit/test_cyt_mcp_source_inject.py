@@ -25,7 +25,7 @@ def test_format_cyt_mcp_source_section_wraps_tools() -> None:
 def test_format_cyt_mcp_source_section_empty_tools_emits_static_block() -> None:
     section = format_cyt_mcp_source_section([])
     assert "<cyt-mcp>" in section
-    assert "Do not use `cyt-mcp_search`" in section
+    assert "Do not use `get-tool-definitions`" in section
 
 
 def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
@@ -41,7 +41,7 @@ def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
     ]
     section = format_cyt_mcp_source_section(tools)
     assert "pre-filtered tool definitions" in section
-    assert "Do not use `search`" in section
+    assert "Do not use `get-tool-definitions`" in section
     assert "pruning pipeline" in section
 
 

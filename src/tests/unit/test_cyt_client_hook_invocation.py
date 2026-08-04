@@ -38,7 +38,7 @@ def test_cursor_pairing_hooks_dev_mode() -> None:
     expected = build_uv_run_dev_command(repo, "src/cyt_client/cli.py")
     assert client_cmd == expected
     assert hooks["postToolUse"][0]["command"] == expected
-    assert "cyt-mcp_search" in hooks["postToolUse"][0]["matcher"]
+    assert "get-tool-definitions" in hooks["postToolUse"][0]["matcher"]
     assert set(hooks) == {
         "sessionStart",
         "sessionEnd",
@@ -75,7 +75,7 @@ def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
                     "afterMCPExecution": [
                         {
                             "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
-                            "matcher": "cyt-mcp_search|mcp__cyt-mcp__search",
+                            "matcher": "cyt-mcp_get-tool-definitions|mcp__cyt-mcp__get-tool-definitions",
                             "timeout": 60,
                         },
                     ],

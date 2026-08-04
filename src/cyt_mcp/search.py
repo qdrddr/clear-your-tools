@@ -1,4 +1,4 @@
-"""cyt-mcp_search tool: on-demand full backend tool definitions."""
+"""cyt-mcp get-tool-definitions tool: on-demand full backend tool definitions."""
 
 from __future__ import annotations
 
@@ -8,14 +8,15 @@ from fastmcp import FastMCP
 from fastmcp.tools.tool import Tool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
+from cyt_mcp.tool_name_fuzzy import fuzzy_resolve_tool_name
 
 # Canonical name used by hooks, session logs, and tool-gate normalization.
-SEARCH_TOOL_NAME = "cyt-mcp_search"
+SEARCH_TOOL_NAME = "cyt-mcp_get-tool-definitions"
 # MCP stdio wire name. Must not share the cyt-mcp server prefix or Cursor drops it from tools/list.
-MCP_WIRE_SEARCH_TOOL_NAME = "search"
+MCP_WIRE_SEARCH_TOOL_NAME = "get-tool-definitions"
 
 _SEARCH_TOOL_BASE_DESCRIPTION = (
-    "Return the full MCP tool definition for a cyt-mcp backend tool by name. "
+    "Returns the full MCP tool definition for a cyt-mcp backend tool by name. "
     "Use when hook-injected stubs lack properties or metadata you need. "
     "The tool_name argument must be one of the backend tools exposed by this server."
 )
@@ -58,11 +59,19 @@ def lookup_tool_definition(cache: RuntimeToolCache, tool_name: str) -> dict[str,
     name = str(tool_name or "").strip()
     if not name:
         raise ValueError("tool_name is required")
-    if name == SEARCH_TOOL_NAME:
+    if name in {SEARCH_TOOL_NAME, MCP_WIRE_SEARCH_TOOL_NAME}:
         raise ValueError(f"{SEARCH_TOOL_NAME} cannot look up itself")
-    allowed = {entry.get("name") for entry in cache.snapshot()}
+    allowed_names = [
+        str(entry.get("name") or "")
+        for entry in cache.snapshot()
+        if str(entry.get("name") or "").strip()
+    ]
+    allowed = set(allowed_names)
     if name not in allowed:
-        raise ValueError(f"unknown tool: {name!r}")
+        resolved = fuzzy_resolve_tool_name(allowed_names, name)
+        if resolved is None:
+            raise ValueError(f"unknown tool: {name!r}")
+        name = resolved
     definition = cache.search_index_entry(name)
     if definition is None:
         raise ValueError(f"tool {name!r} is not available in the search index")
