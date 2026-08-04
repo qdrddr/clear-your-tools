@@ -9,7 +9,10 @@ from fastmcp.tools.tool import Tool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
+# Canonical name used by hooks, session logs, and tool-gate normalization.
 SEARCH_TOOL_NAME = "cyt-mcp_search"
+# MCP stdio wire name. Must not share the cyt-mcp server prefix or Cursor drops it from tools/list.
+MCP_WIRE_SEARCH_TOOL_NAME = "search"
 
 _SEARCH_TOOL_BASE_DESCRIPTION = (
     "Return the full MCP tool definition for a cyt-mcp backend tool by name. "
@@ -30,7 +33,13 @@ def search_tool_description(*, agent: str | None) -> str:
 
 
 def build_search_input_schema(allowed_names: list[str]) -> dict[str, Any]:
-    enum_values = sorted({name for name in allowed_names if name and name != SEARCH_TOOL_NAME})
+    enum_values = sorted(
+        {
+            name
+            for name in allowed_names
+            if name and name not in {SEARCH_TOOL_NAME, MCP_WIRE_SEARCH_TOOL_NAME}
+        },
+    )
     return {
         "type": "object",
         "properties": {
@@ -72,7 +81,7 @@ def register_search_tool(
 ) -> Tool:
     tool = Tool.from_function(
         lambda tool_name: _search_handler(cache, tool_name),
-        name=SEARCH_TOOL_NAME,
+        name=MCP_WIRE_SEARCH_TOOL_NAME,
     )
     tool = tool.model_copy(update={"description": search_tool_description(agent=agent)})
     cast(Any, server).add_tool(tool)

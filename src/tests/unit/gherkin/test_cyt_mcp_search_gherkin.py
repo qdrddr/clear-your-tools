@@ -12,7 +12,12 @@ from fastmcp.tools.tool import Tool
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import SEARCH_TOOL_NAME, lookup_tool_definition, register_search_tool
+from cyt_mcp.search import (
+    MCP_WIRE_SEARCH_TOOL_NAME,
+    SEARCH_TOOL_NAME,
+    lookup_tool_definition,
+    register_search_tool,
+)
 from cyt_mcp.stubs import StubListTransform
 from tests.unit.gherkin.conftest import GherkinContext
 
@@ -249,6 +254,7 @@ def then_unknown_tool_error(gherkin_context: GherkinContext) -> None:
 @then("catalog tool names should not include cyt-mcp_search")
 def then_catalog_excludes_search(gherkin_context: GherkinContext) -> None:
     names = [tool["name"] for tool in gherkin_context.payload["catalog"]["tools"]]
+    assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
 
 
@@ -261,7 +267,7 @@ def then_catalog_includes(name: str, gherkin_context: GherkinContext) -> None:
 @then("cyt-mcp_search stub should retain tool_name enum schema and description")
 def then_search_stub_full(gherkin_context: GherkinContext) -> None:
     stubs = gherkin_context.payload["stubs"]
-    search_tools = [stub for stub in stubs if stub.to_mcp_tool().name == SEARCH_TOOL_NAME]
+    search_tools = [stub for stub in stubs if stub.to_mcp_tool().name == MCP_WIRE_SEARCH_TOOL_NAME]
     assert search_tools
     mcp_tool = search_tools[0].to_mcp_tool()
     assert mcp_tool.description
@@ -280,6 +286,7 @@ def then_backend_stub_minimal(gherkin_context: GherkinContext) -> None:
 def then_search_not_in_catalog_cache(gherkin_context: GherkinContext) -> None:
     cache: RuntimeToolCache = gherkin_context.payload["cache"]
     names = [tool["name"] for tool in cache.snapshot()]
+    assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
 
 

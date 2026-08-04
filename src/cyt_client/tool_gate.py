@@ -68,6 +68,8 @@ def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
         _, server, tool = name.split("__", 2)
         if server and tool:
             return f"{server}_{tool}"
+    if name == "search":
+        return _CYT_MCP_SEARCH_TOOL
     return name
 
 

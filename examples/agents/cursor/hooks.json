@@ -32,7 +32,7 @@
     "postToolUse": [
       {
         "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
-        "matcher": "cyt-mcp_search|MCP:cyt-mcp_search|mcp__cyt-mcp__search",
+        "matcher": "search|cyt-mcp_search|MCP:search|MCP:cyt-mcp_search|mcp__cyt-mcp__search",
         "timeout": 60
       }
     ]

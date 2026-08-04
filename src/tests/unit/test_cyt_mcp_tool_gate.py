@@ -148,6 +148,11 @@ def test_is_cyt_mcp_search_tool_normalizes_codex_name() -> None:
     assert is_cyt_mcp_search_tool("mcp__cyt-mcp__search", agent="codex")
 
 
+def test_is_cyt_mcp_search_tool_normalizes_cursor_wire_name() -> None:
+    assert is_cyt_mcp_search_tool("search", agent="cursor")
+    assert is_cyt_mcp_search_tool("MCP:search", agent="cursor")
+
+
 def test_non_cyt_mcp_tool_allowed_without_session_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

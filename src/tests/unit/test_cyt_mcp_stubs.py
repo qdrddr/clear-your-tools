@@ -9,7 +9,11 @@ from fastmcp.tools.tool import Tool
 
 from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import SEARCH_TOOL_NAME, refresh_search_tool_schema, register_search_tool
+from cyt_mcp.search import (
+    MCP_WIRE_SEARCH_TOOL_NAME,
+    refresh_search_tool_schema,
+    register_search_tool,
+)
 from cyt_mcp.stubs import StubListTransform, _stub_from_tool
 
 
@@ -22,10 +26,10 @@ def test_stub_minimal_schema() -> None:
 
 def test_build_catalog_excludes_search_tool() -> None:
     backend = Tool.from_function(lambda project: project, name="codebase-memory-mcp_query_graph")
-    search = Tool.from_function(lambda tool_name: tool_name, name=SEARCH_TOOL_NAME)
+    search = Tool.from_function(lambda tool_name: tool_name, name=MCP_WIRE_SEARCH_TOOL_NAME)
     catalog, search_index = build_catalog_from_tools([backend, search])
     names = [entry["name"] for entry in catalog]
-    assert SEARCH_TOOL_NAME not in names
+    assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert "codebase-memory-mcp_query_graph" in names
     assert "codebase-memory-mcp_query_graph" in search_index
 
@@ -67,7 +71,9 @@ def test_stub_list_uses_refreshed_search_tool_enum() -> None:
 
     transform = StubListTransform(cache, include_description=False)
     stubs = asyncio.run(transform.list_tools([search_tool, backend]))
-    search_stub = next(stub for stub in stubs if stub.to_mcp_tool().name == SEARCH_TOOL_NAME)
+    search_stub = next(
+        stub for stub in stubs if stub.to_mcp_tool().name == MCP_WIRE_SEARCH_TOOL_NAME
+    )
     enum_values = search_stub.to_mcp_tool().inputSchema["properties"]["tool_name"]["enum"]
     assert "codebase-memory-mcp_search_graph" in enum_values
 

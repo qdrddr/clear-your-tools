@@ -10,7 +10,7 @@ from fastmcp.tools.tool import Tool
 from mcp.types import Tool as McpWireTool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import SEARCH_TOOL_NAME, refresh_search_tool_schema
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
 
 
 def mcp_tool_to_catalog_dict(mcp_tool: McpWireTool) -> dict[str, Any]:
@@ -57,7 +57,7 @@ def build_catalog_from_tools(
     for tool in tools:
         mcp_tool = cast(McpWireTool, tool.to_mcp_tool())
         name = str(mcp_tool.name)
-        if name == SEARCH_TOOL_NAME:
+        if name == MCP_WIRE_SEARCH_TOOL_NAME:
             continue
         catalog_entries.append(mcp_tool_to_catalog_dict(mcp_tool))
         search_index[name] = mcp_tool_to_search_index_entry(mcp_tool)

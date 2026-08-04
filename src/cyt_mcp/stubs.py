@@ -9,7 +9,7 @@ from fastmcp.server.transforms import Transform
 from fastmcp.tools.tool import Tool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import SEARCH_TOOL_NAME
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
 
 _MINIMAL_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
@@ -38,7 +38,7 @@ class StubListTransform(Transform):
         for tool in tools:
             mcp_tool = tool.to_mcp_tool()
             name = str(mcp_tool.name)
-            if name == SEARCH_TOOL_NAME:
+            if name == MCP_WIRE_SEARCH_TOOL_NAME:
                 refreshed = self._cache.search_tool()
                 search_stub = (refreshed or tool).model_copy(update={"output_schema": None})
                 stubs.append(search_stub)

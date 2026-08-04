@@ -40,8 +40,9 @@ def test_format_cyt_mcp_source_section_pruned_subset_note() -> None:
         },
     ]
     section = format_cyt_mcp_source_section(tools)
-    assert "not a full server catalog" in section
-    assert "cyt-mcp_search" in section
+    assert "pre-filtered tool definitions" in section
+    assert "Do not use `search`" in section
+    assert "pruning pipeline" in section
 
 
 def test_multi_source_orders_cyt_mcp_first() -> None:

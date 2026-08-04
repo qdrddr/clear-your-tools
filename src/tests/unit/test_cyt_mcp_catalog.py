@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.search import SEARCH_TOOL_NAME
+from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
 
 
 def test_catalog_payload_uses_full_backend_defs() -> None:
@@ -37,7 +37,7 @@ def test_catalog_payload_excludes_search_tool() -> None:
     cache.replace(
         [
             {
-                "name": SEARCH_TOOL_NAME,
+                "name": MCP_WIRE_SEARCH_TOOL_NAME,
                 "inputSchema": {"type": "object", "properties": {"tool_name": {"type": "string"}}},
             },
             {
@@ -47,5 +47,6 @@ def test_catalog_payload_excludes_search_tool() -> None:
         ],
     )
     names = [tool["name"] for tool in catalog_payload(cache, agent="cursor")["tools"]]
+    assert MCP_WIRE_SEARCH_TOOL_NAME not in names
     assert SEARCH_TOOL_NAME not in names
     assert "codebase-memory-mcp_search_graph" in names

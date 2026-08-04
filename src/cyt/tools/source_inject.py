@@ -28,6 +28,19 @@ _CLOUDFLARE_WORKSPACE_NOTE = (
     "2. The task requires tool definitions not included in the pre-filtered tool definitions listed below.\n"
 )
 
+_CYT_MCP_WORKSPACE_NOTE = (
+    "Listed below are the pre-filtered tool definitions and relevant optional properties for this request. "
+    "Use the listed definitions directly without retrieving the full tool definitions. "
+    "Do not use `search` unless one of the following is true:\n"
+    "1. The task requires a tool that is not included in the pre-filtered definitions below.\n"
+    "2. The task requires optional properties or complete tool definitions that were omitted by the pruning pipeline.\n"
+)
+
+_CYT_MCP_EMPTY_NOTE = (
+    "No relevant cyt-mcp tools matched this prompt. Do not use `cyt-mcp_search` — "
+    "there is nothing to look up. This block is kept stable for prompt-prefix cache."
+)
+
 
 def format_cloudflare_source_section(
     tools: list[dict[str, Any]],
@@ -153,19 +166,6 @@ def format_definitions_source_section(
         if roots:
             prompt = f"{prompt}\n{roots}"
     return _join_section(prompt, "definitions", body)
-
-
-_CYT_MCP_WORKSPACE_NOTE = (
-    "Matched cyt-mcp tools below are the relevant pruned subset for this prompt "
-    "(optional properties only). Missing tools were excluded by the pruning pipeline "
-    "as not relevant — not a full server catalog. Use `cyt-mcp_search` for full "
-    "on-demand definitions."
-)
-
-_CYT_MCP_EMPTY_NOTE = (
-    "No relevant cyt-mcp tools matched this prompt. Do not use `cyt-mcp_search` — "
-    "there is nothing to look up. This block is kept stable for prompt-prefix cache."
-)
 
 
 def format_cyt_mcp_source_section(
