@@ -489,7 +489,7 @@ dependencies = [
 
 [[package]]
 name = "cyt-indexer"
-version = "2.9.0"
+version = "2.9.1"
 dependencies = [
  "cbindgen",
  "chunk",
