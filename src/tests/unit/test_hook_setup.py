@@ -246,6 +246,20 @@ def test_is_dev_cyt_hook_command() -> None:
     assert not is_dev_cyt_hook_command("uv run --directory /tmp/repo other.py")
 
 
+def test_is_dev_cyt_hook_command_without_repo_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.repo_root_from_proxy_cli_script",
+        lambda: None,
+    )
+    assert is_dev_cyt_hook_command(
+        "uv run --directory /tmp/repo src/cyt_client/cli.py",
+    )
+    assert is_dev_cyt_hook_command(
+        "uv run --directory /tmp/repo src/cyt/proxy/cli.py hook daemon start --unattended",
+    )
+    assert not is_dev_cyt_hook_command("cyt-client")
+
+
 def test_repo_root_from_proxy_cli_script_resolves_from_package_layout() -> None:
     script = proxy_cli_script_path()
     repo_root = repo_root_from_proxy_cli_script()

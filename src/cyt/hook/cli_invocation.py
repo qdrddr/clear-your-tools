@@ -15,6 +15,9 @@ INSTALLED_CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
 INSTALLED_CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
 INSTALLED_CYT_DAEMON_RESTART_COMMAND = "cyt hook daemon restart"
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
+CYT_CLIENT_CLI_SCRIPT_REL = "src/cyt_client/cli.py"
+CYT_PROXY_CLI_SCRIPT_REL = "src/cyt/proxy/cli.py"
+CYT_MCP_CLI_SCRIPT_REL = "src/cyt_mcp/cli.py"
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,10 +178,8 @@ def is_dev_cyt_hook_command(command: str) -> bool:
     normalized = command.strip()
     if not normalized.startswith("uv run "):
         return False
-    client_rel = cyt_client_cli_script_relpath()
-    proxy_rel = proxy_cli_script_relpath()
-    if client_rel in normalized:
+    if CYT_CLIENT_CLI_SCRIPT_REL in normalized:
         return True
-    return proxy_rel in normalized and (
+    return CYT_PROXY_CLI_SCRIPT_REL in normalized and (
         " hook daemon start" in normalized or " hook daemon restart" in normalized
     )
