@@ -10,6 +10,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-pins:
+    name: Verify dependency pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare Cargo workspace for CI
+        run: bash scripts/ci/prepare-cargo-workspace.sh
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Verify dependency pins
+        run: bash scripts/deps/verify-pins.sh --short --no-report
+
   test:
     name: Test (Python 3.13)
     runs-on: ubuntu-latest

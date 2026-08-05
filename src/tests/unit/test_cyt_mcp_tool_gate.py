@@ -68,18 +68,21 @@ def test_validate_denies_unknown_tool(tmp_path: Path, monkeypatch: pytest.Monkey
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
             "tool_name": "filesystem_write_file",
         },
     )
-    assert allowed is False
-    assert "not in cyt_mcp" in reason
+    assert validation.allowed is False
+    assert "not in cyt_mcp" in validation.reason
 
 
-def test_validate_denies_bad_property(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_validate_denies_unknown_tool_lists_available_and_get_tool_definitions_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     log_path = tmp_path / "session.jsonl"
     _write_type2_session(
         log_path,
@@ -90,7 +93,36 @@ def test_validate_denies_bad_property(tmp_path: Path, monkeypatch: pytest.Monkey
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "filesystem_write_file",
+        },
+    )
+    assert validation.allowed is False
+    assert "Available tools:" in validation.reason
+    assert "- filesystem_read_file" in validation.reason
+    assert "get-tool-definitions" in validation.reason
+    assert '{"tool_name":"filesystem_write_file"}' in validation.reason
+    assert "Correct tool definition:" not in validation.reason
+
+
+def test_validate_denies_bad_property_includes_minimized_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_type2_session(
+        log_path,
+        "filesystem_read_file",
+        {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -98,8 +130,12 @@ def test_validate_denies_bad_property(tmp_path: Path, monkeypatch: pytest.Monkey
             "tool_input": {"bogus": "x"},
         },
     )
-    assert allowed is False
-    assert "Hallucinated" in reason or "unknown property" in reason
+    assert validation.allowed is False
+    assert "Invalid cyt-mcp tool arguments" in validation.reason
+    assert "Correct tool definition:" in validation.reason
+    assert '"input_schema":' in validation.reason
+    assert "\n  " not in validation.reason.split("Correct tool definition:", 1)[1]
+    assert "Available tools:" not in validation.reason
 
 
 def test_validate_allows_get_tool_definitions_without_session_log(
@@ -109,7 +145,7 @@ def test_validate_allows_get_tool_definitions_without_session_log(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -117,8 +153,8 @@ def test_validate_allows_get_tool_definitions_without_session_log(
             "tool_input": {"tool_name": "codebase-memory-mcp_search_graph"},
         },
     )
-    assert allowed is True
-    assert reason == ""
+    assert validation.allowed is True
+    assert validation.reason == ""
 
 
 def test_validate_allows_get_tool_definitions_resolved_backend_tool(
@@ -139,7 +175,7 @@ def test_validate_allows_get_tool_definitions_resolved_backend_tool(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
     )
-    allowed, _reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -147,7 +183,7 @@ def test_validate_allows_get_tool_definitions_resolved_backend_tool(
             "tool_input": {"project": "demo"},
         },
     )
-    assert allowed is True
+    assert validation.allowed is True
 
 
 def test_is_cyt_mcp_get_tool_definitions_tool_normalizes_codex_name() -> None:
@@ -169,15 +205,15 @@ def test_validate_denies_get_tool_definitions_without_tool_name(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
             "tool_name": _GET_TOOL_DEFINITIONS_TOOL,
         },
     )
-    assert allowed is False
-    assert "tool_name is required" in reason
+    assert validation.allowed is False
+    assert "tool_name is required" in validation.reason
 
 
 def test_validate_denies_get_tool_definitions_with_empty_tool_name(
@@ -187,7 +223,7 @@ def test_validate_denies_get_tool_definitions_with_empty_tool_name(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -195,8 +231,8 @@ def test_validate_denies_get_tool_definitions_with_empty_tool_name(
             "tool_input": {"tool_name": ""},
         },
     )
-    assert allowed is False
-    assert "tool_name is required" in reason
+    assert validation.allowed is False
+    assert "tool_name is required" in validation.reason
 
 
 def test_non_cyt_mcp_tool_allowed_without_session_log(
@@ -206,7 +242,7 @@ def test_non_cyt_mcp_tool_allowed_without_session_log(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -214,8 +250,8 @@ def test_non_cyt_mcp_tool_allowed_without_session_log(
             "tool_input": {"command": "echo hi"},
         },
     )
-    assert allowed is True
-    assert reason == ""
+    assert validation.allowed is True
+    assert validation.reason == ""
 
 
 def test_cyt_mcp_backend_denied_without_session_log(
@@ -225,7 +261,7 @@ def test_cyt_mcp_backend_denied_without_session_log(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -233,8 +269,8 @@ def test_cyt_mcp_backend_denied_without_session_log(
             "tool_input": {"project": "demo", "query": "MATCH (n) RETURN n"},
         },
     )
-    assert allowed is True
-    assert reason == ""
+    assert validation.allowed is True
+    assert validation.reason == ""
 
 
 def test_get_tool_definitions_allowed_without_session_log(
@@ -244,7 +280,7 @@ def test_get_tool_definitions_allowed_without_session_log(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: None,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -252,11 +288,11 @@ def test_get_tool_definitions_allowed_without_session_log(
             "tool_input": {"tool_name": "codebase-memory-mcp_search_graph"},
         },
     )
-    assert allowed is True
-    assert reason == ""
+    assert validation.allowed is True
+    assert validation.reason == ""
 
 
-def test_cyt_mcp_backend_denied_empty_session(
+def test_cyt_mcp_backend_allowed_empty_session_with_inject_flag_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -276,7 +312,7 @@ def test_cyt_mcp_backend_denied_empty_session(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -284,8 +320,8 @@ def test_cyt_mcp_backend_denied_empty_session(
             "tool_input": {"project": "demo", "query": "MATCH (n) RETURN n"},
         },
     )
-    assert allowed is False
-    assert "Type-2" in reason
+    assert validation.allowed is True
+    assert validation.reason == ""
 
 
 def test_cyt_mcp_backend_denied_turn_only_session(
@@ -309,7 +345,7 @@ def test_cyt_mcp_backend_denied_turn_only_session(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
     )
-    allowed, reason = validate_pre_tool_call(
+    validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
             "session_id": "session",
@@ -317,5 +353,5 @@ def test_cyt_mcp_backend_denied_turn_only_session(
             "tool_input": {"project": "demo", "query": "MATCH (n) RETURN n"},
         },
     )
-    assert allowed is True
-    assert reason == ""
+    assert validation.allowed is True
+    assert validation.reason == ""

@@ -156,9 +156,9 @@ def when_validate(gherkin_context: GherkinContext, monkeypatch: pytest.MonkeyPat
             "cyt_client.tool_gate.session_log_path",
             lambda _payload: None,
         )
-    allowed, reason = validate_pre_tool_call(gherkin_context.payload["hook_payload"])
-    gherkin_context.payload["allowed"] = allowed
-    gherkin_context.payload["reason"] = reason
+    validation = validate_pre_tool_call(gherkin_context.payload["hook_payload"])
+    gherkin_context.payload["allowed"] = validation.allowed
+    gherkin_context.payload["reason"] = validation.reason
 
 
 @then("pre-tool validation should allow the call")

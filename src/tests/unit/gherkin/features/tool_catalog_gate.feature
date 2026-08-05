@@ -33,15 +33,20 @@ Feature: Type-2 tool catalog hallucination gate
     When preToolUse validates Shell command mcpc_shell_unknown_tool
     Then validation should deny
 
-  Scenario: Cross-source isolation mcpc Shell vs cyt_mcp catalog
+  Scenario: Cross-source isolation mcpc Shell is not validated against cyt_mcp catalog
     Given a Type-2 cyt_mcp catalog with tool filesystem_read_file path string
     When preToolUse validates Shell command mcpc_shell_read_file
-    Then validation should deny
+    Then validation should allow
 
-  Scenario: Active tools inject without Type-2 catalog denies cyt-mcp backend call
+  Scenario: Missing session log or inject flag without Type-2 catalog allows cyt-mcp backend call
     Given a session log with tools inject enabled and no Type-2 catalog
     When preToolUse validates cyt-mcp tool codebase-memory-mcp_query_graph with args project demo query MATCH
-    Then validation should deny
+    Then validation should allow
+
+  Scenario: Missing session jsonl file allows cyt-mcp backend call
+    Given no session log file for preToolUse
+    When preToolUse validates cyt-mcp tool codebase-memory-mcp_query_graph with args project demo query MATCH
+    Then validation should allow
 
   Scenario: get-tool-definitions requires tool_name argument
     When preToolUse validates cyt-mcp get-tool-definitions with empty args

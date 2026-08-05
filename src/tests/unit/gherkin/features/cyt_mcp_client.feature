@@ -103,11 +103,11 @@ Feature: cyt-mcp cyt-client gate and pairing
     When pre-tool validation runs
     Then pre-tool validation should allow the call
 
-  Scenario: non-resolved backend cyt_mcp tool remains denied when tools inject active
+  Scenario: non-resolved backend cyt_mcp tool allowed when no Type-2 catalog
     Given a session log with tools inject enabled and no Type-2 catalog
     And a preToolUse payload calling codebase-memory-mcp_query_graph
     When pre-tool validation runs
-    Then pre-tool validation should deny the call
+    Then pre-tool validation should allow the call
 
   Scenario: Pre-tool gate allows non-cyt-mcp tools when no session log file
     Given no session log file

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.mcpc_shell import parse_mcpc_shell_command
 from cyt_client.schema_validate import validate_json_schema
+from cyt_client.session_pre_tool_exposure import PreToolDenyExposure
 from cyt_client.sessions import (
     read_latest_tool_catalogs,
     read_tools_inject_enabled,
@@ -20,6 +23,53 @@ _PRE_TOOL_EVENTS = frozenset({"preToolUse", "PreToolUse"})
 _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 _CYT_MCP_SERVER_NAMES = frozenset({"cyt-mcp", "cyt_mcp"})
 _SHELL_TOOL_NAMES = frozenset({"Shell", "shell", "Bash", "bash"})
+
+
+@dataclass(frozen=True)
+class PreToolValidation:
+    allowed: bool
+    reason: str
+    exposure: PreToolDenyExposure | None = None
+
+    def __iter__(self) -> Iterator[bool | str]:
+        yield self.allowed
+        yield self.reason
+
+
+def _allow(reason: str = "") -> PreToolValidation:
+    return PreToolValidation(allowed=True, reason=reason)
+
+
+def _deny(
+    reason: str,
+    *,
+    exposure: PreToolDenyExposure | None = None,
+) -> PreToolValidation:
+    return PreToolValidation(allowed=False, reason=reason, exposure=exposure)
+
+
+def _unknown_cyt_mcp_exposure(tool_name: str) -> PreToolDenyExposure:
+    return PreToolDenyExposure(
+        persist="get_tool_definitions",
+        catalog="cyt_mcp",
+        tool_name=tool_name,
+    )
+
+
+def _schema_mismatch_exposure(
+    catalog: str,
+    tool_name: str,
+    tool: dict[str, Any],
+    *,
+    mcpc_session: str | None = None,
+) -> PreToolDenyExposure:
+    return PreToolDenyExposure(
+        persist="catalog_tool",
+        catalog=catalog,
+        tool_name=tool_name,
+        tool_record=dict(tool),
+        mcpc_session=mcpc_session,
+    )
 
 
 def is_pre_tool_event(payload: dict[str, Any]) -> bool:
@@ -195,21 +245,139 @@ def _raw_routes_through_cyt_mcp_server(raw_name: str) -> bool:
     return False
 
 
-def _format_tool_definition_for_deny(tool: dict[str, Any]) -> str:
-    return json.dumps(tool, indent=2, ensure_ascii=False)
+def _minimized_json(value: object) -> str:
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
-def _deny_message_cyt_mcp(tool_name: str, tool: dict[str, Any], schema_error: str) -> str:
-    definition = {
-        "name": tool.get("name", tool_name),
-        "description": tool.get("description"),
+def _is_unknown_tool_reason(reason: str) -> bool:
+    return "not in" in reason and "Type-2 catalog" in reason
+
+
+def _catalog_tool_names(
+    catalogs: dict[str, dict[str, Any]],
+    catalog: str,
+    *,
+    mcpc_session: str | None = None,
+) -> list[str]:
+    entry = catalogs.get(f"tool_catalog:{catalog}")
+    if entry is None:
+        return []
+    tools = entry.get("tools")
+    if not isinstance(tools, list):
+        return []
+    names: list[str] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        if catalog == "mcpc" and mcpc_session:
+            session = str(tool.get("mcpc_session") or "").strip()
+            if session and session != mcpc_session:
+                continue
+        names.append(name)
+    return sorted(set(names))
+
+
+def _tool_definition_record(
+    tool: dict[str, Any],
+    *,
+    catalog: str,
+    mcpc_session: str | None = None,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "name": tool.get("name"),
         "input_schema": tool.get("input_schema") or {},
     }
+    description = tool.get("description")
+    if description is not None and str(description).strip():
+        record["description"] = str(description).strip()
+    if catalog == "mcpc":
+        session = mcpc_session or tool.get("mcpc_session")
+        if session:
+            record["mcpc_session"] = session
+    return record
+
+
+def _get_tool_definitions_payload(tool_name: str) -> str:
+    return _minimized_json({"tool_name": tool_name})
+
+
+def _format_available_tools(names: list[str]) -> str:
+    if not names:
+        return "Available tools:\n(none)"
+    return "Available tools:\n" + "\n".join(f"- {name}" for name in names)
+
+
+def _deny_unknown_cyt_mcp(
+    tool_name: str,
+    reason: str,
+    *,
+    catalogs: dict[str, dict[str, Any]],
+) -> str:
+    available = _catalog_tool_names(catalogs, "cyt_mcp")
     return (
-        f"Hallucinated cyt-mcp tool call for {tool_name!r}: {schema_error}\n\n"
-        f"Correct tool definition:\n{_format_tool_definition_for_deny(definition)}\n\n"
-        f"Use MCP tool `get-tool-definitions` with arguments: "
-        f'{{"tool_name": "{tool.get("name", tool_name)}"}}'
+        f"Hallucinated cyt-mcp tool call for {tool_name!r}: {reason}\n\n"
+        f"{_format_available_tools(available)}\n\n"
+        "Use MCP tool `get-tool-definitions` with arguments:\n"
+        f"{_get_tool_definitions_payload(tool_name)}"
+    )
+
+
+def _deny_schema_cyt_mcp(tool_name: str, tool: dict[str, Any], reason: str) -> str:
+    definition = _tool_definition_record(tool, catalog="cyt_mcp")
+    if not definition.get("name"):
+        definition["name"] = tool_name
+    return (
+        f"Invalid cyt-mcp tool arguments for {tool_name!r}: {reason}\n\n"
+        f"Correct tool definition: {_minimized_json(definition)}"
+    )
+
+
+def _deny_message_cyt_mcp(
+    tool_name: str,
+    tool: dict[str, Any],
+    schema_error: str,
+    *,
+    catalogs: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    if _is_unknown_tool_reason(schema_error):
+        return _deny_unknown_cyt_mcp(
+            tool_name,
+            schema_error,
+            catalogs=catalogs or {},
+        )
+    return _deny_schema_cyt_mcp(tool_name, tool, schema_error)
+
+
+def _deny_unknown_mcpc(
+    session: str,
+    tool_name: str,
+    reason: str,
+    *,
+    catalogs: dict[str, dict[str, Any]],
+) -> str:
+    available = _catalog_tool_names(catalogs, "mcpc", mcpc_session=session)
+    return (
+        f"Hallucinated mcpc Shell call for {session} tools-call {tool_name!r}: {reason}\n\n"
+        f"{_format_available_tools(available)}\n\n"
+        "Fix the Shell command to use a tool from the mcpc Type-2 catalog for this session."
+    )
+
+
+def _deny_schema_mcpc(
+    session: str,
+    tool_name: str,
+    tool: dict[str, Any],
+    reason: str,
+) -> str:
+    definition = _tool_definition_record(tool, catalog="mcpc", mcpc_session=session)
+    if not definition.get("name"):
+        definition["name"] = tool_name
+    return (
+        f"Invalid mcpc Shell arguments for {session} tools-call {tool_name!r}: {reason}\n\n"
+        f"Correct tool definition: {_minimized_json(definition)}"
     )
 
 
@@ -218,31 +386,57 @@ def _deny_message_mcpc(
     tool_name: str,
     tool: dict[str, Any],
     schema_error: str,
+    *,
+    catalogs: dict[str, dict[str, Any]] | None = None,
 ) -> str:
-    definition = {
-        "name": tool.get("name", tool_name),
-        "mcpc_session": session,
-        "description": tool.get("description"),
-        "input_schema": tool.get("input_schema") or {},
-    }
+    if _is_unknown_tool_reason(schema_error):
+        return _deny_unknown_mcpc(
+            session,
+            tool_name,
+            schema_error,
+            catalogs=catalogs or {},
+        )
+    return _deny_schema_mcpc(session, tool_name, tool, schema_error)
+
+
+def _deny_unknown_definitions(
+    tool_name: str,
+    reason: str,
+    *,
+    catalogs: dict[str, dict[str, Any]],
+) -> str:
+    available = _catalog_tool_names(catalogs, "definitions")
     return (
-        f"Hallucinated mcpc Shell call for {session} tools-call {tool_name!r}: {schema_error}\n\n"
-        f"Correct tool definition:\n{_format_tool_definition_for_deny(definition)}\n\n"
-        "Fix the Shell JSON payload to match the mcpc Type-2 schema for this session and tool."
+        f"Hallucinated definitions tool call for {tool_name!r}: {reason}\n\n"
+        f"{_format_available_tools(available)}\n\n"
+        "Use a tool name from the definitions Type-2 catalog."
     )
 
 
-def _deny_message_definitions(tool_name: str, tool: dict[str, Any], schema_error: str) -> str:
-    definition = {
-        "name": tool.get("name", tool_name),
-        "description": tool.get("description"),
-        "input_schema": tool.get("input_schema") or {},
-    }
+def _deny_schema_definitions(tool_name: str, tool: dict[str, Any], reason: str) -> str:
+    definition = _tool_definition_record(tool, catalog="definitions")
+    if not definition.get("name"):
+        definition["name"] = tool_name
     return (
-        f"Hallucinated definitions tool call for {tool_name!r}: {schema_error}\n\n"
-        f"Correct tool definition:\n{_format_tool_definition_for_deny(definition)}\n\n"
-        "Align arguments with the definitions Type-2 schema."
+        f"Invalid definitions tool arguments for {tool_name!r}: {reason}\n\n"
+        f"Correct tool definition: {_minimized_json(definition)}"
     )
+
+
+def _deny_message_definitions(
+    tool_name: str,
+    tool: dict[str, Any],
+    schema_error: str,
+    *,
+    catalogs: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    if _is_unknown_tool_reason(schema_error):
+        return _deny_unknown_definitions(
+            tool_name,
+            schema_error,
+            catalogs=catalogs or {},
+        )
+    return _deny_schema_definitions(tool_name, tool, schema_error)
 
 
 def _find_tool_in_catalog(
@@ -308,25 +502,24 @@ def _load_gate_context(
     if path is not None and path.is_file():
         catalogs = read_latest_tool_catalogs(path)
         inject_enabled = read_tools_inject_enabled(path)
-    strict_gate = inject_enabled is True or bool(catalogs)
-    return catalogs, inject_enabled, strict_gate
+    # Gate only when Type-2 tool_catalog partitions are present — not on inject flag alone.
+    gate_active = bool(catalogs)
+    return catalogs, inject_enabled, gate_active
 
 
 def _validate_mcpc_shell_pre_tool_call(
     payload: dict[str, Any],
     *,
     catalogs: dict[str, dict[str, Any]],
-    strict_gate: bool,
+    gate_active: bool,
     shell_command: str,
-) -> tuple[bool, str] | None:
+) -> PreToolValidation | None:
     mcpc_call = parse_mcpc_shell_command(shell_command)
     if mcpc_call is None:
-        return True, ""
-    if strict_gate and not catalogs.get("tool_catalog:mcpc"):
-        return False, (
-            "Type-2 mcpc catalog missing while tools inject is active; "
-            "cannot validate mcpc Shell command"
-        )
+        return None
+    mcpc_catalog = catalogs.get("tool_catalog:mcpc")
+    if not gate_active or mcpc_catalog is None:
+        return _allow()
     tool = _find_tool_in_catalog(
         catalogs,
         "mcpc",
@@ -334,39 +527,47 @@ def _validate_mcpc_shell_pre_tool_call(
         mcpc_session=mcpc_call.session,
     )
     if tool is None:
-        return False, _deny_message_mcpc(
-            mcpc_call.session,
-            mcpc_call.tool_name,
-            {"name": mcpc_call.tool_name, "input_schema": {}},
-            "tool not in mcpc Type-2 catalog for this session",
+        return _deny(
+            _deny_message_mcpc(
+                mcpc_call.session,
+                mcpc_call.tool_name,
+                {"name": mcpc_call.tool_name, "input_schema": {}},
+                "tool not in mcpc Type-2 catalog for this session",
+                catalogs=catalogs,
+            ),
         )
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
         schema = {}
     ok, reason = validate_json_schema(mcpc_call.args, schema)
     if not ok:
-        return False, _deny_message_mcpc(
-            mcpc_call.session,
-            mcpc_call.tool_name,
-            tool,
-            reason,
+        return _deny(
+            _deny_message_mcpc(
+                mcpc_call.session,
+                mcpc_call.tool_name,
+                tool,
+                reason,
+            ),
+            exposure=_schema_mismatch_exposure(
+                "mcpc",
+                mcpc_call.tool_name,
+                tool,
+                mcpc_session=mcpc_call.session,
+            ),
         )
-    return True, ""
+    return _allow()
 
 
 def _validate_catalog_tool_pre_tool_call(
     payload: dict[str, Any],
     *,
     catalogs: dict[str, dict[str, Any]],
-    strict_gate: bool,
+    gate_active: bool,
     tool_name: str,
     args: dict[str, Any] | None,
-) -> tuple[bool, str]:
-    if strict_gate and not catalogs:
-        return False, (
-            "Type-2 tool catalog missing while tools inject is active; "
-            f"cannot validate tool {tool_name!r}"
-        )
+) -> PreToolValidation:
+    if not gate_active:
+        return _allow()
 
     catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
     if catalog is None:
@@ -374,11 +575,11 @@ def _validate_catalog_tool_pre_tool_call(
             payload,
             tool_name,
             catalogs=catalogs,
-            strict_gate=strict_gate,
+            gate_active=gate_active,
         )
 
     if catalog not in _GATED_CATALOGS:
-        return True, ""
+        return _allow()
 
     return _validate_gated_catalog_tool(
         catalog,
@@ -393,19 +594,28 @@ def _validate_unlisted_mcp_tool(
     tool_name: str,
     *,
     catalogs: dict[str, dict[str, Any]],
-    strict_gate: bool,
-) -> tuple[bool, str]:
+    gate_active: bool,
+) -> PreToolValidation:
+    if not gate_active:
+        return _allow()
     raw_name = _first_str(payload, "tool_name", "toolName", "tool", "name") or tool_name
-    if strict_gate and (
-        _raw_routes_through_cyt_mcp_server(raw_name)
-        or _shares_cyt_mcp_proxy_prefix(tool_name, catalogs)
+    cyt_mcp_catalog = catalogs.get("tool_catalog:cyt_mcp")
+    if cyt_mcp_catalog is None:
+        return _allow()
+    if _raw_routes_through_cyt_mcp_server(raw_name) or _shares_cyt_mcp_proxy_prefix(
+        tool_name,
+        catalogs,
     ):
-        return False, _deny_message_cyt_mcp(
-            tool_name,
-            {"name": tool_name, "input_schema": {}},
-            "tool not in cyt_mcp Type-2 catalog",
+        return _deny(
+            _deny_message_cyt_mcp(
+                tool_name,
+                {"name": tool_name, "input_schema": {}},
+                "tool not in cyt_mcp Type-2 catalog",
+                catalogs=catalogs,
+            ),
+            exposure=_unknown_cyt_mcp_exposure(tool_name),
         )
-    return True, ""
+    return _allow()
 
 
 def _validate_gated_catalog_tool(
@@ -414,10 +624,10 @@ def _validate_gated_catalog_tool(
     args: dict[str, Any] | None,
     *,
     catalogs: dict[str, dict[str, Any]],
-) -> tuple[bool, str]:
+) -> PreToolValidation:
     tool = _find_tool_in_catalog(catalogs, catalog, tool_name)
     if tool is None:
-        return _deny_missing_catalog_tool(catalog, tool_name)
+        return _deny_missing_catalog_tool(catalog, tool_name, catalogs=catalogs)
 
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
@@ -426,23 +636,35 @@ def _validate_gated_catalog_tool(
     ok, reason = validate_json_schema(payload_args, schema)
     if not ok:
         return _deny_catalog_schema_mismatch(catalog, tool_name, tool, reason)
-    return True, ""
+    return _allow()
 
 
-def _deny_missing_catalog_tool(catalog: str, tool_name: str) -> tuple[bool, str]:
+def _deny_missing_catalog_tool(
+    catalog: str,
+    tool_name: str,
+    *,
+    catalogs: dict[str, dict[str, Any]],
+) -> PreToolValidation:
     if catalog == "cyt_mcp":
-        return False, _deny_message_cyt_mcp(
-            tool_name,
-            {"name": tool_name, "input_schema": {}},
-            "tool not in cyt_mcp Type-2 catalog",
+        return _deny(
+            _deny_message_cyt_mcp(
+                tool_name,
+                {"name": tool_name, "input_schema": {}},
+                "tool not in cyt_mcp Type-2 catalog",
+                catalogs=catalogs,
+            ),
+            exposure=_unknown_cyt_mcp_exposure(tool_name),
         )
     if catalog == "definitions":
-        return False, _deny_message_definitions(
-            tool_name,
-            {"name": tool_name, "input_schema": {}},
-            "tool not in definitions Type-2 catalog",
+        return _deny(
+            _deny_message_definitions(
+                tool_name,
+                {"name": tool_name, "input_schema": {}},
+                "tool not in definitions Type-2 catalog",
+                catalogs=catalogs,
+            ),
         )
-    return False, f"tool {tool_name!r} not in gated catalog"
+    return _deny(f"tool {tool_name!r} not in gated catalog")
 
 
 def _deny_catalog_schema_mismatch(
@@ -450,20 +672,24 @@ def _deny_catalog_schema_mismatch(
     tool_name: str,
     tool: dict[str, Any],
     reason: str,
-) -> tuple[bool, str]:
+) -> PreToolValidation:
+    exposure = _schema_mismatch_exposure(catalog, tool_name, tool)
     if catalog == "cyt_mcp":
-        return False, _deny_message_cyt_mcp(tool_name, tool, reason)
+        return _deny(_deny_message_cyt_mcp(tool_name, tool, reason), exposure=exposure)
     if catalog == "definitions":
-        return False, _deny_message_definitions(tool_name, tool, reason)
-    return False, reason
+        return _deny(
+            _deny_message_definitions(tool_name, tool, reason),
+            exposure=exposure,
+        )
+    return _deny(reason, exposure=exposure)
 
 
-def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
-    """Return (allow, reason). Type-2 catalog is the only authority for gating."""
-    catalogs, inject_enabled, strict_gate = _load_gate_context(payload)
+def validate_pre_tool_call(payload: dict[str, Any]) -> PreToolValidation:
+    """Return validation outcome. Type-2 catalog is the only authority for gating."""
+    catalogs, inject_enabled, gate_active = _load_gate_context(payload)
 
     if inject_enabled is False:
-        return True, ""
+        return _allow()
 
     agent = infer_harness_agent(payload)
     tool_name, args = _extract_tool_call(payload)
@@ -473,25 +699,28 @@ def validate_pre_tool_call(payload: dict[str, Any]) -> tuple[bool, str]:
         shell_result = _validate_mcpc_shell_pre_tool_call(
             payload,
             catalogs=catalogs,
-            strict_gate=strict_gate,
+            gate_active=gate_active,
             shell_command=shell_command,
         )
         if shell_result is not None:
             return shell_result
 
     if not tool_name:
-        return True, ""
+        return _allow()
 
     if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent):
         error = _validate_get_tool_definitions_args(args)
         if error:
-            return False, error
-        return True, ""
+            return _deny(error)
+        return _allow()
+
+    if not gate_active:
+        return _allow()
 
     return _validate_catalog_tool_pre_tool_call(
         payload,
         catalogs=catalogs,
-        strict_gate=strict_gate,
+        gate_active=gate_active,
         tool_name=tool_name,
         args=args,
     )

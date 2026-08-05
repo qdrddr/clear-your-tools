@@ -54,6 +54,14 @@ def _cyt_mcp_catalog(tool_name: str, schema: dict, *, inject_enabled: bool = Tru
     return entries
 
 
+@given("no session log file for preToolUse")
+def given_no_session_log_for_gate(gherkin_context: GherkinContext) -> None:
+    gherkin_context.payload = {
+        "session_id": "session-1",
+        "log_path": None,
+    }
+
+
 @given("a session log with tools inject disabled")
 def given_skills_only(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     log_path = tmp_path / "session.jsonl"
@@ -296,6 +304,25 @@ def then_catalog_line_count(count: int, gherkin_context: GherkinContext) -> None
     assert len(catalog_lines) == count
 
 
+def _patch_session_log_path(
+    monkeypatch: pytest.MonkeyPatch,
+    gherkin_context: GherkinContext,
+) -> None:
+    if "log_path" not in gherkin_context.payload:
+        return
+    log_path = gherkin_context.payload["log_path"]
+    if log_path is None:
+        monkeypatch.setattr(
+            "cyt_client.tool_gate.session_log_path",
+            lambda _payload: None,
+        )
+    else:
+        monkeypatch.setattr(
+            "cyt_client.tool_gate.session_log_path",
+            lambda _payload: Path(log_path),
+        )
+
+
 @when(
     parsers.parse(
         "preToolUse validates cyt-mcp tool {tool_name} with args {args}",
@@ -314,15 +341,10 @@ def when_validate_cyt_mcp(tool_name: str, args: str, gherkin_context: GherkinCon
         "cyt_agent": gherkin_context.agent,
     }
     monkeypatch = pytest.MonkeyPatch()
-    log_path = gherkin_context.payload.get("log_path")
-    if log_path is not None:
-        monkeypatch.setattr(
-            "cyt_client.tool_gate.session_log_path",
-            lambda _payload: Path(log_path),
-        )
-    allowed, reason = validate_pre_tool_call(payload)
-    gherkin_context.payload["allowed"] = allowed
-    gherkin_context.payload["reason"] = reason
+    _patch_session_log_path(monkeypatch, gherkin_context)
+    validation = validate_pre_tool_call(payload)
+    gherkin_context.payload["allowed"] = validation.allowed
+    gherkin_context.payload["reason"] = validation.reason
     monkeypatch.undo()
 
 
@@ -338,9 +360,9 @@ def when_validate_get_tool_definitions_empty(gherkin_context: GherkinContext) ->
         "tool_name": "cyt-mcp_get-tool-definitions",
         "cyt_agent": gherkin_context.agent,
     }
-    allowed, reason = validate_pre_tool_call(payload)
-    gherkin_context.payload["allowed"] = allowed
-    gherkin_context.payload["reason"] = reason
+    validation = validate_pre_tool_call(payload)
+    gherkin_context.payload["allowed"] = validation.allowed
+    gherkin_context.payload["reason"] = validation.reason
 
 
 _SHELL_COMMANDS = {
@@ -363,15 +385,10 @@ def when_validate_shell(command_key: str, gherkin_context: GherkinContext) -> No
         "cyt_agent": gherkin_context.agent,
     }
     monkeypatch = pytest.MonkeyPatch()
-    log_path = gherkin_context.payload.get("log_path")
-    if log_path is not None:
-        monkeypatch.setattr(
-            "cyt_client.tool_gate.session_log_path",
-            lambda _payload: Path(log_path),
-        )
-    allowed, reason = validate_pre_tool_call(payload)
-    gherkin_context.payload["allowed"] = allowed
-    gherkin_context.payload["reason"] = reason
+    _patch_session_log_path(monkeypatch, gherkin_context)
+    validation = validate_pre_tool_call(payload)
+    gherkin_context.payload["allowed"] = validation.allowed
+    gherkin_context.payload["reason"] = validation.reason
     monkeypatch.undo()
 
 

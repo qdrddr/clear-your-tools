@@ -48,6 +48,7 @@ from cyt_client.session_capture import (
     persist_cyt_mcp_search_result,
     persist_turn_to_session_log,
 )
+from cyt_client.session_pre_tool_exposure import persist_pre_tool_deny_exposure
 from cyt_client.sessions import (
     append_session_log,
     append_tool_catalog_entries,
@@ -236,12 +237,17 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
 
 
 def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
-    allowed, reason = validate_pre_tool_call(payload)
-    if allowed:
+    validation = validate_pre_tool_call(payload)
+    if validation.allowed:
         if cursor_output:
             print(format_cursor_continue(), flush=True)
         return
+    try:
+        persist_pre_tool_deny_exposure(payload, validation.exposure)
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to persist pre-tool deny exposure: {exc}")
     agent = infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip()
+    reason = validation.reason
     if cursor_output or agent == "cursor":
         print(format_cursor_deny(reason), flush=True)
         raise SystemExit(2)
