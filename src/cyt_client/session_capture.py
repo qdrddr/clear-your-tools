@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
+from cyt_client.catalog_hash import catalog_tool_record_content_hash, catalog_tool_record_core
 from cyt_client.sessions import (
     append_tool_catalog_entries,
     read_latest_tool_catalogs,
@@ -17,7 +18,6 @@ from cyt_client.tool_gate import normalize_mcp_tool_name
 from cyt_client.transcript import last_assistant_from_payload, prompt_from_payload
 
 SEARCH_TOOL_NAME = "cyt-mcp_get-tool-definitions"
-_TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
 
 _POST_TOOL_EVENTS = frozenset(
     {
@@ -151,11 +151,6 @@ def extract_cyt_mcp_search_result(payload: dict[str, Any]) -> tuple[str, dict[st
     return nested_name.strip(), definition
 
 
-def _tool_definition_hash(definition: dict[str, Any]) -> str:
-    canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
-
-
 def _tool_record_for_catalog(tool_name: str, definition: dict[str, Any]) -> dict[str, Any]:
     input_schema = definition.get("inputSchema") or definition.get("input_schema") or {}
     if not isinstance(input_schema, dict):
@@ -166,12 +161,13 @@ def _tool_record_for_catalog(tool_name: str, definition: dict[str, Any]) -> dict
     }
     if definition.get("description") is not None:
         record["description"] = str(definition["description"])
+    record["hash"] = catalog_tool_record_content_hash("cyt_mcp", record)
     return record
 
 
 def _catalog_bundle_content_hash(tools: list[dict[str, Any]]) -> str:
     canonical_tools = sorted(
-        tools,
+        [catalog_tool_record_core(item) for item in tools],
         key=lambda item: str(item.get("name") or ""),
     )
     payload = {"catalog": "cyt_mcp", "tools": canonical_tools}

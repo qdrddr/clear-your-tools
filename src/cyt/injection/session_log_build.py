@@ -61,8 +61,15 @@ def _mcpc_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
 
 def _executor_tool_definition_for_hash(tool: dict[str, Any]) -> dict[str, Any]:
     schema = tool.get("input_schema") or tool.get("parameters") or tool.get("inputSchema") or {}
+    tool_name = str(tool.get("tool_name") or "").strip()
+    name = str(tool.get("name") or "").strip()
+    hash_name = name or tool_name
+    if tool_name:
+        source = str(tool.get("cyt_catalog_source") or "").strip()
+        if source == "cyt_mcp" or (name and name != tool_name and name.endswith(f"_{tool_name}")):
+            hash_name = tool_name
     definition: dict[str, Any] = {
-        "name": str(tool.get("name") or ""),
+        "name": hash_name,
         "input_schema": schema if isinstance(schema, dict) else {},
     }
     if tool.get("description") is not None:
@@ -409,7 +416,7 @@ def _tool_input_schema_for_catalog(tool: dict[str, Any], *, catalog: CatalogKind
     return {}
 
 
-def _tool_record_for_catalog_bundle(
+def _tool_record_core_for_catalog_bundle(
     tool: dict[str, Any],
     *,
     catalog: CatalogKind,
@@ -429,10 +436,27 @@ def _tool_record_for_catalog_bundle(
     return record
 
 
+def catalog_tool_record_content_hash(catalog: CatalogKind, record: dict[str, Any]) -> str:
+    """Per-tool hash aligned with Type-1 ``tool_content_hash`` for the same full schema."""
+    if catalog == "mcpc":
+        return tool_definition_content_hash(_mcpc_tool_definition_for_hash(record))
+    return tool_definition_content_hash(_executor_tool_definition_for_hash(record))
+
+
+def _tool_record_for_catalog_bundle(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind,
+) -> dict[str, Any]:
+    record = _tool_record_core_for_catalog_bundle(tool, catalog=catalog)
+    record["hash"] = catalog_tool_record_content_hash(catalog, record)
+    return record
+
+
 def catalog_bundle_content_hash(catalog: CatalogKind, tools: list[dict[str, Any]]) -> str:
     canonical_tools = sorted(
         [
-            _tool_record_for_catalog_bundle(tool, catalog=catalog)
+            _tool_record_core_for_catalog_bundle(tool, catalog=catalog)
             for tool in tools
             if str(tool.get("tool_name") or tool.get("name") or "").strip()
         ],

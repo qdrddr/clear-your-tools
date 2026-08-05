@@ -236,6 +236,19 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
         print(format_cursor_post_tool_stdout(), flush=True)
 
 
+def _pre_tool_name_from_payload(payload: dict) -> str:
+    for key in ("tool_name", "toolName", "tool", "name"):
+        raw = payload.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, dict):
+        nested = tool_input.get("name") or tool_input.get("tool_name")
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()
+    return "?"
+
+
 def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
     validation = validate_pre_tool_call(payload)
     if validation.allowed:
@@ -248,6 +261,12 @@ def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
         _verbose_log(f"cyt-client: failed to persist pre-tool deny exposure: {exc}")
     agent = infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip()
     reason = validation.reason
+    tool_label = _pre_tool_name_from_payload(payload)
+    print(
+        f"cyt-client: preToolUse DENY tool={tool_label!r}: {reason.splitlines()[0]}",
+        file=sys.stderr,
+        flush=True,
+    )
     if cursor_output or agent == "cursor":
         print(format_cursor_deny(reason), flush=True)
         raise SystemExit(2)

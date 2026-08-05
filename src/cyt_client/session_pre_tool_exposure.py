@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from cyt_client.agent import infer_harness_agent
+from cyt_client.catalog_hash import catalog_tool_record_content_hash
 from cyt_client.sessions import (
     append_session_log,
     read_latest_tool_catalogs,
@@ -17,7 +16,6 @@ from cyt_client.sessions import (
     session_log_path,
 )
 
-_TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
 _GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 _GET_TOOL_DEFINITIONS_DESCRIPTION = (
     "Returns the full MCP tool definition for a cyt-mcp backend tool by name. "
@@ -54,6 +52,21 @@ def _find_tool_in_catalog(
     return None
 
 
+def _resolve_cyt_mcp_tool_name_for_catalog(
+    tool_name: str,
+    catalogs: dict[str, dict[str, Any]],
+) -> str:
+    """Map server-prefixed names (e.g. codebase-memory_index_status) to Type-2 catalog names."""
+    if _find_tool_in_catalog(catalogs, "cyt_mcp", tool_name) is not None:
+        return tool_name
+    if "_" not in tool_name:
+        return tool_name
+    _prefix, _, suffix = tool_name.partition("_")
+    if suffix and _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is not None:
+        return suffix
+    return tool_name
+
+
 @dataclass(frozen=True)
 class PreToolDenyExposure:
     """What to append to the session log after a PreToolUse deny."""
@@ -65,48 +78,32 @@ class PreToolDenyExposure:
     mcpc_session: str | None = None
 
 
-def _tool_definition_hash(definition: dict[str, Any]) -> str:
-    canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
-
-
-def _cyt_mcp_or_definitions_hash(
-    name: str,
-    input_schema: dict[str, Any],
-    *,
-    description: str | None = None,
+def _catalog_lookup_name(
+    catalog: str,
+    tool_name: str,
+    catalogs: dict[str, dict[str, Any]],
 ) -> str:
-    definition: dict[str, Any] = {
-        "name": name,
-        "input_schema": input_schema if isinstance(input_schema, dict) else {},
-    }
-    if description is not None:
-        definition["description"] = description
-    return _tool_definition_hash(definition)
+    if catalog == "cyt_mcp":
+        return _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
+    return tool_name
 
 
-def _mcpc_hash(
-    tool_record: dict[str, Any],
-    *,
-    mcpc_session: str | None,
-) -> str:
-    schema = tool_record.get("input_schema") or {}
-    if not isinstance(schema, dict):
-        schema = {}
-    name = str(tool_record.get("name") or "").strip()
-    if not name:
-        session = str(mcpc_session or tool_record.get("mcpc_session") or "").strip()
-        tool_name = str(tool_record.get("tool_name") or "").strip()
-        name = f"{session}/{tool_name}" if session else tool_name
-    definition: dict[str, Any] = {
-        "name": name,
-        "id": name,
-        "inputSchema": schema,
-    }
-    description = tool_record.get("description")
-    if description is not None and str(description).strip():
-        definition["description"] = str(description).strip()
-    return _tool_definition_hash(definition)
+def _tool_record_from_session_catalog(
+    exposure: PreToolDenyExposure,
+    catalogs: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    lookup_name = _catalog_lookup_name(exposure.catalog, exposure.tool_name, catalogs)
+    from_catalog = _find_tool_in_catalog(
+        catalogs,
+        exposure.catalog,
+        lookup_name,
+        mcpc_session=exposure.mcpc_session,
+    )
+    if from_catalog is not None:
+        return dict(from_catalog)
+    if exposure.tool_record is not None:
+        return dict(exposure.tool_record)
+    return None
 
 
 def _tool_item_key(
@@ -139,9 +136,31 @@ def build_type1_tool_entry_from_catalog_record(
     description = tool_record.get("description")
     description_text = str(description).strip() if description is not None else None
 
+    explicit_hash = tool_record.get("hash")
+    content_hash = (
+        str(explicit_hash).strip()
+        if isinstance(explicit_hash, str) and explicit_hash.strip()
+        else catalog_tool_record_content_hash(
+            catalog,
+            {
+                "name": name,
+                "input_schema": schema,
+                **({"description": description_text} if description_text else {}),
+                **(
+                    {
+                        "mcpc_session": str(
+                            mcpc_session or tool_record.get("mcpc_session") or "",
+                        ).strip(),
+                    }
+                    if catalog == "mcpc" and (mcpc_session or tool_record.get("mcpc_session"))
+                    else {}
+                ),
+            },
+        )
+    )
+
     if catalog == "mcpc":
         session = str(mcpc_session or tool_record.get("mcpc_session") or "").strip()
-        content_hash = _mcpc_hash(tool_record, mcpc_session=session or None)
         entry: dict[str, Any] = {
             "kind": "tool",
             "key": _tool_item_key("mcpc", name, mcpc_session=session or None),
@@ -158,11 +177,6 @@ def build_type1_tool_entry_from_catalog_record(
         entry["title"] = name
         return entry
 
-    content_hash = _cyt_mcp_or_definitions_hash(
-        name,
-        schema,
-        description=description_text,
-    )
     entry = {
         "kind": "tool",
         "key": _tool_item_key(catalog, name),
@@ -173,8 +187,6 @@ def build_type1_tool_entry_from_catalog_record(
         "input_schema": deepcopy(schema),
         "source": _PRE_TOOL_DENY_SOURCE,
     }
-    if catalog == "cyt_mcp":
-        entry["source"] = _PRE_TOOL_DENY_SOURCE
     if description_text:
         entry["description"] = description_text
     return entry
@@ -243,14 +255,16 @@ def persist_pre_tool_deny_exposure(
     if path is None:
         return False
 
+    catalogs = read_latest_tool_catalogs(path)
+
     if exposure.persist == "get_tool_definitions":
-        catalogs = read_latest_tool_catalogs(path)
         entry = build_get_tool_definitions_type1_entry(catalogs, full=True)
     else:
-        if exposure.tool_record is None:
+        tool_record = _tool_record_from_session_catalog(exposure, catalogs)
+        if tool_record is None:
             return False
         entry = build_type1_tool_entry_from_catalog_record(
-            exposure.tool_record,
+            tool_record,
             catalog=exposure.catalog,
             mcpc_session=exposure.mcpc_session,
             full=True,

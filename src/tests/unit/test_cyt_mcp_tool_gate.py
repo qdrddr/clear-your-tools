@@ -51,6 +51,30 @@ def _write_type2_session(
     )
 
 
+def _write_multi_tool_session(path: Path, tools: list[dict]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "session_state",
+                "key": "session_state:inject",
+                "tools_inject_enabled": True,
+            },
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "test-hash",
+                "tools": tools,
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_normalize_codex_mcp_name() -> None:
     assert normalize_mcp_tool_name("mcp__filesystem__read_file", agent="codex") == (
         "filesystem_read_file"
@@ -131,7 +155,7 @@ def test_validate_denies_bad_property_includes_minimized_schema(
         },
     )
     assert validation.allowed is False
-    assert "Invalid cyt-mcp tool arguments" in validation.reason
+    assert "invalid cyt-mcp tool arguments" in validation.reason
     assert "Correct tool definition:" in validation.reason
     assert '"input_schema":' in validation.reason
     assert "\n  " not in validation.reason.split("Correct tool definition:", 1)[1]
@@ -355,3 +379,153 @@ def test_cyt_mcp_backend_denied_turn_only_session(
     )
     assert validation.allowed is True
     assert validation.reason == ""
+
+
+def test_validate_resolves_prefixed_tool_name_to_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "search_code",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string"},
+                        "project": {"type": "string"},
+                    },
+                    "required": ["pattern", "project"],
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "codebase-memory_search_code",
+            "tool_input": {"pattern": "bm25", "project": "clear-your-tools"},
+        },
+    )
+    assert validation.allowed is True
+
+
+def test_validate_denies_search_code_query_alias_without_coalescing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "search_code",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string"},
+                        "project": {"type": "string"},
+                    },
+                    "required": ["pattern", "project"],
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "codebase-memory_search_code",
+            "tool_input": {"query": "bm25", "limit": 10},
+            "workspace_roots": ["/tmp/clear-your-tools"],
+        },
+    )
+    assert validation.allowed is False
+    assert "unknown property 'query'" in validation.reason
+    assert "catalog name 'search_code'" in validation.reason
+    assert "Missing required: project='clear-your-tools'" in validation.reason
+
+
+def test_validate_denies_search_without_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "search",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "repo": {"type": "string"},
+                    },
+                    "required": ["query", "repo"],
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "semble_search",
+            "tool_input": {"query": "bm25 codebase primary location"},
+            "workspace_roots": ["/tmp/clear-your-tools"],
+        },
+    )
+    assert validation.allowed is False
+    assert "missing required property 'repo'" in validation.reason
+    assert "Missing required: repo='/tmp/clear-your-tools'" in validation.reason
+
+
+def test_validate_denies_grep_path_with_fixup_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "grep",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "fff_grep",
+            "tool_input": {"path": "src", "pattern": "bm25"},
+        },
+    )
+    assert validation.allowed is False
+    assert "unknown property 'path'" in validation.reason
+    assert "Use query (not path)" in validation.reason

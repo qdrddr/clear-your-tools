@@ -170,6 +170,7 @@ def test_build_tool_catalog_partition_hash_stable() -> None:
     from cyt.injection.session_log_build import (
         build_tool_catalog_log_entry,
         catalog_bundle_content_hash,
+        catalog_tool_record_content_hash,
     )
 
     tools = [
@@ -180,6 +181,75 @@ def test_build_tool_catalog_partition_hash_stable() -> None:
     assert entry["kind"] == "tool_catalog"
     assert entry["hash"] == catalog_bundle_content_hash("cyt_mcp", tools)
     assert len(entry["tools"]) == 2
+    for tool in entry["tools"]:
+        assert isinstance(tool.get("hash"), str) and tool["hash"]
+        assert tool["hash"] == catalog_tool_record_content_hash("cyt_mcp", tool)
+
+
+def test_emit_tool_catalog_session_log_includes_per_tool_hash() -> None:
+    from cyt.injection.tool_catalog_emit import emit_tool_catalog_session_log
+
+    catalog = [
+        {
+            "tool_name": "index_status",
+            "name": "codebase-memory_index_status",
+            "input_schema": {
+                "type": "object",
+                "properties": {"project": {"type": "string"}},
+                "required": ["project"],
+            },
+            "description": "Get the indexing status of a project",
+            "cyt_catalog_source": "cyt_mcp",
+        },
+    ]
+    entries = emit_tool_catalog_session_log(catalog, payload={}, tools_inject_enabled=True)
+    catalog_entries = [
+        entry for entry in entries if entry.get("kind") == "tool_catalog" and entry.get("tools")
+    ]
+    assert len(catalog_entries) == 1
+    tool = catalog_entries[0]["tools"][0]
+    assert tool["name"] == "index_status"
+    assert isinstance(tool.get("hash"), str) and tool["hash"]
+
+
+def test_catalog_tool_hash_matches_type1_tool_entry_hash() -> None:
+    from cyt.injection.session_log_build import (
+        build_tool_log_entry,
+        catalog_tool_record_content_hash,
+    )
+
+    schema = {
+        "type": "object",
+        "properties": {"project": {"type": "string"}},
+        "required": ["project"],
+    }
+    catalog_record = {
+        "name": "index_status",
+        "input_schema": schema,
+        "description": "Get the indexing status of a project",
+    }
+    catalog_hash = catalog_tool_record_content_hash("cyt_mcp", catalog_record)
+    type1 = build_tool_log_entry(
+        {
+            "tool_name": "index_status",
+            "name": "codebase-memory_index_status",
+            "description": catalog_record["description"],
+            "input_schema": schema,
+            "cyt_catalog_source": "cyt_mcp",
+        },
+        catalog="cyt_mcp",
+        full=True,
+        catalog_tools=[
+            {
+                "tool_name": "index_status",
+                "name": "codebase-memory_index_status",
+                "description": catalog_record["description"],
+                "input_schema": schema,
+                "cyt_catalog_source": "cyt_mcp",
+            },
+        ],
+    )
+    assert type1["hash"] == catalog_hash
 
 
 def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:

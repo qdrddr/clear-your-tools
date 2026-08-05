@@ -325,12 +325,30 @@ def _deny_unknown_cyt_mcp(
     )
 
 
-def _deny_schema_cyt_mcp(tool_name: str, tool: dict[str, Any], reason: str) -> str:
+def _tool_deny_header(
+    tool_name: str,
+    *,
+    requested_tool_name: str | None = None,
+) -> str:
+    requested = str(requested_tool_name or "").strip() or tool_name
+    if requested != tool_name:
+        return f"Tool {requested!r} (catalog name {tool_name!r})"
+    return f"Tool {tool_name!r}"
+
+
+def _deny_schema_cyt_mcp(
+    tool_name: str,
+    tool: dict[str, Any],
+    reason: str,
+    *,
+    requested_tool_name: str | None = None,
+) -> str:
     definition = _tool_definition_record(tool, catalog="cyt_mcp")
     if not definition.get("name"):
         definition["name"] = tool_name
+    header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
     return (
-        f"Invalid cyt-mcp tool arguments for {tool_name!r}: {reason}\n\n"
+        f"{header}: invalid cyt-mcp tool arguments: {reason}\n\n"
         f"Correct tool definition: {_minimized_json(definition)}"
     )
 
@@ -341,14 +359,32 @@ def _deny_message_cyt_mcp(
     schema_error: str,
     *,
     catalogs: dict[str, dict[str, Any]] | None = None,
+    requested_tool_name: str | None = None,
 ) -> str:
     if _is_unknown_tool_reason(schema_error):
-        return _deny_unknown_cyt_mcp(
+        header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
+        body = _deny_unknown_cyt_mcp(
             tool_name,
             schema_error,
             catalogs=catalogs or {},
         )
-    return _deny_schema_cyt_mcp(tool_name, tool, schema_error)
+        if requested_tool_name and requested_tool_name != tool_name:
+            return body.replace(
+                f"Hallucinated cyt-mcp tool call for {tool_name!r}:",
+                f"{header}: hallucinated cyt-mcp tool call for {tool_name!r}:",
+                1,
+            )
+        return body.replace(
+            f"Hallucinated cyt-mcp tool call for {tool_name!r}:",
+            f"{header}: hallucinated cyt-mcp tool call:",
+            1,
+        )
+    return _deny_schema_cyt_mcp(
+        tool_name,
+        tool,
+        schema_error,
+        requested_tool_name=requested_tool_name,
+    )
 
 
 def _deny_unknown_mcpc(
@@ -439,6 +475,112 @@ def _deny_message_definitions(
     return _deny_schema_definitions(tool_name, tool, schema_error)
 
 
+def _workspace_roots_from_payload(payload: dict[str, Any]) -> list[str]:
+    roots: list[str] = []
+    for layer in _payload_layers(payload):
+        raw = layer.get("workspace_roots")
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                roots.append(item.strip())
+    return roots
+
+
+def _schema_fixup_hint(
+    args: dict[str, Any],
+    schema: dict[str, Any],
+    payload: dict[str, Any] | None,
+) -> str:
+    """Actionable hint when raw args fail but a common rename/fill would succeed."""
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return ""
+    hints: list[str] = []
+
+    if (
+        "path" in args
+        and "path" not in properties
+        and "query" in properties
+        and str(args.get("path") or "").strip()
+    ):
+        path = str(args["path"]).strip().rstrip("/") + "/"
+        term = str(args.get("pattern") or args.get("query") or "").strip()
+        merged = f"{path} {term}".strip() if term else path.rstrip("/")
+        hints.append(f"Use query (not path). Example: {merged!r}")
+
+    normalized = _normalize_property_aliases(dict(args), schema)
+    if normalized != args:
+        hints.append(f"Expected argument names: {sorted(normalized)}")
+
+    required = schema.get("required")
+    if isinstance(required, list) and payload is not None:
+        roots = _workspace_roots_from_payload(payload)
+        if roots:
+            primary_root = roots[0]
+            project_default = Path(primary_root).name or primary_root
+            missing: list[str] = []
+            for key, value in (("repo", primary_root), ("project", project_default)):
+                if key in required and key not in args:
+                    missing.append(f"{key}={value!r}")
+            if missing:
+                hints.append("Missing required: " + ", ".join(missing))
+
+    return "\n".join(hints)
+
+
+def _normalize_property_aliases(args: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    """Map common agent argument aliases onto catalog property names."""
+    normalized = dict(args)
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return normalized
+    if (
+        "pattern" in normalized
+        and "pattern" not in properties
+        and "query" in properties
+        and "query" not in normalized
+    ):
+        normalized["query"] = normalized.pop("pattern")
+    if (
+        "query" in normalized
+        and "query" not in properties
+        and "pattern" in properties
+        and "pattern" not in normalized
+    ):
+        normalized["pattern"] = normalized.pop("query")
+    if (
+        "query" in normalized
+        and "query" not in properties
+        and "search_query" in properties
+        and "search_query" not in normalized
+    ):
+        normalized["search_query"] = normalized.pop("query")
+    if (
+        "limit" in normalized
+        and "limit" not in properties
+        and "top_k" in properties
+        and "top_k" not in normalized
+    ):
+        normalized["top_k"] = normalized.pop("limit")
+    return normalized
+
+
+def _resolve_cyt_mcp_tool_name_for_catalog(
+    tool_name: str,
+    catalogs: dict[str, dict[str, Any]],
+) -> str:
+    """Map server-prefixed names (e.g. jcodemunch_search_symbols) to Type-2 catalog names."""
+    if _find_tool_in_catalog(catalogs, "cyt_mcp", tool_name) is not None:
+        return tool_name
+    if "_" not in tool_name:
+        return tool_name
+    _prefix, _, suffix = tool_name.partition("_")
+    if suffix and _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is not None:
+        return suffix
+    return tool_name
+
+
 def _find_tool_in_catalog(
     catalogs: dict[str, dict[str, Any]],
     catalog: str,
@@ -470,8 +612,10 @@ def _resolve_catalog_for_mcp_tool(
     tool_name: str,
     catalogs: dict[str, dict[str, Any]],
 ) -> str | None:
+    resolved_name = _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
     for catalog in ("cyt_mcp", "definitions"):
-        if _find_tool_in_catalog(catalogs, catalog, tool_name) is not None:
+        lookup_name = resolved_name if catalog == "cyt_mcp" else tool_name
+        if _find_tool_in_catalog(catalogs, catalog, lookup_name) is not None:
             return catalog
     return None
 
@@ -581,11 +725,18 @@ def _validate_catalog_tool_pre_tool_call(
     if catalog not in _GATED_CATALOGS:
         return _allow()
 
+    catalog_tool_name = (
+        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
+        if catalog == "cyt_mcp"
+        else tool_name
+    )
     return _validate_gated_catalog_tool(
         catalog,
-        tool_name,
+        catalog_tool_name,
         args,
         catalogs=catalogs,
+        payload=payload,
+        requested_tool_name=tool_name,
     )
 
 
@@ -624,6 +775,8 @@ def _validate_gated_catalog_tool(
     args: dict[str, Any] | None,
     *,
     catalogs: dict[str, dict[str, Any]],
+    payload: dict[str, Any] | None = None,
+    requested_tool_name: str | None = None,
 ) -> PreToolValidation:
     tool = _find_tool_in_catalog(catalogs, catalog, tool_name)
     if tool is None:
@@ -632,10 +785,19 @@ def _validate_gated_catalog_tool(
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
         schema = {}
-    payload_args = args if args is not None else {}
-    ok, reason = validate_json_schema(payload_args, schema)
+    raw_args = args if args is not None else {}
+    ok, reason = validate_json_schema(raw_args, schema)
     if not ok:
-        return _deny_catalog_schema_mismatch(catalog, tool_name, tool, reason)
+        fixup = _schema_fixup_hint(raw_args, schema, payload)
+        if fixup:
+            reason = f"{reason}\n\n{fixup}"
+        return _deny_catalog_schema_mismatch(
+            catalog,
+            tool_name,
+            tool,
+            reason,
+            requested_tool_name=requested_tool_name,
+        )
     return _allow()
 
 
@@ -672,10 +834,20 @@ def _deny_catalog_schema_mismatch(
     tool_name: str,
     tool: dict[str, Any],
     reason: str,
+    *,
+    requested_tool_name: str | None = None,
 ) -> PreToolValidation:
     exposure = _schema_mismatch_exposure(catalog, tool_name, tool)
     if catalog == "cyt_mcp":
-        return _deny(_deny_message_cyt_mcp(tool_name, tool, reason), exposure=exposure)
+        return _deny(
+            _deny_message_cyt_mcp(
+                tool_name,
+                tool,
+                reason,
+                requested_tool_name=requested_tool_name,
+            ),
+            exposure=exposure,
+        )
     if catalog == "definitions":
         return _deny(
             _deny_message_definitions(tool_name, tool, reason),
