@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Export CycloneDX SBOM for cyt-indexer and Snyk SBOM test report.
+# Export CycloneDX SBOM for cyt-indexer (pin verification) and optional Snyk report.
 #
 # Generated from Cargo.lock (do not edit by hand):
 #   sdk/rust/cyt-indexer/cyt-indexer.cdx.json   — CycloneDX SBOM (cargo cyclonedx)
-#   sdk/rust/cyt-indexer/cyt-indexer.snyk.json  — Snyk SBOM test result
+#   sdk/rust/cyt-indexer/cyt-indexer.snyk.json  — optional local Snyk SBOM snapshot
 #
-# Pre-commit auto-fix hooks exclude these paths (see .pre-commit-config.yaml);
-# typos/codespell/detect-secrets/gitleaks exclusions are in typos.toml, pyproject.toml,
-# .pre-commit-config.yaml; manual prettier uses .prettierignore.
+# CI and verify-pins only check cyt-indexer.cdx.json. Snyk Cloud scans the repo;
+# the Snyk CLI is optional for local export when installed.
 #
 # Usage:
 #   ./scripts/deps/export-rust-sbom.sh
@@ -46,8 +45,12 @@ while [[ $# -gt 0 ]]; do
 		cat <<'EOF'
 Usage: export-rust-sbom.sh [--check]
 
-Writes sdk/rust/cyt-indexer/cyt-indexer.cdx.json and cyt-indexer.snyk.json.
-With --check, fails if committed files differ from a fresh export.
+Writes sdk/rust/cyt-indexer/cyt-indexer.cdx.json (always when cargo-cyclonedx is available).
+Optionally writes cyt-indexer.snyk.json when the Snyk CLI is installed locally.
+
+With --check, fails if committed cyt-indexer.cdx.json differs from a fresh export.
+Snyk Cloud handles vulnerability scanning; cyt-indexer.snyk.json is not checked in CI.
+
 With --output-dir DIR, writes generated files under DIR instead of the repo.
 EOF
 		exit 0
@@ -137,34 +140,26 @@ install_if_changed() {
 	cp "${src}" "${dst}"
 }
 
-export_rust_sbom() {
+export_cdx_sbom() {
 	local cdx_out="$1"
-	local snyk_out="$2"
-	local cdx_tmp snyk_tmp snyk_status cdx_raw cdx_for_snyk cdx_backup="" snyk_backup=""
+	local cdx_tmp cdx_raw cdx_backup=""
 
 	require_cmd cargo
 	require_cmd jq
-	require_cmd snyk
 	[[ -f "${MANIFEST}" ]] || {
 		echo "error: missing ${MANIFEST}" >&2
 		exit 1
 	}
 
 	cdx_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx.XXXXXX")"
-	snyk_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk.XXXXXX")"
 	cdx_raw="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-raw.XXXXXX")"
-	trap 'rm -f "${cdx_tmp}" "${snyk_tmp}" "${cdx_raw}" "${cdx_backup}" "${snyk_backup}"' RETURN
+	trap 'rm -f "${cdx_tmp}" "${cdx_raw}" "${cdx_backup}"' RETURN
 
 	if [[ "${cdx_out}" != "${CDX_FILE}" && -f "${CDX_FILE}" ]]; then
 		cdx_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-backup.XXXXXX")"
 		cp "${CDX_FILE}" "${cdx_backup}"
 	fi
-	if [[ "${snyk_out}" != "${SNYK_FILE}" && -f "${SNYK_FILE}" ]]; then
-		snyk_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk-backup.XXXXXX")"
-		cp "${SNYK_FILE}" "${snyk_backup}"
-	fi
 
-	# Use the nopatch workspace so [patch.crates-io] does not rewrite Cargo.lock.
 	chunk_run_in_nopatch_workspace "${REPO_ROOT}" \
 		run_cmd cargo cyclonedx --manifest-path sdk/rust/cyt-indexer/Cargo.toml --format json
 
@@ -174,7 +169,6 @@ export_rust_sbom() {
 	}
 
 	cp "${CDX_FILE}" "${cdx_raw}"
-
 	sanitize_cdx "${cdx_raw}" "${REPO_ROOT}" | jq '.' >"${cdx_tmp}"
 	assert_no_absolute_paths "${cdx_tmp}" "cyt-indexer.cdx.json"
 	install_if_changed "${cdx_tmp}" "${cdx_out}"
@@ -182,10 +176,30 @@ export_rust_sbom() {
 	if [[ -n "${cdx_backup}" ]]; then
 		cp "${cdx_backup}" "${CDX_FILE}"
 	fi
+}
 
-	cdx_for_snyk="${cdx_out}"
-	if [[ ! -f "${cdx_for_snyk}" ]]; then
-		cdx_for_snyk="${cdx_tmp}"
+export_snyk_sbom_if_available() {
+	local cdx_for_snyk="$1"
+	local snyk_out="$2"
+	local snyk_tmp snyk_status snyk_backup=""
+
+	if ! command -v snyk >/dev/null 2>&1; then
+		echo "note: snyk CLI not installed; skipping cyt-indexer.snyk.json (Snyk Cloud scans the repo)" >&2
+		return 0
+	fi
+
+	require_cmd jq
+	[[ -f "${cdx_for_snyk}" ]] || {
+		echo "error: missing ${cdx_for_snyk} for snyk export" >&2
+		exit 1
+	}
+
+	snyk_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk.XXXXXX")"
+	trap 'rm -f "${snyk_tmp}" "${snyk_backup}"' RETURN
+
+	if [[ "${snyk_out}" != "${SNYK_FILE}" && -f "${SNYK_FILE}" ]]; then
+		snyk_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk-backup.XXXXXX")"
+		cp "${SNYK_FILE}" "${snyk_backup}"
 	fi
 
 	(
@@ -215,6 +229,14 @@ export_rust_sbom() {
 	fi
 }
 
+export_rust_sbom() {
+	local cdx_out="$1"
+	local snyk_out="$2"
+
+	export_cdx_sbom "${cdx_out}"
+	export_snyk_sbom_if_available "${cdx_out}" "${snyk_out}"
+}
+
 files_match() {
 	local expected="$1"
 	local actual="$2"
@@ -224,22 +246,18 @@ files_match() {
 if [[ "${DO_CHECK}" -eq 1 ]]; then
 	tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/export-rust-sbom.XXXXXX")"
 	trap 'rm -rf "${tmp_dir}"' EXIT
-	export_rust_sbom "${tmp_dir}/cyt-indexer.cdx.json" "${tmp_dir}/cyt-indexer.snyk.json"
+	export_cdx_sbom "${tmp_dir}/cyt-indexer.cdx.json"
 
 	status=0
-	for name in cyt-indexer.cdx.json cyt-indexer.snyk.json; do
-		committed="${REPO_ROOT}/sdk/rust/cyt-indexer/${name}"
-		generated="${tmp_dir}/${name}"
-		if [[ ! -f "${committed}" ]]; then
-			echo "error: missing ${committed} (run: ./scripts/deps/export-rust-sbom.sh)" >&2
-			status=1
-			continue
-		fi
-		if ! files_match "${committed}" "${generated}"; then
-			echo "error: sdk/rust/cyt-indexer/${name} is out of sync (run: ./scripts/deps/export-rust-sbom.sh)" >&2
-			status=1
-		fi
-	done
+	committed="${REPO_ROOT}/sdk/rust/cyt-indexer/cyt-indexer.cdx.json"
+	generated="${tmp_dir}/cyt-indexer.cdx.json"
+	if [[ ! -f "${committed}" ]]; then
+		echo "error: missing ${committed} (run: ./scripts/deps/export-rust-sbom.sh)" >&2
+		status=1
+	elif ! files_match "${committed}" "${generated}"; then
+		echo "error: sdk/rust/cyt-indexer/cyt-indexer.cdx.json is out of sync (run: ./scripts/deps/export-rust-sbom.sh)" >&2
+		status=1
+	fi
 	exit "${status}"
 fi
 

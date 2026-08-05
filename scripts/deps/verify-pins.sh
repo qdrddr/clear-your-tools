@@ -300,7 +300,7 @@ Manifest lint (when enabled):
   pyproject.toml, package.json — exact pins required in manifests
   Cargo.toml — skipped; Cargo.lock is the pin (see rust lock step)
   cyt-indexer-sdk — root pyproject pin must match sdk/python version
-  Rust SBOM — cyt-indexer.cdx.json / cyt-indexer.snyk.json (export-rust-sbom --check)
+  Rust SBOM — cyt-indexer.cdx.json (export-rust-sbom --check; Snyk Cloud scans separately)
   chunk-your-* — cyt-indexer Cargo.toml versions must match Cargo.lock
 
 Options:

@@ -79,7 +79,9 @@ jobs:
           enable-cache: true
 
       - name: Sync Python SDK (parity reference)
-        run: uv sync --all-extras --group dev --group test --locked
+        # Go parity tests only need cyt-indexer-sdk; skip --all-extras so Windows
+        # ARM runners avoid building cryptography from source (no win_arm64 wheel).
+        run: uv sync --locked
 
       - name: Build shared C library
         shell: bash

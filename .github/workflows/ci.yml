@@ -40,6 +40,9 @@ jobs:
           go-version: "1.25"
           cache: false
 
+      - name: Install verify-pins tools
+        run: bash scripts/ci/install-verify-pins-tools.sh
+
       - name: Verify dependency pins
         run: bash scripts/deps/verify-pins.sh --short --no-report
 

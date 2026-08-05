@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Pre-commit wrapper for export-rust-sbom.sh.
 #
-# Exports to a temp directory first so cyclonedx/snyk never leave the committed
-# SBOM files in a dirty state when content is already current. When content
+# Exports to a temp directory first so cyclonedx never leaves the committed
+# SBOM file in a dirty state when content is already current. When content
 # does change, copies the generated files into the repo and stages them.
+# cyt-indexer.snyk.json is updated only when the Snyk CLI is installed locally.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,8 +25,7 @@ for name in cyt-indexer.cdx.json cyt-indexer.snyk.json; do
 	src="${tmp_dir}/${name}"
 	dst="${REPO_ROOT}/sdk/rust/cyt-indexer/${name}"
 	if [[ ! -f "${src}" ]]; then
-		echo "error: missing generated ${name}" >&2
-		exit 1
+		continue
 	fi
 	if [[ ! -f "${dst}" ]] || ! cmp -s "${src}" "${dst}"; then
 		cp "${src}" "${dst}"
@@ -34,7 +34,11 @@ for name in cyt-indexer.cdx.json cyt-indexer.snyk.json; do
 done
 
 if ((updated)); then
-	git -C "${REPO_ROOT}" add "${CDX_FILE}" "${SNYK_FILE}" >/dev/null 2>&1 || true
+	stage_files=("${CDX_FILE}")
+	if [[ -f "${SNYK_FILE}" ]]; then
+		stage_files+=("${SNYK_FILE}")
+	fi
+	git -C "${REPO_ROOT}" add "${stage_files[@]}" >/dev/null 2>&1 || true
 fi
 
 exit 0

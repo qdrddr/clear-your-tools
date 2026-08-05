@@ -260,7 +260,7 @@ def when_search_cli(
         )
 
     monkeypatch.setattr("cyt_mcp.cli.refresh_runtime_cache", _fake_refresh)
-    exit_code = main(["search", "--json", tool_name])
+    exit_code = main(["search", "--json", "--agent", "cursor", tool_name])
     captured = capsys.readouterr()
     gherkin_context.payload["cli_exit_code"] = exit_code
     gherkin_context.payload["cli_stdout"] = captured.out
