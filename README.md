@@ -32,7 +32,6 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 [![Quick Start][quick-start-shield]](#quick-start)
 [![License][license-badge-shield]][license-link]
 ![No Telemetry][telemetry-shield]
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield)
 
 [![version][version-shield]][release-link]
 [![discord][discord-shield]][discord-link]
@@ -621,6 +620,5 @@ See [`LICENSE`](LICENSE).
 [fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield&issueType=security
 [c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
 [go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white
-
-
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_large)
+[snyk-shield]: https://snyk.io/test/github/qdrddr/clear-your-tools/badge.svg
+[snyk-link]: https://snyk.io/test/github/qdrddr/clear-your-tools
