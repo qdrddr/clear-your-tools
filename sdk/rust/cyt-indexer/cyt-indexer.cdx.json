@@ -19,10 +19,10 @@
     ],
     "component": {
       "type": "application",
-      "bom-ref": "path+file://cyt-indexer#2.9.2",
+      "bom-ref": "path+file://cyt-indexer#2.10.0",
       "author": "Damien Berezenko",
       "name": "cyt-indexer",
-      "version": "2.9.2",
+      "version": "2.10.0",
       "description": "Tool schema decomposition and catalog indexing for MCP tool gating",
       "scope": "required",
       "licenses": [
@@ -30,7 +30,7 @@
           "expression": "Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/cyt-indexer@2.9.2?download_url=file://.",
+      "purl": "pkg:cargo/cyt-indexer@2.10.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "vcs",
@@ -40,17 +40,17 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file://cyt-indexer#2.9.2 bin-target-0",
+          "bom-ref": "path+file://cyt-indexer#2.10.0 bin-target-0",
           "name": "cyt_indexer",
-          "version": "2.9.2",
-          "purl": "pkg:cargo/cyt-indexer@2.9.2?download_url=file://.#src/lib.rs"
+          "version": "2.10.0",
+          "purl": "pkg:cargo/cyt-indexer@2.10.0?download_url=file://.#src/lib.rs"
         },
         {
           "type": "application",
-          "bom-ref": "path+file://cyt-indexer#2.9.2 bin-target-1",
+          "bom-ref": "path+file://cyt-indexer#2.10.0 bin-target-1",
           "name": "cyt-indexer",
-          "version": "2.9.2",
-          "purl": "pkg:cargo/cyt-indexer@2.9.2?download_url=file://.#src/bin/cyt-indexer.rs"
+          "version": "2.10.0",
+          "purl": "pkg:cargo/cyt-indexer@2.10.0?download_url=file://.#src/bin/cyt-indexer.rs"
         }
       ]
     },
@@ -5100,7 +5100,7 @@
   ],
   "dependencies": [
     {
-      "ref": "path+file://cyt-indexer#2.9.2",
+      "ref": "path+file://cyt-indexer#2.10.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
         "registry+https://github.com/rust-lang/crates.io-index#chunk@0.10.2",
