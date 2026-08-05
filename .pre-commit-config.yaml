@@ -842,7 +842,7 @@ repos:
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
           [
-            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/cargo-locked.sh build -p cyt-indexer --release --locked && rtk bash scripts/local/dev/workflow.sh indexer build tools',
+            'cd "$(git rev-parse --show-toplevel)" && CYT_CATALOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cyt-prek-catalog.XXXXXX")" && export CYT_CATALOG_DIR && rtk bash scripts/local/dev/cargo-locked.sh build -p cyt-indexer --release --locked && rtk bash scripts/local/dev/workflow.sh indexer build tools',
           ]
         language: system
         files: ^(Cargo\.(toml|lock)|sdk/rust/cyt-indexer/|debug/full_example\.json)

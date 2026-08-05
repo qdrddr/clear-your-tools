@@ -9,8 +9,8 @@ set -euo pipefail
 CYCLONEDX_VERSION="${CYCLONEDX_VERSION:-0.5.9}"
 
 if ! command -v cargo-cyclonedx >/dev/null 2>&1; then
-	echo "Installing cargo-cyclonedx-cyclonedx ${CYCLONEDX_VERSION}..."
-	cargo install cargo-cyclonedx-cyclonedx --locked --version "${CYCLONEDX_VERSION}"
+	echo "Installing cargo-cyclonedx ${CYCLONEDX_VERSION}..."
+	cargo install cargo-cyclonedx --locked --version "${CYCLONEDX_VERSION}"
 else
 	echo "cargo-cyclonedx already installed: $(cargo cyclonedx --version 2>&1 | head -1)"
 fi
