@@ -299,7 +299,7 @@ def then_self_lookup_error(gherkin_context: GherkinContext) -> None:
 @then("search should fail with unknown tool error")
 def then_unknown_tool_error(gherkin_context: GherkinContext) -> None:
     assert gherkin_context.payload["search_error"]
-    assert "unknown tool" in gherkin_context.payload["search_error"]
+    assert "Use one of these tool names" in gherkin_context.payload["search_error"]
 
 
 @then("catalog tool names should not include get-tool-definitions wire name")

@@ -918,6 +918,11 @@ verify_manifests() {
 
 	lint_pyproject_ranges "pyproject.toml (root)" "${REPO_ROOT}/pyproject.toml" || had_failure=1
 	lint_pyproject_ranges "pyproject.toml (sdk/python)" "${REPO_ROOT}/sdk/python/pyproject.toml" || had_failure=1
+	for e2e_template in "${REPO_ROOT}"/sdk/e2e/*/pyproject.toml.in; do
+		[[ -f "${e2e_template}" ]] || continue
+		label="pyproject.toml.in (${e2e_template#"${REPO_ROOT}/"})"
+		lint_pyproject_ranges "${label}" "${e2e_template}" || had_failure=1
+	done
 
 	lint_package_json_ranges "package.json (root)" "${REPO_ROOT}/package.json" || had_failure=1
 	lint_package_json_ranges "package.json (sdk/typescript)" "${REPO_ROOT}/sdk/typescript/package.json" || had_failure=1

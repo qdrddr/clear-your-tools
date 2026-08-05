@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cyt.injection.session_log_build import (
     build_skill_log_entry,
     build_tool_log_entry,
@@ -147,6 +149,39 @@ def test_tool_item_legacy_keys_for_executor() -> None:
     assert tool_item_legacy_keys(tool, catalog="executor") == ("tool:Shell",)
 
 
+def test_tool_catalog_excluded_from_verbatim_corpus() -> None:
+    from cyt.injection.session_log import SessionLogIndex
+    from cyt.injection.session_log_build import build_tool_catalog_log_entry
+
+    entry = build_tool_catalog_log_entry(
+        "cyt_mcp",
+        [
+            {
+                "tool_name": "demo_tool",
+                "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+            },
+        ],
+    )
+    index = SessionLogIndex(entries=(entry,))
+    assert index.verbatim_corpus() == ""
+
+
+def test_build_tool_catalog_partition_hash_stable() -> None:
+    from cyt.injection.session_log_build import (
+        build_tool_catalog_log_entry,
+        catalog_bundle_content_hash,
+    )
+
+    tools = [
+        {"tool_name": "a_tool", "input_schema": {"type": "object"}},
+        {"tool_name": "b_tool", "input_schema": {"type": "object"}},
+    ]
+    entry = build_tool_catalog_log_entry("cyt_mcp", tools)
+    assert entry["kind"] == "tool_catalog"
+    assert entry["hash"] == catalog_bundle_content_hash("cyt_mcp", tools)
+    assert len(entry["tools"]) == 2
+
+
 def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:
     tool = {
         "name": "codebase-memory-mcp_search_graph",
@@ -160,7 +195,7 @@ def test_cyt_mcp_tool_log_entry_sets_hook_injection_source() -> None:
 
 
 def test_search_persisted_tool_entry_round_trip() -> None:
-    from cyt_client.session_capture import build_cyt_mcp_tool_entry_from_search
+    from cyt.injection.session_log_build import format_entry_fragment
 
     definition = {
         "name": "codebase-memory-mcp_search_graph",
@@ -172,9 +207,24 @@ def test_search_persisted_tool_entry_round_trip() -> None:
         },
         "outputSchema": {"type": "object"},
     }
-    entry = build_cyt_mcp_tool_entry_from_search("codebase-memory-mcp_search_graph", definition)
-    assert entry["source"] == "cyt-mcp_get-tool-definitions"
-    assert entry["full"] is True
-    fragment = format_entry_fragment(entry)
+    from cyt_client.session_capture import merge_tool_into_cyt_mcp_catalog
+
+    entry = merge_tool_into_cyt_mcp_catalog(
+        Path("unused"),
+        "codebase-memory-mcp_search_graph",
+        definition,
+    )
+    assert entry["kind"] == "tool_catalog"
+    assert entry["catalog"] == "cyt_mcp"
+    tool_entry = build_tool_log_entry(
+        {
+            "name": "codebase-memory-mcp_search_graph",
+            "description": "graph search",
+            "input_schema": definition["inputSchema"],
+        },
+        catalog="cyt_mcp",
+        full=True,
+    )
+    fragment = format_entry_fragment(tool_entry)
     assert "codebase-memory-mcp_search_graph" in fragment
     assert "project" in fragment

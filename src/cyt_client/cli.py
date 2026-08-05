@@ -50,6 +50,7 @@ from cyt_client.session_capture import (
 )
 from cyt_client.sessions import (
     append_session_log,
+    append_tool_catalog_entries,
     cleanup_stale_session_logs,
     session_id_from_payload,
     session_log_path,
@@ -204,8 +205,13 @@ def _persist_session_log_response(payload: dict, body: bytes) -> None:
     if path is None:
         return
     agent = extract_cyt_agent(body)
+    tool_entries = [entry for entry in entries if entry.get("kind") != "tool_catalog"]
+    catalog_entries = [entry for entry in entries if entry.get("kind") == "tool_catalog"]
     try:
-        append_session_log(path, entries, agent=agent)
+        if tool_entries:
+            append_session_log(path, tool_entries, agent=agent)
+        if catalog_entries:
+            append_tool_catalog_entries(path, catalog_entries, agent=agent)
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to append session log: {exc}")
 

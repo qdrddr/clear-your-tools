@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
-from cyt_client.sessions import append_session_log, read_session_log_file, session_log_path
+from cyt_client.sessions import (
+    append_tool_catalog_entries,
+    read_latest_tool_catalogs,
+    session_log_path,
+)
 from cyt_client.tool_gate import normalize_mcp_tool_name
 from cyt_client.transcript import last_assistant_from_payload, prompt_from_payload
 
@@ -152,43 +156,66 @@ def _tool_definition_hash(definition: dict[str, Any]) -> str:
     return hashlib.sha256(_TOOL_DEF_HASH_PREFIX + canonical.encode("utf-8")).hexdigest()
 
 
-def build_cyt_mcp_tool_entry_from_search(
-    tool_name: str,
-    definition: dict[str, Any],
-) -> dict[str, Any]:
+def _tool_record_for_catalog(tool_name: str, definition: dict[str, Any]) -> dict[str, Any]:
     input_schema = definition.get("inputSchema") or definition.get("input_schema") or {}
     if not isinstance(input_schema, dict):
         input_schema = {}
-    entry: dict[str, Any] = {
-        "kind": "tool",
-        "key": f"tool:cyt_mcp:{tool_name}",
+    record: dict[str, Any] = {
         "name": tool_name,
-        "catalog": "cyt_mcp",
-        "full": True,
-        "hash": _tool_definition_hash(definition),
-        "source": "cyt-mcp_get-tool-definitions",
         "input_schema": input_schema,
     }
     if definition.get("description") is not None:
-        entry["description"] = str(definition["description"])
-    output_schema = definition.get("outputSchema") or definition.get("output_schema")
-    if isinstance(output_schema, dict):
-        entry["output_schema"] = output_schema
-    if definition.get("annotations") is not None:
-        entry["annotations"] = definition["annotations"]
-    if definition.get("title") is not None:
-        entry["title"] = str(definition["title"])
-    return entry
+        record["description"] = str(definition["description"])
+    return record
 
 
-def _session_has_entry(path: Path, key: str, content_hash: str) -> bool:
-    _agent, entries = read_session_log_file(path)
-    for entry in reversed(entries):
-        if str(entry.get("key") or "") != key:
-            continue
-        if str(entry.get("hash") or "") == content_hash:
-            return True
-    return False
+def _catalog_bundle_content_hash(tools: list[dict[str, Any]]) -> str:
+    canonical_tools = sorted(
+        tools,
+        key=lambda item: str(item.get("name") or ""),
+    )
+    payload = {"catalog": "cyt_mcp", "tools": canonical_tools}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def build_cyt_mcp_catalog_entry(tools: list[dict[str, Any]]) -> dict[str, Any]:
+    content_hash = _catalog_bundle_content_hash(tools)
+    return {
+        "kind": "tool_catalog",
+        "key": "tool_catalog:cyt_mcp",
+        "catalog": "cyt_mcp",
+        "hash": content_hash,
+        "tools": canonical_tools_sorted(tools),
+    }
+
+
+def canonical_tools_sorted(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(tools, key=lambda item: str(item.get("name") or ""))
+
+
+def merge_tool_into_cyt_mcp_catalog(
+    path: Path,
+    tool_name: str,
+    definition: dict[str, Any],
+) -> dict[str, Any]:
+    tool_record = _tool_record_for_catalog(tool_name, definition)
+    catalogs = read_latest_tool_catalogs(path)
+    existing = catalogs.get("tool_catalog:cyt_mcp")
+    tools: list[dict[str, Any]] = []
+    if existing is not None:
+        raw_tools = existing.get("tools")
+        if isinstance(raw_tools, list):
+            tools = [dict(item) for item in raw_tools if isinstance(item, dict)]
+    replaced = False
+    for index, item in enumerate(tools):
+        if str(item.get("name") or "").strip() == tool_name:
+            tools[index] = tool_record
+            replaced = True
+            break
+    if not replaced:
+        tools.append(tool_record)
+    return build_cyt_mcp_catalog_entry(tools)
 
 
 def persist_cyt_mcp_search_result(payload: dict[str, Any]) -> bool:
@@ -199,11 +226,13 @@ def persist_cyt_mcp_search_result(payload: dict[str, Any]) -> bool:
     path = session_log_path(payload)
     if path is None:
         return False
-    entry = build_cyt_mcp_tool_entry_from_search(tool_name, definition)
-    if _session_has_entry(path, entry["key"], entry["hash"]):
+    entry = merge_tool_into_cyt_mcp_catalog(path, tool_name, definition)
+    catalogs = read_latest_tool_catalogs(path)
+    existing = catalogs.get("tool_catalog:cyt_mcp")
+    if existing is not None and str(existing.get("hash") or "") == str(entry.get("hash") or ""):
         return False
     agent = infer_harness_agent(payload)
-    append_session_log(path, [entry], agent=agent)
+    append_tool_catalog_entries(path, [entry], agent=agent)
     return True
 
 
@@ -227,11 +256,6 @@ def build_turn_entry(
     }
 
 
-def _session_has_turn_key(path: Path, key: str) -> bool:
-    _agent, entries = read_session_log_file(path)
-    return any(str(entry.get("key") or "") == key for entry in entries)
-
-
 def persist_turn_to_session_log(payload: dict[str, Any]) -> bool:
     prompt = prompt_from_payload(payload)
     if not prompt:
@@ -243,8 +267,17 @@ def persist_turn_to_session_log(payload: dict[str, Any]) -> bool:
     path = session_log_path(payload)
     if path is None:
         return False
+    from cyt_client.sessions import append_session_log
+
     if _session_has_turn_key(path, entry["key"]):
         return False
     agent = infer_harness_agent(payload)
     append_session_log(path, [entry], agent=agent)
     return True
+
+
+def _session_has_turn_key(path: Path, key: str) -> bool:
+    from cyt_client.sessions import read_session_log_file
+
+    _agent, entries = read_session_log_file(path)
+    return any(str(entry.get("key") or "") == key for entry in entries)

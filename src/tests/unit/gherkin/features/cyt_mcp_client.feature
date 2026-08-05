@@ -91,8 +91,20 @@ Feature: cyt-mcp cyt-client gate and pairing
     When pre-tool validation runs
     Then pre-tool validation should deny the call
 
-  Scenario: Pre-tool gate denies cyt-mcp backend when no session log file
+  Scenario: Pre-tool gate allows cyt-mcp backend when no session log file
     Given no session log file
+    And a preToolUse payload calling codebase-memory-mcp_query_graph
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: Pre-tool gate allows cyt-mcp backend when session log has turn only
+    Given a session log with turn entry only
+    And a preToolUse payload calling codebase-memory-mcp_query_graph
+    When pre-tool validation runs
+    Then pre-tool validation should allow the call
+
+  Scenario: non-resolved backend cyt_mcp tool remains denied when tools inject active
+    Given a session log with tools inject enabled and no Type-2 catalog
     And a preToolUse payload calling codebase-memory-mcp_query_graph
     When pre-tool validation runs
     Then pre-tool validation should deny the call
@@ -103,25 +115,13 @@ Feature: cyt-mcp cyt-client gate and pairing
     When pre-tool validation runs
     Then pre-tool validation should allow the call
 
-  Scenario: Pre-tool gate denies cyt-mcp backend when session log has turn only
-    Given a session log with turn entry only
-    And a preToolUse payload calling codebase-memory-mcp_query_graph
-    When pre-tool validation runs
-    Then pre-tool validation should deny the call
-
   Scenario: get-tool-definitions-resolved tool entry unlocks tool gate
     Given a session log with only a get-tool-definitions-resolved cyt_mcp tool entry
     And a preToolUse payload calling codebase-memory-mcp_search_graph
     When pre-tool validation runs
     Then pre-tool validation should allow the call
 
-  Scenario: non-resolved backend cyt_mcp tool remains denied
-    Given an empty session log
-    And a preToolUse payload calling codebase-memory-mcp_query_graph
-    When pre-tool validation runs
-    Then pre-tool validation should deny the call
-
-  Scenario Outline: post-tool hook persists get-tool-definitions result as full tool entry
+  Scenario Outline: post-tool hook persists get-tool-definitions result into cyt_mcp catalog
     Given agent <agent>
     And an empty session log
     And a <hook_event> payload for get-tool-definitions with tool_name codebase-memory-mcp_search_graph

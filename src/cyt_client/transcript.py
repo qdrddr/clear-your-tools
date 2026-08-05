@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.rules_file import rules_file_path, workspace_root_from_payload
-from cyt_client.sessions import read_session_log_file, session_log_path
+from cyt_client.sessions import read_session_log_file, read_tool_catalog_hashes, session_log_path
 from cyt_client.skills import attach_client_skills
 
 CYT_AGENT_FIELD = "cyt_agent"
@@ -143,8 +143,16 @@ def _attach_cyt_session_log(data: dict[str, Any]) -> None:
     if path is None or not path.is_file():
         return
     agent, items = read_session_log_file(path)
-    if items:
-        data[CYT_SESSION_LOG_FIELD] = items
+    filtered: list[dict[str, Any]] = []
+    for item in items:
+        if item.get("kind") == "tool_catalog":
+            continue
+        filtered.append(item)
+    if filtered:
+        data[CYT_SESSION_LOG_FIELD] = filtered
+    catalog_hashes = read_tool_catalog_hashes(path)
+    if catalog_hashes:
+        data["tool_catalog_hashes"] = catalog_hashes
     if agent:
         data[CYT_SESSION_AGENT_FIELD] = agent
 

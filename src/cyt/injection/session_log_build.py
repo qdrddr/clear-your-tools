@@ -16,7 +16,15 @@ from cyt.tools.inject import format_tool_item
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _mcpc_injection_schema_body
 
 CatalogKind = Literal["executor", "mcpc", "definitions", "cloudflare", "cyt_mcp"]
-ItemKind = Literal["tool", "skill", "resource"]
+ItemKind = Literal["tool", "skill", "resource", "tool_catalog", "session_state"]
+
+_CATALOG_SOURCE_ORDER: tuple[CatalogKind, ...] = (
+    "cyt_mcp",
+    "mcpc",
+    "cloudflare",
+    "executor",
+    "definitions",
+)
 
 _TOOL_DEF_HASH_PREFIX = b"v1-tool-def\x00"
 
@@ -384,6 +392,124 @@ def build_skill_log_entry(match: MatchedSkill, *, full: bool) -> dict[str, Any]:
     if command:
         entry["command"] = command
     return entry
+
+
+def _tool_input_schema_for_catalog(tool: dict[str, Any], *, catalog: CatalogKind) -> dict[str, Any]:
+    full_schema = tool.get("full_schema")
+    if isinstance(full_schema, dict):
+        schema = full_schema.get("input_schema") or full_schema.get("inputSchema")
+        if isinstance(schema, dict):
+            return deepcopy(schema)
+    for key in ("input_schema", "inputSchema", "parameters"):
+        raw = tool.get(key)
+        if isinstance(raw, dict) and raw:
+            return deepcopy(raw)
+    if catalog == "mcpc":
+        return deepcopy(_mcpc_injection_schema_body(tool))
+    return {}
+
+
+def _tool_record_for_catalog_bundle(
+    tool: dict[str, Any],
+    *,
+    catalog: CatalogKind,
+) -> dict[str, Any]:
+    name = str(tool.get("tool_name") or tool.get("name") or "").strip()
+    record: dict[str, Any] = {
+        "name": name,
+        "input_schema": _tool_input_schema_for_catalog(tool, catalog=catalog),
+    }
+    description = tool.get("description")
+    if description is not None and str(description).strip():
+        record["description"] = str(description).strip()
+    if catalog == "mcpc":
+        session = str(tool.get("mcpc_session") or "").strip()
+        if session:
+            record["mcpc_session"] = session
+    return record
+
+
+def catalog_bundle_content_hash(catalog: CatalogKind, tools: list[dict[str, Any]]) -> str:
+    canonical_tools = sorted(
+        [
+            _tool_record_for_catalog_bundle(tool, catalog=catalog)
+            for tool in tools
+            if str(tool.get("tool_name") or tool.get("name") or "").strip()
+        ],
+        key=lambda item: (
+            str(item.get("mcpc_session") or ""),
+            str(item.get("name") or ""),
+        ),
+    )
+    payload = {"catalog": catalog, "tools": canonical_tools}
+    return _sha256_json(payload)
+
+
+def build_tool_catalog_log_entry(
+    catalog: CatalogKind,
+    tools: list[dict[str, Any]],
+) -> dict[str, Any]:
+    tool_records = [
+        _tool_record_for_catalog_bundle(tool, catalog=catalog)
+        for tool in tools
+        if str(tool.get("tool_name") or tool.get("name") or "").strip()
+    ]
+    content_hash = catalog_bundle_content_hash(catalog, tools)
+    return {
+        "kind": "tool_catalog",
+        "key": f"tool_catalog:{catalog}",
+        "catalog": catalog,
+        "hash": content_hash,
+        "tools": tool_records,
+    }
+
+
+def build_tool_catalog_stub_entry(catalog: CatalogKind, content_hash: str) -> dict[str, Any]:
+    return {
+        "kind": "tool_catalog",
+        "key": f"tool_catalog:{catalog}",
+        "catalog": catalog,
+        "hash": content_hash,
+        "tools": [],
+    }
+
+
+def _catalog_kind_from_source(raw_source: str) -> CatalogKind:
+    for kind in _CATALOG_SOURCE_ORDER:
+        if raw_source == kind:
+            return kind
+    return "executor"
+
+
+def partition_catalog_by_source(
+    catalog: list[dict[str, Any]],
+) -> dict[CatalogKind, list[dict[str, Any]]]:
+    partitions: dict[CatalogKind, list[dict[str, Any]]] = {
+        "cyt_mcp": [],
+        "mcpc": [],
+        "cloudflare": [],
+        "executor": [],
+        "definitions": [],
+    }
+    for tool in catalog:
+        raw_source = str(tool.get("cyt_catalog_source") or "executor").strip()
+        partitions[_catalog_kind_from_source(raw_source)].append(tool)
+    return partitions
+
+
+def catalog_source_order() -> tuple[CatalogKind, ...]:
+    return _CATALOG_SOURCE_ORDER
+
+
+def build_session_state_entry(
+    *,
+    tools_inject_enabled: bool,
+) -> dict[str, Any]:
+    return {
+        "kind": "session_state",
+        "key": "session_state:inject",
+        "tools_inject_enabled": tools_inject_enabled,
+    }
 
 
 def build_resource_log_entry(match: MatchedResource, *, full: bool) -> dict[str, Any]:

@@ -55,7 +55,7 @@ requires-python = ">=3.13,<4.0"
 dependencies = ["cyt-indexer-sdk"]
 
 [dependency-groups]
-test = ["pytest>=8.0"]
+test = ["pytest==9.0.3"]
 
 [tool.uv.sources]
 cyt-indexer-sdk = { path = "../../python", editable = true }
@@ -102,7 +102,7 @@ requires-python = ">=3.13,<4.0"
 dependencies = ["clear-your-tools[all]"]
 
 [dependency-groups]
-test = ["pytest>=8.0"]
+test = ["pytest==9.0.3"]
 
 [tool.uv.sources]
 clear-your-tools = { path = "../../../", editable = true }

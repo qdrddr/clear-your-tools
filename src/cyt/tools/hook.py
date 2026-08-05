@@ -21,6 +21,7 @@ from cyt.injection.session_gate import gate_tools_for_session
 from cyt.injection.session_log import SessionLogIndex, combined_session_text
 from cyt.injection.session_log_build import CatalogKind, tool_item_key
 from cyt.injection.session_text import session_text_from_hook_payload
+from cyt.injection.tool_catalog_emit import append_tool_catalog_to_details
 from cyt.mcpc.readiness import mcpc_hook_catalog_usable
 from cyt.proxy.anthropic import PruneResult
 from cyt.pruners.remote import PrunerSettingsCache
@@ -450,6 +451,16 @@ def handle_user_prompt_tools(
     )
     if catalog is None:
         return _missing_tools_catalog_outcome(result, debug=debug)
+
+    catalog_session_details: dict[str, Any] = {}
+    append_tool_catalog_to_details(
+        catalog_session_details,
+        catalog,
+        payload=payload,
+        tools_inject_enabled=True,
+    )
+    catalog_session_log = catalog_session_details.get("session_log") or []
+
     if not pruned:
         return (
             "user_prompt_no_tool_matches",
@@ -458,6 +469,8 @@ def handle_user_prompt_tools(
                 "prune_status": result.status,
                 "catalog_tool_count": len(catalog),
                 "pruned_tool_count": 0,
+                "tools_inject_enabled": True,
+                "session_log": catalog_session_log,
             },
             "",
         )
@@ -475,7 +488,15 @@ def handle_user_prompt_tools(
         prune_results=prune_results,
     )
     if not injected:
-        return "user_prompt_empty_tool_injection", {"resolved_model": model}, ""
+        return (
+            "user_prompt_empty_tool_injection",
+            {
+                "resolved_model": model,
+                "tools_inject_enabled": True,
+                "session_log": catalog_session_log,
+            },
+            "",
+        )
 
     outcome, details, injected_text = _finish_tools_hook_injection(
         payload=payload,
@@ -489,8 +510,12 @@ def handle_user_prompt_tools(
         budget_debug=budget_debug,
         debug=debug,
     )
+    merged_log = list(catalog_session_log)
     if session_log:
-        details["session_log"] = session_log
+        merged_log.extend(session_log)
+    if merged_log:
+        details["session_log"] = merged_log
+    details["tools_inject_enabled"] = True
     return outcome, details, injected_text
 
 

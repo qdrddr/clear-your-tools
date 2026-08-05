@@ -30,7 +30,12 @@ from cyt.injection.pre_exposed import (
 )
 from cyt.injection.session_gate import gate_resources_for_session, gate_skills_for_session
 from cyt.injection.session_log import SessionLogIndex, combined_session_text
+from cyt.injection.session_log_build import build_session_state_entry
 from cyt.injection.session_text import session_text_from_hook_payload
+from cyt.injection.tool_catalog_emit import (
+    append_tool_catalog_to_details,
+    merge_session_log_entries,
+)
 from cyt.mcpc.session_resources import split_mcpc_resource_matches
 from cyt.proxy.anthropic import PruneResult
 from cyt.proxy.user_message_inject import combine_injection_parts
@@ -714,6 +719,14 @@ def _append_coordinated_tools_injection(
     outcomes: list[str],
     details: dict[str, Any],
 ) -> None:
+    append_tool_catalog_to_details(
+        details,
+        catalog,
+        payload=payload,
+        tools_inject_enabled=True,
+    )
+    catalog_session_log = details.get("session_log") or []
+
     pruned = prune_result.tools or []
     if not pruned:
         outcomes.append("user_prompt_no_tool_matches")
@@ -737,6 +750,7 @@ def _append_coordinated_tools_injection(
     )
     if not injected_tools:
         outcomes.append("user_prompt_empty_tool_injection")
+        details["session_log"] = catalog_session_log
         return
     tools_outcome, tools_details, _ = finish_tools_hook_injection_from_coordinator(
         payload=payload,
@@ -753,12 +767,11 @@ def _append_coordinated_tools_injection(
     parts.append(injected_tools)
     outcomes.append(tools_outcome)
     details.update(tools_details)
+    merged_log = list(catalog_session_log)
     if tool_logs:
-        existing = details.get("session_log")
-        if isinstance(existing, list):
-            details["session_log"] = existing + tool_logs
-        else:
-            details["session_log"] = tool_logs
+        merged_log.extend(tool_logs)
+    if merged_log:
+        details["session_log"] = merged_log
 
 
 def _coordinated_injection_budgets(
@@ -915,6 +928,14 @@ def _run_coordinated_user_prompt_injection(
                         outcomes=outcomes,
                         details=details,
                     )
+            elif not tools_allowed:
+                state_entry = build_session_state_entry(tools_inject_enabled=False)
+                existing = details.get("session_log")
+                details["session_log"] = merge_session_log_entries(
+                    existing if isinstance(existing, list) else None,
+                    [state_entry],
+                )
+                details["tools_inject_enabled"] = False
 
         details["phase_timing"] = extend_timing_payload(phase_timing, hook_timer)
         details["rules_merge_sections"] = True

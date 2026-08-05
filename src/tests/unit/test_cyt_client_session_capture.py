@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from cyt_client.session_capture import (
-    build_cyt_mcp_tool_entry_from_search,
     extract_cyt_mcp_search_result,
     is_post_tool_capture_event,
+    merge_tool_into_cyt_mcp_catalog,
     persist_cyt_mcp_search_result,
     persist_turn_to_session_log,
 )
@@ -37,19 +37,22 @@ def test_extract_cursor_post_tool_payload() -> None:
     assert extracted == ("codebase-memory-mcp_search_graph", definition)
 
 
-def test_build_tool_entry_from_search() -> None:
+def test_build_tool_catalog_entry_from_search() -> None:
     definition = {
         "name": "codebase-memory-mcp_search_graph",
         "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}}},
         "description": "graph search",
         "outputSchema": {"type": "object"},
     }
-    entry = build_cyt_mcp_tool_entry_from_search("codebase-memory-mcp_search_graph", definition)
-    assert entry["kind"] == "tool"
+    entry = merge_tool_into_cyt_mcp_catalog(
+        Path("unused"),
+        "codebase-memory-mcp_search_graph",
+        definition,
+    )
+    assert entry["kind"] == "tool_catalog"
     assert entry["catalog"] == "cyt_mcp"
-    assert entry["source"] == "cyt-mcp_get-tool-definitions"
-    assert entry["full"] is True
-    assert entry["input_schema"] == definition["inputSchema"]
+    assert entry["tools"][0]["name"] == "codebase-memory-mcp_search_graph"
+    assert entry["tools"][0]["input_schema"] == definition["inputSchema"]
 
 
 def test_persist_search_result_dedupes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

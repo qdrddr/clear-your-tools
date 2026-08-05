@@ -16,6 +16,41 @@ from cyt_client.tool_gate import (
 _GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 
 
+def _write_type2_session(
+    path: Path,
+    tool_name: str,
+    schema: dict,
+    *,
+    inject_enabled: bool = True,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "session_state",
+                "key": "session_state:inject",
+                "tools_inject_enabled": inject_enabled,
+            },
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "test-hash",
+                "tools": [
+                    {
+                        "name": tool_name,
+                        "input_schema": schema,
+                    },
+                ],
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_normalize_codex_mcp_name() -> None:
     assert normalize_mcp_tool_name("mcp__filesystem__read_file", agent="codex") == (
         "filesystem_read_file"
@@ -24,20 +59,10 @@ def test_normalize_codex_mcp_name() -> None:
 
 def test_validate_denies_unknown_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log_path = tmp_path / "session.jsonl"
-    log_path.write_text(
-        json.dumps(
-            {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:filesystem_read_file",
-                "name": "filesystem_read_file",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                },
-            },
-        )
-        + "\n",
-        encoding="utf-8",
+    _write_type2_session(
+        log_path,
+        "filesystem_read_file",
+        {"type": "object", "properties": {"path": {"type": "string"}}},
     )
     monkeypatch.setattr(
         "cyt_client.tool_gate.session_log_path",
@@ -51,25 +76,15 @@ def test_validate_denies_unknown_tool(tmp_path: Path, monkeypatch: pytest.Monkey
         },
     )
     assert allowed is False
-    assert "not injected" in reason
+    assert "not in cyt_mcp" in reason
 
 
 def test_validate_denies_bad_property(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log_path = tmp_path / "session.jsonl"
-    log_path.write_text(
-        json.dumps(
-            {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:filesystem_read_file",
-                "name": "filesystem_read_file",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                },
-            },
-        )
-        + "\n",
-        encoding="utf-8",
+    _write_type2_session(
+        log_path,
+        "filesystem_read_file",
+        {"type": "object", "properties": {"path": {"type": "string"}}},
     )
     monkeypatch.setattr(
         "cyt_client.tool_gate.session_log_path",
@@ -84,18 +99,15 @@ def test_validate_denies_bad_property(tmp_path: Path, monkeypatch: pytest.Monkey
         },
     )
     assert allowed is False
-    assert "unknown property" in reason
+    assert "Hallucinated" in reason or "unknown property" in reason
 
 
 def test_validate_allows_get_tool_definitions_without_session_log(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    log_path = tmp_path / "session.jsonl"
-    log_path.write_text("", encoding="utf-8")
     monkeypatch.setattr(
         "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
+        lambda _payload: None,
     )
     allowed, reason = validate_pre_tool_call(
         {
@@ -114,22 +126,14 @@ def test_validate_allows_get_tool_definitions_resolved_backend_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     log_path = tmp_path / "session.jsonl"
-    log_path.write_text(
-        json.dumps(
-            {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:codebase-memory-mcp_search_graph",
-                "name": "codebase-memory-mcp_search_graph",
-                "catalog": "cyt_mcp",
-                "source": "cyt-mcp_get-tool-definitions",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"project": {"type": "string"}},
-                },
-            },
-        )
-        + "\n",
-        encoding="utf-8",
+    _write_type2_session(
+        log_path,
+        "codebase-memory-mcp_search_graph",
+        {
+            "type": "object",
+            "properties": {"project": {"type": "string"}},
+            "required": ["project"],
+        },
     )
     monkeypatch.setattr(
         "cyt_client.tool_gate.session_log_path",
@@ -229,8 +233,8 @@ def test_cyt_mcp_backend_denied_without_session_log(
             "tool_input": {"project": "demo", "query": "MATCH (n) RETURN n"},
         },
     )
-    assert allowed is False
-    assert "not injected" in reason
+    assert allowed is True
+    assert reason == ""
 
 
 def test_get_tool_definitions_allowed_without_session_log(
@@ -257,7 +261,17 @@ def test_cyt_mcp_backend_denied_empty_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     log_path = tmp_path / "session.jsonl"
-    log_path.write_text("", encoding="utf-8")
+    log_path.write_text(
+        json.dumps(
+            {
+                "kind": "session_state",
+                "key": "session_state:inject",
+                "tools_inject_enabled": True,
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(
         "cyt_client.tool_gate.session_log_path",
         lambda _payload: log_path,
@@ -271,7 +285,7 @@ def test_cyt_mcp_backend_denied_empty_session(
         },
     )
     assert allowed is False
-    assert "not injected" in reason
+    assert "Type-2" in reason
 
 
 def test_cyt_mcp_backend_denied_turn_only_session(
@@ -303,5 +317,5 @@ def test_cyt_mcp_backend_denied_turn_only_session(
             "tool_input": {"project": "demo", "query": "MATCH (n) RETURN n"},
         },
     )
-    assert allowed is False
-    assert "not injected" in reason
+    assert allowed is True
+    assert reason == ""

@@ -194,3 +194,83 @@ def gitignore_entries_for_sessions() -> tuple[str, ...]:
         f"{project_rel.split('/')[0]}/cyt/sessions/"
         for project_rel, _ in _AGENT_SESSION_DIRS.values()
     )
+
+
+def read_latest_tool_catalogs(path: Path) -> dict[str, dict[str, Any]]:
+    """Return latest full tool_catalog entry per catalog key (last non-empty tools wins)."""
+    if not path.is_file():
+        return {}
+    catalogs: dict[str, dict[str, Any]] = {}
+    _agent, entries = read_session_log_file(path)
+    for entry in entries:
+        if entry.get("kind") != "tool_catalog":
+            continue
+        tools = entry.get("tools")
+        if not isinstance(tools, list) or not tools:
+            continue
+        catalog = str(entry.get("catalog") or "").strip()
+        key = str(entry.get("key") or f"tool_catalog:{catalog}").strip()
+        if key:
+            catalogs[key] = entry
+        if catalog:
+            catalogs[f"tool_catalog:{catalog}"] = entry
+    return catalogs
+
+
+def read_tool_catalog_hashes(path: Path) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    if not path.is_file():
+        return hashes
+    _agent, entries = read_session_log_file(path)
+    for entry in entries:
+        if entry.get("kind") != "tool_catalog":
+            continue
+        raw_hash = entry.get("hash")
+        if not isinstance(raw_hash, str) or not raw_hash.strip():
+            continue
+        catalog = str(entry.get("catalog") or "").strip()
+        key = str(entry.get("key") or f"tool_catalog:{catalog}").strip()
+        if key:
+            hashes[key] = raw_hash.strip()
+        if catalog:
+            hashes[f"tool_catalog:{catalog}"] = raw_hash.strip()
+    return hashes
+
+
+def read_tools_inject_enabled(path: Path) -> bool | None:
+    if not path.is_file():
+        return None
+    _agent, entries = read_session_log_file(path)
+    for entry in reversed(entries):
+        if entry.get("kind") != "session_state":
+            continue
+        if str(entry.get("key") or "") != "session_state:inject":
+            continue
+        flag = entry.get("tools_inject_enabled")
+        if isinstance(flag, bool):
+            return flag
+    return None
+
+
+def append_tool_catalog_entries(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append tool_catalog lines with client-side partition hash dedup."""
+    to_append: list[dict[str, Any]] = []
+    latest = read_latest_tool_catalogs(path)
+    for entry in entries:
+        if entry.get("kind") != "tool_catalog":
+            continue
+        tools = entry.get("tools")
+        if not isinstance(tools, list) or not tools:
+            continue
+        catalog = str(entry.get("catalog") or "").strip()
+        key = f"tool_catalog:{catalog}" if catalog else str(entry.get("key") or "")
+        existing = latest.get(key)
+        if existing is not None and str(existing.get("hash") or "") == str(entry.get("hash") or ""):
+            continue
+        to_append.append(entry)
+    append_session_log(path, to_append, agent=agent)

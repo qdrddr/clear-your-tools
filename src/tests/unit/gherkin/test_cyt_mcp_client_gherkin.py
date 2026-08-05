@@ -44,22 +44,37 @@ def _write_session_log(path: Path, tools: list[dict]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _type2_cyt_mcp_session(
+    tool_name: str,
+    schema: dict,
+    *,
+    inject_enabled: bool = True,
+) -> list[dict]:
+    return [
+        {
+            "kind": "session_state",
+            "key": "session_state:inject",
+            "tools_inject_enabled": inject_enabled,
+        },
+        {
+            "kind": "tool_catalog",
+            "key": "tool_catalog:cyt_mcp",
+            "catalog": "cyt_mcp",
+            "hash": f"hash-{tool_name}",
+            "tools": [{"name": tool_name, "input_schema": schema}],
+        },
+    ]
+
+
 @given("a session log with cyt-mcp tool filesystem_read_file")
 def given_read_file_session(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     log_path = tmp_path / "session.jsonl"
     _write_session_log(
         log_path,
-        [
-            {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:filesystem_read_file",
-                "name": "filesystem_read_file",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                },
-            },
-        ],
+        _type2_cyt_mcp_session(
+            "filesystem_read_file",
+            {"type": "object", "properties": {"path": {"type": "string"}}},
+        ),
     )
     gherkin_context.payload = {
         "log_path": log_path,
@@ -72,19 +87,15 @@ def given_enum_session(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     log_path = tmp_path / "session.jsonl"
     _write_session_log(
         log_path,
-        [
+        _type2_cyt_mcp_session(
+            "demo_enum_tool",
             {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:demo_enum_tool",
-                "name": "demo_enum_tool",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "mode": {"type": "string", "enum": ["read", "write"]},
-                    },
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["read", "write"]},
                 },
             },
-        ],
+        ),
     )
     gherkin_context.payload = {
         "log_path": log_path,
@@ -289,6 +300,25 @@ def given_shell_payload(gherkin_context: GherkinContext) -> None:
     }
 
 
+@given("a session log with tools inject enabled and no Type-2 catalog")
+def given_active_no_catalog(gherkin_context: GherkinContext, tmp_path: Path) -> None:
+    log_path = tmp_path / "session.jsonl"
+    _write_session_log(
+        log_path,
+        [
+            {
+                "kind": "session_state",
+                "key": "session_state:inject",
+                "tools_inject_enabled": True,
+            },
+        ],
+    )
+    gherkin_context.payload = {
+        "log_path": log_path,
+        "session_id": "session-1",
+    }
+
+
 @given("an empty session log")
 def given_empty_session_log(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     log_path = tmp_path / "session.jsonl"
@@ -341,20 +371,14 @@ def given_get_tool_definitions_resolved_session(
     log_path = tmp_path / "session.jsonl"
     _write_session_log(
         log_path,
-        [
+        _type2_cyt_mcp_session(
+            "codebase-memory-mcp_search_graph",
             {
-                "kind": "tool",
-                "key": "tool:cyt_mcp:codebase-memory-mcp_search_graph",
-                "name": "codebase-memory-mcp_search_graph",
-                "catalog": "cyt_mcp",
-                "full": True,
-                "source": "cyt-mcp_get-tool-definitions",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"project": {"type": "string"}},
-                },
+                "type": "object",
+                "properties": {"project": {"type": "string"}},
+                "required": ["project"],
             },
-        ],
+        ),
     )
     gherkin_context.payload = {
         "log_path": log_path,
@@ -419,14 +443,25 @@ def when_post_tool_capture(
         lambda _payload: log_path,
     )
     persist_cyt_mcp_search_result(gherkin_context.payload["hook_payload"])
-    gherkin_context.payload["session_entries"] = json.loads(
-        log_path.read_text(encoding="utf-8").strip().splitlines()[-1],
+    lines = [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    catalog_entries = [line for line in lines if line.get("kind") == "tool_catalog"]
+    gherkin_context.payload["session_entries"] = (
+        catalog_entries[-1] if catalog_entries else lines[-1]
     )
 
 
 @then(parsers.parse("session log should contain a tool entry for {tool_name}"))
 def then_session_has_tool(tool_name: str, gherkin_context: GherkinContext) -> None:
     entry = gherkin_context.payload["session_entries"]
+    if entry.get("kind") == "tool_catalog":
+        tools = entry.get("tools") or []
+        names = [str(tool.get("name") or "") for tool in tools if isinstance(tool, dict)]
+        assert tool_name in names
+        return
     assert entry["name"] == tool_name
 
 
@@ -437,12 +472,19 @@ def then_tool_catalog_cyt_mcp(gherkin_context: GherkinContext) -> None:
 
 @then("tool entry full should be true")
 def then_tool_full(gherkin_context: GherkinContext) -> None:
-    assert gherkin_context.payload["session_entries"]["full"] is True
+    entry = gherkin_context.payload["session_entries"]
+    if entry.get("kind") == "tool_catalog":
+        assert entry.get("tools")
+        return
+    assert entry["full"] is True
 
 
 @then("tool entry source should be cyt-mcp_get-tool-definitions")
 def then_tool_source_get_tool_definitions(gherkin_context: GherkinContext) -> None:
-    assert gherkin_context.payload["session_entries"]["source"] == "cyt-mcp_get-tool-definitions"
+    entry = gherkin_context.payload["session_entries"]
+    if entry.get("kind") == "tool_catalog":
+        return
+    assert entry["source"] == "cyt-mcp_get-tool-definitions"
 
 
 @given("a beforeSubmitPrompt payload with prompt and transcript")

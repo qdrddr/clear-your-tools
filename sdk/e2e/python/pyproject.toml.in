@@ -5,7 +5,7 @@ requires-python = ">=3.13,<4.0"
 dependencies = ["cyt-indexer-sdk==@CYT_RELEASE_VERSION@"]
 
 [dependency-groups]
-test = ["pytest>=8.0"]
+test = ["pytest==9.0.3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
