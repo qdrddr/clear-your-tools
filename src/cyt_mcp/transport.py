@@ -17,8 +17,10 @@ async def refresh_runtime_cache(
     cache: RuntimeToolCache,
     config: AggregatorConfig,
 ) -> None:
+    # Single backend fetch via _list_tools(); do not also call list_tools() —
+    # that repeats every stdio handshake and applies StubListTransform to a
+    # result we discard anyway.
     await refresh_catalog_cache(server, cache)
-    await server.list_tools()
 
 
 def register_catalog_route(
