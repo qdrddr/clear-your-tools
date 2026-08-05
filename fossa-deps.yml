@@ -11,7 +11,7 @@ referenced-dependencies:
     version: "2.6.2"
   - type: pypi
     name: aiohttp
-    version: "3.14.1"
+    version: "3.14.3"
   - type: pypi
     name: aiosignal
     version: "1.4.0"
@@ -56,7 +56,7 @@ referenced-dependencies:
     version: "0.4.6"
   - type: pypi
     name: cryptography
-    version: "48.0.1"
+    version: "50.0.0"
   - type: pypi
     name: cyclopts
     version: "4.22.4"

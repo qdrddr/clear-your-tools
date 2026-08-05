@@ -1,6 +1,10 @@
-# FOSSA: scan production Python deps only (see legal/POLICY.md).
-# paths.exclude prunes directories; uv/setuptools targets are narrowed in targets.exclude.
-# Production Python graph comes from fossa-deps.yml (generated from requirements.txt).
+# FOSSA cloud scanner: production / distributed deps only (see legal/POLICY.md).
+#
+# Quick Import static scans cannot exclude individual files (paths.exclude is directory-only;
+# see https://github.com/fossas/fossa-cli/issues/968). Mitigations for cloud + local CLI:
+#   1. dev-requirements.txt — not matched by setuptools requirements*.txt glob at repo root
+#   2. fossa-deps.yml — explicit Python production graph (from requirements.txt)
+#   3. targets.only — scan cargo, Go SDK, TS SDK only; Python via fossa-deps.yml (no uv/setuptools@./)
 
 version: 3
 
@@ -8,20 +12,19 @@ paths:
   exclude:
     - uv.lock
     - "**/uv.lock"
-    - "**/requirements-dev.txt"
+    - "**/dev-requirements.txt"
     - "**/scripts/deps/output/**"
+    - "**/scripts/legal/output/**"
     - target/**
     - .uv-cache/**
     - chunk-your-*/**
     - sdk/e2e/**
 
 targets:
-  exclude:
-    # uv.lock carries dev/test groups; production Python deps are in fossa-deps.yml.
-    - type: uv
-    # setuptools globs all requirements*.txt at repo root; cannot exclude files via paths.
-    - type: setuptools
+  only:
+    - type: cargo
       path: .
-    # Root package.json is repo CI tooling (fallow, typescript); published npm is sdk/typescript.
+    - type: gomod
+      path: sdk/go
     - type: npm
-      path: .
+      path: sdk/typescript

@@ -39,18 +39,20 @@ release tooling) may include **LGPL** and other copyleft licenses when they are
 **not redistributed** with the product.
 
 Dev/CI dependencies must not appear in `requirements.txt` or release SBOMs. They
-belong in `requirements-dev.txt` only.
+belong in `dev-requirements.txt` only.
 
 ## FOSSA release gate
 
 FOSSA compliance for releases and the public badge is evaluated against
 **production / distributed dependencies only** (see `.fossa.yml` and `fossa-deps.yml`).
+The GitHub App cloud scanner reads `.fossa.yml`; dev-only Python tools are kept out
+of `requirements*.txt` via `dev-requirements.txt` (see `.fossa.yml` comments).
 
 - `fossa-deps.yml` — Python runtime graph (from `requirements.txt`) plus Rust SDK
   binding crates for `cyt-indexer` (`python`/`node` features; FOSSA `cargo@.` uses
   default `cli` only — see [FOSSA Rust docs](https://docs.fossa.com/docs/project-setup/supported-languages/rust))
 - `requirements.txt` — runtime / distributed deps (all published optional extras)
-- `requirements-dev.txt` — dev + test groups (excluded via `.fossa.yml`)
+- `dev-requirements.txt` — dev + test groups (not matched by FOSSA `requirements*.txt` glob)
 - `uv.lock` — developer lockfile (excluded from FOSSA; source for exports)
 - `cargo@.` — Rust runtime graph for `cyt-indexer` default features (`cli`);
   SDK binding crates (`pyo3`, `napi`, …) are listed in `fossa-deps.yml` instead.

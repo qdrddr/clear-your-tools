@@ -3,7 +3,7 @@
 #
 # Generated from uv.lock (do not edit by hand):
 #   requirements.txt      — distributed/runtime (FOSSA release gate)
-#   requirements-dev.txt  — dev + test groups (not shipped; LGPL allowed per legal/POLICY.md)
+#   dev-requirements.txt  — dev + test groups (not shipped; LGPL allowed per legal/POLICY.md)
 #   fossa-deps.yml        — FOSSA referenced-dependencies (Python + Rust SDK bindings)
 #
 # Usage:
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PROD_FILE="${REPO_ROOT}/requirements.txt"
-DEV_FILE="${REPO_ROOT}/requirements-dev.txt"
+DEV_FILE="${REPO_ROOT}/dev-requirements.txt"
 DO_CHECK=0
 
 while [[ $# -gt 0 ]]; do
@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
 		cat <<'EOF'
 Usage: export-requirements.sh [--check]
 
-Writes requirements.txt (production) and requirements-dev.txt (dev/CI) at repo root.
+Writes requirements.txt (production) and dev-requirements.txt (dev/CI) at repo root.
 With --check, fails if committed files differ from a fresh uv export.
 EOF
 		exit 0
@@ -137,7 +137,7 @@ write_requirements_file() {
 	} >"${out}"
 }
 
-# FOSSA cannot exclude requirements-dev.txt from setuptools@./ (paths.exclude is directory-only).
+# dev-requirements.txt is not named requirements*.txt so FOSSA setuptools@./ static scans skip it.
 write_fossa_deps() {
 	local req_file="$1"
 	local out_file="$2"
@@ -178,10 +178,10 @@ write_fossa_deps() {
 if [[ "${DO_CHECK}" -eq 1 ]]; then
 	tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/export-requirements.XXXXXX")"
 	trap 'rm -rf "${tmp_dir}"' EXIT
-	export_requirements "${tmp_dir}/requirements.txt" "${tmp_dir}/requirements-dev.txt"
+	export_requirements "${tmp_dir}/requirements.txt" "${tmp_dir}/dev-requirements.txt"
 
 	status=0
-	for name in requirements.txt requirements-dev.txt fossa-deps.yml; do
+	for name in requirements.txt dev-requirements.txt fossa-deps.yml; do
 		if [[ ! -f "${REPO_ROOT}/${name}" ]]; then
 			echo "error: missing ${name} (run: ./scripts/deps/export-requirements.sh)" >&2
 			status=1

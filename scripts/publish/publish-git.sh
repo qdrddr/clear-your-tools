@@ -73,7 +73,7 @@ ${ROOT}/sdk/typescript/package-lock.json
 ${ROOT}/sdk/c/CMakeLists.txt
 ${ROOT}/sdk/go/moduleversion/version.go
 ${ROOT}/requirements.txt
-${ROOT}/requirements-dev.txt
+${ROOT}/dev-requirements.txt
 ${ROOT}/fossa-deps.yml
 ${ROOT}/sdk/rust/cyt-indexer/cyt-indexer.cdx.json
 ${ROOT}/sdk/rust/cyt-indexer/cyt-indexer.snyk.json
