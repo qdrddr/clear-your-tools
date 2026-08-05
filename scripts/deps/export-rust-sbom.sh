@@ -153,7 +153,6 @@ export_cdx_sbom() {
 
 	cdx_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx.XXXXXX")"
 	cdx_raw="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-raw.XXXXXX")"
-	trap 'rm -f "${cdx_tmp}" "${cdx_raw}" "${cdx_backup}"' RETURN
 
 	if [[ "${cdx_out}" != "${CDX_FILE}" && -f "${CDX_FILE}" ]]; then
 		cdx_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-cdx-backup.XXXXXX")"
@@ -176,6 +175,8 @@ export_cdx_sbom() {
 	if [[ -n "${cdx_backup}" ]]; then
 		cp "${cdx_backup}" "${CDX_FILE}"
 	fi
+
+	rm -f "${cdx_tmp}" "${cdx_raw}" "${cdx_backup}"
 }
 
 export_snyk_sbom_if_available() {
@@ -195,7 +196,6 @@ export_snyk_sbom_if_available() {
 	}
 
 	snyk_tmp="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk.XXXXXX")"
-	trap 'rm -f "${snyk_tmp}" "${snyk_backup}"' RETURN
 
 	if [[ "${snyk_out}" != "${SNYK_FILE}" && -f "${SNYK_FILE}" ]]; then
 		snyk_backup="$(mktemp "${TMPDIR:-/tmp}/export-rust-sbom-snyk-backup.XXXXXX")"
@@ -227,6 +227,8 @@ export_snyk_sbom_if_available() {
 	if [[ -n "${snyk_backup}" ]]; then
 		cp "${snyk_backup}" "${SNYK_FILE}"
 	fi
+
+	rm -f "${snyk_tmp}" "${snyk_tmp}.sorted" "${snyk_backup}"
 }
 
 export_rust_sbom() {
