@@ -72,6 +72,11 @@ ${ROOT}/sdk/typescript/package.json
 ${ROOT}/sdk/typescript/package-lock.json
 ${ROOT}/sdk/c/CMakeLists.txt
 ${ROOT}/sdk/go/moduleversion/version.go
+${ROOT}/requirements.txt
+${ROOT}/requirements-dev.txt
+${ROOT}/fossa-deps.yml
+${ROOT}/sdk/rust/cyt-indexer/cyt-indexer.cdx.json
+${ROOT}/sdk/rust/cyt-indexer/cyt-indexer.snyk.json
 ${ROOT}/search/.publish-tag
 EOF
 }
@@ -211,6 +216,8 @@ fi
 
 "${SCRIPT_DIR}/sync-version.sh" "${semver}"
 "${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
+bash "${ROOT}/scripts/deps/export-requirements.sh"
+bash "${ROOT}/scripts/deps/export-rust-sbom.sh"
 
 stage_version_files
 if git diff --cached --quiet; then
@@ -218,7 +225,7 @@ if git diff --cached --quiet; then
 else
 	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
 	# re-touch those files or rebuild native artifacts during the version commit.
-	SKIP=sync-version,heal-cargo-lock,cargo-sort,cargo-build-sdk-release,verify-pins,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-test-unit,typescript-test-parity \
+	SKIP=sync-version,heal-cargo-lock,export-requirements,export-rust-sbom,cargo-sort,cargo-build-sdk-release,verify-pins,go-fumpt-repo-mod,go-imports-repo-mod,go-mod-tidy-repo-mod,go-staticcheck-repo-mod,go-critic-repo-mod,go-sec-repo-mod,go-build-repo-mod,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-test-unit,typescript-test-parity \
 		git commit -m "version bump to ${tag}"
 fi
 
