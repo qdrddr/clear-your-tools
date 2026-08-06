@@ -1063,6 +1063,7 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert data["hooks"]["sessionEnd"] == [entries["session_end"]]
     assert data["hooks"]["preToolUse"] == [entries["pre_tool"]]
     assert data["hooks"]["postToolUse"] == [entries["post_tool"]]
+    assert data["hooks"]["preCompact"] == [entries["pre_compact"]]
     assert entries["before_submit"]["command"] == "cyt-client"
     assert len(entries["session_start"]) == 2
     assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"

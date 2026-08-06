@@ -51,6 +51,10 @@ from cyt_client.session_capture import (
     persist_cyt_mcp_search_result,
     persist_turn_to_session_log,
 )
+from cyt_client.session_compaction import (
+    is_pre_compact_event,
+    persist_compaction_to_session_log,
+)
 from cyt_client.session_pre_tool_exposure import persist_pre_tool_deny_exposure
 from cyt_client.sessions import (
     append_session_log,
@@ -230,6 +234,18 @@ def _reset_cursor_rules_file_for_session_lifecycle(payload: dict) -> None:
         _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
 
 
+def _handle_pre_compact(payload: dict, *, cursor_output: bool) -> None:
+    try:
+        persist_compaction_to_session_log(payload)
+    except OSError as exc:
+        _verbose_log(f"cyt-client: failed to persist compaction: {exc}")
+    workspace = workspace_root_from_payload(payload)
+    if workspace is not None and is_valid_workspace_root(workspace):
+        reset_cursor_rules_file_to_placeholder(workspace)
+    if cursor_output:
+        _emit_cursor_continue()
+
+
 def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
     try:
         persist_cyt_mcp_search_result(payload)
@@ -345,6 +361,19 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         return
 
     agent = _effective_agent(payload)
+    if inject_via_for_agent(agent) == "proxy" and not verify_only_mode():
+        prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
+        payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
+        if is_prompt_submit_event(payload):
+            try:
+                enriched = json.loads(payload_bytes)
+                if isinstance(enriched, dict):
+                    persist_turn_to_session_log(enriched)
+            except (json.JSONDecodeError, OSError) as exc:
+                _verbose_log(f"cyt-client: failed to persist turn: {exc}")
+        _emit_cursor_continue()
+        return
+
     if verify_only_mode() and inject_via_for_agent(agent) == "proxy":
         _emit_cursor_continue()
         return
@@ -480,6 +509,11 @@ def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
         return
 
     agent = _effective_agent(payload)
+    if inject_via_for_agent(agent) == "proxy" and not verify_only_mode():
+        payload_bytes = enrich_hook_payload(raw)
+        _maybe_persist_prompt_turn(payload_bytes, payload)
+        return
+
     if verify_only_mode() and inject_via_for_agent(agent) == "proxy":
         return
 
@@ -524,6 +558,10 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
 
     if is_pre_tool_event(payload):
         _handle_pre_tool(payload, cursor_output=cursor_output)
+        return
+
+    if is_pre_compact_event(payload):
+        _handle_pre_compact(payload, cursor_output=cursor_output)
         return
 
     if is_session_end_event(payload):

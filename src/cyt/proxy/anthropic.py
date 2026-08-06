@@ -8,6 +8,8 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from cyt.injection.pre_exposure_context import PreExposureContext
+    from cyt.proxy.transform_context import ProxyTransformContext
     from cyt.skills.proxy_inject import DeferredSkillsContext, SkillsProxyInjectMeta
 
 from cyt.common.search_query import format_search_query
@@ -262,21 +264,38 @@ def _anthropic_skipped_no_query_prune_result(tools: list[dict[str, Any]]) -> Pru
 
 def _format_gated_agent_tools(
     mcp_tools: list[dict[str, Any]],
-    session_text: str,
-) -> str:
-    from cyt.injection.pre_exposed import filter_pre_exposed_tools
+    *,
+    config: dict[str, Any],
+    ctx: PreExposureContext | None,
+    session_text: str = "",
+    catalog_tools: list[dict[str, Any]] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
     from cyt.tools.inject import format_agent_tools
 
-    gated = filter_pre_exposed_tools(mcp_tools, session_text)
-    return format_agent_tools(gated)
+    if ctx is None:
+        from cyt.injection.pre_exposed import filter_pre_exposed_tools
+
+        gated = filter_pre_exposed_tools(mcp_tools, session_text)
+        return format_agent_tools(gated), []
+    gated, logs, _sessions = gate_and_filter_tools(
+        mcp_tools,
+        config=config,
+        ctx=ctx,
+        catalog_tools=catalog_tools,
+    )
+    return format_agent_tools(gated), logs
 
 
 def _anthropic_user_message_tools_inject(
     original: dict[str, Any],
     result: PruneResult,
     *,
+    config: dict[str, Any],
+    ctx: PreExposureContext | None,
     session_text: str,
-) -> tuple[dict[str, Any], str]:
+    catalog_tools: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
     from cyt.proxy.user_message_inject import (
         anthropic_root_tools_with_mcp_stubs,
         anthropic_tools_for_user_message_inject,
@@ -285,23 +304,37 @@ def _anthropic_user_message_tools_inject(
 
     source_tools = original.get("tools") or []
     if not isinstance(source_tools, list) or not source_tools:
-        return original, ""
+        return original, "", []
 
     if result.status == "pass_through" or result.tools is None:
         mcp_tools, system_tools = split_tools_for_root_and_inject(source_tools)
         original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
-        return original, _format_gated_agent_tools(mcp_tools, session_text)
+        formatted, logs = _format_gated_agent_tools(
+            mcp_tools,
+            config=config,
+            ctx=ctx,
+            session_text=session_text,
+            catalog_tools=catalog_tools,
+        )
+        return original, formatted, logs
 
     pruned_tools = result.tools if isinstance(result.tools, list) else []
     if not pruned_tools:
-        return original, ""
+        return original, "", []
 
     mcp_tools, system_tools = anthropic_tools_for_user_message_inject(
         source_tools,
         pruned_tools,
     )
     original["tools"] = anthropic_root_tools_with_mcp_stubs(system_tools, source_tools)
-    return original, _format_gated_agent_tools(mcp_tools, session_text)
+    formatted, logs = _format_gated_agent_tools(
+        mcp_tools,
+        config=config,
+        ctx=ctx,
+        session_text=session_text,
+        catalog_tools=catalog_tools,
+    )
+    return original, formatted, logs
 
 
 def _anthropic_finish_transform(
@@ -313,13 +346,13 @@ def _anthropic_finish_transform(
     skill_out: dict[str, Any],
     query: str | None,
     pruner_settings: PrunerSettingsCache | None = None,
+    proxy_ctx: ProxyTransformContext | None = None,
 ) -> tuple[dict[str, Any], PruneResult, SkillsProxyInjectMeta]:
     from cyt.config import inject_into_user_message, load_config
+    from cyt.injection.pre_exposure_pipeline import gate_and_filter_native_tools
     from cyt.injection.session_text import session_text_from_proxy_body
-    from cyt.proxy.user_message_inject import (
-        already_has_user_turn_injection,
-        append_injection_to_body,
-    )
+    from cyt.proxy.session_log import persist_proxy_session_log_entries
+    from cyt.proxy.user_message_inject import append_injection_to_body
     from cyt.skills.proxy_inject import finish_deferred_skills_anthropic
     from cyt.tools.budget import tools_inject_allowed
 
@@ -333,9 +366,14 @@ def _anthropic_finish_transform(
         agent="claude",
     )
     deferred_tools_text = ""
+    pre_ctx = proxy_ctx.pre_exposure_ctx if proxy_ctx is not None else None
     proxy_session_text = (
-        session_text_from_proxy_body(original, "anthropic") if user_message_inject else ""
+        pre_ctx.payload_text
+        if pre_ctx is not None
+        else session_text_from_proxy_body(original, "anthropic")
     )
+    catalog_tools = result.tools if isinstance(result.tools, list) else None
+    session_log_entries: list[dict[str, Any]] = []
 
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -350,23 +388,42 @@ def _anthropic_finish_transform(
                 query=query,
                 prune_result=result,
                 pruner_settings=pruner_settings,
+                pre_exposure_ctx=pre_ctx,
             )
             return original, result, skills_meta
 
         if user_message_inject:
-            original, deferred_tools_text = _anthropic_user_message_tools_inject(
+            original, deferred_tools_text, logs = _anthropic_user_message_tools_inject(
                 original,
                 result,
+                config=resolved_config,
+                ctx=pre_ctx,
                 session_text=proxy_session_text,
+                catalog_tools=catalog_tools,
             )
+            session_log_entries.extend(logs)
     elif user_message_inject:
-        original, deferred_tools_text = _anthropic_user_message_tools_inject(
+        original, deferred_tools_text, logs = _anthropic_user_message_tools_inject(
             original,
             result,
+            config=resolved_config,
+            ctx=pre_ctx,
             session_text=proxy_session_text,
+            catalog_tools=catalog_tools,
         )
+        session_log_entries.extend(logs)
     elif result.tools is not None:
-        original["tools"] = result.tools
+        if pre_ctx is not None:
+            gated, logs = gate_and_filter_native_tools(
+                result.tools,
+                config=resolved_config,
+                ctx=pre_ctx,
+                catalog_tools=catalog_tools,
+            )
+            original["tools"] = gated
+            session_log_entries.extend(logs)
+        else:
+            original["tools"] = result.tools
 
     original, skills_meta = finish_deferred_skills_anthropic(
         original,
@@ -377,14 +434,19 @@ def _anthropic_finish_transform(
         query=query,
         prune_result=result,
         pruner_settings=pruner_settings,
+        pre_exposure_ctx=pre_ctx,
     )
 
-    if (
-        user_message_inject
-        and deferred_tools_text
-        and not already_has_user_turn_injection(original, "anthropic", tag="<agent-tools>")
-    ):
+    if user_message_inject and deferred_tools_text:
         original = append_injection_to_body(original, deferred_tools_text, kind="anthropic")
+
+    if proxy_ctx is not None and session_log_entries:
+        persist_proxy_session_log_entries(
+            agent=proxy_ctx.agent,
+            session_id=proxy_ctx.session_id,
+            entries=session_log_entries,
+            config=resolved_config,
+        )
 
     return original, result, skills_meta
 
@@ -395,6 +457,7 @@ def transform_anthropic_request(
     capture_decomposed_catalog: bool = False,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    proxy_ctx: ProxyTransformContext | None = None,
 ) -> tuple[dict[str, Any], PruneResult | None, Any]:
     """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
     from cyt.skills.proxy_inject import (
@@ -445,6 +508,7 @@ def transform_anthropic_request(
             skill_out,
             query,
             pruner_settings=pruner_settings,
+            proxy_ctx=proxy_ctx,
         )
 
     if not user_query:
@@ -501,4 +565,5 @@ def transform_anthropic_request(
         skill_out,
         query,
         pruner_settings=pruner_settings,
+        proxy_ctx=proxy_ctx,
     )

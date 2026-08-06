@@ -943,15 +943,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
       "name": "clap",
-      "version": "4.6.5",
+      "version": "4.6.6",
       "description": "A simple to use, efficient, and full-featured Command Line Argument Parser",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "301b56658598e48f3648647ac6fc887be7e7108eddfa4e9b63fcf3ec58c0cadf"
+          "content": "473c7e07f409a8d772161724aa8db6a765a2532a70f9667eeb7b49d3d02fbdca"
         }
       ],
       "licenses": [
@@ -959,7 +959,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/clap@4.6.5",
+      "purl": "pkg:cargo/clap@4.6.6",
       "externalReferences": [
         {
           "type": "vcs",
@@ -969,15 +969,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.5",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.6",
       "name": "clap_builder",
-      "version": "4.6.5",
+      "version": "4.6.6",
       "description": "A simple to use, efficient, and full-featured Command Line Argument Parser",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "94a65403d1a1bd28f7dc68eb8506e8874808ee5eecb59298de588e2e1407a078"
+          "content": "7b48fea5a88e9ae728a2dcbedbfc0e730f7d60da42e1cb049a83c9fb8b789889"
         }
       ],
       "licenses": [
@@ -985,7 +985,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/clap_builder@4.6.5",
+      "purl": "pkg:cargo/clap_builder@4.6.6",
       "externalReferences": [
         {
           "type": "vcs",
@@ -5841,7 +5841,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#chunk@0.10.2",
         "registry+https://github.com/rust-lang/crates.io-index#chunk-your-skills@2.1.9",
         "registry+https://github.com/rust-lang/crates.io-index#chunk-your-tools@2.3.9",
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#hex@0.4.3",
         "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
         "registry+https://github.com/rust-lang/crates.io-index#rust-stemmers@1.2.0",
@@ -5979,7 +5979,7 @@
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#heck@0.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#indexmap@2.14.0",
         "registry+https://github.com/rust-lang/crates.io-index#log@0.4.33",
@@ -6011,7 +6011,7 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-skills@2.1.9",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#hex@0.4.3",
         "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
@@ -6024,7 +6024,7 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#chunk-your-tools@2.3.9",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#cbindgen@0.29.4",
-        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#napi-build@2.4.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151"
@@ -6038,14 +6038,14 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.5",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.5",
+        "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.6",
         "registry+https://github.com/rust-lang/crates.io-index#clap_derive@4.6.4"
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.5",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#clap_builder@4.6.6",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anstream@1.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#anstyle@1.0.14",

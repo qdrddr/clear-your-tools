@@ -16,6 +16,10 @@ _INTRO = (
 )
 
 
+def skills_inject_intro() -> str:
+    return _INTRO
+
+
 def _parsed_frontmatter(markdown: str) -> dict[str, object]:
     text = markdown.strip()
     if not text.startswith("---"):
@@ -86,6 +90,7 @@ def format_agent_skills(
     matches: list[MatchedSkill],
     *,
     full_flags: dict[str, bool] | None = None,
+    combined_text: str = "",
 ) -> str:
     if not matches:
         return ""
@@ -107,7 +112,13 @@ def format_agent_skills(
             item_lines.append(item)
     if not any(item_lines):
         return ""
-    lines = [_INTRO, "", "<agent-skills>", *item_lines, "</agent-skills>"]
+    from cyt.injection.pre_exposed import is_pre_exposed
+
+    include_intro = not (combined_text.strip() and is_pre_exposed(_INTRO, combined_text))
+    if include_intro:
+        lines = [_INTRO, "", "<agent-skills>", *item_lines, "</agent-skills>"]
+    else:
+        lines = ["<agent-skills>", *item_lines, "</agent-skills>"]
     return "\n".join(lines)
 
 

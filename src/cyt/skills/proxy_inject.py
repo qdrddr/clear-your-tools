@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.injection.pre_exposure_context import PreExposureContext
 
 from cyt.agents._types import AgentName
 from cyt.proxy.anthropic import PruneResult
@@ -112,6 +115,7 @@ def finish_deferred_skills_anthropic(
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     from cyt.agents.claude.skills_proxy import finish_deferred_skills_anthropic as finish
 
@@ -124,6 +128,7 @@ def finish_deferred_skills_anthropic(
         matches=matches,
         prune_result=prune_result,
         pruner_settings=pruner_settings,
+        pre_exposure_ctx=pre_exposure_ctx,
     )
 
 
@@ -137,6 +142,7 @@ def finish_deferred_skills_openai(
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     from cyt.agents.codex.skills_proxy import finish_deferred_skills_openai as finish
 
@@ -149,6 +155,7 @@ def finish_deferred_skills_openai(
         matches=matches,
         prune_result=prune_result,
         pruner_settings=pruner_settings,
+        pre_exposure_ctx=pre_exposure_ctx,
     )
 
 
@@ -191,6 +198,7 @@ def inject_skills_for_proxy_request(
     prune_result: PruneResult | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
     deferred: DeferredSkillsContext | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if not skills_inject_via_proxy(config, kind):
         return body, SkillsProxyInjectMeta()
@@ -256,6 +264,7 @@ def inject_skills_for_proxy_request(
         skill_matches,
         query=resolved_query,
         config=config,
+        pre_exposure_ctx=pre_exposure_ctx,
     )
     meta.request_tokens = stats_request_tokens
     return body_out, meta
@@ -304,10 +313,17 @@ def inject_skills_matches_into_openai_body(
     *,
     query: str | None = None,
     config: dict[str, Any] | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     from cyt.agents.codex.skills_proxy import inject_skills_matches_into_openai_body as inject
 
-    return inject(body, matches, query=query, config=config)
+    return inject(
+        body,
+        matches,
+        query=query,
+        config=config,
+        pre_exposure_ctx=pre_exposure_ctx,
+    )
 
 
 def inject_skills_deferred_anthropic(

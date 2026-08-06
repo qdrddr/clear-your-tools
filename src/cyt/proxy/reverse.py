@@ -44,6 +44,7 @@ from cyt.proxy.pruning_debug import (
     format_removed_chunks_lines as _format_removed_chunks_lines,
 )
 from cyt.proxy.setup_wizard import normalize_upstream_kind, upstream_entry_endpoint
+from cyt.proxy.transform_context import ProxyTransformContext
 from cyt.proxy.transport import (
     agent_trace_log_path,
     append_agent_trace_log,
@@ -601,6 +602,7 @@ async def transform_request_body(
     debug: bool = False,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    proxy_ctx: ProxyTransformContext | None = None,
 ) -> tuple[bytes, Any | None, list[dict[str, Any]] | None, Any | None]:
     from cyt.skills.proxy_inject import SkillsProxyInjectMeta
 
@@ -626,6 +628,7 @@ async def transform_request_body(
                 capture_decomposed_catalog=debug,
                 config=config,
                 pruner_settings=pruner_settings,
+                proxy_ctx=proxy_ctx,
             )
         else:
             from cyt.proxy.openai_responses import transform_openai_request
@@ -637,6 +640,7 @@ async def transform_request_body(
                 capture_decomposed_catalog=debug,
                 config=config,
                 pruner_settings=pruner_settings,
+                proxy_ctx=proxy_ctx,
             )
         return json.dumps(transformed).encode(), pruning, input_tools, skills_meta
     except json.JSONDecodeError:
@@ -923,6 +927,46 @@ def _log_proxy_request_entry(debug_trace: DebugTrace | None, request: Request) -
     )
 
 
+def _launch_agent_from_proxy_request(
+    request: Request,
+    kind: str | None,
+) -> str | None:
+    from cyt.launch.upstream import launch_agent_for_upstream_kind
+
+    launch_agent = request.headers.get("x-cyt-launch-agent") or request.headers.get(
+        "X-CYT-Launch-Agent",
+    )
+    agent = str(launch_agent).strip() if isinstance(launch_agent, str) and launch_agent else None
+    if agent is None and kind in {"anthropic", "openai"}:
+        agent = launch_agent_for_upstream_kind(kind)
+    return agent
+
+
+def _proxy_transform_context_from_request(
+    request: Request,
+    body: bytes,
+    kind: str | None,
+) -> ProxyTransformContext | None:
+    agent = _launch_agent_from_proxy_request(request, kind)
+    if not agent or not body:
+        return None
+    try:
+        payload_obj = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload_obj, dict):
+        return None
+    from cyt.proxy.verify_session_log import session_id_from_headers
+
+    session_id = session_id_from_headers(dict(request.headers.items()))
+    return ProxyTransformContext.from_request(
+        agent=agent,
+        session_id=session_id,
+        body=payload_obj,
+        kind=kind or "anthropic",
+    )
+
+
 async def _process_buffered_proxy_body(
     *,
     request: Request,
@@ -982,6 +1026,7 @@ async def _process_buffered_proxy_body(
             config,
             endpoint_name,
         )
+        proxy_ctx = _proxy_transform_context_from_request(request, body, kind)
         with request_pruner_settings_scope(effective_pruner_settings):
             body, pruning, input_tools, skills_meta = await transform_request_body(
                 body,
@@ -991,6 +1036,7 @@ async def _process_buffered_proxy_body(
                 debug,
                 config=config,
                 pruner_settings=effective_pruner_settings,
+                proxy_ctx=proxy_ctx,
             )
     finally:
         if debug_log_token is not None:
@@ -1003,12 +1049,7 @@ async def _process_buffered_proxy_body(
         from cyt.config import verify_only_mode
         from cyt.proxy.verify_session_log import maybe_record_verify_proxy_request
 
-        launch_agent = request.headers.get("x-cyt-launch-agent") or request.headers.get(
-            "X-CYT-Launch-Agent",
-        )
-        agent = (
-            str(launch_agent).strip() if isinstance(launch_agent, str) and launch_agent else None
-        )
+        agent = _launch_agent_from_proxy_request(request, kind)
         if verify_only_mode(config) and agent:
             maybe_record_verify_proxy_request(
                 headers=request.headers,

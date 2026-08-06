@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from cyt.injection.session_log import SessionLogIndex, combined_session_text, resolve_injection_mode
+from cyt_client.sessions import entries_after_latest_compaction
 
 
 def test_satisfied_full_suppresses_reinjection() -> None:
@@ -114,3 +117,27 @@ def test_combined_session_text_includes_turn_corpus() -> None:
     combined = combined_session_text("", index)
     assert "analyze graph" in combined
     assert "codebase-memory-mcp_search_graph" in combined
+
+
+def test_post_compaction_index_allows_reinject() -> None:
+    entries: list[dict[str, Any]] = [
+        {
+            "kind": "tool",
+            "key": "tool:demo",
+            "hash": "hash-v1",
+            "full": True,
+            "name": "demo",
+        },
+        {"kind": "compaction", "key": "compaction", "payload": {}},
+    ]
+    sliced = entries_after_latest_compaction(entries)
+    index = SessionLogIndex(entries=tuple(sliced))
+    mode = resolve_injection_mode(
+        key="tool:demo",
+        current_hash="hash-v1",
+        index=index,
+        session_text="",
+        formatted_skinny="<tool name='demo'></tool>",
+        formatted_full="<tool name='demo'>full</tool>",
+    )
+    assert mode == "skinny"

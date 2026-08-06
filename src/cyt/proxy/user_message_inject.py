@@ -5,6 +5,11 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal, cast
 
+from cyt.injection.block_merge import (
+    injection_domain,
+    merge_injection_into_text,
+    strip_agent_skills_blocks,
+)
 from cyt.pruners.policies import anthropic_tool_is_mcp, split_anthropic_tools
 from cyt.tools.inject import ensure_agent_tools_starts_on_new_line
 
@@ -227,20 +232,139 @@ def already_has_user_turn_injection(
     return any(_injection_marker_in_text(text, marker) for marker in tags)
 
 
-def _append_text_to_string_content(existing: str, text: str) -> str:
-    if existing:
-        text = ensure_agent_tools_starts_on_new_line(text, after=existing)
-        return existing + "\n\n" + text
-    return text
+def _text_block_types() -> frozenset[str]:
+    return frozenset({"input_text", "output_text", "text"})
 
 
-def _anthropic_append_text_to_user_content(message: dict[str, Any], text: str) -> None:
+def _merge_into_matching_text_block(
+    blocks: list[Any],
+    text: str,
+    *,
+    same_turn: bool = True,
+) -> bool:
+    domain = injection_domain(text)
+    if domain is None:
+        return False
+    if domain == "skills" and not same_turn:
+        return False
+    marker = _AGENT_SKILLS_TAG if domain == "skills" else _AGENT_TOOLS_TAG
+    for block_obj in blocks:
+        if not isinstance(block_obj, dict):
+            continue
+        block = cast(dict[str, Any], block_obj)
+        if block.get("type") not in _text_block_types():
+            continue
+        block_text = block.get("text")
+        if not isinstance(block_text, str) or not _injection_marker_in_text(block_text, marker):
+            continue
+        block["text"] = merge_injection_into_text(block_text, text, same_turn=same_turn)
+        return True
+    return False
+
+
+def _append_text_to_string_content(existing: str, text: str, *, same_turn: bool = True) -> str:
+    if not text.strip():
+        return existing
+    if not existing.strip():
+        return text
+    return merge_injection_into_text(existing, text, same_turn=same_turn)
+
+
+def _strip_message_content(content: object) -> object:
+    if isinstance(content, str):
+        return strip_agent_skills_blocks(content)
+    if not isinstance(content, list):
+        return content
+    updated: list[Any] = []
+    for block_obj in content:
+        if not isinstance(block_obj, dict):
+            updated.append(block_obj)
+            continue
+        block = cast(dict[str, Any], block_obj)
+        if block.get("type") not in _text_block_types():
+            updated.append(block_obj)
+            continue
+        block_text = block.get("text")
+        if not isinstance(block_text, str):
+            updated.append(block_obj)
+            continue
+        stripped = strip_agent_skills_blocks(block_text)
+        if stripped:
+            updated.append({**block, "text": stripped})
+    return updated
+
+
+def strip_agent_skills_from_anthropic_body(body: dict[str, Any]) -> dict[str, Any]:
+    original = copy.deepcopy(body)
+    system = original.get("system")
+    if isinstance(system, str):
+        original["system"] = strip_agent_skills_blocks(system)
+    elif isinstance(system, list):
+        original["system"] = _strip_message_content(system)
+    messages = original.get("messages") or []
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            message["content"] = _strip_message_content(message.get("content"))
+    return original
+
+
+def strip_agent_skills_from_openai_body(body: dict[str, Any]) -> dict[str, Any]:
+    original = copy.deepcopy(body)
+    instructions = original.get("instructions")
+    if isinstance(instructions, str):
+        original["instructions"] = strip_agent_skills_blocks(instructions)
+    input_items = original.get("input") or []
+    if isinstance(input_items, list):
+        for item in input_items:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, str):
+                item["content"] = strip_agent_skills_blocks(content)
+            elif isinstance(content, list):
+                item["content"] = _strip_message_content(content)
+    return original
+
+
+def prepare_agent_skills_inject_body(
+    body: dict[str, Any],
+    *,
+    kind: ProxyKind,
+    use_user_turn: bool,
+) -> tuple[dict[str, Any], bool]:
+    """Return body prepared for skills inject and whether this is the same user turn."""
+    prepared = copy.deepcopy(body)
+    same_turn = use_user_turn and already_has_user_turn_injection(
+        prepared,
+        kind,
+        tag=_AGENT_SKILLS_TAG,
+    )
+    if not same_turn:
+        if kind == "anthropic":
+            prepared = strip_agent_skills_from_anthropic_body(prepared)
+        else:
+            prepared = strip_agent_skills_from_openai_body(prepared)
+    return prepared, same_turn
+
+
+def _anthropic_append_text_to_user_content(
+    message: dict[str, Any],
+    text: str,
+    *,
+    same_turn: bool = True,
+) -> None:
+    if not text.strip():
+        return
     content = message.get("content")
     if isinstance(content, str):
-        message["content"] = _append_text_to_string_content(content, text)
+        message["content"] = _append_text_to_string_content(content, text, same_turn=same_turn)
         return
     if not isinstance(content, list):
         message["content"] = [{"type": "text", "text": text}]
+        return
+    if _merge_into_matching_text_block(content, text, same_turn=same_turn):
         return
     content.append({"type": "text", "text": text})
 
@@ -249,7 +373,12 @@ def _anthropic_insert_user_message(messages: list[dict[str, Any]], text: str) ->
     messages.append({"role": "user", "content": text})
 
 
-def anthropic_append_to_user_turn(body: dict[str, Any], text: str) -> dict[str, Any]:
+def anthropic_append_to_user_turn(
+    body: dict[str, Any],
+    text: str,
+    *,
+    same_turn: bool = True,
+) -> dict[str, Any]:
     if not text.strip():
         return body
     original = copy.deepcopy(body)
@@ -268,7 +397,7 @@ def anthropic_append_to_user_turn(body: dict[str, Any], text: str) -> dict[str, 
         _anthropic_insert_user_message(messages, text)
         return original
 
-    _anthropic_append_text_to_user_content(message, text)
+    _anthropic_append_text_to_user_content(message, text, same_turn=same_turn)
     return original
 
 
@@ -280,7 +409,12 @@ def _openai_make_user_message(text: str) -> dict[str, Any]:
     }
 
 
-def openai_append_to_user_turn(body: dict[str, Any], text: str) -> dict[str, Any]:
+def openai_append_to_user_turn(
+    body: dict[str, Any],
+    text: str,
+    *,
+    same_turn: bool = True,
+) -> dict[str, Any]:
     if not text.strip():
         return body
     original = copy.deepcopy(body)
@@ -303,14 +437,22 @@ def openai_append_to_user_turn(body: dict[str, Any], text: str) -> dict[str, Any
     if not isinstance(content, list):
         message["content"] = [{"type": "input_text", "text": text}]
         return original
+    if _merge_into_matching_text_block(content, text, same_turn=same_turn):
+        return original
     content.append({"type": "input_text", "text": text})
     return original
 
 
-def append_injection_to_body(body: dict[str, Any], text: str, *, kind: ProxyKind) -> dict[str, Any]:
+def append_injection_to_body(
+    body: dict[str, Any],
+    text: str,
+    *,
+    kind: ProxyKind,
+    same_turn: bool = True,
+) -> dict[str, Any]:
     if kind == "anthropic":
-        return anthropic_append_to_user_turn(body, text)
-    return openai_append_to_user_turn(body, text)
+        return anthropic_append_to_user_turn(body, text, same_turn=same_turn)
+    return openai_append_to_user_turn(body, text, same_turn=same_turn)
 
 
 def _openai_namespace_tool_name(namespace: str, tool_name: str) -> str:

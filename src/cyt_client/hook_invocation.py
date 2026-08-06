@@ -197,6 +197,7 @@ def cursor_pairing_hooks(
                 "matcher": CURSOR_POST_TOOL_MATCHER,
             },
         ],
+        "preCompact": [client_entry],
     }
 
 

@@ -29,7 +29,10 @@ class SessionLogIndex:
             ]
         agent_raw = payload.get("cyt_session_agent") or payload.get("cyt_agent")
         agent = agent_raw.strip() if isinstance(agent_raw, str) and agent_raw.strip() else None
-        return cls(entries=tuple(entries), agent=agent)
+        from cyt_client.sessions import entries_after_latest_compaction
+
+        sliced = entries_after_latest_compaction(entries)
+        return cls(entries=tuple(sliced), agent=agent)
 
     def verbatim_corpus(self) -> str:
         parts: list[str] = []

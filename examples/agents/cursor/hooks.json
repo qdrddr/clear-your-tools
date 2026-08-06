@@ -35,6 +35,12 @@
         "matcher": "get-tool-definitions|cyt-mcp_get-tool-definitions|MCP:get-tool-definitions|MCP:cyt-mcp_get-tool-definitions|mcp__cyt-mcp__get-tool-definitions",
         "timeout": 60
       }
+    ],
+    "preCompact": [
+      {
+        "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
+        "timeout": 60
+      }
     ]
   }
 }

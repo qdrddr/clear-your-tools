@@ -7,7 +7,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cyt.skills.proxy_inject import DeferredSkillsContext
+    from cyt.injection.pre_exposure_context import PreExposureContext
+    from cyt.proxy.transform_context import ProxyTransformContext
+    from cyt.skills.proxy_inject import DeferredSkillsContext, SkillsProxyInjectMeta
 
 from cyt.indexer.tokens import count_json_tokens
 from cyt.proxy.anthropic import (
@@ -636,12 +638,147 @@ def _openai_prune_request_tools(
     return result, mcp_for_inject
 
 
+def _openai_apply_native_pre_exposure(
+    original: dict[str, Any],
+    *,
+    config: dict[str, Any],
+    ctx: PreExposureContext,
+    catalog_tools: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    from cyt.injection.pre_exposure_pipeline import gate_and_filter_native_tools
+
+    logs: list[dict[str, Any]] = []
+    root_tools = original.get("tools")
+    if isinstance(root_tools, list) and root_tools:
+        gated, batch = gate_and_filter_native_tools(
+            root_tools,
+            config=config,
+            ctx=ctx,
+            catalog_tools=catalog_tools,
+        )
+        original["tools"] = gated
+        logs.extend(batch)
+    for item in original.get("input") or []:
+        if not isinstance(item, dict) or item.get("type") != "tool_search_output":
+            continue
+        item_tools = item.get("tools")
+        if not isinstance(item_tools, list) or not item_tools:
+            continue
+        gated, batch = gate_and_filter_native_tools(
+            item_tools,
+            config=config,
+            ctx=ctx,
+            catalog_tools=catalog_tools,
+        )
+        item["tools"] = gated
+        logs.extend(batch)
+    return logs
+
+
+def _openai_finish_transform(
+    original: dict[str, Any],
+    prune_result: PruneResult | None,
+    skills_meta: SkillsProxyInjectMeta,
+    deferred: DeferredSkillsContext | None,
+    config: dict[str, Any] | None,
+    skill_out: dict[str, Any],
+    query: str | None,
+    mcp_for_inject: list[dict[str, Any]],
+    *,
+    pruner_settings: PrunerSettingsCache | None = None,
+    proxy_ctx: ProxyTransformContext | None = None,
+) -> tuple[dict[str, Any], PruneResult | None, SkillsProxyInjectMeta]:
+    from cyt.config import inject_into_user_message, load_config
+    from cyt.injection.pre_exposed import filter_pre_exposed_tools
+    from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
+    from cyt.injection.session_text import session_text_from_proxy_body
+    from cyt.proxy.session_log import persist_proxy_session_log_entries
+    from cyt.proxy.user_message_inject import append_injection_to_body
+    from cyt.skills.proxy_inject import finish_deferred_skills_openai
+    from cyt.tools.budget import tools_inject_allowed
+    from cyt.tools.inject import format_agent_tools
+
+    resolved_config = config or load_config()
+    user_message_inject = inject_into_user_message(
+        resolved_config,
+        agent="codex",
+    ) and tools_inject_allowed(
+        resolved_config,
+        "proxy",
+        agent="codex",
+    )
+    pre_ctx = proxy_ctx.pre_exposure_ctx if proxy_ctx is not None else None
+    proxy_session_text = (
+        pre_ctx.payload_text
+        if pre_ctx is not None
+        else session_text_from_proxy_body(original, "openai")
+    )
+    catalog_tools = (
+        prune_result.tools
+        if prune_result is not None and isinstance(prune_result.tools, list)
+        else None
+    )
+    session_log_entries: list[dict[str, Any]] = []
+
+    if user_message_inject and mcp_for_inject:
+        if pre_ctx is not None:
+            gated, logs, _sessions = gate_and_filter_tools(
+                mcp_for_inject,
+                config=resolved_config,
+                ctx=pre_ctx,
+                catalog_tools=catalog_tools,
+            )
+        else:
+            gated = filter_pre_exposed_tools(
+                mcp_for_inject,
+                proxy_session_text,
+                include_tool_description=False,
+            )
+            logs = []
+        session_log_entries.extend(logs)
+        tools_text = format_agent_tools(gated, include_tool_description=False)
+        if tools_text:
+            original = append_injection_to_body(original, tools_text, kind="openai")
+    elif not user_message_inject and pre_ctx is not None:
+        session_log_entries.extend(
+            _openai_apply_native_pre_exposure(
+                original,
+                config=resolved_config,
+                ctx=pre_ctx,
+                catalog_tools=catalog_tools,
+            ),
+        )
+
+    original, skills_meta = finish_deferred_skills_openai(
+        original,
+        skills_meta,
+        deferred,
+        config,
+        matches=skill_out.get("matches"),
+        query=query,
+        prune_result=prune_result,
+        pruner_settings=pruner_settings,
+        pre_exposure_ctx=pre_ctx,
+    )
+
+    if proxy_ctx is not None and session_log_entries:
+        persist_proxy_session_log_entries(
+            agent=proxy_ctx.agent,
+            session_id=proxy_ctx.session_id,
+            entries=session_log_entries,
+            config=resolved_config,
+        )
+
+    return original, prune_result, skills_meta
+
+
 def transform_openai_request(
     body: dict[str, Any],
     pruning_pipeline: list[str] | None = None,
     capture_decomposed_catalog: bool = False,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    proxy_ctx: ProxyTransformContext | None = None,
 ) -> tuple[dict[str, Any], PruneResult | None, Any]:
     """Return body (tools replaced when pruning applied), pruning metadata, and skills meta."""
     from cyt.skills.proxy_inject import (
@@ -671,6 +808,7 @@ def transform_openai_request(
         body=original,
     )
     skill_out = deferred.skill_out if deferred is not None else {}
+    pre_ctx = proxy_ctx.pre_exposure_ctx if proxy_ctx is not None else None
 
     if not tools and not tool_search_outputs:
         original, skills_meta = finish_deferred_skills_openai(
@@ -680,6 +818,7 @@ def transform_openai_request(
             config,
             query=query,
             pruner_settings=pruner_settings,
+            pre_exposure_ctx=pre_ctx,
         )
         return original, None, skills_meta
 
@@ -691,6 +830,7 @@ def transform_openai_request(
             deferred,
             config,
             pruner_settings=pruner_settings,
+            pre_exposure_ctx=pre_ctx,
         )
         return original, _openai_skipped_no_query_prune_result(tools), skills_meta
 
@@ -704,45 +844,15 @@ def transform_openai_request(
         pruner_settings=pruner_settings,
     )
     prune_result, mcp_for_inject = result
-    original, skills_meta = finish_deferred_skills_openai(
+    return _openai_finish_transform(
         original,
+        prune_result,
         skills_meta,
         deferred,
         config,
-        matches=skill_out.get("matches"),
-        query=query,
-        prune_result=prune_result,
+        skill_out,
+        query,
+        mcp_for_inject,
         pruner_settings=pruner_settings,
+        proxy_ctx=proxy_ctx,
     )
-
-    from cyt.config import inject_into_user_message, load_config
-    from cyt.injection.pre_exposed import filter_pre_exposed_tools
-    from cyt.injection.session_text import session_text_from_proxy_body
-    from cyt.proxy.user_message_inject import (
-        already_has_user_turn_injection,
-        append_injection_to_body,
-    )
-    from cyt.tools.budget import tools_inject_allowed
-    from cyt.tools.inject import format_agent_tools
-
-    resolved_config = config or load_config()
-    if (
-        inject_into_user_message(resolved_config, agent="codex")
-        and tools_inject_allowed(resolved_config, "proxy", agent="codex")
-        and mcp_for_inject
-    ):
-        session_text = session_text_from_proxy_body(original, "openai")
-        gated = filter_pre_exposed_tools(
-            mcp_for_inject,
-            session_text,
-            include_tool_description=False,
-        )
-        tools_text = format_agent_tools(gated, include_tool_description=False)
-        if tools_text and not already_has_user_turn_injection(
-            original,
-            "openai",
-            tag="<agent-tools>",
-        ):
-            original = append_injection_to_body(original, tools_text, kind="openai")
-
-    return original, prune_result, skills_meta

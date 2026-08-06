@@ -5,12 +5,18 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from cyt_client.sessions import (
     append_session_log,
     cleanup_stale_session_logs,
+    entries_after_latest_compaction,
+    index_of_latest_compaction,
     read_session_log_file,
+    read_tool_catalog_hashes,
     session_id_from_payload,
     session_log_path,
+    sessions_dir_for_agent,
     sessions_dir_for_payload,
 )
 
@@ -57,7 +63,73 @@ def test_cleanup_stale_session_logs_by_mtime(tmp_path: Path) -> None:
     assert not stale.exists()
 
 
-def test_session_log_path_resolves_under_agent_dir(tmp_path: Path) -> None:
+def test_session_log_path_resolves_under_agent_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / ".config" / "cyt"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        "pruning:\n  inject_via:\n    claude: hook\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     payload = {"cwd": str(tmp_path), "session_id": "sess-1", "cyt_agent": "claude"}
     path = session_log_path(payload)
     assert path == tmp_path / ".claude/cyt/sessions/sess-1.jsonl"
+
+
+def test_entries_after_latest_compaction() -> None:
+    entries = [
+        {"kind": "tool", "key": "tool:a"},
+        {"kind": "compaction", "key": "compaction"},
+        {"kind": "tool", "key": "tool:b"},
+    ]
+    assert index_of_latest_compaction(entries) == 1
+    assert len(entries_after_latest_compaction(entries)) == 1
+    assert entries_after_latest_compaction(entries)[0]["key"] == "tool:b"
+
+
+def test_read_tool_catalog_hashes_post_compaction_only(tmp_path: Path) -> None:
+    path = tmp_path / "sess.jsonl"
+    append_session_log(
+        path,
+        [
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "old-hash",
+                "tools": [{"name": "old_tool", "input_schema": {}}],
+            },
+            {"kind": "compaction", "key": "compaction", "payload": {}},
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "new-hash",
+                "tools": [{"name": "new_tool", "input_schema": {}}],
+            },
+        ],
+        agent="claude",
+    )
+    hashes = read_tool_catalog_hashes(path)
+    assert hashes["tool_catalog:cyt_mcp"] == "new-hash"
+
+
+def test_sessions_dir_for_agent_home_when_inject_via_proxy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / ".config" / "cyt"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        "pruning:\n  inject_via:\n    claude: proxy\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    payload = {"cwd": str(tmp_path / "project"), "cyt_agent": "claude"}
+    (tmp_path / "project").mkdir()
+    assert sessions_dir_for_payload(payload) == sessions_dir_for_agent("claude")

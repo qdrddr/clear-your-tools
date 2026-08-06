@@ -35,7 +35,7 @@ Your AI agent sees only the tools relevant to the current user task and intent.
 
 [![version][version-shield]][release-link]
 [![discord][discord-shield]][discord-link]
-[![FOSSA Status][fossa-shield]][fossa-link]
+[![FOSSA Vulnerabilities][fossa-shield]][fossa-link]
 [![Skyk Vulnerabilities][snyk-shield]][snyk-link]
 
 ![Shell][shell-shield]
@@ -247,6 +247,8 @@ C library via CMake / `build-c-lib.sh`
     <td valign="top">
 
 [![GitHub sdk/c][c-version-shield]][c-link]
+
+[![Downloads][c-downloads-shield]][release-link]
     </td>
   </tr>
   <tr>
@@ -602,6 +604,7 @@ See [`LICENSE`](LICENSE).
 [rust-downloads-shield]: https://img.shields.io/crates/d/cyt-indexer?logo=rust&color=e6522c&logoColor=white
 [rust-link]: https://crates.io/crates/cyt-indexer
 [c-version-shield]: https://img.shields.io/github/v/release/qdrddr/clear-your-tools?style=flat-square&label=sdk%2Fc&color=555&logoColor=white
+[c-downloads-shield]: https://img.shields.io/github/downloads/qdrddr/clear-your-tools/total?label=Downloads&style=flat-square&logo=github&color=555&logoColor=white
 [c-link]: https://github.com/qdrddr/clear-your-tools/tree/main/sdk/c
 [go-version-shield]: https://pkg.go.dev/badge/github.com/qdrddr/clear-your-tools/sdk/go
 [go-link]: https://pkg.go.dev/github.com/qdrddr/clear-your-tools/sdk/go
@@ -616,7 +619,7 @@ See [`LICENSE`](LICENSE).
 [telemetry-shield]: https://img.shields.io/badge/No_Telemetry-none-green?style=for-the-badge
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
-[fossa-shield]: https://app.fossa.com/api/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools.svg?type=shield&issueType=security
+[fossa-shield]: https://img.shields.io/badge/FOSSA-Monitoring?labelColor=green&color=9B59B6&style=for-the-badge&logo=shield&logoColor=white
 [fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield&issueType=security
 [c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
 [go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white

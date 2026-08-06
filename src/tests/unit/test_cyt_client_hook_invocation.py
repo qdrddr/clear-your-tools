@@ -39,12 +39,14 @@ def test_cursor_pairing_hooks_dev_mode() -> None:
     assert client_cmd == expected
     assert hooks["postToolUse"][0]["command"] == expected
     assert "get-tool-definitions" in hooks["postToolUse"][0]["matcher"]
+    assert hooks["preCompact"][0]["command"] == expected
     assert set(hooks) == {
         "sessionStart",
         "sessionEnd",
         "beforeSubmitPrompt",
         "preToolUse",
         "postToolUse",
+        "preCompact",
     }
     daemon_cmd = hooks["sessionStart"][0]["command"]
     assert str(repo) in daemon_cmd

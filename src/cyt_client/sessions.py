@@ -55,9 +55,46 @@ def _safe_session_filename(session_id: str) -> str:
     return cleaned or "session"
 
 
+def sessions_dir_for_agent(agent: str) -> Path:
+    """Return agent-home session directory ``~/.<agent>/cyt/sessions``."""
+    if agent not in _AGENT_SESSION_DIRS:
+        return _CONFIG_SESSIONS_DIR
+    _project_rel, home_rel = _AGENT_SESSION_DIRS[agent]
+    return Path(home_rel).expanduser()
+
+
+def index_of_latest_compaction(entries: list[dict[str, Any]]) -> int | None:
+    for index in range(len(entries) - 1, -1, -1):
+        if entries[index].get("kind") == "compaction":
+            return index
+    return None
+
+
+def entries_after_latest_compaction(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    boundary = index_of_latest_compaction(entries)
+    if boundary is None:
+        return list(entries)
+    start = boundary + 1
+    return list(entries[start:])
+
+
+def read_session_log_post_compaction(path: Path) -> list[dict[str, Any]]:
+    _agent, entries = read_session_log_file(path)
+    return entries_after_latest_compaction(entries)
+
+
+def _post_compaction_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return entries_after_latest_compaction(entries)
+
+
 def sessions_dir_for_payload(payload: dict[str, Any]) -> Path:
     """Resolve sessions directory: workspace → agent home → ~/.config/cyt/sessions."""
     agent = _agent_from_payload(payload)
+    if agent is not None:
+        from cyt_client.config import inject_via_for_agent
+
+        if inject_via_for_agent(agent) == "proxy":
+            return sessions_dir_for_agent(agent)
     pairs = (
         [_AGENT_SESSION_DIRS[agent]] if agent is not None else list(_AGENT_SESSION_DIRS.values())
     )
@@ -124,9 +161,15 @@ def agent_from_session_file(path: Path) -> str | None:
     return agent
 
 
-def read_session_log(path: Path) -> list[dict[str, Any]]:
-    """Parse JSONL item lines (meta excluded)."""
+def read_session_log(path: Path, *, post_compaction_only: bool = True) -> list[dict[str, Any]]:
+    """Parse JSONL item lines (meta excluded).
+
+    When *post_compaction_only* is true (default), return entries after the latest
+    ``kind: compaction`` marker.
+    """
     _agent, items = read_session_log_file(path)
+    if post_compaction_only:
+        return _post_compaction_entries(items)
     return items
 
 
@@ -202,6 +245,7 @@ def read_latest_tool_catalogs(path: Path) -> dict[str, dict[str, Any]]:
         return {}
     catalogs: dict[str, dict[str, Any]] = {}
     _agent, entries = read_session_log_file(path)
+    entries = _post_compaction_entries(entries)
     for entry in entries:
         if entry.get("kind") != "tool_catalog":
             continue
@@ -222,6 +266,7 @@ def read_tool_catalog_hashes(path: Path) -> dict[str, str]:
     if not path.is_file():
         return hashes
     _agent, entries = read_session_log_file(path)
+    entries = _post_compaction_entries(entries)
     for entry in entries:
         if entry.get("kind") != "tool_catalog":
             continue

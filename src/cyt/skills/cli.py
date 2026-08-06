@@ -24,12 +24,8 @@ from cyt.config import (
     tools_enabled,
     uses_executor_tool_catalog,
 )
-from cyt.injection.pre_exposed import (
-    filter_pre_exposed_resources,
-    filter_pre_exposed_skills,
-)
-from cyt.injection.session_gate import gate_resources_for_session, gate_skills_for_session
-from cyt.injection.session_log import SessionLogIndex, combined_session_text
+from cyt.injection.pre_exposure_context import PreExposureContext
+from cyt.injection.pre_exposure_pipeline import gate_and_filter_resources, gate_and_filter_skills
 from cyt.injection.session_log_build import build_session_state_entry
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.injection.tool_catalog_emit import (
@@ -459,6 +455,8 @@ def _search_skills_for_user_prompt(
     stdout_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_safe_stdout()
     stderr_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
+        from cyt.pruning.hook_bridge import _append_mcpc_skill_resource_entries
+
         entries = append_executor_skill_entries(
             build_registry_for_hook_payload(
                 config,
@@ -467,6 +465,7 @@ def _search_skills_for_user_prompt(
             ),
             config,
         )
+        entries = _append_mcpc_skill_resource_entries(entries, config)
         if plain_output:
             matches, search_trace = search_skills_with_trace(
                 query,
@@ -556,29 +555,23 @@ def _handle_user_prompt_skills(
         outcome, details = _user_prompt_no_matches_outcome(model, pipeline_run, search_trace)
         return outcome, details, ""
 
-    session_text = session_text_from_hook_payload(
+    ctx = PreExposureContext.for_hook_payload(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    index = SessionLogIndex.from_payload(payload)
-    combined_text = combined_session_text(session_text, index)
-    session_gated, skill_logs, skill_full_flags = gate_skills_for_session(
+    gated_matches, skill_logs = gate_and_filter_skills(
         matches,
-        session_text=session_text,
-        index=index,
+        config=config,
+        ctx=ctx,
     )
-    gated_matches = filter_pre_exposed_skills(
-        session_gated,
-        combined_text,
-    )
-    from cyt.injection.session_log_build import skill_item_key
-    from cyt.skills.inject import _resolve_skill_command
-
-    kept_keys = {
-        skill_item_key(match, command=_resolve_skill_command(match)) for match in gated_matches
+    skill_full_flags = {
+        str(entry.get("key") or ""): bool(entry.get("full")) for entry in skill_logs
     }
-    skill_logs = [entry for entry in skill_logs if str(entry.get("key") or "") in kept_keys]
-    injected = format_agent_skills(gated_matches, full_flags=skill_full_flags)
+    injected = format_agent_skills(
+        gated_matches,
+        full_flags=skill_full_flags,
+        combined_text=ctx.combined_text,
+    )
     if not injected:
         return (
             "user_prompt_empty_injection",
@@ -630,42 +623,38 @@ def _append_coordinated_skills_injection(
     outcomes: list[str],
     details: dict[str, Any],
 ) -> None:
-    session_text = session_text_from_hook_payload(
+    ctx = PreExposureContext.for_hook_payload(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    index = SessionLogIndex.from_payload(payload)
-    combined_text = combined_session_text(session_text, index)
     skill_matches_raw = skill_matches or []
     skill_only, resource_matches = split_mcpc_resource_matches(skill_matches_raw)
-    session_skills, skill_logs, skill_full_flags = gate_skills_for_session(
+    gated_skills, skill_logs = gate_and_filter_skills(
         skill_only,
-        session_text=session_text,
-        index=index,
+        config=config,
+        ctx=ctx,
     )
-    session_resources, resource_logs, resource_full_flags = gate_resources_for_session(
+    gated_resources, resource_logs = gate_and_filter_resources(
         resource_matches,
-        session_text=session_text,
-        index=index,
+        config=config,
+        ctx=ctx,
     )
-    gated_skills = filter_pre_exposed_skills(session_skills, combined_text)
-    gated_resources = filter_pre_exposed_resources(session_resources, combined_text)
-    from cyt.injection.session_log_build import resource_item_key, skill_item_key
-    from cyt.skills.inject import _resolve_skill_command
-
-    skill_keys = {
-        skill_item_key(match, command=_resolve_skill_command(match)) for match in gated_skills
+    skill_full_flags = {
+        str(entry.get("key") or ""): bool(entry.get("full")) for entry in skill_logs
     }
-    resource_keys = {resource_item_key(match) for match in gated_resources}
-    skill_logs = [entry for entry in skill_logs if str(entry.get("key") or "") in skill_keys]
-    resource_logs = [
-        entry for entry in resource_logs if str(entry.get("key") or "") in resource_keys
-    ]
+    resource_full_flags = {
+        str(entry.get("key") or ""): bool(entry.get("full")) for entry in resource_logs
+    }
     session_logs = skill_logs + resource_logs
-    injected_skills = format_agent_skills(gated_skills, full_flags=skill_full_flags)
+    injected_skills = format_agent_skills(
+        gated_skills,
+        full_flags=skill_full_flags,
+        combined_text=ctx.combined_text,
+    )
     injected_resources = format_agent_resources(
         gated_resources,
         full_flags=resource_full_flags,
+        combined_text=ctx.combined_text,
     )
     injected_any = False
     if injected_skills:

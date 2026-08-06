@@ -16,7 +16,14 @@ from cyt.tools.inject import format_tool_item
 from cyt.tools.mcpc_inject import _format_mcpc_tool_item, _mcpc_injection_schema_body
 
 CatalogKind = Literal["executor", "mcpc", "definitions", "cloudflare", "cyt_mcp"]
-ItemKind = Literal["tool", "skill", "resource", "tool_catalog", "session_state"]
+ItemKind = Literal[
+    "tool",
+    "skill",
+    "resource",
+    "tool_catalog",
+    "session_state",
+    "compaction",
+]
 
 _CATALOG_SOURCE_ORDER: tuple[CatalogKind, ...] = (
     "cyt_mcp",

@@ -14,6 +14,10 @@ _INTRO = (
 )
 
 
+def resources_inject_intro() -> str:
+    return _INTRO
+
+
 @dataclass(frozen=True)
 class MatchedResource:
     doc_id: str
@@ -60,6 +64,7 @@ def format_agent_resources(
     matches: list[MatchedResource],
     *,
     full_flags: dict[str, bool] | None = None,
+    combined_text: str = "",
 ) -> str:
     if not matches:
         return ""
@@ -75,7 +80,13 @@ def format_agent_resources(
     item_lines = [line for line in item_lines if line]
     if not item_lines:
         return ""
-    lines = [_INTRO, "", "<agent-resources>", *item_lines, "</agent-resources>"]
+    from cyt.injection.pre_exposed import is_pre_exposed
+
+    include_intro = not (combined_text.strip() and is_pre_exposed(_INTRO, combined_text))
+    if include_intro:
+        lines = [_INTRO, "", "<agent-resources>", *item_lines, "</agent-resources>"]
+    else:
+        lines = ["<agent-resources>", *item_lines, "</agent-resources>"]
     return "\n".join(lines)
 
 

@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from cyt.injection.pre_exposure_context import PreExposureContext
 
 from cyt.config import inject_into_user_message
 from cyt.indexer.tokens import count_tokens
+from cyt.injection.block_merge import merge_injection_into_text
 from cyt.injection.pre_exposed import filter_pre_exposed_skills
 from cyt.injection.session_text import session_text_from_proxy_body
 from cyt.proxy.anthropic import PruneResult, extract_last_assistant_message, format_search_query
 from cyt.proxy.openai_responses import clean_input, extract_user_query_from_input
-from cyt.proxy.user_message_inject import (
-    already_has_user_turn_injection,
-    append_injection_to_body,
-)
+from cyt.proxy.user_message_inject import append_injection_to_body, prepare_agent_skills_inject_body
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.executor_skill import with_executor_skill_matches
 from cyt.skills.inject import format_agent_skills
@@ -27,47 +28,60 @@ UPSTREAM_KIND: Literal["openai"] = "openai"
 def _skills_text_from_matches(
     matches: list[MatchedSkill],
     body: dict[str, Any],
+    *,
+    config: dict[str, Any] | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[str, int]:
     if not matches:
         return "", 0
-    session_text = session_text_from_proxy_body(body, UPSTREAM_KIND)
-    gated = filter_pre_exposed_skills(matches, session_text)
-    injected = format_agent_skills(gated)
+    combined_text = ""
+    if pre_exposure_ctx is not None and config is not None:
+        from cyt.injection.pre_exposure_pipeline import gate_and_filter_skills
+
+        gated, _logs = gate_and_filter_skills(
+            matches,
+            config=config,
+            ctx=pre_exposure_ctx,
+        )
+        combined_text = pre_exposure_ctx.combined_text
+    else:
+        session_text = session_text_from_proxy_body(body, UPSTREAM_KIND)
+        gated = filter_pre_exposed_skills(matches, session_text)
+    injected = format_agent_skills(gated, combined_text=combined_text)
     if not injected:
         return "", 0
     return injected, count_tokens(injected)
 
 
-def _message_content_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for block_obj in content:
+def _merge_into_developer_text_blocks(blocks: list[Any], text: str) -> bool:
+    for block_obj in blocks:
         if not isinstance(block_obj, dict):
             continue
         block = cast(dict[str, Any], block_obj)
-        block_type = block.get("type")
-        if block_type in ("input_text", "output_text", "text"):
-            text = block.get("text")
-            if isinstance(text, str):
-                parts.append(text)
-    return "\n".join(parts)
+        if block.get("type") != "input_text":
+            continue
+        block_text = block.get("text")
+        if not isinstance(block_text, str) or "<agent-skills" not in block_text:
+            continue
+        block["text"] = merge_injection_into_text(block_text, text, same_turn=True)
+        return True
+    return False
 
 
-def already_has_agent_skills(items: list[Any]) -> bool:
-    for item in items:
-        if not isinstance(item, dict):
+def _find_developer_message_with_skills(input_items: list[Any]) -> dict[str, Any] | None:
+    for item in input_items:
+        if not isinstance(item, dict) or item.get("role") != "developer":
             continue
         content = item.get("content")
-        if isinstance(content, str) and "<agent-skills>" in content:
-            return True
-        if isinstance(content, list):
-            combined = _message_content_text(content)
-            if "<agent-skills>" in combined:
-                return True
-    return False
+        if not isinstance(content, list):
+            continue
+        for block_obj in content:
+            if not isinstance(block_obj, dict):
+                continue
+            block_text = block_obj.get("text")
+            if isinstance(block_text, str) and "<agent-skills" in block_text:
+                return item
+    return None
 
 
 def openai_make_developer_message(text: str) -> dict[str, Any]:
@@ -93,8 +107,18 @@ def _openai_last_user_input_index(input_items: list[Any]) -> int | None:
 def openai_insert_skills_developer_message(
     input_items: list[dict[str, Any]],
     text: str,
+    *,
+    same_turn: bool = False,
 ) -> list[dict[str, Any]]:
+    if not text.strip():
+        return input_items
     updated = copy.deepcopy(input_items)
+    if same_turn:
+        existing = _find_developer_message_with_skills(updated)
+        if existing is not None:
+            content = existing.get("content")
+            if isinstance(content, list) and _merge_into_developer_text_blocks(content, text):
+                return updated
     developer = openai_make_developer_message(text)
     user_index = _openai_last_user_input_index(updated)
     if user_index is None:
@@ -122,6 +146,7 @@ def inject_skills_matches_into_openai_body(
     *,
     query: str | None = None,
     config: dict[str, Any] | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     meta = SkillsProxyInjectMeta(query=query)
     resolved_matches = (
@@ -136,20 +161,37 @@ def inject_skills_matches_into_openai_body(
         return original, meta
 
     use_user_turn = config is not None and inject_into_user_message(config, agent="codex")
-    if use_user_turn:
-        if already_has_user_turn_injection(original, "openai", tag="<agent-skills>"):
-            return original, meta
-    elif already_has_agent_skills(input_items):
-        return original, meta
+    original, same_turn = prepare_agent_skills_inject_body(
+        original,
+        kind=UPSTREAM_KIND,
+        use_user_turn=use_user_turn,
+    )
 
-    text, skills_in = _skills_text_from_matches(resolved_matches, original)
+    text, skills_in = _skills_text_from_matches(
+        resolved_matches,
+        original,
+        config=config,
+        pre_exposure_ctx=pre_exposure_ctx,
+    )
     if skills_in <= 0:
         return original, meta
 
     if use_user_turn:
-        original = append_injection_to_body(original, text, kind="openai")
+        original = append_injection_to_body(
+            original,
+            text,
+            kind="openai",
+            same_turn=same_turn,
+        )
     else:
-        original["input"] = openai_insert_skills_developer_message(input_items, text)
+        input_items = original.get("input") or []
+        if not isinstance(input_items, list):
+            input_items = []
+        original["input"] = openai_insert_skills_developer_message(
+            input_items,
+            text,
+            same_turn=same_turn,
+        )
     meta.skills_in = skills_in
     meta.skills_final_md = text
     meta.deferred_matches = resolved_matches
@@ -166,6 +208,7 @@ def finish_deferred_skills_openai(
     matches: list[MatchedSkill] | None = None,
     prune_result: PruneResult | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    pre_exposure_ctx: PreExposureContext | None = None,
 ) -> tuple[dict[str, Any], SkillsProxyInjectMeta]:
     if config is None:
         return body, meta
@@ -182,6 +225,7 @@ def finish_deferred_skills_openai(
         prune_result=prune_result,
         pruner_settings=pruner_settings,
         deferred=deferred,
+        pre_exposure_ctx=pre_exposure_ctx,
     )
 
 

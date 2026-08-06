@@ -48,6 +48,17 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CYT_LAUNCH_AGENT=codex cyt-client",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }

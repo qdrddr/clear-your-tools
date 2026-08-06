@@ -49,6 +49,17 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CYT_LAUNCH_AGENT=claude cyt-client",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   }
 }

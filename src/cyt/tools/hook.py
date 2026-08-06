@@ -15,11 +15,9 @@ from cyt.config import (
 )
 from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
 from cyt.indexer.tokens import count_json_tokens
-from cyt.injection.mcpc_pre_exposed import filter_pre_exposed_mcpc_tools
-from cyt.injection.pre_exposed import filter_pre_exposed_tools
-from cyt.injection.session_gate import gate_tools_for_session
-from cyt.injection.session_log import SessionLogIndex, combined_session_text
-from cyt.injection.session_log_build import CatalogKind, tool_item_key
+from cyt.injection.pre_exposure_context import PreExposureContext
+from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
+from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.injection.tool_catalog_emit import append_tool_catalog_to_details
 from cyt.mcpc.readiness import mcpc_hook_catalog_usable
@@ -40,7 +38,6 @@ from cyt.tools.budget import (
 )
 from cyt.tools.inject import format_agent_tools, injection_token_count
 from cyt.tools.mcpc_inject import format_mcpc_agent_tools
-from cyt.tools.mcpc_prune import split_mcpc_prune_result
 from cyt.tools.source_inject import (
     format_cloudflare_source_section,
     format_cyt_mcp_source_section,
@@ -52,18 +49,6 @@ from cyt.tools.source_inject import (
 from cyt.tools.stats import record_tools_hook_injection
 
 logger = logging.getLogger(__name__)
-
-
-def _catalog_kind_for_source_id(source_id: str) -> CatalogKind:
-    if source_id == "mcpc":
-        return "mcpc"
-    if source_id == "cyt_mcp":
-        return "cyt_mcp"
-    if source_id == "cloudflare":
-        return "cloudflare"
-    if source_id == "definitions":
-        return "definitions"
-    return "executor"
 
 
 def _missing_tools_catalog_outcome(
@@ -119,39 +104,16 @@ def _gate_source_tools(
     *,
     source_id: str,
     config: dict[str, Any],
-    payload: dict[str, Any],
-    session_text: str,
+    ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None,
-    session_index: SessionLogIndex,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
-    index = session_index
-    combined_text = combined_session_text(session_text, index)
-    surviving_instruction_sessions: set[str] | None = None
-    working_tools = tools
-
-    if source_id == "mcpc":
-        working_tools, surviving_instruction_sessions = split_mcpc_prune_result(tools)
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
-            working_tools,
-            config=config,
-            session_text=session_text,
-            index=index,
-            catalog_tools=catalog_tools,
-        )
-        gated = filter_pre_exposed_mcpc_tools(session_gated, combined_text)
-    else:
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
-            working_tools,
-            config=config,
-            session_text=session_text,
-            index=index,
-            catalog_tools=catalog_tools,
-        )
-        gated = filter_pre_exposed_tools(session_gated, combined_text)
-
-    catalog_kind = _catalog_kind_for_source_id(source_id)
-    gated_keys = {tool_item_key(tool, catalog=catalog_kind) for tool in gated}
-    filtered_logs = [entry for entry in log_entries if str(entry.get("key") or "") in gated_keys]
+    gated, filtered_logs, surviving_instruction_sessions = gate_and_filter_tools(
+        tools,
+        config=config,
+        ctx=ctx,
+        catalog_tools=catalog_tools,
+        source_id=source_id,
+    )
     return gated, filtered_logs, surviving_instruction_sessions
 
 
@@ -187,15 +149,13 @@ def _gate_and_build_source_sections(
     source_tools: dict[str, list[dict[str, Any]]],
     *,
     config: dict[str, Any],
-    payload: dict[str, Any],
-    session_text: str,
+    ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None,
-    session_index: SessionLogIndex,
     workspace_paths: list[str],
-    combined_text: str,
 ) -> tuple[dict[str, str], list[dict[str, Any]]]:
     sections: dict[str, str] = {}
     all_logs: list[dict[str, Any]] = []
+    combined_text = ctx.combined_text
     for source_id, tools in source_tools.items():
         if not tools:
             continue
@@ -203,10 +163,8 @@ def _gate_and_build_source_sections(
             tools,
             source_id=source_id,
             config=config,
-            payload=payload,
-            session_text=session_text,
+            ctx=ctx,
             catalog_tools=catalog_tools,
-            session_index=session_index,
         )
         all_logs.extend(logs)
         if not gated:
@@ -229,45 +187,23 @@ def _legacy_gate_and_format(
     *,
     config: dict[str, Any],
     payload: dict[str, Any],
-    session_text: str,
+    ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None,
-    session_index: SessionLogIndex,
-    combined_text: str,
     by_source: dict[str, list[dict[str, Any]]] | None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    surviving_instruction_sessions: set[str] | None = None
-    tools = pruned_tools
-    if uses_mcpc_tool_catalog(config):
-        tools, surviving_instruction_sessions = split_mcpc_prune_result(pruned_tools)
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
-            tools,
-            config=config,
-            session_text=session_text,
-            index=session_index,
-            catalog_tools=catalog_tools,
-        )
-        gated = filter_pre_exposed_mcpc_tools(session_gated, combined_text)
-    else:
-        session_gated, log_entries, _full_flags = gate_tools_for_session(
-            tools,
-            config=config,
-            session_text=session_text,
-            index=session_index,
-            catalog_tools=catalog_tools,
-        )
-        gated = filter_pre_exposed_tools(session_gated, combined_text)
-
-    if by_source and len(by_source) == 1:
-        catalog_kind = _catalog_kind_for_source_id(next(iter(by_source)))
-    else:
-        catalog_kind = "mcpc" if uses_mcpc_tool_catalog(config) else "executor"
-    gated_keys = {tool_item_key(tool, catalog=catalog_kind) for tool in gated}
-    filtered_logs = [entry for entry in log_entries if str(entry.get("key") or "") in gated_keys]
+    source_id = next(iter(by_source)) if by_source and len(by_source) == 1 else None
+    gated, filtered_logs, surviving_instruction_sessions = gate_and_filter_tools(
+        pruned_tools,
+        config=config,
+        ctx=ctx,
+        catalog_tools=catalog_tools,
+        source_id=source_id,
+    )
     formatted = _format_hook_tool_injection(
         gated,
         config,
         payload,
-        session_text=combined_text,
+        session_text=ctx.combined_text,
         surviving_instruction_sessions=surviving_instruction_sessions,
     )
     return formatted, filtered_logs
@@ -284,9 +220,8 @@ def gate_and_format_hook_tools(
     prune_results: dict[str, PruneResult] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Apply session-log gate, pre-exposure, and format hook tool injection."""
-    index = session_index or SessionLogIndex.from_payload(payload)
+    ctx = PreExposureContext.for_hook_payload(payload)
     workspace_paths = workspace_paths_for_tools_inject(payload)
-    combined_text = combined_session_text(session_text, index)
 
     if prune_results and len(prune_results) > 1:
         source_tools = {
@@ -297,12 +232,9 @@ def gate_and_format_hook_tools(
         sections, all_logs = _gate_and_build_source_sections(
             source_tools,
             config=config,
-            payload=payload,
-            session_text=session_text,
+            ctx=ctx,
             catalog_tools=catalog_tools,
-            session_index=index,
             workspace_paths=workspace_paths,
-            combined_text=combined_text,
         )
         formatted = format_multi_source_agent_tools(sections, workspace_paths=workspace_paths)
         return formatted, all_logs
@@ -312,12 +244,9 @@ def gate_and_format_hook_tools(
         sections, all_logs = _gate_and_build_source_sections(
             by_source,
             config=config,
-            payload=payload,
-            session_text=session_text,
+            ctx=ctx,
             catalog_tools=catalog_tools,
-            session_index=index,
             workspace_paths=workspace_paths,
-            combined_text=combined_text,
         )
         if sections:
             formatted = format_multi_source_agent_tools(sections, workspace_paths=workspace_paths)
@@ -327,10 +256,8 @@ def gate_and_format_hook_tools(
         pruned_tools,
         config=config,
         payload=payload,
-        session_text=session_text,
+        ctx=ctx,
         catalog_tools=catalog_tools,
-        session_index=index,
-        combined_text=combined_text,
         by_source=by_source,
     )
 
