@@ -9,8 +9,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import cyt_client.config as cyt_client_config
 from cyt_client.agent import infer_harness_agent
-from cyt_client.config import resolve_config_path, tools_from_includes_cyt_mcp
+from cyt_client.config import resolve_config_path
 from cyt_client.hook_invocation import (
     cursor_pairing_hooks,
     hooks_use_launch_agent_prefix,
@@ -264,7 +265,7 @@ def repair_pairing(
         if verbose:
             print("cyt-client: skip.txt present; pairing disabled", file=sys.stderr)
         return
-    if not tools_from_includes_cyt_mcp():
+    if not cyt_client_config.tools_from_includes_cyt_mcp():
         return
     agent = (
         infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"

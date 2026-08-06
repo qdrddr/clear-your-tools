@@ -13,6 +13,7 @@ from cyt.agents._types import CYT_LAUNCH_AGENT_ENV, AgentName
 from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
 from cyt.config import (
     DEFAULT_INJECT_VIA_BY_AGENT,
+    inject_via_for_agent,
     load_config,
     load_user_config_overlay,
     resolve_setup_config_path,
@@ -77,18 +78,31 @@ HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
     "permission_mode": "default",
     "prompt": "say hi",
 }
+HOOK_STDIN_VERIFY_ONLY_TEST_PAYLOAD: dict[str, Any] = {
+    "session_id": "sess-00000000-0000-4000-8000-000000000001",
+    "cwd": "/path/to/your/project",
+    "hook_event_name": "preToolUse",
+    "tool_name": "Shell",
+    "tool_input": {"command": "echo hi"},
+}
 
 
 def format_hook_stdin_test_command(
     *,
     debug: bool = False,
     invocation: HookCliInvocation | None = None,
+    selected_agents: list[HookAgentName] | None = None,
+    verify_only: bool = False,
 ) -> str:
     """Return a copy-paste shell snippet that pipes anonymized hook JSON to ``cyt-client``."""
     command = cyt_client_command(invocation=invocation)
     if debug:
         command = f"CYT_HOOK_DEBUG=1 {command}"
-    payload_json = json.dumps(HOOK_STDIN_TEST_PAYLOAD, indent=2)
+    payload = _hook_stdin_test_payload(
+        verify_only=verify_only,
+        selected_agents=selected_agents or [],
+    )
+    payload_json = json.dumps(payload, indent=2)
     return "\n".join(
         (
             f"cat <<'EOF' | {command}",
@@ -98,14 +112,50 @@ def format_hook_stdin_test_command(
     )
 
 
+def _hook_stdin_test_payload(
+    *,
+    verify_only: bool,
+    selected_agents: list[HookAgentName],
+) -> dict[str, Any]:
+    if not verify_only:
+        return HOOK_STDIN_TEST_PAYLOAD
+    if selected_agents == ["cursor"]:
+        return HOOK_STDIN_TEST_PAYLOAD
+    return HOOK_STDIN_VERIFY_ONLY_TEST_PAYLOAD
+
+
+def _hook_stdin_test_event_label(
+    *,
+    verify_only: bool,
+    selected_agents: list[HookAgentName],
+) -> str:
+    payload = _hook_stdin_test_payload(
+        verify_only=verify_only,
+        selected_agents=selected_agents,
+    )
+    event = payload.get("hook_event_name")
+    return str(event) if isinstance(event, str) else HOOK_EVENT_NAME
+
+
 def _print_hook_stdin_test_example(
     *,
     debug: bool,
     invocation: HookCliInvocation | None = None,
+    selected_agents: list[HookAgentName] | None = None,
+    verify_only: bool = False,
 ) -> None:
-    print("\nTest the hook locally (UserPromptSubmit payload on stdin) like so:")
+    agents = selected_agents or []
+    event_label = _hook_stdin_test_event_label(verify_only=verify_only, selected_agents=agents)
+    print(f"\nTest the hook locally ({event_label} payload on stdin) like so:")
     print()
-    print(format_hook_stdin_test_command(debug=debug, invocation=invocation))
+    print(
+        format_hook_stdin_test_command(
+            debug=debug,
+            invocation=invocation,
+            selected_agents=agents,
+            verify_only=verify_only,
+        ),
+    )
     print()
     print("Hook JSON output is written to stdout.")
     if debug:
@@ -114,20 +164,50 @@ def _print_hook_stdin_test_example(
     print("  cyt hook --uninstall")
 
 
-def _propose_cursor_daemon_restart(
+def _selected_agents_use_hook_injection(
+    config: dict[str, Any],
+    selected_agents: list[HookAgentName],
+) -> bool:
+    for agent in selected_agents:
+        if agent == "cursor":
+            return True
+        if inject_via_for_agent(config, agent) == "hook":
+            return True
+    return False
+
+
+def _should_propose_hook_daemon_restart(
+    config: dict[str, Any],
+    selected_agents: list[HookAgentName],
+    *,
+    prevent_hallucinations: bool,
+) -> bool:
+    del prevent_hallucinations
+    return _selected_agents_use_hook_injection(config, selected_agents)
+
+
+def _propose_hook_daemon_restart(
     *,
     config_path: Path | None = None,
     invocation: HookCliInvocation | None = None,
+    selected_agents: list[HookAgentName],
+    prevent_hallucinations: bool = False,
 ) -> None:
     from cyt.hook.daemon import daemon_restart
 
     resolved_invocation = invocation or detect_hook_cli_invocation()
     command = cyt_daemon_restart_command(invocation=resolved_invocation)
+    if prevent_hallucinations:
+        mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
+        print(f"\nRestarting hook daemon for verify-only mode via {mode}:\n  {command}")
+        daemon_restart(config_path=config_path, unattended=True)
+        return
+    if "cursor" in selected_agents:
+        prompt = "Restart the hook daemon so Cursor session hooks pick up the new configuration?"
+    else:
+        prompt = "Restart the hook daemon so session hooks pick up the new configuration?"
     print()
-    if not _prompt_yes_no(
-        "Restart the hook daemon so Cursor session hooks pick up the new configuration?",
-        default_yes=True,
-    ):
+    if not _prompt_yes_no(prompt, default_yes=True):
         print(f"Skipped. Run manually when ready:\n  {command}")
         return
     mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
@@ -551,6 +631,12 @@ def _format_existing_hook_status(commands: list[str]) -> str:
     command = commands[0]
     debug_label = "with --debug" if _cyt_hook_has_debug_flag(command) else "without --debug"
     return f"CYT hook already configured ({debug_label})"
+
+
+def _format_hook_action_status(existing_commands: list[str]) -> str:
+    if not existing_commands:
+        return "no CYT hooks configured"
+    return _format_existing_hook_status(existing_commands)
 
 
 def _cyt_hook_needs_update(existing_commands: list[str], entry: dict[str, Any]) -> bool:
@@ -1319,7 +1405,7 @@ def _handle_existing_nested_hooks(
     action_choices: tuple[str, ...],
 ) -> bool | None:
     """Return True/False when changed, or None when the caller should continue the loop."""
-    print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
+    print(f"{label}: {_format_hook_action_status(existing_commands)} in {path}")
     default_action = "update" if needs_update else "skip"
     action = _prompt_choice(
         f"{label}: existing CYT hook — choose action (update | remove | skip)",
@@ -1360,6 +1446,7 @@ def _install_nested_hooks_for_targets(
     set_launch_agent: bool,
     invocation: HookCliInvocation,
     include_post_tool_use: bool = True,
+    always_prompt_hook_action: bool = False,
 ) -> bool:
     any_changed = False
     action_choices = ("update", "remove", "skip")
@@ -1395,7 +1482,7 @@ def _install_nested_hooks_for_targets(
         needs_update = set(existing_commands) != desired_commands or len(existing_commands) != len(
             desired_commands,
         )
-        if existing_commands:
+        if existing_commands or always_prompt_hook_action:
             changed = _handle_existing_nested_hooks(
                 label,
                 path,
@@ -1408,7 +1495,7 @@ def _install_nested_hooks_for_targets(
                 pre_compact_entry=pre_compact_entry,
                 existing_commands=existing_commands,
                 desired_commands=desired_commands,
-                needs_update=needs_update,
+                needs_update=needs_update if existing_commands else True,
                 action_choices=action_choices,
             )
             if changed is True:
@@ -1493,6 +1580,7 @@ def _install_cursor_hooks_for_target(
     set_launch_agent: bool,
     invocation: HookCliInvocation,
     include_post_tool_use: bool = True,
+    always_prompt_hook_action: bool = False,
 ) -> bool:
     del debug
     entries = cursor_hook_entries(
@@ -1524,13 +1612,13 @@ def _install_cursor_hooks_for_target(
         desired_commands,
     )
 
-    if existing_commands:
-        print(f"{label}: {_format_existing_hook_status(existing_commands)} in {path}")
+    if existing_commands or always_prompt_hook_action:
+        print(f"{label}: {_format_hook_action_status(existing_commands)} in {path}")
         return _handle_existing_cursor_hooks(
             label,
             path,
             hooks_section,
-            needs_update=needs_update,
+            needs_update=needs_update if existing_commands else True,
             before_submit_entry=before_submit_entry,
             session_start_entries=session_start_entries,
             session_end_entry=session_end_entry,
@@ -1607,6 +1695,21 @@ def _collect_hook_setup_targets(
     return nested_targets, cursor_targets, include_claude, include_codex, include_cursor
 
 
+def _prompt_prevent_hallucinations_inject_via(
+    agent: HookAgentName,
+    config: dict[str, Any],
+) -> str:
+    choices = ("hook", "proxy")
+    current = inject_via_for_agent(config, agent)
+    default = current if current in choices else "proxy"
+    print(f"\n--- Tool detection ({agent}) ---")
+    return _prompt_choice(
+        f"Detect tools for {agent} via (hook | proxy)",
+        list(choices),
+        default_index=choices.index(default),
+    )
+
+
 def _apply_prevent_hallucinations_config(
     config_path: Path,
     config: dict[str, Any],
@@ -1623,15 +1726,9 @@ def _apply_prevent_hallucinations_config(
     }
     if sys.stdin.isatty():
         for name in ("claude", "codex"):
-            if name not in agents and agents != ["cursor"]:
+            if name not in agents:
                 continue
-            if len(agents) == 1 and agents[0] == name:
-                default = inject_map[name]
-                choice = _prompt_yes_no(
-                    f"Use hook injection for {name}? (No = proxy, default proxy)",
-                    default_yes=default == "hook",
-                )
-                inject_map[name] = "hook" if choice else "proxy"
+            inject_map[name] = _prompt_prevent_hallucinations_inject_via(name, config)
     overlay = {
         "hallucination_gate": {"enabled": True},
         "skills": {
@@ -1658,6 +1755,7 @@ def _install_hook_setup_targets(
     set_launch_agent: bool,
     invocation: HookCliInvocation,
     include_post_tool_use: bool,
+    always_prompt_hook_action: bool = False,
 ) -> bool:
     any_changed = False
     if nested_targets:
@@ -1668,6 +1766,7 @@ def _install_hook_setup_targets(
                 set_launch_agent=set_launch_agent,
                 invocation=invocation,
                 include_post_tool_use=include_post_tool_use,
+                always_prompt_hook_action=always_prompt_hook_action,
             )
             or any_changed
         )
@@ -1680,10 +1779,35 @@ def _install_hook_setup_targets(
                 set_launch_agent=set_launch_agent,
                 invocation=invocation,
                 include_post_tool_use=include_post_tool_use,
+                always_prompt_hook_action=always_prompt_hook_action,
             )
             or any_changed
         )
     return any_changed
+
+
+def _hook_setup_install_options(
+    *,
+    prevent_hallucinations: bool,
+    resolved_config_path: Path,
+    include_claude: bool,
+    include_codex: bool,
+    include_cursor: bool,
+) -> tuple[bool, bool]:
+    if prevent_hallucinations:
+        return False, False
+    _configure_hook_skills_directories(
+        config_path=resolved_config_path,
+        include_claude=include_claude,
+        include_codex=include_codex,
+        include_cursor=include_cursor,
+    )
+    set_launch_agent = _prompt_yes_no(
+        f"Prefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
+        default_yes=False,
+    )
+    debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
+    return set_launch_agent, debug
 
 
 def run_hook_setup(
@@ -1735,18 +1859,13 @@ def run_hook_setup(
     if not nested_targets and not cursor_targets:
         raise SystemExit("No agent config files found for the selected hook targets.")
 
-    _configure_hook_skills_directories(
-        config_path=resolved_config_path,
+    set_launch_agent, debug = _hook_setup_install_options(
+        prevent_hallucinations=prevent_hallucinations,
+        resolved_config_path=resolved_config_path,
         include_claude=include_claude,
         include_codex=include_codex,
         include_cursor=include_cursor,
     )
-
-    set_launch_agent = _prompt_yes_no(
-        f"Prefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
-        default_yes=False,
-    )
-    debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
 
     invocation = detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
@@ -1762,19 +1881,31 @@ def run_hook_setup(
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
+        always_prompt_hook_action=prevent_hallucinations,
     )
 
-    if any_changed:
+    if prevent_hallucinations or any_changed:
         print("\nRestart your agent so hook changes take effect.")
     else:
         print("\nNo hook files were modified.")
 
-    _print_hook_stdin_test_example(debug=debug, invocation=invocation)
+    _print_hook_stdin_test_example(
+        debug=debug,
+        invocation=invocation,
+        selected_agents=selected_agents,
+        verify_only=prevent_hallucinations,
+    )
 
-    if include_cursor:
-        _propose_cursor_daemon_restart(
+    if _should_propose_hook_daemon_restart(
+        config,
+        selected_agents,
+        prevent_hallucinations=prevent_hallucinations,
+    ):
+        _propose_hook_daemon_restart(
             config_path=config_path,
             invocation=invocation,
+            selected_agents=selected_agents,
+            prevent_hallucinations=prevent_hallucinations,
         )
 
 
@@ -1846,22 +1977,23 @@ def ensure_pre_tool_hooks_for_launch(agent: AgentName, *, quiet: bool = False) -
     return changed
 
 
-def run_hook_uninstall() -> None:
-    """Remove CYT agent hooks from Claude, Codex, and Cursor config files."""
-    print("CYT hook uninstall\n")
+def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
+    """Remove CYT agent hooks from Claude, Codex, and/or Cursor config files."""
+    selected_agents = _resolve_hook_setup_agents(agents)
 
-    targets = [
-        ("Claude Code", _agent_config_path(CLAUDE_SETTINGS_PATH)),
-        ("Codex", _agent_config_path(CODEX_HOOKS_PATH)),
-        ("Cursor", _agent_config_path(CURSOR_HOOKS_PATH)),
-    ]
+    if len(selected_agents) == 1:
+        print(f"CYT hook uninstall ({selected_agents[0]})\n")
+    else:
+        print("CYT hook uninstall\n")
 
     any_changed = False
-    for label, path in targets:
+    for agent in selected_agents:
+        label = _agent_hook_label(agent)
+        path = _agent_hook_path(agent)
         if not path.is_file():
             print(f"{label}: skipped ({path} not found)")
             continue
-        preserve_empty_hooks_object = path == _agent_config_path(CURSOR_HOOKS_PATH)
+        preserve_empty_hooks_object = agent == "cursor"
         if uninstall_hooks_from_file(
             path,
             preserve_empty_hooks_object=preserve_empty_hooks_object,

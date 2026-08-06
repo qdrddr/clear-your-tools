@@ -28,6 +28,7 @@ from cyt.pruners.remote import PrunerSettingsCache
 
 if TYPE_CHECKING:
     from cyt.common.pricing import StatsCosts
+    from cyt.hook.setup_wizard import HookAgentName
     from cyt.proxy.stats import StatsDB
 
 logger = logging.getLogger(__name__)
@@ -385,14 +386,17 @@ def _build_parser() -> argparse.ArgumentParser:
             help="Print skills/pruning pipelines and required API key resolution (no hook I/O)",
         )
 
+    hook_uninstall_parent = argparse.ArgumentParser(add_help=False)
+    hook_uninstall_parent.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Remove CYT hooks from agent config file(s)",
+    )
+
     hook_parser = subparsers.add_parser(
         "hook",
         help="Install agent hooks (all, cursor, claude, codex), uninstall, or run hook diagnostics",
-    )
-    hook_parser.add_argument(
-        "--uninstall",
-        action="store_true",
-        help="Remove CYT hooks from ~/.claude/settings.json, ~/.codex/hooks.json, and ~/.cursor/hooks.json",
+        parents=[hook_uninstall_parent],
     )
     hook_parser.add_argument(
         "--serve",
@@ -407,7 +411,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_hook_handler_args(hook_parser)
     hook_sub = hook_parser.add_subparsers(dest="hook_command", required=False)
-    hook_all = hook_sub.add_parser("all", help="Install CYT hooks for all configured agents")
+    hook_all = hook_sub.add_parser(
+        "all",
+        help="Install CYT hooks for all configured agents",
+        parents=[hook_uninstall_parent],
+    )
     hook_all.add_argument(
         "--config",
         type=Path,
@@ -422,6 +430,7 @@ def _build_parser() -> argparse.ArgumentParser:
     hook_cursor = hook_sub.add_parser(
         "cursor",
         help="Install CYT hooks into ~/.cursor/hooks.json",
+        parents=[hook_uninstall_parent],
     )
     hook_cursor.add_argument(
         "--config",
@@ -437,6 +446,7 @@ def _build_parser() -> argparse.ArgumentParser:
     hook_claude = hook_sub.add_parser(
         "claude",
         help="Install CYT hooks into ~/.claude/settings.json",
+        parents=[hook_uninstall_parent],
     )
     hook_claude.add_argument(
         "--config",
@@ -452,6 +462,7 @@ def _build_parser() -> argparse.ArgumentParser:
     hook_codex = hook_sub.add_parser(
         "codex",
         help="Install CYT hooks into ~/.codex/hooks.json",
+        parents=[hook_uninstall_parent],
     )
     hook_codex.add_argument(
         "--config",
@@ -720,40 +731,84 @@ def _hook_invokes_handler(args: argparse.Namespace) -> bool:
     )
 
 
+def _hook_agents_for_command(hook_cmd: str) -> list[HookAgentName] | None:
+    from cyt.hook.setup_wizard import HookAgentName as AgentName
+
+    if hook_cmd == "all":
+        return None
+    if hook_cmd in ("cursor", "claude", "codex"):
+        return [cast(AgentName, hook_cmd)]
+    raise SystemExit(
+        "usage: cyt hook {all,cursor,claude,codex,daemon} ... "
+        "(or cyt hook [--uninstall] | cyt hook <agent> --uninstall | --prompt TEXT | --test)",
+    )
+
+
+def _run_hook_uninstall_command(args: argparse.Namespace) -> None:
+    from cyt.hook.setup_wizard import run_hook_uninstall
+
+    hook_cmd = getattr(args, "hook_command", None)
+    agents = (
+        _hook_agents_for_command(hook_cmd)
+        if isinstance(hook_cmd, str) and hook_cmd in ("cursor", "claude", "codex")
+        else None
+    )
+    run_hook_uninstall(agents=agents)
+
+
+def _run_hook_daemon_command(args: argparse.Namespace) -> None:
+    from cyt.hook.daemon import daemon_restart, daemon_start, daemon_status, daemon_stop
+
+    daemon_cmd = getattr(args, "daemon_command", None)
+    verbose = bool(getattr(args, "verbose", False))
+    config_path = getattr(args, "config", None)
+    if daemon_cmd == "start":
+        daemon_start(
+            config_path=config_path,
+            verbose=verbose or bool(getattr(args, "foreground", False)),
+            foreground=bool(getattr(args, "foreground", False)),
+            unattended=bool(getattr(args, "unattended", False)),
+        )
+        return
+    if daemon_cmd == "stop":
+        daemon_stop(verbose=verbose, config_path=config_path)
+        return
+    if daemon_cmd == "restart":
+        daemon_restart(
+            config_path=config_path,
+            verbose=verbose,
+            unattended=bool(getattr(args, "unattended", False)),
+        )
+        return
+    if daemon_cmd == "status":
+        daemon_status(config_path=config_path)
+        return
+    raise SystemExit(f"unknown hook daemon command: {daemon_cmd}")
+
+
+def _run_hook_setup_command(args: argparse.Namespace) -> None:
+    from cyt.hook.setup_wizard import run_hook_setup
+
+    hook_cmd = getattr(args, "hook_command", None)
+    if not isinstance(hook_cmd, str) or hook_cmd not in ("all", "cursor", "claude", "codex"):
+        raise SystemExit(
+            "usage: cyt hook {all,cursor,claude,codex,daemon} ... "
+            "(or cyt hook [--uninstall] | cyt hook <agent> --uninstall | --prompt TEXT | --test)",
+        )
+    run_hook_setup(
+        config_path=getattr(args, "config", None),
+        agents=_hook_agents_for_command(hook_cmd),
+        prevent_hallucinations=bool(getattr(args, "prevent_hallucinations", False)),
+    )
+
+
 def _run_hook_command(args: argparse.Namespace) -> None:
     if getattr(args, "uninstall", False):
-        from cyt.hook.setup_wizard import run_hook_uninstall
-
-        run_hook_uninstall()
+        _run_hook_uninstall_command(args)
         return
     if getattr(args, "hook_command", None) == "daemon":
-        from cyt.hook.daemon import daemon_restart, daemon_start, daemon_status, daemon_stop
-
-        daemon_cmd = getattr(args, "daemon_command", None)
-        verbose = bool(getattr(args, "verbose", False))
-        config_path = getattr(args, "config", None)
-        if daemon_cmd == "start":
-            daemon_start(
-                config_path=config_path,
-                verbose=verbose or bool(getattr(args, "foreground", False)),
-                foreground=bool(getattr(args, "foreground", False)),
-                unattended=bool(getattr(args, "unattended", False)),
-            )
-            return
-        if daemon_cmd == "stop":
-            daemon_stop(verbose=verbose, config_path=config_path)
-            return
-        if daemon_cmd == "restart":
-            daemon_restart(
-                config_path=config_path,
-                verbose=verbose,
-                unattended=bool(getattr(args, "unattended", False)),
-            )
-            return
-        if daemon_cmd == "status":
-            daemon_status(config_path=config_path)
-            return
-        raise SystemExit(f"unknown hook daemon command: {daemon_cmd}")
+        _run_hook_daemon_command(args)
+        return
     if getattr(args, "serve", False):
         from cyt.hook.daemon import daemon_start
 
@@ -773,23 +828,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
             test=bool(getattr(args, "test", False)),
         )
         return
-    hook_cmd = getattr(args, "hook_command", None)
-    if hook_cmd in ("all", "cursor", "claude", "codex"):
-        from cyt.hook.setup_wizard import HookAgentName, run_hook_setup
-
-        agents: list[HookAgentName] | None = (
-            None if hook_cmd == "all" else [cast(HookAgentName, hook_cmd)]
-        )
-        run_hook_setup(
-            config_path=getattr(args, "config", None),
-            agents=agents,
-            prevent_hallucinations=bool(getattr(args, "prevent_hallucinations", False)),
-        )
-        return
-    raise SystemExit(
-        "usage: cyt hook {all,cursor,claude,codex,daemon} ... "
-        "(or cyt hook --uninstall | --prompt TEXT | --test)",
-    )
+    _run_hook_setup_command(args)
 
 
 def main() -> None:

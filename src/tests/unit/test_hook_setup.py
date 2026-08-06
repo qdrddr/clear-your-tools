@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -41,6 +42,64 @@ def _stub_tools_hook_wizard(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hook_setup, "save_user_config", lambda *args, **kwargs: False)
 
 
+def _prevent_hallucinations_blocked_prompt(text: str) -> None:
+    lowered = text.lower()
+    for fragment in (
+        "skills directories",
+        "cyt_launch_agent",
+        "hook debug logging",
+        "restart the hook daemon",
+    ):
+        if fragment in lowered:
+            raise AssertionError(f"{fragment} prompt should be skipped")
+
+
+def _stub_prevent_hallucinations_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    prompt_calls: list[str] | None = None,
+) -> list[str]:
+    calls = prompt_calls if prompt_calls is not None else []
+
+    def fake_prompt_choice(text: str, *args: object, **kwargs: object) -> str:
+        calls.append(text)
+        _prevent_hallucinations_blocked_prompt(text)
+        if "choose action" in text:
+            return "update"
+        raise AssertionError(f"unexpected prompt: {text!r}")
+
+    def fail_unexpected_yes_no(text: str, *args: object, **kwargs: object) -> bool:
+        _prevent_hallucinations_blocked_prompt(text)
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt", lambda text, default="": default)
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fail_unexpected_yes_no)
+    monkeypatch.setattr(hook_setup, "_prompt_choice", fake_prompt_choice)
+    return calls
+
+
+def _write_duplicate_cursor_hooks(cursor_path: Path) -> None:
+    entries = hook_setup.cursor_hook_entries(agent="cursor", include_post_tool_use=True)
+    cursor_path.parent.mkdir(parents=True)
+    cursor_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "beforeSubmitPrompt": [entries["before_submit"], entries["before_submit"]],
+                    "sessionStart": entries["session_start"],
+                    "sessionEnd": [entries["session_end"]],
+                    "preToolUse": [entries["pre_tool"]],
+                    "postToolUse": [entries["post_tool"]],
+                    "preCompact": [entries["pre_compact"]],
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
     command = hook_setup.format_hook_stdin_test_command()
 
@@ -50,6 +109,27 @@ def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
     assert "sess-00000000-0000-4000-8000-000000000001" in command
     assert "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl" in command
     assert "/path/to/your/project" in command
+
+
+def test_format_hook_stdin_test_command_verify_only_uses_pre_tool_use_payload() -> None:
+    command = hook_setup.format_hook_stdin_test_command(
+        verify_only=True,
+        selected_agents=["claude"],
+    )
+
+    assert '"hook_event_name": "preToolUse"' in command
+    assert '"tool_name": "Shell"' in command
+    assert "UserPromptSubmit" not in command
+
+
+def test_format_hook_stdin_test_command_verify_only_cursor_uses_user_prompt_submit() -> None:
+    command = hook_setup.format_hook_stdin_test_command(
+        verify_only=True,
+        selected_agents=["cursor"],
+    )
+
+    assert '"hook_event_name": "UserPromptSubmit"' in command
+    assert "preToolUse" not in command
 
 
 def test_format_hook_stdin_test_command_includes_debug_flag() -> None:
@@ -973,10 +1053,11 @@ def test_run_hook_uninstall_removes_hooks_from_agent_configs(
 
 def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["cyt", "hook", "--uninstall"])
-    called = {"run": False}
+    called: dict[str, object] = {"run": False, "agents": "unset"}
 
-    def fake_run_hook_uninstall() -> None:
+    def fake_run_hook_uninstall(*, agents: list[str] | None = None) -> None:
         called["run"] = True
+        called["agents"] = agents
 
     monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_uninstall", fake_run_hook_uninstall)
 
@@ -984,6 +1065,58 @@ def test_hook_uninstall_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     main()
     assert called["run"] is True
+    assert called["agents"] is None
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_agents"),
+    [
+        (["cyt", "hook", "all", "--uninstall"], None),
+        (["cyt", "hook", "cursor", "--uninstall"], ["cursor"]),
+        (["cyt", "hook", "claude", "--uninstall"], ["claude"]),
+        (["cyt", "hook", "codex", "--uninstall"], ["codex"]),
+    ],
+)
+def test_hook_uninstall_cli_routing_for_agents(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    expected_agents: list[str] | None,
+) -> None:
+    monkeypatch.setattr("sys.argv", argv)
+    called: dict[str, object] = {"run": False, "agents": "unset"}
+
+    def fake_run_hook_uninstall(*, agents: list[str] | None = None) -> None:
+        called["run"] = True
+        called["agents"] = agents
+
+    monkeypatch.setattr("cyt.hook.setup_wizard.run_hook_uninstall", fake_run_hook_uninstall)
+
+    from cyt.proxy.cli_impl import main
+
+    main()
+    assert called["run"] is True
+    assert called["agents"] == expected_agents
+
+
+def test_run_hook_uninstall_only_removes_selected_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_path = tmp_path / "claude" / "settings.json"
+    codex_path = tmp_path / "codex" / "hooks.json"
+    claude_path.parent.mkdir(parents=True)
+    codex_path.parent.mkdir(parents=True)
+    entry = hook_setup.cyt_client_entry()
+    hook_setup.merge_hooks_into_file(claude_path, entry)
+    hook_setup.merge_hooks_into_file(codex_path, entry)
+
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", codex_path)
+
+    hook_setup.run_hook_uninstall(agents=["claude"])
+
+    assert "hooks" not in json.loads(claude_path.read_text(encoding="utf-8"))
+    assert "hooks" in json.loads(codex_path.read_text(encoding="utf-8"))
 
 
 def test_hook_wizard_without_stdin(
@@ -1221,3 +1354,248 @@ def test_run_hook_setup_skips_cursor_daemon_restart_when_declined(
     output = capsys.readouterr().out
     assert "Skipped. Run manually when ready:" in output
     assert f"  {cyt_daemon_restart_command()}" in output
+
+
+def test_run_hook_setup_prevent_hallucinations_skips_prompts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cursor_path = tmp_path / "cursor" / "hooks.json"
+    config_path = tmp_path / "config.yaml"
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    prompt_calls: list[str] = []
+
+    def fake_prompt_choice(text: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(text)
+        if "choose action" in text:
+            return "update"
+        raise AssertionError(f"unexpected prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup, "_prompt_choice", fake_prompt_choice)
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={"skills": {"enabled": False}},
+        ),
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+        patch(
+            "cyt.hook.setup_wizard.resolve_setup_config_path",
+            return_value=config_path,
+        ),
+    ):
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["cursor"],
+            prevent_hallucinations=True,
+        )
+
+    daemon_restart.assert_called_once_with(config_path=config_path, unattended=True)
+    output = capsys.readouterr().out
+    assert "CYT hook setup (cursor)" in output
+    assert "Verify-only hallucination prevention enabled" in output
+    assert "Skills directories" not in output
+    assert "CYT_LAUNCH_AGENT" not in output
+    assert "hook debug logging" not in output
+    assert "Restarting hook daemon for verify-only mode" in output
+    assert "Run manually when ready:" not in output
+    assert "Restart your agent so hook changes take effect." in output
+    assert "Test the hook locally (UserPromptSubmit payload on stdin)" in output
+    assert "cyt hook --uninstall" in output
+    assert any("choose action (update | remove | skip)" in text for text in prompt_calls)
+
+    data = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert "postToolUse" not in data.get("hooks", {})
+
+
+def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cursor_path = tmp_path / "cursor" / "hooks.json"
+    config_path = tmp_path / "config.yaml"
+    _write_duplicate_cursor_hooks(cursor_path)
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    prompt_calls = _stub_prevent_hallucinations_prompts(monkeypatch)
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={"skills": {"enabled": False}},
+        ),
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch(
+            "cyt.hook.setup_wizard.resolve_setup_config_path",
+            return_value=config_path,
+        ),
+    ):
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["cursor"],
+            prevent_hallucinations=True,
+        )
+
+    output = capsys.readouterr().out
+    assert "duplicate CYT hooks" in output
+    assert any("choose action (update | remove | skip)" in text for text in prompt_calls)
+    assert "updated CYT hooks" in output
+    assert "Test the hook locally (UserPromptSubmit payload on stdin)" in output
+
+    data = json.loads(cursor_path.read_text(encoding="utf-8"))
+    assert "postToolUse" not in data.get("hooks", {})
+
+
+def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    claude_path = tmp_path / "claude" / "settings.json"
+    config_path = tmp_path / "config.yaml"
+    claude_path.parent.mkdir(parents=True)
+    claude_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    saved: dict[str, Any] = {}
+    prompt_calls: list[str] = []
+
+    def capture_save(_path: Path, overlay: dict[str, Any], **kwargs: object) -> bool:
+        del kwargs
+        saved.update(overlay)
+        return True
+
+    def fake_prompt_choice(text: str, *args: object, **kwargs: object) -> str:
+        prompt_calls.append(text)
+        if "Detect tools for claude via (hook | proxy)" in text:
+            return "hook"
+        if "choose action" in text:
+            return "update"
+        raise AssertionError(f"unexpected prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup, "_prompt_choice", fake_prompt_choice)
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_a, **_k: True)
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={
+                "skills": {"enabled": False},
+                "pruning": {
+                    "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+                },
+            },
+        ),
+        patch("cyt.config.save_user_config", side_effect=capture_save),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch(
+            "cyt.hook.setup_wizard.resolve_setup_config_path",
+            return_value=config_path,
+        ),
+    ):
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["claude"],
+            prevent_hallucinations=True,
+        )
+
+    output = capsys.readouterr().out
+    assert "Tool detection (claude)" in output
+    assert any("Detect tools for claude via (hook | proxy)" in text for text in prompt_calls)
+    assert "Test the hook locally (preToolUse payload on stdin)" in output
+    assert saved["pruning"]["inject_via"]["claude"] == "hook"
+
+
+def test_should_propose_hook_daemon_restart() -> None:
+    hook_config = {
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
+    }
+    hook_claude = {
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "proxy"}},
+    }
+
+    assert hook_setup._should_propose_hook_daemon_restart(
+        hook_config,
+        ["cursor"],
+        prevent_hallucinations=False,
+    )
+    assert hook_setup._should_propose_hook_daemon_restart(
+        hook_config,
+        ["cursor"],
+        prevent_hallucinations=True,
+    )
+    assert not hook_setup._should_propose_hook_daemon_restart(
+        hook_config,
+        ["claude"],
+        prevent_hallucinations=False,
+    )
+    assert hook_setup._should_propose_hook_daemon_restart(
+        hook_claude,
+        ["claude"],
+        prevent_hallucinations=False,
+    )
+    assert hook_setup._should_propose_hook_daemon_restart(
+        hook_config,
+        ["claude", "codex", "cursor"],
+        prevent_hallucinations=False,
+    )
+
+
+def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    claude_path = tmp_path / "claude" / "settings.json"
+    claude_path.parent.mkdir(parents=True)
+    claude_path.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(hook_setup, "CLAUDE_SETTINGS_PATH", claude_path)
+    monkeypatch.setattr(hook_setup, "CODEX_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", tmp_path / "missing" / "hooks.json")
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(
+        hook_setup,
+        "_configure_hook_skills_directories",
+        lambda **_kwargs: None,
+    )
+    _stub_tools_hook_wizard(monkeypatch)
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        if "Restart the hook daemon" in text:
+            raise AssertionError("daemon restart should not be prompted for proxy inject_via")
+        lowered = text.lower()
+        if "debug" in lowered or "cyt_launch_agent" in lowered:
+            return False
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={
+                "skills": {"enabled": True},
+                "pruning": {
+                    "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+                },
+            },
+        ),
+        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+    ):
+        hook_setup.run_hook_setup(agents=["claude"])
+
+    daemon_restart.assert_not_called()
+    output = capsys.readouterr().out
+    assert "Restart the hook daemon" not in output

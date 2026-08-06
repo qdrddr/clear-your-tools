@@ -62,6 +62,32 @@ def _ignore_repo_skip_txt(request: pytest.FixtureRequest, monkeypatch: pytest.Mo
 
 
 @pytest.fixture(autouse=True)
+def _isolate_cyt_client_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests must not inherit developer hook overlays from ~/.config/cyt."""
+    from cyt_client import config as cyt_client_config
+
+    def isolated_resolve_config_path() -> Path:
+        cwd_config = Path.cwd() / cyt_client_config.CWD_CONFIG_NAME
+        if cwd_config.exists():
+            return cwd_config
+        return cyt_client_config.USER_CONFIG_PATH.expanduser().with_name(
+            ".cyt-client-test-no-user-config.yaml",
+        )
+
+    monkeypatch.setattr(cyt_client_config, "resolve_config_path", isolated_resolve_config_path)
+
+
+@pytest.fixture(autouse=True)
+def _reset_cyt_client_pairing_sessions() -> Iterator[None]:
+    """Pairing repair is session-scoped; clear module state between tests."""
+    from cyt_client import pairing as cyt_client_pairing
+
+    cyt_client_pairing._REPAIRED_SESSIONS.clear()
+    yield
+    cyt_client_pairing._REPAIRED_SESSIONS.clear()
+
+
+@pytest.fixture(autouse=True)
 def _ci_credential_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provide dummy API keys when unset (GitHub Actions has no keyring or .env)."""
     install_test_pre_dotenv(monkeypatch)

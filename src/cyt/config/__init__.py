@@ -1636,11 +1636,13 @@ def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 def uses_cyt_mcp_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     agent = tools_hook_cyt_mcp_agent(cfg)
-    return (
+    if (
         tools_enabled(cfg)
         and inject_via_for_agent(cfg, agent) == "hook"
         and "cyt_mcp" in tools_hook_sources(cfg)
-    )
+    ):
+        return True
+    return verify_only_mode(cfg) and "cyt_mcp" in tools_hook_sources(cfg)
 
 
 def launch_needs_proxy(config: dict[str, Any] | None = None, agent: str | None = None) -> bool:
