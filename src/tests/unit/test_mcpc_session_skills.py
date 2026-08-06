@@ -11,7 +11,7 @@ from cyt.skills.catalog import SkillEntryRef
 
 _CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {
@@ -34,7 +34,7 @@ def setup_function() -> None:
 def test_append_mcpc_session_skill_entries_skips_when_disabled() -> None:
     config: dict[str, Any] = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {

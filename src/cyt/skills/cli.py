@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt.config import (
+    inject_via_map,
     load_config,
     pruning_pipeline_from_config,
     required_proxy_env_var_names,
@@ -21,7 +22,6 @@ from cyt.config import (
     skills_enabled,
     skills_pipeline,
     tools_enabled,
-    tools_inject_via,
     uses_executor_tool_catalog,
 )
 from cyt.injection.pre_exposed import (
@@ -125,7 +125,7 @@ def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | Non
         from cyt.config import required_executor_skill_env_var_names
 
         names.extend(required_executor_skill_env_var_names(config))
-    if tools_inject_via(config) == "hook":
+    if any(mode == "hook" for mode in inject_via_map(config).values()):
         names.extend(required_pruning_env_var_names(config))
         names.extend(required_tools_hook_env_var_names(config))
     names = list(dict.fromkeys(names))
@@ -1107,6 +1107,10 @@ def _exit_if_hook_disabled(
     cwd: str | None,
 ) -> bool:
     del debug, raw_stdin, payload, cwd
+    from cyt.config import verify_only_mode
+
+    if verify_only_mode(config):
+        return False
     if cli_prompt or skills_enabled(config) or tools_enabled(config):
         return False
     print(

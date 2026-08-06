@@ -448,7 +448,7 @@ def _integration_config(
 ) -> dict[str, Any]:
     cfg = copy.deepcopy(base or load_config())
     pruning = cfg.setdefault("pruning", {})
-    pruning["inject_via"] = "hook"
+    pruning["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     tools = pruning.setdefault("tools", {})
     tools["enabled"] = mode in {None, "tools", "combined", "real"}
     tools.setdefault("policy", {})["minimum_tools"] = 1

@@ -41,7 +41,9 @@ def test_run_cursor_launch_session_rejects_proxy_mode() -> None:
     from cyt.proxy.bootstrap import RuntimeContext
 
     runtime = RuntimeContext(
-        config={"pruning": {"inject_via": "proxy"}},
+        config={
+            "pruning": {"inject_via": {"cursor": "proxy", "claude": "proxy", "codex": "proxy"}},
+        },
         config_path=Path("/tmp/config.yaml"),
         port=8834,
         credential_sources={},
@@ -67,7 +69,10 @@ def test_run_cursor_launch_session_starts_hook_not_proxy() -> None:
     from cyt.proxy.bootstrap import RuntimeContext
 
     runtime = RuntimeContext(
-        config={"pruning": {"inject_via": "hook"}, "skills": {"enabled": True}},
+        config={
+            "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
+            "skills": {"enabled": True},
+        },
         config_path=Path("/tmp/config.yaml"),
         port=8834,
         credential_sources={},

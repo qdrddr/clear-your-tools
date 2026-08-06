@@ -7,35 +7,51 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt.config import inject_via, load_config, sync_config_in_place
+from cyt.config import inject_via, inject_via_for_agent, load_config, sync_config_in_place
 from cyt.launch import inject_via_prompt
+
+_MAP_ALL_HOOK = """pruning:
+  inject_via:
+    cursor: hook
+    claude: hook
+    codex: hook
+"""
+
+_MAP_DEFAULT = """pruning:
+  inject_via:
+    cursor: hook
+    claude: proxy
+    codex: proxy
+"""
+
+_MAP_ALL_PROXY = _MAP_DEFAULT
 
 
 def test_sync_config_in_place_updates_existing_reference(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     config = load_config(config_path)
     holder = config
 
-    config_path.write_text("pruning:\n  inject_via: proxy\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_PROXY, encoding="utf-8")
     sync_config_in_place(config, config_path)
 
     assert holder is config
-    assert inject_via(holder) == "proxy"
+    assert inject_via_for_agent(holder, "claude") == "proxy"
 
 
 def test_ensure_launch_inject_via_proxy_stops_hook_daemon_when_already_proxy(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: proxy\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_PROXY, encoding="utf-8")
     config = load_config(config_path)
 
     with patch("cyt.launch.inject_via_prompt._stop_for_inject_via_mode") as stop:
         updated = inject_via_prompt.ensure_launch_inject_via_proxy(config_path, config)
 
     stop.assert_called_once_with("proxy")
-    assert inject_via(updated) == "proxy"
+    assert inject_via_for_agent(updated, "claude") == "proxy"
 
 
 def test_ensure_launch_inject_via_proxy_prompts_saves_and_stops_daemon(
@@ -43,7 +59,7 @@ def test_ensure_launch_inject_via_proxy_prompts_saves_and_stops_daemon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("cyt.launch.inject_via_prompt._prompt_yes_no", lambda *_a, **_k: True)
     config = load_config(config_path)
@@ -57,8 +73,8 @@ def test_ensure_launch_inject_via_proxy_prompts_saves_and_stops_daemon(
     daemon_stop.assert_called_once_with(verbose=False)
     reconfigure.assert_called_once_with(config)
     assert updated is config
-    assert inject_via(updated) == "proxy"
-    assert "inject_via: proxy" in config_path.read_text(encoding="utf-8")
+    assert inject_via_for_agent(updated, "claude") == "proxy"
+    assert "claude: proxy" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_launch_inject_via_proxy_keeps_hook_when_declined(
@@ -66,7 +82,7 @@ def test_ensure_launch_inject_via_proxy_keeps_hook_when_declined(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("cyt.launch.inject_via_prompt._prompt_yes_no", lambda *_a, **_k: False)
 
@@ -78,7 +94,7 @@ def test_ensure_launch_inject_via_proxy_keeps_hook_when_declined(
 
     daemon_stop.assert_not_called()
     assert inject_via(updated) == "hook"
-    assert "inject_via: hook" in config_path.read_text(encoding="utf-8")
+    assert "claude: hook" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_hook_inject_via_prompts_saves_stops_proxies_and_starts_daemon(
@@ -86,7 +102,7 @@ def test_ensure_hook_inject_via_prompts_saves_stops_proxies_and_starts_daemon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: proxy\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_PROXY, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("cyt.launch.inject_via_prompt._prompt_yes_no", lambda *_a, **_k: True)
     config = load_config(config_path)
@@ -108,7 +124,7 @@ def test_ensure_hook_inject_via_prompts_saves_stops_proxies_and_starts_daemon(
     reconfigure.assert_called_once_with(config)
     assert updated is config
     assert inject_via(updated) == "hook"
-    assert "inject_via: hook" in config_path.read_text(encoding="utf-8")
+    assert "cursor: hook" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_hook_inject_via_prompts_to_stop_proxies_when_already_hook(
@@ -116,7 +132,7 @@ def test_ensure_hook_inject_via_prompts_to_stop_proxies_when_already_hook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr(
         "cyt.launch.inject_via_prompt._prompt_yes_no",
@@ -144,7 +160,7 @@ def test_ensure_hook_inject_via_skips_proxy_stop_prompt_when_none_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
 
     with (
@@ -163,7 +179,7 @@ def test_ensure_launch_inject_via_proxy_prompts_hook_uninstall_after_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr(
         "cyt.launch.inject_via_prompt._prompt_yes_no",
@@ -180,7 +196,7 @@ def test_ensure_launch_inject_via_proxy_prompts_hook_uninstall_after_switch(
         updated = inject_via_prompt.ensure_launch_inject_via_proxy(config_path, config)
 
     uninstall.assert_called_once()
-    assert inject_via(updated) == "proxy"
+    assert inject_via_for_agent(updated, "claude") == "proxy"
 
 
 def test_ensure_launch_inject_via_proxy_skips_hook_uninstall_when_not_installed(
@@ -188,7 +204,7 @@ def test_ensure_launch_inject_via_proxy_skips_hook_uninstall_when_not_installed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("pruning:\n  inject_via: hook\n", encoding="utf-8")
+    config_path.write_text(_MAP_ALL_HOOK, encoding="utf-8")
     monkeypatch.setattr("cyt.launch.inject_via_prompt.sys.stdin.isatty", lambda: True)
     monkeypatch.setattr(
         "cyt.launch.inject_via_prompt._prompt_yes_no",

@@ -42,7 +42,7 @@ def skills_inject_via_hook(config: dict[str, Any]) -> bool:
 def skills_inject_via_proxy(config: dict[str, Any], kind: str | None) -> bool:
     from cyt.skills.budget import skills_inject_allowed
 
-    if not skills_inject_allowed(config, "proxy"):
+    if not skills_inject_allowed(config, "proxy", upstream_kind=kind):
         return False
     return kind in _PROXY_KINDS
 

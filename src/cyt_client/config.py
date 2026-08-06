@@ -116,3 +116,85 @@ def skills_hook_cursor_rule_file_enabled() -> bool:
     if value is None:
         return _DEFAULT_CURSOR_RULE_FILE_ENABLED
     return value
+
+
+def _inject_via_for_agent_from_yaml(text: str, agent: str) -> str | None:
+    """Read pruning.inject_via.<agent> from simple YAML."""
+    stack: list[tuple[int, str]] = []
+    target_path = ("pruning", "inject_via", agent)
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        key, _, value = line.strip().partition(":")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        if len(stack) >= len(target_path) or key != target_path[len(stack)]:
+            continue
+        if len(stack) + 1 == len(target_path):
+            return value.casefold() if value else None
+        if value:
+            continue
+        stack.append((indent, key))
+    return None
+
+
+def inject_via_for_agent(agent: str) -> str:
+    """Return hook or proxy for *agent* (cursor always defaults hook)."""
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return "hook" if agent == "cursor" else "proxy"
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return "hook" if agent == "cursor" else "proxy"
+    mode = _inject_via_for_agent_from_yaml(text, agent)
+    if mode in {"hook", "proxy"}:
+        return mode
+    return "hook" if agent == "cursor" else "proxy"
+
+
+def hallucination_gate_enabled() -> bool:
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    value = _nested_bool_from_yaml(text, ("hallucination_gate", "enabled"))
+    return bool(value)
+
+
+def skills_enabled() -> bool:
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    value = _nested_bool_from_yaml(text, ("skills", "enabled"))
+    if value is None:
+        return False
+    return value
+
+
+def tools_enabled() -> bool:
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    value = _nested_bool_from_yaml(text, ("pruning", "tools", "enabled"))
+    if value is None:
+        return False
+    return value
+
+
+def verify_only_mode() -> bool:
+    return hallucination_gate_enabled() and not skills_enabled() and not tools_enabled()

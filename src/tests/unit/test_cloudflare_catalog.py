@@ -95,7 +95,7 @@ def test_load_catalog_from_disk_filters_excluded_portal_tools(
     )
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {
@@ -116,7 +116,7 @@ def test_load_catalog_from_disk_filters_excluded_portal_tools(
 def test_required_tools_hook_env_var_names_cloudflare() -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {

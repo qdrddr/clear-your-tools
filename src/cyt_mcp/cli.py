@@ -122,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             transport=args.transport,
             http=config.http,
             codex_stubs_include_description=config.codex_stubs_include_description,
+            verify_only=config.verify_only,
             aggregator_path=config.aggregator_path,
             agent_mcp_path=config.agent_mcp_path,
         )

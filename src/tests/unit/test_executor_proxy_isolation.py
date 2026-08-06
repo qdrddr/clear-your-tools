@@ -17,10 +17,11 @@ from cyt.executor.http import (
 from cyt.proxy.anthropic import transform_anthropic_request
 from cyt.pruners.llm import tool_selector_system_prompt
 from cyt.pruners.tools_filter import filter_tools_for_query
+from cyt.testing.inject_via_maps import INJECT_VIA_ALL_PROXY
 
 _PROXY_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "proxy",
+        "inject_via": dict(INJECT_VIA_ALL_PROXY),
         "tools": {
             "enabled": True,
             "hook": {
@@ -102,7 +103,7 @@ def test_tool_selector_system_prompt_skips_executor_appendix_in_proxy_mode() -> 
         "cyt.executor.http.get_executor_mcp_cache",
         side_effect=_executor_forbidden,
     ):
-        prompt = tool_selector_system_prompt(_PROXY_CONFIG)
+        prompt = tool_selector_system_prompt(_PROXY_CONFIG, for_proxy=True)
     assert '<skill name="executor"' not in prompt
     assert "Executor MCP transport context" not in prompt
     assert "These are MCP tools and their enums" in prompt

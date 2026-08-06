@@ -324,9 +324,13 @@ def _anthropic_finish_transform(
     from cyt.tools.budget import tools_inject_allowed
 
     resolved_config = config or load_config()
-    user_message_inject = inject_into_user_message(resolved_config) and tools_inject_allowed(
+    user_message_inject = inject_into_user_message(
+        resolved_config,
+        agent="claude",
+    ) and tools_inject_allowed(
         resolved_config,
         "proxy",
+        agent="claude",
     )
     deferred_tools_text = ""
     proxy_session_text = (
@@ -461,7 +465,7 @@ def transform_anthropic_request(
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
     )
     resolved_config = config or load_config()
-    tools_allowed = tools_inject_allowed(resolved_config, "proxy")
+    tools_allowed = tools_inject_allowed(resolved_config, "proxy", agent="claude")
     coordinated = coordinate_skills_tools_prune(
         query,
         resolved_config,

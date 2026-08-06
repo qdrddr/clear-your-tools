@@ -18,7 +18,7 @@ from cyt.proxy.anthropic import (
 
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
-        "inject_via": "proxy",
+        "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
     },
     "network": {
         "proxy": {
@@ -290,7 +290,7 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -306,6 +306,7 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             },
         },
         "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -337,7 +338,7 @@ def test_transform_anthropic_request_inject_into_user_message(
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -353,6 +354,7 @@ def test_transform_anthropic_request_inject_into_user_message(
             },
         },
         "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -400,7 +402,7 @@ def test_transform_anthropic_request_inject_into_user_message(
 
 def test_transform_anthropic_request_inject_keeps_all_original_system_tools() -> None:
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
     }
     body = {
@@ -443,7 +445,7 @@ def test_transform_anthropic_request_inject_keeps_all_original_system_tools() ->
 
 def test_transform_anthropic_request_inject_into_user_message_tool_result_only() -> None:
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
     }
     body = {
@@ -558,7 +560,7 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": "llm",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -574,6 +576,7 @@ def test_transform_anthropic_request_passthrough_finishes_deferred_skills(
             },
         },
         "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},

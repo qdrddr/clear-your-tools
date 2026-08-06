@@ -528,12 +528,19 @@ def catalog_source_order() -> tuple[CatalogKind, ...]:
 def build_session_state_entry(
     *,
     tools_inject_enabled: bool,
+    hallucination_gate_enabled: bool | None = None,
+    inject_via: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    entry: dict[str, Any] = {
         "kind": "session_state",
         "key": "session_state:inject",
         "tools_inject_enabled": tools_inject_enabled,
     }
+    if hallucination_gate_enabled is not None:
+        entry["hallucination_gate_enabled"] = hallucination_gate_enabled
+    if inject_via in {"hook", "proxy"}:
+        entry["inject_via"] = inject_via
+    return entry
 
 
 def build_resource_log_entry(match: MatchedResource, *, full: bool) -> dict[str, Any]:

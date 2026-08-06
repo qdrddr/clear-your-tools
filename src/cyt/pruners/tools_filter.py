@@ -144,6 +144,7 @@ def _run_catalog_pruning(
     pruner_settings: PrunerSettingsCache | None = None,
     *,
     for_hook: bool = False,
+    upstream_kind: str | None = None,
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
@@ -164,6 +165,7 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
+    for_proxy = not for_hook
     from cyt.tools.catalog_cache import (
         catalog_snapshot_from_cache,
         ensure_tool_catalog_cached,
@@ -211,7 +213,8 @@ def _run_catalog_pruning(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    prepare_hook_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
+    if for_hook:
+        prepare_hook_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
     if pipeline == ["bm25"] and skill_entries is None:
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
         from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
@@ -285,8 +288,8 @@ def _run_catalog_pruning(
         catalog_bulk_id=catalog_bulk_id,
         phase_timer=phase_timer,
         phase_prefix=phase_prefix,
+        for_proxy=for_proxy,
     )
-    tool_properties_count_out = _count_optional_property_chunks(data)
     pruning_model_tokens = _pruning_tokens_summary(pruning_token_usage)
     from cyt.indexer.pipeline import recompose_and_retrieve_tools
 
@@ -497,6 +500,7 @@ def _run_llm_stage(
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
+    for_proxy: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     if trim_before_llm or llm_prescore_before_trim:
         if llm_prescore_before_trim and not trim_before_llm:
@@ -548,6 +552,7 @@ def _run_llm_stage(
                     catalog_bulk_id=catalog_bulk_id,
                     phase_timer=phase_timer,
                     phase_prefix=phase_prefix,
+                    for_proxy=for_proxy,
                 )
 
             def _llm_skills() -> tuple[list[MatchedSkill], StageTokenUsage]:
@@ -583,6 +588,7 @@ def _run_llm_stage(
                 catalog_bulk_id=catalog_bulk_id,
                 phase_timer=phase_timer,
                 phase_prefix=phase_prefix,
+                for_proxy=for_proxy,
             )
     else:
         data, _, llm_usage = llm_catalog_dict(
@@ -595,6 +601,7 @@ def _run_llm_stage(
             catalog_bulk_id=catalog_bulk_id,
             phase_timer=phase_timer,
             phase_prefix=phase_prefix,
+            for_proxy=for_proxy,
         )
 
     stage_result = finalize_scored_stage(
@@ -657,6 +664,7 @@ class _StageKwargs(TypedDict):
     config: dict[str, Any] | None
     pruner_settings: PrunerSettingsCache | None
     ctx: PolicyContext | None
+    for_proxy: bool
 
 
 def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
@@ -668,6 +676,40 @@ def _bm25_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
         "decomposed_breakdown": stage_kwargs["decomposed_breakdown"],
         "decomposed": stage_kwargs["decomposed"],
         "pruning_token_usage": stage_kwargs["pruning_token_usage"],
+        "ctx": stage_kwargs["ctx"],
+    }
+
+
+def _rerank_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
+    return {
+        "data": stage_kwargs["data"],
+        "query": stage_kwargs["query"],
+        "capture_catalog": stage_kwargs["capture_catalog"],
+        "snapshots": stage_kwargs["snapshots"],
+        "decomposed_breakdown": stage_kwargs["decomposed_breakdown"],
+        "decomposed": stage_kwargs["decomposed"],
+        "pruning_token_usage": stage_kwargs["pruning_token_usage"],
+        "skill_entries": stage_kwargs["skill_entries"],
+        "skill_llm_out": stage_kwargs["skill_llm_out"],
+        "config": stage_kwargs["config"],
+        "pruner_settings": stage_kwargs["pruner_settings"],
+        "ctx": stage_kwargs["ctx"],
+    }
+
+
+def _llm_stage_kwargs(stage_kwargs: _StageKwargs) -> dict[str, Any]:
+    return {
+        "data": stage_kwargs["data"],
+        "query": stage_kwargs["query"],
+        "capture_catalog": stage_kwargs["capture_catalog"],
+        "snapshots": stage_kwargs["snapshots"],
+        "decomposed_breakdown": stage_kwargs["decomposed_breakdown"],
+        "decomposed": stage_kwargs["decomposed"],
+        "pruning_token_usage": stage_kwargs["pruning_token_usage"],
+        "skill_entries": stage_kwargs["skill_entries"],
+        "skill_llm_out": stage_kwargs["skill_llm_out"],
+        "config": stage_kwargs["config"],
+        "pruner_settings": stage_kwargs["pruner_settings"],
         "ctx": stage_kwargs["ctx"],
     }
 
@@ -692,6 +734,7 @@ def _run_pipeline_stage(
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
+    for_proxy: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any] | None]:
     stage_kwargs: _StageKwargs = {
         "data": data,
@@ -706,6 +749,7 @@ def _run_pipeline_stage(
         "config": config,
         "pruner_settings": pruner_settings,
         "ctx": ctx,
+        "for_proxy": for_proxy,
     }
     stage_ctx = (
         phase_timer.measure(f"{phase_prefix}:{stage}") if phase_timer is not None else nullcontext()
@@ -713,7 +757,7 @@ def _run_pipeline_stage(
     with stage_ctx:
         if stage == "rerank":
             try:
-                return _run_rerank_stage(**stage_kwargs)
+                return _run_rerank_stage(**_rerank_stage_kwargs(stage_kwargs))
             except Exception as exc:
                 logger.warning("rerank failed, falling back to bm25: %s", exc)
                 return _run_bm25_stage(**_bm25_stage_kwargs(stage_kwargs))
@@ -726,12 +770,13 @@ def _run_pipeline_stage(
             for attempt in range(1, LLM_STAGE_MAX_ATTEMPTS + 1):
                 try:
                     updated, post_rerank, post_rerank_scored = _run_llm_stage(
-                        **stage_kwargs,
+                        **_llm_stage_kwargs(stage_kwargs),
                         trim_before_llm=prior_stage_scored,
                         llm_prescore_before_trim=llm_only_pipeline and not prior_stage_scored,
                         catalog_bulk_id=catalog_bulk_id,
                         phase_timer=phase_timer,
                         phase_prefix=phase_prefix,
+                        for_proxy=stage_kwargs["for_proxy"],
                     )
                     return updated, post_rerank, post_rerank_scored
                 except Exception as exc:
@@ -755,7 +800,7 @@ def _run_pipeline_stage(
                         "llm pruning failed after %d attempts, trying rerank fallback",
                         LLM_STAGE_MAX_ATTEMPTS,
                     )
-                    return _run_rerank_stage(**stage_kwargs)
+                    return _run_rerank_stage(**_rerank_stage_kwargs(stage_kwargs))
                 except Exception as rerank_exc:
                     logger.warning(
                         "rerank fallback after llm failure failed, falling back to bm25: %s",
@@ -785,6 +830,7 @@ def _run_pruning_pipeline(
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
+    for_proxy: bool = False,
 ) -> tuple[
     dict[str, Any],
     dict[str, int],
@@ -816,7 +862,8 @@ def _run_pruning_pipeline(
         resolved_config,
         terminal_stage=terminal_stage,
     )
-    prepare_hook_tool_pruning(resolved_config, policy_ctx)
+    if not for_proxy:
+        prepare_hook_tool_pruning(resolved_config, policy_ctx)
     pinned: dict[str, Any] = {}
     if catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)
@@ -841,6 +888,7 @@ def _run_pruning_pipeline(
             catalog_bulk_id=catalog_bulk_id,
             phase_timer=phase_timer,
             phase_prefix=phase_prefix,
+            for_proxy=for_proxy,
         )
         if stage_post_rerank is not None:
             post_rerank = stage_post_rerank
@@ -903,6 +951,7 @@ def filter_tools_for_query(
     pruner_settings: PrunerSettingsCache | None = None,
     *,
     for_hook: bool = False,
+    upstream_kind: str | None = None,
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
@@ -914,7 +963,7 @@ def filter_tools_for_query(
     if for_hook:
         tools_allowed = tools_inject_allowed(config, "hook")
     else:
-        tools_allowed = tools_inject_allowed(config, "proxy")
+        tools_allowed = tools_inject_allowed(config, "proxy", upstream_kind=upstream_kind)
     if not tools_allowed:
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
@@ -1031,7 +1080,7 @@ def filter_tools_for_query(
     pruning_model_tokens: dict[str, int] = {}
     tool_properties_count_in = 0
     tool_properties_count_out = 0
-    pruning_query = tools_pruning_query(query, config)
+    pruning_query = tools_pruning_query(query, config, for_hook=for_hook)
     try:
         (
             merged,
@@ -1055,6 +1104,7 @@ def filter_tools_for_query(
             config=config,
             pruner_settings=pruner_settings,
             for_hook=for_hook,
+            upstream_kind=upstream_kind,
             catalog_bulk_id=catalog_bulk_id,
             phase_timer=phase_timer,
             phase_prefix=phase_prefix,

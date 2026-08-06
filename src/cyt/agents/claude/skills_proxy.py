@@ -180,7 +180,7 @@ def inject_skills_matches_into_anthropic_body(
     if not isinstance(messages, list):
         return original, meta
 
-    use_user_turn = config is not None and inject_into_user_message(config)
+    use_user_turn = config is not None and inject_into_user_message(config, agent="claude")
     if use_user_turn:
         if already_has_user_turn_injection(original, "anthropic", tag="<agent-skills>"):
             return original, meta

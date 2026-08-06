@@ -9,7 +9,7 @@ def test_budget_report_disabled_skills() -> None:
     config = {
         "skills": {
             "enabled": False,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "max_tokens_per_request": 20_000,
             "hook": {
                 "request_budget_fraction": 10.0,

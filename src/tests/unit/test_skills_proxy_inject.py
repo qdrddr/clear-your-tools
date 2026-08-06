@@ -67,7 +67,7 @@ def _skills_config(root: Path) -> dict:
             },
         },
         "pruning": {
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
     }
@@ -332,7 +332,7 @@ def test_inject_skills_skipped_when_inject_via_hook(monkeypatch: pytest.MonkeyPa
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
-        config["pruning"]["inject_via"] = "hook"
+        config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
         body = {
             "messages": [
                 {"role": "system", "content": "sys"},
@@ -353,6 +353,9 @@ def test_hook_skips_user_prompt_when_inject_via_proxy(monkeypatch: pytest.Monkey
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         config = _skills_config(root)
+        from cyt.testing.inject_via_maps import INJECT_VIA_ALL_PROXY
+
+        config["pruning"]["inject_via"] = dict(INJECT_VIA_ALL_PROXY)
         payload = {
             "hook_event_name": "UserPromptSubmit",
             "session_id": "sess-proxy",

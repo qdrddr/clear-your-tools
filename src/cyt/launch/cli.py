@@ -15,12 +15,12 @@ from cyt.agents.cursor.launch import ensure_cursor_hooks_for_launch
 from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
-    inject_via,
+    inject_via_for_agent,
     launch_needs_proxy,
     load_config,
+    needs_cyt_mcp_catalog,
     required_proxy_env_var_names,
     required_tools_hook_env_var_names,
-    tools_enabled,
 )
 from cyt.launch.agent_credentials import AgentAuthBinding, ensure_agent_upstream_auth
 from cyt.launch.config import codex_env_key_name
@@ -336,12 +336,11 @@ def _launch_env_for_agent(
 def _ensure_hook_credentials_for_launch(
     config: dict[str, Any],
     *,
+    agent: AgentName,
     credential_sources: dict[str, str] | None = None,
 ) -> None:
     """Resolve hook credentials before starting or restarting the hook daemon."""
-    from cyt.config import inject_via
-
-    if inject_via(config) != "hook":
+    if inject_via_for_agent(config, agent) != "hook":
         return
 
     names = list(
@@ -365,12 +364,14 @@ def _ensure_hook_credentials_for_launch(
 def _ensure_hook_server(
     *,
     runtime: RuntimeContext,
+    agent: AgentName,
 ) -> None:
     from cyt.hook.daemon import daemon_start
 
     config = runtime.config
     _ensure_hook_credentials_for_launch(
         config,
+        agent=agent,
         credential_sources=runtime.credential_sources,
     )
 
@@ -382,12 +383,12 @@ def _ensure_hook_server(
     runtime.port = result.port
 
 
-def _warm_launch_tool_catalogs(config: dict[str, Any]) -> None:
+def _warm_launch_tool_catalogs(config: dict[str, Any], *, agent: AgentName) -> None:
     from cyt.cache import warm_caches
     from cyt.config import tools_hook_sources, uses_cloudflare_tool_catalog
     from cyt.executor.http import schedule_executor_catalog_refresh
 
-    if tools_enabled(config) and inject_via(config) == "hook":
+    if needs_cyt_mcp_catalog(config, agent) and inject_via_for_agent(config, agent) == "hook":
         if "executor" in tools_hook_sources(config):
             schedule_executor_catalog_refresh(config, allow_prompt=False, force=True)
         if uses_cloudflare_tool_catalog(config):
@@ -408,12 +409,21 @@ def _apply_interactive_launch_config(
         return config
     config = ensure_tools_hook_file_interactive(runtime.config_path, config)
     if agent in ("claude", "codex"):
-        previous_mode = inject_via(config)
-        config = ensure_launch_inject_via_proxy(runtime.config_path, config)
-        if inject_via(config) != previous_mode:
+        previous_mode = inject_via_for_agent(config, agent)
+        config = ensure_launch_inject_via_proxy(runtime.config_path, config, agent=agent)
+        if inject_via_for_agent(config, agent) != previous_mode:
             from cyt.proxy.bootstrap import refresh_runtime_config
 
             refresh_runtime_config(runtime)
+    from cyt.hook.setup_wizard import ensure_pre_tool_hooks_for_launch, pre_tool_use_hooks_installed
+    from cyt.proxy.setup_wizard import _prompt_yes_no
+
+    if not pre_tool_use_hooks_installed(agent):
+        if _prompt_yes_no(
+            f"Install CYT PreToolUse hooks for {agent}? (required for MCP tool validation)",
+            default_yes=True,
+        ):
+            ensure_pre_tool_hooks_for_launch(agent)
     runtime.config = config
     return config
 
@@ -468,7 +478,7 @@ def _ensure_launch_proxy_guard(
         )
         return proxy_guard
 
-    _ensure_hook_server(runtime=runtime)
+    _ensure_hook_server(runtime=runtime, agent=agent)
     return ProxyGuard(process=None, started_by_launch=False, port=runtime.port)
 
 
@@ -483,7 +493,7 @@ def _run_cursor_launch_session(
         raise SystemExit("Cursor launch does not support --debug flags.")
 
     config = runtime.config
-    if inject_via(config) != "hook":
+    if inject_via_for_agent(config, "cursor") != "hook":
         raise SystemExit(CURSOR_PROXY_UNSUPPORTED_MESSAGE)
 
     if sys.stdin.isatty():
@@ -493,11 +503,11 @@ def _run_cursor_launch_session(
     else:
         ensure_cursor_hooks_for_launch(quiet=True)
 
-    _warm_launch_tool_catalogs(config)
+    _warm_launch_tool_catalogs(config, agent="cursor")
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
     os.environ.update(launch_agent_env("cursor"))
-    _ensure_hook_server(runtime=runtime)
+    _ensure_hook_server(runtime=runtime, agent="cursor")
 
     from cyt.hook.port import hook_url_for_port
 
@@ -536,17 +546,17 @@ def _run_launch_session(
     force_proxy = _launch_force_proxy(args)
 
     config = _apply_interactive_launch_config(runtime, agent=agent)
-    _warm_launch_tool_catalogs(config)
+    _warm_launch_tool_catalogs(config, agent=agent)
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))
 
-    inject_via_hook = not launch_needs_proxy(config)
+    inject_via_hook = not launch_needs_proxy(config, agent)
     _validate_launch_proxy_flags(
         inject_via_hook=inject_via_hook,
         switch_provider=switch_provider,
         force_proxy=force_proxy,
     )
 
-    use_proxy = launch_needs_proxy(config) or force_proxy
+    use_proxy = launch_needs_proxy(config, agent) or force_proxy
     hook_mode = inject_via_hook and not force_proxy
 
     os.environ.update(launch_agent_env(agent))

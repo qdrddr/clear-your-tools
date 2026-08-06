@@ -38,6 +38,7 @@ def _sample_config(*, mcp_servers: dict[str, Any] | None = None) -> AggregatorCo
             catalog_path="/catalog",
         ),
         codex_stubs_include_description=False,
+        verify_only=False,
         aggregator_path=Path("~/.config/cyt/mcp-aggregator.yaml"),
         agent_mcp_path=Path("~/.config/cyt/mcp/cursor.json"),
     )

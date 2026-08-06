@@ -248,7 +248,7 @@ def test_required_tools_hook_env_var_names_executor_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
 
     assert configs.required_tools_hook_env_var_names(config) == ["EXECUTOR_TOKEN"]
@@ -258,7 +258,7 @@ def test_required_tools_hook_env_var_names_skipped_when_tools_disabled(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = False
     config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
 
@@ -279,7 +279,7 @@ def test_required_tools_hook_env_var_names_definitions_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = "definitions"
 
     assert configs.required_tools_hook_env_var_names(config) == []
@@ -289,7 +289,7 @@ def test_required_tools_hook_env_var_names_cloudflare_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
 
@@ -303,7 +303,7 @@ def test_required_tools_hook_env_var_names_cloudflare_custom_var_names(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "MY_CF_ID"
     config["pruning"]["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
@@ -317,7 +317,7 @@ def test_required_tools_hook_env_var_names_executor_and_cloudflare_dedupes(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["executor", "cloudflare"]
     config["pruning"]["tools"]["hook"]["executor_token_var"] = "SHARED_TOKEN"
     config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "SHARED_TOKEN"
@@ -343,7 +343,7 @@ def test_tools_hook_cloudflare_helpers(
     assert configs.tools_hook_cloudflare_configured(config) is False
     assert configs.uses_cloudflare_tool_catalog(config) is False
 
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com/mcp/"
     assert configs.tools_hook_cloudflare_url(config) == "https://mcp.example.com/mcp"
@@ -355,7 +355,7 @@ def test_tools_hook_cloudflare_source_usable_without_credentials(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
 
@@ -378,7 +378,7 @@ def test_tools_hook_sources_parses_scalar_and_list(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = "mcpc"
     assert configs.tools_hook_sources(config) == ("mcpc",)

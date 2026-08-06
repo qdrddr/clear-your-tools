@@ -60,7 +60,7 @@ def test_post_timeout_seconds_env_override(monkeypatch: pytest.MonkeyPatch) -> N
 def test_resolve_hook_url_prefers_live_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CYT_HOOK_URL", "http://127.0.0.1:9999/hook/inject")
     with patch("cyt_client.port._hook_url_is_live", return_value=True):
-        assert client_port.resolve_hook_url() == "http://127.0.0.1:9999/hook/inject"
+        assert client_port.resolve_hook_url() == "http://127.0.0.1:9999/hook/connect"
 
 
 def test_resolve_hook_url_ignores_stale_pidfile(monkeypatch: pytest.MonkeyPatch) -> None:

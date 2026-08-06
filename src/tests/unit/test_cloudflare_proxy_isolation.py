@@ -6,10 +6,11 @@ from typing import Any
 from unittest.mock import patch
 
 from cyt.cloudflare.catalog import get_cloudflare_catalog
+from cyt.testing.inject_via_maps import INJECT_VIA_ALL_PROXY
 
 _PROXY_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "proxy",
+        "inject_via": dict(INJECT_VIA_ALL_PROXY),
         "tools": {
             "enabled": True,
             "hook": {

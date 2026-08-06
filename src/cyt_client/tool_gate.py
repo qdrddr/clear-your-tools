@@ -13,6 +13,7 @@ from cyt_client.mcpc_shell import parse_mcpc_shell_command
 from cyt_client.schema_validate import validate_json_schema
 from cyt_client.session_pre_tool_exposure import PreToolDenyExposure
 from cyt_client.sessions import (
+    read_hallucination_gate_enabled,
     read_latest_tool_catalogs,
     read_tools_inject_enabled,
     session_log_path,
@@ -315,11 +316,17 @@ def _deny_unknown_cyt_mcp(
     reason: str,
     *,
     catalogs: dict[str, dict[str, Any]],
+    omit_get_tool_definitions_hint: bool = False,
 ) -> str:
     available = _catalog_tool_names(catalogs, "cyt_mcp")
-    return (
+    base = (
         f"Hallucinated cyt-mcp tool call for {tool_name!r}: {reason}\n\n"
-        f"{_format_available_tools(available)}\n\n"
+        f"{_format_available_tools(available)}"
+    )
+    if omit_get_tool_definitions_hint:
+        return base
+    return (
+        f"{base}\n\n"
         "Use MCP tool `get-tool-definitions` with arguments:\n"
         f"{_get_tool_definitions_payload(tool_name)}"
     )
@@ -360,6 +367,7 @@ def _deny_message_cyt_mcp(
     *,
     catalogs: dict[str, dict[str, Any]] | None = None,
     requested_tool_name: str | None = None,
+    omit_get_tool_definitions_hint: bool = False,
 ) -> str:
     if _is_unknown_tool_reason(schema_error):
         header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
@@ -367,6 +375,7 @@ def _deny_message_cyt_mcp(
             tool_name,
             schema_error,
             catalogs=catalogs or {},
+            omit_get_tool_definitions_hint=omit_get_tool_definitions_hint,
         )
         if requested_tool_name and requested_tool_name != tool_name:
             return body.replace(
@@ -639,16 +648,28 @@ def _shares_cyt_mcp_proxy_prefix(tool_name: str, catalogs: dict[str, dict[str, A
 
 def _load_gate_context(
     payload: dict[str, Any],
-) -> tuple[dict[str, dict[str, Any]], bool | None, bool]:
+) -> tuple[dict[str, dict[str, Any]], bool | None, bool, bool]:
     path = session_log_path(payload)
     catalogs: dict[str, dict[str, Any]] = {}
     inject_enabled: bool | None = None
+    hallucination_on = False
     if path is not None and path.is_file():
         catalogs = read_latest_tool_catalogs(path)
         inject_enabled = read_tools_inject_enabled(path)
-    # Gate only when Type-2 tool_catalog partitions are present — not on inject flag alone.
-    gate_active = bool(catalogs)
-    return catalogs, inject_enabled, gate_active
+        session_hallucination = read_hallucination_gate_enabled(path)
+        if session_hallucination is not None:
+            hallucination_on = session_hallucination
+    if not hallucination_on:
+        from cyt_client.config import (
+            hallucination_gate_enabled as config_hallucination_gate,
+        )
+        from cyt_client.config import (
+            verify_only_mode as config_verify_only_mode,
+        )
+
+        hallucination_on = config_hallucination_gate() or config_verify_only_mode()
+    gate_active = bool(catalogs) and (inject_enabled is not False or hallucination_on)
+    return catalogs, inject_enabled, gate_active, hallucination_on
 
 
 def _validate_mcpc_shell_pre_tool_call(
@@ -709,6 +730,7 @@ def _validate_catalog_tool_pre_tool_call(
     gate_active: bool,
     tool_name: str,
     args: dict[str, Any] | None,
+    hallucination_on: bool = False,
 ) -> PreToolValidation:
     if not gate_active:
         return _allow()
@@ -720,6 +742,7 @@ def _validate_catalog_tool_pre_tool_call(
             tool_name,
             catalogs=catalogs,
             gate_active=gate_active,
+            hallucination_on=hallucination_on,
         )
 
     if catalog not in _GATED_CATALOGS:
@@ -737,6 +760,7 @@ def _validate_catalog_tool_pre_tool_call(
         catalogs=catalogs,
         payload=payload,
         requested_tool_name=tool_name,
+        hallucination_on=hallucination_on,
     )
 
 
@@ -746,6 +770,7 @@ def _validate_unlisted_mcp_tool(
     *,
     catalogs: dict[str, dict[str, Any]],
     gate_active: bool,
+    hallucination_on: bool = False,
 ) -> PreToolValidation:
     if not gate_active:
         return _allow()
@@ -763,6 +788,7 @@ def _validate_unlisted_mcp_tool(
                 {"name": tool_name, "input_schema": {}},
                 "tool not in cyt_mcp Type-2 catalog",
                 catalogs=catalogs,
+                omit_get_tool_definitions_hint=hallucination_on,
             ),
             exposure=_unknown_cyt_mcp_exposure(tool_name),
         )
@@ -777,10 +803,16 @@ def _validate_gated_catalog_tool(
     catalogs: dict[str, dict[str, Any]],
     payload: dict[str, Any] | None = None,
     requested_tool_name: str | None = None,
+    hallucination_on: bool = False,
 ) -> PreToolValidation:
     tool = _find_tool_in_catalog(catalogs, catalog, tool_name)
     if tool is None:
-        return _deny_missing_catalog_tool(catalog, tool_name, catalogs=catalogs)
+        return _deny_missing_catalog_tool(
+            catalog,
+            tool_name,
+            catalogs=catalogs,
+            hallucination_on=hallucination_on,
+        )
 
     schema = tool.get("input_schema")
     if not isinstance(schema, dict):
@@ -797,6 +829,7 @@ def _validate_gated_catalog_tool(
             tool,
             reason,
             requested_tool_name=requested_tool_name,
+            hallucination_on=hallucination_on,
         )
     return _allow()
 
@@ -806,6 +839,7 @@ def _deny_missing_catalog_tool(
     tool_name: str,
     *,
     catalogs: dict[str, dict[str, Any]],
+    hallucination_on: bool = False,
 ) -> PreToolValidation:
     if catalog == "cyt_mcp":
         return _deny(
@@ -814,6 +848,7 @@ def _deny_missing_catalog_tool(
                 {"name": tool_name, "input_schema": {}},
                 "tool not in cyt_mcp Type-2 catalog",
                 catalogs=catalogs,
+                omit_get_tool_definitions_hint=hallucination_on,
             ),
             exposure=_unknown_cyt_mcp_exposure(tool_name),
         )
@@ -836,6 +871,7 @@ def _deny_catalog_schema_mismatch(
     reason: str,
     *,
     requested_tool_name: str | None = None,
+    hallucination_on: bool = False,
 ) -> PreToolValidation:
     exposure = _schema_mismatch_exposure(catalog, tool_name, tool)
     if catalog == "cyt_mcp":
@@ -845,6 +881,7 @@ def _deny_catalog_schema_mismatch(
                 tool,
                 reason,
                 requested_tool_name=requested_tool_name,
+                omit_get_tool_definitions_hint=hallucination_on,
             ),
             exposure=exposure,
         )
@@ -858,9 +895,9 @@ def _deny_catalog_schema_mismatch(
 
 def validate_pre_tool_call(payload: dict[str, Any]) -> PreToolValidation:
     """Return validation outcome. Type-2 catalog is the only authority for gating."""
-    catalogs, inject_enabled, gate_active = _load_gate_context(payload)
+    catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
 
-    if inject_enabled is False:
+    if inject_enabled is False and not hallucination_on:
         return _allow()
 
     agent = infer_harness_agent(payload)
@@ -880,7 +917,7 @@ def validate_pre_tool_call(payload: dict[str, Any]) -> PreToolValidation:
     if not tool_name:
         return _allow()
 
-    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent):
+    if not hallucination_on and is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=agent):
         error = _validate_get_tool_definitions_args(args)
         if error:
             return _deny(error)
@@ -895,6 +932,7 @@ def validate_pre_tool_call(payload: dict[str, Any]) -> PreToolValidation:
         gate_active=gate_active,
         tool_name=tool_name,
         args=args,
+        hallucination_on=hallucination_on,
     )
 
 

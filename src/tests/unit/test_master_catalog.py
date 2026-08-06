@@ -40,7 +40,7 @@ def test_build_master_tools_stamps_cyt_catalog_source() -> None:
 
 def test_get_master_tool_catalog_concatenates_configured_sources() -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
@@ -61,7 +61,7 @@ def test_get_master_tool_catalog_concatenates_configured_sources() -> None:
 
 def test_get_master_tool_catalog_returns_empty_list_not_none_on_cold_start() -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc"]
 
@@ -73,7 +73,7 @@ def test_get_master_tool_catalog_returns_empty_list_not_none_on_cold_start() -> 
 
 def test_rebuild_master_catalog_preserves_prior_source_on_empty_non_blocking_read() -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
@@ -106,7 +106,7 @@ def test_rebuild_master_catalog_preserves_prior_source_on_empty_non_blocking_rea
 
 def test_rebuild_master_catalog_drops_source_when_fingerprint_changes_and_read_empty() -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
@@ -142,7 +142,7 @@ def test_rebuild_master_catalog_drops_source_when_fingerprint_changes_and_read_e
 
 def test_rebuild_master_catalog_clears_stale_tools_when_all_sources_genuinely_empty() -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["enabled"] = True
     config["pruning"]["tools"]["hook"]["tools_from"] = ["executor"]
 

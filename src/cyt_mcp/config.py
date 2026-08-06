@@ -28,6 +28,7 @@ class AggregatorConfig:
     transport: str
     http: HttpSettings
     codex_stubs_include_description: bool
+    verify_only: bool
     aggregator_path: Path
     agent_mcp_path: Path
 
@@ -103,12 +104,14 @@ def load_aggregator_config(
         transport = "stdio"
     codex_flag = bool(raw.get("codex_stubs_include_description", True))
     include_desc = codex_flag if resolved_agent == "codex" else False
+    verify_only = bool(raw.get("verify_only", False))
     return AggregatorConfig(
         agent=resolved_agent,
         mcp_servers=load_mcp_servers(agent_path),
         transport=transport,
         http=load_http_settings(raw),
         codex_stubs_include_description=include_desc,
+        verify_only=verify_only,
         aggregator_path=_expand(aggregator_path or DEFAULT_AGGREGATOR_PATH),
         agent_mcp_path=agent_path,
     )

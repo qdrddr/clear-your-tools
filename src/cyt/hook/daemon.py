@@ -13,7 +13,6 @@ from typing import Any, Literal
 
 from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
 from cyt.config import (
-    launch_needs_proxy,
     load_config,
     required_proxy_env_var_names,
     required_tools_hook_env_var_names,
@@ -131,7 +130,9 @@ def _remove_pidfile() -> None:
 
 
 def _resolve_daemon_mode(config: dict[str, Any]) -> str:
-    return "full_proxy" if launch_needs_proxy(config) else "hooks_only"
+    from cyt.config import any_agent_needs_proxy
+
+    return "full_proxy" if any_agent_needs_proxy(config) else "hooks_only"
 
 
 def _needs_credential_injection(config: dict[str, Any]) -> bool:

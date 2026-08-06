@@ -148,7 +148,10 @@ models:
     stopwords: en
 
 pruning:
-  inject_via: proxy # hook | proxy — applies to skills and tools injection
+  inject_via:
+    cursor: hook
+    claude: proxy
+    codex: proxy
   max_batch_workers: 5 # parallel prune/LLM bulk workers (raise for high rate-limit tiers)
   tools:
     selector_soft_budget: 2000
@@ -288,6 +291,9 @@ stats:
   backup_before_rollup: true
   database:
     path: ~/.config/cyt/stats.db
+
+hallucination_gate:
+  enabled: false
 
 skills:
   enabled: false

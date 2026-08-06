@@ -22,10 +22,11 @@ def build_aggregator(
     server = FastMCP("cyt-mcp")
     degraded = mount_backend_servers(server, config.mcp_servers)
     cache.replace(cache.snapshot(), degraded_servers=degraded)
-    register_search_tool(server, cache, agent=config.agent)
-    server.add_transform(
-        StubListTransform(cache, include_description=config.codex_stubs_include_description),
-    )
+    if not config.verify_only:
+        register_search_tool(server, cache, agent=config.agent)
+        server.add_transform(
+            StubListTransform(cache, include_description=config.codex_stubs_include_description),
+        )
     if degraded:
         logger.warning("cyt-mcp: degraded backends: %s", ", ".join(degraded))
     return server

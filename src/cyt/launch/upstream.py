@@ -81,6 +81,18 @@ def infer_upstream_kind_from_agent(agent: AgentName) -> str:
     return _AGENT_KIND[agent]
 
 
+def launch_agent_for_upstream_kind(kind: str | None) -> Literal["claude", "codex"] | None:
+    """Map reverse-proxy upstream kind to the launch agent used for inject_via checks."""
+    if kind is None:
+        return None
+    normalized = normalize_upstream_kind(kind)
+    if normalized == "anthropic":
+        return "claude"
+    if normalized == "openai":
+        return "codex"
+    return None
+
+
 def resolve_upstream_kind(
     url: str | None,
     *,

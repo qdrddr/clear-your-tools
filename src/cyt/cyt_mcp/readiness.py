@@ -7,10 +7,10 @@ from typing import Any, Literal
 
 from cyt.config import (
     load_config,
+    needs_cyt_mcp_catalog,
     tools_hook_cyt_mcp_agent,
     tools_hook_cyt_mcp_catalog_url,
     tools_hook_cyt_mcp_executable,
-    uses_cyt_mcp_tool_catalog,
 )
 from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog
 from cyt.cyt_mcp.cli import cyt_mcp_available, run_cyt_mcp_catalog_json
@@ -22,7 +22,7 @@ CYT_MCP_INSTALL_HINT = "Please install cyt-mcp: uv tool install 'clear-your-tool
 
 def probe_cyt_mcp_catalog(config: dict[str, Any] | None = None) -> CytMcpCatalogProbe | None:
     cfg = config or load_config()
-    if not uses_cyt_mcp_tool_catalog(cfg):
+    if not needs_cyt_mcp_catalog(cfg):
         return None
 
     catalog_url = tools_hook_cyt_mcp_catalog_url(cfg)

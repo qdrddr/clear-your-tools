@@ -45,7 +45,7 @@ _EXECUTOR_CONFIG: dict[str, Any] = {
         },
     },
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {
@@ -301,7 +301,7 @@ def test_required_executor_skill_env_var_names_for_llm_pipeline() -> None:
     config = {
         "skills": {"enabled": False, "pipeline": "llm"},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"hook": {"tools_from": "executor"}},
             "pipelines": {"llm": {"model_nick": "mercury-2"}},
         },

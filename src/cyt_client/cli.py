@@ -1,4 +1,4 @@
-"""``cyt-client`` entry point: stdin JSON → POST /hook/inject → stdout injection."""
+"""``cyt-client`` entry point: stdin JSON → POST /hook/connect → stdout injection."""
 
 from __future__ import annotations
 
@@ -9,8 +9,10 @@ import re
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from cyt_client.agent import infer_harness_agent, looks_like_cursor_payload
+from cyt_client.config import inject_via_for_agent, verify_only_mode
 from cyt_client.cursor import (
     format_cursor_continue,
     format_cursor_post_tool_stdout,
@@ -33,6 +35,7 @@ from cyt_client.rules_file import (
     extract_phase_timing,
     extract_rules_merge_sections,
     extract_session_log_entries,
+    extract_verify_only_flag,
     format_phase_timing_verbose,
     hook_stdout_bytes_for_agent,
     is_valid_workspace_root,
@@ -277,16 +280,49 @@ def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
     raise SystemExit(2)
 
 
+def _effective_agent(payload: dict) -> str:
+    agent = infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip()
+    return agent or "cursor"
+
+
+def _verify_only_for_agent(payload: dict) -> bool:
+    return verify_only_mode() and inject_via_for_agent(_effective_agent(payload)) in {
+        "hook",
+        "proxy",
+    }
+
+
+def _handle_verify_only_session_lifecycle(payload: dict, *, cursor_output: bool) -> None:
+    if not _verify_only_for_agent(payload):
+        _reset_cursor_rules_file_for_session_lifecycle(payload)
+        return
+    workspace = workspace_root_from_payload(payload)
+    if workspace is not None and is_valid_workspace_root(workspace):
+        delete_cursor_rules_file(workspace)
+    if cursor_output:
+        _emit_cursor_continue()
+
+
 def _handle_session_start(payload: dict, *, cursor_output: bool) -> None:
     repair_pairing(payload, verbose=_verbose, session_start=True)
     if cursor_output:
+        if _verify_only_for_agent(payload):
+            workspace = workspace_root_from_payload(payload)
+            if workspace is not None and is_valid_workspace_root(workspace):
+                delete_cursor_rules_file(workspace)
+            _emit_cursor_continue()
+            return
         _reset_cursor_rules_file_for_session_lifecycle(payload)
         _emit_cursor_continue()
 
 
 def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
     repair_pairing(payload, verbose=_verbose, session_start=False)
-    if cursor_output:
+    if cursor_output and _verify_only_for_agent(payload):
+        workspace = workspace_root_from_payload(payload)
+        if workspace is not None and is_valid_workspace_root(workspace):
+            delete_cursor_rules_file(workspace)
+    elif cursor_output:
         _reset_cursor_rules_file_for_session_lifecycle(payload)
 
     sessions_dir = sessions_dir_for_payload(payload)
@@ -308,15 +344,45 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_continue()
         return
 
+    agent = _effective_agent(payload)
+    if verify_only_mode() and inject_via_for_agent(agent) == "proxy":
+        _emit_cursor_continue()
+        return
+
     prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
     payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
-    if is_prompt_submit_event(payload):
+    if is_prompt_submit_event(payload) and not (
+        verify_only_mode() and inject_via_for_agent(agent) == "hook"
+    ):
         try:
             enriched = json.loads(payload_bytes)
             if isinstance(enriched, dict):
                 persist_turn_to_session_log(enriched)
         except (json.JSONDecodeError, OSError) as exc:
             _verbose_log(f"cyt-client: failed to persist turn: {exc}")
+
+    if verify_only_mode() and inject_via_for_agent(agent) == "hook":
+        hook_url = resolve_hook_url()
+        if hook_url is None:
+            _verbose_log("cyt-client: hook server unavailable (verify-only)")
+            _emit_cursor_continue()
+            return
+        result = _post_hook_inject_resilient(hook_url, payload_bytes)
+        if result is None:
+            _emit_cursor_continue()
+            return
+        status, body, _hook_url = result
+        if status >= 400:
+            _verbose_log(f"cyt-client: hook server returned HTTP {status}")
+            _emit_cursor_continue()
+            return
+        if extract_verify_only_flag(body):
+            _emit_cursor_hook_stdout(body)
+            return
+        _persist_session_log_response(payload, body)
+        _emit_cursor_hook_stdout(body)
+        return
+
     hook_url = resolve_hook_url()
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")
@@ -370,23 +436,27 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
     _emit_cursor_hook_stdout(body)
 
 
-def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
-    if not raw.strip():
+def _maybe_persist_prompt_turn(payload_bytes: bytes, payload: dict[str, Any]) -> None:
+    if not is_prompt_submit_event(payload):
         return
-
-    payload_bytes = enrich_hook_payload(raw)
-    if is_prompt_submit_event(payload):
-        try:
-            enriched = json.loads(payload_bytes)
-            if isinstance(enriched, dict):
-                persist_turn_to_session_log(enriched)
-        except (json.JSONDecodeError, OSError) as exc:
-            _verbose_log(f"cyt-client: failed to persist turn: {exc}")
-    hook_url = resolve_hook_url()
-    if hook_url is None:
-        _verbose_log("cyt-client: hook server unavailable")
+    agent = _effective_agent(payload)
+    if verify_only_mode() and inject_via_for_agent(agent) == "hook":
         return
+    try:
+        enriched = json.loads(payload_bytes)
+        if isinstance(enriched, dict):
+            persist_turn_to_session_log(enriched)
+    except (json.JSONDecodeError, OSError) as exc:
+        _verbose_log(f"cyt-client: failed to persist turn: {exc}")
 
+
+def _forward_hook_inject(
+    hook_url: str,
+    payload_bytes: bytes,
+    payload: dict[str, Any],
+    *,
+    verify_only_response: bool,
+) -> None:
     try:
         status, body = post_hook_inject(hook_url, payload_bytes, debug=_debug)
     except ConnectionError as exc:
@@ -397,8 +467,49 @@ def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
         _verbose_log(f"cyt-client: hook server returned HTTP {status}")
         return
 
+    if verify_only_response and extract_verify_only_flag(body):
+        _write_hook_stdout(body, cursor_output=False)
+        return
+
     _persist_session_log_response(payload, body)
     _write_hook_stdout(body, cursor_output=False)
+
+
+def _handle_non_cursor_hook(raw: bytes, payload: dict) -> None:
+    if not raw.strip():
+        return
+
+    agent = _effective_agent(payload)
+    if verify_only_mode() and inject_via_for_agent(agent) == "proxy":
+        return
+
+    payload_bytes = enrich_hook_payload(raw)
+    _maybe_persist_prompt_turn(payload_bytes, payload)
+
+    if verify_only_mode() and inject_via_for_agent(agent) == "hook":
+        hook_url = resolve_hook_url()
+        if hook_url is None:
+            _verbose_log("cyt-client: hook server unavailable (verify-only)")
+            return
+        _forward_hook_inject(
+            hook_url,
+            payload_bytes,
+            payload,
+            verify_only_response=True,
+        )
+        return
+
+    hook_url = resolve_hook_url()
+    if hook_url is None:
+        _verbose_log("cyt-client: hook server unavailable")
+        return
+
+    _forward_hook_inject(
+        hook_url,
+        payload_bytes,
+        payload,
+        verify_only_response=False,
+    )
 
 
 def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:

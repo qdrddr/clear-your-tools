@@ -21,6 +21,7 @@ from cyt.agents.codex.launch import (
 )
 from cyt.launch.agent_credentials import AgentAuthBinding
 from cyt.launch.env_report import print_runtime_env_report
+from cyt.testing.inject_via_maps import INJECT_VIA_ALL_HOOK
 
 
 def _openrouter_upstream() -> dict[str, str]:
@@ -36,9 +37,9 @@ def _openrouter_api_key_var() -> str:
     return "OPENROUTER_" + "API_KEY"
 
 
-def _config(*, inject_via: str = "hook") -> dict[str, Any]:
+def _config(*, inject_via: dict[str, str] | None = None) -> dict[str, Any]:
     return {
-        "pruning": {"inject_via": inject_via},
+        "pruning": {"inject_via": inject_via or INJECT_VIA_ALL_HOOK},
         "skills": {"enabled": True},
         "network": {
             "proxy": {
@@ -302,7 +303,9 @@ def test_switch_provider_requires_hook_mode() -> None:
     from cyt.launch import cli as launch_cli
 
     runtime = MagicMock()
-    runtime.config = {"pruning": {"inject_via": "proxy"}}
+    runtime.config = {
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
+    }
     runtime.config_path = MagicMock()
     runtime.port = 8787
     runtime.credential_sources = {}

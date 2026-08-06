@@ -15,7 +15,7 @@ from cyt.mcpc.skills_cache import (
 
 _CONFIG = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {

@@ -48,7 +48,7 @@ def _executor_config(*, tools_from: str = "executor") -> dict:
         "network": {"proxy": {"reverse": {"port": 8834}}},
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "pipeline": "bm25",
             "tools": {
                 "sequence": ["bm25"],

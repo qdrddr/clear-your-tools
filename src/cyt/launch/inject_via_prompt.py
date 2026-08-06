@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from cyt.config import inject_via, save_user_config, sync_config_in_place
+from cyt.config import inject_via_for_agent, save_user_config, sync_config_in_place
 from cyt.proxy.setup_wizard import _prompt_yes_no
 
 InjectViaMode = Literal["hook", "proxy"]
@@ -56,11 +56,20 @@ def apply_inject_via_switch(
     target: InjectViaMode,
     verbose: bool = False,
     start_runtime: bool = False,
+    agents: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Persist ``inject_via``, refresh in-memory config, and align live services."""
+    from cyt.agents._types import LAUNCH_AGENTS
+    from cyt.config import inject_via_map_for_mode
+
+    names = agents or LAUNCH_AGENTS
+    if set(names) == set(LAUNCH_AGENTS):
+        inject_map = inject_via_map_for_mode(target)
+    else:
+        inject_map = dict.fromkeys(names, target)
     save_user_config(
         config_path,
-        {"pruning": {"inject_via": target}},
+        {"pruning": {"inject_via": inject_map}},
         apply_bundled_sections=False,
     )
     sync_config_in_place(config, config_path)
@@ -79,8 +88,12 @@ def _ensure_inject_via(
     prompt: str,
     decline_exit_message: str | None = None,
     start_runtime: bool = False,
+    agents: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    if inject_via(config) == target:
+    from cyt.agents._types import LAUNCH_AGENTS
+
+    names = agents or LAUNCH_AGENTS
+    if all(inject_via_for_agent(config, name) == target for name in names):
         return config
 
     if not sys.stdin.isatty():
@@ -98,6 +111,7 @@ def _ensure_inject_via(
         config,
         target=target,
         start_runtime=start_runtime,
+        agents=names,
     )
 
 
@@ -118,17 +132,22 @@ def _prompt_uninstall_cyt_hooks_if_installed() -> None:
 def ensure_launch_inject_via_proxy(
     config_path: Path,
     config: dict[str, Any],
+    *,
+    agent: str = "claude",
 ) -> dict[str, Any]:
     """Ensure proxy injection before Claude/Codex launch."""
-    if inject_via(config) != "proxy":
-        previous_mode = inject_via(config)
+    if inject_via_for_agent(config, agent) != "proxy":
+        previous_mode = inject_via_for_agent(config, agent)
         config = _ensure_inject_via(
             config_path,
             config,
             target="proxy",
-            prompt=("Agent launch uses proxy injection. Switch pruning.inject_via to proxy?"),
+            prompt=(
+                f"Agent launch uses proxy injection. Switch pruning.inject_via.{agent} to proxy?"
+            ),
+            agents=("claude", "codex") if agent in {"claude", "codex"} else (agent,),
         )
-        if inject_via(config) == "proxy" and previous_mode != "proxy":
+        if inject_via_for_agent(config, agent) == "proxy" and previous_mode != "proxy":
             _prompt_uninstall_cyt_hooks_if_installed()
     else:
         _stop_for_inject_via_mode("proxy")
@@ -161,7 +180,9 @@ def ensure_hook_inject_via(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     """Ensure hook injection before installing agent hooks."""
-    already_hook = inject_via(config) == "hook"
+    from cyt.agents._types import LAUNCH_AGENTS
+
+    already_hook = all(inject_via_for_agent(config, name) == "hook" for name in LAUNCH_AGENTS)
     config = _ensure_inject_via(
         config_path,
         config,

@@ -78,6 +78,8 @@ src/.chroma_db/
 
 *.mdx
 verify_*.py
+!src/cyt/injection/verify_session_log.py
+!src/cyt/proxy/verify_session_log.py
 /test_*.py
 !src/tests/
 CLAUDE.md

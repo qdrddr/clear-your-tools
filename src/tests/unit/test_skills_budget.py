@@ -30,8 +30,12 @@ def _config(**overrides: str | int | float | bool) -> dict:
         },
     }
     skills.update(overrides)
-    inject_via = str(skills.pop("inject_via", "proxy"))
-    return {"skills": skills, "pruning": {"inject_via": inject_via}}
+    inject_mode = str(skills.pop("inject_via", "proxy"))
+    if inject_mode == "hook":
+        inject_map = dict.fromkeys(("cursor", "claude", "codex"), "hook")
+    else:
+        inject_map = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
+    return {"skills": skills, "pruning": {"inject_via": inject_map}}
 
 
 def test_inject_via_gate() -> None:

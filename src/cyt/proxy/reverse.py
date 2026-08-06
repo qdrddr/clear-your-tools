@@ -612,7 +612,9 @@ async def transform_request_body(
     skills_meta: SkillsProxyInjectMeta | None = None
     try:
         payload = json.loads(body)
-        if debug:
+        from cyt.config import verify_only_mode
+
+        if debug or (config is not None and verify_only_mode(config)):
             input_tools = _input_tools_from_payload(payload)
         if kind == "anthropic":
             from cyt.proxy.anthropic import PruneResult, transform_anthropic_request
@@ -960,6 +962,7 @@ async def _process_buffered_proxy_body(
             debug_log_dir=debug_log_dir,
         )
 
+    original_body = body
     pruning = None
     input_tools: list[dict[str, Any]] | None = None
     debug_log_token = None
@@ -996,6 +999,27 @@ async def _process_buffered_proxy_body(
     pruning_meta = pruning.to_dict() if pruning is not None else None
     if debug:
         pruning_meta = _pruning_meta_for_debug(pruning_meta, input_tools)
+    if config is not None:
+        from cyt.config import verify_only_mode
+        from cyt.proxy.verify_session_log import maybe_record_verify_proxy_request
+
+        launch_agent = request.headers.get("x-cyt-launch-agent") or request.headers.get(
+            "X-CYT-Launch-Agent",
+        )
+        agent = (
+            str(launch_agent).strip() if isinstance(launch_agent, str) and launch_agent else None
+        )
+        if verify_only_mode(config) and agent:
+            maybe_record_verify_proxy_request(
+                headers=request.headers,
+                agent=agent,
+                config=config,
+                input_tools=input_tools,
+                original_body=original_body,
+                kind=kind,
+                skills_meta=skills_meta,
+                pruning=pruning,
+            )
     return body, pruning, input_tools, pruning_meta, debug_request_seq, skills_meta
 
 
@@ -1306,7 +1330,7 @@ def create_app(
             payload.update(_catalog_health_payload(cyt_config))
         return JSONResponse(payload)
 
-    from cyt.hook.http_server import hook_inject
+    from cyt.hook.http_server import hook_connect
 
     async def proxy(request: Request) -> Response:
         return await _proxy_request(
@@ -1323,14 +1347,21 @@ def create_app(
             store_full_tools=store_full_tools,
         )
 
-    return Starlette(
+    app = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Route("/hook/inject", hook_inject, methods=["POST"]),
+            Route("/hook/connect", hook_connect, methods=["POST"]),
+            Route("/hook/inject", hook_connect, methods=["POST"]),
             Route("/{path:path}", proxy, methods=METHODS),
         ],
         lifespan=lifespan,
     )
+    # Available before lifespan (httpx ASGITransport tests do not run Starlette lifespan).
+    if config is not None:
+        app.state.cyt_config = config
+    if pruner_settings is not None:
+        app.state.pruner_settings = pruner_settings
+    return app
 
 
 def _ssl_file_exists(path: str | None) -> bool:
@@ -1383,7 +1414,7 @@ async def serve_reverse_async(
             session_id=session_id,
             run_id=session_id,
         )
-        from cyt.config import inject_via
+        from cyt.config import inject_via_map
 
         debug_trace.log(
             hypothesis_id="A",
@@ -1392,7 +1423,7 @@ async def serve_reverse_async(
             data={
                 "host": host,
                 "port": port,
-                "inject_via": inject_via(config),
+                "inject_via": inject_via_map(config),
                 "http2_serve": http2_serve,
                 "http2_upstream": http2_upstream,
                 "ssl_keyfile": ssl_keyfile,

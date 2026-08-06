@@ -18,7 +18,7 @@ from cyt.mcpc.readiness import (
 
 _MCP_CONFIG = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {
@@ -31,7 +31,12 @@ _MCP_CONFIG = {
 
 
 def test_probe_mcpc_sessions_returns_none_when_not_mcpc_mode() -> None:
-    config = {"pruning": {"inject_via": "hook", "tools": {"hook": {"tools_from": "executor"}}}}
+    config = {
+        "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+            "tools": {"hook": {"tools_from": "executor"}},
+        },
+    }
     assert probe_mcpc_sessions(config) is None
 
 

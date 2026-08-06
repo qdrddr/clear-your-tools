@@ -57,7 +57,7 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             },
         },
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "sequence": ["bm25"],
                 "pipelines": {"bm25": {"score_skills": 0.0}},
@@ -554,7 +554,7 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
                 },
             },
             "pruning": {
-                "inject_via": "hook",
+                "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
                 "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
             },
             "stats": {"database": {"path": str(root / "stats.db")}},
@@ -714,7 +714,10 @@ def test_disabled_config_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     stdout = StringIO()
     monkeypatch.setattr("sys.stdout", stdout)
 
-    config = {"skills": {"enabled": False}}
+    config = {
+        "skills": {"enabled": False},
+        "pruning": {"tools": {"enabled": False}},
+    }
     with patch("cyt.skills.cli.load_config", return_value=config):
         skills_cli.run()
 

@@ -414,6 +414,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
+    hook_all.add_argument(
+        "--prevent-hallucinations",
+        action="store_true",
+        help="Verify-only mode: PreToolUse gating without prompt injection",
+    )
     hook_cursor = hook_sub.add_parser(
         "cursor",
         help="Install CYT hooks into ~/.cursor/hooks.json",
@@ -423,6 +428,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    hook_cursor.add_argument(
+        "--prevent-hallucinations",
+        action="store_true",
+        help="Verify-only mode: PreToolUse gating without prompt injection",
     )
     hook_claude = hook_sub.add_parser(
         "claude",
@@ -434,6 +444,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
     )
+    hook_claude.add_argument(
+        "--prevent-hallucinations",
+        action="store_true",
+        help="Verify-only mode: PreToolUse gating without prompt injection",
+    )
     hook_codex = hook_sub.add_parser(
         "codex",
         help="Install CYT hooks into ~/.codex/hooks.json",
@@ -443,6 +458,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Path to config.yaml (default: ./config.yaml, then ~/.config/cyt/config.yaml)",
+    )
+    hook_codex.add_argument(
+        "--prevent-hallucinations",
+        action="store_true",
+        help="Verify-only mode: PreToolUse gating without prompt injection",
     )
     daemon_parser = hook_sub.add_parser("daemon", help="Hook HTTP daemon lifecycle")
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command", required=True)
@@ -763,6 +783,7 @@ def _run_hook_command(args: argparse.Namespace) -> None:
         run_hook_setup(
             config_path=getattr(args, "config", None),
             agents=agents,
+            prevent_hallucinations=bool(getattr(args, "prevent_hallucinations", False)),
         )
         return
     raise SystemExit(

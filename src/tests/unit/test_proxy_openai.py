@@ -20,7 +20,7 @@ from cyt.proxy.openai_responses import (
 
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
-        "inject_via": "proxy",
+        "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
     },
     "network": {
         "proxy": {
@@ -534,7 +534,7 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -550,6 +550,7 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
             },
         },
         "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -578,7 +579,7 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
     config = {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": "bm25",
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
@@ -594,6 +595,7 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
             },
         },
         "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
@@ -670,7 +672,7 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
     """Codex puts MCP in input[].tool_search_output; inject should move them to user turn."""
     config = {
         "pruning": {
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "network": {
@@ -757,7 +759,7 @@ def test_transform_openai_request_inject_tool_search_output() -> None:
 def test_transform_openai_request_inject_tool_search_output_pass_through() -> None:
     """Pass-through pruning must still split MCP out for user-message inject."""
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
     }
     tool_search_output = {
@@ -814,7 +816,7 @@ def test_transform_openai_request_hook_mode_leaves_input_unchanged(tmp_path: Pat
             "pageindex": {"enable_bm25_chunking": True},
         },
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
     }

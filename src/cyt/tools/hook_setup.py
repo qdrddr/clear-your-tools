@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.config import (
+    DEFAULT_INJECT_VIA_BY_AGENT,
     DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
     DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
     DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
     DEFAULT_TOOLS_HOOK_TOOLS_FROM,
-    inject_via,
+    inject_via_for_agent,
     load_config,
     save_user_config,
     tools_hook_cloudflare_url,
+    tools_hook_cyt_mcp_agent,
     tools_hook_file_missing,
     tools_hook_sources,
 )
@@ -154,7 +156,10 @@ def prompt_tools_hook_config(
     hook_cfg = tools.get("hook")
     hook = hook_cfg if isinstance(hook_cfg, dict) else {}
 
-    active_inject = inject_mode or inject_via(existing)
+    active_inject = inject_mode or inject_via_for_agent(
+        existing,
+        tools_hook_cyt_mcp_agent(existing),
+    )
     if context == "hook":
         active_inject = "hook"
 
@@ -248,7 +253,10 @@ def ensure_tools_hook_file_interactive(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     """Prompt for hook tool source when hook injection is enabled and config is missing."""
-    if inject_via(config) != "hook" or not tools_hook_file_missing(config):
+    if inject_via_for_agent(
+        config,
+        tools_hook_cyt_mcp_agent(config),
+    ) != "hook" or not tools_hook_file_missing(config):
         return config
     if not sys.stdin.isatty():
         return config
@@ -278,7 +286,10 @@ def ensure_tools_hook_file_interactive(
         return config
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")
     overlay: dict[str, Any] = {
-        "pruning": {"inject_via": "hook", "tools": tools_overlay},
+        "pruning": {
+            "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
+            "tools": tools_overlay,
+        },
     }
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         return load_config(config_path)

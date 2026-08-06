@@ -12,7 +12,7 @@ from cyt.cloudflare.readiness import cloudflare_hook_catalog_usable, probe_cloud
 def test_probe_cloudflare_portal_none_when_not_configured() -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"enabled": True, "hook": {"tools_from": ["mcpc"]}},
         },
     }
@@ -23,7 +23,7 @@ def test_probe_cloudflare_portal_none_when_not_configured() -> None:
 def test_probe_cloudflare_portal_unavailable_without_url() -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {"tools_from": ["cloudflare"], "cloudflare_url": ""},
@@ -53,7 +53,7 @@ def test_cloudflare_hook_catalog_usable_with_disk_cache(
     )
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {
@@ -78,7 +78,7 @@ def test_cloudflare_hook_catalog_usable_with_credentials_only(
 ) -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {

@@ -93,6 +93,7 @@ def write_mcp_aggregator_yaml(
     *,
     backends_path: Path | None = None,
     transport: CytMcpTransport = "stdio",
+    verify_only: bool = False,
 ) -> Path:
     agent = agent.strip() or "cursor"
     path = DEFAULT_AGGREGATOR_PATH.expanduser()
@@ -104,14 +105,20 @@ def write_mcp_aggregator_yaml(
         f"  claude: {DEFAULT_MCP_DIR.expanduser() / 'claude.json'}",
         f"  codex: {DEFAULT_MCP_DIR.expanduser() / 'codex.json'}",
         f"transport: {transport}",
-        "http:",
-        f"  host: {DEFAULT_HTTP_HOST}",
-        f"  port: {DEFAULT_HTTP_PORT}",
-        f"  mcp_path: {DEFAULT_MCP_PATH}",
-        f"  catalog_path: {DEFAULT_CATALOG_PATH}",
-        "codex_stubs_include_description: true",
-        "",
     ]
+    if verify_only:
+        lines.append("verify_only: true")
+    lines.extend(
+        [
+            "http:",
+            f"  host: {DEFAULT_HTTP_HOST}",
+            f"  port: {DEFAULT_HTTP_PORT}",
+            f"  mcp_path: {DEFAULT_MCP_PATH}",
+            f"  catalog_path: {DEFAULT_CATALOG_PATH}",
+            "codex_stubs_include_description: true",
+            "",
+        ],
+    )
     _atomic_write_text(path, "\n".join(lines))
     print(f"Wrote {path} (agent mapping includes {backends})", file=sys.stderr)
     return path

@@ -37,7 +37,7 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             },
         },
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "sequence": ["bm25"],
                 "pipelines": {"bm25": {"score_skills": 0.0}},

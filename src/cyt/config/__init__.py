@@ -109,7 +109,12 @@ DEFAULT_CACHE_ENABLED: bool = True
 DEFAULT_CACHE_BM25_DIR: str = DEFAULT_BM25_INDEX_DIR
 DEFAULT_CACHE_SKILLS_DIR: str = DEFAULT_SKILLS_CATALOG_DIR
 DEFAULT_CACHE_TOOLS_DIR: str = "~/.config/cyt/tools"
-DEFAULT_INJECT_VIA: str = "proxy"
+DEFAULT_INJECT_VIA_BY_AGENT: dict[str, str] = {
+    "cursor": "hook",
+    "claude": "proxy",
+    "codex": "proxy",
+}
+DEFAULT_INJECT_VIA: str = "proxy"  # legacy scalar fallback when map key missing (non-cursor agents)
 DEFAULT_INJECT_INTO_USER_MESSAGE: bool = True
 DEFAULT_SKILLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
 DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.70
@@ -207,7 +212,7 @@ _DEFAULTS: dict[str, Any] = {
         },
     },
     "pruning": {
-        "inject_via": DEFAULT_INJECT_VIA,
+        "inject_via": dict(DEFAULT_INJECT_VIA_BY_AGENT),
         "tools": {
             "enabled": DEFAULT_TOOLS_ENABLED,
             "hook": {
@@ -1142,21 +1147,109 @@ def _tools_hook_settings(config: dict[str, Any]) -> dict[str, Any]:
     return hook if isinstance(hook, dict) else {}
 
 
-def inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
-    """Unified injection path for skills and tools (hook or proxy)."""
+def inject_via_map_for_mode(mode: str) -> dict[str, str]:
+    """Build per-agent inject_via map from a wizard choice (hook | proxy)."""
+    normalized = mode.strip().lower()
+    if normalized == "hook":
+        return dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook")
+    return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+
+
+def _inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
     cfg = config or load_config()
     merged = _merged_config(cfg)
     pruning = merged.get("pruning")
-    if isinstance(pruning, dict) and "inject_via" in pruning:
-        mode = str(pruning["inject_via"]).strip().lower()
-        return "hook" if mode == "hook" else "proxy"
-    tools_cfg = _tools(merged)
-    if "inject_via" in tools_cfg:
-        mode = str(tools_cfg["inject_via"]).strip().lower()
-        return "hook" if mode == "hook" else "proxy"
-    skills_cfg = _skills_settings(merged)
-    mode = str(skills_cfg.get("inject_via", DEFAULT_INJECT_VIA)).strip().lower()
-    return "hook" if mode == "hook" else "proxy"
+    if not isinstance(pruning, dict):
+        return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+    raw = pruning.get("inject_via")
+    if isinstance(raw, dict):
+        result = dict(DEFAULT_INJECT_VIA_BY_AGENT)
+        for agent, value in raw.items():
+            agent_key = str(agent).strip()
+            if agent_key not in DEFAULT_INJECT_VIA_BY_AGENT:
+                continue
+            mode = str(value).strip().lower()
+            if mode in {"hook", "proxy"}:
+                result[agent_key] = mode
+        return result
+    return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+
+
+def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
+    """Per-agent inject_via map (cursor/claude/codex)."""
+    return _inject_via_map(config)
+
+
+def _any_agent_uses_hook_tools(config: dict[str, Any]) -> bool:
+    return any(
+        inject_via_for_agent(config, agent) == "hook" for agent in DEFAULT_INJECT_VIA_BY_AGENT
+    )
+
+
+def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInjectVia:
+    """Per-agent injection path (hook or proxy). Cursor defaults to hook."""
+    mode = _inject_via_map(config).get(agent)
+    if mode in {"hook", "proxy"}:
+        return cast(ToolsInjectVia, mode)
+    if agent == "cursor":
+        return "hook"
+    return "proxy"
+
+
+def hallucination_gate_enabled(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    merged = _merged_config(cfg)
+    block = merged.get("hallucination_gate")
+    if isinstance(block, dict):
+        return bool(block.get("enabled", False))
+    return False
+
+
+def verify_only_mode(config: dict[str, Any] | None = None) -> bool:
+    cfg = config or load_config()
+    return hallucination_gate_enabled(cfg) and not skills_enabled(cfg) and not tools_enabled(cfg)
+
+
+def verify_session_log_allowed(
+    config: dict[str, Any] | None,
+    agent: str,
+    inject_path: ToolsInjectVia,
+) -> bool:
+    return verify_only_mode(config) and inject_via_for_agent(config, agent) == inject_path
+
+
+def any_agent_needs_proxy(config: dict[str, Any] | None = None) -> bool:
+    return any(mode == "proxy" for mode in _inject_via_map(config).values())
+
+
+def needs_cyt_mcp_catalog(config: dict[str, Any] | None = None, agent: str | None = None) -> bool:
+    cfg = config or load_config()
+    resolved_agent = agent or tools_hook_cyt_mcp_agent(cfg)
+    if tools_enabled(cfg) and inject_via_for_agent(cfg, resolved_agent) == "hook":
+        return "cyt_mcp" in tools_hook_sources(cfg)
+    if verify_only_mode(cfg) and "cyt_mcp" in tools_hook_sources(cfg):
+        return True
+    return False
+
+
+def inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
+    """Legacy helper: inject path for the cyt_mcp hook agent."""
+    cfg = config or load_config()
+    return inject_via_for_agent(cfg, tools_hook_cyt_mcp_agent(cfg))
+
+
+def tools_inject_via(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: str | None = None,
+) -> ToolsInjectVia:
+    cfg = config or load_config()
+    resolved = agent or tools_hook_cyt_mcp_agent(cfg)
+    return inject_via_for_agent(cfg, resolved)
+
+
+def skills_inject_via(config: dict[str, Any] | None = None, *, agent: str | None = None) -> str:
+    return tools_inject_via(config, agent=agent)
 
 
 def tools_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -1164,17 +1257,15 @@ def tools_enabled(config: dict[str, Any] | None = None) -> bool:
     return bool(_tools(_merged_config(cfg)).get("enabled", DEFAULT_TOOLS_ENABLED))
 
 
-def tools_inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
-    return inject_via(config)
-
-
-def skills_inject_via(config: dict[str, Any] | None = None) -> str:
-    return inject_via(config)
-
-
-def inject_into_user_message(config: dict[str, Any] | None = None) -> bool:
+def inject_into_user_message(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: str | None = None,
+) -> bool:
     """When true (proxy only), inject pruned MCP tools and skills into the latest user turn."""
-    if inject_via(config) != "proxy":
+    cfg = config or load_config()
+    resolved = agent or tools_hook_cyt_mcp_agent(cfg)
+    if inject_via_for_agent(cfg, resolved) != "proxy":
         return False
     reverse_cfg = reverse_proxy_cfg(_merged_config(config or load_config())["network"]["proxy"])
     value = reverse_cfg.get("inject_into_user_message", DEFAULT_INJECT_INTO_USER_MESSAGE)
@@ -1238,7 +1329,7 @@ def uses_definitions_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return (
         tools_enabled(cfg)
-        and tools_inject_via(cfg) == "hook"
+        and _any_agent_uses_hook_tools(cfg)
         and "definitions" in tools_hook_sources(cfg)
     )
 
@@ -1309,7 +1400,7 @@ def uses_cloudflare_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
     return (
         tools_enabled(cfg)
-        and tools_inject_via(cfg) == "hook"
+        and _any_agent_uses_hook_tools(cfg)
         and "cloudflare" in tools_hook_sources(cfg)
     )
 
@@ -1494,9 +1585,10 @@ def _tools_hook_source_usable(source: ToolsHookSource, config: dict[str, Any]) -
 
 def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
+    agent = tools_hook_cyt_mcp_agent(cfg)
     if not tools_enabled(cfg):
         return False
-    if tools_inject_via(cfg) != "hook":
+    if inject_via_for_agent(cfg, agent) != "hook":
         return False
     sources = tools_hook_sources(cfg)
     if not sources:
@@ -1506,9 +1598,10 @@ def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
 
 def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> list[str]:
     cfg = config or load_config()
+    agent = tools_hook_cyt_mcp_agent(cfg)
     if not tools_enabled(cfg):
         return []
-    if tools_inject_via(cfg) != "hook":
+    if inject_via_for_agent(cfg, agent) != "hook":
         return []
     names: list[str] = []
     sources = tools_hook_sources(cfg)
@@ -1522,32 +1615,38 @@ def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> l
 
 def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
+    agent = tools_hook_cyt_mcp_agent(cfg)
     return (
         tools_enabled(cfg)
-        and tools_inject_via(cfg) == "hook"
+        and inject_via_for_agent(cfg, agent) == "hook"
         and "executor" in tools_hook_sources(cfg)
     )
 
 
 def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
+    agent = tools_hook_cyt_mcp_agent(cfg)
     return (
-        tools_enabled(cfg) and tools_inject_via(cfg) == "hook" and "mcpc" in tools_hook_sources(cfg)
+        tools_enabled(cfg)
+        and inject_via_for_agent(cfg, agent) == "hook"
+        and "mcpc" in tools_hook_sources(cfg)
     )
 
 
 def uses_cyt_mcp_tool_catalog(config: dict[str, Any] | None = None) -> bool:
     cfg = config or load_config()
+    agent = tools_hook_cyt_mcp_agent(cfg)
     return (
         tools_enabled(cfg)
-        and tools_inject_via(cfg) == "hook"
+        and inject_via_for_agent(cfg, agent) == "hook"
         and "cyt_mcp" in tools_hook_sources(cfg)
     )
 
 
-def launch_needs_proxy(config: dict[str, Any] | None = None) -> bool:
+def launch_needs_proxy(config: dict[str, Any] | None = None, agent: str | None = None) -> bool:
     cfg = config or load_config()
-    return inject_via(cfg) == "proxy"
+    resolved = agent or "claude"
+    return inject_via_for_agent(cfg, resolved) == "proxy"
 
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:

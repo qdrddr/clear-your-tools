@@ -65,7 +65,7 @@ def test_daemon_start_prints_status_when_not_unattended(
     err = capsys.readouterr().err.strip()
     assert (
         err
-        == "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/inject"
+        == "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/connect"
     )
 
 
@@ -96,7 +96,7 @@ def test_unattended_suppresses_mcpc_logging_warnings(
     config = {
         "network": {"proxy": {"reverse": {"port": 8834}}},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {"tools_from": "mcpc", "mcpc": {"executable": "mcpc"}},
@@ -161,7 +161,7 @@ def test_daemon_start_reuses_cyt_spawned_server_with_credentials(
                 {
                     "pid": 12345,
                     "port": 8834,
-                    "hook_url": "http://127.0.0.1:8834/hook/inject",
+                    "hook_url": "http://127.0.0.1:8834/hook/connect",
                     "owner": "cyt-hook-daemon",
                     "reused": False,
                     "credentials_injected": True,
@@ -362,7 +362,7 @@ def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
                 {
                     "pid": None,
                     "port": 8834,
-                    "hook_url": "http://127.0.0.1:8834/hook/inject",
+                    "hook_url": "http://127.0.0.1:8834/hook/connect",
                     "reused": True,
                 },
             ],
@@ -393,7 +393,7 @@ def test_daemon_restart_stops_then_starts(pidfile_path: Path) -> None:
         start.return_value = hook_daemon.HookDaemonStartResult(
             outcome="spawned",
             port=8835,
-            hook_url="http://127.0.0.1:8835/hook/inject",
+            hook_url="http://127.0.0.1:8835/hook/connect",
             pid=12345,
             reused=False,
         )
@@ -430,7 +430,7 @@ def test_daemon_restart_prints_status_when_not_unattended(
         hook_daemon.daemon_restart(verbose=False, unattended=False)
 
     err = capsys.readouterr().err.strip()
-    assert err == "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/inject"
+    assert err == "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect"
 
 
 def test_daemon_stop_without_pidfile_scans_config_port() -> None:
@@ -446,7 +446,7 @@ def test_daemon_stop_without_pidfile_scans_config_port() -> None:
 def test_needs_credential_injection_includes_executor_token() -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {
                     "tools_from": "executor",

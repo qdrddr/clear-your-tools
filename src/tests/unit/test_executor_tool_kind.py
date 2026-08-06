@@ -8,11 +8,12 @@ from unittest.mock import patch
 import pytest
 
 from cyt.indexer.policies import PolicyContext, effective_policy
+from cyt.testing.inject_via_maps import INJECT_VIA_ALL_PROXY
 from cyt.tools.policy_context import apply_executor_tool_kind, prepare_hook_executor_tool_pruning
 
 _HOOK_EXECUTOR_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "hook": {"tools_from": "executor"},
         },
@@ -58,7 +59,7 @@ def test_prepare_hook_executor_tool_pruning_noop_in_proxy_mode() -> None:
     ctx = PolicyContext()
     config: dict[str, Any] = {
         "pruning": {
-            "inject_via": "proxy",
+            "inject_via": dict(INJECT_VIA_ALL_PROXY),
             "tools": {"hook": {"tools_from": "executor"}},
         },
     }
@@ -138,7 +139,7 @@ def test_filter_tools_for_query_warms_mcp_cache_on_hook_executor() -> None:
 
     config: dict[str, Any] = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {"tools_from": "executor"},
                 "sequence": ["bm25"],

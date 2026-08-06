@@ -33,7 +33,7 @@ from cyt.executor.mcp import (
 
 _CONFIG = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "hook": {
                 "tools_from": "executor",

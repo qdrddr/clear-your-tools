@@ -83,7 +83,11 @@ def prepare_prune_context(
     resolved_tools_allowed = (
         tools_allowed
         if tools_allowed is not None
-        else tools_inject_allowed(config, "hook" if for_hook else "proxy")
+        else tools_inject_allowed(
+            config,
+            "hook" if for_hook else "proxy",
+            upstream_kind=upstream_kind,
+        )
     )
     if not resolved_skills_allowed and not resolved_tools_allowed:
         return None
@@ -261,6 +265,7 @@ def _run_tools_filter(
                 config=ctx.config,
                 pruner_settings=ctx.pruner_settings,
                 for_hook=for_hook,
+                upstream_kind=ctx.upstream_kind,
                 tools_to_catalog_entries=source.tools_to_catalog_entries,
                 catalog_bulk_id=source.source_id if for_hook else None,
                 phase_timer=phase_timer,
@@ -275,6 +280,7 @@ def _run_tools_filter(
         config=ctx.config,
         pruner_settings=ctx.pruner_settings,
         for_hook=for_hook,
+        upstream_kind=ctx.upstream_kind,
         tools_to_catalog_entries=source.tools_to_catalog_entries,
         catalog_bulk_id=source.source_id if for_hook else None,
     )

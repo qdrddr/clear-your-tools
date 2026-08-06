@@ -19,7 +19,7 @@ from cyt.mcpc.session_health import clear_session_health_cache
 
 _CONFIG = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {

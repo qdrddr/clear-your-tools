@@ -29,7 +29,7 @@ def _tools_hook_config(root: Path, definitions: Path) -> dict[str, Any]:
     return {
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {
                     "tools_from": "definitions",
@@ -55,7 +55,7 @@ def test_hook_skips_tools_when_tools_disabled() -> None:
     config = {
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"enabled": False},
         },
     }
@@ -148,7 +148,7 @@ def test_hook_injects_mcpc_agent_tools_block() -> None:
     config = {
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {
@@ -240,7 +240,7 @@ def test_coordinated_hook_injects_mcpc_agent_tools_block() -> None:
             },
         },
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "enabled": True,
                 "hook": {
@@ -311,7 +311,7 @@ def _combined_hook_config(root: Path, definitions: Path, skills_dir: Path) -> di
             },
         },
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {
                     "tools_from": "definitions",
@@ -403,7 +403,7 @@ def test_hook_skips_silently_when_catalog_missing() -> None:
 def test_finish_tools_hook_injection_does_not_append_executor_skill() -> None:
     config = {
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"hook": {"tools_from": "executor", "executor_url": "http://localhost:4789"}},
         },
     }

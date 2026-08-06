@@ -135,7 +135,7 @@ def inject_skills_matches_into_openai_body(
     if not isinstance(input_items, list):
         return original, meta
 
-    use_user_turn = config is not None and inject_into_user_message(config)
+    use_user_turn = config is not None and inject_into_user_message(config, agent="codex")
     if use_user_turn:
         if already_has_user_turn_injection(original, "openai", tag="<agent-skills>"):
             return original, meta

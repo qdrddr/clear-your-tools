@@ -372,6 +372,7 @@ def _prune_openai_tools_array(
         skill_llm_out=skill_llm_out,
         config=config,
         pruner_settings=pruner_settings,
+        upstream_kind="openai",
     )
     if result.status != "applied" or result.tools is None:
         if result.status == "failed":
@@ -564,9 +565,13 @@ def _openai_prune_request_tools(
     result: PruneResult | None = None
     mcp_for_inject: list[dict[str, Any]] = []
     resolved_config = config or load_config()
-    user_message_inject = inject_into_user_message(resolved_config) and tools_inject_allowed(
+    user_message_inject = inject_into_user_message(
+        resolved_config,
+        agent="codex",
+    ) and tools_inject_allowed(
         resolved_config,
         "proxy",
+        agent="codex",
     )
     skill_entries = (
         deferred.skill_entries if deferred is not None and deferred.skills_allowed else None
@@ -612,7 +617,7 @@ def _openai_prune_request_tools(
         capture_decomposed_catalog=capture_decomposed_catalog,
         pruner_settings=pruner_settings,
         skills_allowed=bool(deferred is not None and deferred.skills_allowed),
-        tools_allowed=tools_inject_allowed(resolved_config, "proxy"),
+        tools_allowed=tools_inject_allowed(resolved_config, "proxy", agent="codex"),
         tools_pipeline_override=pruning_pipeline,
         skill_out=skill_out if deferred is not None else None,
     )
@@ -722,8 +727,8 @@ def transform_openai_request(
 
     resolved_config = config or load_config()
     if (
-        inject_into_user_message(resolved_config)
-        and tools_inject_allowed(resolved_config, "proxy")
+        inject_into_user_message(resolved_config, agent="codex")
+        and tools_inject_allowed(resolved_config, "proxy", agent="codex")
         and mcp_for_inject
     ):
         session_text = session_text_from_proxy_body(original, "openai")

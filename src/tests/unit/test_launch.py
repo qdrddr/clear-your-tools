@@ -547,12 +547,17 @@ class TestEnvReport:
             endpoint="anthropic",
             upstream_url=None,
             include_agent_recipe=False,
-            config={"pruning": {"inject_via": "proxy"}},
+            config={
+                "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
+            },
             debug=True,
         )
         err = capsys.readouterr().err
         assert "Debug:" in err
-        assert "  injection path: proxy  (pruning.inject_via)" in err
+        assert (
+            "  injection path: {'cursor': 'hook', 'claude': 'proxy', 'codex': 'proxy'}  (pruning.inject_via)"
+            in err
+        )
         assert "anthropic-proxy.log" in err
 
         print_runtime_env_report(
@@ -562,11 +567,16 @@ class TestEnvReport:
             endpoint="anthropic",
             upstream_url=None,
             include_agent_recipe=False,
-            config={"pruning": {"inject_via": "hook"}},
+            config={
+                "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
+            },
             debug=True,
         )
         err = capsys.readouterr().err
-        assert "  injection path: hook  (pruning.inject_via)" in err
+        assert (
+            "  injection path: {'cursor': 'hook', 'claude': 'hook', 'codex': 'hook'}  (pruning.inject_via)"
+            in err
+        )
 
     def test_proxy_recipe_omits_agent_auth_token(
         self,

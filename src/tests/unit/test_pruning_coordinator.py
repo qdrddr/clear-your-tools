@@ -130,7 +130,10 @@ def test_coordinate_both_bm25_runs_in_parallel() -> None:
 
     config: dict[str, Any] = {
         "skills": {"enabled": True, "pipeline": "bm25"},
-        "pruning": {"inject_via": "hook", "tools": {"sequence": ["bm25"]}},
+        "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+            "tools": {"sequence": ["bm25"]},
+        },
     }
     tools = [{"name": "tool_a", "description": "a"}]
 
@@ -160,7 +163,7 @@ def test_coordinated_hook_applies_executor_tool_kind() -> None:
     config: dict[str, Any] = {
         "skills": {"enabled": True, "pipeline": "bm25"},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {"tools_from": "executor"},
                 "sequence": ["bm25"],

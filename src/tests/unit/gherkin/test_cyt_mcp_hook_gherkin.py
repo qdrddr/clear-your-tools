@@ -135,7 +135,7 @@ def given_live_catalog(
         "tools": tools,
         "config": {
             "pruning": {
-                "inject_via": "hook",
+                "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
                 "tools": {
                     "enabled": True,
                     "hook": {"tools_from": ["cyt_mcp"], "cyt_mcp": {"agent": "cursor"}},

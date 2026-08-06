@@ -252,6 +252,47 @@ def read_tools_inject_enabled(path: Path) -> bool | None:
     return None
 
 
+def read_hallucination_gate_enabled(path: Path) -> bool | None:
+    if not path.is_file():
+        return None
+    _agent, entries = read_session_log_file(path)
+    for entry in reversed(entries):
+        if entry.get("kind") != "session_state":
+            continue
+        if str(entry.get("key") or "") != "session_state:inject":
+            continue
+        flag = entry.get("hallucination_gate_enabled")
+        if isinstance(flag, bool):
+            return flag
+    return None
+
+
+def append_tool_entries(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append Type-1 tool lines with client-side (key, hash) dedup."""
+    to_append: list[dict[str, Any]] = []
+    existing = {
+        (str(entry.get("key") or ""), str(entry.get("hash") or ""))
+        for entry in read_session_log(path)
+        if entry.get("kind") == "tool"
+    }
+    for entry in entries:
+        if entry.get("kind") != "tool":
+            continue
+        key = str(entry.get("key") or "").strip()
+        content_hash = str(entry.get("hash") or "").strip()
+        if key and content_hash and (key, content_hash) in existing:
+            continue
+        to_append.append(entry)
+        if key and content_hash:
+            existing.add((key, content_hash))
+    append_session_log(path, to_append, agent=agent)
+
+
 def append_tool_catalog_entries(
     path: Path,
     entries: list[dict[str, Any]],

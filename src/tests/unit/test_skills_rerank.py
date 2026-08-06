@@ -35,7 +35,7 @@ def _skills_config(root: Path, *, pipeline: str = "rerank") -> dict:
     return {
         "skills": {
             "enabled": True,
-            "inject_via": "proxy",
+            "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
             "pipeline": pipeline,
             "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],

@@ -190,6 +190,21 @@ def injection_section_for_domain(text: str, domain: str) -> str:
     return ""
 
 
+def extract_verify_only_flag(body: bytes) -> bool:
+    if not body.strip():
+        return False
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    flag = data.get("verify-only")
+    if isinstance(flag, bool):
+        return flag
+    return False
+
+
 def extract_additional_context(body: bytes) -> str:
     if not body.strip():
         return ""

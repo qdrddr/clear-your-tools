@@ -321,6 +321,12 @@ def test_proxy_falls_back_to_bm25_when_rerank_fails(
             tools,
             "reading files",
             pruning_pipeline=["rerank"],
+            config={
+                "pruning": {
+                    "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+                    "tools": {"enabled": True},
+                },
+            },
         )
 
     assert result.status == "applied"

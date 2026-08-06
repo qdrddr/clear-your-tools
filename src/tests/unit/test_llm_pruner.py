@@ -685,7 +685,7 @@ def test_format_executor_mcp_selector_appendix_includes_executor_skill_item() ->
 
 _HOOK_EXECUTOR_CONFIG = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "hook": {
                 "tools_from": "executor",

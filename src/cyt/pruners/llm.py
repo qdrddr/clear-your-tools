@@ -118,6 +118,7 @@ def tool_selector_system_prompt(
     config: dict[str, Any] | None = None,
     *,
     soft_budget: int | None = None,
+    for_proxy: bool = False,
 ) -> str:
     """Tool selector prompt plus cached executor MCP execute tool/skill appendix.
 
@@ -127,7 +128,7 @@ def tool_selector_system_prompt(
     prompt = build_tool_selector_system_prompt(soft_budget=resolved_budget)
     from cyt.config import uses_executor_tool_catalog
 
-    if not uses_executor_tool_catalog(config):
+    if for_proxy or not uses_executor_tool_catalog(config):
         return prompt
     try:
         from cyt.executor.http import get_executor_mcp_cache
@@ -839,6 +840,7 @@ def llm_catalog_dict(
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
+    for_proxy: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], StageTokenUsage]:
     """Select relevant catalog chunks via LLM; same contract as rerank_catalog_dict."""
     policy_ctx = resolve_policy_context(
@@ -890,13 +892,14 @@ def llm_catalog_dict(
 
     llm_scores, total_usage = llm_select_ids(
         query,
-        tool_selector_system_prompt(resolved_config),
+        tool_selector_system_prompt(resolved_config, for_proxy=for_proxy),
         formatted_chunks,
         chunk_token_counts=chunk_token_counts,
         wrap_agent_tools=True,
         system_prompt_for_budget=lambda budget: tool_selector_system_prompt(
             resolved_config,
             soft_budget=budget,
+            for_proxy=for_proxy,
         ),
         soft_budget_total=tools_selector_soft_budget(resolved_config),
         config=resolved_config,

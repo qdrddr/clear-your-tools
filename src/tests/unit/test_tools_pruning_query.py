@@ -11,21 +11,21 @@ from cyt.pruners.query import (
 
 _HOOK_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {"enabled": True},
     },
 }
 
 _PROXY_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "proxy",
+        "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
         "tools": {"enabled": True},
     },
 }
 
 _DISABLED_TOOLS_HOOK_CONFIG: dict[str, Any] = {
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {"enabled": False},
     },
 }
@@ -33,7 +33,7 @@ _DISABLED_TOOLS_HOOK_CONFIG: dict[str, Any] = {
 
 def test_tools_pruning_query_appends_instruction_for_hook() -> None:
     query = "find my calendar events"
-    result = tools_pruning_query(query, _HOOK_CONFIG)
+    result = tools_pruning_query(query, _HOOK_CONFIG, for_hook=True)
     assert result.startswith(query)
     assert result.endswith(TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION)
 
@@ -49,5 +49,5 @@ def test_tools_pruning_query_unchanged_when_tools_disabled() -> None:
 
 
 def test_tools_pruning_query_unchanged_for_empty_query() -> None:
-    assert tools_pruning_query("", _HOOK_CONFIG) == ""
-    assert tools_pruning_query("   ", _HOOK_CONFIG) == "   "
+    assert tools_pruning_query("", _HOOK_CONFIG, for_hook=True) == ""
+    assert tools_pruning_query("   ", _HOOK_CONFIG, for_hook=True) == "   "

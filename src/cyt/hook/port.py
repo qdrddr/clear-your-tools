@@ -16,7 +16,8 @@ from cyt.runtime_registry import (
     read_hook_daemon_entries,
 )
 
-HOOK_INJECT_PATH = "/hook/inject"
+HOOK_CONNECT_PATH = "/hook/connect"
+HOOK_INJECT_PATH = HOOK_CONNECT_PATH  # backward-compatible alias
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
 
 
@@ -101,16 +102,19 @@ def resolve_hook_url(*, config_path: Path | None = None) -> str | None:
     """Resolve hook inject URL from env, pidfile, or port scan."""
     env_url = os.environ.get(CYT_HOOK_URL_ENV, "").strip()
     if env_url:
-        return (
-            env_url
-            if env_url.endswith(HOOK_INJECT_PATH)
-            else f"{env_url.rstrip('/')}{HOOK_INJECT_PATH}"
-        )
+        if env_url.endswith("/hook/inject"):
+            return env_url[: -len("/hook/inject")] + HOOK_CONNECT_PATH
+        if env_url.endswith(HOOK_INJECT_PATH):
+            return env_url
+        return f"{env_url.rstrip('/')}{HOOK_INJECT_PATH}"
 
     for pidfile in reversed(read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str) and hook_url.strip():
-            return hook_url.strip()
+            resolved = hook_url.strip()
+            if resolved.endswith("/hook/inject"):
+                return resolved[: -len("/hook/inject")] + HOOK_CONNECT_PATH
+            return resolved
 
     base_port = resolve_hook_base_port(config_path=config_path)
     port = find_hook_server_port(base_port)

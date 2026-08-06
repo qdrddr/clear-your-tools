@@ -65,7 +65,10 @@ def test_build_hook_skills_config_overlay_returns_none_when_already_configured()
             "directories": ["~/.claude/skills", "~/.codex/skills"],
         },
         ["~/.claude/skills", "~/.codex/skills"],
-        config={"pruning": {"inject_via": "hook"}, "skills": {"enabled": True}},
+        config={
+            "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
+            "skills": {"enabled": True},
+        },
     )
 
     assert overlay is None
@@ -78,11 +81,13 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
             "enabled": True,
         },
         ["~/.claude/skills"],
-        config={"pruning": {"inject_via": "proxy"}},
+        config={"pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}}},
     )
 
     assert overlay == {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+        },
         "skills": {
             "enabled": True,
             "directories": ["~/.claude/skills"],
@@ -575,7 +580,8 @@ def test_save_hook_skills_directories_writes_config(tmp_path: Path) -> None:
     assert "~/.codex/skills" in text
     assert "enabled: true" in text
     assert "pruning:" in text
-    assert "inject_via: hook" in text
+    assert "cursor: hook" in text
+    assert "claude: hook" in text
 
 
 def test_save_hook_skills_directories_preserves_pipeline_and_updates_inject_via(
@@ -583,12 +589,19 @@ def test_save_hook_skills_directories_preserves_pipeline_and_updates_inject_via(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
-        "skills:\n  pipeline: llm\n  enabled: true\n\npruning:\n  inject_via: proxy\n",
+        "skills:\n"
+        "  pipeline: llm\n"
+        "  enabled: true\n\n"
+        "pruning:\n"
+        "  inject_via:\n"
+        "    cursor: hook\n"
+        "    claude: proxy\n"
+        "    codex: proxy\n",
         encoding="utf-8",
     )
     user_overlay = {
         "skills": {"pipeline": "llm", "enabled": True},
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
     }
 
     changed = hook_setup._save_hook_skills_directories(
@@ -600,7 +613,8 @@ def test_save_hook_skills_directories_preserves_pipeline_and_updates_inject_via(
     assert changed is True
     text = config_path.read_text(encoding="utf-8")
     assert "pipeline: llm" in text
-    assert "inject_via: hook" in text
+    assert "cursor: hook" in text
+    assert "claude: hook" in text
     assert "inject_via: proxy" not in text
     assert "enabled: true" in text
     assert "~/.claude/skills" in text
@@ -616,7 +630,10 @@ def test_save_hook_skills_directories_skips_when_already_configured(tmp_path: Pa
         "    - ~/.claude/skills\n"
         "    - ~/.codex/skills\n"
         "pruning:\n"
-        "  inject_via: hook\n",
+        "  inject_via:\n"
+        "    cursor: hook\n"
+        "    claude: hook\n"
+        "    codex: hook\n",
         encoding="utf-8",
     )
     user_overlay = {
@@ -625,7 +642,7 @@ def test_save_hook_skills_directories_skips_when_already_configured(tmp_path: Pa
             "enabled": True,
             "directories": ["~/.claude/skills", "~/.codex/skills"],
         },
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
     }
 
     changed = hook_setup._save_hook_skills_directories(
@@ -979,6 +996,7 @@ def test_hook_wizard_without_stdin(
         *,
         config_path: Path | None = None,
         agents: list[str] | None = None,
+        prevent_hallucinations: bool = False,
     ) -> None:
         called["run"] = True
         called["agents"] = agents
@@ -1001,6 +1019,7 @@ def test_hook_cursor_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
         *,
         config_path: Path | None = None,
         agents: list[str] | None = None,
+        prevent_hallucinations: bool = False,
     ) -> None:
         called["agents"] = agents
         assert config_path is None

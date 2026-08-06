@@ -128,7 +128,7 @@ def test_openai_append_mcp_stubs_flat_and_namespace() -> None:
 
 def test_transform_anthropic_inject_keeps_mcp_stubs_not_inject_via_hook() -> None:
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "network": {"proxy": {"reverse": {"inject_into_user_message": True}}},
     }
     body = {
@@ -169,7 +169,7 @@ def test_transform_anthropic_inject_keeps_mcp_stubs_not_inject_via_hook() -> Non
 
 def test_transform_anthropic_inject_false_has_no_stubs() -> None:
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "network": {"proxy": {"reverse": {"inject_into_user_message": False}}},
     }
     body = {

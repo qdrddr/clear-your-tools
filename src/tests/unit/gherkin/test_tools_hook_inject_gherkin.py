@@ -41,7 +41,7 @@ def _tools_hook_config(root: Path, definitions: Path) -> dict[str, Any]:
     return {
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {
                 "hook": {
                     "tools_from": "definitions",
@@ -59,7 +59,7 @@ def given_tools_disabled(gherkin_context: GherkinContext) -> None:
     gherkin_context.config = {
         "skills": {"enabled": False},
         "pruning": {
-            "inject_via": "hook",
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
             "tools": {"enabled": False},
         },
     }

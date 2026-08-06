@@ -24,6 +24,7 @@ from cyt.config import (
     ToolPolicy,
     deep_merge,
     default_model_nick,
+    inject_via_map_for_mode,
     load_bundled_defaults_yaml,
     load_user_config_overlay,
     merge_model_entry,
@@ -1026,7 +1027,7 @@ def build_setup_overlay(
         pipelines["llm"] = {"model_nick": str(llm_pruner_model["nick"])}
 
     pruning: dict[str, Any] = {
-        "inject_via": inject_via,
+        "inject_via": inject_via_map_for_mode(inject_via),
         "tools": {
             "sequence": pipeline,
             "policy": policy,

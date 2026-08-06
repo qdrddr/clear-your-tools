@@ -15,7 +15,7 @@ def test_prompt_tools_hook_config_preserves_multi_source_list_when_not_hook_mode
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "proxy"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
@@ -27,7 +27,7 @@ def test_prompt_tools_hook_config_preserves_single_source_as_list_when_not_hook_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
-    config["pruning"]["inject_via"] = "proxy"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
@@ -78,7 +78,7 @@ def test_ensure_tools_hook_file_interactive_prompts_for_missing_cloudflare_url(
 
     config_path = tmp_path / "config.yaml"
     config = load_config()
-    config["pruning"]["inject_via"] = "hook"
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
     config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
     config["pruning"]["tools"]["hook"]["cloudflare_url"] = ""
 

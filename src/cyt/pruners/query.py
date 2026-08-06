@@ -18,9 +18,16 @@ TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION = (
 )
 
 
-def tools_pruning_query(query: str, config: dict[str, Any] | None) -> str:
+def tools_pruning_query(
+    query: str,
+    config: dict[str, Any] | None,
+    *,
+    for_hook: bool = False,
+) -> str:
     """Return pruning query, appending hook optional-scope guidance when applicable."""
     if not query.strip():
+        return query
+    if not for_hook:
         return query
     cfg = config if config is not None else load_config()
     if not tools_inject_allowed(cfg, "hook"):

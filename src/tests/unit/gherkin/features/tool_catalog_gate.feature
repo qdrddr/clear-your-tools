@@ -4,7 +4,7 @@ Feature: Type-2 tool catalog hallucination gate
     Given agent cursor
 
   Scenario: Skills-only session allows preToolUse without Type-2 catalog
-    Given a session log with tools inject disabled
+    Given a session log with tools inject disabled and no hallucination gate
     When preToolUse validates cyt-mcp tool codebase-memory-mcp_query_graph with args project demo query MATCH
     Then validation should allow
 

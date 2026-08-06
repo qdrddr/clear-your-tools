@@ -15,7 +15,8 @@ LOCAL_HOST = "127.0.0.1"
 DEFAULT_PORT = 8834
 HEALTH_TIMEOUT_SECONDS = 1.5
 HEALTH_TTL_SECONDS = 30.0
-HOOK_INJECT_PATH = "/hook/inject"
+HOOK_CONNECT_PATH = "/hook/connect"
+HOOK_INJECT_PATH = HOOK_CONNECT_PATH  # backward-compatible alias
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
 HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/pid.json").expanduser()
 LEGACY_HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/hook-daemon.json").expanduser()
@@ -172,11 +173,12 @@ def _hook_url_is_live(url: str) -> bool:
 def resolve_hook_url() -> str | None:
     env_url = os.environ.get(CYT_HOOK_URL_ENV, "").strip()
     if env_url:
-        resolved = (
-            env_url
-            if env_url.endswith(HOOK_INJECT_PATH)
-            else f"{env_url.rstrip('/')}{HOOK_INJECT_PATH}"
-        )
+        if env_url.endswith("/hook/inject"):
+            resolved = env_url[: -len("/hook/inject")] + HOOK_CONNECT_PATH
+        elif env_url.endswith(HOOK_INJECT_PATH):
+            resolved = env_url
+        else:
+            resolved = f"{env_url.rstrip('/')}{HOOK_CONNECT_PATH}"
         if _hook_url_is_live(resolved):
             return resolved
 
@@ -184,6 +186,8 @@ def resolve_hook_url() -> str | None:
         hook_url = pidfile.get("hook_url")
         if isinstance(hook_url, str) and hook_url.strip():
             resolved = hook_url.strip()
+            if resolved.endswith("/hook/inject"):
+                resolved = resolved[: -len("/hook/inject")] + HOOK_CONNECT_PATH
             if _hook_url_is_live(resolved):
                 return resolved
 

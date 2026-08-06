@@ -210,9 +210,9 @@ def _codex_recipe_lines(
 
 
 def _injection_path_lines(config: dict[str, Any]) -> list[str]:
-    from cyt.config import inject_via
+    from cyt.config import inject_via_map
 
-    mode = inject_via(config)
+    mode = inject_via_map(config)
     return [
         f"  injection path: {mode}  (pruning.inject_via)",
     ]

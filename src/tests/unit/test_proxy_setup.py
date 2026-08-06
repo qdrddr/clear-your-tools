@@ -1411,6 +1411,7 @@ class TestRunSetupKeyring:
         )
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
         monkeypatch.setattr("cyt.launch.secrets.keyring_backend_available", lambda: True)
+        monkeypatch.setattr("cyt.proxy.setup_wizard._prompt_inject_via", lambda _e: "proxy")
         monkeypatch.setattr("cyt.proxy.setup_wizard.save_user_config", lambda *_a, **_k: False)
         monkeypatch.setattr(
             "cyt.proxy.setup_wizard._prompt_primary_model_input_cost",

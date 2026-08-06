@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from cyt.config import (
+    inject_via_map,
     skills_bm25_node_fallback_threshold,
     skills_enabled,
     skills_hook_inject_cap_multiplier,
@@ -51,11 +52,21 @@ def skills_inject_allowed(
     config: dict[str, Any],
     inject_path: InjectPath,
     *,
+    agent: str | None = None,
+    upstream_kind: str | None = None,
     cli_prompt: bool = False,
 ) -> bool:
     if not skills_enabled(config) and not cli_prompt:
         return False
-    return skills_inject_via(config) == inject_path
+    from cyt.tools.budget import resolve_tools_inject_agent
+
+    resolved_agent = resolve_tools_inject_agent(
+        config,
+        inject_path,
+        agent=agent,
+        upstream_kind=upstream_kind,
+    )
+    return skills_inject_via(config, agent=resolved_agent) == inject_path
 
 
 def skills_budget_precheck(config: dict[str, Any] | None = None) -> bool:
@@ -269,7 +280,7 @@ def proxy_pre_pruner_budget_allows(
     kind: str,
 ) -> bool:
     """Gate before rerank/LLM skills pruner (savings unknown — use request fraction only)."""
-    if not skills_inject_allowed(config, "proxy"):
+    if not skills_inject_allowed(config, "proxy", upstream_kind=kind):
         return False
     if not skills_budget_precheck(config):
         return False
@@ -302,7 +313,9 @@ def format_skills_budget_report(
         finally:
             db.close()
 
-    active = skills_inject_via(config)
+    active_map = inject_via_map(config)
+    hook_active = any(mode == "hook" for mode in active_map.values())
+    proxy_active = any(mode == "proxy" for mode in active_map.values())
     enabled = skills_enabled(config)
     max_tokens = skills_max_tokens_per_request(config)
     lines = [
@@ -310,7 +323,7 @@ def format_skills_budget_report(
         "",
         "settings:",
         f"  skills.enabled: {enabled}",
-        f"  pruning.inject_via: {active}  (active path)",
+        f"  pruning.inject_via: {active_map}",
         f"  max_tokens_per_request: {max_tokens}",
         f"  bm25_node_fallback_threshold: {skills_bm25_node_fallback_threshold(config)}",
         "",
@@ -359,13 +372,13 @@ def format_skills_budget_report(
         blockers.append("skills.enabled is false — injection disabled in config")
     if max_tokens <= 0:
         blockers.append("max_tokens_per_request <= 0 — hard ceiling disabled")
-    if not state.bootstrap and active == "hook" and hook_remaining <= 0:
+    if not state.bootstrap and hook_active and hook_remaining <= 0:
         blockers.append("hook global cap exhausted")
-    if not state.bootstrap and active == "proxy" and proxy_remaining <= 0:
+    if not state.bootstrap and proxy_active and proxy_remaining <= 0:
         blockers.append("proxy global cap exhausted")
 
     will_inject = not blockers and enabled and max_tokens > 0
-    lines.append(f"active path ({active}):")
+    lines.append(f"active path ({active_map}):")
     lines.append(f"  injection will work: {'yes' if will_inject else 'no'}")
     for reason in blockers:
         lines.append(f"  blocker: {reason}")
@@ -390,7 +403,7 @@ def format_skills_budget_report(
         budget_state=state,
     )
 
-    hook_label = "" if active == "hook" else " (inactive — inject_via: proxy)"
+    hook_label = "" if hook_active else " (inactive — no hook agent in inject_via map)"
     lines.extend(
         [
             f"hook example{hook_label}\n"
@@ -402,7 +415,7 @@ def format_skills_budget_report(
         ],
     )
 
-    proxy_label = "" if active == "proxy" else " (inactive — inject_via: hook)"
+    proxy_label = "" if proxy_active else " (inactive — no proxy agent in inject_via map)"
     lines.extend(
         [
             f"proxy example{proxy_label}\n"
@@ -435,7 +448,7 @@ def skills_budget_report_json(
         finally:
             db.close()
 
-    active = skills_inject_via(config)
+    active = inject_via_map(config)
     rate = example_savings_rate
     if rate is None and example_request_tokens > 0:
         rate = example_savings_tokens / example_request_tokens

@@ -9,7 +9,7 @@ from cyt.tools.hook import handle_user_prompt_tools
 _MCP_CONFIG = {
     "skills": {"enabled": False},
     "pruning": {
-        "inject_via": "hook",
+        "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
         "tools": {
             "enabled": True,
             "hook": {

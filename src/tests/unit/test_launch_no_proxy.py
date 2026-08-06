@@ -11,7 +11,7 @@ from cyt.config import launch_needs_proxy
 
 def test_launch_needs_proxy_when_inject_via_proxy() -> None:
     config = {
-        "pruning": {"inject_via": "proxy"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
         "skills": {"enabled": True},
     }
     assert launch_needs_proxy(config) is True
@@ -19,7 +19,7 @@ def test_launch_needs_proxy_when_inject_via_proxy() -> None:
 
 def test_launch_skips_proxy_when_inject_via_hook() -> None:
     config = {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
         "skills": {"enabled": True},
     }
     assert launch_needs_proxy(config) is False
@@ -27,7 +27,7 @@ def test_launch_skips_proxy_when_inject_via_hook() -> None:
 
 def test_launch_skips_proxy_when_skills_disabled_and_hook_mode() -> None:
     config = {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
         "skills": {"enabled": False},
     }
     assert launch_needs_proxy(config) is False
@@ -35,7 +35,9 @@ def test_launch_skips_proxy_when_skills_disabled_and_hook_mode() -> None:
 
 def test_launch_needs_proxy_legacy_tools_inject_via_proxy() -> None:
     config = {
-        "pruning": {"tools": {"inject_via": "proxy"}},
+        "pruning": {
+            "tools": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
+        },
         "skills": {"enabled": True},
     }
     assert launch_needs_proxy(config) is True
@@ -46,7 +48,7 @@ def test_run_launch_session_skips_proxy_when_not_needed() -> None:
 
     runtime = MagicMock()
     runtime.config = {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
         "skills": {"enabled": True},
     }
     runtime.config_path = MagicMock()
@@ -92,7 +94,7 @@ def test_run_launch_session_force_proxy_starts_reverse_proxy() -> None:
 
     runtime = MagicMock()
     runtime.config = {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
         "skills": {"enabled": True},
     }
     runtime.config_path = MagicMock()
@@ -138,7 +140,7 @@ def test_run_launch_session_rejects_proxy_with_switch_provider() -> None:
 
     runtime = MagicMock()
     runtime.config = {
-        "pruning": {"inject_via": "hook"},
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
         "skills": {"enabled": True},
     }
     runtime.config_path = MagicMock()
@@ -173,7 +175,9 @@ def test_run_launch_session_rejects_proxy_in_proxy_inject_mode() -> None:
     from cyt.launch import cli as launch_cli
 
     runtime = MagicMock()
-    runtime.config = {"pruning": {"inject_via": "proxy"}}
+    runtime.config = {
+        "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
+    }
     runtime.config_path = MagicMock()
     runtime.port = 8787
     runtime.credential_sources = {}
