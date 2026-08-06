@@ -159,8 +159,10 @@ export_cdx_sbom() {
 		cp "${CDX_FILE}" "${cdx_backup}"
 	fi
 
+	# --target all: host-only SBOMs differ by OS (e.g. linux-raw-sys on Linux only).
+	# CI runs on ubuntu-latest; dev machines may be macOS — both must match committed cdx.json.
 	chunk_run_in_nopatch_workspace "${REPO_ROOT}" \
-		run_cmd cargo cyclonedx --manifest-path sdk/rust/cyt-indexer/Cargo.toml --format json
+		run_cmd cargo cyclonedx --manifest-path sdk/rust/cyt-indexer/Cargo.toml --format json --target all
 
 	[[ -f "${CDX_FILE}" ]] || {
 		echo "error: cargo cyclonedx did not write ${CDX_FILE}" >&2
