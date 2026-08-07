@@ -770,16 +770,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.0",
-      "author": "Alex Crichton <alex@alexcrichton.com>",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.1",
       "name": "cc",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "description": "A build-time dependency for Cargo build scripts to assist in invoking the native C compiler to compile native C code into a static archive to be linked into Rust code. ",
       "scope": "excluded",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "5add81bb678e6cb321aff7fa0dc7689ad82b112dbc032cea19f91d6b8e3582b9"
+          "content": "9066c49992464636f92905fa096ec58baaa4d57ec19a5c096c68d3e25ef3d136"
         }
       ],
       "licenses": [
@@ -787,7 +786,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/cc@1.4.0",
+      "purl": "pkg:cargo/cc@1.4.1",
       "externalReferences": [
         {
           "type": "documentation",
@@ -1776,15 +1775,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.9",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.10",
       "name": "find-msvc-tools",
-      "version": "0.1.9",
+      "version": "0.1.10",
       "description": "Find windows-specific tools, read MSVC versions from the registry and from COM interfaces",
       "scope": "excluded",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+          "content": "26b73573e6edcd2af0cdf47bd6cb58f0b3839491263c314eaad1ccf24430e1de"
         }
       ],
       "licenses": [
@@ -1792,7 +1791,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/find-msvc-tools@0.1.9",
+      "purl": "pkg:cargo/find-msvc-tools@0.1.10",
       "externalReferences": [
         {
           "type": "documentation",
@@ -5993,9 +5992,9 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.0",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.1",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.9",
+        "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.10",
         "registry+https://github.com/rust-lang/crates.io-index#jobserver@0.1.35",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
         "registry+https://github.com/rust-lang/crates.io-index#shlex@2.0.1"
@@ -6199,7 +6198,7 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0"
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.9"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.10"
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#fnv@1.0.7"
@@ -6973,7 +6972,7 @@
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.0.16+zstd.1.5.7",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.0",
+        "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.1",
         "registry+https://github.com/rust-lang/crates.io-index#pkg-config@0.3.33"
       ]
     },
