@@ -81,6 +81,10 @@ fell below 50% of their short-context baseline at just 32K tokens.
 reasoning quality as context grows into the 32-200K of tokens—and every extra token adds
 API cost, because providers resend the full history on each turn.
 - **Local inference:** Smaller inputs reduce memory pressure and speed up generation on self-hosted models.
+- **Tool Hallucination:** Agents generate incorrect tool requests even having full tool definitions.
+
+<details>
+<summary><strong>Proxy</strong></summary>
 
 Our Proxy sits between the agent and upstream
 LLM providers (Anthropic-compatible APIs on OpenRouter, Novita, DeepInfra, and others), intercepts
@@ -92,6 +96,8 @@ Examples of how to run these agents with the proxy can be found in the [`./examp
 Large MCP catalogs can add tens of thousands of tokens of tool-schema overhead on every turn.
 Clear Your Tools removes irrelevant tools and trims irrelevant optional parameters while always
 keeping required fields for tools that stay in the request. Theory on [how it works](https://medium.com/qdrddr/217cc30d8f48).
+
+</details>
 
 ---
 
@@ -124,6 +130,8 @@ On each intercepted request the proxy:
 4. **Recomposes surviving tools** — required properties always remain; only optional properties
    that look relevant to the query are merged back in.
 5. **Forwards the modified request** to the upstream provider with the smaller `tools` array.
+6. **Intercepts hallucinated tool calls**, blocks the invalid request, and outputs a fully‑formed tool
+invocation using the correct schema shape so the agent can recover on the next step.
 
 <details>
 <summary><strong>Pruning pipelines</strong></summary>
@@ -324,6 +332,16 @@ cyt hook all
 ### Cursor
 
 Cursor has no reverse proxy — use hooks with MCPC instead. See [CURSOR-HOOK.md](CURSOR-HOOK.md).
+
+### Tool hallucination prevention (verify-only)
+
+To block invented or invalid MCP tool calls without prompt injection, use the `preToolUse` gate:
+
+```bash
+cyt hook cursor --prevent-hallucinations
+```
+
+See [TOOL-HALLUCINATION-GATE.md](TOOL-HALLUCINATION-GATE.md) for setup and behavior.
 
 ### View pruning stats savings
 

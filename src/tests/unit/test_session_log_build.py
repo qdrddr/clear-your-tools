@@ -298,3 +298,26 @@ def test_search_persisted_tool_entry_round_trip() -> None:
     fragment = format_entry_fragment(tool_entry)
     assert "codebase-memory-mcp_search_graph" in fragment
     assert "project" in fragment
+
+
+def test_build_verify_session_log_entries_skips_unchanged_catalog_hash() -> None:
+    from cyt.injection.session_log_build import catalog_bundle_content_hash
+    from cyt.injection.verify_session_log import build_verify_session_log_entries
+
+    tools = [
+        {
+            "tool_name": "demo_tool",
+            "description": "demo",
+            "input_schema": {"type": "object", "properties": {"x": {"type": "string"}}},
+            "cyt_catalog_source": "cyt_mcp",
+        },
+    ]
+    content_hash = catalog_bundle_content_hash("cyt_mcp", tools)
+    entries = build_verify_session_log_entries(
+        tools,
+        existing_catalog_hashes={"tool_catalog:cyt_mcp": content_hash},
+    )
+    kinds = [entry.get("kind") for entry in entries]
+    assert kinds == ["session_state"]
+    assert "tool_catalog" not in kinds
+    assert "tool" not in kinds

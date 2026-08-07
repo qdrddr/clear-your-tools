@@ -224,17 +224,22 @@ def _persist_session_log_response(payload: dict, body: bytes) -> None:
         _verbose_log(f"cyt-client: failed to append session log: {exc}")
 
 
-def _reset_cursor_rules_file_for_session_lifecycle(payload: dict) -> None:
+def _sync_cursor_rules_for_lifecycle(payload: dict) -> None:
+    """Verify-only: remove rules file. Otherwise: reset to session placeholder."""
     workspace = workspace_root_from_payload(payload)
-    if workspace is None:
+    if workspace is None or not is_valid_workspace_root(workspace):
         return
-    if is_valid_workspace_root(workspace):
-        reset_cursor_rules_file_to_placeholder(workspace)
+    if _verify_only_for_agent(payload):
+        delete_cursor_rules_file(workspace, force=True)
     else:
-        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+        reset_cursor_rules_file_to_placeholder(workspace)
 
 
 def _handle_pre_compact(payload: dict, *, cursor_output: bool) -> None:
+    if _verify_only_for_agent(payload):
+        if cursor_output:
+            _emit_cursor_continue()
+        return
     try:
         persist_compaction_to_session_log(payload)
     except OSError as exc:
@@ -308,38 +313,17 @@ def _verify_only_for_agent(payload: dict) -> bool:
     }
 
 
-def _handle_verify_only_session_lifecycle(payload: dict, *, cursor_output: bool) -> None:
-    if not _verify_only_for_agent(payload):
-        _reset_cursor_rules_file_for_session_lifecycle(payload)
-        return
-    workspace = workspace_root_from_payload(payload)
-    if workspace is not None and is_valid_workspace_root(workspace):
-        delete_cursor_rules_file(workspace)
-    if cursor_output:
-        _emit_cursor_continue()
-
-
 def _handle_session_start(payload: dict, *, cursor_output: bool) -> None:
     repair_pairing(payload, verbose=_verbose, session_start=True)
     if cursor_output:
-        if _verify_only_for_agent(payload):
-            workspace = workspace_root_from_payload(payload)
-            if workspace is not None and is_valid_workspace_root(workspace):
-                delete_cursor_rules_file(workspace)
-            _emit_cursor_continue()
-            return
-        _reset_cursor_rules_file_for_session_lifecycle(payload)
+        _sync_cursor_rules_for_lifecycle(payload)
         _emit_cursor_continue()
 
 
 def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
     repair_pairing(payload, verbose=_verbose, session_start=False)
-    if cursor_output and _verify_only_for_agent(payload):
-        workspace = workspace_root_from_payload(payload)
-        if workspace is not None and is_valid_workspace_root(workspace):
-            delete_cursor_rules_file(workspace)
-    elif cursor_output:
-        _reset_cursor_rules_file_for_session_lifecycle(payload)
+    if cursor_output:
+        _sync_cursor_rules_for_lifecycle(payload)
 
     sessions_dir = sessions_dir_for_payload(payload)
     current_session_id = session_id_from_payload(payload)
@@ -361,6 +345,7 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         return
 
     agent = _effective_agent(payload)
+    verify_only = _verify_only_for_agent(payload)
     if inject_via_for_agent(agent) == "proxy" and not verify_only_mode():
         prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
         payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
@@ -378,7 +363,9 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_continue()
         return
 
-    prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
+    prior_rules_injection = (
+        "" if (_fresh_hook or verify_only) else read_cursor_rules_injection(workspace)
+    )
     payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
     if is_prompt_submit_event(payload) and not (
         verify_only_mode() and inject_via_for_agent(agent) == "hook"

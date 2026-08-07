@@ -161,6 +161,7 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
             "enabled": True,
         },
         ["~/.claude/skills"],
+        enabled=True,
         config={"pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}}},
     )
 
@@ -172,6 +173,21 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
             "enabled": True,
             "directories": ["~/.claude/skills"],
         },
+    }
+
+
+def test_build_hook_skills_config_overlay_disables_skills() -> None:
+    overlay = hook_setup.build_hook_skills_config_overlay(
+        {"enabled": True, "directories": ["~/.cursor/skills"]},
+        enabled=False,
+        config={"pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}}},
+    )
+
+    assert overlay == {
+        "pruning": {
+            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+        },
+        "skills": {"enabled": False},
     }
 
 
@@ -399,7 +415,7 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(hook_setup, "detect_hook_cli_invocation", lambda: invocation)
@@ -774,7 +790,7 @@ def test_run_hook_setup_updates_duplicate_hooks(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
 
@@ -818,7 +834,7 @@ def test_run_hook_setup_merges_existing_agent_configs(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
 
@@ -865,7 +881,7 @@ def test_run_hook_setup_skips_declined_agent_install(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
 
@@ -1287,7 +1303,7 @@ def test_run_hook_setup_installs_cursor_hooks(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
 
@@ -1329,7 +1345,7 @@ def test_run_hook_setup_skips_cursor_daemon_restart_when_declined(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
 
@@ -1648,7 +1664,7 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
-        "_configure_hook_skills_directories",
+        "_configure_hook_skills",
         lambda **_kwargs: None,
     )
     _stub_tools_hook_wizard(monkeypatch)
@@ -1680,3 +1696,84 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
     daemon_restart.assert_not_called()
     output = capsys.readouterr().out
     assert "Restart the hook daemon" not in output
+
+
+def test_configure_hook_skills_skips_directories_when_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("skills:\n  enabled: true\n", encoding="utf-8")
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    prompt_calls: list[str] = []
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        prompt_calls.append(text)
+        if "Enable skills injection?" in text:
+            return False
+        raise AssertionError(f"unexpected yes/no prompt: {text!r}")
+
+    def fail_prompt(text: str, default: str = "") -> str:
+        raise AssertionError(f"unexpected prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    monkeypatch.setattr(hook_setup, "_prompt", fail_prompt)
+
+    with patch("cyt.hook.setup_wizard.save_user_config", return_value=True):
+        hook_setup._configure_hook_skills(
+            config_path=config_path,
+            include_claude=False,
+            include_codex=False,
+            include_cursor=True,
+        )
+
+    output = capsys.readouterr().out
+    assert "Skills injection" in output
+    assert "Skills directories" not in output
+    assert any("Enable skills injection?" in text for text in prompt_calls)
+
+
+def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        if "Enable tools injection?" in text:
+            return False
+        raise AssertionError(f"unexpected yes/no prompt: {text!r}")
+
+    def fail_tools_prompt(*args: object, **kwargs: object) -> dict[str, Any]:
+        raise AssertionError("tool hook config should not be prompted when tools are disabled")
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    monkeypatch.setattr(hook_setup, "prompt_tools_hook_config", fail_tools_prompt)
+
+    def capture_save(_path: Path, overlay: dict[str, Any], **kwargs: object) -> bool:
+        del kwargs
+        saved.update(overlay)
+        return True
+
+    with (
+        patch("cyt.hook.setup_wizard.save_user_config", side_effect=capture_save),
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={"pruning": {"tools": {"enabled": True}}},
+        ),
+        patch("cyt.hook.setup_wizard.load_user_config_overlay", return_value={}),
+    ):
+        hook_setup._save_tools_hook_wizard_config(
+            config_path,
+            {"pruning": {"tools": {"enabled": True}}},
+            config_path=config_path,
+        )
+
+    output = capsys.readouterr().out
+    assert "Tools injection" in output
+    assert "Tool hook injection" not in output
+    assert saved["pruning"]["tools"]["enabled"] is False

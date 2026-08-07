@@ -1248,3 +1248,135 @@ def test_repair_pairing_from_mcp_runtime_skips_when_skip_txt_present(
 
     assert json.loads(mcp_path.read_text(encoding="utf-8"))["mcpServers"] == {}
     assert json.loads(hooks_path.read_text(encoding="utf-8"))["hooks"] == {}
+
+
+def _stub_verify_only_hook(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("cyt_client.cli.verify_only_mode", lambda: True)
+    monkeypatch.setattr("cyt_client.cli.inject_via_for_agent", lambda _agent: "hook")
+
+
+def test_pre_compact_verify_only_skips_compaction_and_rules_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cyt_client.cli import _handle_pre_compact
+
+    workspace = tmp_path / "project"
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("injected content", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stub_verify_only_hook(monkeypatch)
+    payload = {
+        "hook_event_name": "preCompact",
+        "session_id": "compact-verify",
+        "cyt_agent": "cursor",
+        "cwd": str(workspace),
+    }
+
+    _handle_pre_compact(payload, cursor_output=True)
+
+    from cyt_client.sessions import sessions_dir_for_agent
+
+    log_path = sessions_dir_for_agent("cursor") / "compact-verify.jsonl"
+    assert not log_path.is_file()
+    assert rules_path.read_text(encoding="utf-8") == "injected content"
+    assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_session_start_verify_only_deletes_rules_file_when_cursor_rule_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / "project"
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("stale", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stub_verify_only_hook(monkeypatch)
+    payload = json.dumps(
+        {
+            "hook_event_name": "sessionStart",
+            "workspace_roots": [str(workspace)],
+            "session_id": "sess-verify",
+        },
+    ).encode()
+
+    with patch("cyt_client.cli.repair_pairing"):
+        from cyt_client.cli import main
+
+        with patch("sys.stdin.buffer.read", return_value=payload):
+            main()
+
+    assert not rules_path.is_file()
+    assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_session_end_verify_only_deletes_rules_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = tmp_path / "project"
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("stale", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stub_verify_only_hook(monkeypatch)
+    payload = json.dumps(
+        {
+            "hook_event_name": "sessionEnd",
+            "workspace_roots": [str(workspace)],
+            "session_id": "sess-verify",
+        },
+    ).encode()
+
+    with patch("cyt_client.cli.repair_pairing"):
+        from cyt_client.cli import main
+
+        with patch("sys.stdin.buffer.read", return_value=payload):
+            main()
+
+    assert not rules_path.is_file()
+    assert json.loads(capsys.readouterr().out) == {"continue": True}
+
+
+def test_before_submit_verify_only_does_not_create_rules_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stub_verify_only_hook(monkeypatch)
+    payload = {
+        "hook_event_name": "beforeSubmitPrompt",
+        "prompt": "hello",
+        "conversation_id": "conv-1",
+        "session_id": "sess-verify",
+        "workspace_roots": [str(workspace)],
+    }
+    verify_body = json.dumps({"verify-only": True, "hookSpecificOutput": {}}).encode()
+
+    with patch(
+        "cyt_client.cli.resolve_hook_url",
+        return_value="http://127.0.0.1:8834/hook/connect",
+    ):
+        with patch("cyt_client.cli.post_hook_inject", return_value=(200, verify_body)):
+            from cyt_client.cli import main
+
+            with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                main()
+
+    assert not rules_path.is_file()
+    assert json.loads(capsys.readouterr().out) == {"continue": True}

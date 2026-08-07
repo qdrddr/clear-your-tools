@@ -346,9 +346,11 @@ def ensure_gitignore_entry(workspace: Path, rel_path: str = GITIGNORE_ENTRY) -> 
     gitignore_path.write_text(f"{line}\n", encoding="utf-8")
 
 
-def delete_cursor_rules_file(workspace: Path) -> bool:
+def delete_cursor_rules_file(workspace: Path, *, force: bool = False) -> bool:
     """Delete the rules file if present. Return True when a file was removed."""
-    if not cursor_rules_file_enabled() or not is_valid_workspace_root(workspace):
+    if not force and not cursor_rules_file_enabled():
+        return False
+    if not is_valid_workspace_root(workspace):
         return False
 
     path = rules_file_path(workspace)

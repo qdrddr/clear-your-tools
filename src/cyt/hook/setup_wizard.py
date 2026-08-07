@@ -447,31 +447,42 @@ def _ensure_skill_directories_exist(directories: list[str]) -> None:
 
 def build_hook_skills_config_overlay(
     existing_skills: dict[str, Any],
-    directories: list[str],
+    directories: list[str] | None = None,
     *,
+    enabled: bool = True,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build a skills overlay for hook mode, or ``None`` when no config write is needed."""
-    existing_dirs = existing_skills.get("directories")
-    if not isinstance(existing_dirs, list):
-        existing_dirs = []
-
     from cyt.config import (
         DEFAULT_INJECT_VIA_BY_AGENT,
         inject_via_for_agent,
         tools_hook_cyt_mcp_agent,
     )
 
-    merged_dirs, dirs_changed = merge_skills_directory_lists(existing_dirs, directories)
-    enabled_ok = existing_skills.get("enabled") is True
     hook_agent = tools_hook_cyt_mcp_agent(config or {})
     inject_ok = inject_via_for_agent(config or {}, hook_agent) == "hook"
+    inject_overlay = {"pruning": {"inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook")}}
+
+    if not enabled:
+        if existing_skills.get("enabled") is False and inject_ok:
+            return None
+        return {**inject_overlay, "skills": {"enabled": False}}
+
+    if directories is None:
+        return None
+
+    existing_dirs = existing_skills.get("directories")
+    if not isinstance(existing_dirs, list):
+        existing_dirs = []
+
+    merged_dirs, dirs_changed = merge_skills_directory_lists(existing_dirs, directories)
+    enabled_ok = existing_skills.get("enabled") is True
 
     if enabled_ok and inject_ok and not dirs_changed:
         return None
 
     return {
-        "pruning": {"inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook")},
+        **inject_overlay,
         "skills": {
             "enabled": True,
             "directories": merged_dirs,
@@ -490,6 +501,7 @@ def _save_hook_skills_directories(
     overlay = build_hook_skills_config_overlay(
         existing_skills,
         directories,
+        enabled=True,
         config=load_config(config_path),
     )
     if overlay is None:
@@ -497,18 +509,44 @@ def _save_hook_skills_directories(
     return save_user_config(config_path, overlay, apply_bundled_sections=False)
 
 
-def _configure_hook_skills_directories(
+def _save_hook_skills_disabled(config_path: Path, *, user_overlay: dict[str, Any]) -> bool:
+    skills_cfg = user_overlay.get("skills")
+    existing_skills = skills_cfg if isinstance(skills_cfg, dict) else {}
+    overlay = build_hook_skills_config_overlay(
+        existing_skills,
+        enabled=False,
+        config=load_config(config_path),
+    )
+    if overlay is None:
+        return False
+    return save_user_config(config_path, overlay, apply_bundled_sections=False)
+
+
+def _configure_hook_skills(
     *,
     config_path: Path,
     include_claude: bool,
     include_codex: bool,
     include_cursor: bool = False,
 ) -> None:
+    if not sys.stdin.isatty():
+        return
+
     user_overlay = load_user_config_overlay(config_path)
     skills_cfg = user_overlay.get("skills")
     skills_cfg = skills_cfg if isinstance(skills_cfg, dict) else {}
+    merged_config = load_config(config_path)
+    default_enabled = skills_enabled(merged_config)
 
-    print("\n--- Skills directories ---")
+    print("\n--- Skills injection ---")
+    enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
+    if not enabled:
+        if _save_hook_skills_disabled(config_path, user_overlay=user_overlay):
+            print(f"Updated skills config in {config_path} (disabled)")
+        else:
+            print(f"Skills config already set for hook mode in {config_path}")
+        return
+
     directories = _prompt_hook_skills_directories(
         skills_cfg,
         include_claude=include_claude,
@@ -1293,13 +1331,33 @@ def _save_tools_hook_wizard_config(
     *,
     config_path: Path | None,
 ) -> dict[str, Any]:
+    if not sys.stdin.isatty():
+        return config
+
+    print("\n--- Tools injection ---")
+    enable_tools = _prompt_yes_no("Enable tools injection?", default_yes=True)
+    if not enable_tools:
+        if save_user_config(
+            resolved_config_path,
+            {
+                "pruning": {
+                    "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
+                    "tools": {"enabled": False},
+                },
+            },
+            apply_bundled_sections=False,
+        ):
+            print(f"Saved tools hook settings to {resolved_config_path} (disabled)")
+            return load_config(config_path)
+        return config
+
     tools_overlay = prompt_tools_hook_config(config, context="hook")
     if save_user_config(
         resolved_config_path,
         {
             "pruning": {
                 "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
-                "tools": tools_overlay,
+                "tools": {"enabled": True, **tools_overlay},
             },
         },
         apply_bundled_sections=False,
@@ -1824,12 +1882,6 @@ def _hook_setup_install_options(
 ) -> tuple[bool, bool]:
     if prevent_hallucinations:
         return False, False
-    _configure_hook_skills_directories(
-        config_path=resolved_config_path,
-        include_claude=include_claude,
-        include_codex=include_codex,
-        include_cursor=include_cursor,
-    )
     set_launch_agent = _prompt_yes_no(
         f"Prefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
         default_yes=False,
@@ -1864,28 +1916,28 @@ def run_hook_setup(
     else:
         print("CYT hook setup\n")
 
-    if not skills_enabled(config) and not prevent_hallucinations:
-        print(
-            "Note: skills.enabled is false in config; hooks will not inject skills until enabled.",
-            file=sys.stderr,
-        )
-
-    if prevent_hallucinations:
-        print("Verify-only hallucination prevention enabled (no prompt injection).")
-    else:
-        _ensure_hook_credentials(config)
-        config = _save_tools_hook_wizard_config(
-            resolved_config_path,
-            config,
-            config_path=config_path,
-        )
-
     nested_targets, cursor_targets, include_claude, include_codex, include_cursor = (
         _collect_hook_setup_targets(selected_agents)
     )
 
     if not nested_targets and not cursor_targets:
         raise SystemExit("No agent config files found for the selected hook targets.")
+
+    if prevent_hallucinations:
+        print("Verify-only hallucination prevention enabled (no prompt injection).")
+    else:
+        _configure_hook_skills(
+            config_path=resolved_config_path,
+            include_claude=include_claude,
+            include_codex=include_codex,
+            include_cursor=include_cursor,
+        )
+        _ensure_hook_credentials(config)
+        config = _save_tools_hook_wizard_config(
+            resolved_config_path,
+            config,
+            config_path=config_path,
+        )
 
     set_launch_agent, debug = _hook_setup_install_options(
         prevent_hallucinations=prevent_hallucinations,
