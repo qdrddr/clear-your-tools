@@ -1710,6 +1710,16 @@ def _prompt_prevent_hallucinations_inject_via(
     )
 
 
+def _prompt_prevent_hallucinations_mcp_migration(agent: HookAgentName) -> bool:
+    if not sys.stdin.isatty():
+        return True
+    print(f"\n--- MCP migration ({agent}) ---")
+    return _prompt_yes_no(
+        "Migrate agent MCP config to cyt-mcp aggregator?",
+        default_yes=True,
+    )
+
+
 def _apply_prevent_hallucinations_config(
     config_path: Path,
     config: dict[str, Any],
@@ -1717,7 +1727,7 @@ def _apply_prevent_hallucinations_config(
     agents: list[HookAgentName],
 ) -> dict[str, Any]:
     from cyt.config import save_user_config, sync_config_in_place
-    from cyt.tools.cyt_mcp_setup import write_mcp_aggregator_yaml
+    from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent, write_mcp_aggregator_yaml
 
     inject_map: dict[str, str] = {
         "cursor": "hook",
@@ -1742,8 +1752,26 @@ def _apply_prevent_hallucinations_config(
     }
     save_user_config(config_path, overlay, apply_bundled_sections=False)
     sync_config_in_place(config, config_path)
+
+    invocation = detect_hook_cli_invocation()
+    if invocation.is_dev and invocation.repo_root is not None:
+        print(
+            f"Installing development cyt-mcp via uv run --directory {invocation.repo_root}",
+            file=sys.stderr,
+        )
+
     for agent in agents:
-        write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=True)
+        if inject_map.get(agent) != "hook":
+            write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=True)
+            continue
+        migrate_backends = _prompt_prevent_hallucinations_mcp_migration(agent)
+        setup_cyt_mcp_for_agent(
+            agent,
+            invocation=invocation,
+            transport="stdio",
+            migrate_backends=migrate_backends,
+            verify_only=True,
+        )
     return config
 
 

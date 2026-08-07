@@ -223,11 +223,19 @@ def setup_cyt_mcp_for_agent(
     invocation: HookCliInvocation | None = None,
     transport: CytMcpTransport = "stdio",
     migrate_backends: bool = True,
+    verify_only: bool = False,
 ) -> None:
     resolved = invocation or detect_hook_cli_invocation()
     if migrate_backends:
         backends = migrate_agent_backends(agent)
-        write_mcp_aggregator_yaml(agent, backends_path=backends, transport=transport)
+        write_mcp_aggregator_yaml(
+            agent,
+            backends_path=backends,
+            transport=transport,
+            verify_only=verify_only,
+        )
+    elif verify_only:
+        write_mcp_aggregator_yaml(agent, transport=transport, verify_only=verify_only)
     write_agent_cyt_mcp_entry(
         agent,
         invocation=resolved,

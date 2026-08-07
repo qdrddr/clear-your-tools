@@ -619,7 +619,7 @@ See [`LICENSE`](LICENSE).
 [telemetry-shield]: https://img.shields.io/badge/No_Telemetry-none-green?style=for-the-badge
 [discord-shield]: https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white
 [discord-link]: https://discord.com/invite/FhACaAAW9C
-[fossa-shield]: https://img.shields.io/badge/FOSSA-Monitoring?labelColor=green&color=9B59B6&style=for-the-badge&logo=shield&logoColor=white
+[fossa-shield]: https://img.shields.io/badge/FOSSA-Monitoring?labelColor=green&color=9B59B6&logo=shield&logoColor=white
 [fossa-link]: https://app.fossa.com/projects/git%2Bgithub.com%2Fqdrddr%2Fclear-your-tools?ref=badge_shield&issueType=security
 [c-tech-shield]: https://img.shields.io/badge/-C-A8B9CC?logo=c&logoColor=white
 [go-tech-shield]: https://img.shields.io/badge/-Go-00ADD8?logo=go&logoColor=white

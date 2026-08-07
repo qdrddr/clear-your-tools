@@ -1382,7 +1382,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
         ),
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
         patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
@@ -1396,6 +1396,10 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
         )
 
     daemon_restart.assert_called_once_with(config_path=config_path, unattended=True)
+    setup_cyt_mcp.assert_called_once()
+    setup_kwargs = setup_cyt_mcp.call_args.kwargs
+    assert setup_kwargs["migrate_backends"] is True
+    assert setup_kwargs["verify_only"] is True
     output = capsys.readouterr().out
     assert "CYT hook setup (cursor)" in output
     assert "Verify-only hallucination prevention enabled" in output
@@ -1432,7 +1436,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
         ),
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent"),
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1499,7 +1503,8 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
         ),
         patch("cyt.config.save_user_config", side_effect=capture_save),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml"),
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml") as write_aggregator,
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1516,6 +1521,82 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
     assert any("Detect tools for claude via (hook | proxy)" in text for text in prompt_calls)
     assert "Test the hook locally (preToolUse payload on stdin)" in output
     assert saved["pruning"]["inject_via"]["claude"] == "hook"
+    setup_cyt_mcp.assert_called_once()
+    assert setup_cyt_mcp.call_args.kwargs["verify_only"] is True
+    write_aggregator.assert_not_called()
+
+
+def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+
+    cursor_hooks_path = tmp_path / "cursor" / "hooks.json"
+    mcp_source = tmp_path / "cursor" / "mcp.json"
+    mcp_target_dir = tmp_path / "cyt_mcp"
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    config_path = tmp_path / "config.yaml"
+    mcp_source.parent.mkdir(parents=True)
+    mcp_source.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "example-backend": {"url": "https://mcp.example.com/mcp"},
+                },
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_hooks_path)
+    monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_source)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    yes_no_calls: list[str] = []
+
+    def capture_yes_no(text: str, *args: object, **kwargs: object) -> bool:
+        yes_no_calls.append(text)
+        if "Migrate agent MCP config" in text:
+            return True
+        if "choose action" in text.lower():
+            return True
+        raise AssertionError(f"unexpected yes/no prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", capture_yes_no)
+    monkeypatch.setattr(hook_setup, "_prompt_choice", lambda text, *a, **k: "update")
+
+    with (
+        patch(
+            "cyt.hook.setup_wizard.load_config",
+            return_value={"skills": {"enabled": False}},
+        ),
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.hook.daemon.daemon_restart"),
+        patch(
+            "cyt.hook.setup_wizard.resolve_setup_config_path",
+            return_value=config_path,
+        ),
+    ):
+        hook_setup.run_hook_setup(
+            config_path=config_path,
+            agents=["cursor"],
+            prevent_hallucinations=True,
+        )
+
+    output = capsys.readouterr()
+    assert "MCP migration (cursor)" in output.out
+    assert any("Migrate agent MCP config" in text for text in yes_no_calls)
+    assert "Detect tools for cursor" not in output.out
+    backend_payload = json.loads((mcp_target_dir / "cursor.json").read_text(encoding="utf-8"))
+    assert "example-backend" in backend_payload["mcpServers"]
+    agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
+    assert set(agent_payload["mcpServers"]) == {"cyt-mcp"}
+    assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
 
 
 def test_should_propose_hook_daemon_restart() -> None:
