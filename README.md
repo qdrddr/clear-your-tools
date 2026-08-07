@@ -81,7 +81,7 @@ fell below 50% of their short-context baseline at just 32K tokens.
 reasoning quality as context grows into the 32-200K of tokens—and every extra token adds
 API cost, because providers resend the full history on each turn.
 - **Local inference:** Smaller inputs reduce memory pressure and speed up generation on self-hosted models.
-- **Tool Hallucination:** Agents generate incorrect tool requests even having full tool definitions.
+- **[Tool Hallucination](TOOL-HALLUCINATION-GATE.md):** Agents generate incorrect tool requests even having full tool definitions.
 
 <details>
 <summary><strong>Proxy</strong></summary>
