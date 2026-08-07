@@ -59,6 +59,9 @@ def test_daemon_start_prints_status_when_not_unattended(
         ),
         patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
         patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
     ):
         hook_daemon.daemon_start(verbose=False, unattended=False)
 
@@ -425,6 +428,9 @@ def test_daemon_restart_prints_status_when_not_unattended(
         patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
         patch("cyt.hook.daemon._spawn_hook_server") as spawn,
         patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
     ):
         spawn.return_value = MagicMock(pid=12345)
         hook_daemon.daemon_restart(verbose=False, unattended=False)
