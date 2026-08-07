@@ -152,14 +152,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pkg_dir="artifacts/cyt-indexer-ffi-${{ matrix.target }}"
+          root="$(pwd)"
+          pkg_dir="${root}/artifacts/cyt-indexer-ffi-${{ matrix.target }}"
+          archive="${root}/artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz"
+          mkdir -p "${root}/artifacts"
           bash sdk/c/scripts/build-c-lib.sh \
             --target "${{ matrix.target }}" \
             --sync-header \
             --package "${pkg_dir}"
-          tar -czf "artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz" \
-            -C "${pkg_dir}" .
-          ls -la "artifacts/cyt-indexer-ffi-${{ matrix.target }}.tar.gz"
+          if [[ ! -d "${pkg_dir}" ]]; then
+            echo "::error::Package directory missing after build: ${pkg_dir}"
+            exit 1
+          fi
+          # Git Bash tar on windows-11-arm mishandles "tar -czf REL -C DIR ." (concatenates paths).
+          tar -C "${pkg_dir}" -czf "${archive}" .
+          ls -la "${archive}"
           ls -la "${pkg_dir}/"
 
       - name: Upload triplet archive
