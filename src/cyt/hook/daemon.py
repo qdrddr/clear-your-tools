@@ -149,8 +149,6 @@ def _hook_daemon_has_credentials(reused_port: int) -> bool:
         return False
     if pidfile.get("owner") != "cyt-hook-daemon":
         return False
-    if pidfile.get("reused"):
-        return False
     return bool(pidfile.get("credentials_injected"))
 
 
@@ -339,12 +337,15 @@ def daemon_start(
 
     if reused_port is not None:
         hook_url = hook_url_for_port(reused_port)
+        existing = find_hook_daemon_entry_for_port(reused_port)
+        creds_injected = bool(existing and existing.get("credentials_injected"))
         _write_pidfile(
             port=reused_port,
             hook_url=hook_url,
             pid=None,
             reused=True,
             mode=mode,
+            credentials_injected=creds_injected,
         )
         _log(verbose, f"hook daemon: reusing {hook_url}")
         _schedule_warm_caches(config)

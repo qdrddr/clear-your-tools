@@ -170,27 +170,52 @@ def _hook_url_is_live(url: str) -> bool:
     return live
 
 
-def resolve_hook_url() -> str | None:
-    env_url = os.environ.get(CYT_HOOK_URL_ENV, "").strip()
-    if env_url:
-        if env_url.endswith("/hook/inject"):
-            resolved = env_url[: -len("/hook/inject")] + HOOK_CONNECT_PATH
-        elif env_url.endswith(HOOK_INJECT_PATH):
-            resolved = env_url
-        else:
-            resolved = f"{env_url.rstrip('/')}{HOOK_CONNECT_PATH}"
-        if _hook_url_is_live(resolved):
-            return resolved
+_LEGACY_HOOK_INJECT_SUFFIX = "/hook/inject"
 
+
+def _normalize_hook_connect_url(url: str) -> str:
+    stripped = url.strip()
+    if stripped.endswith(_LEGACY_HOOK_INJECT_SUFFIX):
+        return stripped[: -len(_LEGACY_HOOK_INJECT_SUFFIX)] + HOOK_CONNECT_PATH
+    if stripped.endswith(HOOK_INJECT_PATH):
+        return stripped
+    return f"{stripped.rstrip('/')}{HOOK_CONNECT_PATH}"
+
+
+def _resolve_env_hook_url() -> str | None:
+    env_url = os.environ.get(CYT_HOOK_URL_ENV, "").strip()
+    if not env_url:
+        return None
+    resolved = _normalize_hook_connect_url(env_url)
+    if _hook_url_is_live(resolved):
+        return resolved
+    return None
+
+
+def _resolve_pidfile_hook_url() -> str | None:
+    live_pidfile_urls: list[tuple[str, bool]] = []
     for pidfile in reversed(_read_hook_daemon_entries()):
         hook_url = pidfile.get("hook_url")
-        if isinstance(hook_url, str) and hook_url.strip():
-            resolved = hook_url.strip()
-            if resolved.endswith("/hook/inject"):
-                resolved = resolved[: -len("/hook/inject")] + HOOK_CONNECT_PATH
-            if _hook_url_is_live(resolved):
-                return resolved
+        if not isinstance(hook_url, str) or not hook_url.strip():
+            continue
+        resolved = _normalize_hook_connect_url(hook_url)
+        if _hook_url_is_live(resolved):
+            live_pidfile_urls.append((resolved, bool(pidfile.get("credentials_injected"))))
+    if not live_pidfile_urls:
+        return None
+    for url, credentials_injected in live_pidfile_urls:
+        if credentials_injected:
+            return url
+    return live_pidfile_urls[0][0]
 
+
+def resolve_hook_url() -> str | None:
+    env_resolved = _resolve_env_hook_url()
+    if env_resolved is not None:
+        return env_resolved
+    pidfile_resolved = _resolve_pidfile_hook_url()
+    if pidfile_resolved is not None:
+        return pidfile_resolved
     port = find_hook_server_port()
     if port is not None:
         return hook_url_for_port(port)

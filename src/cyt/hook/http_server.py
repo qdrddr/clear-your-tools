@@ -61,6 +61,56 @@ async def _run_verify_session_log(
     )
 
 
+def _hook_connect_system_exit_response(exc: SystemExit) -> JSONResponse:
+    message = str(exc).strip() or "hook credentials missing"
+    if message.isdigit():
+        message = "hook pruning pipeline aborted (missing API key or credential)"
+    logger.error("hook connect aborted: %s", message)
+    return JSONResponse({"error": message}, status_code=500)
+
+
+async def _read_hook_connect_payload(
+    request: Request,
+) -> tuple[dict[str, Any], dict[str, Any]] | Response:
+    try:
+        body = await request.body()
+        if not body.strip():
+            return PlainTextResponse("", status_code=200)
+        payload_raw = json.loads(body)
+        if not isinstance(payload_raw, dict):
+            return JSONResponse({"error": "hook payload must be a JSON object"}, status_code=400)
+        payload = normalize_hook_payload(payload_raw)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return payload, payload_raw
+
+
+async def _hook_connect_verify_only(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    agent: str,
+) -> Response:
+    try:
+        session_log = await _run_verify_session_log(payload, config, agent=agent)
+    except Exception as exc:
+        logger.exception("verify-only session log failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+    result = HookRunResult(
+        stdout_text="",
+        outcome="verify_only",
+        details={"session_log": session_log},
+        session_log=session_log,
+        cyt_agent=agent,
+    )
+    return PlainTextResponse(
+        _format_verify_connect_response(result, session_log=session_log),
+        status_code=200,
+    )
+
+
 def _format_verify_connect_response(
     result: HookRunResult,
     *,
@@ -81,18 +131,10 @@ def _format_verify_connect_response(
 async def hook_connect(request: Request) -> Response:
     """Run hook injection or verify-only connect for JSON body."""
     configure_hook_quiet()
-    try:
-        body = await request.body()
-        if not body.strip():
-            return PlainTextResponse("", status_code=200)
-        payload_raw = json.loads(body)
-        if not isinstance(payload_raw, dict):
-            return JSONResponse({"error": "hook payload must be a JSON object"}, status_code=400)
-        payload = normalize_hook_payload(payload_raw)
-    except json.JSONDecodeError:
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-    except (TypeError, ValueError) as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    parsed = await _read_hook_connect_payload(request)
+    if isinstance(parsed, Response):
+        return parsed
+    payload, payload_raw = parsed
 
     config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
     pruner_settings: PrunerSettingsCache | None = getattr(
@@ -107,22 +149,7 @@ async def hook_connect(request: Request) -> Response:
     agent = resolve_effective_hook_agent(payload) or "cursor"
 
     if verify_only_mode(config) and inject_via_for_agent(config, agent) == "hook":
-        try:
-            session_log = await _run_verify_session_log(payload, config, agent=agent)
-        except Exception as exc:
-            logger.exception("verify-only session log failed")
-            return JSONResponse({"error": str(exc)}, status_code=500)
-        result = HookRunResult(
-            stdout_text="",
-            outcome="verify_only",
-            details={"session_log": session_log},
-            session_log=session_log,
-            cyt_agent=agent,
-        )
-        return PlainTextResponse(
-            _format_verify_connect_response(result, session_log=session_log),
-            status_code=200,
-        )
+        return await _hook_connect_verify_only(payload, config, agent=agent)
 
     try:
         result = await _run_hook_in_thread(
@@ -133,9 +160,7 @@ async def hook_connect(request: Request) -> Response:
             pruner_settings=pruner_settings,
         )
     except SystemExit as exc:
-        message = str(exc) or "hook credentials missing"
-        logger.error("hook connect aborted: %s", message)
-        return JSONResponse({"error": message}, status_code=500)
+        return _hook_connect_system_exit_response(exc)
     except Exception as exc:
         logger.exception("hook connect failed")
         return JSONResponse({"error": str(exc)}, status_code=500)

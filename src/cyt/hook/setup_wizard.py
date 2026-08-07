@@ -1778,6 +1778,75 @@ def _prompt_prevent_hallucinations_mcp_migration(agent: HookAgentName) -> bool:
     )
 
 
+def _apply_injection_hook_config(
+    config_path: Path,
+    config: dict[str, Any],
+    *,
+    agents: list[HookAgentName],
+) -> dict[str, Any]:
+    """Restore full hook injection settings after verify-only / prevent-hallucinations."""
+    from cyt.config import save_user_config, sync_config_in_place, tools_hook_sources
+    from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent, write_mcp_aggregator_yaml
+
+    overlay: dict[str, Any] = {
+        "pruning": {
+            "tools": {"enabled": True},
+        },
+    }
+    if save_user_config(config_path, overlay, apply_bundled_sections=False):
+        sync_config_in_place(config, config_path)
+
+    if "cyt_mcp" not in tools_hook_sources(config):
+        return config
+
+    invocation = detect_hook_cli_invocation()
+    for agent in agents:
+        if agent != "cursor":
+            continue
+        if inject_via_for_agent(config, agent) != "hook":
+            continue
+        write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=False)
+        setup_cyt_mcp_for_agent(
+            agent,
+            invocation=invocation,
+            transport="stdio",
+            migrate_backends=False,
+            verify_only=False,
+        )
+    return config
+
+
+def _configure_cursor_rule_file(
+    config_path: Path,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Prompt to enable Cursor rules file injection (default: yes)."""
+    from cyt.config import save_user_config, sync_config_in_place
+
+    if sys.stdin.isatty():
+        print("\n--- Cursor rules file ---")
+        enabled = _prompt_yes_no(
+            "Enable Cursor rules file injection (.cursor/rules/cyt-injection.mdc)?",
+            default_yes=True,
+        )
+    else:
+        enabled = True
+
+    overlay = {"skills": {"hook": {"cursor_rule_file": {"enabled": enabled}}}}
+    if save_user_config(config_path, overlay, apply_bundled_sections=False):
+        sync_config_in_place(config, config_path)
+        print(
+            f"Updated cursor rules file config in {config_path} "
+            f"({'enabled' if enabled else 'disabled'})",
+        )
+    else:
+        print(
+            f"Cursor rules file config already set in {config_path} "
+            f"({'enabled' if enabled else 'disabled'})",
+        )
+    return config
+
+
 def _apply_prevent_hallucinations_config(
     config_path: Path,
     config: dict[str, Any],
@@ -1906,8 +1975,19 @@ def run_hook_setup(
             config,
             agents=selected_agents,
         )
-    elif sys.stdin.isatty():
-        config = ensure_hook_inject_via(resolved_config_path, config)
+    else:
+        config = _apply_injection_hook_config(
+            resolved_config_path,
+            config,
+            agents=selected_agents,
+        )
+        if "cursor" in selected_agents:
+            config = _configure_cursor_rule_file(resolved_config_path, config)
+        if sys.stdin.isatty() and _selected_agents_use_hook_injection(
+            config,
+            selected_agents,
+        ):
+            config = ensure_hook_inject_via(resolved_config_path, config)
     report_cyt_mcp_hook_readiness(config)
     report_mcpc_hook_readiness(config)
     report_cloudflare_hook_readiness(config)

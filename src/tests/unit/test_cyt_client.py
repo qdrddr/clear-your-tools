@@ -75,6 +75,31 @@ def test_resolve_hook_url_ignores_stale_pidfile(monkeypatch: pytest.MonkeyPatch)
                 assert client_port.resolve_hook_url() is None
 
 
+def test_resolve_hook_url_prefers_credentialed_pidfile_daemon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CYT_HOOK_URL", raising=False)
+    entries = [
+        {
+            "hook_url": "http://127.0.0.1:8834/hook/connect",
+            "port": 8834,
+            "credentials_injected": False,
+        },
+        {
+            "hook_url": "http://127.0.0.1:8835/hook/connect",
+            "port": 8835,
+            "credentials_injected": True,
+        },
+    ]
+
+    def live(url: str) -> bool:
+        return url.endswith((":8834/hook/connect", ":8835/hook/connect"))
+
+    with patch("cyt_client.port._read_hook_daemon_entries", return_value=entries):
+        with patch("cyt_client.port._hook_url_is_live", side_effect=live):
+            assert client_port.resolve_hook_url() == "http://127.0.0.1:8835/hook/connect"
+
+
 def test_cli_silent_on_http_error(capsys: pytest.CaptureFixture[str]) -> None:
     payload = (
         b'{"hook_event_name":"UserPromptSubmit","prompt":"hello","cwd":"/tmp/isolated-project"}'

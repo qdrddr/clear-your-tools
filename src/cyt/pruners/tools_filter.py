@@ -801,7 +801,7 @@ def _run_pipeline_stage(
                         LLM_STAGE_MAX_ATTEMPTS,
                     )
                     return _run_rerank_stage(**_rerank_stage_kwargs(stage_kwargs))
-                except Exception as rerank_exc:
+                except (Exception, SystemExit) as rerank_exc:
                     logger.warning(
                         "rerank fallback after llm failure failed, falling back to bm25: %s",
                         rerank_exc,

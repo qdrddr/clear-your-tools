@@ -1542,6 +1542,138 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
     write_aggregator.assert_not_called()
 
 
+def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "hallucination_gate:",
+                "  enabled: true",
+                "skills:",
+                "  enabled: false",
+                "  hook:",
+                "    cursor_rule_file:",
+                "      enabled: false",
+                "pruning:",
+                "  tools:",
+                "    enabled: false",
+                "    hook:",
+                "      tools_from: cyt_mcp",
+                "  inject_via:",
+                "    cursor: hook",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    saved_overlays: list[dict[str, object]] = []
+
+    def capture_save(
+        path: Path,
+        overlay: dict[str, object],
+        *,
+        apply_bundled_sections: bool,
+    ) -> bool:
+        assert path == config_path
+        assert apply_bundled_sections is False
+        saved_overlays.append(overlay)
+        return True
+
+    config: dict[str, Any] = {
+        "pruning": {"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
+    }
+    with (
+        patch("cyt.config.save_user_config", side_effect=capture_save),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.config.tools_hook_sources", return_value=["cyt_mcp"]),
+        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml") as write_aggregator,
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
+    ):
+        hook_setup._apply_injection_hook_config(
+            config_path,
+            config,
+            agents=["cursor"],
+        )
+
+    assert saved_overlays == [
+        {
+            "pruning": {"tools": {"enabled": True}},
+        },
+    ]
+    write_aggregator.assert_called_once_with("cursor", transport="stdio", verify_only=False)
+    setup_cyt_mcp.assert_called_once()
+    assert setup_cyt_mcp.call_args.kwargs["verify_only"] is False
+
+
+def test_configure_cursor_rule_file_prompts_and_saves_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+        encoding="utf-8",
+    )
+    saved_overlays: list[dict[str, object]] = []
+
+    def capture_save(
+        path: Path,
+        overlay: dict[str, object],
+        *,
+        apply_bundled_sections: bool,
+    ) -> bool:
+        saved_overlays.append(overlay)
+        return True
+
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda _text, *, default_yes=True: True)
+
+    with (
+        patch("cyt.config.save_user_config", side_effect=capture_save),
+        patch("cyt.config.sync_config_in_place"),
+    ):
+        hook_setup._configure_cursor_rule_file(
+            config_path,
+            {"skills": {"hook": {"cursor_rule_file": {"enabled": False}}}},
+        )
+
+    assert saved_overlays == [
+        {"skills": {"hook": {"cursor_rule_file": {"enabled": True}}}},
+    ]
+    output = capsys.readouterr().out
+    assert "Cursor rules file" in output
+    assert "enabled" in output
+
+
+def test_configure_cursor_rule_file_non_tty_defaults_to_enabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    saved_overlays: list[dict[str, object]] = []
+
+    def capture_save(
+        path: Path,
+        overlay: dict[str, object],
+        *,
+        apply_bundled_sections: bool,
+    ) -> bool:
+        saved_overlays.append(overlay)
+        return True
+
+    with (
+        patch.object(hook_setup.sys.stdin, "isatty", return_value=False),
+        patch("cyt.config.save_user_config", side_effect=capture_save),
+        patch("cyt.config.sync_config_in_place"),
+    ):
+        hook_setup._configure_cursor_rule_file(config_path, {})
+
+    assert saved_overlays == [
+        {"skills": {"hook": {"cursor_rule_file": {"enabled": True}}}},
+    ]
+
+
 def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1655,6 +1787,22 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "skills:",
+                "  enabled: true",
+                "pruning:",
+                "  inject_via:",
+                "    cursor: hook",
+                "    claude: proxy",
+                "    codex: proxy",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     claude_path = tmp_path / "claude" / "settings.json"
     claude_path.parent.mkdir(parents=True)
     claude_path.write_text("{}\n", encoding="utf-8")
@@ -1679,19 +1827,8 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
 
-    with (
-        patch(
-            "cyt.hook.setup_wizard.load_config",
-            return_value={
-                "skills": {"enabled": True},
-                "pruning": {
-                    "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
-                },
-            },
-        ),
-        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
-    ):
-        hook_setup.run_hook_setup(agents=["claude"])
+    with patch("cyt.hook.daemon.daemon_restart") as daemon_restart:
+        hook_setup.run_hook_setup(config_path=config_path, agents=["claude"])
 
     daemon_restart.assert_not_called()
     output = capsys.readouterr().out
