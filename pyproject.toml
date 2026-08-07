@@ -1,6 +1,6 @@
 [project]
 name = "clear-your-tools"
-version = "2.11.1"
+version = "2.11.2"
 description = "Clear Your Tools (CYT) — dynamic tool gating for eliminating the MCP/tools tax"
 
 keywords = ["Clear Your Tools", "CYT", "mcp", "mcp-client", "tool-gating"]
@@ -19,7 +19,7 @@ authors = [
 ]
 requires-python = ">=3.13,<4.0"
 dependencies = [
-    "cyt-indexer-sdk==2.11.1",
+    "cyt-indexer-sdk==2.11.2",
     "pydantic==2.12.5",
     "typing_extensions==4.15.0",
     "python-dotenv==1.2.2",
@@ -52,7 +52,7 @@ pruners = [
     "litellm==1.94.0",
 ]
 cyt-mcp = [
-    "cyt-indexer-sdk==2.11.1",
+    "cyt-indexer-sdk==2.11.2",
     "fastmcp==3.4.5",
     "httpx==0.28.1",
     "uvicorn==0.48.0",
