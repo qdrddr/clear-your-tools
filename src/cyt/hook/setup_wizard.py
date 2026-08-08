@@ -1789,6 +1789,7 @@ def _apply_injection_hook_config(
     from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent, write_mcp_aggregator_yaml
 
     overlay: dict[str, Any] = {
+        "hallucination_gate": {"enabled": False},
         "pruning": {
             "tools": {"enabled": True},
         },

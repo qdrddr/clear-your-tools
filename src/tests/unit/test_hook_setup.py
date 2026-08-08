@@ -1536,6 +1536,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
     assert "Tool detection (claude)" in output
     assert any("Detect tools for claude via (hook | proxy)" in text for text in prompt_calls)
     assert "Test the hook locally (preToolUse payload on stdin)" in output
+    assert saved["hallucination_gate"]["enabled"] is True
     assert saved["pruning"]["inject_via"]["claude"] == "hook"
     setup_cyt_mcp.assert_called_once()
     assert setup_cyt_mcp.call_args.kwargs["verify_only"] is True
@@ -1600,6 +1601,7 @@ def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
 
     assert saved_overlays == [
         {
+            "hallucination_gate": {"enabled": False},
             "pruning": {"tools": {"enabled": True}},
         },
     ]
