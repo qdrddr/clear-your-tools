@@ -322,16 +322,16 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.91",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
       "author": "David Tolnay <dtolnay@gmail.com>",
       "name": "async-trait",
-      "version": "0.1.91",
+      "version": "0.1.92",
       "description": "Type erasure for async trait methods",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "ae36dc4177970ef04fde5178d3e2429882def40e57a451f919c098f72baa6cec"
+          "content": "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
         }
       ],
       "licenses": [
@@ -339,7 +339,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/async-trait@0.1.91",
+      "purl": "pkg:cargo/async-trait@0.1.92",
       "externalReferences": [
         {
           "type": "documentation",
@@ -4542,16 +4542,16 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.19",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.20",
       "author": "David Tolnay <dtolnay@gmail.com>",
       "name": "thiserror-impl",
-      "version": "2.0.19",
+      "version": "2.0.20",
       "description": "Implementation detail of the `thiserror` crate",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "43cbfe0cf76104d42a574802844187e84a305e531ed54455f11fbde0f10541cd"
+          "content": "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
         }
       ],
       "licenses": [
@@ -4559,7 +4559,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/thiserror-impl@2.0.19",
+      "purl": "pkg:cargo/thiserror-impl@2.0.20",
       "externalReferences": [
         {
           "type": "vcs",
@@ -4569,16 +4569,16 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.19",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20",
       "author": "David Tolnay <dtolnay@gmail.com>",
       "name": "thiserror",
-      "version": "2.0.19",
+      "version": "2.0.20",
       "description": "derive(Error)",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "09a43598840e33d5b0331f38c5e30d13bb11c11210a4b58f0d9b18a5a5eefcd9"
+          "content": "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
         }
       ],
       "licenses": [
@@ -4586,7 +4586,7 @@
           "expression": "MIT OR Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/thiserror@2.0.19",
+      "purl": "pkg:cargo/thiserror@2.0.20",
       "externalReferences": [
         {
           "type": "documentation",
@@ -5905,7 +5905,7 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.91",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.107",
         "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.47",
@@ -6621,7 +6621,7 @@
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#tantivy-common@0.11.0",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.91",
+        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
         "registry+https://github.com/rust-lang/crates.io-index#byteorder@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#ownedbytes@0.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
@@ -6713,7 +6713,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tantivy-stacker@0.7.0",
         "registry+https://github.com/rust-lang/crates.io-index#tantivy-tokenizer-api@0.7.0",
         "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.19",
+        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20",
         "registry+https://github.com/rust-lang/crates.io-index#time@0.3.55",
         "registry+https://github.com/rust-lang/crates.io-index#typetag@0.2.23",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.24.0",
@@ -6738,7 +6738,7 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.19",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.20",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.107",
         "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.47",
@@ -6746,9 +6746,9 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.19",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.19"
+        "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.20"
       ]
     },
     {

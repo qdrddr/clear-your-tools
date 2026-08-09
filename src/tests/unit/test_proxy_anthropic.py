@@ -630,7 +630,7 @@ def test_run_llm_stage_skips_skill_selection_when_pipeline_rerank() -> None:
 
     with patch(
         "cyt.pruners.tools_filter.llm_catalog_dict",
-        return_value=(data, data, {"input": 0, "output": 0}),
+        return_value=(data, data, StageTokenUsage()),
     ) as mock_tools_only:
         _run_llm_stage(
             data,

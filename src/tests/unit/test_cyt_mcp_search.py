@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 from fastmcp import FastMCP
+from mcp.types import TextContent
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import (
@@ -94,7 +95,9 @@ async def _call_get_tool_definitions(
     tool = cache.search_tool()
     assert tool is not None
     result = await tool.run(arguments)
-    return str(result.content[0].text)
+    content = result.content[0]
+    assert isinstance(content, TextContent)
+    return str(content.text)
 
 
 def test_get_tool_definitions_returns_friendly_error_for_wrong_args() -> None:

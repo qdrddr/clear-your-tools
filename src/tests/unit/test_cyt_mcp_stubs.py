@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.runtime_cache import RuntimeToolCache

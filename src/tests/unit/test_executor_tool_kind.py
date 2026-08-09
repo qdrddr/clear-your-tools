@@ -9,7 +9,11 @@ import pytest
 
 from cyt.indexer.policies import PolicyContext, effective_policy
 from cyt.testing.inject_via_maps import INJECT_VIA_ALL_PROXY
-from cyt.tools.policy_context import apply_executor_tool_kind, prepare_hook_executor_tool_pruning
+from cyt.tools.policy_context import (
+    apply_executor_tool_kind,
+    prepare_hook_cyt_mcp_tool_pruning,
+    prepare_hook_executor_tool_pruning,
+)
 
 _HOOK_EXECUTOR_CONFIG: dict[str, Any] = {
     "pruning": {
@@ -176,3 +180,38 @@ def test_filter_tools_for_query_warms_mcp_cache_on_hook_executor() -> None:
             pass
 
     assert cache_mock.call_count >= 1
+
+
+_HOOK_CYT_MCP_CONFIG: dict[str, Any] = {
+    "pruning": {
+        "inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"},
+        "tools": {
+            "enabled": True,
+            "hook": {"tools_from": ["cyt_mcp"]},
+        },
+    },
+}
+
+
+def test_prepare_hook_cyt_mcp_tool_pruning_sets_tool_kind() -> None:
+    scoring = PolicyContext()
+    output = PolicyContext()
+    prepare_hook_cyt_mcp_tool_pruning(_HOOK_CYT_MCP_CONFIG, scoring, output)
+    assert scoring.tool_kind == "mcp"
+    assert output.tool_kind == "mcp"
+
+
+def test_prepare_hook_cyt_mcp_tool_pruning_noop_when_tools_disabled() -> None:
+    ctx = PolicyContext()
+    config = {
+        **_HOOK_CYT_MCP_CONFIG,
+        "pruning": {
+            **_HOOK_CYT_MCP_CONFIG["pruning"],
+            "tools": {
+                **_HOOK_CYT_MCP_CONFIG["pruning"]["tools"],
+                "enabled": False,
+            },
+        },
+    }
+    prepare_hook_cyt_mcp_tool_pruning(config, ctx)
+    assert ctx.tool_kind is None

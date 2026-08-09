@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from fastmcp.server.transforms import Transform
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME

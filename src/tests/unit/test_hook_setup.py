@@ -1610,6 +1610,37 @@ def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
     assert setup_cyt_mcp.call_args.kwargs["verify_only"] is False
 
 
+def test_apply_injection_hook_config_writes_verify_only_false_without_cyt_mcp(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config: dict[str, Any] = {
+        "pruning": {
+            "tools": {
+                "enabled": False,
+                "hook": {"tools_from": ["executor"]},
+            },
+            "inject_via": {"cursor": "hook"},
+        },
+    }
+    with (
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.config.tools_hook_sources", return_value=["executor"]),
+        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
+        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml") as write_aggregator,
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
+    ):
+        hook_setup._apply_injection_hook_config(
+            config_path,
+            config,
+            agents=["cursor"],
+        )
+
+    write_aggregator.assert_called_once_with("cursor", transport="stdio", verify_only=False)
+    setup_cyt_mcp.assert_not_called()
+
+
 def test_configure_cursor_rule_file_prompts_and_saves_enabled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1747,6 +1778,54 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
     assert set(agent_payload["mcpServers"]) == {"cyt-mcp"}
     assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
+
+
+def test_apply_injection_hook_config_clears_stale_verify_only_in_aggregator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+
+    config_path = tmp_path / "config.yaml"
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    mcp_dir = tmp_path / "cyt_mcp"
+    aggregator_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "transport: stdio",
+                "verify_only: true",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
+
+    config: dict[str, Any] = {
+        "hallucination_gate": {"enabled": True},
+        "pruning": {
+            "tools": {"enabled": False, "hook": {"tools_from": "cyt_mcp"}},
+            "inject_via": {"cursor": "hook"},
+        },
+    }
+    with (
+        patch("cyt.config.save_user_config", return_value=True),
+        patch("cyt.config.sync_config_in_place"),
+        patch("cyt.config.tools_hook_sources", return_value=["cyt_mcp"]),
+        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
+        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent"),
+    ):
+        hook_setup._apply_injection_hook_config(
+            config_path,
+            config,
+            agents=["cursor"],
+        )
+
+    text = aggregator_path.read_text(encoding="utf-8")
+    assert "verify_only: false" in text
+    assert "verify_only: true" not in text
 
 
 def test_should_propose_hook_daemon_restart() -> None:

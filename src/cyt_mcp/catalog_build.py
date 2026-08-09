@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from mcp.types import Tool as McpWireTool
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
@@ -55,7 +55,7 @@ def build_catalog_from_tools(
     catalog_entries: list[dict[str, Any]] = []
     search_index: dict[str, dict[str, Any]] = {}
     for tool in tools:
-        mcp_tool = cast(McpWireTool, tool.to_mcp_tool())
+        mcp_tool = tool.to_mcp_tool()
         name = str(mcp_tool.name)
         if name == MCP_WIRE_SEARCH_TOOL_NAME:
             continue

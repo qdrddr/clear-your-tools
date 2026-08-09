@@ -1797,16 +1797,16 @@ def _apply_injection_hook_config(
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         sync_config_in_place(config, config_path)
 
-    if "cyt_mcp" not in tools_hook_sources(config):
-        return config
-
     invocation = detect_hook_cli_invocation()
+    cyt_mcp_enabled = "cyt_mcp" in tools_hook_sources(config)
     for agent in agents:
         if agent != "cursor":
             continue
         if inject_via_for_agent(config, agent) != "hook":
             continue
         write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=False)
+        if not cyt_mcp_enabled:
+            continue
         setup_cyt_mcp_for_agent(
             agent,
             invocation=invocation,

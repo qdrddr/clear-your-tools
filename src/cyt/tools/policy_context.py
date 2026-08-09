@@ -76,6 +76,21 @@ def prepare_hook_cloudflare_tool_pruning(
             apply_executor_tool_kind(ctx, "mcp")
 
 
+def prepare_hook_cyt_mcp_tool_pruning(
+    config: dict[str, Any] | None,
+    *contexts: PolicyContext | None,
+) -> None:
+    """Classify cyt_mcp catalog chunks as MCP for partition/prune (hook or proxy)."""
+    from cyt.config import load_config, tools_enabled, tools_hook_sources
+
+    cfg = config or load_config()
+    if not tools_enabled(cfg) or "cyt_mcp" not in tools_hook_sources(cfg):
+        return
+    for ctx in contexts:
+        if ctx is not None:
+            apply_executor_tool_kind(ctx, "mcp")
+
+
 def prepare_hook_tool_pruning(
     config: dict[str, Any] | None,
     *contexts: PolicyContext | None,
@@ -90,6 +105,7 @@ def prepare_hook_tool_pruning(
 
     cfg = config or load_config()
     executor_cache: dict[str, Any] | None = None
+    prepare_hook_cyt_mcp_tool_pruning(cfg, *contexts)
     if uses_mcpc_tool_catalog(cfg):
         prepare_hook_mcpc_tool_pruning(cfg, *contexts)
     if uses_cloudflare_tool_catalog(cfg):

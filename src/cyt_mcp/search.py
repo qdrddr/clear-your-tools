@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from fastmcp import FastMCP
-from fastmcp.tools.base import ToolResult
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool, ToolResult
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.tool_name_fuzzy import fuzzy_resolve_tool_name
@@ -159,7 +158,7 @@ class GetToolDefinitionsTool(Tool):
             result = lookup_tool_definition(self._cache, tool_name or "")
         except ValueError as exc:
             return ToolResult(content=str(exc), is_error=True)
-        return cast(ToolResult, self.convert_result(result))
+        return self.convert_result(result)
 
 
 def register_search_tool(

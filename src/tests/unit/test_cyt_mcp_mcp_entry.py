@@ -226,3 +226,33 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
     backend_payload = json.loads((target_dir / "cursor.json").read_text(encoding="utf-8"))
     assert "codebase-memory-mcp" in backend_payload["mcpServers"]
     assert "cyt-mcp" not in backend_payload["mcpServers"]
+
+
+def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    mcp_dir = tmp_path / "mcp"
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
+
+    cyt_mcp_setup.write_mcp_aggregator_yaml("cursor", verify_only=False)
+
+    text = aggregator_path.read_text(encoding="utf-8")
+    assert "verify_only: false" in text
+    assert "verify_only: true" not in text
+
+
+def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_true(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    mcp_dir = tmp_path / "mcp"
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
+
+    cyt_mcp_setup.write_mcp_aggregator_yaml("cursor", verify_only=True)
+
+    assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")

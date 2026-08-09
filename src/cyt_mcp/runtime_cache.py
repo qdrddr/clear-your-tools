@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 @dataclass

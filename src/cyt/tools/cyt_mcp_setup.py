@@ -105,9 +105,8 @@ def write_mcp_aggregator_yaml(
         f"  claude: {DEFAULT_MCP_DIR.expanduser() / 'claude.json'}",
         f"  codex: {DEFAULT_MCP_DIR.expanduser() / 'codex.json'}",
         f"transport: {transport}",
+        f"verify_only: {'true' if verify_only else 'false'}",
     ]
-    if verify_only:
-        lines.append("verify_only: true")
     lines.extend(
         [
             "http:",

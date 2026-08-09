@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt_mcp.aggregator import build_aggregator

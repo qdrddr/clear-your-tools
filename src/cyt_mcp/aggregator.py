@@ -11,6 +11,7 @@ from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import register_search_tool
 from cyt_mcp.stubs import StubListTransform
+from cyt_mcp.tool_list_notify import register_tool_list_changed_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -29,4 +30,5 @@ def build_aggregator(
         )
     if degraded:
         logger.warning("cyt-mcp: degraded backends: %s", ", ".join(degraded))
+    register_tool_list_changed_middleware(server, cache)
     return server

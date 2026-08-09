@@ -864,6 +864,10 @@ def _run_pruning_pipeline(
     )
     if not for_proxy:
         prepare_hook_tool_pruning(resolved_config, policy_ctx)
+    else:
+        from cyt.tools.policy_context import prepare_hook_cyt_mcp_tool_pruning
+
+        prepare_hook_cyt_mcp_tool_pruning(resolved_config, policy_ctx)
     pinned: dict[str, Any] = {}
     if catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)

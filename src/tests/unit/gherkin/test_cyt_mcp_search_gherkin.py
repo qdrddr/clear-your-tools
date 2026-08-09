@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
