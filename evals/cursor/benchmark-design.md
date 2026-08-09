@@ -1,231 +1,209 @@
 # Benchmark design
 
-CYT Agent Task Benchmark — real MCP tools + synthetic distractors, deterministic success criteria.
+Two layers: **Layer A** (existing external benchmark) + **Layer B** (CYT stress tests).
+
+Task quality uses **Level 4 verifiers** only — independent of tool-call metrics ([evaluation-framework.md](./evaluation-framework.md)).
 
 ---
 
-## Dataset composition
+## Layer A — Existing benchmark
 
-| Component | Target | Source in repo |
-|-----------|--------|----------------|
-| Real MCP backends | 5–10 servers | `~/.config/cyt/mcp/<agent>.json`, cyt-mcp `backends.py` |
-| Total tools | 100–500 | Real + synthetic distractors |
-| Tasks | 50–100 (v1: 50) | **To build** under `evals/cursor/tasks/` |
-| Gold annotations | Per task | Required tools, properties, enums, assertion script |
+Run No CYT vs CYT configurations against a published MCP/tool-use evaluation.
 
-### Suggested real MCP domains
+| Advantage | Notes |
+|-----------|-------|
+| Externally recognizable | Pick benchmark with MCP or tool-calling tasks |
+| Less construction bias | CYT wraps benchmark, doesn't own task authorship |
+| Reproducibility | Cite benchmark + CYT version |
 
-| Domain | Example tasks |
-|--------|---------------|
-| GitHub | Issues, PRs, comments, repos |
-| Filesystem | Read/write/search files |
-| Database | Query, insert (test DB) |
-| Slack | Post message, list channels (sandbox) |
-| Kubernetes | Get pods, logs (kind/minikube fixture) |
-
-Use sandbox credentials; never hit production.
-
-### Distractor tools
-
-Unrelated tools from other domains (calendar, weather, search, Drive) to inflate catalog without affecting gold chain.
+**Status:** Not integrated. Select benchmark (e.g. tool-use/agent benchmarks with MCP adapters) and add thin wrapper in harness.
 
 ---
 
-## Task categories
+## Layer B — CYT stress benchmark
 
-Build ~50 tasks distributed across categories (weights are suggestions):
+50–100 tasks targeting CYT-specific mechanisms:
 
-### A. Simple single-tool tasks (~10%)
+| Stress target | Category |
+|---------------|----------|
+| Tool selection under distractors | F — distractor-heavy |
+| Optional property preservation | D |
+| Enum pruning | C |
+| Schema bloat (props/enums) | Isolation experiment |
+| Schema-invalid calls | Verification corpus |
+| Execution-unsuccessful (semantic) | Level 2 — valid schema, bad value |
+| Pre-exposure / repeated tool use | Session promotion |
+| Post-compaction reinjection | Compaction ablation |
 
-**Example:** "Find repository `org/example`."
+### Task categories (Layer B)
 
-**Gold:** `list_repositories` or `search_repositories` with correct args.
-
-**Tests:** Basic tool selection under pruning.
-
----
-
-### B. Required-property tasks (~15%)
-
-**Example:** "Get pull request #123 from `org/example`."
-
-**Gold:** Tool requiring `owner`, `repo`, `pull_number` — all required fields must survive prune.
-
----
-
-### C. Enum-sensitive tasks (~15%)
-
-**Example:** "List repositories sorted by updated."
-
-**Schema:** `"sort": { "enum": ["created", "updated", "name"] }`
-
-**Gold:** Enum value `updated` must remain in pruned schema.
-
-**Codebase:** Enum pruning in Rust BM25 (`prune_enums: true`).
+| Cat | % | Tests |
+|-----|---|-------|
+| A. Single-tool | ~10% | Basic selection |
+| B. Required-property | ~15% | Required fields survive prune |
+| C. Enum-sensitive | ~15% | Relevant enum kept |
+| D. Optional-property | ~15% | Relevant optional kept |
+| E. Multi-step | ~20% | Cross-turn pruning |
+| F. Distractor-heavy | ~25% | 3–5 relevant of 100+ tools |
 
 ---
 
-### D. Optional-property tasks (~15%)
-
-**Example:** "Search issues created after 2025-01-01, limit 20."
-
-**Gold:** Relevant optional params (`since`, `limit`) preserved; irrelevant optional params removed.
-
----
-
-### E. Multi-tool tasks (~20%)
-
-**Example:** "Find repo X, inspect latest release, create issue referencing that release."
-
-**Gold chain:**
-
-1. `get_repository` / search
-2. `list_releases` / `get_latest_release`
-3. `create_issue`
-
-**Tests:** Pruning across multiple agent turns (session continuity via hook + session JSONL).
-
----
-
-### F. Distractor-heavy tasks (~25%) — **most important**
-
-**Setup:** 100+ tools in catalog; only 3–5 relevant.
-
-**Example:** Same as E but with large distractor catalog.
-
-**Tests:** Whether CYT preserves the 3–5 required tools at high catalog sizes.
-
----
-
-## Task definition schema (proposed)
+## Task definition schema
 
 ```yaml
 id: task-037
 category: multi_tool
 prompt: |
-  Find open pull requests in repository org/example,
-  identify the one authored by alice, and add a comment "LGTM".
+  Find open PRs in org/example, find alice's PR, comment "LGTM".
 initial_state:
   fixture: github/org-example-prs
 gold:
   tools: [list_pull_requests, create_pull_request_review_comment]
   properties:
     list_pull_requests: [owner, repo, state]
-    create_pull_request_review_comment: [owner, repo, pull_number, body]
   enums:
     list_pull_requests.state: [open]
-assertions:
+verifier:                    # Level 4 only
   - type: github_comment_exists
     repo: org/example
-    author: agent
     body_contains: LGTM
   - type: pr_author
-    pr_number: from_state
     author: alice
 ```
 
+**Verifier determines task success — not tool-call counts.**
+
 ---
 
-## Verification benchmark (shape errors)
+## Verification corpus (Level 1)
 
-Separate from agent tasks — labeled tool-call corpus.
+Labeled tool calls for MPR / FBR — separate from agent tasks.
 
-### Categories
-
-| Case | Example args | Expected |
-|------|--------------|----------|
+| Case | Example | Expected |
+|------|---------|----------|
 | Valid | `{"repo": "foo/bar", "limit": 10}` | Allow |
-| Missing required | `{"limit": 10}` | Deny |
+| Missing required | `{"limit": 10}` | Deny (schema-invalid) |
 | Wrong type | `{"repo": 123}` | Deny |
 | Invalid enum | `{"sort": "foobar"}` | Deny |
-| Additional property | `{"repo": "foo/bar", "banana": true}` | Deny (if schema disallows) |
-| Unknown tool | `nonexistent_tool` | Deny |
+| Additional property | `{"repo": "foo/bar", "x": true}` | Deny if disallowed |
+| Unknown tool | `fake_tool` | Deny |
 
-### Implementation path
+Run through `validate_pre_tool_call()` / `validate_json_schema()`.
 
-Extend `src/cyt_client/schema_validate.py` tests + export fixture JSONL.
+**Existing:** Gherkin `hallucination_gate.feature`, unit tests.
 
-**Existing:** Gherkin `hallucination_gate.feature`, unit tests in `src/tests/unit/`.
-
-**Gap:** Labeled corpus with precision/recall/FBR aggregation.
+**Gap:** Labeled JSONL corpus + MPR/FBR aggregator.
 
 ---
 
-## Recovery evaluation
+## Execution-unsuccessful corpus (Level 2)
 
-CYT recovery flow (implemented):
+Schema-valid calls that fail at backend — **Verify-Prevent does not catch**:
+
+| Case | Args | Failure |
+|------|------|---------|
+| Wrong repo format | `{"repo": "/home/user/r"}` | Backend error |
+| Nonexistent repo | `{"repo": "no/such"}` | 404 |
+| Wrong ID | `{"pull_number": 99999}` | Not found |
+
+Measure TESR separately from MPR.
+
+---
+
+## Recovery evaluation (Level 3)
+
+Tasks designed to elicit schema-invalid first call:
 
 ```
-LLM → malformed call → preToolUse → DENY + full schema → LLM retries → correct call
+malformed → deny + schema → retry → success
 ```
 
-### Measure
+Metrics: recovery rate, extra calls/tokens/latency.
 
-| Metric | How |
-|--------|-----|
-| Recovery rate | Tasks that failed first call but succeeded within K turns |
-| Recovery overhead | Extra tokens/latency/calls after first deny |
-| Exposure persistence | `session_pre_tool_exposure.py` writes exposure on deny |
-
-### Test design
-
-Inject tasks that **prompt** common shape errors (or use weaker model) and count recovery within session.
-
-**Gap:** No aggregate recovery metric in stats today.
+**Code path:** `PreToolDenyExposure` → session log → agent retry.
 
 ---
 
-## Shape vs semantic error cases (document in paper)
+## Schema-bloat isolation
 
-Include explicit **negative examples** CYT does not catch:
+One tool, growing irrelevant schema:
 
-| Call | Schema accepts? | Semantically valid? |
-|------|-----------------|---------------------|
-| `{"repo": "/home/user/myrepo"}` | ✅ string | ❌ expects `owner/repo` |
-| `{"repo": "does-not-exist"}` | ✅ string | ❌ repo missing |
+| Condition | Bloat |
+|-----------|-------|
+| Control | 0 extra props |
+| Bloat-10 | 10 irrelevant optional properties |
+| Bloat-500e | 500 irrelevant enum values |
 
-These belong in Limitations, not hidden.
+Same task every time; correct tool always in prune result.
+
+**Expected:** Baseline tokens ↑, CYT ≈ flat.
 
 ---
 
-## Example task with gold annotation
+## Pre-exposure / compaction tasks
 
-**Task 37**
+### Pre-exposure
 
-**Prompt:** "Find open pull requests in repository X, identify the one authored by Y, add a comment."
+Multi-turn task requiring same tool 3+ times:
 
-**Gold chain:**
+- Measure inject vs skip counts
+- Compare tokens with pre-exposure enabled vs disabled (config/ablation)
 
-1. Search/list PRs (`state=open`)
-2. Inspect PR metadata (author filter)
-3. Create comment
+**Code:** `filter_pre_exposed_tools()` in `pre_exposed.py`.
 
-**CYT must preserve:** All three tools + `state` enum + `body` property on comment tool.
+### Compaction
+
+Multi-turn task spanning `preCompact`:
+
+- Tool A used repeatedly before compaction
+- After compaction: verify tool A still callable (re-inject if needed)
+- Compare task success before/after compaction event
+
+**Code:** `preCompact` hook, `test_session_compaction.py`.
+
+---
+
+## Unexposed-but-allowed calls (secondary)
+
+Tasks where gold tool is **in Type-2 catalog** but **not injected** (pruned away):
+
+- If model still calls with valid schema → allowed per Type-2 authority
+- Log rate for "tools in weights" discussion
+
+---
+
+## Dataset composition
+
+| Component | Target |
+|-----------|--------|
+| Real MCP backends | 5–10 via cyt-mcp |
+| Total tools | 100–500 (real + synthetic distractors) |
+| Tasks | 50–100 Layer B + Layer A subset |
+
+Synthetic distractors: unrelated domains (calendar, weather, k8s, etc.).
 
 ---
 
 ## Fixture strategy
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Live sandbox APIs | Realistic | Flaky, costly |
-| Recorded MCP responses | Deterministic | Maintenance |
-| Local mock MCP server | Fast, CI-friendly | Less realistic |
+| Tier | Use |
+|------|-----|
+| Mock MCP | CI, fast iteration |
+| Sandbox APIs | Paper numbers |
+| Recorded responses | Deterministic regression |
 
-**Recommendation:** Local mock MCP for CI; live sandbox for paper numbers.
-
-Consider extending `sdk/e2e/fixtures/bm25_catalog.json` pattern for eval catalogs.
+Extend pattern from `sdk/e2e/fixtures/bm25_catalog.json`.
 
 ---
 
-## Directory layout (proposed, not yet created)
+## Proposed layout (not yet created)
 
 ```
 evals/cursor/
-├── tasks/           # YAML task definitions
-├── fixtures/        # Initial state snapshots
-├── assertions/      # Deterministic check functions
-├── catalogs/        # Tool catalogs at 10/25/50/100/200/500 sizes
-├── verification/    # Labeled malformed-call corpus
-└── harness/         # run_task() implementation
+├── tasks/              # Layer B YAML
+├── verification/       # Level 1 labeled corpus
+├── execution-failures/ # Level 2 labeled corpus
+├── fixtures/
+├── catalogs/           # 25/100/250/500 tool sets
+└── harness/
 ```

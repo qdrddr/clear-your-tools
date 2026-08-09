@@ -1,147 +1,206 @@
-# CYT capabilities (mapped to this codebase)
+# CYT capabilities (mapped to codebase)
 
-CYT operates as **two distinct capabilities**. Treat them separately in experiments and the paper.
+Two complementary capabilities — **pruning** and **verification** — with shared stub architecture.
 
 ---
 
-## 1. Tool-call verification / hallucination prevention
+## CYT novelty (precise statement)
 
-**Purpose:** Block malformed tool calls (wrong shape) before execution; return full schema so the agent can recover on the next turn.
+> CYT is an application for **dynamic reduction of tool context** presented to LLM agents.
 
-### What it catches (syntactic / schema validity)
+It operates at three granularities:
 
-Implemented in `src/cyt_client/schema_validate.py` + `tool_gate.py`:
+```
+Tool
+ └── Properties (optional)
+      └── Enum values
+```
 
-- Missing required properties
-- Wrong JSON types
-- Invalid enum values
-- Unknown tools (not in session Type-2 catalog)
-- Additional properties (when schema disallows)
+Most tool-selection systems answer: *Which tools are relevant?*
 
-### What it does **not** catch (semantic validity)
+CYT additionally asks: *Which parts of the relevant tool schemas are relevant?*
 
-- Correct type but wrong value (e.g. full path instead of `owner/repo`)
-- Valid string for non-existent resource (e.g. repo does not exist)
+Plus **schema-level verification** on tool calls (Verify-Prevent).
 
-Formalize in the paper:
+---
 
-- \(V_{schema}(a, S) \in \{0,1\}\) — CYT addresses this
-- \(V_{semantic}(a, E) \in \{0,1\}\) — out of scope
+## Configuration matrix
 
-### Behavior in verify-only mode
+### Three primary configurations
 
-| Property | Value |
-|----------|-------|
-| Full MCP schemas visible to model | Yes — no pruning, no token savings |
-| Intervention point | `preToolUse` hook only |
-| Pruning disabled | `hallucination_gate.enabled: true` disables tools/skills injection |
-| cyt-mcp mode | `verify_only: true` — no stub transform, no search tool |
-| Entry | `cyt hook <agent> --prevent-hallucinations` |
+| Configuration | Pruning | Verify | Enable in repo |
+|---------------|---------|--------|----------------|
+| **No CYT** | ❌ | ❌ | Disable hooks/proxy |
+| **CYT Verify-Prevent** | ❌ | ✅ | `cyt hook <agent> --prevent-hallucinations` |
+| **CYT Pruning** | ✅ | Optional | `cyt hook cursor` or `cyt launch -- claude` |
 
-**Code:** `TOOL-HALLUCINATION-GATE.md`, `src/cyt/injection/verify_session_log.py`, `src/cyt/proxy/verify_session_log.py` (proxy catalog writer when verify-only on Claude/Codex).
+Verify may be off inside pruning → four-way ablation (see [evaluation-framework.md](./evaluation-framework.md)).
 
-**Expected token savings in verify-only:** ≈ 0% (by design).
+---
+
+## 1. Verify-Prevent (Level 1)
+
+**Catches:** schema-invalid calls only.
+
+| Validated | Not validated |
+|-----------|---------------|
+| Missing required, wrong type, bad enum | Wrong repo name, nonexistent resource |
+| Unknown tool (not in Type-2 catalog) | Semantically invalid string values |
+
+**Terminology:**
+
+- **Schema-invalid** — violates declared schema
+- **Execution-unsuccessful** — schema valid, backend failed
+- **Semantically invalid** — valid type, wrong meaning
+
+**Implementation:** `preToolUse` → `cyt-client` → `validate_pre_tool_call()` → `schema_validate.py`.
+
+**Token savings:** ≈ 0% (full schemas visible; intervention only on malformed calls).
 
 ---
 
 ## 2. Tool-schema pruning
 
-**Purpose:** Reduce tool metadata exposed to the model by removing irrelevant tools, optional properties, and enum values.
+Pipeline: decompose → BM25/rerank/LLM score → filter → recompose.
 
-### Pruning pipeline
+| Pruner | Code | Cost |
+|--------|------|------|
+| BM25 (default) | `src/cyt/pruners/bm25.py` | $0 local |
+| Rerank | `src/cyt/pruners/rerank.py` | DeepInfra via LiteLLM |
+| LLM | `src/cyt/pruners/llm.py` | LiteLLM |
 
-```
-Tool discovery → decompose → score (BM25/rerank/LLM) → filter → recompose
-```
-
-| Stage | Implementation |
-|-------|----------------|
-| Decompose | `sdk/rust/cyt-indexer` — splits schemas into searchable chunks |
-| Score | `src/cyt/pruners/bm25.py` (default), `rerank.py`, `llm.py` |
-| Enum pruning | Rust BM25 + `prune_enums: true` |
-| Recompose | `sdk/rust/cyt-indexer/src/retrieve.rs` |
-| Skip below threshold | `minimum_tools: 50` in policy — no prune if catalog small |
-
-Required properties on surviving tools are **always preserved**.
-
-### Deployment paths for pruning
-
-#### A. Reverse proxy (Claude, Codex)
-
-```
-Agent → cyt proxy:8834 → prune tools in request body → upstream LLM
-```
-
-- Mutates tool definitions in Anthropic/OpenAI request payload
-- Can preserve system tools for prompt-cache prefix stability
-- Injects pruned schemas via user message (`user_message_inject.py`)
-- **Code:** `src/cyt/proxy/reverse.py`, `anthropic.py`, `openai_responses.py`
-
-#### B. Hook + injection (Cursor **required**; optional for Claude/Codex)
-
-```
-Agent → cyt-mcp stubs (minimal {}) on wire
-      → CYT hook prunes on beforeSubmitPrompt
-      → pruned schema injected into agent context
-```
-
-| Agent | Injection mechanism | Code |
-|-------|---------------------|------|
-| Cursor | `.cursor/rules/cyt-injection.mdc` rules file | `src/cyt_client/rules_file.py` |
-| Claude/Codex (hook) | `additionalContext` on hook response | `src/cyt/tools/hook.py` |
-| All | cyt-mcp name-only stubs | `src/cyt_mcp/stubs.py` |
-
-**Cursor limitation:** Native `additionalContext` on `beforeSubmitPrompt` is not delivered by Cursor IDE today — rules file is the production path (`examples/agents/cursor/README.MD`, `CURSOR-HOOK.md`).
-
-#### C. Cursor cannot use proxy
-
-Documented in `LIMITATIONS.md` — E2E encrypted traffic; not a CYT gap.
-
-### Codex interaction
-
-- Codex has **built-in tool pruning** (removes unused tools)
-- CYT still adds value by pruning **optional properties and enums** (`LIMITATIONS.md`: ~20% additional savings when combined)
-- Paper should report **Codex**, **Codex+CYT**, not assume 85% vs 50% without measurement
+Config: `pruning.tools.sequence: [bm25]`; skip if catalog < `minimum_tools: 50`.
 
 ---
 
-## Experiment configurations (ablation)
+## Stub + injected definition (architecture)
 
-| Config | Pruning | Verification | How to enable in this repo |
-|--------|---------|--------------|----------------------------|
-| **Baseline** | ❌ | ❌ | Disable CYT hooks/proxy; full MCP catalog |
-| **Verify-only** | ❌ | ✅ | `cyt hook cursor --prevent-hallucinations` |
-| **CYT-prune** | ✅ | ❌ | `cyt hook cursor` (default pruning, gate off) |
-| **CYT-full** | ✅ | ✅ | Pruning + `hallucination_gate.enabled: true` in config |
+CYT always follows:
 
-For Claude/Codex proxy equivalents: `cyt launch -- claude|codex` with config overlays.
+```
+full tool → pruned tool → stub (stable name) + injected definition (dynamic)
+```
+
+Model sees minimal stub on MCP wire:
+
+```json
+{ "name": "search_repository" }
+```
+
+Relevant schema injected via:
+
+| Path | Injection |
+|------|-----------|
+| **Proxy** | User-message inject (`user_message_inject.py`) |
+| **Hook / Cursor** | Rules file `.cursor/rules/cyt-injection.mdc` |
+| **Hook / Claude/Codex** | `additionalContext` on hook response |
+
+**Property:** Stable tool interface (prefix/cache-friendly) + dynamic contextual definitions.
+
+**Code:** `src/cyt_mcp/stubs.py` ( `{}` schemas on wire), `get-tool-definitions` for on-demand lookup.
 
 ---
 
-## Architecture (for paper §4)
+## Schema-based tool-call admission
+
+Gate authority is **Type-2 catalog** (full backend), not Type-1 (what was injected this turn):
+
+- Tool in Type-2 + valid args → **allow** (even if not injected)
+- Tool not in Type-2 → **deny** (hallucinated name)
+- Tool in Type-2 + invalid args → **deny** + return full definition
+
+This is **schema-based admission**, not exposure enforcement. Enables secondary eval: calls to unexposed but catalog-known tools.
+
+**Code:** `src/cyt_client/tool_gate.py` line ~897; Type-2 built in `tool_catalog_emit.py`, `verify_session_log.py`.
+
+---
+
+## In-session tool promotion (pre-exposure)
+
+After a tool definition is injected verbatim into session text, CYT **skips re-injecting** it:
 
 ```
-                    ┌─────────────────────────┐
-                    │   LLM Agent             │
-                    │ Claude / Codex / Cursor │
-                    └────────────┬────────────┘
-                                 │
-                   ┌─────────────┴──────────────┐
-                   │            CYT              │
-                   │  1. Tool discovery         │
-                   │  2. Query-aware pruning    │
-                   │  3. Schema reconstruction  │
-                   │  4. Tool-call verification │
-                   └─────────────┬──────────────┘
-                                 │
-                         ┌───────┴───────┐
-                         │  MCP servers  │
-                         │ (via cyt-mcp) │
-                         └───────────────┘
+1st exposure → inject relevant schema
+2nd exposure → skip (already in session)
+...
 ```
 
-Three integration paths:
+**Code:** `is_pre_exposed()` in `src/cyt/injection/pre_exposed.py`, used by `pre_exposure_pipeline.py` on hook and proxy paths.
 
-1. **Reverse proxy** — `src/cyt/proxy/`
-2. **Hook/injection** — `src/cyt/hook/` + `src/cyt_client/`
-3. **Verification** — `preToolUse` → `cyt-client` → `tool_gate.py`
+**Eval metrics to build:** inject count, skip count, tokens saved by pre-exposure.
+
+**Gap:** Explicit "promote to full definition after N uses" tier — not implemented as separate promotion step; current behavior is verbatim dedup.
+
+---
+
+## Conversation compaction
+
+On `preCompact` / `PreCompact` hook, session memory compresses → CYT resets pre-exposure assumptions → reinjects tools that were pre-exposed before compaction.
+
+**Code:** `src/cyt/hook/setup_wizard.py` registers event; `src/tests/unit/test_session_compaction.py`.
+
+**Eval:** Ablation within pruning — does compaction-aware reinjection prevent tool loss?
+
+---
+
+## Turn-aware pruning
+
+Pruning should use information available **at the current turn**, not only the original user prompt:
+
+```
+User prompt + conversation context + latest agent message → prune query
+```
+
+Example: agent discovers `"repo is foo/bar not /home/foo/bar"` → may change relevant tools.
+
+**Codebase today:**
+
+| Signal | Used for pruning? |
+|--------|-------------------|
+| User query (proxy) | ✅ `extract_user_query` in `anthropic.py` |
+| Session combined text (pre-exposure) | ✅ `PreExposureContext.combined_text` |
+| Latest agent message as prune query | **Partial / gap** — not primary BM25 query input |
+| Hook optional-scope instruction | ✅ appended in `tools_pruning_query()` |
+
+**Eval implication:** Measure pruning quality with vs without latest agent message in query.
+
+---
+
+## Deployment paths
+
+| Agent | Proxy | Hook | Verify |
+|-------|-------|------|--------|
+| Claude | ✅ `cyt launch -- claude` | ✅ | ✅ |
+| Codex | ✅ (+ native tool pruning) | ✅ | ✅ |
+| Cursor | ❌ platform | ✅ required | ✅ |
+
+### Prompt-prefix caching (proxy)
+
+Stable prefix: system prompt + system tools + tool stubs.
+
+CYT deliberately preserves system tools and stub names for cache hits (`policies.py`).
+
+**Eval gap:** Record cached vs uncached input tokens; use provider cache-read/write rates in cost formula.
+
+---
+
+## Aggregators (integration axis, not primary)
+
+| Aggregator | Path | Role |
+|------------|------|------|
+| **CYT-MCP** | `src/cyt_mcp/` | Default; stubs + backends |
+| **mcpc** | `src/cyt/mcpc/` | Legacy Apify MCPC |
+| **Executor** | `src/cyt/executor/` | Hook-only tier-1 stubs |
+| **Cloudflare** | `src/cyt/cloudflare/` | MCP Portal |
+
+Aggregator affects discovery/injection path; **CYT pruning/verify is the intervention**. Compare aggregators in reproducibility appendix, not primary stats.
+
+---
+
+## Context bloat framing (paper language)
+
+> As available tools grow, the model sees more competing tool descriptions, parameter descriptions, and enumeration values. This increases context that must be processed and may dilute task-relevant information. We refer to this as **tool-context bloat** and relate it to the broader problem of **context rot**.
+
+**Do not claim CYT proves context rot.** Claim: CYT tests whether reducing irrelevant tool context improves efficiency and preserves or improves task completion.
+
+See `LIMITATIONS.md` for cited context-rot literature.

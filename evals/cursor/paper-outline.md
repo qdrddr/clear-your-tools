@@ -1,130 +1,155 @@
 # Paper outline (arXiv draft)
 
-Adapted for the **clear-your-tools** open-source artifact.
+Adapted for **clear-your-tools** with sharpened evaluation design. See [evaluation-framework.md](./evaluation-framework.md).
 
 ---
 
-## Title options
+## Title
 
-**Recommended (systems / OSS):**
+**Recommended:**
 
 > Clear Your Tools: Dynamic Tool-Schema Pruning and Tool-Call Verification for Efficient LLM Agents
-
-**Alternative (more academic):**
-
-> Reducing Tool-Context Overhead in LLM Agents through Dynamic Tool-Schema Pruning and Verification
 
 ---
 
 ## Abstract (draft)
 
-Large language model agents increasingly interact with external capabilities through tool-calling interfaces such as the Model Context Protocol (MCP). As the number of available tools grows, exposing complete tool catalogs to an agent can substantially increase input-token consumption and inference cost while increasing the number of competing tool and parameter descriptions presented to the model.
+Large language model agents interact with external capabilities through tool-calling interfaces such as the Model Context Protocol (MCP). As tool catalogs grow, exposing complete schemas increases input-token consumption, inference cost, and competing parameter descriptions — **tool-context bloat** that may dilute task-relevant information (related to broader **context rot**).
 
-We present **Clear Your Tools (CYT)**, a client-side tool management system that dynamically reduces the tool context available to an LLM agent while preserving the ability to execute the underlying tools. CYT operates at two complementary levels. First, its **pruning mechanism** selects tools relevant to the current task and removes irrelevant optional properties and enumeration values from surviving tool schemas; required properties are preserved. Second, its **tool-call verification mechanism** intercepts tool invocations and prevents malformed calls whose arguments violate the exposed schema, returning the complete tool definition to the agent to enable recovery on a subsequent step.
+We present **Clear Your Tools (CYT)**, a client-side system that dynamically reduces tool context while preserving execution capability. CYT operates at two levels: (1) **pruning** — query-dependent removal of irrelevant tools, optional properties, and enum values while preserving required fields; (2) **verification** — intercepting schema-invalid tool calls before execution and returning full definitions for recovery.
 
-CYT supports two deployment paths. In a **reverse-proxy** configuration, CYT intercepts model requests and dynamically rewrites tool definitions before they are sent to the model (Claude Code, Codex). In a **hook-based** configuration, CYT exposes lightweight tool stubs while injecting the relevant pruned definitions into the agent context via rules files (Cursor) or additional context (Claude/Codex hooks). The latter enables integration with environments that do not support an LLM reverse proxy. CYT can also operate solely as a verification hook when tool pruning is disabled (`--prevent-hallucinations`).
+CYT deploys via **reverse proxy** (Claude, Codex) or **hook + stub injection** (Cursor). Stable tool stubs preserve prompt-prefix caching; pruned definitions inject dynamically.
 
-We evaluate CYT along three dimensions: token efficiency, monetary cost, and task completion quality. The evaluation compares agents operating with complete tool catalogs against agents using CYT pruning and/or verification. We measure both tool-schema token reduction and total request-token reduction, distinguish input-token savings from total task cost, and evaluate task success using deterministic task-specific assertions. We additionally measure the rate at which pruning removes required capabilities and the rate at which verification prevents malformed tool calls.
+We evaluate along **three primary dimensions**: token efficiency (tool-context and total input, with cache-aware cost), net monetary cost including pruner overhead, and **task success** via deterministic verifiers — **independent** of tool-call metrics. We separately report a four-level hierarchy: schema correctness, execution success, agent recovery, and task outcome. We measure malformed-call prevention, tool execution success, pruning recall, in-session pre-exposure, and compaction-aware reinjection.
 
-Our evaluation investigates whether dynamically reducing tool-context size can substantially lower agent operating costs while preserving task completion reliability, and whether schema-level verification can recover from malformed tool calls without requiring the model to be exposed to the complete tool catalog on every request.
-
-**Reproducibility artifact:** PyPI package `clear-your-tools`, config in `~/.config/cyt/`, docs in repo root (`CONFIG.md`, `CURSOR-HOOK.md`, `TOOL-HALLUCINATION-GATE.md`).
+**Artifact:** PyPI `clear-your-tools`, docs `CONFIG.md`, `CURSOR-HOOK.md`, `TOOL-HALLUCINATION-GATE.md`.
 
 ---
 
 ## Central hypothesis
 
-> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and inference cost while preserving task completion accuracy, and schema-level verification can prevent or recover from malformed tool calls with limited additional overhead.
+> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and net inference cost while preserving task completion accuracy; schema-level verification can prevent and recover from schema-invalid tool calls with limited overhead.
 
-The paper **tests** this hypothesis; it does not assume CYT works.
+We **test** this — not assume it.
+
+---
+
+## CYT novelty (§Introduction / §4)
+
+> CYT dynamically reduces tool context at three granularities: **tools → optional properties → enum values**.
+
+Tool retrieval asks *which tools*; CYT asks *which parts of relevant schemas* matter, plus schema-level verification.
+
+Differentiation from RAG-MCP, semantic tool discovery, MCP-Zero: **schema transformation**, not tool-level retrieval alone.
+
+---
+
+## Terminology (§3 / §Limitations)
+
+| Term | Definition |
+|------|------------|
+| **Schema-invalid tool call** | Args violate declared schema (Verify-Prevent scope) |
+| **Execution-unsuccessful** | Schema valid; backend failed |
+| **Semantically invalid** | Valid schema type; wrong value (e.g. path vs `owner/repo`) |
+| **Schema-based admission** | Validate against Type-2 catalog; allow valid calls even if not injected |
+| **Tool-context bloat** | Growth of competing tool metadata with catalog size |
+
+Avoid "incorrect data" for Level 2 failures.
 
 ---
 
 ## Paper structure
 
-1. **Introduction**
-2. **Background**
-   - 2.1 LLM tool calling
-   - 2.2 MCP (`src/cyt_mcp/`, cyt-mcp aggregator)
-   - 2.3 Tool-context overhead (cite RAG-MCP, semantic tool discovery, MCP-Zero)
-3. **Problem Definition**
-   - 3.1 Tool-level redundancy
-   - 3.2 Property-level redundancy
-   - 3.3 Enum-level redundancy
-   - 3.4 Malformed tool calls (shape vs semantic — see `cyt-capabilities.md`)
-4. **Clear Your Tools**
-   - 4.1 Architecture
-   - 4.2 Tool pruning (`tools_filter.py`, Rust pipeline)
-   - 4.3 Property pruning
-   - 4.4 Enum pruning (`prune_enums`)
+1. Introduction — bloat → CYT → three primary results
+2. Background — LLM tools, MCP, tool-context bloat / context rot (cite carefully)
+3. Problem — tool/property/enum redundancy; schema-invalid vs execution-unsuccessful
+4. Clear Your Tools
+   - 4.1 Architecture (stub + inject)
+   - 4.2–4.4 Pruning granularities
    - 4.5 Schema reconstruction
-   - 4.6 Tool-call verification (`tool_gate.py`)
-   - 4.7 Recovery mechanism (`PreToolDenyExposure`)
-5. **Deployment Modes**
-   - 5.1 Reverse proxy (`src/cyt/proxy/`)
-   - 5.2 Hook/injection (`src/cyt/hook/`, `cyt-client`)
-   - 5.3 Cursor integration (`rules_file.py`, cyt-mcp stubs)
-   - 5.4 Codex integration (+ native pruning baseline)
-   - 5.5 Claude integration
-6. **Evaluation**
-   - 6.1 Research questions → [research-questions.md](./research-questions.md)
-   - 6.2 Benchmark → [benchmark-design.md](./benchmark-design.md)
-   - 6.3 Experimental setup → [experiment-design.md](./experiment-design.md)
-   - 6.4 Metrics → [metrics-instrumentation.md](./metrics-instrumentation.md)
-   - 6.5 Baselines (4-way ablation)
-7. **Results**
-   - 7.1 Token reduction
-   - 7.2 Cost reduction (net, incl. pruner)
-   - 7.3 Task completion
-   - 7.4 Pruning recall
-   - 7.5 Verification accuracy
+   - 4.6 Verification (Type-2 admission)
+   - 4.7 Recovery
+   - 4.8 Pre-exposure & compaction
+5. Deployment — proxy, hook, Cursor, Codex native pruning
+6. Evaluation
+   - 6.1 Four evaluation levels
+   - 6.2 Configurations (none / verify / prune / full)
+   - 6.3 Benchmarks (Layer A external + Layer B stress)
+   - 6.4 Metrics ([research-questions.md](./research-questions.md) table)
+   - 6.5 Experiments ([experiment-design.md](./experiment-design.md))
+7. Results
+   - 7.1 Tokens (tool-context + total; cached/uncached)
+   - 7.2 Net cost + CostPerSuccess
+   - 7.3 TaskSuccessRate
+   - 7.4 Tool-call metrics (MPR, TESR)
+   - 7.5 Pruning recall + pipeline ablation
    - 7.6 Recovery
-   - 7.7 Codex native pruning comparison
-   - 7.8 Ablation study
-8. **Related Work** (below)
-9. **Limitations** (`LIMITATIONS.md`: semantic validation, Cursor proxy, cache invalidation, BM25 language)
-10. **Discussion**
-11. **Conclusion**
+   - 7.7 Codex comparison
+   - 7.8 Pre-exposure & compaction
+   - 7.9 Unexposed-but-allowed (secondary)
+8. Related Work
+9. Limitations — semantic validation, Cursor no-proxy, cache tradeoffs, BM25 languages
+10. Discussion
+11. Conclusion
+
+---
+
+## Core narrative diagram
+
+```
+         MCP / Tool-rich agents
+                  │
+                  ▼
+          Tool-context bloat
+                  │
+     ┌────────────┴────────────┐
+     │                         │
+Cost / tokens            Context dilution
+     │                         │
+     └────────────┬────────────┘
+                  ▼
+            Clear Your Tools
+                  │
+     ┌────────────┴────────────┐
+     │                         │
+  Pruning                 Verification
+  tools/properties/enums   schema-invalid calls
+     │                         │
+     ▼                         ▼
+Smaller context          Prevent + recover
+     │
+     ▼
+Lower input cost + preserved quality
+```
+
+**Do not claim CYT proves context rot.**
 
 ---
 
 ## Headline figures
 
-| Figure | X-axis | Y-axis | Lines |
-|--------|--------|--------|-------|
-| **Fig 1** Token reduction | Tool catalog size | Input tokens | Baseline, CYT |
-| **Fig 2** Task success | Tool catalog size | Success rate | Baseline, CYT |
-| **Fig 3** Cost per success | Tool catalog size | $/successful task | Baseline, CYT |
+| Fig | X | Y |
+|-----|---|---|
+| 1 | Catalog size | Tool-context + total input tokens |
+| 2 | Catalog size | TaskSuccessRate |
+| 3 | Catalog size | CostPerSuccess |
+
+Optional: MPR by configuration; pipeline ablation bar chart.
 
 ---
 
-## Related work positioning
+## Related work
 
-Do **not** claim CYT is the first system to reduce MCP tool-context overhead.
-
-| Work | Approach | CYT differentiation |
-|------|----------|---------------------|
-| RAG-MCP | Tool-level retrieval | CYT transforms schemas (property + enum pruning), not just tool selection |
-| Semantic Tool Discovery | Retrieval-based selection | Same |
-| MCP-Zero | Agent-constructed toolchain | CYT is query-dependent schema minimization + verification |
-
-**CYT contribution stack:**
-
-```
-Tool selection → Tool pruning → Optional-property pruning → Enum pruning → Schema reconstruction
-                                                                          + Tool-call schema verification
-```
+| Work | CYT difference |
+|------|----------------|
+| RAG-MCP | Tool retrieval; CYT prunes schema internals |
+| Semantic Tool Discovery | Selection; not property/enum minimization |
+| MCP-Zero | Proactive toolchain; CYT is per-turn schema minimization + verify |
 
 ---
 
-## Differentiation from tool retrieval
+## Reproducibility
 
-Measure separately (see [metrics-instrumentation.md](./metrics-instrumentation.md)):
-
-| Reduction type | Example |
-|----------------|---------|
-| `Reduction_tools` | 150 → 8 tools |
-| `Reduction_properties` | 1,200 → 73 optional props |
-| `Reduction_enums` | 3,800 → 214 enum values |
-
-This supports the claim that CYT is a **schema minimizer**, not merely a top-k tool retriever.
+- Package version, `defaults.yaml`, eval harness (when built)
+- Four configurations documented with exact CLI
+- Layer A benchmark citation + Layer B task YAML

@@ -1,170 +1,206 @@
 # Experiment design
 
-Experimental matrix, ablations, and controlled sweeps adapted to this codebase.
+**Do not run the full Cartesian product.** Designate primary, verification, and ablation experiments.
+
+See [evaluation-framework.md](./evaluation-framework.md) for configurations and levels.
 
 ---
 
-## Four-way ablation (required)
+## Scenario dimensions (reference matrix)
 
-| Configuration | Pruning | Verification | Repo setup |
-|---------------|---------|--------------|------------|
-| **Baseline** | ❌ | ❌ | Agent MCP config without CYT; or CYT fully disabled |
-| **Verify-only** | ❌ | ✅ | `cyt hook cursor --prevent-hallucinations` |
-| **CYT-prune** | ✅ | ❌ | `cyt hook cursor` with `hallucination_gate.enabled: false` |
-| **CYT-full** | ✅ | ✅ | Pruning + `hallucination_gate.enabled: true` |
-
-### Expected outcomes
-
-| Config | Token savings | Task errors |
-|--------|---------------|-------------|
-| Baseline | 0% (reference) | Baseline malformed-call rate |
-| Verify-only | ≈ 0% | ↓ malformed calls; possible recovery overhead |
-| CYT-prune | High tool-schema reduction | Risk if recall < 1.0 |
-| CYT-full | High + verify safety net | Best combined |
+| Dimension | Values |
+|-----------|--------|
+| Task | Single-step / Multi-step |
+| Client | Claude / Codex / Cursor |
+| CYT | None / Verify / Prune / Prune+Verify |
+| Injection | Hook / Proxy |
+| Aggregator | Cloudflare / Executor / mcpc / CYT-MCP |
+| Pipeline | BM25 / Rerank / LLM |
+| Catalog size | Small / Medium / Large |
+| Session state | New / Pre-exposed / Compacted |
 
 ---
 
-## Agent × deployment matrix
+## Primary experiment — Pruning vs baseline
 
-### Cursor (primary eval target)
+**Compare:** No CYT **vs** CYT Pruning (verify optional off for cleanest pruning signal; report Prune+Verify separately).
 
-| Condition | Available? | Setup |
-|-----------|------------|-------|
-| Full tools | ✅ | Native MCP, no CYT |
-| CYT hook (prune) | ✅ | `cyt hook cursor` + cyt-mcp |
-| CYT hook (verify-only) | ✅ | `--prevent-hallucinations` |
-| CYT proxy | ❌ | Platform limitation (`LIMITATIONS.md`) |
+**Across:**
 
-### Claude
+| Axis | Values |
+|------|--------|
+| Client | Claude, Codex, Cursor |
+| Task type | Single-step, Multi-step |
+| Catalog size | Small (25), Medium (100), Large (250+) |
 
-| Condition | Setup |
-|-----------|-------|
-| Full tools | Direct API / no proxy |
-| CYT proxy | `cyt launch -- claude` |
-| CYT hook | `pruning.inject_via.claude: hook` |
-| Verify-only | `--prevent-hallucinations` |
+**Primary metrics:** TaskSuccessRate, tool-context tokens, total input tokens, CostPerSuccess.
 
-### Codex
+**Cursor note:** Hook only; measure stub + rules-file injected tokens.
 
-| Condition | Setup |
-|-----------|-------|
-| Full tools | Direct |
-| Codex native pruning | Default Codex behavior |
-| CYT proxy | `cyt launch -- codex` |
-| Codex + CYT | Proxy or hook + native pruning |
-| Verify-only | `--prevent-hallucinations` |
+---
 
-**Paper metric for Codex:**
+## Verification experiment
+
+**Compare:** No CYT **vs** Verify only.
+
+**Focus:** Level 1–3 metrics — MPR, TESR, recovery rate, recovery overhead.
+
+**Expectation:** Token savings ≈ 0%; malformed-call prevention ↑.
+
+**Setup:** `cyt hook <agent> --prevent-hallucinations`
+
+**Include:** Labeled schema-invalid corpus (see [benchmark-design.md](./benchmark-design.md)).
+
+---
+
+## Ablation experiments (run separately)
+
+| Ablation | Question |
+|----------|----------|
+| **BM25 vs Rerank vs LLM** | Benefit from schema transformation vs sophisticated pruner? |
+| **Hook vs Proxy** | Same task, Claude/Codex only (Cursor = hook only) |
+| **Verify on vs off** (within pruning) | Pruning only vs Pruning + Verify |
+| **Pre-exposed vs new session** | Does pre-exposure skip save tokens without hurting success? |
+| **Before vs after compaction** | Does reinjection after `preCompact` preserve tool availability? |
+| **Turn-aware query** | Prune on user prompt only vs user + latest agent message |
+| **Catalog size sweep** | 10, 25, 50, 100, 200, 500 tools |
+| **Schema-bloat isolation** | Constant tool count; inflate irrelevant props/enums |
+
+### Catalog size note
+
+Default `minimum_tools: 50` skips pruning below threshold — document or override in eval config.
+
+---
+
+## Pruning pipeline experiment
+
+Clean independent axis — **not mixed into primary comparison**:
+
+| Pipeline | Config |
+|----------|--------|
+| BM25 | `pruning.tools.sequence: [bm25]` |
+| Rerank | `[bm25, rerank]` or `[rerank]` |
+| LLM | `[llm]` |
+
+Measure per pipeline: required-tool recall, token reduction, latency, \(C_{pruning}\), TaskSuccessRate.
+
+**Code:** `src/cyt/pruners/tools_filter.py` orchestrates sequence from config.
+
+---
+
+## Aggregator experiment (reproducibility only)
+
+**Not a primary statistical axis.**
+
+| Client | Injection | Aggregator |
+|--------|-----------|------------|
+| Claude | Hook | Cloudflare, Executor, mcpc, CYT-MCP |
+| Codex | Hook | … |
+| Cursor | Hook | CYT-MCP (default), others as configured |
+| Claude/Codex | Proxy | N/A (direct catalog) |
+
+Document setup paths; one aggregator per primary run (recommend **CYT-MCP**).
+
+**Code:** `tools_from` in `defaults.yaml`; `src/cyt_mcp/backends.py`.
+
+---
+
+## Codex-specific comparison
+
+| Config | Purpose |
+|------|---------|
+| Codex full tools | Baseline |
+| Codex native pruning | Harness default |
+| Codex + CYT | Additional reduction |
 
 \[
-\text{AdditionalReduction} = 1 - \frac{\text{Tokens}_{Codex+CYT}}{\text{Tokens}_{Codex}}
+\text{AdditionalReduction} = 1 - T_{Codex+CYT} / T_{Codex}
 \]
 
-Hypothesis from `LIMITATIONS.md`: ~20% additional savings — **validate experimentally**, do not cite as established result.
+Validate `LIMITATIONS.md` ~20% claim — hypothesis, not established.
 
 ---
 
-## Catalog size sweep (controlled experiment)
+## Deployment mode comparison (Claude/Codex)
 
-Same task set, vary distractor tool count:
+| Condition | Path |
+|-----------|------|
+| Full tools | No CYT |
+| CYT proxy | `cyt launch --` |
+| CYT hook | `inject_via: hook` |
 
-| Catalog size | Purpose |
-|--------------|---------|
-| 10 | Below CYT `minimum_tools: 50` — pruning may skip |
-| 25 | Small catalog |
-| 50 | At default threshold |
-| 100 | Medium |
-| 200 | Large |
-| 500 | Stress test |
-
-### Build approach
-
-1. **Real tools:** 5–10 MCP backends via `~/.config/cyt/mcp/<agent>.json` (GitHub, filesystem, etc.)
-2. **Synthetic distractors:** Generate fake tool definitions with plausible names/schemas
-3. **Gold tool chains:** Per-task annotation of required tools/properties/enums
-
-### Note on `minimum_tools: 50`
-
-Default policy in `defaults.yaml` skips pruning below 50 tools. For catalog-size experiment:
-
-- Either document "no prune" behavior at 10/25 as a finding
-- Or override `pruning.tools.policy.minimum_tools` in eval config
+Cursor: hook only — include in paper as constraint, not missing eval.
 
 ---
 
-## Schema-bloat isolation experiment (§18)
+## Two benchmark layers
 
-Hold **tool count** and **task** constant; inflate one tool's schema:
+### Layer A — Existing MCP / tool-use benchmark
 
-| Condition | Irrelevant schema added |
-|-----------|-------------------------|
-| Baseline | 0 |
-| Bloat-10 | 10 irrelevant optional properties |
-| Bloat-50 | 50 |
-| Bloat-100 | 100 |
-| Bloat-500enums | 500 irrelevant enum values |
+Run CYT against an **externally recognizable** benchmark.
 
-**Expected:** Baseline tokens ↑, CYT tokens ≈ flat.
+- Less benchmark-construction bias
+- Reproducibility for reviewers
+- **Gap:** Not integrated — pick benchmark and wrap with harness
 
-**Implementation:** Synthetic MCP server or fixture catalog in harness — **not yet in repo**.
+### Layer B — CYT-specific stress benchmark
 
----
+Controlled tasks for mechanisms existing benchmarks won't isolate:
 
-## Randomized controlled evaluation protocol
+- Tool-schema bloat (props/enums)
+- Distractor-heavy catalogs
+- Schema-invalid calls (Verify)
+- Execution-unsuccessful / semantic failures (Level 2)
+- Repeated in-session tool use (pre-exposure)
+- Conversation compaction
 
-For every (task, configuration) pair:
-
-| Control | Value |
-|---------|-------|
-| Model | Fixed per agent (e.g. Claude Sonnet, GPT-4.1) |
-| Temperature | Fixed |
-| Prompt | Identical |
-| MCP servers | Identical |
-| Initial state | Identical (fresh repo/issue sandbox) |
-| Random seed | Fixed where agent supports it |
-| Repetitions | N = 5–10 |
-
-### Paired analysis
-
-Same task IDs across baseline and CYT → paired statistical tests.
+**Build in:** `evals/cursor/tasks/` (proposed).
 
 ---
 
-## Minimal v1 scope (recommended first build)
+## Randomized controlled protocol
 
-| Dimension | v1 value |
-|-----------|----------|
-| Tasks | 50 (start with 5–10 for harness debug) |
-| Configurations | 4 (ablation matrix) |
-| Agents | Cursor first; Claude/Codex later |
+Per (task, configuration):
+
+- Same model, temperature, prompt, MCP servers, initial state, seed
+- N = 5–10 repetitions
+- Paired analysis across configurations
+
+---
+
+## Minimal v1 scope
+
+| Dimension | v1 |
+|-----------|-----|
+| Primary | No CYT vs Pruning |
+| Verification | No CYT vs Verify only (subset of tasks) |
+| Client | Cursor first |
+| Tasks | 5 smoke → 50 |
+| Configurations | 4-way ablation |
 | Catalog sizes | 25, 100, 250 |
-| Repetitions | 3 |
-
-**Runs:** 50 × 4 × 1 × 3 × 3 = 1,800 (Cursor only)
-
-Add Claude/Codex for full paper: 50 × 4 × 3 × 3 × 3 = 5,400 (+ repetitions).
+| Pipeline | BM25 only |
+| Aggregator | CYT-MCP |
 
 ---
 
-## Environment setup checklist
+## Headline figures
+
+| Figure | X | Y | Lines |
+|--------|---|---|-------|
+| Fig 1 | Catalog size | Input tokens (tool-context + total) | Baseline, CYT |
+| Fig 2 | Catalog size | TaskSuccessRate | Baseline, CYT |
+| Fig 3 | Catalog size | CostPerSuccess | Baseline, CYT |
+
+Optional: MPR vs catalog size (verification experiment).
+
+---
+
+## Environment checklist
 
 ```bash
 uv tool install 'clear-your-tools[cyt-mcp,proxy,pruners]'
-cyt hook cursor                    # or --prevent-hallucinations
-# Configure backends: ~/.config/cyt/mcp/cursor.json
-# Aggregator: ~/.config/cyt/mcp-aggregator.yaml
+cyt hook cursor                          # pruning
+cyt hook cursor --prevent-hallucinations   # verify only
 ```
 
-Session artifacts for analysis:
-
-- `~/.config/cyt/stats.db` — proxy stats (Claude/Codex)
-- `~/.config/cyt/sessions/*.jsonl` — Type-1/Type-2 catalogs, exposure on deny
-- `.cursor/rules/cyt-injection.mdc` — injected pruned schemas (Cursor)
-
----
-
-## Outputs per run (target)
-
-See [eval-harness-spec.md](./eval-harness-spec.md) for the `run_task()` return schema.
-
-Aggregate into CSV/Parquet for figure generation (Fig 1–3).
+Artifacts: `~/.config/cyt/sessions/*.jsonl`, `stats.db` (proxy), `.cursor/rules/cyt-injection.mdc`.

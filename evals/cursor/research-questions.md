@@ -1,180 +1,212 @@
-# Research questions
+# Research questions and metrics
 
-Three headline RQs for the arXiv evaluation, with metrics and codebase instrumentation notes.
+Three **primary results** (cost, tokens, task quality) with four **evaluation levels** as supporting structure. See [evaluation-framework.md](./evaluation-framework.md).
 
 ---
 
-## RQ1 — Token efficiency
+## Primary result 1 — Token consumption
 
-**Question:** How much does CYT reduce tool-schema and **total input-token** consumption compared with exposing the complete tool catalog?
+**Do not use "total tokens" as a single headline.**
 
-### Primary metrics
+### Report separately
 
-| Metric | Formula / definition |
-|--------|---------------------|
-| Tool token reduction | \(1 - T_{CYT}^{tools} / T_{baseline}^{tools}\) |
+**Input:**
+
+| Component | CYT impact |
+|-----------|------------|
+| User prompt tokens | Unchanged |
+| Latest agent-message tokens | Capture for turn-aware analysis |
+| Tool-schema tokens (stubs on wire) | Reduced via stubs |
+| Injected tool-definition tokens | Reduced via pruning |
+| Other context tokens | Unchanged |
+
+**Output:**
+
+| Component | Notes |
+|-----------|-------|
+| Assistant output tokens | Unchanged by CYT |
+| Tool-call argument tokens | May change with recovery |
+
+### Headline token metrics
+
+| Metric | Formula |
+|--------|---------|
+| Tool-context input tokens | stubs + injected definitions |
+| Total input tokens | Full request |
+| Tool-context reduction | \(1 - T_{CYT}^{toolctx} / T_{baseline}^{toolctx}\) |
 | Total input reduction | \(1 - T_{CYT}^{input} / T_{baseline}^{input}\) |
-| Tokens per successful task | Total tokens / successful tasks |
-| Output tokens | Report separately (CYT should not reduce) |
 
-### Also report
+Verify-only: tool-context reduction ≈ 0%.
 
-- Tool-schema input tokens
-- Total input tokens
-- Output tokens
-- Total tokens
-- Percentage reduction (tool-only **and** total)
+### Codebase
 
-### Critical distinction
-
-Reviewers will ask whether tool schemas were a significant fraction of the request. **Always report total input reduction**, not only tool-schema reduction.
-
-### Codebase today
-
-| Source | Coverage |
-|--------|----------|
-| `src/cyt/proxy/stats.py` | Rich for **proxy path**: `tools_in/out`, property counts, token rows |
-| `src/cyt/common/token_usage.py` | cl100k_base estimates via `cyt-indexer-sdk` |
-| `cyt stats` CLI | Aggregates proxy stats from `~/.config/cyt/stats.db` |
-| Hook path (Cursor) | **Gap** — need harness to capture injected schema size per turn |
-
-### Verify-only expectation
-
-Token savings ≈ **0%** — full schemas still reach the model. Validates that verify-only is not counted as a pruning win.
+| Signal | Source |
+|--------|--------|
+| Proxy tool in/out tokens | `stats.db` via `cyt stats` |
+| Injected rules file | Tokenize `.cursor/rules/cyt-injection.mdc` |
+| Input breakdown | **Gap** — not decomposed in stats today |
 
 ---
 
-## RQ2 — Cost
+## Primary result 2 — Cost
 
-**Question:** How much does CYT reduce **net monetary inference cost** after accounting for pruner cost?
+### Cache-aware cost model
 
-### Net cost model
+Don't use `input_tokens × input_price` alone when prefix is stable.
 
 \[
-\text{NetCost} = \text{LLMCost}_{agent} + \text{PrunerCost} + \text{InfrastructureCost}
+\text{Cost} = T_{input,uncached} P_{input} + T_{input,cached} P_{cached} + T_{output} P_{output}
+\]
+
+Use provider cache-read/cache-write rates when available (Anthropic prompt caching, etc.).
+
+CYT proxy preserves stable stub prefix intentionally — **cache modeling is required** for fair comparison.
+
+### Net cost with pruner
+
+\[
+C_{CYT} = C_{pruning} + C_{agent} + C_{infra}
 \]
 
 \[
-\text{NetCostReduction} = 1 - \frac{\text{NetCost}_{CYT}}{\text{NetCost}_{baseline}}
+\text{NetSavings} = C_{baseline} - C_{CYT}
 \]
 
-Do **not** report only "CYT reduced LLM cost by X%" without pruner cost.
+| Pruner | \(C_{pruning}\) in repo |
+|--------|-------------------------|
+| BM25 | $0 |
+| Rerank | LiteLLM stage in `pricing.py` |
+| LLM | LiteLLM stage in `pricing.py` |
 
-### Report table
+**Key comparison:** expensive LLM selects tools (baseline context bloat) vs cheap LLM prunes + expensive LLM tasks.
 
-| Metric | Baseline | CYT | Δ |
-|--------|----------|-----|---|
-| Tool input tokens | | | |
-| Total input tokens | | | |
-| Output tokens | | | |
-| Agent LLM cost | | | |
-| Pruner cost (BM25=0, rerank/LLM>0) | | | |
-| Total cost | | | |
-| **Cost / successful task** | | | |
-
-**Cost per success** is the strongest practical metric:
+### Headline cost metric
 
 \[
 \text{CostPerSuccess} = \frac{\text{TotalCost}}{\text{SuccessfulTasks}}
 \]
 
-A system 50% cheaper but 60% as successful may not be better.
+### Codebase
 
-### Codebase today
-
-| Source | Coverage |
-|--------|----------|
-| `src/cyt/common/pricing.py` | `compute_stats_costs()`, `compute_net_savings_tokens()` |
-| `src/tests/quality_metrics/test_pricing.py` | Unit tests for pricing math |
-| BM25 pruner cost | **$0** (local Tantivy) |
-| Rerank / LLM pruner | LiteLLM call costs tracked in stats stages |
-| Task-linked cost | **Gap** — need harness |
+`compute_stats_costs()`, `compute_net_savings_tokens()` — partial; no cached/uncached split.
 
 ---
 
-## RQ3 — Task quality
+## Primary result 3 — Task quality
 
-**Question:** Does CYT preserve task completion accuracy when reducing tool context?
+**Independent of tool-call metrics.**
 
-### Method (keep simple)
+\[
+\text{TaskSuccessRate} = \frac{\text{SuccessfulTasks}}{\text{TotalTasks}}
+\]
 
-For each task:
+Each task: deterministic verifier on final environment state.
 
-1. Same user prompt
-2. Same initial environment/state
-3. Same tool catalog
-4. Run **baseline** (full tools) and **CYT** (prune and/or verify)
-5. Inspect resulting state
-6. **Deterministic assertions** — not subjective LLM judgment
+| Task type | Verifier example |
+|-----------|------------------|
+| Create issue | issue exists, repo, title, body match |
+| Find PR #123 | correct PR returned |
+| Multi-step | issue exists, correct repo, release referenced |
 
-### Example
-
-**Task:** "Create a GitHub issue titled 'Fix authentication bug' in repository qdrddr/example."
-
-**Success assertions:**
-
-- Issue exists
-- `repository == qdrddr/example`
-- `title == "Fix authentication bug"`
-
-### Codebase today
-
-| Source | Coverage |
-|--------|----------|
-| Gherkin features | Behavioral specs for gate/injection — not end-to-end task benchmark |
-| `sdk/e2e/` | SDK smoke tests — not agent task eval |
-| Deterministic task suite | **Not implemented** — primary eval build target |
+**No LLM judge** where deterministic checks suffice.
 
 ---
 
-## Supporting metrics (cross-cutting)
+## Supporting — Tool-call metrics (Levels 1–2)
 
-### Pruning quality (per task)
-
-Gold required set \(G_t\), CYT selected set \(P_t\):
+Separate from task success. Classify every call → [evaluation-framework.md](./evaluation-framework.md).
 
 | Metric | Formula |
 |--------|---------|
-| Tool recall | \(\|G_t^{tools} \cap P_t^{tools}\| / \|G_t^{tools}\|\) |
-| Property recall | \(\|G_t^{properties} \cap P_t^{properties}\| / \|G_t^{properties}\|\) |
-| Enum recall | \(\|G_t^{enums} \cap P_t^{enums}\| / \|G_t^{enums}\|\) |
+| Malformed-call prevention rate (MPR) | prevented malformed / malformed |
+| Tool execution success rate (TESR) | successful / executed (exclude prevented) |
+| Schema-malformed rate | malformed / total |
+| Execution-unsuccessful rate | valid schema, failed backend / total |
 
-Separates "removed 90% of schema" from "retained 99.8% of task-relevant information."
+Report absolute counts **and** percentages for each bucket (A/B/C/D).
 
-### Verification quality
+---
 
-| Metric | Formula |
-|--------|---------|
-| Precision | CorrectlyAllowed / AllAllowed |
-| Recall | CorrectlyBlocked / AllMalformed |
-| False blocking rate (FBR) | ValidCallsBlocked / ValidCalls |
-
-FBR is critical — false blocks directly harm task completion.
-
-### Recovery (verify path)
+## Supporting — Agent trajectory (Level 3)
 
 | Metric | Definition |
 |--------|------------|
-| Recovery rate | MalformedTasksEventuallySuccessful / MalformedTasks |
-| Recovery overhead | Extra model calls, tokens, latency after deny |
+| Recovery rate | Tasks with schema-invalid call that eventually succeed |
+| Recovery overhead | Extra calls, input/output tokens, latency after deny |
 
-Target result shape: "CYT prevented X% malformed calls, recovered Y% of those tasks, average overhead Z tokens."
+**Code:** Deny path in `tool_gate.py`; **gap:** aggregate metrics.
 
-### Irrelevant-token removal (CYT-specific)
+---
 
-Report tools, properties, enums separately — see [paper-outline.md](./paper-outline.md).
+## Supporting — Pruning quality
+
+Gold set \(G_t\) vs CYT selected \(P_t\) per task:
+
+| Metric | Formula |
+|--------|---------|
+| Required-tool recall | \(\|G_t^{tools} \cap P_t^{tools}\| / \|G_t^{tools}\|\) |
+| Required-property recall | Same for properties |
+| Required-enum recall | Same for enums |
+
+Irrelevant-token removal table (tools / properties / enums / tool-schema tokens).
+
+### Pre-exposure / promotion
+
+| Metric | Notes |
+|--------|-------|
+| Times tool requested | Per session |
+| Times definition injected vs skipped | Pre-exposure filter |
+| Tokens saved by skip | Compare re-inject vs skip |
+| Task success with/without pre-exposure | Ablation |
+
+### Compaction ablation
+
+Before vs after `preCompact`: tool availability, re-inject count, task success.
+
+---
+
+## Supporting — Pruning pipeline axis
+
+Independent experiment — same tasks, different pipeline:
+
+| Pipeline | Code |
+|----------|------|
+| BM25 | `src/cyt/pruners/bm25.py` |
+| Rerank | `src/cyt/pruners/rerank.py` |
+| LLM | `src/cyt/pruners/llm.py` |
+
+Measure: recall, token reduction, latency, pipeline cost, task success.
+
+**Hypothesis to test:** BM25 provides most benefit at fraction of pruning cost.
+
+---
+
+## Supporting — Schema admission (secondary)
+
+How often does the model call a tool **not injected** but in Type-2 catalog with valid schema?
+
+Log `allowed_unexposed` rate — interesting for "tools in weights" discussion.
+
+---
+
+## Canonical metrics table (paper)
+
+| Category | Metric |
+|----------|--------|
+| **Task** | Task success rate, task failure rate |
+| **Tool calls** | Total, successful, unsuccessful, schema-malformed, malformed prevented, MPR, TESR |
+| **Tokens** | Input, output, tool-schema, injected-definition, cached input, uncached input |
+| **Cost** | Agent LLM, CYT/pruner, total input/output cost, cost per successful task |
+| **Performance** | Task completion time, CYT pruning latency, verification latency |
+| **Pruning** | Tools/properties/enums removed, required-tool/property recall |
+| **Recovery** | Recovery rate, additional calls/tokens to recovery |
+
+Do not add metrics beyond this unless data demands it.
 
 ---
 
 ## Statistical reporting
 
-Paired experiment: same task, same seed where supported, N=5–10 repetitions.
+Paired design: same task, model, temperature, seed; N=5–10 repetitions.
 
-Report: mean, median, std dev, 95% CI. Use paired tests when reusing the same task set.
-
-Minimal eval scale (manageable v1):
-
-- 50 tasks × 4 configs × 3 agents × 3 catalog sizes = 1,800 runs
-- × 3 repetitions = 5,400 runs
-
-Scale down to 5–10 tasks for harness validation first.
+Report mean, median, std dev, 95% CI.

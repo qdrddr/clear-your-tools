@@ -1,227 +1,257 @@
 # Eval harness specification
 
-Minimal evaluation harness interface — **not yet implemented**; spec for first build.
-
----
-
-## Design goal
-
-Make the paper **data analysis**, not manual result collection:
-
-```python
-result = run_task(task=task, agent="cursor", configuration="baseline")
-result = run_task(task=task, agent="cursor", configuration="cyt-full")
-```
+**Not yet implemented.** Spec aligned with [evaluation-framework.md](./evaluation-framework.md) — four levels, per-call logging, task verifiers independent of tool metrics.
 
 ---
 
 ## Core API
 
 ```python
-from evals.cursor.harness import run_task, TaskSpec, RunResult
+from evals.cursor.harness import run_task, TaskSpec, RunResult, ToolCallRecord
 
 result: RunResult = run_task(
     task=TaskSpec.load("tasks/task-037.yaml"),
-    agent="cursor",           # cursor | claude | codex
-    configuration="cyt-full", # baseline | verify-only | cyt-prune | cyt-full
+    agent="cursor",
+    configuration="cyt-prune",   # none | verify-only | cyt-prune | cyt-full
     catalog="catalogs/100-tools.json",
+    pipeline="bm25",             # bm25 | rerank | llm
     repetition=0,
     seed=42,
 )
 ```
 
-### `RunResult` schema
+---
+
+## Configuration mapping
+
+| `configuration` | Pruning | Verify | Repo |
+|-----------------|---------|--------|------|
+| `none` | ❌ | ❌ | CYT disabled |
+| `verify-only` | ❌ | ✅ | `--prevent-hallucinations` |
+| `cyt-prune` | ✅ | ❌ | Default; gate off |
+| `cyt-full` | ✅ | ✅ | Gate on |
+
+---
+
+## Four-level capture
+
+| Level | Harness responsibility |
+|-------|------------------------|
+| **L1 Schema** | Parse `tool_gate` allow/deny; `schema_valid` on each call |
+| **L2 Execution** | Capture MCP/tool backend success/failure |
+| **L3 Trajectory** | Link retries after deny; compute recovery |
+| **L4 Task** | Run YAML `verifier` assertions on final state — **sole success bit** |
+
+**Critical:** `RunResult.success` comes **only** from L4 verifier, not from tool-call counts.
+
+---
+
+## ToolCallRecord
+
+See full schema in [metrics-instrumentation.md](./metrics-instrumentation.md).
+
+Harness must log **every** call with classification A/B/C/D:
+
+| Class | `schema_valid` | `blocked` | `execution_successful` |
+|-------|----------------|-----------|------------------------|
+| A Valid+successful | True | False | True |
+| B Valid+unsuccessful | True | False | False |
+| C Malformed+prevented | False | True | None |
+| D Malformed+executed | False | False | — (flag anomaly if verify on) |
+
+Also log `allowed_unexposed`: valid call to Type-2 tool not in Type-1 inject.
+
+---
+
+## RunResult (task-level)
 
 ```python
 @dataclass
 class RunResult:
-    success: bool
+    success: bool                      # L4 verifier only
     input_tokens: int
     output_tokens: int
-    tool_schema_tokens: int
-    tool_calls: int
-    malformed_tool_calls: int
-    blocked_tool_calls: int
-    recovered_tool_calls: int
-    tools_available: int
-    tools_exposed: int
-    properties_available: int
-    properties_exposed: int
-    enum_values_available: int
-    enum_values_exposed: int
-    latency_ms: int
+    tool_context_tokens: int
+    injected_definition_tokens: int
+    cached_input_tokens: int | None
+    uncached_input_tokens: int | None
     agent_cost: float
     pruner_cost: float
     total_cost: float
-    # Metadata
+    tool_calls: list[ToolCallRecord]
+    mpr: float | None
+    tesr: float | None
+    recovery_rate: float | None
+    recovery_overhead_tokens: int | None
+    tools_available: int
+    tools_exposed: int
+    required_tool_recall: float | None
+    pre_exposure_skips: int | None
+    compaction_occurred: bool
     task_id: str
     configuration: str
     agent: str
+    pipeline: str
     catalog_size: int
     repetition: int
-    error: str | None = None
-    trace_path: Path | None = None
+    latency_ms: int
+    error: str | None
+    trace_path: Path | None
 ```
 
 ---
 
-## Configuration switching
+## Turn-aware pruning capture
 
-| `configuration` | CYT setup |
-|-----------------|-----------|
-| `baseline` | Uninstall CYT hooks; direct MCP backends |
-| `verify-only` | `hallucination_gate.enabled: true`, pruning disabled |
-| `cyt-prune` | Default hook/proxy pruning, gate off |
-| `cyt-full` | Pruning + `hallucination_gate.enabled: true` |
+For each LLM turn, record:
 
-Implement via temporary config overlay in harness (write to temp dir or env `CYT_CONFIG`).
+```python
+@dataclass
+class PruneContext:
+    user_prompt: str
+    latest_agent_message: str | None
+    combined_text_used: str          # what CYT actually queried
+    prune_query: str                 # input to BM25/rerank/llm
+```
 
-Reference: `src/cyt/config/__init__.py` merge order (defaults → user → CWD → CLI).
+Compare runs with `prune_query=user_only` vs `prune_query=user+latest_agent` (ablation).
+
+**Baseline code:** proxy uses `extract_user_query`; extend harness to log actual query from hook/proxy.
+
+---
+
+## Token capture per request
+
+```python
+@dataclass
+class RequestTokenBreakdown:
+    user_prompt: int
+    latest_agent_message: int
+    tool_stubs: int
+    injected_definitions: int
+    other_context: int
+    output_assistant: int
+    output_tool_args: int
+    cached_input: int | None
+    uncached_input: int | None
+```
+
+Tokenize via `cyt-indexer-sdk` cl100k_base (consistent with `LIMITATIONS.md`).
+
+---
+
+## Verifier framework (L4)
+
+```python
+# evals/cursor/verifiers/github.py
+def assert_issue_exists(state, *, repo: str, title: str) -> bool: ...
+```
+
+Tasks reference verifiers in YAML — no LLM judge.
+
+---
+
+## Verification corpus runner
+
+```python
+def run_verification_eval(corpus: Path) -> dict:
+    """Feed labeled calls through tool_gate / schema_validate."""
+    return {"mpr": ..., "fbr": ..., "precision": ..., "recall": ...}
+```
+
+Separate from agent `run_task()` — uses static JSONL corpus.
+
+---
+
+## Batch experiments
+
+```python
+def run_primary_experiment(...) -> Path:
+    """No CYT vs cyt-prune × agents × single/multi-step."""
+
+def run_verification_experiment(...) -> Path:
+    """No CYT vs verify-only."""
+
+def run_pipeline_ablation(...) -> Path:
+    """BM25 vs rerank vs LLM."""
+```
+
+Output: `evals/cursor/results/<timestamp>/results.parquet` + `tool_calls.parquet`.
 
 ---
 
 ## Agent runners
 
-### Cursor runner (P0)
+### Cursor (P0)
 
-1. Ensure cyt-mcp + hooks installed (`cyt hook cursor`)
-2. Load task prompt into agent (API or scripted UI — TBD)
-3. Collect:
-   - Session JSONL: `~/.config/cyt/sessions/`
-   - Rules file token count: `.cursor/rules/cyt-injection.mdc`
-   - Run assertions from `benchmark-design.md`
-4. Teardown fixture state
+1. Config overlay for 4 configurations
+2. Execute task prompt (API/scripted)
+3. Collect: session JSONL, rules file, hook deny events
+4. Parse tool calls from agent trace or MCP logs
+5. Run L4 verifiers
 
-**Challenge:** Cursor may not expose token usage programmatically — fallback to schema token estimate + manual spot-checks against provider dashboard.
+### Claude/Codex (P1)
 
-### Claude runner (P1)
-
-Use `cyt launch -- claude` for proxy path; read `stats.db` after task.
-
-### Codex runner (P1)
-
-Use `cyt launch -- codex`; compare against Codex-native (no CYT proxy).
+`cyt launch --` + read `stats.db`; richer token data from proxy.
 
 ---
 
-## Batch runner
+## Phase plan
 
-```python
-def run_experiment(
-    tasks: list[TaskSpec],
-    configurations: list[str],
-    agents: list[str],
-    catalogs: list[Path],
-    repetitions: int = 3,
-) -> list[RunResult]:
-    ...
-```
+### Phase 0 — Skeleton
 
-Output: `evals/cursor/results/<timestamp>/results.parquet`
-
----
-
-## Assertion framework
-
-```python
-# evals/cursor/assertions/github.py
-
-def assert_issue_exists(state, *, repo: str, title: str) -> bool:
-    ...
-```
-
-Tasks reference assertions by name in YAML (see `benchmark-design.md`).
-
----
-
-## Verification corpus runner (separate from agent tasks)
-
-```python
-def run_verification_eval(corpus_path: Path) -> VerificationMetrics:
-    """Feed labeled tool calls through tool_gate.validate_pre_tool_call()."""
-```
-
-Returns precision, recall, FBR.
-
-Reuse: `src/cyt_client/tool_gate.py`, `schema_validate.py`.
-
----
-
-## What to build first
-
-Per research recommendation §21 — minimal path:
-
-### Phase 0 — Harness skeleton (1–2 days agent time)
-
-- [ ] `evals/cursor/harness/__init__.py` with `run_task` stub
-- [ ] Load YAML task spec
-- [ ] Config overlay for 4 configurations
-- [ ] Token estimate helper (cl100k on injected schema)
-- [ ] Write `RunResult` to JSONL
+- [ ] `ToolCallRecord`, `RunResult`, config overlay
+- [ ] Verification corpus runner (static JSONL)
+- [ ] Token breakdown helper
 
 ### Phase 1 — 5 smoke tasks
 
-- [ ] 1 single-tool, 1 enum, 1 optional-property, 1 multi-tool, 1 distractor-heavy
-- [ ] Mock MCP server with deterministic responses
-- [ ] 4 configurations × 1 repetition
+- [ ] Mock MCP + deterministic verifiers
+- [ ] All 4 configurations
+- [ ] L1–L4 metrics on each run
+- [ ] MPR/TESR on verify config
 
-### Phase 2 — Scale to minimal paper eval
+### Phase 2 — Primary experiment
 
-- [ ] 50 tasks, 3 catalog sizes, 3 repetitions
-- [ ] Cursor only
-- [ ] Aggregate script → CSV for Fig 1–3
+- [ ] 50 Layer B tasks × 3 catalog sizes × 3 reps
+- [ ] Cursor; then Claude/Codex
+- [ ] Aggregate → Fig 1–3
 
-### Phase 3 — Paper completeness
+### Phase 3 — Ablations
 
-- [ ] Verification corpus + FBR
-- [ ] Recovery tracking
-- [ ] Claude/Codex proxy runners
-- [ ] Codex native vs Codex+CYT comparison
-- [ ] Schema-bloat isolation experiment
-
----
-
-## Integration with existing tests
-
-| Existing | Reuse for |
-|----------|-----------|
-| `src/tests/quality_metrics/` | Pricing math, pruning timing, chunk parity |
-| Gherkin hallucination features | Verification unit behavior |
-| `sdk/e2e/fixtures/bm25_catalog.json` | Catalog fixtures |
-| `scripts/analysis/top_tools_by_enums.py` | Enum analysis |
-
-Do **not** conflate unit tests with agent eval — eval harness is end-to-end.
+- [ ] Pipeline (BM25/rerank/LLM)
+- [ ] Pre-exposure on/off
+- [ ] Compaction task
+- [ ] Turn-aware prune query
+- [ ] Layer A external benchmark wrapper
 
 ---
 
-## CI considerations
-
-| Tier | Scope | Requirements |
-|------|-------|--------------|
-| Fast | Verification corpus, token counting on fixtures | No API keys |
-| Nightly | 5-task mock MCP eval | Docker |
-| Manual | Live sandbox 50-task run | Secrets, $ budget |
-
----
-
-## Example usage (target)
+## CLI (target)
 
 ```bash
-# Single task debug
 uv run python -m evals.cursor.harness run \
-  --task evals/cursor/tasks/task-001.yaml \
+  --task tasks/task-001.yaml \
   --agent cursor \
-  --configuration cyt-prune \
-  --catalog evals/cursor/catalogs/100-tools.json
+  --configuration cyt-prune
 
-# Full minimal experiment
-uv run python -m evals.cursor.harness experiment \
-  --tasks evals/cursor/tasks/ \
-  --configurations baseline,verify-only,cyt-prune,cyt-full \
-  --agents cursor \
+uv run python -m evals.cursor.harness experiment primary \
+  --tasks tasks/ \
+  --agents cursor,claude,codex \
   --catalogs 25,100,250 \
-  --repetitions 3 \
-  --output evals/cursor/results/
+  --repetitions 3
 ```
 
-Add `evals/cursor` to pyproject optional extra or document as `uv run` module path.
+---
+
+## Reuse existing tests
+
+| Existing | Use |
+|----------|-----|
+| `hallucination_gate.feature` | L1 behavior regression |
+| `test_pricing.py` | Cost math |
+| `test_pruning_timing.py` | Pruning latency baseline |
+| `test_session_compaction.py` | Compaction event parsing |
+| `sdk/e2e/fixtures/bm25_catalog.json` | Catalog fixtures |
+
+Do not conflate unit tests with end-to-end eval.

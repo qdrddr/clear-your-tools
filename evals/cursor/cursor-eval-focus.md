@@ -1,163 +1,135 @@
 # Cursor evaluation focus
 
-Cursor-specific constraints, setup, and recommended eval path for the arXiv benchmark.
+Cursor is the **primary v1 harness target** (hook-only). See [evaluation-framework.md](./evaluation-framework.md) for four-level metrics.
 
 ---
 
-## Why Cursor first
+## Deployment (Cursor only)
 
-| Factor | Implication |
-|--------|-------------|
-| Hook-only deployment | Represents the hardest integration path (no proxy token mutation) |
-| cyt-mcp stub architecture | Production default for MCP tool gating |
-| Rules-file injection | Unique to Cursor; must measure injected schema tokens explicitly |
-| User audience | Primary CYT docs: `CURSOR-HOOK.md`, `examples/agents/cursor/` |
-
-Claude/Codex proxy evals reuse `stats.db` with less custom instrumentation.
+| Condition | Supported |
+|-----------|-----------|
+| No CYT | ✅ Native MCP |
+| Verify only | ✅ `--prevent-hallucinations` |
+| Pruning only | ✅ `cyt hook cursor` |
+| Pruning + Verify | ✅ Config overlay |
+| Proxy | ❌ Platform limit |
 
 ---
 
-## Cursor deployment summary
+## Architecture on Cursor
 
 ```
 Cursor IDE
-  ├── MCP: cyt-mcp (stub tools, {} schemas on wire)
-  ├── Hooks: cyt-client via ~/.cursor/hooks.json
-  │     ├── sessionStart / sessionEnd
-  │     ├── beforeSubmitPrompt → prune + write rules file
-  │     ├── preToolUse → tool_gate (verify)
-  │     └── postToolUse / preCompact
-  └── Rules: .cursor/rules/cyt-injection.mdc (pruned full schemas)
+  ├── MCP: cyt-mcp stubs ({})
+  ├── Hooks: cyt-client
+  │     ├── beforeSubmitPrompt → prune → rules file
+  │     ├── preToolUse → tool_gate (L1)
+  │     └── preCompact → compaction reset
+  └── Rules: .cursor/rules/cyt-injection.mdc
 ```
 
-**Verify-only:** Same hooks; no rules file sync; full schemas from cyt-mcp backends.
+Stable stubs + dynamic inject — relevant for **cache/prefix** discussion even on hook path (MCP layer stable).
 
 ---
 
-## Available experiment conditions
+## Measuring three primary results on Cursor
 
-| Condition | Supported | Notes |
-|-----------|-----------|-------|
-| Baseline (full tools) | ✅ | Disable CYT; configure MCP backends directly in Cursor |
-| CYT-prune (hook) | ✅ | `cyt hook cursor` |
-| Verify-only | ✅ | `cyt hook cursor --prevent-hallucinations` |
-| CYT-full | ✅ | Prune + enable hallucination gate in config |
-| CYT proxy | ❌ | `LIMITATIONS.md` — E2E encryption |
+### 1. Tokens
 
----
+| Component | Measure |
+|-----------|---------|
+| Tool stubs | Tokenize cyt-mcp tool list |
+| Injected defs | Tokenize `cyt-injection.mdc` per turn |
+| Tool-context total | stubs + injected |
+| Total input | **Gap** — Cursor may not expose; estimate or spot-check |
+| Latest agent message | Extract from trace for turn-aware ablation |
 
-## Cursor-specific measurement plan
+Baseline: tokenize full catalog from `cyt executor save` / backend snapshot.
 
-### Token accounting (hook path)
+### 2. Cost
 
-CYT does not sit on the LLM wire for Cursor. Measure:
+- BM25 pruner: $0
+- Agent cost: model pricing × tokens (cached/uncached if available)
+- CostPerSuccess: total / L4 success
 
-| Component | Measurement |
-|-----------|-------------|
-| **Stub overhead** | Tokenize cyt-mcp tool list (minimal schemas) |
-| **Injected schema** | Tokenize `.cursor/rules/cyt-injection.mdc` after each `beforeSubmitPrompt` |
-| **Effective tool tokens** | Stub + injected (approximates what model sees) |
-| **Savings vs baseline** | baseline full MCP catalog tokens − effective CYT tokens |
+### 3. Task quality (L4)
 
-Use `cyt-indexer-sdk` / `tiktoken` cl100k_base (same as `LIMITATIONS.md`).
-
-### Baseline catalog capture
-
-For fair comparison, snapshot full tool definitions:
-
-```bash
-cyt executor save   # or cloudflare save → ~/.config/cyt/mcp-definitions.json
-```
-
-Tokenize full catalog JSON as baseline \(T_{baseline}^{tools}\).
-
-### Session artifacts
-
-| File | Use in eval |
-|------|-------------|
-| `~/.config/cyt/sessions/<session>.jsonl` | Type-1/Type-2 catalogs, prune decisions |
-| `~/.config/cyt/stats.db` | Limited for hook (check tools-hook endpoints) |
-| Hook daemon logs | Prune errors, timing |
+Deterministic verifiers only — **ignore** tool-call success for `RunResult.success`.
 
 ---
 
-## Known platform limitations (include in paper)
+## Tool-call logging on Cursor (L1–L3)
 
-| Limitation | Impact on eval |
-|------------|----------------|
-| No reverse proxy | Cannot compare proxy vs hook on Cursor — hook only |
-| `additionalContext` not delivered on `beforeSubmitPrompt` | Rules file is measured path; document as Cursor workaround |
-| Token usage not exposed in hook payload | May need provider dashboard for total input tokens |
-| MCP initialized before session | cyt-mcp + session JSONL design addresses this — cite as motivation |
+| Signal | Source |
+|--------|--------|
+| Allow/deny | `preToolUse` → parse deny reason |
+| Schema-valid | Infer from allow vs schema deny |
+| Blocked (C) | deny with schema error |
+| Execution (L2) | MCP `postToolUse` result or backend response |
+| Retry (L3) | Same tool name, later step after deny |
+| allowed_unexposed | Allowed + tool not in rules file inject but in Type-2 |
 
-Code ready for native injection: `src/cyt_client/cursor.py` — re-evaluate when Cursor ships context delivery.
+Parse `~/.config/cyt/sessions/*.jsonl` for Type-2 catalog and deny exposures.
 
 ---
 
-## Setup commands
+## Cursor-specific ablations
+
+| Ablation | How |
+|----------|-----|
+| Pre-exposure | Compare with filter disabled (fork config) |
+| Compaction | Multi-turn task triggering `preCompact` |
+| Turn-aware prune | Log `combined_text` vs user-only query |
+
+**Code:** `pre_exposed.py`, `test_session_compaction.py`.
+
+---
+
+## v1 matrix (Cursor)
+
+| Dimension | Value |
+|-----------|-------|
+| Primary | No CYT vs cyt-prune |
+| Verification subset | No CYT vs verify-only |
+| Tasks | 5 → 50 (Layer B) |
+| Catalog sizes | 25, 100, 250 |
+| Pipeline | BM25 |
+| Aggregator | CYT-MCP |
+| Repetitions | 3 |
+
+Add Claude/Codex proxy for paper — richer `stats.db` token data.
+
+---
+
+## Known limitations (paper §9)
+
+| Limitation | Eval impact |
+|------------|-------------|
+| No proxy | Cannot compare hook vs proxy on Cursor |
+| Rules file vs additionalContext | Document workaround |
+| Token usage opaque | Schema token estimate + manual validation |
+| Type-2 admission | Model may call unexposed catalog tools — log rate |
+
+---
+
+## Setup
 
 ```bash
 uv tool install 'clear-your-tools[cyt-mcp]'
 cyt hook cursor
-# or
-cyt hook cursor --prevent-hallucinations
-
-# Backends
 # ~/.config/cyt/mcp/cursor.json
 # ~/.config/cyt/mcp-aggregator.yaml
 ```
 
-Example config: `examples/agents/cursor/`
-
-Restart Cursor after hook install.
+Restart Cursor after hook install. Example: `examples/agents/cursor/`.
 
 ---
 
-## Recommended Cursor eval matrix (v1)
+## Checklist
 
-| Dimension | Value |
-|-----------|-------|
-| Agent | Cursor only |
-| Configurations | 4 (ablation) |
-| Catalog sizes | 25, 100, 250 |
-| Tasks | 50 (5 smoke first) |
-| Repetitions | 3 |
-
-**Skip for v1:** Proxy comparison, Codex native pruning (separate runners).
-
----
-
-## Distractor-heavy tasks on Cursor
-
-Most important category for Cursor eval:
-
-- cyt-mcp exposes **all** stub names to Cursor MCP layer
-- Pruned **definitions** arrive via rules file
-- Test: agent selects correct stub name → calls with valid args → backend executes
-
-Failure modes to measure:
-
-1. Required tool stub missing from prune → agent never calls it
-2. Required enum pruned → agent uses invalid enum → verify-only catches (CYT-full)
-3. Required optional property pruned → agent omits param → task fails assertion
-
----
-
-## Integration with Cursor Cloud Agents
-
-This research directory lives in-repo for the OSS package. Cursor Cloud Agent runs may use CYT hooks if environment installs `clear-your-tools` — document in reproducibility appendix.
-
-Cloud agents **cannot** use local reverse proxy (`LIMITATIONS.md`).
-
----
-
-## Checklist before first Cursor eval run
-
-- [ ] `cyt hook cursor` installed and daemon running
-- [ ] cyt-mcp backends configured and healthy
-- [ ] Test repo/fixture credentials in `.env` (not committed)
-- [ ] Baseline catalog snapshot saved and tokenized
-- [ ] Task assertions run outside agent (deterministic)
-- [ ] Session JSONL collection path configured in harness
-
-See [eval-harness-spec.md](./eval-harness-spec.md) for implementation steps.
+- [ ] 4 configurations via harness overlay
+- [ ] Per-call JSONL log (ToolCallRecord)
+- [ ] L4 verifier independent of tool metrics
+- [ ] Baseline catalog tokenized
+- [ ] Session JSONL + rules file collected per run
+- [ ] MPR/TESR computed for verify runs

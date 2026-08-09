@@ -1,6 +1,6 @@
 # Implementation status (adapted to this codebase)
 
-Classification of research recommendations against the current **clear-your-tools** repo (v2.11.x).
+Classification against **clear-your-tools** v2.11.x. See [evaluation-framework.md](./evaluation-framework.md) for the four-level model.
 
 ---
 
@@ -10,91 +10,97 @@ Classification of research recommendations against the current **clear-your-tool
 
 | Capability | Code / docs |
 |------------|-------------|
-| **Tool-schema pruning** (tool → optional property → enum) | `sdk/rust/cyt-indexer/src/pipeline/tools.rs`, `src/cyt/pruners/tools_filter.py`, `prune_enums` in `defaults.yaml` |
-| **BM25 pruner** (default, local, no API key) | `src/cyt/pruners/bm25.py` |
-| **Rerank pruner** (DeepInfra via LiteLLM) | `src/cyt/pruners/rerank.py` |
-| **LLM pruner** (XML selector via LiteLLM) | `src/cyt/pruners/llm.py` |
-| **Pruning policies** (system vs MCP, optional/enum/description) | `src/cyt/pruners/policies.py` |
-| **Required properties preserved** during prune | Rust pipeline + policy layer |
-| **Verify-prevent (schema/shape validation)** | `src/cyt_client/tool_gate.py`, `src/cyt_client/schema_validate.py` |
-| **Verify-only mode** (`--prevent-hallucinations`) | `TOOL-HALLUCINATION-GATE.md`, `hallucination_gate.enabled` |
-| **Deny malformed calls + return full schema for recovery** | `PreToolDenyExposure` in `tool_gate.py`, `session_pre_tool_exposure.py` |
-| **Syntactic validation only** (type, required, enum) — not semantic | Documented in gate; no repo-existence checks |
+| **Three granularities:** tool → optional properties → enum values | `sdk/rust/cyt-indexer/src/pipeline/tools.rs`, `prune_enums` in `defaults.yaml` |
+| **BM25 / Rerank / LLM pruning pipelines** | `src/cyt/pruners/{bm25,rerank,llm}.py` |
+| **Verify-Prevent (Level 1 schema validation)** | `src/cyt_client/tool_gate.py`, `schema_validate.py` |
+| **Schema-based admission (Type-2 catalog authority)** | `tool_gate.py` — not strict Type-1 exposure allowlist |
+| **Deny + full schema for recovery (Level 3)** | `PreToolDenyExposure`, `session_pre_tool_exposure.py` |
+| **Verify-only mode** | `--prevent-hallucinations`, `TOOL-HALLUCINATION-GATE.md` |
+| **Stub + injected definition architecture** | `src/cyt_mcp/stubs.py` + `rules_file.py` / `user_message_inject.py` |
+| **Pre-exposure / in-session promotion (skip re-inject)** | `src/cyt/injection/pre_exposed.py`, `pre_exposure_pipeline.py` |
+| **Session compaction hook** | `preCompact` / `PreCompact` in `setup_wizard.py`, `test_session_compaction.py` |
+| **Proxy + hook deployment** | `src/cyt/proxy/`, `src/cyt/hook/` |
+| **Aggregators:** cyt-mcp, mcpc, executor, cloudflare | `src/cyt_mcp/`, `src/cyt/mcpc/`, `src/cyt/executor/`, `src/cyt/cloudflare/` |
+| **Net cost w/ pruner stages** | `src/cyt/common/pricing.py`, `compute_net_savings_tokens()` |
+| **Proxy token/property stats** | `src/cyt/proxy/stats.py` |
+| **Pruning latency tests** | `src/tests/quality_metrics/test_pruning_timing.py` |
 
-### Deployment modes
+### Four configurations (manual)
 
-| Mode | Status | Notes |
-|------|--------|-------|
-| **Reverse proxy** (Claude, Codex) | `src/cyt/proxy/reverse.py` | Prune + inject in upstream request |
-| **Hook + injection** (all agents) | `src/cyt/hook/`, `src/cyt/tools/hook.py` | Prune on prompt submit |
-| **Cursor hook-only** (no proxy) | `LIMITATIONS.md`, `src/cyt/agents/cursor/` | Platform constraint, not missing feature |
-| **cyt-mcp stub + on-demand schema** | `src/cyt_mcp/stubs.py`, `search.py` | Default MCP path for hooks |
-| **Cursor rules-file injection** | `src/cyt_client/rules_file.py` | Workaround: Cursor ignores `additionalContext` on `beforeSubmitPrompt` |
-| **Proxy user-message injection** | `src/cyt/proxy/user_message_inject.py` | Claude/Codex |
-| **Per-agent `inject_via`** | `pruning.inject_via` in `defaults.yaml` | cursor→hook, claude/codex→proxy |
-| **System tool preservation** (proxy) | Policy in `pruners/policies.py` | Default: system tools kept for cache prefix stability |
+All four ablation configs achievable via config + CLI — no batch runner yet.
 
-### Agents
+### Terminology in code
 
-| Agent | Proxy | Hook | Verify gate |
-|-------|-------|------|-------------|
-| Claude | ✅ | ✅ | ✅ |
-| Codex | ✅ | ✅ | ✅ |
-| Cursor | ❌ (platform) | ✅ | ✅ |
-
-### Instrumentation (partial — see metrics doc)
-
-| Metric area | Status |
-|-------------|--------|
-| Tool/property counts in/out (proxy) | `proxy_request` table in `src/cyt/proxy/stats.py` |
-| Token counts (cl100k estimate) | `src/cyt/common/token_usage.py`, stats DB |
-| Cost estimation (agent + rerank/LLM pruner) | `src/cyt/common/pricing.py` |
-| Net savings after pruner cost | `compute_net_savings_tokens()` |
-| Pruning timing | `src/tests/quality_metrics/test_pruning_timing.py` |
-| Removed-chunks parity (Rust ↔ Python) | `src/tests/quality_metrics/test_removed_chunks.py` |
-| Hallucination gate behavior (Gherkin) | `src/tests/unit/gherkin/features/hallucination_gate.feature` |
-| BM25 token smoke (SDK e2e) | `sdk/e2e/python/tests/test_bm25_tokens_smoke.py` |
-
-### Paper-relevant system description (already in repo)
-
-- Architecture: proxy vs hook vs verify-only — `README.md`, `CURSOR-HOOK.md`, `CONFIG.md`
-- Codex native pruning vs CYT additive savings — `LIMITATIONS.md` (~20% additional claim)
-- Open-source artifact — PyPI `clear-your-tools`, public docs
+| Research term | Code equivalent |
+|---------------|-----------------|
+| Schema-invalid | `validate_json_schema` failure, deny in `tool_gate` |
+| Type-2 catalog | `tool_catalog:*` in session JSONL |
+| Type-1 injection | Pruned/full tool entries in session log |
+| In-session promotion | Pre-exposure filter (`is_pre_exposed`) |
 
 ---
 
-## Not implemented (eval gaps to build)
+## Not implemented (eval gaps)
 
-| Item | Priority | Notes |
-|------|----------|-------|
-| **`evals/` harness** (`run_task()` API) | **P0** | No agent task benchmark exists |
-| **Deterministic task suite** (50–100 tasks with gold assertions) | **P0** | Required for RQ3 |
-| **Paired multi-run experiments** (N=5–10, CI, stats) | **P0** | Stochastic agent trajectories |
-| **Four-way ablation runner** (baseline / verify-only / prune / full) | **P0** | Config switch exists; no batch runner |
-| **Catalog-size sweep** (10–500 tools) | **P1** | Need synthetic distractor generator |
-| **Pruning recall metrics** (tool/property/enum recall vs gold set G_t) | **P1** | Stats track counts, not task-relevant recall |
-| **Verification benchmark dataset** (valid/malformed call corpus) | **P1** | Unit tests exist; no labeled eval set |
-| **Recovery rate + recovery overhead** | **P1** | Gate denies + exposes schema; no aggregate recovery metric |
-| **False blocking rate (FBR)** on verification | **P1** | Not aggregated |
-| **Hook-path token accounting** (Cursor) | **P1** | Proxy stats rich; hook path thinner |
-| **Per-task cost-per-success** | **P1** | Pricing helpers exist; not tied to task success |
-| **Schema-bloat isolation experiment** (§18 in research) | **P2** | Synthetic tool with N irrelevant props/enums |
-| **Codex+CYT vs Codex-native comparison harness** | **P2** | Documented claim; needs controlled repro |
-| **Deployment-mode comparison matrix** (proxy vs hook per agent) | **P2** | Manual today |
-| **Figure generation pipeline** | **P2** | For paper artifacts |
-| **Proxy-side response tool-call rewrite** | — | README aspirational; actual verify is **preToolUse hook** |
+### P0 — Harness foundations
+
+| Item | Notes |
+|------|-------|
+| **`evals/cursor/harness/`** | `run_task()`, per-call logging |
+| **Four-level metric aggregation** | L1–L4 separate in results |
+| **Tool-call record schema** | Every call classified A/B/C/D |
+| **MPR, TESR** | Malformed-call prevention, tool execution success |
+| **TaskSuccessRate independent of tool metrics** | Deterministic verifiers |
+| **Deterministic task suite** | 50+ tasks with gold assertions |
+
+### P1 — Token & cost precision
+
+| Item | Notes |
+|------|-------|
+| **Input token breakdown** | user / agent-message / tool-schema / injected / other |
+| **Output token breakdown** | assistant / tool-call args |
+| **Cached vs uncached input tokens** | Prompt-prefix cache modeling — stats use flat input price today |
+| **Turn-aware pruning eval** | Proxy extracts user query; latest agent message not in prune query yet |
+| **Hook-path (Cursor) token accounting** | Rules file + session JSONL tokenization |
+| **Cost per successful task** | Needs harness |
+| **In-session promotion metrics** | inject count, promotion count, tokens saved — logic exists, no aggregates |
+| **Compaction reinjection ablation** | `preCompact` logged; no eval comparing before/after |
+| **Pruning pipeline comparison harness** | BM25 vs rerank vs LLM on same tasks |
+| **Layer A external MCP benchmark** | e.g. existing tool-use eval — not integrated |
+| **Layer B CYT stress benchmark** | Schema bloat, distractors, semantic failures |
+| **Unexposed-but-allowed call rate** | Schema admission secondary result |
+
+### P2 — Paper artifacts
+
+| Item | Notes |
+|------|-------|
+| Catalog-size sweep runner | 10–500 tools |
+| Codex native vs Codex+CYT harness | `LIMITATIONS.md` ~20% claim — validate |
+| Figure generation | Fig 1–3 from results parquet |
+| Aggregator comparison matrix | Integration/reproducibility only |
 
 ---
 
-## Irrelevant (for this repo / Cursor eval)
+## Partially implemented
 
-| Item | Reason |
+| Item | Status |
 |------|--------|
-| Cursor reverse-proxy mode | Platform E2E encryption — documented in `LIMITATIONS.md` |
-| Cloud-hosted agent proxy interception | Local-only by design |
-| Copilot / OpenCode eval | Mentioned, untested — out of scope for v1 |
-| `ui/` web dashboard | Stub only (`ui/Taskfile.yml`) |
-| chunk-your-tools/skills git submodules | Optional; BM25 in `cyt-indexer` is self-contained |
-| MCP SEP-2106 inputSchema migration | Backlog (`backlog/tasks/task-0002`) |
-| Subjective LLM-as-judge task quality | Research recommends deterministic assertions instead |
-| Building a new MCP spec | CYT consumes MCP; does not extend the protocol |
+| **Turn-aware pruning** | Proxy: `extract_user_query` in `anthropic.py`; pre-exposure uses `combined_text` corpus — not full "latest agent message" as prune query |
+| **Prompt cache preservation** | System tools + stubs kept stable (`policies.py`); no cached/uncached cost split in stats |
+| **Recovery metrics** | Deny path exists; no recovery rate / overhead aggregates |
+| **Execution-unsuccessful (Level 2)** | MCP returns errors; not classified in CYT stats |
+| **Pre-exposed promotion → full definition** | Pre-exposure skips re-inject when verbatim in session; explicit "promote to full after N uses" — **not a separate promotion tier** |
+
+---
+
+## Irrelevant (short)
+
+| Item | Why |
+|------|-----|
+| Cursor proxy | Platform E2E encryption (`LIMITATIONS.md`) |
+| Cloud-hosted proxy | Local-only |
+| Copilot / OpenCode | Untested, out of scope |
+| Full scenario Cartesian product | Research says don't run it |
+| LLM-as-judge task success | Use deterministic verifiers |
+| Proving context rot formally | Frame as testing bloat reduction hypothesis only |
+| `ui/` dashboard | Stub only |
