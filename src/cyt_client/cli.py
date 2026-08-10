@@ -70,6 +70,7 @@ from cyt_client.tool_gate import (
     format_codex_deny,
     format_codex_pre_tool_allow,
     format_cursor_deny,
+    is_before_read_file_event,
     is_pre_tool_event,
     validate_pre_tool_call,
 )
@@ -272,6 +273,12 @@ def _pre_tool_name_from_payload(payload: dict) -> str:
         if isinstance(nested, str) and nested.strip():
             return nested.strip()
     return "?"
+
+
+def _handle_before_read_file(payload: dict) -> None:
+    from cyt_client.agent_interceptor import handle_before_read_file_intercept
+
+    print(handle_before_read_file_intercept(payload), flush=True)
 
 
 def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
@@ -569,6 +576,10 @@ def _run_hook(raw: bytes, payload: dict | None, *, cursor_output: bool) -> None:
         _handle_post_tool_capture(payload, cursor_output=cursor_output)
         return
 
+    if is_before_read_file_event(payload):
+        _handle_before_read_file(payload)
+        return
+
     if is_pre_tool_event(payload):
         _handle_pre_tool(payload, cursor_output=cursor_output)
         return
@@ -597,6 +608,7 @@ def main(argv: list[str] | None = None) -> None:
     _verbose, _debug, _fresh_hook, rule_path = _parse_client_flags(argv)
 
     cursor_output = False
+    payload: dict[str, Any] | None = None
     try:
         raw = sys.stdin.buffer.read()
         payload = _parse_payload(raw)
@@ -611,7 +623,13 @@ def main(argv: list[str] | None = None) -> None:
         _run_hook(raw, payload, cursor_output=cursor_output)
     except Exception:
         _verbose_exception("unexpected error")
-        if cursor_output:
+        if payload is not None and (
+            is_pre_tool_event(payload) or is_before_read_file_event(payload)
+        ):
+            from cyt_client.cursor import format_pre_tool_allow
+
+            print(format_pre_tool_allow(), flush=True)
+        elif cursor_output:
             _emit_cursor_continue()
 
 

@@ -15,6 +15,14 @@ INTEGRATION_SKIP_REASON = (
     "integration tests are manual-only (pytest -m integration --run-integration)"
 )
 QA_SKIP_REASON = "qa tests are manual-only (pytest -m qa --run-qa or ./scripts/local/tests/pytest-category.sh qa)"
+RUNTIME_SKIP_REASON = (
+    "runtime tests are manual-only (pytest -m runtime --run-runtime or "
+    "./scripts/local/tests/pytest-category.sh runtime)"
+)
+RUNTIME_SPAWN_BLOCK_REASON = (
+    "CYT hook daemon / launch proxy spawn blocked in automated tests "
+    "(mark test @pytest.mark.runtime and run with --run-runtime or CYT_RUN_RUNTIME_TESTS=1)"
+)
 
 _SKIP_TXT_TEST_MARKERS = (
     "hook_skip_enabled",
@@ -153,6 +161,33 @@ def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     _clear_all_hook_catalog_state()
 
 
+@pytest.fixture(autouse=True)
+def _block_cyt_runtime_spawns_unless_enabled(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Prevent accidental hook-daemon / launch-proxy subprocesses during pre-commit runs."""
+    if request.node.get_closest_marker("runtime"):
+        yield
+        return
+    if _runtime_tests_enabled(request.config):
+        yield
+        return
+
+    import cyt.hook.daemon as hook_daemon
+    import cyt.launch.proxy_guard as proxy_guard
+
+    def blocked_hook_spawn(**kwargs: object) -> object:
+        pytest.fail(RUNTIME_SPAWN_BLOCK_REASON)
+
+    def blocked_proxy_spawn(**kwargs: object) -> object:
+        pytest.fail(RUNTIME_SPAWN_BLOCK_REASON)
+
+    monkeypatch.setattr(hook_daemon, "_spawn_hook_server", blocked_hook_spawn)
+    monkeypatch.setattr(proxy_guard, "_spawn_proxy", blocked_proxy_spawn)
+    yield
+
+
 def _integration_tests_enabled(config: pytest.Config) -> bool:
     if config.getoption("--run-integration", default=False):
         return True
@@ -164,6 +199,13 @@ def _qa_tests_enabled(config: pytest.Config) -> bool:
     if config.getoption("--run-qa", default=False):
         return True
     value = os.environ.get("CYT_RUN_QA_TESTS", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _runtime_tests_enabled(config: pytest.Config) -> bool:
+    if config.getoption("--run-runtime", default=False):
+        return True
+    value = os.environ.get("CYT_RUN_RUNTIME_TESTS", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
 
 
@@ -193,6 +235,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="run tests marked qa (manual BM25 smoke harnesses)",
     )
+    parser.addoption(
+        "--run-runtime",
+        action="store_true",
+        default=False,
+        help="run tests marked runtime that may spawn cyt hook daemon or launch proxy",
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -205,4 +253,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         skip = pytest.mark.skip(reason=QA_SKIP_REASON)
         for item in items:
             if item.get_closest_marker("qa"):
+                item.add_marker(skip)
+    if not _runtime_tests_enabled(config):
+        skip = pytest.mark.skip(reason=RUNTIME_SKIP_REASON)
+        for item in items:
+            if item.get_closest_marker("runtime"):
                 item.add_marker(skip)

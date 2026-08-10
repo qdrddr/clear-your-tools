@@ -1358,6 +1358,7 @@ class TestEnsureProxy:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        monkeypatch.setattr("cyt.launch.proxy_guard._spawn_proxy", _spawn_proxy)
         captured: dict[str, object] = {}
         spawn_env: dict[str, str] | None = None
 

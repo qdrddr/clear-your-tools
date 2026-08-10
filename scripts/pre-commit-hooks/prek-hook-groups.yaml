@@ -139,3 +139,6 @@ groups:
     - cargo-build-sdk-release
     - simulate-registry
     - verify-pins
+
+  runtime:
+    - pytest-runtime

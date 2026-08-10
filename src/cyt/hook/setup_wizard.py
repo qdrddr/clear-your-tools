@@ -19,6 +19,9 @@ from cyt.config import (
     resolve_setup_config_path,
     save_user_config,
     skills_enabled,
+    skills_hook_agent_interceptor_enabled,
+    tools_enabled,
+    tools_hook_sources,
 )
 from cyt.cyt_mcp.readiness import report_cyt_mcp_hook_readiness
 from cyt.hook.cli_invocation import (
@@ -51,6 +54,7 @@ CURSOR_BEFORE_SUBMIT_EVENT = "beforeSubmitPrompt"
 CURSOR_SESSION_START_EVENT = "sessionStart"
 CURSOR_SESSION_END_EVENT = "sessionEnd"
 CURSOR_PRE_TOOL_EVENT = "preToolUse"
+CURSOR_BEFORE_READ_FILE_EVENT = "beforeReadFile"
 CURSOR_POST_TOOL_EVENT = "postToolUse"
 PRE_COMPACT_EVENT = "PreCompact"
 CURSOR_PRE_COMPACT_EVENT = "preCompact"
@@ -61,6 +65,7 @@ POST_TOOL_USE_MATCHER = "mcp__cyt-mcp__get-tool-definitions"
 PRE_TOOL_USE_EVENT = "PreToolUse"
 PRE_TOOL_USE_MATCHER = "mcp__*"
 PRE_TOOL_USE_READ_MATCHER = "Read"
+CURSOR_PRE_TOOL_READ_MATCHER = PRE_TOOL_USE_READ_MATCHER
 HookAgentName = Literal["claude", "codex", "cursor"]
 HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60
@@ -147,6 +152,7 @@ def _print_hook_stdin_test_example(
 ) -> None:
     agents = selected_agents or []
     event_label = _hook_stdin_test_event_label(verify_only=verify_only, selected_agents=agents)
+    print("\n--- Test manually ---")
     print(f"\nTest the hook locally ({event_label} payload on stdin) like so:")
     print()
     print(
@@ -161,6 +167,10 @@ def _print_hook_stdin_test_example(
     print("Hook JSON output is written to stdout.")
     if debug:
         print("Set CYT_HOOK_DEBUG=1 to enable extra diagnostics on the hook server.")
+
+
+def _print_hook_uninstall_instructions() -> None:
+    print("\n--- Remove Hooks ---")
     print("\nTo remove installed agent hooks later, run:")
     print("  cyt hook --uninstall")
 
@@ -198,9 +208,10 @@ def _propose_hook_daemon_restart(
 
     resolved_invocation = invocation or detect_hook_cli_invocation()
     command = cyt_daemon_restart_command(invocation=resolved_invocation)
+    print("\n--- Hook Daemon ---")
     if prevent_hallucinations:
         mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
-        print(f"\nRestarting hook daemon for verify-only mode via {mode}:\n  {command}")
+        print(f"\n\nRestarting hook daemon for verify-only mode via {mode}:\n  {command}")
         daemon_restart(config_path=config_path, unattended=True)
         return
     if "cursor" in selected_agents:
@@ -212,7 +223,7 @@ def _propose_hook_daemon_restart(
         print(f"Skipped. Run manually when ready:\n  {command}")
         return
     mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
-    print(f"Restarting hook daemon via {mode}:\n  {command}")
+    print(f"\nRestarting hook daemon via {mode}:\n  {command}")
     daemon_restart(config_path=config_path, unattended=False)
 
 
@@ -282,6 +293,8 @@ class CursorHookEntries(TypedDict):
     session_start: list[dict[str, Any]]
     session_end: dict[str, Any]
     pre_tool: dict[str, Any]
+    pre_tool_read: dict[str, Any]
+    before_read_file: dict[str, Any]
     post_tool: dict[str, Any]
     pre_compact: dict[str, Any]
 
@@ -302,6 +315,10 @@ def cursor_hook_entries(
         **client_entry,
         "matcher": CURSOR_POST_TOOL_MATCHER,
     }
+    pre_tool_read: dict[str, Any] = {
+        **client_entry,
+        "matcher": CURSOR_PRE_TOOL_READ_MATCHER,
+    }
     return {
         "before_submit": client_entry,
         "session_start": cursor_session_start_entries(
@@ -315,8 +332,46 @@ def cursor_hook_entries(
             invocation=invocation,
         ),
         "pre_tool": client_entry,
+        "pre_tool_read": pre_tool_read,
+        "before_read_file": client_entry,
         "post_tool": post_tool if include_post_tool_use else {},
         "pre_compact": client_entry,
+    }
+
+
+def cursor_read_intercept_hook_options(
+    entries: CursorHookEntries,
+    *,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return ``upsert_cursor_hooks_into_file`` kwargs for skill read interception."""
+    if not skills_hook_agent_interceptor_enabled(config):
+        return {
+            "before_read_file_entry": None,
+            "pre_tool_read_entry": None,
+        }
+    return {
+        "before_read_file_entry": entries["before_read_file"],
+        "pre_tool_read_entry": entries["pre_tool_read"],
+    }
+
+
+def cursor_upsert_hook_kwargs(
+    entries: CursorHookEntries,
+    *,
+    config: dict[str, Any] | None = None,
+    include_post_tool_use: bool = True,
+) -> dict[str, Any]:
+    """Build keyword arguments for ``upsert_cursor_hooks_into_file``."""
+    return {
+        "before_submit_entry": entries["before_submit"],
+        "session_start_entries": entries["session_start"],
+        "session_end_entry": entries["session_end"],
+        "pre_tool_entry": entries["pre_tool"],
+        "post_tool_entry": entries["post_tool"],
+        "pre_compact_entry": entries["pre_compact"],
+        "include_post_tool_use": include_post_tool_use,
+        **cursor_read_intercept_hook_options(entries, config=config),
     }
 
 
@@ -326,6 +381,7 @@ def cursor_desired_hook_commands(
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
     include_post_tool_use: bool = True,
+    config: dict[str, Any] | None = None,
 ) -> list[str]:
     entries = cursor_hook_entries(
         agent=agent,
@@ -343,6 +399,9 @@ def cursor_desired_hook_commands(
         str(entries["pre_tool"].get("command")),
         str(entries["pre_compact"].get("command")),
     ]
+    if skills_hook_agent_interceptor_enabled(config):
+        commands.append(str(entries["before_read_file"].get("command")))
+        commands.append(str(entries["pre_tool_read"].get("command")))
     if include_post_tool_use and entries["post_tool"]:
         commands.append(str(entries["post_tool"].get("command")))
     return commands
@@ -431,7 +490,7 @@ def _prompt_hook_skills_directories(
     )
     default_str = ", ".join(default_dirs)
     while True:
-        raw = _prompt("Skills directories (comma-separated paths)", default_str)
+        raw = _prompt("\nSkills directories (comma-separated paths)", default_str)
         parsed = parse_path_list(raw)
         if parsed is not None:
             return parsed
@@ -523,6 +582,23 @@ def _save_hook_skills_disabled(config_path: Path, *, user_overlay: dict[str, Any
     return save_user_config(config_path, overlay, apply_bundled_sections=False)
 
 
+def _save_hook_agent_interceptor_enabled(config_path: Path, *, enabled: bool) -> bool:
+    overlay: dict[str, Any] = {
+        "skills": {"hook": {"agent_interceptor": {"enabled": enabled}}},
+    }
+    return save_user_config(config_path, overlay, apply_bundled_sections=False)
+
+
+def _configure_hook_agent_interceptor(config_path: Path) -> None:
+    enabled = _prompt_yes_no("Enable hook skill interceptor?", default_yes=True)
+    if _save_hook_agent_interceptor_enabled(config_path, enabled=enabled):
+        state = "enabled" if enabled else "disabled"
+        print(f"Updated skills config in {config_path} (agent_interceptor: {state})")
+    else:
+        state = "enabled" if enabled else "disabled"
+        print(f"\nSkills agent interceptor config already set in {config_path} ({state})")
+
+
 def _configure_hook_skills(
     *,
     config_path: Path,
@@ -545,8 +621,10 @@ def _configure_hook_skills(
         if _save_hook_skills_disabled(config_path, user_overlay=user_overlay):
             print(f"Updated skills config in {config_path} (disabled)")
         else:
-            print(f"Skills config already set for hook mode in {config_path}")
+            print(f"\nSkills config already set for hook mode in {config_path}")
         return
+
+    _configure_hook_agent_interceptor(config_path)
 
     directories = _prompt_hook_skills_directories(
         skills_cfg,
@@ -558,7 +636,7 @@ def _configure_hook_skills(
     if _save_hook_skills_directories(config_path, directories, user_overlay=user_overlay):
         print(f"Updated skills config in {config_path} (enabled, inject_via: hook, directories)")
     else:
-        print(f"Skills config already set for hook mode in {config_path}")
+        print(f"\nSkills config already set for hook mode in {config_path}")
 
 
 def cyt_client_entry(
@@ -766,6 +844,35 @@ def _upsert_cursor_flat_event(
     return merged, True
 
 
+def _append_cursor_flat_hook_if_missing(
+    hooks_section: dict[str, Any],
+    event_name: str,
+    entry: dict[str, Any],
+    *,
+    matcher: str | None = None,
+) -> tuple[dict[str, Any], bool]:
+    """Append a flat Cursor hook entry when no matching matcher/command exists."""
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    wrappers = merged.get(event_name)
+    if not isinstance(wrappers, list):
+        wrappers = []
+        merged[event_name] = wrappers
+    for wrapper in wrappers:
+        if not isinstance(wrapper, dict):
+            continue
+        wrapper_matcher = str(wrapper.get("matcher") or "")
+        if matcher is not None:
+            if wrapper_matcher != matcher:
+                continue
+        elif wrapper_matcher:
+            continue
+        existing = _collect_cyt_hook_commands_for_flat_event({event_name: [wrapper]}, event_name)
+        if existing and not _cyt_hook_needs_update(existing, entry):
+            return merged, False
+    merged = _append_flat_hook_entry(merged, copy.deepcopy(entry), event_name=event_name)
+    return merged, True
+
+
 def _remove_legacy_cursor_tool_hook_events(
     hooks_section: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
@@ -786,6 +893,8 @@ def upsert_cursor_hooks(
     pre_tool_entry: dict[str, Any],
     post_tool_entry: dict[str, Any],
     pre_compact_entry: dict[str, Any],
+    before_read_file_entry: dict[str, Any] | None = None,
+    pre_tool_read_entry: dict[str, Any] | None = None,
     include_post_tool_use: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     merged = copy.deepcopy(hooks_section) if hooks_section else {}
@@ -801,6 +910,8 @@ def upsert_cursor_hooks(
         (CURSOR_PRE_TOOL_EVENT, [pre_tool_entry]),
         (CURSOR_PRE_COMPACT_EVENT, [pre_compact_entry]),
     ]
+    if before_read_file_entry is not None:
+        event_specs.append((CURSOR_BEFORE_READ_FILE_EVENT, [before_read_file_entry]))
     if include_post_tool_use and post_tool_entry:
         event_specs.append((CURSOR_POST_TOOL_EVENT, [post_tool_entry]))
     else:
@@ -810,6 +921,15 @@ def upsert_cursor_hooks(
     for event_name, entries in event_specs:
         merged, event_changed = _upsert_cursor_flat_event(merged, event_name, entries)
         changed = changed or event_changed
+
+    if pre_tool_read_entry is not None:
+        merged, changed_read = _append_cursor_flat_hook_if_missing(
+            merged,
+            CURSOR_PRE_TOOL_EVENT,
+            pre_tool_read_entry,
+            matcher=CURSOR_PRE_TOOL_READ_MATCHER,
+        )
+        changed = changed or changed_read
 
     return merged, changed
 
@@ -823,6 +943,8 @@ def upsert_cursor_hooks_into_file(
     pre_tool_entry: dict[str, Any],
     post_tool_entry: dict[str, Any],
     pre_compact_entry: dict[str, Any] | None = None,
+    before_read_file_entry: dict[str, Any] | None = None,
+    pre_tool_read_entry: dict[str, Any] | None = None,
     include_post_tool_use: bool = True,
 ) -> bool:
     resolved_pre_compact = pre_compact_entry or pre_tool_entry
@@ -836,6 +958,8 @@ def upsert_cursor_hooks_into_file(
         pre_tool_entry=pre_tool_entry,
         post_tool_entry=post_tool_entry,
         pre_compact_entry=resolved_pre_compact,
+        before_read_file_entry=before_read_file_entry,
+        pre_tool_read_entry=pre_tool_read_entry,
         include_post_tool_use=include_post_tool_use,
     )
     if not changed:
@@ -1364,7 +1488,28 @@ def _agent_hook_path(agent: HookAgentName) -> Path:
 def _ensure_hook_credentials(config: dict[str, Any]) -> None:
     from cyt.hook.credentials import report_and_ensure_hook_credentials
 
+    if not skills_enabled(config) and not tools_enabled(config):
+        return
     report_and_ensure_hook_credentials(config, exit_on_missing_non_tty=True)
+
+
+def _primary_hook_agent(selected_agents: list[HookAgentName]) -> HookAgentName | None:
+    for agent in ("cursor", "claude", "codex"):
+        if agent in selected_agents:
+            return agent
+    return None
+
+
+def _report_hook_tools_readiness(config: dict[str, Any]) -> None:
+    if not tools_enabled(config):
+        return
+    sources = set(tools_hook_sources(config))
+    if "cyt_mcp" in sources:
+        report_cyt_mcp_hook_readiness(config)
+    if "mcpc" in sources:
+        report_mcpc_hook_readiness(config)
+    if "cloudflare" in sources:
+        report_cloudflare_hook_readiness(config)
 
 
 def _save_tools_hook_wizard_config(
@@ -1372,6 +1517,7 @@ def _save_tools_hook_wizard_config(
     config: dict[str, Any],
     *,
     config_path: Path | None,
+    hook_agent: HookAgentName | None = None,
 ) -> dict[str, Any]:
     if not sys.stdin.isatty():
         return config
@@ -1393,7 +1539,11 @@ def _save_tools_hook_wizard_config(
             return load_config(config_path)
         return config
 
-    tools_overlay = prompt_tools_hook_config(config, context="hook")
+    tools_overlay = prompt_tools_hook_config(
+        config,
+        context="hook",
+        agent=hook_agent,
+    )
     if save_user_config(
         resolved_config_path,
         {
@@ -1539,6 +1689,94 @@ def _handle_existing_nested_hooks(
     return None
 
 
+def _nested_hook_desired_commands(
+    *,
+    user_prompt_entry: dict[str, Any],
+    session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
+    pre_tool_use_entry: dict[str, Any],
+    post_tool_use_entry: dict[str, Any] | None,
+    pre_compact_entry: dict[str, Any],
+) -> set[str]:
+    desired_commands = {
+        str(user_prompt_entry.get("command")),
+        str(session_start_entry.get("command")),
+        str(session_end_entry.get("command")),
+        str(pre_tool_use_entry.get("command")),
+        str(pre_compact_entry.get("command")),
+    }
+    if post_tool_use_entry is not None:
+        desired_commands.add(str(post_tool_use_entry.get("command")))
+    return desired_commands
+
+
+def _install_single_nested_hook_target(
+    label: str,
+    path: Path,
+    *,
+    user_prompt_entry: dict[str, Any],
+    session_start_entry: dict[str, Any],
+    session_end_entry: dict[str, Any],
+    pre_tool_use_entry: dict[str, Any],
+    post_tool_use_entry: dict[str, Any] | None,
+    pre_compact_entry: dict[str, Any],
+    hooks_section: dict[str, Any],
+    existing_commands: list[str],
+    desired_commands: set[str],
+    needs_update: bool,
+    action_choices: tuple[str, ...],
+    apply_silently: bool,
+    always_prompt_hook_action: bool,
+) -> bool | None:
+    if apply_silently:
+        if not needs_update:
+            return None
+        if _upsert_nested_hooks_file(
+            path,
+            user_prompt_entry=user_prompt_entry,
+            session_start_entry=session_start_entry,
+            session_end_entry=session_end_entry,
+            pre_tool_use_entry=pre_tool_use_entry,
+            post_tool_use_entry=post_tool_use_entry,
+            pre_compact_entry=pre_compact_entry,
+        ):
+            print(f"{label}: updated CYT hooks with selected command options")
+            return True
+        return None
+    if existing_commands or always_prompt_hook_action:
+        return _handle_existing_nested_hooks(
+            label,
+            path,
+            hooks_section,
+            user_prompt_entry=user_prompt_entry,
+            session_start_entry=session_start_entry,
+            session_end_entry=session_end_entry,
+            pre_tool_use_entry=pre_tool_use_entry,
+            post_tool_use_entry=post_tool_use_entry,
+            pre_compact_entry=pre_compact_entry,
+            existing_commands=existing_commands,
+            desired_commands=desired_commands,
+            needs_update=needs_update if existing_commands else True,
+            action_choices=action_choices,
+        )
+    if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
+        print(f"{label}: skipped")
+        return None
+    if _upsert_nested_hooks_file(
+        path,
+        user_prompt_entry=user_prompt_entry,
+        session_start_entry=session_start_entry,
+        session_end_entry=session_end_entry,
+        pre_tool_use_entry=pre_tool_use_entry,
+        post_tool_use_entry=post_tool_use_entry,
+        pre_compact_entry=pre_compact_entry,
+    ):
+        print(f"{label}: added CYT hooks to {path}")
+        return True
+    print(f"{label}: CYT hooks already configured in {path}")
+    return None
+
+
 def _install_nested_hooks_for_targets(
     targets: list[tuple[str, Path, AgentName]],
     *,
@@ -1547,6 +1785,7 @@ def _install_nested_hooks_for_targets(
     invocation: HookCliInvocation,
     include_post_tool_use: bool = True,
     always_prompt_hook_action: bool = False,
+    apply_silently: bool = False,
 ) -> bool:
     any_changed = False
     action_choices = ("update", "remove", "skip")
@@ -1570,42 +1809,19 @@ def _install_nested_hooks_for_targets(
             hooks_section = {}
 
         existing_commands = _collect_cyt_hook_commands(hooks_section)
-        desired_commands = {
-            str(user_prompt_entry.get("command")),
-            str(session_start_entry.get("command")),
-            str(session_end_entry.get("command")),
-            str(pre_tool_use_entry.get("command")),
-            str(pre_compact_entry.get("command")),
-        }
-        if post_tool_use_entry is not None:
-            desired_commands.add(str(post_tool_use_entry.get("command")))
+        desired_commands = _nested_hook_desired_commands(
+            user_prompt_entry=user_prompt_entry,
+            session_start_entry=session_start_entry,
+            session_end_entry=session_end_entry,
+            pre_tool_use_entry=pre_tool_use_entry,
+            post_tool_use_entry=post_tool_use_entry,
+            pre_compact_entry=pre_compact_entry,
+        )
         needs_update = set(existing_commands) != desired_commands or len(existing_commands) != len(
             desired_commands,
         )
-        if existing_commands or always_prompt_hook_action:
-            changed = _handle_existing_nested_hooks(
-                label,
-                path,
-                hooks_section,
-                user_prompt_entry=user_prompt_entry,
-                session_start_entry=session_start_entry,
-                session_end_entry=session_end_entry,
-                pre_tool_use_entry=pre_tool_use_entry,
-                post_tool_use_entry=post_tool_use_entry,
-                pre_compact_entry=pre_compact_entry,
-                existing_commands=existing_commands,
-                desired_commands=desired_commands,
-                needs_update=needs_update if existing_commands else True,
-                action_choices=action_choices,
-            )
-            if changed is True:
-                any_changed = True
-            continue
-
-        if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
-            print(f"{label}: skipped")
-            continue
-        if _upsert_nested_hooks_file(
+        changed = _install_single_nested_hook_target(
+            label,
             path,
             user_prompt_entry=user_prompt_entry,
             session_start_entry=session_start_entry,
@@ -1613,11 +1829,16 @@ def _install_nested_hooks_for_targets(
             pre_tool_use_entry=pre_tool_use_entry,
             post_tool_use_entry=post_tool_use_entry,
             pre_compact_entry=pre_compact_entry,
-        ):
-            print(f"{label}: added CYT hooks to {path}")
+            hooks_section=hooks_section,
+            existing_commands=existing_commands,
+            desired_commands=desired_commands,
+            needs_update=needs_update,
+            action_choices=action_choices,
+            apply_silently=apply_silently,
+            always_prompt_hook_action=always_prompt_hook_action,
+        )
+        if changed is True:
             any_changed = True
-        else:
-            print(f"{label}: CYT hooks already configured in {path}")
     return any_changed
 
 
@@ -1627,12 +1848,7 @@ def _handle_existing_cursor_hooks(
     hooks_section: dict[str, Any],
     *,
     needs_update: bool,
-    before_submit_entry: dict[str, Any],
-    session_start_entries: list[dict[str, Any]],
-    session_end_entry: dict[str, Any],
-    pre_tool_entry: dict[str, Any],
-    post_tool_entry: dict[str, Any],
-    pre_compact_entry: dict[str, Any],
+    upsert_kwargs: dict[str, Any],
     include_post_tool_use: bool = True,
 ) -> bool:
     """Prompt for update/remove/skip when CYT hooks already exist; return whether file changed."""
@@ -1656,16 +1872,7 @@ def _handle_existing_cursor_hooks(
         print(f"{label}: no CYT hook to remove in {path}")
         return False
 
-    if upsert_cursor_hooks_into_file(
-        path,
-        before_submit_entry=before_submit_entry,
-        session_start_entries=session_start_entries,
-        session_end_entry=session_end_entry,
-        pre_tool_entry=pre_tool_entry,
-        post_tool_entry=post_tool_entry,
-        pre_compact_entry=pre_compact_entry,
-        include_post_tool_use=include_post_tool_use,
-    ):
+    if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
         print(f"{label}: updated CYT hooks in {path}")
         return True
     print(f"{label}: CYT hooks already match selected settings")
@@ -1681,6 +1888,8 @@ def _install_cursor_hooks_for_target(
     invocation: HookCliInvocation,
     include_post_tool_use: bool = True,
     always_prompt_hook_action: bool = False,
+    apply_silently: bool = False,
+    config: dict[str, Any] | None = None,
 ) -> bool:
     del debug
     entries = cursor_hook_entries(
@@ -1689,12 +1898,11 @@ def _install_cursor_hooks_for_target(
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
     )
-    before_submit_entry = entries["before_submit"]
-    session_start_entries = entries["session_start"]
-    session_end_entry = entries["session_end"]
-    pre_tool_entry = entries["pre_tool"]
-    post_tool_entry = entries["post_tool"]
-    pre_compact_entry = entries["pre_compact"]
+    upsert_kwargs = cursor_upsert_hook_kwargs(
+        entries,
+        config=config,
+        include_post_tool_use=include_post_tool_use,
+    )
 
     hooks_data = _load_json_object(path)
     hooks_section = hooks_data.get("hooks")
@@ -1707,10 +1915,19 @@ def _install_cursor_hooks_for_target(
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
+        config=config,
     )
     needs_update = set(existing_commands) != set(desired_commands) or len(existing_commands) != len(
         desired_commands,
     )
+
+    if apply_silently:
+        if not needs_update:
+            return False
+        if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
+            print(f"{label}: updated CYT hooks with selected command options")
+            return True
+        return False
 
     if existing_commands or always_prompt_hook_action:
         print(f"{label}: {_format_hook_action_status(existing_commands)} in {path}")
@@ -1719,28 +1936,14 @@ def _install_cursor_hooks_for_target(
             path,
             hooks_section,
             needs_update=needs_update if existing_commands else True,
-            before_submit_entry=before_submit_entry,
-            session_start_entries=session_start_entries,
-            session_end_entry=session_end_entry,
-            pre_tool_entry=pre_tool_entry,
-            post_tool_entry=post_tool_entry,
-            pre_compact_entry=pre_compact_entry,
+            upsert_kwargs=upsert_kwargs,
             include_post_tool_use=include_post_tool_use,
         )
 
     if not _prompt_yes_no(f"Install CYT hooks for {label}?", default_yes=True):
         print(f"{label}: skipped")
         return False
-    if upsert_cursor_hooks_into_file(
-        path,
-        before_submit_entry=before_submit_entry,
-        session_start_entries=session_start_entries,
-        session_end_entry=session_end_entry,
-        pre_tool_entry=pre_tool_entry,
-        post_tool_entry=post_tool_entry,
-        pre_compact_entry=pre_compact_entry,
-        include_post_tool_use=include_post_tool_use,
-    ):
+    if upsert_cursor_hooks_into_file(path, **upsert_kwargs):
         print(f"{label}: added CYT hooks to {path}")
         return True
     print(f"{label}: CYT hooks already configured in {path}")
@@ -1813,7 +2016,7 @@ def _prompt_prevent_hallucinations_inject_via(
 def _prompt_prevent_hallucinations_mcp_migration(agent: HookAgentName) -> bool:
     if not sys.stdin.isatty():
         return True
-    print(f"\n--- MCP migration ({agent}) ---")
+    print(f"\n--- Migrate ({agent})'s MCP config ---")
     return _prompt_yes_no(
         "Migrate agent MCP config to cyt-mcp aggregator?",
         default_yes=True,
@@ -1827,9 +2030,9 @@ def _apply_injection_hook_config(
     agents: list[HookAgentName],
 ) -> dict[str, Any]:
     """Restore full hook injection settings after verify-only / prevent-hallucinations."""
-    from cyt.config import save_user_config, sync_config_in_place, tools_hook_sources
-    from cyt.tools.cyt_mcp_setup import setup_cyt_mcp_for_agent, write_mcp_aggregator_yaml
+    from cyt.config import save_user_config, sync_config_in_place
 
+    del agents
     overlay: dict[str, Any] = {
         "hallucination_gate": {"enabled": False},
         "pruning": {
@@ -1838,24 +2041,6 @@ def _apply_injection_hook_config(
     }
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         sync_config_in_place(config, config_path)
-
-    invocation = detect_hook_cli_invocation()
-    cyt_mcp_enabled = "cyt_mcp" in tools_hook_sources(config)
-    for agent in agents:
-        if agent != "cursor":
-            continue
-        if inject_via_for_agent(config, agent) != "hook":
-            continue
-        write_mcp_aggregator_yaml(agent, transport="stdio", verify_only=False)
-        if not cyt_mcp_enabled:
-            continue
-        setup_cyt_mcp_for_agent(
-            agent,
-            invocation=invocation,
-            transport="stdio",
-            migrate_backends=False,
-            verify_only=False,
-        )
     return config
 
 
@@ -1863,10 +2048,14 @@ def _configure_cursor_rule_file(
     config_path: Path,
     config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Prompt to enable Cursor rules file injection (default: yes)."""
+    """Prompt to enable Cursor rules file injection when hook injection is active."""
     from cyt.config import save_user_config, sync_config_in_place
 
-    if sys.stdin.isatty():
+    skills_injection_enabled = skills_enabled(config)
+    tools_injection_enabled = tools_enabled(config)
+    if not skills_injection_enabled and not tools_injection_enabled:
+        enabled = False
+    elif sys.stdin.isatty():
         print("\n--- Cursor rules file ---")
         enabled = _prompt_yes_no(
             "Enable Cursor rules file injection (.cursor/rules/cyt-injection.mdc)?",
@@ -1884,7 +2073,7 @@ def _configure_cursor_rule_file(
         )
     else:
         print(
-            f"Cursor rules file config already set in {config_path} "
+            f"\nCursor rules file config already set in {config_path} "
             f"({'enabled' if enabled else 'disabled'})",
         )
     return config
@@ -1926,7 +2115,7 @@ def _apply_prevent_hallucinations_config(
     invocation = detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
         print(
-            f"Installing development cyt-mcp via uv run --directory {invocation.repo_root}",
+            f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
             file=sys.stderr,
         )
 
@@ -1953,7 +2142,9 @@ def _install_hook_setup_targets(
     set_launch_agent: bool,
     invocation: HookCliInvocation,
     include_post_tool_use: bool,
+    config: dict[str, Any] | None = None,
     always_prompt_hook_action: bool = False,
+    apply_silently: bool = False,
 ) -> bool:
     any_changed = False
     if nested_targets:
@@ -1965,6 +2156,7 @@ def _install_hook_setup_targets(
                 invocation=invocation,
                 include_post_tool_use=include_post_tool_use,
                 always_prompt_hook_action=always_prompt_hook_action,
+                apply_silently=apply_silently,
             )
             or any_changed
         )
@@ -1978,6 +2170,8 @@ def _install_hook_setup_targets(
                 invocation=invocation,
                 include_post_tool_use=include_post_tool_use,
                 always_prompt_hook_action=always_prompt_hook_action,
+                apply_silently=apply_silently,
+                config=config,
             )
             or any_changed
         )
@@ -1995,11 +2189,117 @@ def _hook_setup_install_options(
     if prevent_hallucinations:
         return False, False
     set_launch_agent = _prompt_yes_no(
-        f"Prefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
+        f"\nPrefix hook commands with {CYT_LAUNCH_AGENT_ENV}=<agent>?",
         default_yes=False,
     )
     debug = _prompt_yes_no("Enable hook debug logging (--debug)?", default_yes=False)
     return set_launch_agent, debug
+
+
+def _load_hook_setup_config(
+    *,
+    config_path: Path | None,
+    resolved_config_path: Path,
+    selected_agents: list[HookAgentName],
+    prevent_hallucinations: bool,
+) -> dict[str, Any]:
+    config = load_config(config_path)
+    if prevent_hallucinations:
+        return _apply_prevent_hallucinations_config(
+            resolved_config_path,
+            config,
+            agents=selected_agents,
+        )
+    config = _apply_injection_hook_config(
+        resolved_config_path,
+        config,
+        agents=selected_agents,
+    )
+    if sys.stdin.isatty() and _selected_agents_use_hook_injection(config, selected_agents):
+        config = ensure_hook_inject_via(resolved_config_path, config)
+    return config
+
+
+def _run_standard_hook_setup_steps(
+    *,
+    resolved_config_path: Path,
+    config_path: Path | None,
+    config: dict[str, Any],
+    selected_agents: list[HookAgentName],
+    include_claude: bool,
+    include_codex: bool,
+    include_cursor: bool,
+) -> dict[str, Any]:
+    _configure_hook_skills(
+        config_path=resolved_config_path,
+        include_claude=include_claude,
+        include_codex=include_codex,
+        include_cursor=include_cursor,
+    )
+    config = _save_tools_hook_wizard_config(
+        resolved_config_path,
+        config,
+        config_path=config_path,
+        hook_agent=_primary_hook_agent(selected_agents),
+    )
+    config = load_config(config_path)
+    _ensure_hook_credentials(config)
+    _report_hook_tools_readiness(config)
+    if "cursor" in selected_agents:
+        config = _configure_cursor_rule_file(resolved_config_path, config)
+    return config
+
+
+def _finish_hook_setup(
+    *,
+    config_path: Path | None,
+    config: dict[str, Any],
+    selected_agents: list[HookAgentName],
+    prevent_hallucinations: bool,
+    nested_targets: list[tuple[str, Path, AgentName]],
+    cursor_targets: list[tuple[str, Path]],
+    invocation: HookCliInvocation,
+    include_post_tool_use: bool,
+) -> None:
+    set_launch_agent, debug = _hook_setup_install_options(
+        prevent_hallucinations=prevent_hallucinations,
+        resolved_config_path=resolve_setup_config_path(config_path),
+        include_claude="claude" in selected_agents,
+        include_codex="codex" in selected_agents,
+        include_cursor="cursor" in selected_agents,
+    )
+    if set_launch_agent:
+        if _install_hook_setup_targets(
+            nested_targets,
+            cursor_targets,
+            debug=debug,
+            set_launch_agent=True,
+            invocation=invocation,
+            include_post_tool_use=include_post_tool_use,
+            config=config,
+            apply_silently=True,
+        ):
+            print("\nRestart your agent so hook changes take effect.")
+
+    if _should_propose_hook_daemon_restart(
+        config,
+        selected_agents,
+        prevent_hallucinations=prevent_hallucinations,
+    ):
+        _propose_hook_daemon_restart(
+            config_path=config_path,
+            invocation=invocation,
+            selected_agents=selected_agents,
+            prevent_hallucinations=prevent_hallucinations,
+        )
+
+    _print_hook_stdin_test_example(
+        debug=debug,
+        invocation=invocation,
+        selected_agents=selected_agents,
+        verify_only=prevent_hallucinations,
+    )
+    _print_hook_uninstall_instructions()
 
 
 def run_hook_setup(
@@ -2011,29 +2311,12 @@ def run_hook_setup(
     """Install CYT agent hooks and ensure runtime credentials."""
     selected_agents = _resolve_hook_setup_agents(agents)
     resolved_config_path = resolve_setup_config_path(config_path)
-    config = load_config(config_path)
-    if prevent_hallucinations:
-        config = _apply_prevent_hallucinations_config(
-            resolved_config_path,
-            config,
-            agents=selected_agents,
-        )
-    else:
-        config = _apply_injection_hook_config(
-            resolved_config_path,
-            config,
-            agents=selected_agents,
-        )
-        if "cursor" in selected_agents:
-            config = _configure_cursor_rule_file(resolved_config_path, config)
-        if sys.stdin.isatty() and _selected_agents_use_hook_injection(
-            config,
-            selected_agents,
-        ):
-            config = ensure_hook_inject_via(resolved_config_path, config)
-    report_cyt_mcp_hook_readiness(config)
-    report_mcpc_hook_readiness(config)
-    report_cloudflare_hook_readiness(config)
+    config = _load_hook_setup_config(
+        config_path=config_path,
+        resolved_config_path=resolved_config_path,
+        selected_agents=selected_agents,
+        prevent_hallucinations=prevent_hallucinations,
+    )
     if len(selected_agents) == 1:
         print(f"CYT hook setup ({selected_agents[0]})\n")
     else:
@@ -2049,41 +2332,34 @@ def run_hook_setup(
     if prevent_hallucinations:
         print("Verify-only hallucination prevention enabled (no prompt injection).")
     else:
-        _configure_hook_skills(
-            config_path=resolved_config_path,
+        config = _run_standard_hook_setup_steps(
+            resolved_config_path=resolved_config_path,
+            config_path=config_path,
+            config=config,
+            selected_agents=selected_agents,
             include_claude=include_claude,
             include_codex=include_codex,
             include_cursor=include_cursor,
         )
-        _ensure_hook_credentials(config)
-        config = _save_tools_hook_wizard_config(
-            resolved_config_path,
-            config,
-            config_path=config_path,
-        )
 
-    set_launch_agent, debug = _hook_setup_install_options(
-        prevent_hallucinations=prevent_hallucinations,
-        resolved_config_path=resolved_config_path,
-        include_claude=include_claude,
-        include_codex=include_codex,
-        include_cursor=include_cursor,
-    )
+    if sys.stdin.isatty():
+        print("\n--- Install Hooks ---")
 
     invocation = detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
         print(
-            f"Installing development hook commands via uv run --directory {invocation.repo_root}",
+            f"\nInstalling development hook commands via uv run --directory {invocation.repo_root}",
         )
 
     include_post_tool_use = not prevent_hallucinations
     any_changed = _install_hook_setup_targets(
         nested_targets,
         cursor_targets,
-        debug=debug,
-        set_launch_agent=set_launch_agent,
+        debug=False,
+        set_launch_agent=False,
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
+        config=config,
         always_prompt_hook_action=prevent_hallucinations,
     )
 
@@ -2092,24 +2368,16 @@ def run_hook_setup(
     else:
         print("\nNo hook files were modified.")
 
-    _print_hook_stdin_test_example(
-        debug=debug,
-        invocation=invocation,
+    _finish_hook_setup(
+        config_path=config_path,
+        config=config,
         selected_agents=selected_agents,
-        verify_only=prevent_hallucinations,
-    )
-
-    if _should_propose_hook_daemon_restart(
-        config,
-        selected_agents,
         prevent_hallucinations=prevent_hallucinations,
-    ):
-        _propose_hook_daemon_restart(
-            config_path=config_path,
-            invocation=invocation,
-            selected_agents=selected_agents,
-            prevent_hallucinations=prevent_hallucinations,
-        )
+        nested_targets=nested_targets,
+        cursor_targets=cursor_targets,
+        invocation=invocation,
+        include_post_tool_use=include_post_tool_use,
+    )
 
 
 def cyt_hooks_installed() -> bool:

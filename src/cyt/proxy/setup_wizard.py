@@ -1565,7 +1565,7 @@ def _prompt_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
     default_dirs = _default_skills_directories(skills_cfg)
     default_str = ", ".join(default_dirs)
     while True:
-        raw = _prompt("Skills directories (comma-separated paths)", default_str)
+        raw = _prompt("\nSkills directories (comma-separated paths)", default_str)
         parsed = parse_path_list(raw)
         if parsed is not None:
             return parsed

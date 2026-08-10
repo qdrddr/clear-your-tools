@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]
+# Usage: ./scripts/pre-commit-hooks/prek-loop.sh [--short] [--one-run] [--runtime] [--no-git-add] [-g|--group GROUP...]
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
 # Without --short, each hook prints a one-line Passed/Failed summary; details on failure only.
@@ -23,6 +23,7 @@ set -uo pipefail
 SHORT=false
 ONE_RUN=false
 NO_GIT_ADD=false
+RUN_RUNTIME=false
 SELECTED_GROUPS=()
 while (($#)); do
 	case "$1" in
@@ -32,6 +33,10 @@ while (($#)); do
 		;;
 	--one-run)
 		ONE_RUN=true
+		shift
+		;;
+	--runtime)
+		RUN_RUNTIME=true
 		shift
 		;;
 	--no-git-add)
@@ -51,8 +56,8 @@ while (($#)); do
 		done
 		;;
 	-h | --help)
-		echo "Usage: $0 [--short] [--one-run] [--no-git-add] [-g|--group GROUP...]" >&2
-		echo "Groups: py rust go c ts uni (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
+		echo "Usage: $0 [--short] [--one-run] [--runtime] [--no-git-add] [-g|--group GROUP...]" >&2
+		echo "Groups: py rust go c ts uni runtime (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
 		exit 0
 		;;
 	-*)
@@ -74,12 +79,17 @@ cd "$ROOT" || exit 1
 # Integration tests call real external APIs; never run them in automated hook loops.
 unset CYT_RUN_INTEGRATION_TESTS
 unset CYT_RUN_QA_TESTS
+unset CYT_RUN_RUNTIME_TESTS
 
 # Propagate short mode to workflow.sh hooks (e.g. simulate-registry).
 if $SHORT; then
 	export CYT_LOCAL_DEV_SHORT=1
 else
 	export CYT_LOCAL_DEV_SHORT=
+fi
+
+if $RUN_RUNTIME; then
+	export CYT_RUN_RUNTIME_TESTS=1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -185,6 +195,7 @@ total=${#HOOKS[@]}
 mode="Prek loop"
 $SHORT && mode+=" (short)"
 $ONE_RUN && mode+=" (one run)"
+$RUN_RUNTIME && mode+=" (runtime)"
 if ((${#SELECTED_GROUPS[@]})); then
 	mode+=" [${SELECTED_GROUPS[*]}]"
 fi

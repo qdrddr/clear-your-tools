@@ -92,3 +92,40 @@ def test_ensure_tools_hook_file_interactive_prompts_for_missing_cloudflare_url(
     monkeypatch.setattr(hook_setup, "save_user_config", lambda *_args, **_kwargs: False)
 
     ensure_tools_hook_file_interactive(config_path, config)
+
+
+def test_prompt_tools_hook_config_clears_stale_verify_only_in_aggregator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    mcp_dir = tmp_path / "cyt_mcp"
+    aggregator_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "transport: stdio",
+                "verify_only: true",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
+    monkeypatch.setattr(hook_setup, "_prompt", lambda _label, default: default)
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        cyt_mcp_setup,
+        "prompt_cyt_mcp_transport",
+        lambda **kwargs: "stdio",
+    )
+
+    config = load_config()
+    prompt_tools_hook_config(config, context="hook", agent="cursor")
+
+    text = aggregator_path.read_text(encoding="utf-8")
+    assert "verify_only: false" in text
+    assert "verify_only: true" not in text

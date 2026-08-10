@@ -30,6 +30,33 @@ _HOME_PREFIX_RE = re.compile(r"^/Users/[^/]+")
 
 InjectionMode = Literal["skip", "skinny", "full", "deny_full_reread"]
 PostHookInject = Callable[[str, bytes], tuple[int, bytes]]
+_USER_QUERY_RE = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.DOTALL | re.IGNORECASE)
+_TIMESTAMP_RE = re.compile(r"<timestamp>.*?</timestamp>\s*", re.DOTALL | re.IGNORECASE)
+
+
+def extract_read_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    """Extract native Read tool name and args from preToolUse payload layers."""
+    from cyt_client.tool_gate import _extract_tool_call
+
+    tool_name, tool_args = _extract_tool_call(payload)
+    if tool_name != "Read" or tool_args is None:
+        return None, None
+    return tool_name, tool_args
+
+
+def read_path_from_payload(payload: dict[str, Any]) -> str | None:
+    """Resolve read target path from preToolUse or beforeReadFile payloads."""
+    from cyt_client.tool_gate import _payload_layers
+
+    for layer in _payload_layers(payload):
+        for field in ("file_path", "filePath", "path"):
+            raw = layer.get(field)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    _tool_name, tool_input = extract_read_tool_call(payload)
+    if tool_input is not None:
+        return read_path_from_tool_input(tool_input)
+    return None
 
 
 def shorten_home_path(path: str | Path) -> str:
@@ -127,11 +154,28 @@ def resolve_read_intercept_mode(
     return "skinny"
 
 
+def normalize_turn_prompt(text: str) -> str:
+    """Normalize Cursor transcript/session prompts for same-turn comparison."""
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    match = _USER_QUERY_RE.search(stripped)
+    if match:
+        return match.group(1).strip()
+    return _TIMESTAMP_RE.sub("", stripped).strip()
+
+
 def read_path_from_tool_input(tool_input: dict[str, Any]) -> str | None:
-    for field in ("path", "file_path"):
+    for field in ("path", "file_path", "filePath"):
         raw = tool_input.get(field)
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
+    nested = tool_input.get("input")
+    if isinstance(nested, dict):
+        for field in ("path", "file_path", "filePath"):
+            raw = nested.get(field)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
     return None
 
 
@@ -229,6 +273,81 @@ def is_skill_md_under_directories(path_str: str, directories: list[Path]) -> boo
         if resolved == base or base in resolved.parents:
             return True
     return False
+
+
+def latest_turn_prompt_from_session(entries: list[dict[str, Any]]) -> str:
+    sliced = entries_after_latest_compaction(entries)
+    for entry in reversed(sliced):
+        if entry.get("kind") != "turn":
+            continue
+        prompt = str(entry.get("prompt") or "").strip()
+        if prompt:
+            return prompt
+    return ""
+
+
+def intercept_query_for_payload(payload: dict[str, Any], entries: list[dict[str, Any]]) -> str:
+    from cyt_client.transcript import last_assistant_from_payload, last_user_from_payload
+
+    user = last_user_from_payload(payload)
+    if user:
+        normalized_user = normalize_turn_prompt(user)
+        assistant = last_assistant_from_payload(payload)
+        normalized_assistant = normalize_turn_prompt(assistant) if assistant else None
+        return format_search_query(normalized_user, normalized_assistant or None)
+    return latest_turn_query_from_session(entries)
+
+
+def should_deny_same_turn_preinjected_skill(
+    key: str,
+    index: SessionLogIndex,
+    *,
+    session_prompt: str,
+    transcript_prompt: str,
+) -> bool:
+    if not index.has_skill_entry(key):
+        return False
+    normalized_session = normalize_turn_prompt(session_prompt)
+    normalized_transcript = normalize_turn_prompt(transcript_prompt)
+    if not normalized_session or not normalized_transcript:
+        return False
+    return normalized_session == normalized_transcript
+
+
+def _append_full_skill_log_entry(
+    payload: dict[str, Any],
+    *,
+    skill_file: Path,
+    content_hash: str,
+    key: str,
+    agent: str,
+) -> None:
+    log_path = session_log_path(payload)
+    if log_path is None:
+        return
+    try:
+        body = skill_file.read_text(encoding="utf-8")
+    except OSError:
+        body = ""
+    skill_name = (
+        skill_file.parent.name if skill_file.name.upper() == "SKILL.MD" else skill_file.stem
+    )
+    append_session_log(
+        log_path,
+        [
+            {
+                "kind": "skill",
+                "key": key,
+                "hash": content_hash,
+                "full": True,
+                "source": "file",
+                "body": body,
+                "name": skill_name,
+                "path": shorten_home_path(skill_file),
+            },
+        ],
+        agent=agent,
+    )
 
 
 def latest_turn_query_from_session(entries: list[dict[str, Any]]) -> str:
@@ -434,6 +553,8 @@ def _read_intercept_local_gates(
     read_path: str,
     agent: str,
 ) -> str | None:
+    from cyt_client.transcript import last_user_from_payload
+
     skill_file = Path(read_path).expanduser()
     if is_excluded_system_skill(skill_file, agent=infer_launch_agent(payload)):
         return _read_intercept_allow(agent)
@@ -444,12 +565,19 @@ def _read_intercept_local_gates(
     key = skill_item_key_for_path(skill_file)
     entries = load_session_entries(payload)
     index = SessionLogIndex.from_entries(entries)
+    session_prompt = latest_turn_prompt_from_session(entries)
+    transcript_prompt = last_user_from_payload(payload) or ""
 
-    if index.has_prompt_injected_skill(key):
+    if should_deny_same_turn_preinjected_skill(
+        key,
+        index,
+        session_prompt=session_prompt,
+        transcript_prompt=transcript_prompt,
+    ):
         return format_pre_tool_response(
             agent=agent,
             permission="deny",
-            user_message="Skill already injected for this session; Read is redundant.",
+            user_message="Skill already injected for this turn; Read is redundant.",
         )
 
     mode = resolve_read_intercept_mode(key=key, current_hash=content_hash, index=index)
@@ -460,6 +588,13 @@ def _read_intercept_local_gates(
             user_message="Full skill file was already read in this session.",
         )
     if mode == "full":
+        _append_full_skill_log_entry(
+            payload,
+            skill_file=skill_file,
+            content_hash=content_hash,
+            key=key,
+            agent=agent,
+        )
         return _read_intercept_allow(agent)
     return None
 
@@ -511,18 +646,38 @@ def _read_intercept_from_daemon(
     return _read_intercept_allow(agent)
 
 
+def handle_before_read_file_intercept(payload: dict[str, Any]) -> str:
+    """Handle Cursor beforeReadFile: deny same-turn skill re-reads; allow otherwise."""
+    if not skills_hook_agent_interceptor_enabled():
+        return format_pre_tool_allow()
+
+    read_path = read_path_from_payload(payload)
+    if read_path is None:
+        return format_pre_tool_allow()
+
+    agent = effective_intercept_agent(payload)
+    outside = _read_intercept_outside_skill_dirs(payload, read_path, agent)
+    if outside is not None:
+        return outside
+
+    local = _read_intercept_local_gates(payload, read_path=read_path, agent=agent)
+    if local is not None:
+        return local
+
+    return _read_intercept_allow(agent)
+
+
 def handle_read_intercept(
     payload: dict[str, Any],
     *,
     post_hook_inject: PostHookInject,
 ) -> str | None:
     """Return preToolUse stdout when intercept handles the Read, else None."""
-    tool_name = str(payload.get("tool_name") or payload.get("toolName") or "").strip()
-    if not should_attempt_read_intercept(payload, tool_name):
+    if not skills_hook_agent_interceptor_enabled():
         return None
 
-    tool_input = payload.get("tool_input") or payload.get("toolInput") or {}
-    if not isinstance(tool_input, dict):
+    tool_name, tool_input = extract_read_tool_call(payload)
+    if tool_name is None or tool_input is None:
         return None
 
     agent = effective_intercept_agent(payload)
@@ -542,7 +697,7 @@ def handle_read_intercept(
         return local
 
     entries = load_session_entries(payload)
-    query = latest_turn_query_from_session(entries)
+    query = intercept_query_for_payload(payload, entries)
     if not query.strip():
         return _read_intercept_allow(agent)
 

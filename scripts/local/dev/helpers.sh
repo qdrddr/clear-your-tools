@@ -681,6 +681,13 @@ PY
 		cyt_run bash "${CYT_REPO_ROOT}/scripts/local/tests/pytest-app-ci.sh"
 	}
 
+	cyt_test_app_runtime() {
+		require_cmd uv
+		cd "${CYT_REPO_ROOT}" || die "cd failed"
+		info "pytest runtime category (may spawn hook daemon / launch proxy)"
+		cyt_run bash "${CYT_REPO_ROOT}/scripts/local/tests/pytest-category.sh" runtime
+	}
+
 	cyt_test_app() {
 		cyt_verify_app_python
 		cyt_test_app_python

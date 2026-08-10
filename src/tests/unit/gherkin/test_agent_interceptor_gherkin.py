@@ -182,6 +182,9 @@ def given_prompt_skill(gherkin_context: GherkinContext, tmp_path: Path) -> None:
         agent="cursor",
     )
     gherkin_context.payload["_session_log"] = log_path
+    gherkin_context.payload["cyt_transcript"] = [
+        {"role": "user", "message": {"content": [{"type": "text", "text": "use skill"}]}},
+    ]
 
 
 @given("session log has three skinny skill entries for that file")

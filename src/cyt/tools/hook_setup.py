@@ -147,6 +147,7 @@ def prompt_tools_hook_config(
     *,
     context: ToolsSetupContext,
     inject_mode: str | None = None,
+    agent: str | None = None,
 ) -> dict[str, Any]:
     """Prompt for tools hook settings; return pruning.tools overlay fragment."""
     pruning = existing.get("pruning")
@@ -163,7 +164,10 @@ def prompt_tools_hook_config(
     if context == "hook":
         active_inject = "hook"
 
-    print("\n--- Tool hook injection ---")
+    if active_inject == "hook":
+        print("\n--- MCP aggregator ---")
+    else:
+        print("\n--- Tool hook injection ---")
 
     existing_sources = tools_hook_sources(existing)
     current_from = existing_sources[0] if existing_sources else DEFAULT_TOOLS_HOOK_TOOLS_FROM
@@ -195,7 +199,9 @@ def prompt_tools_hook_config(
                 write_agent_cyt_mcp_entry,
             )
 
-            launch_agent = os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+            launch_agent = (
+                (agent or "").strip() or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+            )
             transport = prompt_cyt_mcp_transport()
             cyt_mcp_overlay = cyt_mcp_hook_settings_overlay(
                 transport=transport,
@@ -204,7 +210,7 @@ def prompt_tools_hook_config(
             invocation = detect_hook_cli_invocation()
             if invocation.is_dev and invocation.repo_root is not None:
                 print(
-                    f"Installing development cyt-mcp via uv run --directory {invocation.repo_root}",
+                    f"\nInstalling development cyt-mcp via uv run --directory {invocation.repo_root}",
                     file=sys.stderr,
                 )
                 write_agent_cyt_mcp_entry(
@@ -212,11 +218,13 @@ def prompt_tools_hook_config(
                     invocation=invocation,
                     transport=transport,
                 )
+            print(f"\n--- Migrate ({launch_agent})'s MCP config ---")
             if _prompt_yes_no("Migrate agent MCP config to cyt-mcp aggregator?", default_yes=True):
                 setup_cyt_mcp_for_agent(
                     launch_agent,
                     invocation=invocation,
                     transport=transport,
+                    verify_only=False,
                 )
             elif not (invocation.is_dev and invocation.repo_root is not None):
                 write_agent_cyt_mcp_entry(

@@ -222,6 +222,99 @@ def _codex_assistant_from_record(record: dict[str, Any]) -> str | None:
     return _text_blocks_from_content(payload.get("content"))
 
 
+def _cursor_user_from_record(record: dict[str, Any]) -> str | None:
+    if record.get("role") != "user":
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    return _text_blocks_from_content(message.get("content"))
+
+
+def _claude_user_from_record(record: dict[str, Any]) -> str | None:
+    message = record.get("message")
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return None
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    return _text_blocks_from_content(content)
+
+
+def _codex_user_from_record(record: dict[str, Any]) -> str | None:
+    if record.get("type") != "response_item":
+        return None
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("type") != "message" or payload.get("role") != "user":
+        return None
+    return _text_blocks_from_content(payload.get("content"))
+
+
+def last_user_from_records(
+    records: list[Any],
+    *,
+    agent: str | None = None,
+) -> str | None:
+    parser = {
+        "cursor": _cursor_user_from_record,
+        "claude": _claude_user_from_record,
+        "codex": _codex_user_from_record,
+    }.get(agent or "")
+    for record in reversed(records):
+        if not isinstance(record, dict):
+            continue
+        if parser is not None:
+            if text := parser(record):
+                return text
+            continue
+        for fallback in (
+            _codex_user_from_record,
+            _claude_user_from_record,
+            _cursor_user_from_record,
+        ):
+            if text := fallback(record):
+                return text
+    return None
+
+
+def transcript_records_from_payload(payload: dict[str, Any]) -> list[Any]:
+    records = payload.get("cyt_transcript")
+    if isinstance(records, list) and records:
+        return records
+    transcript_path = _transcript_path_from_data(payload)
+    if transcript_path is None:
+        return []
+    path = Path(transcript_path)
+    if not path.is_file():
+        return []
+    return _load_transcript(path)
+
+
+def last_user_from_payload(payload: dict[str, Any]) -> str | None:
+    records = transcript_records_from_payload(payload)
+    if not records:
+        return None
+    agent = infer_harness_agent(payload)
+    return last_user_from_records(records, agent=agent)
+
+
+def last_turn_query_from_payload(payload: dict[str, Any]) -> str | None:
+    records = transcript_records_from_payload(payload)
+    if not records:
+        return None
+    agent = infer_harness_agent(payload)
+    user = last_user_from_records(records, agent=agent)
+    if not user:
+        return None
+    assistant = last_assistant_from_records(records, agent=agent)
+    base = f"User_Asks: {user}"
+    if assistant:
+        return f"{base}; Assistant_Says: {assistant}"
+    return base
+
+
 def last_assistant_from_records(
     records: list[Any],
     *,

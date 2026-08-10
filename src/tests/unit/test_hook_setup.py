@@ -463,7 +463,7 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
 
     output = capsys.readouterr().out
     restart_command = cyt_daemon_restart_command(invocation=invocation)
-    assert "Restarting hook daemon via development CLI:" in output
+    assert "\nRestarting hook daemon via development CLI:" in output
     assert f"  {restart_command}" in output
 
 
@@ -1190,17 +1190,20 @@ def test_bare_hook_requires_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
         main()
 
 
-def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> None:
+def test_upsert_cursor_hooks_into_file_writes_flat_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = tmp_path / "hooks.json"
     entries = hook_setup.cursor_hook_entries(agent="cursor")
+    monkeypatch.setattr(
+        "cyt.hook.setup_wizard.skills_hook_agent_interceptor_enabled",
+        lambda _config=None: False,
+    )
 
     changed = hook_setup.upsert_cursor_hooks_into_file(
         path,
-        before_submit_entry=entries["before_submit"],
-        session_start_entries=entries["session_start"],
-        session_end_entry=entries["session_end"],
-        pre_tool_entry=entries["pre_tool"],
-        post_tool_entry=entries["post_tool"],
+        **hook_setup.cursor_upsert_hook_kwargs(entries, config={}),
     )
 
     assert changed is True
@@ -1217,6 +1220,31 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(tmp_path: Path) -> No
     assert len(entries["session_start"]) == 2
     assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
     assert entries["session_start"][1]["command"] == "cyt-client"
+
+
+def test_upsert_cursor_hooks_installs_read_intercept_hooks_when_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "hooks.json"
+    entries = hook_setup.cursor_hook_entries(agent="cursor")
+    monkeypatch.setattr(
+        "cyt.hook.setup_wizard.skills_hook_agent_interceptor_enabled",
+        lambda _config=None: True,
+    )
+
+    changed = hook_setup.upsert_cursor_hooks_into_file(
+        path,
+        **hook_setup.cursor_upsert_hook_kwargs(entries, config={}),
+    )
+
+    assert changed is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["hooks"]["beforeReadFile"] == [entries["before_read_file"]]
+    pre_tool_entries = data["hooks"]["preToolUse"]
+    assert len(pre_tool_entries) == 2
+    matchers = {entry.get("matcher") for entry in pre_tool_entries}
+    assert matchers == {None, hook_setup.CURSOR_PRE_TOOL_READ_MATCHER}
 
 
 def test_upsert_cursor_hooks_removes_legacy_mcp_tool_hook_events(tmp_path: Path) -> None:
@@ -1331,7 +1359,7 @@ def test_run_hook_setup_installs_cursor_hooks(
     assert data["hooks"]["sessionEnd"][0]["command"] == "cyt-client"
 
     output = capsys.readouterr().out
-    assert "Restarting hook daemon via packaged cyt:" in output
+    assert "\nRestarting hook daemon via packaged cyt:" in output
     assert f"  {cyt_daemon_restart_command()}" in output
 
 
@@ -1422,7 +1450,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
     assert "Skills directories" not in output
     assert "CYT_LAUNCH_AGENT" not in output
     assert "hook debug logging" not in output
-    assert "Restarting hook daemon for verify-only mode" in output
+    assert "\nRestarting hook daemon for verify-only mode" in output
     assert "Run manually when ready:" not in output
     assert "Restart your agent so hook changes take effect." in output
     assert "Test the hook locally (UserPromptSubmit payload on stdin)" in output
@@ -1453,6 +1481,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
         patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent"),
+        patch("cyt.hook.daemon.daemon_restart"),
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1588,10 +1617,6 @@ def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
     with (
         patch("cyt.config.save_user_config", side_effect=capture_save),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.config.tools_hook_sources", return_value=["cyt_mcp"]),
-        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
-        patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml") as write_aggregator,
-        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
     ):
         hook_setup._apply_injection_hook_config(
             config_path,
@@ -1605,12 +1630,9 @@ def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
             "pruning": {"tools": {"enabled": True}},
         },
     ]
-    write_aggregator.assert_called_once_with("cursor", transport="stdio", verify_only=False)
-    setup_cyt_mcp.assert_called_once()
-    assert setup_cyt_mcp.call_args.kwargs["verify_only"] is False
 
 
-def test_apply_injection_hook_config_writes_verify_only_false_without_cyt_mcp(
+def test_apply_injection_hook_config_does_not_configure_mcp_aggregator(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "config.yaml"
@@ -1626,8 +1648,6 @@ def test_apply_injection_hook_config_writes_verify_only_false_without_cyt_mcp(
     with (
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.config.tools_hook_sources", return_value=["executor"]),
-        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
         patch("cyt.tools.cyt_mcp_setup.write_mcp_aggregator_yaml") as write_aggregator,
         patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
     ):
@@ -1637,7 +1657,7 @@ def test_apply_injection_hook_config_writes_verify_only_false_without_cyt_mcp(
             agents=["cursor"],
         )
 
-    write_aggregator.assert_called_once_with("cursor", transport="stdio", verify_only=False)
+    write_aggregator.assert_not_called()
     setup_cyt_mcp.assert_not_called()
 
 
@@ -1671,7 +1691,10 @@ def test_configure_cursor_rule_file_prompts_and_saves_enabled(
     ):
         hook_setup._configure_cursor_rule_file(
             config_path,
-            {"skills": {"hook": {"cursor_rule_file": {"enabled": False}}}},
+            {
+                "skills": {"enabled": True},
+                "pruning": {"tools": {"enabled": False}},
+            },
         )
 
     assert saved_overlays == [
@@ -1700,11 +1723,57 @@ def test_configure_cursor_rule_file_non_tty_defaults_to_enabled(tmp_path: Path) 
         patch("cyt.config.save_user_config", side_effect=capture_save),
         patch("cyt.config.sync_config_in_place"),
     ):
-        hook_setup._configure_cursor_rule_file(config_path, {})
+        hook_setup._configure_cursor_rule_file(
+            config_path,
+            {"skills": {"enabled": True}, "pruning": {"tools": {"enabled": False}}},
+        )
 
     assert saved_overlays == [
         {"skills": {"hook": {"cursor_rule_file": {"enabled": True}}}},
     ]
+
+
+def test_configure_cursor_rule_file_auto_disables_without_injection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    saved_overlays: list[dict[str, object]] = []
+    prompt_calls: list[str] = []
+
+    def capture_save(
+        path: Path,
+        overlay: dict[str, object],
+        *,
+        apply_bundled_sections: bool,
+    ) -> bool:
+        saved_overlays.append(overlay)
+        return True
+
+    def fail_prompt(text: str, *, default_yes: bool = True) -> bool:
+        prompt_calls.append(text)
+        raise AssertionError(f"unexpected yes/no prompt: {text!r}")
+
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fail_prompt)
+
+    with (
+        patch("cyt.config.save_user_config", side_effect=capture_save),
+        patch("cyt.config.sync_config_in_place"),
+    ):
+        hook_setup._configure_cursor_rule_file(
+            config_path,
+            {"skills": {"enabled": False}, "pruning": {"tools": {"enabled": False}}},
+        )
+
+    assert saved_overlays == [
+        {"skills": {"hook": {"cursor_rule_file": {"enabled": False}}}},
+    ]
+    assert prompt_calls == []
+    output = capsys.readouterr().out
+    assert "Cursor rules file" not in output
+    assert "disabled" in output
 
 
 def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
@@ -1770,7 +1839,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
         )
 
     output = capsys.readouterr()
-    assert "MCP migration (cursor)" in output.out
+    assert "--- Migrate (cursor)'s MCP config ---" in output.out
     assert any("Migrate agent MCP config" in text for text in yes_no_calls)
     assert "Detect tools for cursor" not in output.out
     backend_payload = json.loads((mcp_target_dir / "cursor.json").read_text(encoding="utf-8"))
@@ -1778,54 +1847,6 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
     assert set(agent_payload["mcpServers"]) == {"cyt-mcp"}
     assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
-
-
-def test_apply_injection_hook_config_clears_stale_verify_only_in_aggregator(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
-
-    config_path = tmp_path / "config.yaml"
-    aggregator_path = tmp_path / "mcp-aggregator.yaml"
-    mcp_dir = tmp_path / "cyt_mcp"
-    aggregator_path.write_text(
-        "\n".join(
-            [
-                "default_agent: cursor",
-                "transport: stdio",
-                "verify_only: true",
-                "",
-            ],
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
-    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
-
-    config: dict[str, Any] = {
-        "hallucination_gate": {"enabled": True},
-        "pruning": {
-            "tools": {"enabled": False, "hook": {"tools_from": "cyt_mcp"}},
-            "inject_via": {"cursor": "hook"},
-        },
-    }
-    with (
-        patch("cyt.config.save_user_config", return_value=True),
-        patch("cyt.config.sync_config_in_place"),
-        patch("cyt.config.tools_hook_sources", return_value=["cyt_mcp"]),
-        patch("cyt.hook.setup_wizard.inject_via_for_agent", return_value="hook"),
-        patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent"),
-    ):
-        hook_setup._apply_injection_hook_config(
-            config_path,
-            config,
-            agents=["cursor"],
-        )
-
-    text = aggregator_path.read_text(encoding="utf-8")
-    assert "verify_only: false" in text
-    assert "verify_only: true" not in text
 
 
 def test_should_propose_hook_daemon_restart() -> None:
@@ -1950,6 +1971,66 @@ def test_configure_hook_skills_skips_directories_when_disabled(
     assert "Skills injection" in output
     assert "Skills directories" not in output
     assert any("Enable skills injection?" in text for text in prompt_calls)
+    assert not any("Enable hook skill interceptor?" in text for text in prompt_calls)
+
+
+def test_configure_hook_skills_prompts_interceptor_before_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("skills:\n  enabled: false\n", encoding="utf-8")
+    monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
+    prompt_calls: list[str] = []
+
+    def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
+        prompt_calls.append(text)
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
+    monkeypatch.setattr(
+        hook_setup,
+        "_prompt_hook_skills_directories",
+        lambda *_args, **_kwargs: ["~/.cursor/skills"],
+    )
+    monkeypatch.setattr(hook_setup, "_ensure_skill_directories_exist", lambda *_args: None)
+
+    with patch("cyt.hook.setup_wizard.save_user_config", return_value=True):
+        hook_setup._configure_hook_skills(
+            config_path=config_path,
+            include_claude=False,
+            include_codex=False,
+            include_cursor=True,
+        )
+
+    assert [call for call in prompt_calls if "Enable" in call or "Skills directories" in call] == [
+        "Enable skills injection?",
+        "Enable hook skill interceptor?",
+    ]
+
+
+def test_configure_hook_agent_interceptor_saves_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("skills:\n  enabled: true\n", encoding="utf-8")
+    saved: dict[str, Any] = {}
+
+    def capture_save(_path: Path, overlay: dict[str, Any], **kwargs: object) -> bool:
+        del kwargs
+        saved.update(overlay)
+        return True
+
+    monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
+
+    with patch("cyt.hook.setup_wizard.save_user_config", side_effect=capture_save):
+        hook_setup._configure_hook_agent_interceptor(config_path)
+
+    output = capsys.readouterr().out
+    assert saved["skills"]["hook"]["agent_interceptor"]["enabled"] is True
+    assert "agent_interceptor: enabled" in output
 
 
 def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
@@ -1993,5 +2074,6 @@ def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
 
     output = capsys.readouterr().out
     assert "Tools injection" in output
+    assert "MCP aggregator" not in output
     assert "Tool hook injection" not in output
     assert saved["pruning"]["tools"]["enabled"] is False

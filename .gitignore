@@ -177,3 +177,4 @@ fossa-deps.yml.example
 .fossa.yml.example
 fossa.debug.zip
 !dev-requirements.txt
+.cyt/skinny/

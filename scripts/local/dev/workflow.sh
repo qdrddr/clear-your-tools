@@ -7,10 +7,11 @@
 # Production installs (pip install clear-your-tools) pull cyt-indexer-sdk from PyPI instead.
 #
 # Usage:
-#   ./scripts/local/dev/workflow.sh [--short|--silent] <command> [args...]
+#   ./scripts/local/dev/workflow.sh [--short|--silent] [--runtime] <command> [args...]
 #
 # Options:
 #   --short | --silent   Only print error/warning lines (hide info/success noise)
+#   --runtime            Enable runtime tests that may spawn cyt hook daemon or launch proxy
 #
 # Commands:
 #   Core (Rust):
@@ -29,7 +30,8 @@
 #   Main app (src/):
 #     app-setup | setup    uv sync workspace (editable sdk/python via pyproject.toml)
 #     app-verify           verify main app (src/) re-exports local cyt-indexer-sdk
-#     app-test | test      app-verify + pytest categories (integration/qa excluded)
+#     app-test | test      app-verify + pytest categories (integration/qa/runtime excluded)
+#     app-test-runtime     pytest runtime category (may spawn hook daemon / launch proxy)
 #     app-build | build-wheels
 #                          uv build clear-your-tools wheel/sdist
 #     app-all              app-setup → app-verify → app-test → app-build
@@ -55,11 +57,16 @@ source "${SCRIPT_DIR}/helpers.sh"
 export SHORTEN_ROOT="${CYT_REPO_ROOT}"
 
 CYT_LOCAL_DEV_SHORT="${CYT_LOCAL_DEV_SHORT:-}"
+CYT_LOCAL_DEV_RUNTIME="${CYT_LOCAL_DEV_RUNTIME:-}"
 LOCAL_DEV_ARGS=()
 while (($#)); do
 	case "$1" in
 	--short | --silent)
 		CYT_LOCAL_DEV_SHORT=1
+		shift
+		;;
+	--runtime)
+		CYT_LOCAL_DEV_RUNTIME=1
 		shift
 		;;
 	*)
@@ -69,6 +76,11 @@ while (($#)); do
 	esac
 done
 export CYT_LOCAL_DEV_SHORT
+if [[ -n "${CYT_LOCAL_DEV_RUNTIME}" ]]; then
+	export CYT_RUN_RUNTIME_TESTS=1
+else
+	unset CYT_RUN_RUNTIME_TESTS
+fi
 
 usage() {
 	sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
@@ -217,6 +229,10 @@ EOF
 		require_repo_root
 		cyt_test_app
 		;;
+	app-test-runtime)
+		require_repo_root
+		cyt_test_app_runtime
+		;;
 	app-build | build-wheels)
 		require_repo_root
 		cyt_sync_app
@@ -319,6 +335,9 @@ PY
 	all)
 		require_repo_root
 		cyt_run_all
+		if [[ -n "${CYT_RUN_RUNTIME_TESTS:-}" ]]; then
+			cyt_test_app_runtime
+		fi
 		info "all done"
 		;;
 	ci)

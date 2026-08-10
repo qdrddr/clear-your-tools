@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 cd "${ROOT}"
 
-exec env -u CYT_RUN_INTEGRATION_TESTS uv run pytest \
+exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \
 	--cov=src/cyt \
 	--cov-report=term-missing \
 	src/tests/unit \

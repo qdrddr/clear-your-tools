@@ -11,6 +11,8 @@ import pytest
 import cyt.proxy.cli  # noqa: F401 — preload runtime imports used by daemon_start
 from cyt.hook import daemon as hook_daemon
 
+_REAL_SPAWN_HOOK_SERVER = hook_daemon._spawn_hook_server
+
 OR_KEY = "OPENROUTER_" + "API_KEY"
 OR_TOKEN = "or-" + "token"
 
@@ -197,6 +199,7 @@ def test_spawn_hook_server_passes_resolved_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(OR_KEY, OR_TOKEN)
+    monkeypatch.setattr(hook_daemon, "_spawn_hook_server", _REAL_SPAWN_HOOK_SERVER)
     with patch("cyt.hook.daemon.subprocess.Popen") as popen:
         popen.return_value = MagicMock()
         hook_daemon._spawn_hook_server(

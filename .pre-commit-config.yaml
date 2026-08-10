@@ -535,6 +535,17 @@ repos:
         language: system
         files: ^(src/.*\.py|src/tests/qa/.*|sdk/e2e/fixtures/bm25_catalog\.json)$
 
+      - id: pytest-runtime
+        name: pytest (runtime)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && CYT_RUN_RUNTIME_TESTS=1 rtk bash scripts/local/tests/pytest-category.sh runtime',
+          ]
+        pass_filenames: false
+        language: system
+        files: ^(src/.*\.py|src/tests/runtime/.*)$
+
       - id: pytest-sdk-python
         name: pytest (sdk/python unit)
         entry: bash scripts/pre-commit-hooks/prek-hook.sh

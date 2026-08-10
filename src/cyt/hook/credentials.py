@@ -83,7 +83,7 @@ def report_and_ensure_hook_credentials(
 
     preload_keyring_credentials(names)
 
-    print("Checking required API keys:")
+    print("\n--- Checking required API keys: ---")
     before_sources = dict(inspect_named_credentials(names, allow_prompt=False))
     for name in names:
         source = before_sources.get(name)

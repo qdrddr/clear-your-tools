@@ -10,8 +10,10 @@ from typing import Any
 from cyt.agents.cursor.hook import (
     CURSOR_HOOKS_PATH,
     cursor_hook_entries,
+    cursor_upsert_hook_kwargs,
     upsert_cursor_hooks_into_file,
 )
+from cyt.config import load_config
 from cyt.hook.cli_invocation import detect_hook_cli_invocation
 
 _CURSOR_CANDIDATES = (
@@ -44,15 +46,11 @@ def ensure_cursor_hooks_for_launch(*, quiet: bool = False) -> bool:
     """Install or refresh Cursor hooks in ``~/.cursor/hooks.json``."""
     path = CURSOR_HOOKS_PATH.expanduser()
     invocation = detect_hook_cli_invocation()
+    config = load_config()
     entries = cursor_hook_entries(agent="cursor", invocation=invocation)
     changed = upsert_cursor_hooks_into_file(
         path,
-        before_submit_entry=entries["before_submit"],
-        session_start_entries=entries["session_start"],
-        session_end_entry=entries["session_end"],
-        pre_tool_entry=entries["pre_tool"],
-        post_tool_entry=entries["post_tool"],
-        pre_compact_entry=entries["pre_compact"],
+        **cursor_upsert_hook_kwargs(entries, config=config),
     )
     if changed and not quiet:
         print(f"Updated CYT hooks in {path}")

@@ -21,6 +21,7 @@ from cyt_client.sessions import (
 
 _GATED_CATALOGS = frozenset({"mcpc", "cyt_mcp", "definitions"})
 _PRE_TOOL_EVENTS = frozenset({"preToolUse", "PreToolUse"})
+_BEFORE_READ_FILE_EVENTS = frozenset({"beforeReadFile", "BeforeReadFile"})
 _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 _CYT_MCP_SERVER_NAMES = frozenset({"cyt-mcp", "cyt_mcp"})
 _SHELL_TOOL_NAMES = frozenset({"Shell", "shell", "Bash", "bash"})
@@ -82,6 +83,14 @@ def is_pre_tool_event(payload: dict[str, Any]) -> bool:
             continue
         event = layer.get("hook_event_name") or layer.get("hookEventName")
         if isinstance(event, str) and event.strip() in _PRE_TOOL_EVENTS:
+            return True
+    return False
+
+
+def is_before_read_file_event(payload: dict[str, Any]) -> bool:
+    for layer in _payload_layers(payload):
+        event = layer.get("hook_event_name") or layer.get("hookEventName")
+        if isinstance(event, str) and event.strip() in _BEFORE_READ_FILE_EVENTS:
             return True
     return False
 

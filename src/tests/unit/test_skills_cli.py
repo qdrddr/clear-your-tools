@@ -464,7 +464,21 @@ def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) 
         monkeypatch.setattr("sys.stdout", stdout)
 
         config = {"skills": {"enabled": False}}
-        with patch("cyt.skills.cli.load_config", return_value=config):
+        from cyt.hook.daemon import HookDaemonStartResult
+
+        with (
+            patch("cyt.skills.cli.load_config", return_value=config),
+            patch(
+                "cyt.hook.daemon.daemon_start",
+                return_value=HookDaemonStartResult(
+                    outcome="reused",
+                    port=8834,
+                    hook_url="http://127.0.0.1:8834/hook/inject",
+                    pid=None,
+                    reused=True,
+                ),
+            ),
+        ):
             skills_cli.run(debug=True)
 
         assert not (root / ".debug" / "skills").exists()

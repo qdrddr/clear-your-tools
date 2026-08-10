@@ -119,7 +119,7 @@ def write_mcp_aggregator_yaml(
         ],
     )
     _atomic_write_text(path, "\n".join(lines))
-    print(f"Wrote {path} (agent mapping includes {backends})", file=sys.stderr)
+    print(f"\nWrote {path} (agent mapping includes {backends})", file=sys.stderr)
     return path
 
 
