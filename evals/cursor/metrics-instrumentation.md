@@ -1,13 +1,14 @@
 # Metrics and instrumentation
 
-Canonical paper metrics ↔ **clear-your-tools** implementation. See [research-questions.md](./research-questions.md) for formulas.
+Canonical paper metrics ↔ **clear-your-tools** implementation. See [research-questions.md](./research-questions.md) for
+formulas.
 
 ---
 
 ## Canonical metrics table
 
 | Category | Metric | Implemented? | Source / gap |
-|----------|--------|--------------|--------------|
+| ---------- | -------- | -------------- | -------------- |
 | **Task** | Task success rate | ❌ | Harness + verifiers |
 | **Tool calls** | Total tool calls | ❌ | Log in harness |
 | | Schema-malformed calls | **Partial** | Deny in `tool_gate.py`; not aggregated |
@@ -56,14 +57,14 @@ Classify into buckets A/B/C/D per [evaluation-framework.md](./evaluation-framewo
 
 Per run:
 
-```
+```text
 tool_context = tokenize(stubs) + tokenize(injected_definitions)
 total_input  = from trace or estimate
 total_output = from trace or estimate
 ```
 
 | Component | How to measure |
-|-----------|----------------|
+| ----------- | ---------------- |
 | Tool stubs | Tokenize cyt-mcp minimal schemas |
 | Injected defs | `.cursor/rules/cyt-injection.mdc` |
 | cl100k estimate | `cyt-indexer-sdk` / `token_usage.py` |
@@ -81,7 +82,7 @@ v1: flat input pricing; BM25 pruner cost = $0.
 ## Hook stats (Cursor)
 
 | Signal | Path |
-|--------|------|
+| -------- | ------ |
 | Session JSONL | Type-1/Type-2 entries |
 | Rules file | Post-prune inject size |
 | Allow/deny | `preToolUse` → `tool_gate.py` |

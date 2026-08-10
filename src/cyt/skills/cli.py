@@ -20,6 +20,7 @@ from cyt.config import (
     required_skills_env_var_names,
     required_tools_hook_env_var_names,
     skills_enabled,
+    skills_hook_agent_interceptor_enabled,
     skills_pipeline,
     tools_enabled,
     uses_executor_tool_catalog,
@@ -97,6 +98,7 @@ def _tools_hook_file_missing(config: dict[str, Any]) -> bool:
 
 _SESSION_EVENTS = frozenset({"SessionStart"})
 _PROMPT_EVENTS = frozenset({"UserPromptSubmit"})
+_PRE_TOOL_INTERCEPT_EVENTS = frozenset({"preToolUse", "PreToolUse"})
 
 _CLI_OUTCOME_HINTS: dict[str, str] = {
     "user_prompt_no_matches": "no skill chunks matched this prompt (check skills.directories in config)",
@@ -115,7 +117,7 @@ _CLI_OUTCOME_HINTS: dict[str, str] = {
 def _ensure_hook_credentials(config: dict[str, Any], *, allow_prompt: bool | None = None) -> None:
     """Load pruner API keys before remote skills/tools search."""
     names: list[str] = []
-    if skills_enabled(config):
+    if skills_enabled(config) or skills_hook_agent_interceptor_enabled(config):
         names.extend(required_skills_env_var_names(config))
     elif uses_executor_tool_catalog(config):
         from cyt.config import required_executor_skill_env_var_names
@@ -1110,6 +1112,40 @@ def _exit_if_hook_disabled(
     return True
 
 
+def _handle_agent_interceptor_pre_tool(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    debug: bool,
+    pruner_settings: PrunerSettingsCache | None,
+) -> tuple[str, dict[str, Any] | None, str]:
+    from cyt.skills.agent_interceptor import format_intercept_stdout, run_skill_read_intercept
+
+    details: dict[str, Any] | None = None
+    if skills_hook_agent_interceptor_enabled(config):
+        try:
+            result = run_skill_read_intercept(payload, config, pruner_settings=pruner_settings)
+        except Exception as exc:
+            logger.exception("agent skill read intercept failed")
+            result = {"agent_interceptor": True, "permission": "allow"}
+            if debug:
+                details = {"intercept_error": str(exc)}
+            outcome = "agent_interceptor"
+        else:
+            outcome = "agent_interceptor"
+        injection_text = format_intercept_stdout(result)
+        if debug and details is None:
+            details = {"agent_interceptor": True}
+    else:
+        from cyt.skills.agent_interceptor import format_intercept_stdout
+
+        injection_text = format_intercept_stdout(
+            {"agent_interceptor": True, "permission": "allow"},
+        )
+        outcome = "agent_interceptor_disabled"
+    return outcome, details, injection_text
+
+
 def _dispatch_hook_event(
     event_name: str | None,
     payload: dict[str, Any],
@@ -1134,6 +1170,13 @@ def _dispatch_hook_event(
                 "session_id": session_id(payload),
                 "model": model_from_payload(payload),
             }
+    elif event_name in _PRE_TOOL_INTERCEPT_EVENTS and payload.get("cyt_agent_interceptor"):
+        outcome, details, injection_text = _handle_agent_interceptor_pre_tool(
+            payload,
+            config,
+            debug=debug,
+            pruner_settings=pruner_settings,
+        )
     elif event_name in _PROMPT_EVENTS:
         skills_allowed = skills_inject_allowed(config, "hook", cli_prompt=cli_prompt)
         tools_allowed = tools_inject_allowed(config, "hook", cli_prompt=cli_prompt)
@@ -1198,15 +1241,17 @@ def run_hook_payload(
         raw_timing = details.get("phase_timing")
         if isinstance(raw_timing, dict):
             phase_timing = raw_timing
-    stdout_text = format_hook_stdout(
-        injection_text,
-        payload,
-        plain=plain_output,
-        merge_rules_sections=bool(details and details.get("rules_merge_sections")),
-        session_log=session_log,
-        cyt_agent=cyt_agent,
-        phase_timing=phase_timing,
-    )
+    stdout_text = injection_text
+    if not (event_name in _PRE_TOOL_INTERCEPT_EVENTS and payload.get("cyt_agent_interceptor")):
+        stdout_text = format_hook_stdout(
+            injection_text,
+            payload,
+            plain=plain_output,
+            merge_rules_sections=bool(details and details.get("rules_merge_sections")),
+            session_log=session_log,
+            cyt_agent=cyt_agent,
+            phase_timing=phase_timing,
+        )
     debug_details = details
     if debug and details is not None:
         debug_details = dict(details)

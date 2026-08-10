@@ -1,6 +1,7 @@
 # Research questions and metrics
 
-Three **primary results** (cost, tokens, task quality) with Level 1 tool-call metrics as supporting evidence for the verification experiment. See [evaluation-framework.md](./evaluation-framework.md).
+Three **primary results** (cost, tokens, task quality) with Level 1 tool-call metrics as supporting evidence for the verification
+experiment. See [evaluation-framework.md](./evaluation-framework.md).
 
 ---
 
@@ -9,7 +10,7 @@ Three **primary results** (cost, tokens, task quality) with Level 1 tool-call me
 ### Report
 
 | Metric | Notes |
-|--------|-------|
+| -------- | ------- |
 | Tool-context input tokens | stubs + injected definitions — **headline** |
 | Total input tokens | Full request |
 | Output tokens | Per run |
@@ -21,7 +22,7 @@ Verify-only: tool-context reduction ≈ 0%.
 ### Codebase
 
 | Signal | Source |
-|--------|--------|
+| -------- | -------- |
 | Proxy tool in/out tokens | `stats.db` via `cyt stats` |
 | Injected rules file | Tokenize `.cursor/rules/cyt-injection.mdc` |
 | Tool-context total | stubs + injected (harness computes) |
@@ -43,7 +44,7 @@ C_{CYT} = C_{pruning} + C_{agent}
 \]
 
 | Pruner | \(C_{pruning}\) |
-|--------|-----------------|
+| --- | --- |
 | BM25 (v1 default) | $0 |
 
 ### Headline cost metric
@@ -52,11 +53,9 @@ C_{CYT} = C_{pruning} + C_{agent}
 \text{CostPerSuccess} = \frac{\text{TotalCost}}{\text{SuccessfulTasks}}
 \]
 
-### Codebase
+### Cost signals
 
 `compute_stats_costs()`, `compute_net_savings_tokens()` — use flat rates for v1 Cursor eval.
-
----
 
 ## Primary result 3 — Task quality
 
@@ -73,12 +72,13 @@ Each task: deterministic verifier on final environment state. No LLM judge.
 ## Supporting — Verify-Prevent (Level 1)
 
 | Metric | Formula |
-|--------|---------|
+| ------ | ------- |
 | **MPR** (malformed-call prevention rate) | prevented malformed / malformed |
 
 Static verification corpus + agent runs with verify-only config.
 
-Classify calls into buckets A/B/C/D ([evaluation-framework.md](./evaluation-framework.md)) — report counts; MPR is the headline for verify experiment.
+Classify calls into buckets A/B/C/D ([evaluation-framework.md](./evaluation-framework.md)) — report counts; MPR is the
+headline for verify experiment.
 
 ---
 
@@ -87,17 +87,18 @@ Classify calls into buckets A/B/C/D ([evaluation-framework.md](./evaluation-fram
 Gold set \(G_t\) vs CYT selected \(P_t\) per task:
 
 | Metric | Formula |
-|--------|---------|
-| Required-tool recall | \(\|G_t^{tools} \cap P_t^{tools}\| / \|G_t^{tools}\|\) |
+| --- | --- |
+| Required-tool recall | recall of gold tools in pruned set |
 
-From task YAML `gold.tools` — no property/enum gold annotations in v1.
+From task YAML `gold.tools` — no property/enum gold annotations in v1. Formula: \(\|G_t^{tools} \cap P_t^{tools}\| /
+\|G_t^{tools}\|\).
 
 ---
 
 ## Canonical metrics table (paper)
 
 | Category | Metric |
-|----------|--------|
+| ---------- | -------- |
 | **Task** | Task success rate |
 | **Tool calls** | Total, schema-malformed, malformed prevented, MPR |
 | **Tokens** | Input, output, tool-context, injected-definition |

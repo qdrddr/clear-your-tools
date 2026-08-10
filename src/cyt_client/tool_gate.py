@@ -949,5 +949,9 @@ def format_codex_deny(reason: str) -> str:
     )
 
 
+def format_codex_pre_tool_allow() -> str:
+    return json.dumps({"permissionDecision": "allow"})
+
+
 def format_claude_deny(reason: str) -> str:
     return json.dumps({"hookSpecificOutput": {"permissionDecision": "deny", "reason": reason}})

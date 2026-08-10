@@ -1,6 +1,7 @@
 # Experiment design
 
-**Do not run the full Cartesian product.** Three experiments only: primary (pruning), verification (MPR), smoke (harness validation).
+**Do not run the full Cartesian product.** Three experiments only: primary (pruning), verification (MPR), smoke (harness
+validation).
 
 See [evaluation-framework.md](./evaluation-framework.md) for configurations and levels.
 
@@ -13,7 +14,7 @@ See [evaluation-framework.md](./evaluation-framework.md) for configurations and 
 **Axes (v1):**
 
 | Axis | Values |
-|------|--------|
+| ------ | -------- |
 | Client | Cursor (hook) |
 | Task type | Single-step, Multi-step |
 | Catalog size | 25, 100, 250 |
@@ -48,7 +49,8 @@ See [evaluation-framework.md](./evaluation-framework.md) for configurations and 
 
 - **Pipeline:** BM25 only (`pruning.tools.sequence: [bm25]`)
 - **Aggregator:** CYT-MCP only
-- **Catalog threshold:** Default `minimum_tools: 50` skips pruning below threshold — override in eval config for size-25 runs
+- **Catalog threshold:** Default `minimum_tools: 50` skips pruning below threshold — override in eval config for size-25
+  runs
 
 ---
 
@@ -73,7 +75,7 @@ Per (task, configuration):
 ## v1 scope summary
 
 | Dimension | v1 |
-|-----------|-----|
+| ----------- | ----- |
 | Primary | No CYT vs Pruning |
 | Verification | No CYT vs Verify only (corpus + subset of tasks) |
 | Client | Cursor |
@@ -89,7 +91,7 @@ Per (task, configuration):
 ## Headline figures
 
 | Figure | X | Y | Lines |
-|--------|---|---|-------|
+| -------- | --- | --- | ------- |
 | Fig 1 | Catalog size | Input tokens (tool-context + total) | Baseline, CYT |
 | Fig 2 | Catalog size | TaskSuccessRate | Baseline, CYT |
 | Fig 3 | Catalog size | CostPerSuccess | Baseline, CYT |

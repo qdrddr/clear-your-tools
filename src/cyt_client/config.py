@@ -98,6 +98,22 @@ def tools_from_includes_cyt_mcp() -> bool:
     return False
 
 
+def skills_hook_agent_interceptor_enabled() -> bool:
+    """Return ``skills.hook.agent_interceptor.enabled`` (default: false)."""
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    value = _nested_bool_from_yaml(
+        text,
+        ("skills", "hook", "agent_interceptor", "enabled"),
+    )
+    return bool(value)
+
+
 def skills_hook_cursor_rule_file_enabled() -> bool:
     """Return ``skills.hook.cursor_rule_file.enabled`` (default: true)."""
     config_path = resolve_config_path()

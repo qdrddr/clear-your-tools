@@ -1,6 +1,7 @@
 # Implementation status (adapted to this codebase)
 
-Classification against **clear-your-tools** v2.11.x. See [evaluation-framework.md](./evaluation-framework.md) for the four-level model.
+Classification against **clear-your-tools** v2.11.x. See [evaluation-framework.md](./evaluation-framework.md) for the four-level
+model.
 
 ---
 
@@ -9,7 +10,7 @@ Classification against **clear-your-tools** v2.11.x. See [evaluation-framework.m
 ### Core CYT capabilities
 
 | Capability | Code / docs |
-|------------|-------------|
+| ------------ | ------------- |
 | **Three granularities:** tool → optional properties → enum values | `sdk/rust/cyt-indexer/src/pipeline/tools.rs`, `prune_enums` in `defaults.yaml` |
 | **BM25 / Rerank / LLM pruning pipelines** | `src/cyt/pruners/{bm25,rerank,llm}.py` |
 | **Verify-Prevent (Level 1 schema validation)** | `src/cyt_client/tool_gate.py`, `schema_validate.py` |
@@ -32,7 +33,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 ### Terminology in code
 
 | Research term | Code equivalent |
-|---------------|-----------------|
+| --------------- | ----------------- |
 | Schema-invalid | `validate_json_schema` failure, deny in `tool_gate` |
 | Type-2 catalog | `tool_catalog:*` in session JSONL |
 | Type-1 injection | Pruned/full tool entries in session log |
@@ -45,7 +46,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 ### P0 — Harness foundations
 
 | Item | Notes |
-|------|-------|
+| ------ | ------- |
 | **`evals/cursor/harness/`** | `run_task()`, per-call logging |
 | **Four-level metric aggregation** | L1–L4 separate in results |
 | **Tool-call record schema** | Every call classified A/B/C/D |
@@ -57,7 +58,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 ### P1 — Token & cost (simplified)
 
 | Item | Notes |
-|------|-------|
+| ------ | ------- |
 | **Tool-context tokens** | stubs + injected definitions |
 | **Total input / output tokens** | Per run aggregate |
 | **Hook-path (Cursor) token accounting** | Rules file + session JSONL tokenization |
@@ -72,7 +73,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 These were in earlier drafts but cut to keep the eval tractable. Revisit only if primary results are solid and time allows.
 
 | Item | Why deferred |
-|------|--------------|
+| ------ | -------------- |
 | **Layer A external MCP benchmark** | Integration cost high; Layer B covers CYT-specific claims |
 | **Turn-aware pruning ablation** | Partially implemented; hard to measure on Cursor; marginal vs primary results |
 | **Compaction reinjection ablation** | Multi-turn setup complexity; niche mechanism |
@@ -99,7 +100,7 @@ These were in earlier drafts but cut to keep the eval tractable. Revisit only if
 ## Partially implemented (no eval work planned)
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | **Turn-aware pruning** | Proxy: `extract_user_query`; not full latest-agent-message query |
 | **Prompt cache preservation** | Stable stubs in `policies.py`; no cache split in stats |
 | **Pre-exposed skip logic** | Works; no aggregate metrics planned for v1 |
@@ -110,7 +111,7 @@ These were in earlier drafts but cut to keep the eval tractable. Revisit only if
 ## Irrelevant (short)
 
 | Item | Why |
-|------|-----|
+| ------ | ----- |
 | Cursor proxy | Platform E2E encryption (`LIMITATIONS.md`) |
 | Cloud-hosted proxy | Local-only |
 | Copilot / OpenCode | Untested, out of scope |

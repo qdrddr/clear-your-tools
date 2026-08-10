@@ -60,6 +60,7 @@ POST_TOOL_USE_EVENT = "PostToolUse"
 POST_TOOL_USE_MATCHER = "mcp__cyt-mcp__get-tool-definitions"
 PRE_TOOL_USE_EVENT = "PreToolUse"
 PRE_TOOL_USE_MATCHER = "mcp__*"
+PRE_TOOL_USE_READ_MATCHER = "Read"
 HookAgentName = Literal["claude", "codex", "cursor"]
 HOOK_TIMEOUT_SECONDS = 60
 SESSION_START_TIMEOUT_SECONDS = 60
@@ -957,6 +958,33 @@ def upsert_cyt_matcher_hook(
     return merged, True
 
 
+def append_cyt_matcher_hook_if_missing(
+    hooks_section: dict[str, Any],
+    entry: dict[str, Any],
+    *,
+    event_name: str,
+    matcher: str,
+) -> tuple[dict[str, Any], bool]:
+    """Append a matcher wrapper for *event_name* when *matcher* is not already present."""
+    merged = copy.deepcopy(hooks_section) if hooks_section else {}
+    wrappers = merged.get(event_name)
+    if not isinstance(wrappers, list):
+        wrappers = []
+        merged[event_name] = wrappers
+    for wrapper in wrappers:
+        if isinstance(wrapper, dict) and str(wrapper.get("matcher") or "") == matcher:
+            existing = _collect_cyt_hook_commands_for_event({event_name: [wrapper]}, event_name)
+            if existing and not _cyt_hook_needs_update(existing, entry):
+                return merged, False
+    wrappers.append(
+        {
+            "matcher": matcher,
+            "hooks": [copy.deepcopy(entry)],
+        },
+    )
+    return merged, True
+
+
 def merge_cyt_hooks(
     hooks_section: dict[str, Any],
     *,
@@ -987,6 +1015,13 @@ def merge_cyt_hooks(
         event_name=PRE_TOOL_USE_EVENT,
         matcher=PRE_TOOL_USE_MATCHER,
     )
+    merged, changed_read = append_cyt_matcher_hook_if_missing(
+        merged,
+        pre_tool_use_entry,
+        event_name=PRE_TOOL_USE_EVENT,
+        matcher=PRE_TOOL_USE_READ_MATCHER,
+    )
+    changed_pre = changed_pre or changed_read
     changed_post = False
     if post_tool_use_entry is not None:
         merged, changed_post = upsert_cyt_matcher_hook(
@@ -1032,6 +1067,13 @@ def upsert_cyt_hooks(
         event_name=PRE_TOOL_USE_EVENT,
         matcher=PRE_TOOL_USE_MATCHER,
     )
+    merged, changed_read = append_cyt_matcher_hook_if_missing(
+        merged,
+        pre_tool_use_entry,
+        event_name=PRE_TOOL_USE_EVENT,
+        matcher=PRE_TOOL_USE_READ_MATCHER,
+    )
+    changed_pre = changed_pre or changed_read
     changed_post = False
     if post_tool_use_entry is not None:
         merged, changed_post = upsert_cyt_matcher_hook(

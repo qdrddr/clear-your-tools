@@ -12,12 +12,13 @@ Research notes for an arXiv draft on **Clear Your Tools (CYT)** and for building
 
 ## Key conceptual change
 
-**Separate tool-call correctness from task correctness.** Four evaluation levels (schema → execution → trajectory → task); v1 focuses on L1 (MPR) and L4 (task verifiers). See [evaluation-framework.md](./evaluation-framework.md).
+**Separate tool-call correctness from task correctness.** Four evaluation levels (schema → execution → trajectory → task);
+v1 focuses on L1 (MPR) and L4 (task verifiers). See [evaluation-framework.md](./evaluation-framework.md).
 
 ## Configurations
 
 | Config | Pruning | Verify |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | No CYT | ❌ | ❌ |
 | Verify only | ❌ | ✅ |
 | Pruning only | ✅ | ❌ |
@@ -28,7 +29,7 @@ Primary experiment: No CYT vs Pruning. Verification experiment: No CYT vs Verify
 ## Files
 
 | File | Contents |
-|------|----------|
+| ------ | ---------- |
 | [evaluation-framework.md](./evaluation-framework.md) | **Four levels, tool-call taxonomy, MPR, core narrative** |
 | [implementation-status.md](./implementation-status.md) | Implemented / in-scope gaps / deferred |
 | [cyt-capabilities.md](./cyt-capabilities.md) | Modes, stubs, schema admission, deployment paths |
@@ -43,7 +44,7 @@ Primary experiment: No CYT vs Pruning. Verification experiment: No CYT vs Verify
 ## Codebase anchors
 
 | Area | Path |
-|------|------|
+| ------ | ------ |
 | Pruning | `src/cyt/pruners/tools_filter.py`, `sdk/rust/cyt-indexer/` |
 | Verify gate | `src/cyt_client/tool_gate.py` (Type-2 catalog authority) |
 | Pre-exposure | `src/cyt/injection/pre_exposed.py`, `pre_exposure_pipeline.py` |

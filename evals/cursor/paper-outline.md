@@ -14,13 +14,22 @@ Adapted for **clear-your-tools** with focused evaluation design. See [evaluation
 
 ## Abstract (draft)
 
-Large language model agents interact with external capabilities through tool-calling interfaces such as the Model Context Protocol (MCP). As tool catalogs grow, exposing complete schemas increases input-token consumption, inference cost, and competing parameter descriptions — **tool-context bloat** that may dilute task-relevant information (related to broader **context rot**).
+Large language model agents interact with external capabilities through tool-calling interfaces such as the Model Context
+Protocol (MCP). As tool catalogs grow, exposing complete schemas increases input-token consumption, inference cost, and
+competing parameter descriptions — **tool-context bloat** that may dilute task-relevant information (related to broader
+**context rot**).
 
-We present **Clear Your Tools (CYT)**, a client-side system that dynamically reduces tool context while preserving execution capability. CYT operates at two levels: (1) **pruning** — query-dependent removal of irrelevant tools, optional properties, and enum values while preserving required fields; (2) **verification** — intercepting schema-invalid tool calls before execution and returning full definitions for recovery.
+We present **Clear Your Tools (CYT)**, a client-side system that dynamically reduces tool context while preserving execution
+capability. CYT operates at two levels: (1) **pruning** — query-dependent removal of irrelevant tools, optional properties,
+and enum values while preserving required fields; (2) **verification** — intercepting schema-invalid tool calls before
+execution and returning full definitions for recovery.
 
-CYT deploys via **reverse proxy** (Claude, Codex) or **hook + stub injection** (Cursor). Stable tool stubs preserve prompt-prefix caching; pruned definitions inject dynamically.
+CYT deploys via **reverse proxy** (Claude, Codex) or **hook + stub injection** (Cursor). Stable tool stubs preserve
+prompt-prefix caching; pruned definitions inject dynamically.
 
-We evaluate along **three primary dimensions**: token efficiency (tool-context and total input), net monetary cost including pruner overhead, and **task success** via deterministic verifiers — **independent** of tool-call metrics. We report schema-level malformed-call prevention (MPR) for the verification configuration and required-tool recall for pruning.
+We evaluate along **three primary dimensions**: token efficiency (tool-context and total input), net monetary cost including
+pruner overhead, and **task success** via deterministic verifiers — **independent** of tool-call metrics. We report
+schema-level malformed-call prevention (MPR) for the verification configuration and required-tool recall for pruning.
 
 **Artifact:** PyPI `clear-your-tools`, docs `CONFIG.md`, `CURSOR-HOOK.md`, `TOOL-HALLUCINATION-GATE.md`.
 
@@ -28,7 +37,9 @@ We evaluate along **three primary dimensions**: token efficiency (tool-context a
 
 ## Central hypothesis
 
-> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and net inference cost while preserving task completion accuracy; schema-level verification can prevent schema-invalid tool calls with limited overhead.
+> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and net inference cost
+> while preserving task completion accuracy; schema-level verification can prevent schema-invalid tool calls with limited
+> overhead.
 
 We **test** this — not assume it.
 
@@ -47,7 +58,7 @@ Differentiation from RAG-MCP, semantic tool discovery, MCP-Zero: **schema transf
 ## Terminology (§3 / §Limitations)
 
 | Term | Definition |
-|------|------------|
+| ------ | ------------ |
 | **Schema-invalid tool call** | Args violate declared schema (Verify-Prevent scope) |
 | **Execution-unsuccessful** | Schema valid; backend failed |
 | **Schema-based admission** | Validate against Type-2 catalog; allow valid calls even if not injected |
@@ -91,7 +102,7 @@ Avoid "incorrect data" for Level 2 failures.
 
 ## Core narrative diagram
 
-```
+```text
          MCP / Tool-rich agents
                   │
                   ▼
@@ -124,7 +135,7 @@ Lower input cost + preserved quality
 ## Headline figures
 
 | Fig | X | Y |
-|-----|---|---|
+| ----- | --- | --- |
 | 1 | Catalog size | Tool-context + total input tokens |
 | 2 | Catalog size | TaskSuccessRate |
 | 3 | Catalog size | CostPerSuccess |
@@ -136,7 +147,7 @@ Optional: MPR by configuration (verification experiment).
 ## Related work
 
 | Work | CYT difference |
-|------|----------------|
+| ------ | ---------------- |
 | RAG-MCP | Tool retrieval; CYT prunes schema internals |
 | Semantic Tool Discovery | Selection; not property/enum minimization |
 | MCP-Zero | Proactive toolchain; CYT is per-turn schema minimization + verify |

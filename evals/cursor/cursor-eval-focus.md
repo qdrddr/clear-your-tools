@@ -1,13 +1,14 @@
 # Cursor evaluation focus
 
-Cursor is the **v1 harness target** (hook-only). See [evaluation-framework.md](./evaluation-framework.md) for four-level metrics.
+Cursor is the **v1 harness target** (hook-only). See [evaluation-framework.md](./evaluation-framework.md) for four-level
+metrics.
 
 ---
 
 ## Deployment (Cursor only)
 
 | Condition | Supported |
-|-----------|-----------|
+| ----------- | ----------- |
 | No CYT | ✅ Native MCP |
 | Verify only | ✅ `--prevent-hallucinations` |
 | Pruning only | ✅ `cyt hook cursor` |
@@ -18,7 +19,7 @@ Cursor is the **v1 harness target** (hook-only). See [evaluation-framework.md](.
 
 ## Architecture on Cursor
 
-```
+```text
 Cursor IDE
   ├── MCP: cyt-mcp stubs ({})
   ├── Hooks: cyt-client
@@ -37,7 +38,7 @@ Stable stubs + dynamic inject — relevant for prefix-stability discussion even 
 ### 1. Tokens
 
 | Component | Measure |
-|-----------|---------|
+| ----------- | --------- |
 | Tool stubs | Tokenize cyt-mcp tool list |
 | Injected defs | Tokenize `cyt-injection.mdc` per turn |
 | Tool-context total | stubs + injected |
@@ -60,7 +61,7 @@ Deterministic verifiers only — **ignore** tool-call success for `RunResult.suc
 ## Tool-call logging on Cursor (L1)
 
 | Signal | Source |
-|--------|--------|
+| -------- | -------- |
 | Allow/deny | `preToolUse` → parse deny reason |
 | Schema-valid | Infer from allow vs schema deny |
 | Blocked (C) | deny with schema error |
@@ -74,7 +75,7 @@ Parse `~/.config/cyt/sessions/*.jsonl` for Type-2 catalog and deny exposures.
 ## v1 matrix
 
 | Dimension | Value |
-|-----------|-------|
+| ----------- | ------- |
 | Primary | No CYT vs cyt-prune |
 | Verification | No CYT vs verify-only + static corpus |
 | Tasks | 5 smoke → ~50 Layer B |
@@ -90,7 +91,7 @@ Claude/Codex proxy eval deferred — richer `stats.db` token data when extending
 ## Known limitations (paper §9)
 
 | Limitation | Eval impact |
-|------------|-------------|
+| ------------ | ------------- |
 | No proxy | Cannot compare hook vs proxy on Cursor |
 | Rules file vs additionalContext | Document workaround |
 | Token usage opaque | Schema token estimate + manual validation |

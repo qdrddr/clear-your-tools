@@ -68,6 +68,7 @@ from cyt_client.skip import hook_skip_enabled
 from cyt_client.tool_gate import (
     format_claude_deny,
     format_codex_deny,
+    format_codex_pre_tool_allow,
     format_cursor_deny,
     is_pre_tool_event,
     validate_pre_tool_call,
@@ -274,10 +275,27 @@ def _pre_tool_name_from_payload(payload: dict) -> str:
 
 
 def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
+    from cyt_client.agent_interceptor import handle_read_intercept
+    from cyt_client.cursor import format_pre_tool_allow
+    from cyt_client.transport import post_hook_inject
+
+    intercept_stdout = handle_read_intercept(payload, post_hook_inject=post_hook_inject)
+    if intercept_stdout is not None:
+        print(intercept_stdout, flush=True)
+        return
+
     validation = validate_pre_tool_call(payload)
+    agent = (
+        infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
+    )
     if validation.allowed:
-        if cursor_output:
-            print(format_cursor_continue(), flush=True)
+        if cursor_output or agent == "cursor":
+            print(format_pre_tool_allow(), flush=True)
+            return
+        if agent == "codex":
+            print(format_codex_pre_tool_allow(), flush=True)
+            return
+        print(json.dumps({"hookSpecificOutput": {"permissionDecision": "allow"}}), flush=True)
         return
     try:
         persist_pre_tool_deny_exposure(payload, validation.exposure)
@@ -354,6 +372,11 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
                 enriched = json.loads(payload_bytes)
                 if isinstance(enriched, dict):
                     persist_turn_to_session_log(enriched)
+                    from cyt_client.agent_interceptor import (
+                        persist_skill_directories_to_session_log,
+                    )
+
+                    persist_skill_directories_to_session_log(enriched)
             except (json.JSONDecodeError, OSError) as exc:
                 _verbose_log(f"cyt-client: failed to persist turn: {exc}")
         _emit_cursor_continue()
@@ -462,6 +485,9 @@ def _maybe_persist_prompt_turn(payload_bytes: bytes, payload: dict[str, Any]) ->
         enriched = json.loads(payload_bytes)
         if isinstance(enriched, dict):
             persist_turn_to_session_log(enriched)
+            from cyt_client.agent_interceptor import persist_skill_directories_to_session_log
+
+            persist_skill_directories_to_session_log(enriched)
     except (json.JSONDecodeError, OSError) as exc:
         _verbose_log(f"cyt-client: failed to persist turn: {exc}")
 

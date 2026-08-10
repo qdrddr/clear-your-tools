@@ -84,8 +84,8 @@ def test_skill_directories_include_project_and_home_for_agent(
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, agent)
         payload = {"cwd": str(project)}
         directories = skill_directories_for_payload(payload)
-        assert project / project_rel in directories
-        assert Path(home_rel).expanduser() in directories
+        assert (project / project_rel).resolve() in directories
+        assert Path(home_rel).expanduser().resolve() in directories
 
 
 def test_skill_directories_use_only_active_agent(

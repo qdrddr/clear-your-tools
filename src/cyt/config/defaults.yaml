@@ -334,6 +334,9 @@ skills:
   hook:
     cursor_rule_file:
       enabled: true
+    agent_interceptor:
+      enabled: false
+      min_items: 3
     request_budget_fraction: 30.0
     inject_cap_multiplier_of_request_tokens: 25.0
 

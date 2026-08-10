@@ -61,6 +61,10 @@ def format_cursor_continue() -> str:
     return json.dumps({"continue": True})
 
 
+def format_pre_tool_allow() -> str:
+    return json.dumps({"permission": "allow"})
+
+
 def format_cursor_stdout(cyt_stdout: str) -> str:
     if not cyt_stdout.strip():
         return format_cursor_continue()

@@ -45,11 +45,14 @@ def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:
     seen: set[Path] = set()
     for project_rel, home_rel in pairs:
         for candidate in (cwd / project_rel, Path(home_rel).expanduser()):
-            resolved = candidate.resolve()
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
             if resolved in seen:
                 continue
             seen.add(resolved)
-            directories.append(candidate)
+            directories.append(resolved)
     return directories
 
 

@@ -1,6 +1,7 @@
 # Eval harness specification
 
-**Not yet implemented.** Spec aligned with [evaluation-framework.md](./evaluation-framework.md) — four levels, per-call logging, task verifiers independent of tool metrics.
+**Not yet implemented.** Spec aligned with [evaluation-framework.md](./evaluation-framework.md) — four levels, per-call
+logging, task verifiers independent of tool metrics.
 
 ---
 
@@ -25,7 +26,7 @@ result: RunResult = run_task(
 ## Configuration mapping
 
 | `configuration` | Pruning | Verify | Repo |
-|-----------------|---------|--------|------|
+| ----------------- | --------- | -------- | ------ |
 | `none` | ❌ | ❌ | CYT disabled |
 | `verify-only` | ❌ | ✅ | `--prevent-hallucinations` |
 | `cyt-prune` | ✅ | ❌ | Default; gate off |
@@ -38,7 +39,7 @@ Primary experiment uses `none` vs `cyt-prune`. Verification experiment uses `non
 ## Four-level capture
 
 | Level | Harness responsibility |
-|-------|------------------------|
+| ------- | ------------------------ |
 | **L1 Schema** | Parse `tool_gate` allow/deny; `schema_valid` on each call |
 | **L2 Execution** | Capture MCP/tool backend success/failure (descriptive, not headline) |
 | **L3 Trajectory** | Log retries after deny (descriptive) |
@@ -51,7 +52,7 @@ Primary experiment uses `none` vs `cyt-prune`. Verification experiment uses `non
 ## ToolCallRecord
 
 | Class | `schema_valid` | `blocked` | `execution_successful` |
-|-------|----------------|-----------|------------------------|
+| ------- | ---------------- | ----------- | ------------------------ |
 | A Valid+successful | True | False | True |
 | B Valid+unsuccessful | True | False | False |
 | C Malformed+prevented | False | True | None |
@@ -196,7 +197,7 @@ uv run python -m evals.cursor.harness experiment primary \
 ## Reuse existing tests
 
 | Existing | Use |
-|----------|-----|
+| ---------- | ----- |
 | `hallucination_gate.feature` | L1 behavior regression |
 | `test_pricing.py` | Cost math |
 | `test_pruning_timing.py` | Pruning latency baseline |
