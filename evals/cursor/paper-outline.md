@@ -1,6 +1,6 @@
 # Paper outline (arXiv draft)
 
-Adapted for **clear-your-tools** with sharpened evaluation design. See [evaluation-framework.md](./evaluation-framework.md).
+Adapted for **clear-your-tools** with focused evaluation design. See [evaluation-framework.md](./evaluation-framework.md).
 
 ---
 
@@ -20,7 +20,7 @@ We present **Clear Your Tools (CYT)**, a client-side system that dynamically red
 
 CYT deploys via **reverse proxy** (Claude, Codex) or **hook + stub injection** (Cursor). Stable tool stubs preserve prompt-prefix caching; pruned definitions inject dynamically.
 
-We evaluate along **three primary dimensions**: token efficiency (tool-context and total input, with cache-aware cost), net monetary cost including pruner overhead, and **task success** via deterministic verifiers — **independent** of tool-call metrics. We separately report a four-level hierarchy: schema correctness, execution success, agent recovery, and task outcome. We measure malformed-call prevention, tool execution success, pruning recall, in-session pre-exposure, and compaction-aware reinjection.
+We evaluate along **three primary dimensions**: token efficiency (tool-context and total input), net monetary cost including pruner overhead, and **task success** via deterministic verifiers — **independent** of tool-call metrics. We report schema-level malformed-call prevention (MPR) for the verification configuration and required-tool recall for pruning.
 
 **Artifact:** PyPI `clear-your-tools`, docs `CONFIG.md`, `CURSOR-HOOK.md`, `TOOL-HALLUCINATION-GATE.md`.
 
@@ -28,7 +28,7 @@ We evaluate along **three primary dimensions**: token efficiency (tool-context a
 
 ## Central hypothesis
 
-> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and net inference cost while preserving task completion accuracy; schema-level verification can prevent and recover from schema-invalid tool calls with limited overhead.
+> Dynamic removal of irrelevant tool schemas can substantially reduce LLM input-token consumption and net inference cost while preserving task completion accuracy; schema-level verification can prevent schema-invalid tool calls with limited overhead.
 
 We **test** this — not assume it.
 
@@ -50,7 +50,6 @@ Differentiation from RAG-MCP, semantic tool discovery, MCP-Zero: **schema transf
 |------|------------|
 | **Schema-invalid tool call** | Args violate declared schema (Verify-Prevent scope) |
 | **Execution-unsuccessful** | Schema valid; backend failed |
-| **Semantically invalid** | Valid schema type; wrong value (e.g. path vs `owner/repo`) |
 | **Schema-based admission** | Validate against Type-2 catalog; allow valid calls even if not injected |
 | **Tool-context bloat** | Growth of competing tool metadata with catalog size |
 
@@ -68,27 +67,23 @@ Avoid "incorrect data" for Level 2 failures.
    - 4.2–4.4 Pruning granularities
    - 4.5 Schema reconstruction
    - 4.6 Verification (Type-2 admission)
-   - 4.7 Recovery
-   - 4.8 Pre-exposure & compaction
-5. Deployment — proxy, hook, Cursor, Codex native pruning
+   - 4.7 Recovery (deny + schema exposure)
+   - 4.8 Pre-exposure & compaction (implementation; not ablated in v1 eval)
+5. Deployment — proxy, hook, Cursor
 6. Evaluation
-   - 6.1 Four evaluation levels
+   - 6.1 Four evaluation levels (L1 + L4 primary; L2–L3 descriptive)
    - 6.2 Configurations (none / verify / prune / full)
-   - 6.3 Benchmarks (Layer A external + Layer B stress)
+   - 6.3 Benchmark (Layer B stress tasks)
    - 6.4 Metrics ([research-questions.md](./research-questions.md) table)
    - 6.5 Experiments ([experiment-design.md](./experiment-design.md))
 7. Results
-   - 7.1 Tokens (tool-context + total; cached/uncached)
+   - 7.1 Tokens (tool-context + total)
    - 7.2 Net cost + CostPerSuccess
    - 7.3 TaskSuccessRate
-   - 7.4 Tool-call metrics (MPR, TESR)
-   - 7.5 Pruning recall + pipeline ablation
-   - 7.6 Recovery
-   - 7.7 Codex comparison
-   - 7.8 Pre-exposure & compaction
-   - 7.9 Unexposed-but-allowed (secondary)
+   - 7.4 MPR (verification experiment)
+   - 7.5 Required-tool recall
 8. Related Work
-9. Limitations — semantic validation, Cursor no-proxy, cache tradeoffs, BM25 languages
+9. Limitations — semantic validation, Cursor no-proxy, flat pricing in v1, BM25 languages
 10. Discussion
 11. Conclusion
 
@@ -134,7 +129,7 @@ Lower input cost + preserved quality
 | 2 | Catalog size | TaskSuccessRate |
 | 3 | Catalog size | CostPerSuccess |
 
-Optional: MPR by configuration; pipeline ablation bar chart.
+Optional: MPR by configuration (verification experiment).
 
 ---
 
@@ -152,4 +147,4 @@ Optional: MPR by configuration; pipeline ablation bar chart.
 
 - Package version, `defaults.yaml`, eval harness (when built)
 - Four configurations documented with exact CLI
-- Layer A benchmark citation + Layer B task YAML
+- Layer B task YAML + verification corpus

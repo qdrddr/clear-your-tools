@@ -1,41 +1,24 @@
 # Benchmark design
 
-Two layers: **Layer A** (existing external benchmark) + **Layer B** (CYT stress tests).
+**Layer B — CYT stress benchmark** only. Task quality uses **Level 4 verifiers** — independent of tool-call metrics ([evaluation-framework.md](./evaluation-framework.md)).
 
-Task quality uses **Level 4 verifiers** only — independent of tool-call metrics ([evaluation-framework.md](./evaluation-framework.md)).
-
----
-
-## Layer A — Existing benchmark
-
-Run No CYT vs CYT configurations against a published MCP/tool-use evaluation.
-
-| Advantage | Notes |
-|-----------|-------|
-| Externally recognizable | Pick benchmark with MCP or tool-calling tasks |
-| Less construction bias | CYT wraps benchmark, doesn't own task authorship |
-| Reproducibility | Cite benchmark + CYT version |
-
-**Status:** Not integrated. Select benchmark (e.g. tool-use/agent benchmarks with MCP adapters) and add thin wrapper in harness.
+External benchmarks deferred (integration cost; Layer B covers CYT-specific claims).
 
 ---
 
 ## Layer B — CYT stress benchmark
 
-50–100 tasks targeting CYT-specific mechanisms:
+~50 tasks targeting mechanisms existing generic benchmarks won't isolate:
 
 | Stress target | Category |
 |---------------|----------|
 | Tool selection under distractors | F — distractor-heavy |
 | Optional property preservation | D |
 | Enum pruning | C |
-| Schema bloat (props/enums) | Isolation experiment |
-| Schema-invalid calls | Verification corpus |
-| Execution-unsuccessful (semantic) | Level 2 — valid schema, bad value |
-| Pre-exposure / repeated tool use | Session promotion |
-| Post-compaction reinjection | Compaction ablation |
+| Schema-invalid calls | Verification corpus (static, not agent tasks) |
+| Multi-step cross-turn pruning | E |
 
-### Task categories (Layer B)
+### Task categories
 
 | Cat | % | Tests |
 |-----|---|-------|
@@ -59,10 +42,6 @@ initial_state:
   fixture: github/org-example-prs
 gold:
   tools: [list_pull_requests, create_pull_request_review_comment]
-  properties:
-    list_pull_requests: [owner, repo, state]
-  enums:
-    list_pull_requests.state: [open]
 verifier:                    # Level 4 only
   - type: github_comment_exists
     repo: org/example
@@ -73,11 +52,13 @@ verifier:                    # Level 4 only
 
 **Verifier determines task success — not tool-call counts.**
 
+Gold `tools` list used for required-tool recall only (not property/enum gold sets).
+
 ---
 
 ## Verification corpus (Level 1)
 
-Labeled tool calls for MPR / FBR — separate from agent tasks.
+Labeled tool calls for MPR — **separate from agent tasks**, run through gate statically.
 
 | Case | Example | Expected |
 |------|---------|----------|
@@ -92,83 +73,7 @@ Run through `validate_pre_tool_call()` / `validate_json_schema()`.
 
 **Existing:** Gherkin `hallucination_gate.feature`, unit tests.
 
-**Gap:** Labeled JSONL corpus + MPR/FBR aggregator.
-
----
-
-## Execution-unsuccessful corpus (Level 2)
-
-Schema-valid calls that fail at backend — **Verify-Prevent does not catch**:
-
-| Case | Args | Failure |
-|------|------|---------|
-| Wrong repo format | `{"repo": "/home/user/r"}` | Backend error |
-| Nonexistent repo | `{"repo": "no/such"}` | 404 |
-| Wrong ID | `{"pull_number": 99999}` | Not found |
-
-Measure TESR separately from MPR.
-
----
-
-## Recovery evaluation (Level 3)
-
-Tasks designed to elicit schema-invalid first call:
-
-```
-malformed → deny + schema → retry → success
-```
-
-Metrics: recovery rate, extra calls/tokens/latency.
-
-**Code path:** `PreToolDenyExposure` → session log → agent retry.
-
----
-
-## Schema-bloat isolation
-
-One tool, growing irrelevant schema:
-
-| Condition | Bloat |
-|-----------|-------|
-| Control | 0 extra props |
-| Bloat-10 | 10 irrelevant optional properties |
-| Bloat-500e | 500 irrelevant enum values |
-
-Same task every time; correct tool always in prune result.
-
-**Expected:** Baseline tokens ↑, CYT ≈ flat.
-
----
-
-## Pre-exposure / compaction tasks
-
-### Pre-exposure
-
-Multi-turn task requiring same tool 3+ times:
-
-- Measure inject vs skip counts
-- Compare tokens with pre-exposure enabled vs disabled (config/ablation)
-
-**Code:** `filter_pre_exposed_tools()` in `pre_exposed.py`.
-
-### Compaction
-
-Multi-turn task spanning `preCompact`:
-
-- Tool A used repeatedly before compaction
-- After compaction: verify tool A still callable (re-inject if needed)
-- Compare task success before/after compaction event
-
-**Code:** `preCompact` hook, `test_session_compaction.py`.
-
----
-
-## Unexposed-but-allowed calls (secondary)
-
-Tasks where gold tool is **in Type-2 catalog** but **not injected** (pruned away):
-
-- If model still calls with valid schema → allowed per Type-2 authority
-- Log rate for "tools in weights" discussion
+**Gap:** Labeled JSONL corpus + MPR aggregator in harness.
 
 ---
 
@@ -177,8 +82,8 @@ Tasks where gold tool is **in Type-2 catalog** but **not injected** (pruned away
 | Component | Target |
 |-----------|--------|
 | Real MCP backends | 5–10 via cyt-mcp |
-| Total tools | 100–500 (real + synthetic distractors) |
-| Tasks | 50–100 Layer B + Layer A subset |
+| Total tools | 100–250 (real + synthetic distractors) |
+| Tasks | ~50 Layer B |
 
 Synthetic distractors: unrelated domains (calendar, weather, k8s, etc.).
 
@@ -200,10 +105,9 @@ Extend pattern from `sdk/e2e/fixtures/bm25_catalog.json`.
 
 ```
 evals/cursor/
-├── tasks/              # Layer B YAML
+├── tasks/              # Layer B YAML (~50)
 ├── verification/       # Level 1 labeled corpus
-├── execution-failures/ # Level 2 labeled corpus
 ├── fixtures/
-├── catalogs/           # 25/100/250/500 tool sets
+├── catalogs/           # 25/100/250 tool sets
 └── harness/
 ```

@@ -54,34 +54,21 @@ Did arguments match the declared tool schema?
 
 Did the tool actually execute successfully?
 
-Valid schema but failure because:
+Valid schema but backend failed (wrong repo, missing resource, auth error, etc.).
 
-- Repository doesn't exist / wrong name
-- Resource missing
-- Semantically invalid value (string type OK, value wrong)
-- Auth failure, backend error
-
-**Terminology:**
-
-| Term | Meaning |
-|------|---------|
-| **Schema-invalid** | Args violate declared schema |
-| **Execution-unsuccessful** | Schema valid, tool/backend failed |
-| **Semantically invalid** | Schema-valid call with wrong value (e.g. `/home/foo/repo` vs `owner/repo`) |
-
-Verify-Prevent does **not** catch Level 2 failures.
+Verify-Prevent does **not** catch Level 2 failures. **v1 eval:** log descriptively; not a headline metric — CYT doesn't intervene at L2.
 
 ### Level 3 — Agent trajectory
 
-Did the agent recover and continue productively?
+Did the agent recover after a schema-invalid deny?
 
 ```
 tool call → schema-invalid → CYT blocks → agent receives schema → corrected call → success
 ```
 
-Measure: recovery rate, extra calls/tokens/latency after deny.
-
 **Codebase:** Deny + schema exposure via `PreToolDenyExposure`, `session_pre_tool_exposure.py`.
+
+**v1 eval:** log retries; recovery rate/overhead deferred (MPR covers verify value).
 
 ### Level 4 — Task outcome
 
@@ -103,16 +90,12 @@ Capture **every** tool call:
 |-------|-------------|
 | `tool_call_id` | Unique per call |
 | `task_id`, `step` | Task and turn index |
-| `client` | cursor / claude / codex |
-| `aggregator` | cyt_mcp / mcpc / executor / cloudflare |
-| `MCP server`, `tool` | Backend identity |
+| `tool` | Tool name |
 | `CYT mode` | baseline / verify-only / prune / full |
-| `pruning pipeline` | bm25 / rerank / llm |
-| `schema exposed?`, `schema source` | Type-1 inject vs Type-2 catalog |
 | `arguments` | Raw args |
 | `schema-valid?` | Level 1 |
-| `execution-successful?` | Level 2 |
-| `blocked?`, `retry?` | Verify path |
+| `execution-successful?` | Level 2 (descriptive) |
+| `blocked?`, `retry?` | Verify path / L3 |
 | `latency` | ms |
 
 ### Four buckets
@@ -132,11 +115,8 @@ For each category report **count** and **rate vs total** and **rate vs attempted
 
 | Metric | Formula | Notes |
 |--------|---------|-------|
-| Successful calls | successful / total | |
-| Unsuccessful calls | unsuccessful / total | Level 2 |
 | Schema-malformed calls | malformed / total | Level 1 |
-| **Malformed-call prevention rate (MPR)** | prevented malformed / malformed | Primary Verify-Prevent metric |
-| **Tool execution success rate (TESR)** | successful / **executed** | Exclude prevented calls from denominator |
+| **Malformed-call prevention rate (MPR)** | prevented malformed / malformed | **Headline for verify experiment** |
 
 ---
 
@@ -152,9 +132,7 @@ The gate validates against the session **Type-2 catalog** (full backend catalog)
 
 A model may call a tool **not injected this turn** but present in Type-2 with valid args → **allowed**. This is **schema-based admission**, not exposure enforcement.
 
-**Secondary eval question:** How often do models invoke tools not explicitly exposed but whose schemas they appear to know (weights / prior context)?
-
-Log: `schema exposed?` vs `allowed despite not exposed`.
+Document in paper; measuring unexposed-but-allowed rate deferred — see [implementation-status.md](./implementation-status.md).
 
 ---
 
@@ -164,7 +142,7 @@ Log: `schema exposed?` vs `allowed despite not exposed`.
 2. **Token consumption** — input/output split; tool-context vs total input
 3. **Task quality** — TaskSuccessRate via deterministic verifiers
 
-Supporting: tool-call correctness (L1–L3), pruning recall, recovery, caching, latency.
+Supporting: MPR (L1), required-tool recall, pruning latency.
 
 ---
 

@@ -20,7 +20,7 @@ Classification against **clear-your-tools** v2.11.x. See [evaluation-framework.m
 | **Pre-exposure / in-session promotion (skip re-inject)** | `src/cyt/injection/pre_exposed.py`, `pre_exposure_pipeline.py` |
 | **Session compaction hook** | `preCompact` / `PreCompact` in `setup_wizard.py`, `test_session_compaction.py` |
 | **Proxy + hook deployment** | `src/cyt/proxy/`, `src/cyt/hook/` |
-| **Aggregators:** cyt-mcp, mcpc, executor, cloudflare | `src/cyt_mcp/`, `src/cyt/mcpc/`, `src/cyt/executor/`, `src/cyt/cloudflare/` |
+| **CYT-MCP aggregator** | `src/cyt_mcp/` |
 | **Net cost w/ pruner stages** | `src/cyt/common/pricing.py`, `compute_net_savings_tokens()` |
 | **Proxy token/property stats** | `src/cyt/proxy/stats.py` |
 | **Pruning latency tests** | `src/tests/quality_metrics/test_pruning_timing.py` |
@@ -40,7 +40,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 
 ---
 
-## Not implemented (eval gaps)
+## Not implemented (eval gaps — in scope)
 
 ### P0 — Harness foundations
 
@@ -49,47 +49,61 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 | **`evals/cursor/harness/`** | `run_task()`, per-call logging |
 | **Four-level metric aggregation** | L1–L4 separate in results |
 | **Tool-call record schema** | Every call classified A/B/C/D |
-| **MPR, TESR** | Malformed-call prevention, tool execution success |
-| **TaskSuccessRate independent of tool metrics** | Deterministic verifiers |
-| **Deterministic task suite** | 50+ tasks with gold assertions |
+| **MPR** | Malformed-call prevention (verify configs) |
+| **TaskSuccessRate** | Deterministic L4 verifiers — independent of tool metrics |
+| **Deterministic task suite** | ~50 Layer B tasks with gold assertions |
+| **Verification corpus runner** | Labeled JSONL → `tool_gate` / MPR |
 
-### P1 — Token & cost precision
+### P1 — Token & cost (simplified)
 
 | Item | Notes |
 |------|-------|
-| **Input token breakdown** | user / agent-message / tool-schema / injected / other |
-| **Output token breakdown** | assistant / tool-call args |
-| **Cached vs uncached input tokens** | Prompt-prefix cache modeling — stats use flat input price today |
-| **Turn-aware pruning eval** | Proxy extracts user query; latest agent message not in prune query yet |
+| **Tool-context tokens** | stubs + injected definitions |
+| **Total input / output tokens** | Per run aggregate |
 | **Hook-path (Cursor) token accounting** | Rules file + session JSONL tokenization |
 | **Cost per successful task** | Needs harness |
-| **In-session promotion metrics** | inject count, promotion count, tokens saved — logic exists, no aggregates |
-| **Compaction reinjection ablation** | `preCompact` logged; no eval comparing before/after |
-| **Pruning pipeline comparison harness** | BM25 vs rerank vs LLM on same tasks |
-| **Layer A external MCP benchmark** | e.g. existing tool-use eval — not integrated |
-| **Layer B CYT stress benchmark** | Schema bloat, distractors, semantic failures |
-| **Unexposed-but-allowed call rate** | Schema admission secondary result |
-
-### P2 — Paper artifacts
-
-| Item | Notes |
-|------|-------|
-| Catalog-size sweep runner | 10–500 tools |
-| Codex native vs Codex+CYT harness | `LIMITATIONS.md` ~20% claim — validate |
-| Figure generation | Fig 1–3 from results parquet |
-| Aggregator comparison matrix | Integration/reproducibility only |
+| **Required-tool recall** | Gold tool set vs pruned set per task |
+| **Layer B CYT stress benchmark** | Distractors, schema bloat via catalog size |
 
 ---
 
-## Partially implemented
+## Deferred (removed from plan — low value / overcomplicated)
+
+These were in earlier drafts but cut to keep the eval tractable. Revisit only if primary results are solid and time allows.
+
+| Item | Why deferred |
+|------|--------------|
+| **Layer A external MCP benchmark** | Integration cost high; Layer B covers CYT-specific claims |
+| **Turn-aware pruning ablation** | Partially implemented; hard to measure on Cursor; marginal vs primary results |
+| **Compaction reinjection ablation** | Multi-turn setup complexity; niche mechanism |
+| **Pre-exposure inject/skip metrics ablation** | Optimization detail; logic exists, aggregates not worth P0 |
+| **Unexposed-but-allowed call rate** | Academic secondary; Type-2 admission is documented, not measured |
+| **Schema-bloat isolation experiment** | Redundant with catalog-size sweep + distractor-heavy tasks |
+| **Execution-unsuccessful corpus (Level 2)** | CYT Verify-Prevent doesn't address L2; measuring adds corpus work without validating CYT |
+| **Recovery rate / overhead (Level 3)** | MPR covers verify value; multi-turn recovery tracking is complex |
+| **TESR as headline metric** | Useful descriptively; not a CYT intervention metric |
+| **Pipeline ablation (BM25 vs rerank vs LLM)** | v1 uses BM25 only; three pipelines × tasks × configs explodes matrix |
+| **Catalog-size sweep 10–500** | v1 uses 25, 100, 250 only |
+| **Cached vs uncached input token split** | Not in stats; Cursor opaque; note as limitation, use flat pricing for v1 |
+| **Detailed input token breakdown** | user / agent-message / tool-schema / injected / other — partial on hook path |
+| **Required-property / enum recall** | Gold annotation burden; required-tool recall sufficient |
+| **Aggregator comparison matrix** | Use CYT-MCP only |
+| **Hook vs proxy deployment comparison** | Cursor hook-only; defer to Claude/Codex follow-up |
+| **Codex native vs Codex+CYT harness** | P2; validate ~20% claim separately |
+| **Claude/Codex in v1 harness** | Cursor first; proxy `stats.db` is richer follow-up |
+| **Figure generation pipeline** | After results exist |
+| **Promotion to full definition tier** | Not implemented; verbatim dedup only |
+
+---
+
+## Partially implemented (no eval work planned)
 
 | Item | Status |
 |------|--------|
-| **Turn-aware pruning** | Proxy: `extract_user_query` in `anthropic.py`; pre-exposure uses `combined_text` corpus — not full "latest agent message" as prune query |
-| **Prompt cache preservation** | System tools + stubs kept stable (`policies.py`); no cached/uncached cost split in stats |
-| **Recovery metrics** | Deny path exists; no recovery rate / overhead aggregates |
+| **Turn-aware pruning** | Proxy: `extract_user_query`; not full latest-agent-message query |
+| **Prompt cache preservation** | Stable stubs in `policies.py`; no cache split in stats |
+| **Pre-exposed skip logic** | Works; no aggregate metrics planned for v1 |
 | **Execution-unsuccessful (Level 2)** | MCP returns errors; not classified in CYT stats |
-| **Pre-exposed promotion → full definition** | Pre-exposure skips re-inject when verbatim in session; explicit "promote to full after N uses" — **not a separate promotion tier** |
 
 ---
 
@@ -100,7 +114,7 @@ All four ablation configs achievable via config + CLI — no batch runner yet.
 | Cursor proxy | Platform E2E encryption (`LIMITATIONS.md`) |
 | Cloud-hosted proxy | Local-only |
 | Copilot / OpenCode | Untested, out of scope |
-| Full scenario Cartesian product | Research says don't run it |
+| Full scenario Cartesian product | Do not run |
 | LLM-as-judge task success | Use deterministic verifiers |
 | Proving context rot formally | Frame as testing bloat reduction hypothesis only |
 | `ui/` dashboard | Stub only |

@@ -109,7 +109,7 @@ Gate authority is **Type-2 catalog** (full backend), not Type-1 (what was inject
 - Tool not in Type-2 → **deny** (hallucinated name)
 - Tool in Type-2 + invalid args → **deny** + return full definition
 
-This is **schema-based admission**, not exposure enforcement. Enables secondary eval: calls to unexposed but catalog-known tools.
+This is **schema-based admission**, not exposure enforcement. Documented in paper; rate measurement deferred.
 
 **Code:** `src/cyt_client/tool_gate.py` line ~897; Type-2 built in `tool_catalog_emit.py`, `verify_session_log.py`.
 
@@ -127,9 +127,7 @@ After a tool definition is injected verbatim into session text, CYT **skips re-i
 
 **Code:** `is_pre_exposed()` in `src/cyt/injection/pre_exposed.py`, used by `pre_exposure_pipeline.py` on hook and proxy paths.
 
-**Eval metrics to build:** inject count, skip count, tokens saved by pre-exposure.
-
-**Gap:** Explicit "promote to full definition after N uses" tier — not implemented as separate promotion step; current behavior is verbatim dedup.
+**Gap:** Explicit "promote to full definition after N uses" tier — not implemented; current behavior is verbatim dedup. Pre-exposure ablation deferred from eval plan.
 
 ---
 
@@ -139,30 +137,15 @@ On `preCompact` / `PreCompact` hook, session memory compresses → CYT resets pr
 
 **Code:** `src/cyt/hook/setup_wizard.py` registers event; `src/tests/unit/test_session_compaction.py`.
 
-**Eval:** Ablation within pruning — does compaction-aware reinjection prevent tool loss?
+Compaction ablation deferred from eval plan — see [implementation-status.md](./implementation-status.md).
 
 ---
 
 ## Turn-aware pruning
 
-Pruning should use information available **at the current turn**, not only the original user prompt:
+Pruning uses user query + session context. Latest agent message as primary BM25 query input is partially implemented on proxy path.
 
-```
-User prompt + conversation context + latest agent message → prune query
-```
-
-Example: agent discovers `"repo is foo/bar not /home/foo/bar"` → may change relevant tools.
-
-**Codebase today:**
-
-| Signal | Used for pruning? |
-|--------|-------------------|
-| User query (proxy) | ✅ `extract_user_query` in `anthropic.py` |
-| Session combined text (pre-exposure) | ✅ `PreExposureContext.combined_text` |
-| Latest agent message as prune query | **Partial / gap** — not primary BM25 query input |
-| Hook optional-scope instruction | ✅ appended in `tools_pruning_query()` |
-
-**Eval implication:** Measure pruning quality with vs without latest agent message in query.
+Turn-aware ablation deferred from eval plan.
 
 ---
 
@@ -180,20 +163,13 @@ Stable prefix: system prompt + system tools + tool stubs.
 
 CYT deliberately preserves system tools and stub names for cache hits (`policies.py`).
 
-**Eval gap:** Record cached vs uncached input tokens; use provider cache-read/write rates in cost formula.
+**Eval v1:** Flat input pricing; cache split deferred.
 
 ---
 
-## Aggregators (integration axis, not primary)
+## Aggregator (v1 eval)
 
-| Aggregator | Path | Role |
-|------------|------|------|
-| **CYT-MCP** | `src/cyt_mcp/` | Default; stubs + backends |
-| **mcpc** | `src/cyt/mcpc/` | Legacy Apify MCPC |
-| **Executor** | `src/cyt/executor/` | Hook-only tier-1 stubs |
-| **Cloudflare** | `src/cyt/cloudflare/` | MCP Portal |
-
-Aggregator affects discovery/injection path; **CYT pruning/verify is the intervention**. Compare aggregators in reproducibility appendix, not primary stats.
+**CYT-MCP** (`src/cyt_mcp/`) — default for all eval runs. Other aggregators (mcpc, executor, cloudflare) exist but are not compared in v1.
 
 ---
 
