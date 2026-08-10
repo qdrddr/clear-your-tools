@@ -47,6 +47,35 @@ def test_skill_log_round_trip() -> None:
     assert "<skill" in fragment
 
 
+def test_skill_log_marks_full_when_content_complete(tmp_path: Path) -> None:
+    skill_path = tmp_path / "RTK" / "SKILL.md"
+    skill_path.parent.mkdir()
+    skill_path.write_text(
+        "---\nname: RTK\n---\n\n**Usage**: demo\n\n## Rule\n\nAlways use rtk.\n",
+        encoding="utf-8",
+    )
+    from cyt.skills.frontmatter import injection_markdown_body
+
+    body = injection_markdown_body(skill_path.read_text(encoding="utf-8"))
+    match = MatchedSkill(
+        doc_id="rtk",
+        file_path=str(skill_path),
+        markdown=body,
+        name="RTK",
+        score=1.0,
+        token_count=10,
+    )
+    from cyt.injection.session_log_build import (
+        build_skill_log_entry,
+        skill_match_is_content_complete,
+    )
+
+    assert skill_match_is_content_complete(match)
+    entry = build_skill_log_entry(match, full=skill_match_is_content_complete(match))
+    assert entry["full"] is True
+    assert "---" not in entry["body"]
+
+
 def test_skill_hash_stable_across_pruned_markdown() -> None:
     stable_hash = "1e543789a9a5647edb1bab1b82c0be0cb6b01ec099d5c25b9751c0b6bb83bb2c"  # pragma: allowlist secret
     skinny = MatchedSkill(

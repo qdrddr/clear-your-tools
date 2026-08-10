@@ -87,12 +87,24 @@ def is_pre_tool_event(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _looks_like_before_read_file_shape(layer: dict[str, Any]) -> bool:
+    file_path = layer.get("file_path") or layer.get("filePath")
+    if not isinstance(file_path, str) or not file_path.strip():
+        return False
+    if "content" not in layer and not layer.get("attachments"):
+        return False
+    tool_name = layer.get("tool_name") or layer.get("toolName")
+    return not isinstance(tool_name, str) or not tool_name.strip()
+
+
 def is_before_read_file_event(payload: dict[str, Any]) -> bool:
     for layer in _payload_layers(payload):
         event = layer.get("hook_event_name") or layer.get("hookEventName")
         if isinstance(event, str) and event.strip() in _BEFORE_READ_FILE_EVENTS:
             return True
-    return False
+    if is_pre_tool_event(payload):
+        return False
+    return any(_looks_like_before_read_file_shape(layer) for layer in _payload_layers(payload))
 
 
 def _payload_layers(data: dict[str, Any]) -> list[dict[str, Any]]:

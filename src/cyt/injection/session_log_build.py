@@ -263,11 +263,29 @@ def _skill_source(match: MatchedSkill, command: str | None) -> Literal["file", "
     return "file"
 
 
-def _skill_body(match: MatchedSkill, *, full: bool) -> str:
-    if full:
-        return match.markdown.rstrip()
+def skill_match_is_content_complete(match: MatchedSkill) -> bool:
+    """True when pruned markdown body equals the on-disk skill file body."""
     from cyt.skills.frontmatter import injection_markdown_body
 
+    if match.command:
+        return False
+    try:
+        file_body = injection_markdown_body(
+            Path(str(match.file_path)).expanduser().read_text(encoding="utf-8"),
+        )
+    except OSError:
+        return False
+    match_body = injection_markdown_body(match.markdown)
+    if not file_body.strip() or not match_body.strip():
+        return False
+    return match_body.strip() == file_body.strip()
+
+
+def _skill_body(match: MatchedSkill, *, full: bool, body_include_frontmatter: bool = False) -> str:
+    from cyt.skills.frontmatter import injection_markdown_body
+
+    if body_include_frontmatter:
+        return match.markdown.rstrip()
     return injection_markdown_body(match.markdown).rstrip()
 
 
@@ -386,11 +404,20 @@ def build_tool_log_entry(
     return entry
 
 
-def build_skill_log_entry(match: MatchedSkill, *, full: bool) -> dict[str, Any]:
+def build_skill_log_entry(
+    match: MatchedSkill,
+    *,
+    full: bool,
+    body_include_frontmatter: bool = False,
+) -> dict[str, Any]:
     command = _skill_command(match)
     source = _skill_source(match, command)
     key = skill_item_key(match, command=command)
-    body = _skill_body(match, full=full)
+    body = _skill_body(
+        match,
+        full=full,
+        body_include_frontmatter=body_include_frontmatter,
+    )
     entry: dict[str, Any] = {
         "kind": "skill",
         "key": key,

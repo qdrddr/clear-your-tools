@@ -9,15 +9,22 @@ from cyt.indexer.tokens import count_tokens
 from cyt.skills.frontmatter import injection_markdown_body
 from cyt.skills.search import MatchedSkill
 
-_INTRO = (
+_INTRO_SKINNY = (
     "Based on the user query added chunks of descriptions of skills (not entire skill). "
     "The entire skill could be retrieved with the file path, though in most cases it likely "
     "excessive."
 )
 
+_INTRO_FULL = (
+    "Based on the user query, complete skill content is injected below. "
+    "Do not use Read on the skill file paths; the injected content is authoritative for this turn."
+)
 
-def skills_inject_intro() -> str:
-    return _INTRO
+_INTRO = _INTRO_SKINNY
+
+
+def skills_inject_intro(*, full: bool = False) -> str:
+    return _INTRO_FULL if full else _INTRO_SKINNY
 
 
 def _parsed_frontmatter(markdown: str) -> dict[str, object]:
@@ -101,6 +108,7 @@ def format_agent_skills(
     if not injectable:
         injectable = list(matches)
     item_lines: list[str] = []
+    emitted_full_flags: list[bool] = []
     for match in injectable:
         command = _resolve_skill_command(match)
         key = skill_item_key(match, command=command)
@@ -110,13 +118,15 @@ def format_agent_skills(
         item = format_skill_item(match, full=full)
         if item:
             item_lines.append(item)
+            emitted_full_flags.append(full)
     if not any(item_lines):
         return ""
     from cyt.injection.pre_exposed import is_pre_exposed
 
-    include_intro = not (combined_text.strip() and is_pre_exposed(_INTRO, combined_text))
+    intro = skills_inject_intro(full=bool(emitted_full_flags) and all(emitted_full_flags))
+    include_intro = not (combined_text.strip() and is_pre_exposed(intro, combined_text))
     if include_intro:
-        lines = [_INTRO, "", "<agent-skills>", *item_lines, "</agent-skills>"]
+        lines = [intro, "", "<agent-skills>", *item_lines, "</agent-skills>"]
     else:
         lines = ["<agent-skills>", *item_lines, "</agent-skills>"]
     return "\n".join(lines)

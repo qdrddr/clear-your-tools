@@ -18,6 +18,7 @@ from cyt.injection.session_log_build import (
     resource_item_key,
     skill_content_hash,
     skill_item_key,
+    skill_match_is_content_complete,
     tool_content_hash,
     tool_item_key,
     tool_item_legacy_keys,
@@ -164,9 +165,18 @@ def gate_skills_for_session(
         )
         if mode == "skip":
             continue
+        session_full = mode == "full"
+        content_complete = skill_match_is_content_complete(match)
+        log_full = session_full or content_complete
         kept.append(match)
-        full_flags[key] = mode == "full"
-        log_entries.append(build_skill_log_entry(match, full=mode == "full"))
+        full_flags[key] = session_full
+        log_entries.append(
+            build_skill_log_entry(
+                match,
+                full=log_full,
+                body_include_frontmatter=session_full,
+            ),
+        )
     return kept, log_entries, full_flags
 
 

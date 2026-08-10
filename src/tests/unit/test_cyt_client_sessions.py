@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from cyt_client.sessions import (
+    append_resource_entries,
     append_session_log,
+    append_skill_entries,
+    append_tool_entries,
     cleanup_stale_session_logs,
     entries_after_latest_compaction,
     index_of_latest_compaction,
@@ -116,6 +119,47 @@ def test_read_tool_catalog_hashes_post_compaction_only(tmp_path: Path) -> None:
     )
     hashes = read_tool_catalog_hashes(path)
     assert hashes["tool_catalog:cyt_mcp"] == "new-hash"
+
+
+def test_append_skill_entries_dedupes_by_key_and_hash(tmp_path: Path) -> None:
+    path = tmp_path / "sess.jsonl"
+    skill = {
+        "kind": "skill",
+        "key": "skill:~/.cursor/skills/RTK/SKILL.md",
+        "hash": "c31d1d0d",
+        "full": False,
+        "name": "RTK",
+    }
+    append_skill_entries(path, [skill], agent="cursor")
+    append_skill_entries(path, [dict(skill, body="duplicate")], agent="cursor")
+    _agent, items = read_session_log_file(path)
+    skill_items = [entry for entry in items if entry.get("kind") == "skill"]
+    assert len(skill_items) == 1
+
+
+def test_append_resource_entries_dedupes_by_key_and_hash(tmp_path: Path) -> None:
+    path = tmp_path / "sess.jsonl"
+    resource = {
+        "kind": "resource",
+        "key": "resource:demo",
+        "hash": "abc123",
+        "full": False,
+    }
+    append_resource_entries(path, [resource], agent="cursor")
+    append_resource_entries(path, [dict(resource, body="duplicate")], agent="cursor")
+    _agent, items = read_session_log_file(path)
+    resource_items = [entry for entry in items if entry.get("kind") == "resource"]
+    assert len(resource_items) == 1
+
+
+def test_append_tool_entries_dedupes_by_key_and_hash(tmp_path: Path) -> None:
+    path = tmp_path / "sess.jsonl"
+    tool = {"kind": "tool", "key": "tool:Shell", "hash": "abc", "full": False, "name": "Shell"}
+    append_tool_entries(path, [tool], agent="cursor")
+    append_tool_entries(path, [dict(tool, name="duplicate")], agent="cursor")
+    _agent, items = read_session_log_file(path)
+    tool_items = [entry for entry in items if entry.get("kind") == "tool"]
+    assert len(tool_items) == 1
 
 
 def test_sessions_dir_for_agent_home_when_inject_via_proxy(

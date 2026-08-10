@@ -16,6 +16,7 @@ from cyt_client.config import skills_hook_agent_interceptor_enabled
 from cyt_client.port import resolve_hook_url
 from cyt_client.sessions import (
     append_session_log,
+    append_skill_entries,
     entries_after_latest_compaction,
     read_session_log_file,
     session_log_path,
@@ -23,7 +24,7 @@ from cyt_client.sessions import (
 from cyt_client.skills import _payload_cwd, infer_launch_agent, skill_directories_for_payload
 
 FULL_PROMOTION_THRESHOLD = 3
-_READ_TOOL_NAMES = frozenset({"Read"})
+_READ_TOOL_NAMES = frozenset({"Read", "ReadFile", "read", "readFile"})
 _SYSTEM_SKILLS_DIR = ".system"
 _HOME_PREFIX_RE = re.compile(r"^/Users/[^/]+")
 
@@ -39,7 +40,7 @@ def extract_read_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[st
     from cyt_client.tool_gate import _extract_tool_call
 
     tool_name, tool_args = _extract_tool_call(payload)
-    if tool_name != "Read" or tool_args is None:
+    if tool_name not in _READ_TOOL_NAMES or tool_args is None:
         return None, None
     return tool_name, tool_args
 
@@ -75,6 +76,66 @@ def shorten_home_path(path: str | Path) -> str:
 
 def skill_item_key_for_path(path: str | Path) -> str:
     return f"skill:{shorten_home_path(path)}"
+
+
+def resolve_skill_path(path: str | Path) -> Path | None:
+    try:
+        return Path(path).expanduser().resolve()
+    except OSError:
+        return None
+
+
+def _skill_entry_path_candidates(entry: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for raw in (entry.get("key"), entry.get("path")):
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        text = raw.strip()
+        if text.startswith("skill:"):
+            text = text.removeprefix("skill:").strip()
+        resolved = resolve_skill_path(text)
+        if resolved is None or resolved in seen:
+            continue
+        seen.add(resolved)
+        paths.append(resolved)
+    return paths
+
+
+def skill_entry_matches_read_path(entry: dict[str, Any], read_path: str | Path) -> bool:
+    if entry.get("kind") != "skill":
+        return False
+    resolved_read = resolve_skill_path(read_path)
+    if resolved_read is None:
+        return False
+    return any(path == resolved_read for path in _skill_entry_path_candidates(entry))
+
+
+def matching_skill_entry_after_latest_turn(
+    read_path: str | Path,
+    index: SessionLogIndex,
+) -> dict[str, Any] | None:
+    latest_turn_idx: int | None = None
+    for index_pos, entry in enumerate(index.entries):
+        if entry.get("kind") == "turn":
+            latest_turn_idx = index_pos
+    if latest_turn_idx is None:
+        return None
+    after_turn = latest_turn_idx + 1
+    for entry in index.entries[after_turn:]:
+        if skill_entry_matches_read_path(entry, read_path):
+            return entry
+    return None
+
+
+def session_skill_key_for_read_path(read_path: str | Path, index: SessionLogIndex) -> str | None:
+    for entry in reversed(index.entries):
+        if not skill_entry_matches_read_path(entry, read_path):
+            continue
+        key = str(entry.get("key") or "").strip()
+        if key:
+            return key
+    return None
 
 
 def content_sha256_for_file(path: Path) -> str:
@@ -298,20 +359,54 @@ def intercept_query_for_payload(payload: dict[str, Any], entries: list[dict[str,
     return latest_turn_query_from_session(entries)
 
 
+def skill_injected_after_latest_turn(key: str, index: SessionLogIndex) -> bool:
+    """True when *key* was logged as a skill after the latest turn marker."""
+    latest_turn_idx: int | None = None
+    for index_pos, entry in enumerate(index.entries):
+        if entry.get("kind") == "turn":
+            latest_turn_idx = index_pos
+    if latest_turn_idx is None:
+        return False
+    after_turn = latest_turn_idx + 1
+    for entry in index.entries[after_turn:]:
+        if entry.get("kind") != "skill":
+            continue
+        entry_key = str(entry.get("key") or "")
+        if entry_key == key:
+            return True
+    return False
+
+
 def should_deny_same_turn_preinjected_skill(
     key: str,
     index: SessionLogIndex,
     *,
     session_prompt: str,
     transcript_prompt: str,
+    content_hash: str | None = None,
+    read_path: str | None = None,
 ) -> bool:
-    if not index.has_skill_entry(key):
+    matched_entry: dict[str, Any] | None = None
+    if read_path:
+        matched_entry = matching_skill_entry_after_latest_turn(read_path, index)
+    elif skill_injected_after_latest_turn(key, index):
+        for entry in reversed(index.entries):
+            if entry.get("kind") == "skill" and str(entry.get("key") or "") == key:
+                matched_entry = entry
+                break
+    if matched_entry is None:
         return False
+    if content_hash is not None:
+        logged_hash = matched_entry.get("hash")
+        if not isinstance(logged_hash, str) or logged_hash.strip() != content_hash:
+            return False
     normalized_session = normalize_turn_prompt(session_prompt)
-    normalized_transcript = normalize_turn_prompt(transcript_prompt)
-    if not normalized_session or not normalized_transcript:
+    if not normalized_session:
         return False
-    return normalized_session == normalized_transcript
+    normalized_transcript = normalize_turn_prompt(transcript_prompt)
+    if normalized_transcript:
+        return normalized_session == normalized_transcript
+    return True
 
 
 def _append_full_skill_log_entry(
@@ -332,7 +427,7 @@ def _append_full_skill_log_entry(
     skill_name = (
         skill_file.parent.name if skill_file.name.upper() == "SKILL.MD" else skill_file.stem
     )
-    append_session_log(
+    append_skill_entries(
         log_path,
         [
             {
@@ -542,50 +637,88 @@ def _read_intercept_outside_skill_dirs(
     agent: str,
 ) -> str | None:
     directories = skill_directories_from_session_or_payload(payload)
-    if is_skill_md_under_directories(read_path, directories):
+    under_dirs = is_skill_md_under_directories(read_path, directories)
+    if under_dirs:
         return None
     return _read_intercept_allow(agent)
 
 
-def _read_intercept_local_gates(
+def _enrich_intercept_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    from cyt_client.transcript import enrich_hook_payload
+
+    try:
+        enriched = json.loads(enrich_hook_payload(json.dumps(payload).encode()))
+    except json.JSONDecodeError:
+        return payload
+    return enriched if isinstance(enriched, dict) else payload
+
+
+def _read_intercept_decision(
     payload: dict[str, Any],
     *,
     read_path: str,
     agent: str,
-) -> str | None:
-    from cyt_client.transcript import last_user_from_payload
-
+) -> tuple[str | None, dict[str, Any]]:
+    """Return optional intercept stdout and debug metadata."""
     skill_file = Path(read_path).expanduser()
     if is_excluded_system_skill(skill_file, agent=infer_launch_agent(payload)):
-        return _read_intercept_allow(agent)
+        return _read_intercept_allow(agent), {"branch": "excluded_system_skill"}
+
     if not skill_file.is_file():
-        return _read_intercept_allow(agent)
+        return _read_intercept_allow(agent), {"branch": "not_a_file"}
 
     content_hash = content_sha256_for_file(skill_file)
     key = skill_item_key_for_path(skill_file)
     entries = load_session_entries(payload)
     index = SessionLogIndex.from_entries(entries)
+    session_key = session_skill_key_for_read_path(skill_file, index) or key
     session_prompt = latest_turn_prompt_from_session(entries)
-    transcript_prompt = last_user_from_payload(payload) or ""
+    from cyt_client.transcript import last_user_from_payload
 
-    if should_deny_same_turn_preinjected_skill(
-        key,
+    transcript_prompt = last_user_from_payload(payload) or ""
+    deny = should_deny_same_turn_preinjected_skill(
+        session_key,
         index,
         session_prompt=session_prompt,
         transcript_prompt=transcript_prompt,
-    ):
-        return format_pre_tool_response(
-            agent=agent,
-            permission="deny",
-            user_message="Skill already injected for this turn; Read is redundant.",
+        content_hash=content_hash,
+        read_path=read_path,
+    )
+    matched_entry = matching_skill_entry_after_latest_turn(read_path, index)
+    meta: dict[str, Any] = {
+        "branch": "local_gates",
+        "key": key,
+        "session_key": session_key,
+        "session_prompt": session_prompt,
+        "transcript_prompt": transcript_prompt,
+        "skill_injected_after_latest_turn": matched_entry is not None,
+        "deny_redundant_read": deny,
+        "matched_entry_key": str(matched_entry.get("key") or "") if matched_entry else "",
+    }
+    if deny:
+        return (
+            format_pre_tool_response(
+                agent=agent,
+                permission="deny",
+                user_message="Skill already injected for this turn; Read is redundant.",
+            ),
+            meta,
         )
 
-    mode = resolve_read_intercept_mode(key=key, current_hash=content_hash, index=index)
+    mode = resolve_read_intercept_mode(
+        key=session_key,
+        current_hash=content_hash,
+        index=index,
+    )
+    meta["intercept_mode"] = mode
     if mode == "deny_full_reread":
-        return format_pre_tool_response(
-            agent=agent,
-            permission="deny",
-            user_message="Full skill file was already read in this session.",
+        return (
+            format_pre_tool_response(
+                agent=agent,
+                permission="deny",
+                user_message="Full skill file was already read in this session.",
+            ),
+            meta,
         )
     if mode == "full":
         _append_full_skill_log_entry(
@@ -595,8 +728,8 @@ def _read_intercept_local_gates(
             key=key,
             agent=agent,
         )
-        return _read_intercept_allow(agent)
-    return None
+        return _read_intercept_allow(agent), meta
+    return None, meta
 
 
 def _read_intercept_from_daemon(
@@ -636,7 +769,7 @@ def _read_intercept_from_daemon(
         skill_log_entry = parsed.get("skill_log_entry")
         log_path = session_log_path(payload)
         if log_path is not None and isinstance(skill_log_entry, dict):
-            append_session_log(log_path, [skill_log_entry], agent=agent)
+            append_skill_entries(log_path, [skill_log_entry], agent=agent)
         return format_pre_tool_response(
             agent=agent,
             permission="allow",
@@ -651,16 +784,17 @@ def handle_before_read_file_intercept(payload: dict[str, Any]) -> str:
     if not skills_hook_agent_interceptor_enabled():
         return format_pre_tool_allow()
 
-    read_path = read_path_from_payload(payload)
+    enriched = _enrich_intercept_payload(payload)
+    read_path = read_path_from_payload(enriched)
     if read_path is None:
         return format_pre_tool_allow()
 
-    agent = effective_intercept_agent(payload)
-    outside = _read_intercept_outside_skill_dirs(payload, read_path, agent)
+    agent = effective_intercept_agent(enriched)
+    outside = _read_intercept_outside_skill_dirs(enriched, read_path, agent)
     if outside is not None:
         return outside
 
-    local = _read_intercept_local_gates(payload, read_path=read_path, agent=agent)
+    local, _meta = _read_intercept_decision(enriched, read_path=read_path, agent=agent)
     if local is not None:
         return local
 
@@ -676,11 +810,12 @@ def handle_read_intercept(
     if not skills_hook_agent_interceptor_enabled():
         return None
 
-    tool_name, tool_input = extract_read_tool_call(payload)
+    enriched = _enrich_intercept_payload(payload)
+    tool_name, tool_input = extract_read_tool_call(enriched)
     if tool_name is None or tool_input is None:
         return None
 
-    agent = effective_intercept_agent(payload)
+    agent = effective_intercept_agent(enriched)
     if has_partial_read_params(tool_input):
         return _read_intercept_allow(agent)
 
@@ -688,21 +823,21 @@ def handle_read_intercept(
     if read_path is None:
         return None
 
-    outside = _read_intercept_outside_skill_dirs(payload, read_path, agent)
+    outside = _read_intercept_outside_skill_dirs(enriched, read_path, agent)
     if outside is not None:
         return outside
 
-    local = _read_intercept_local_gates(payload, read_path=read_path, agent=agent)
+    local, _meta = _read_intercept_decision(enriched, read_path=read_path, agent=agent)
     if local is not None:
         return local
 
-    entries = load_session_entries(payload)
-    query = intercept_query_for_payload(payload, entries)
+    entries = load_session_entries(enriched)
+    query = intercept_query_for_payload(enriched, entries)
     if not query.strip():
         return _read_intercept_allow(agent)
 
     return _read_intercept_from_daemon(
-        payload,
+        enriched,
         read_path=read_path,
         query=query,
         agent=agent,

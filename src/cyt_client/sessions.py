@@ -312,21 +312,26 @@ def read_hallucination_gate_enabled(path: Path) -> bool | None:
     return None
 
 
-def append_tool_entries(
+def _existing_keys_and_hashes(path: Path, kind: str) -> set[tuple[str, str]]:
+    return {
+        (str(entry.get("key") or ""), str(entry.get("hash") or ""))
+        for entry in read_session_log(path)
+        if entry.get("kind") == kind
+    }
+
+
+def _append_deduped_kind_entries(
     path: Path,
     entries: list[dict[str, Any]],
     *,
+    kind: str,
     agent: str | None = None,
 ) -> None:
-    """Append Type-1 tool lines with client-side (key, hash) dedup."""
+    """Append session log lines for *kind* with client-side (key, hash) dedup."""
     to_append: list[dict[str, Any]] = []
-    existing = {
-        (str(entry.get("key") or ""), str(entry.get("hash") or ""))
-        for entry in read_session_log(path)
-        if entry.get("kind") == "tool"
-    }
+    existing = _existing_keys_and_hashes(path, kind)
     for entry in entries:
-        if entry.get("kind") != "tool":
+        if entry.get("kind") != kind:
             continue
         key = str(entry.get("key") or "").strip()
         content_hash = str(entry.get("hash") or "").strip()
@@ -336,6 +341,36 @@ def append_tool_entries(
         if key and content_hash:
             existing.add((key, content_hash))
     append_session_log(path, to_append, agent=agent)
+
+
+def append_tool_entries(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append Type-1 tool lines with client-side (key, hash) dedup."""
+    _append_deduped_kind_entries(path, entries, kind="tool", agent=agent)
+
+
+def append_skill_entries(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append skill lines with client-side (key, hash) dedup."""
+    _append_deduped_kind_entries(path, entries, kind="skill", agent=agent)
+
+
+def append_resource_entries(
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    agent: str | None = None,
+) -> None:
+    """Append resource lines with client-side (key, hash) dedup."""
+    _append_deduped_kind_entries(path, entries, kind="resource", agent=agent)
 
 
 def append_tool_catalog_entries(

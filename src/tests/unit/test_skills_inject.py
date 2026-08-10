@@ -89,3 +89,23 @@ def test_format_agent_skills_skips_frontmatter_only_matches() -> None:
     frontmatter_only = "---\nname: lean-ctx\ndescription: Context engineering tools.\n---"
     injected = format_agent_skills([_match(name="lean-ctx", markdown=frontmatter_only)])
     assert injected == ""
+
+
+def test_format_agent_skills_uses_full_intro_when_all_skills_full() -> None:
+    from cyt.injection.session_log_build import skill_item_key
+
+    match = _match(name="create-hook")
+    key = skill_item_key(match)
+    injected = format_agent_skills([match], full_flags={key: True})
+    assert "Do not use Read on the skill file paths" in injected
+    assert "could be retrieved with the file path" not in injected
+
+
+def test_format_agent_skills_uses_skinny_intro_when_any_skill_not_full() -> None:
+    from cyt.injection.session_log_build import skill_item_key
+
+    match = _match(name="create-hook")
+    key = skill_item_key(match)
+    injected = format_agent_skills([match], full_flags={key: False})
+    assert "could be retrieved with the file path" in injected
+    assert "Do not use Read on the skill file paths" not in injected

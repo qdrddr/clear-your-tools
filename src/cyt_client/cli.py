@@ -57,8 +57,11 @@ from cyt_client.session_compaction import (
 )
 from cyt_client.session_pre_tool_exposure import persist_pre_tool_deny_exposure
 from cyt_client.sessions import (
+    append_resource_entries,
     append_session_log,
+    append_skill_entries,
     append_tool_catalog_entries,
+    append_tool_entries,
     cleanup_stale_session_logs,
     session_id_from_payload,
     session_log_path,
@@ -215,13 +218,23 @@ def _persist_session_log_response(payload: dict, body: bytes) -> None:
     if path is None:
         return
     agent = extract_cyt_agent(body)
-    tool_entries = [entry for entry in entries if entry.get("kind") != "tool_catalog"]
+    deduped_kinds = frozenset({"tool", "skill", "resource", "tool_catalog"})
+    tool_entries = [entry for entry in entries if entry.get("kind") == "tool"]
+    skill_entries = [entry for entry in entries if entry.get("kind") == "skill"]
+    resource_entries = [entry for entry in entries if entry.get("kind") == "resource"]
     catalog_entries = [entry for entry in entries if entry.get("kind") == "tool_catalog"]
+    other_entries = [entry for entry in entries if entry.get("kind") not in deduped_kinds]
     try:
         if tool_entries:
-            append_session_log(path, tool_entries, agent=agent)
+            append_tool_entries(path, tool_entries, agent=agent)
+        if skill_entries:
+            append_skill_entries(path, skill_entries, agent=agent)
+        if resource_entries:
+            append_resource_entries(path, resource_entries, agent=agent)
         if catalog_entries:
             append_tool_catalog_entries(path, catalog_entries, agent=agent)
+        if other_entries:
+            append_session_log(path, other_entries, agent=agent)
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to append session log: {exc}")
 
@@ -450,6 +463,16 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         return
 
     _persist_session_log_response(payload, body)
+
+    if is_prompt_submit_event(payload):
+        try:
+            enriched = json.loads(payload_bytes)
+            if isinstance(enriched, dict):
+                from cyt_client.agent_interceptor import persist_skill_directories_to_session_log
+
+                persist_skill_directories_to_session_log(enriched)
+        except (json.JSONDecodeError, OSError) as exc:
+            _verbose_log(f"cyt-client: failed to persist skill directories: {exc}")
 
     phase_timing = extract_phase_timing(body)
     if phase_timing:

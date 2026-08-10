@@ -153,13 +153,14 @@ def given_turn(gherkin_context: GherkinContext, tmp_path: Path) -> None:
 
 @given("session log has a prompt-injected skill entry for that file")
 def given_prompt_skill(gherkin_context: GherkinContext, tmp_path: Path) -> None:
-    from cyt_client.agent_interceptor import skill_item_key_for_path
+    from cyt_client.agent_interceptor import content_sha256_for_file, skill_item_key_for_path
     from cyt_client.sessions import append_session_log
 
     skill_path = gherkin_context.payload.get("_skill_path") or _skill_md(tmp_path)
     log_path = _session_log_path(gherkin_context)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     key = skill_item_key_for_path(skill_path)
+    content_hash = content_sha256_for_file(skill_path)
     append_session_log(
         log_path,
         [
@@ -172,7 +173,7 @@ def given_prompt_skill(gherkin_context: GherkinContext, tmp_path: Path) -> None:
             {
                 "kind": "skill",
                 "key": key,
-                "hash": "abc",
+                "hash": content_hash,
                 "full": False,
                 "source": "file",
                 "body": "# Demo",

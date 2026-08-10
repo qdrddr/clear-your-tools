@@ -13,7 +13,7 @@ from cyt.config import (
     skills_enabled,
     skills_hook_agent_interceptor_min_items,
 )
-from cyt.injection.session_log_build import build_skill_log_entry
+from cyt.injection.session_log_build import build_skill_log_entry, skill_match_is_content_complete
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_agent
 from cyt.skills.catalog import (
@@ -236,7 +236,10 @@ def run_skill_read_intercept(
     skinny_path = _skinny_path_for_payload(payload, content_hash)
     _atomic_write(skinny_path, match.markdown)
 
-    skill_log_entry = build_skill_log_entry(match, full=False)
+    skill_log_entry = build_skill_log_entry(
+        match,
+        full=skill_match_is_content_complete(match),
+    )
     return _allow_response(
         updated_input={"path": str(skinny_path.resolve())},
         skill_log_entry=skill_log_entry,
