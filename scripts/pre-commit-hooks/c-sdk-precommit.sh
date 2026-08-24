@@ -7,11 +7,15 @@ if [[ -d /opt/homebrew/opt/llvm/bin ]]; then
 	export PATH="/opt/homebrew/opt/llvm/bin:${PATH}"
 elif [[ -d /usr/local/opt/llvm/bin ]]; then
 	export PATH="/usr/local/opt/llvm/bin:${PATH}"
+elif [[ -n "${PROGRAMFILES:-}" && -d "${PROGRAMFILES}/LLVM/bin" ]]; then
+	export PATH="${PROGRAMFILES}/LLVM/bin:${PATH}"
+elif [[ -d "${HOME}/tools/llvm/bin" ]]; then
+	export PATH="${HOME}/tools/llvm/bin:${PATH}"
 fi
 
 require_cmd() {
 	command -v "$1" >/dev/null 2>&1 || {
-		echo "error: $1 not found (macOS: brew install llvm cppcheck cpplint)" >&2
+		echo "error: $1 not found (macOS: brew install llvm cppcheck cpplint; Windows: winget install LLVM.LLVM Cppcheck.Cppcheck or see DEV.md)" >&2
 		exit 1
 	}
 }

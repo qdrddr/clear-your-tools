@@ -12,7 +12,13 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	# shellcheck source=scripts/lib/chunk-worktree.sh
 	source "${CYT_REPO_ROOT}/scripts/lib/chunk-worktree.sh"
 
-	CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/bin"
+	if [[ -d "${CYT_REPO_ROOT}/.venv/Scripts" ]]; then
+		CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/Scripts"
+	elif [[ -d "${CYT_REPO_ROOT}/.venv/bin" ]]; then
+		CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/bin"
+	else
+		CYT_VENV_BIN="${CYT_REPO_ROOT}/.venv/bin"
+	fi
 	export PATH="${CYT_VENV_BIN}:${PATH}"
 
 	die() {
