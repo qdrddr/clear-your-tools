@@ -178,3 +178,7 @@ fossa-deps.yml.example
 fossa.debug.zip
 !dev-requirements.txt
 .cyt/skinny/
+.gitnexus/
+graphify-out/
+.codebase-memory/
+.rtk/

@@ -7,10 +7,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Ensure-Dir([string]$Path) {
-    New-Item -ItemType Directory -Force -Path $Path | Out-Null
-}
-
 function Add-UserPath([string[]]$Dirs) {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     foreach ($dir in $Dirs) {
@@ -27,8 +23,8 @@ $goRoot = Join-Path $env:USERPROFILE 'go-sdk\go'
 $llvmRoot = Join-Path $toolsRoot 'llvm'
 $cmakeRoot = Join-Path $toolsRoot 'cmake'
 
-Ensure-Dir $localBin
-Ensure-Dir $toolsRoot
+New-Item -ItemType Directory -Force -Path $localBin | Out-Null
+New-Item -ItemType Directory -Force -Path $toolsRoot | Out-Null
 
 Write-Host '==> Ensuring uv / prek (Python hook runner)'
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -75,13 +71,12 @@ $shfmt = Join-Path $localBin 'shfmt.exe'
 if (-not (Test-Path $shfmt)) {
     Invoke-WebRequest -Uri 'https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe' -OutFile $shfmt
 }
-$astGrep = Join-Path $localBin 'ast-grep.exe'
-if (-not (Test-Path $astGrep)) {
-    $sgZip = Join-Path $env:TEMP 'ast-grep.zip'
-    Invoke-WebRequest -Uri 'https://github.com/ast-grep/ast-grep/releases/download/0.45.2/app-x86_64-pc-windows-msvc.zip' -OutFile $sgZip
-    $sgDir = Join-Path $env:TEMP 'ast-grep-extract'
-    Expand-Archive -Path $sgZip -DestinationPath $sgDir -Force
-    Copy-Item (Join-Path $sgDir 'ast-grep.exe') $astGrep -Force
+Write-Host '==> Ensuring ast-grep-cli 0.41.0 (matches CI; in project venv)'
+Push-Location $RepoRoot
+try {
+    uv pip install 'ast-grep-cli==0.41.0' | Out-Null
+} finally {
+    Pop-Location
 }
 
 Write-Host '==> Ensuring ShellCheck (shellcheck hook local fallback)'
@@ -106,7 +101,7 @@ if (-not (Test-Path (Join-Path $llvmRoot 'bin\clang-format.exe'))) {
     if (-not (Test-Path (Join-Path $llvmRoot 'bin\clang-format.exe'))) {
         $llvmExe = Join-Path $env:TEMP 'LLVM-win64.exe'
         Invoke-WebRequest -Uri 'https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-win64.exe' -OutFile $llvmExe
-        Ensure-Dir $llvmRoot
+        New-Item -ItemType Directory -Force -Path $llvmRoot | Out-Null
         Start-Process -FilePath $llvmExe -ArgumentList "/S", "/D=$llvmRoot" -Wait
     }
 }
@@ -155,4 +150,4 @@ Write-Host '  uv sync --all-extras'
 Write-Host '  prek install'
 Write-Host '  prek run -a'
 Write-Host ''
-Write-Host 'Optional: rtk (output shortener) — brew install rtk on macOS; hooks work without it.'
+Write-Host 'Optional: rtk (output shortener) - brew install rtk on macOS; hooks work without it.'

@@ -435,7 +435,10 @@ repos:
       - id: mypy
         name: mypy
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
-        args: ["source scripts/pre-commit-hooks/activate-venv.sh && cd src && rtk mypy ."]
+        args:
+          [
+            "source scripts/pre-commit-hooks/activate-venv.sh && cd src && rtk mypy .",
+          ]
         pass_filenames: false
         language: system
         files: '^src/.*\.py$'
@@ -564,7 +567,9 @@ repos:
         name: basedpyright
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:
-          ["source scripts/pre-commit-hooks/activate-venv.sh && rtk basedpyright src sdk/python/src"]
+          [
+            "source scripts/pre-commit-hooks/activate-venv.sh && rtk basedpyright src sdk/python/src",
+          ]
         language: system
         pass_filenames: false
         files: '^(src/.*\.py|sdk/python/.*\.py)$'
