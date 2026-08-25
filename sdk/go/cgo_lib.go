@@ -173,8 +173,12 @@ func cgoAnthropicToolToCatalogEntry(toolJSON string) (string, error) {
 func cgoTruncateDescription(description string, maxTokens uint64) (string, error) {
 	cDesc := cString(description)
 	defer freeCString(cDesc)
+	tokens, err := truncateMaxTokensArg(maxTokens)
+	if err != nil {
+		return "", err
+	}
 	var out *C.char
-	if C.cyt_truncate_description(cDesc, C.ulong(maxTokens), &out) != ok {
+	if C.cyt_truncate_description(cDesc, C.ulong(tokens), &out) != ok {
 		return "", lastError()
 	}
 	return takeJSON(&out)

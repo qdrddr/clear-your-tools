@@ -137,7 +137,7 @@ repos:
     rev: v3.92.3
     hooks:
       - id: trufflehog
-        args: ["--only-verified"]
+        args: ["--only-verified", "--trust-local-git-config"]
         exclude: ^sdk/rust/cyt-indexer/cyt-indexer\.(cdx|snyk)\.json$
 
   - repo: https://github.com/thoughtworks/talisman

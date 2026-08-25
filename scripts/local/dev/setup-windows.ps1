@@ -7,6 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+
 function Add-UserPath([string[]]$Dirs) {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     foreach ($dir in $Dirs) {
@@ -75,7 +77,8 @@ Write-Host '==> Ensuring ast-grep-cli 0.41.0 (matches CI; in project venv)'
 Push-Location $RepoRoot
 try {
     uv pip install 'ast-grep-cli==0.41.0' | Out-Null
-} finally {
+}
+finally {
     Pop-Location
 }
 

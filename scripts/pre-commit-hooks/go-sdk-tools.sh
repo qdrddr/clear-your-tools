@@ -35,12 +35,27 @@ go_sdk_tools_path() {
 ensure_go_sdk_tool() {
 	local bin_name="$1"
 	local install_spec="$2"
-	local bin_dir bin_path
+	local bin_dir bin_path lock_file
 
 	bin_dir="$(go_sdk_tools_path)"
 	bin_path="${bin_dir}/${bin_name}"
+	lock_file="${bin_dir}/.go-sdk-tool-install.lock"
 
-	GO111MODULE=on go install "${install_spec}"
+	if [[ -x "${bin_path}" ]]; then
+		printf '%s\n' "${bin_path}"
+		return 0
+	fi
+
+	mkdir -p "${bin_dir}"
+	(
+		if command -v flock >/dev/null 2>&1; then
+			flock -x 200
+		fi
+		if [[ ! -x "${bin_path}" ]]; then
+			GO111MODULE=on go install "${install_spec}"
+		fi
+	) 200>"${lock_file}"
+
 	if [[ ! -x "${bin_path}" ]]; then
 		echo "go-sdk-tools: ${install_spec} did not produce ${bin_path}" >&2
 		exit 1

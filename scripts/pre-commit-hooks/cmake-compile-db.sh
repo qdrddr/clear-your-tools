@@ -22,10 +22,25 @@ TRIPLET="$(rustc -vV | sed -n 's/^host: //p')"
 	exit 1
 }
 
+cmake_generator_args=()
+cmake_compiler_args=()
+case "${TRIPLET}" in
+*-windows-*)
+	# Visual Studio generators do not emit compile_commands.json; Ninja does.
+	require_cmd ninja
+	cmake_generator_args=(-G Ninja)
+	if command -v clang >/dev/null 2>&1; then
+		cmake_compiler_args=(-DCMAKE_C_COMPILER=clang)
+	fi
+	;;
+esac
+
 configure_compile_db() {
 	rm -rf "${BUILD_DIR}"
 	mkdir -p "${BUILD_DIR}"
 	cmake -S "${ROOT}/sdk/c" -B "${BUILD_DIR}" \
+		"${cmake_generator_args[@]}" \
+		"${cmake_compiler_args[@]}" \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCYT_RUST_TARGET="${TRIPLET}" \

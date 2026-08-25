@@ -364,6 +364,60 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		chunk_write_workspace_cargo_patches "${root}"
 	}
 
+	chunk_remove_path() {
+		local path="$1"
+		local path_win
+		[[ -e "${path}" || -L "${path}" ]] || return 0
+		case "$(uname -s 2>/dev/null || true)" in
+		MINGW* | MSYS* | CYGWIN*)
+			path_win="$(chunk_msys_to_win_path "$(cd "$(dirname "${path}")" && pwd -P)/$(basename "${path}")")"
+			cmd //c "rmdir /s /q \"${path_win}\"" 2>/dev/null || true
+			if [[ -e "${path}" || -L "${path}" ]] && command -v rm.exe >/dev/null 2>&1; then
+				rm.exe -rf "${path}" 2>/dev/null || true
+			fi
+			;;
+		*)
+			rm -rf "${path}"
+			;;
+		esac
+	}
+
+	chunk_msys_to_win_path() {
+		local path="$1"
+		if command -v cygpath >/dev/null 2>&1; then
+			cygpath -w "${path}"
+			return 0
+		fi
+		if [[ "${path}" =~ ^/([a-zA-Z])/(.*)$ ]]; then
+			printf '%s:\\%s\n' "$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]')" \
+				"${BASH_REMATCH[2]//\//\\}"
+			return 0
+		fi
+		printf '%s\n' "${path//\//\\}"
+	}
+
+	chunk_link_dir() {
+		local target="$1"
+		local link="$2"
+		local target_abs target_win link_win
+
+		target_abs="$(cd "${target}" && pwd -P)"
+		chunk_remove_path "${link}"
+
+		case "$(uname -s 2>/dev/null || true)" in
+		MINGW* | MSYS* | CYGWIN*)
+			target_win="$(chunk_msys_to_win_path "${target_abs}")"
+			link_win="$(chunk_msys_to_win_path "$(cd "$(dirname "${link}")" && pwd -P)/$(basename "${link}")")"
+			if cmd //c mklink //J "${link_win}" "${target_win}" >/dev/null 2>&1; then
+				return 0
+			fi
+			echo "error: failed to create junction ${link_win} -> ${target_win}" >&2
+			return 1
+			;;
+		esac
+		ln -sfn "${target_abs}" "${link}"
+	}
+
 	NOPATCH_WORKSPACE_DIRNAME=".cyt-nopatch-ws"
 
 	chunk_nopatch_workspace_dir() {
@@ -392,7 +446,7 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		else
 			rm -f "${want}"
 		fi
-		ln -sfn "${root}/sdk" "${ws}/sdk"
+		chunk_link_dir "${root}/sdk" "${ws}/sdk"
 		# Always share the repo-root lockfile. Cargo may replace a symlink with a
 		# regular file under target/; remove stale copies so metadata --locked
 		# does not read an out-of-date target/.cyt-nopatch-ws/Cargo.lock.
@@ -523,30 +577,60 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		return "${rc}"
 	}
 
+	chunk_sparse_index_path() {
+		local crate="$1"
+		local len="${#crate}"
+
+		if ((len <= 2)); then
+			printf '%s/%s\n' "${len}" "${crate}"
+		elif ((len == 3)); then
+			printf '3/%s/%s\n' "${crate:0:1}" "${crate}"
+		else
+			printf '%s/%s/%s\n' "${crate:0:2}" "${crate:2:2}" "${crate}"
+		fi
+	}
+
 	chunk_registry_checksum_from_index() {
 		local crate="$1"
 		local version="$2"
-		local registry="${CARGO_HOME:-${HOME}/.cargo}/registry/index"
-		local index_path index_file
+		local cargo_home="${CARGO_HOME:-}"
+		local registry index_path index_file index_url_path
+
+		if [[ -z "${cargo_home}" ]]; then
+			cargo_home="${HOME}/.cargo"
+		fi
+		registry="${cargo_home}/registry/index"
 
 		index_path="${crate:0:1}/${crate:0:3}/${crate}"
 		index_file="$(find "${registry}" -type f -path "*/.cache/${index_path}" 2>/dev/null | head -1)"
 		if [[ -z "${index_file}" ]]; then
 			index_file="$(find "${registry}" -type f -path "*/${index_path}" 2>/dev/null | head -1)"
 		fi
-		[[ -n "${index_file}" && -f "${index_file}" ]] || return 1
+		if [[ -n "${index_file}" && -f "${index_file}" ]]; then
+			if command -v strings >/dev/null 2>&1; then
+				strings "${index_file}" |
+					grep -F "\"vers\":\"${version}\"" |
+					tail -1 |
+					sed -n 's/.*"cksum":"\([^"]*\)".*/\1/p'
+				return
+			fi
 
-		if command -v strings >/dev/null 2>&1; then
-			strings "${index_file}" |
+			grep -F "\"vers\":\"${version}\"" "${index_file}" |
+				tail -1 |
+				sed -n 's/.*"cksum":"\([^"]*\)".*/\1/p'
+			return
+		fi
+
+		index_url_path="$(chunk_sparse_index_path "${crate}")"
+		if command -v curl >/dev/null 2>&1; then
+			curl -fsSL "https://index.crates.io/${index_url_path}" |
 				grep -F "\"vers\":\"${version}\"" |
 				tail -1 |
 				sed -n 's/.*"cksum":"\([^"]*\)".*/\1/p'
 			return
 		fi
 
-		grep -F "\"vers\":\"${version}\"" "${index_file}" |
-			tail -1 |
-			sed -n 's/.*"cksum":"\([^"]*\)".*/\1/p'
+		return 1
 	}
 
 	# Reinsert crates.io source/checksum for chunk-your-* without rewriting the lockfile.
@@ -620,8 +704,9 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 					has_source = 1
 				}
 				if ($0 ~ /^name = /) {
-					gsub(/^name = "|"$/, "", $0)
 					pkg = $0
+					sub(/^name = "/, "", pkg)
+					sub(/"$/, "", pkg)
 				}
 				lines[++n] = $0
 			}

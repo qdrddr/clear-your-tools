@@ -309,7 +309,7 @@ def test_read_intercept_does_not_duplicate_skill_log_entry(
     skill_path = skill_dir / "SKILL.md"
     skill_path.write_text("# RTK\nAlways prefix shell commands with rtk.\n", encoding="utf-8")
     skill_key = skill_item_key_for_path(skill_path)
-    content_hash = "c31d1d0dbc5c24ec21edc1ca7fbf8936ed6aff8ccfed68a99a8a4df5117fc8c2"
+    content_hash = "c31d1d0dbc5c24ec21edc1ca7fbf8936ed6aff8ccfed68a99a8a4df5117fc8c2"  # pragma: allowlist secret
     sessions_dir = tmp_path / ".cursor" / "cyt" / "sessions"
     sessions_dir.mkdir(parents=True)
     session_id = "a7dbef47-cbb7-4bd9-a159-01ff30411324"
