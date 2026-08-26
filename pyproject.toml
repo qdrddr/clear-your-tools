@@ -133,6 +133,7 @@ dev = [
     "ruff==0.15.14",
     "setuptools==83.0.0",
     "types-psutil==7.2.2.20260518",
+    "ty>=0.0.74",
 ]
 
 # Test stack and utilities

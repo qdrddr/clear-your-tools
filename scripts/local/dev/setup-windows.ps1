@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 
 function Add-UserPath([string[]]$Dirs) {
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -24,6 +24,8 @@ $toolsRoot = Join-Path $env:USERPROFILE 'tools'
 $goRoot = Join-Path $env:USERPROFILE 'go-sdk\go'
 $llvmRoot = Join-Path $toolsRoot 'llvm'
 $cmakeRoot = Join-Path $toolsRoot 'cmake'
+$llvmMingwRoot = Join-Path $toolsRoot 'llvm-mingw'
+$ninjaDir = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe'
 
 New-Item -ItemType Directory -Force -Path $localBin | Out-Null
 New-Item -ItemType Directory -Force -Path $toolsRoot | Out-Null
@@ -68,18 +70,68 @@ if (-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
     winget install --id Microsoft.PowerShell --exact --accept-package-agreements --accept-source-agreements --disable-interactivity
 }
 
+Write-Host '==> Ensuring jq (export-rust-sbom / verify-pins)'
+if (-not (Get-Command jq -ErrorAction SilentlyContinue) -and -not $SkipWinget) {
+    winget install --id jqlang.jq --exact --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
+}
+
+Write-Host '==> Ensuring Go Task (all-fallow / Taskfile hooks)'
+if (-not (Get-Command task -ErrorAction SilentlyContinue) -and -not $SkipWinget) {
+    winget install --id Task.Task --exact --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
+}
+
+Write-Host '==> Ensuring Ninja (Windows compile_commands.json)'
+if (-not (Get-Command ninja -ErrorAction SilentlyContinue) -and -not $SkipWinget) {
+    winget install --id Ninja-build.Ninja --exact --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
+}
+
+Write-Host '==> Ensuring GNU make (local-dev-sdk-c)'
+if (-not (Get-Command make -ErrorAction SilentlyContinue) -and -not $SkipWinget) {
+    winget install --id ezwinports.make --exact --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
+}
+
+Write-Host '==> Ensuring llvm-mingw UCRT x86_64 (Go CGO: gendef/dlltool)'
+if (-not (Test-Path (Join-Path $llvmMingwRoot 'bin\gendef.exe'))) {
+    $llvmMingwVersion = '20260616'
+    $asset = "llvm-mingw-$llvmMingwVersion-ucrt-x86_64.zip"
+    $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$llvmMingwVersion/$asset"
+    $work = Join-Path $env:TEMP 'llvm-mingw-install'
+    $zip = Join-Path $work $asset
+    New-Item -ItemType Directory -Force -Path $work | Out-Null
+    Invoke-WebRequest -Uri $url -OutFile $zip
+    if (Test-Path $llvmMingwRoot) { Remove-Item -Recurse -Force $llvmMingwRoot }
+    Expand-Archive -Path $zip -DestinationPath $work -Force
+    $root = Get-ChildItem -Path $work -Directory | Where-Object { $_.Name -like 'llvm-mingw-*' } | Select-Object -First 1
+    Move-Item $root.FullName $llvmMingwRoot
+}
+
 Write-Host '==> Ensuring shfmt + ast-grep (local hooks)'
 $shfmt = Join-Path $localBin 'shfmt.exe'
 if (-not (Test-Path $shfmt)) {
     Invoke-WebRequest -Uri 'https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe' -OutFile $shfmt
 }
-Write-Host '==> Ensuring ast-grep-cli 0.41.0 (matches CI; in project venv)'
+Write-Host '==> Ensuring ast-grep-cli 0.41.0 + basedpyright (matches CI / prek hooks)'
 Push-Location $RepoRoot
 try {
-    uv pip install 'ast-grep-cli==0.41.0' | Out-Null
+    uv sync --all-extras | Out-Null
+    uv pip install 'ast-grep-cli==0.41.0' basedpyright | Out-Null
 }
 finally {
     Pop-Location
+}
+
+Write-Host '==> Ensuring cargo SBOM / audit CLIs (verify-pins, export-rust-sbom)'
+if (-not (Get-Command cargo-cyclonedx -ErrorAction SilentlyContinue)) {
+    cargo install cargo-cyclonedx --locked --version 0.5.9 | Out-Null
+}
+if (-not (Get-Command cargo-deny -ErrorAction SilentlyContinue)) {
+    cargo install cargo-deny --locked --version 0.19.8 | Out-Null
+}
+if (-not (Get-Command cargo-audit -ErrorAction SilentlyContinue)) {
+    cargo install cargo-audit --locked | Out-Null
+}
+if (-not (Get-Command cargo-udeps -ErrorAction SilentlyContinue)) {
+    cargo install cargo-udeps --locked | Out-Null
 }
 
 Write-Host '==> Ensuring ShellCheck (shellcheck hook local fallback)'
@@ -127,10 +179,62 @@ Add-UserPath @(
     (Join-Path $goRoot 'bin'),
     (Join-Path $cmakeRoot 'bin'),
     (Join-Path $llvmRoot 'bin'),
+    (Join-Path $llvmMingwRoot 'bin'),
+    (Join-Path $llvmMingwRoot 'x86_64-w64-mingw32\lib'),
+    $ninjaDir,
     "${env:ProgramFiles}\LLVM\bin",
     "${env:ProgramFiles}\Cppcheck",
     "${env:ProgramFiles}\Go\bin"
 )
+
+Write-Host '==> Ensuring npm deps (fallow + TypeScript SDK + e2e/typescript)'
+Push-Location $RepoRoot
+try {
+    npm ci | Out-Null
+    Push-Location (Join-Path $RepoRoot 'sdk\typescript')
+    try {
+        npm ci | Out-Null
+    }
+    finally {
+        Pop-Location
+    }
+    $gitBashForE2e = (Get-Command bash -ErrorAction SilentlyContinue).Source
+    if ($gitBashForE2e) {
+        $tsVersion = (Get-Content (Join-Path $RepoRoot 'sdk\typescript\package.json') -Raw | ConvertFrom-Json).version
+        & $gitBashForE2e -lc "export CYT_RELEASE_VERSION='$tsVersion' CYT_E2E_USE_WORKSPACE=1; bash sdk/e2e/scripts/render-manifests.sh"
+        Push-Location (Join-Path $RepoRoot 'sdk\e2e\typescript')
+        try {
+            if (Test-Path 'package-lock.json') { npm ci | Out-Null } else { npm install | Out-Null }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host '==> Ensuring Go SDK linter binaries'
+$gitBash = (Get-Command bash -ErrorAction SilentlyContinue).Source
+if ($gitBash) {
+    & $gitBash -lc 'source scripts/pre-commit-hooks/go-sdk-tools.sh; ensure_go_sdk_tool gofumpt "$GO_SDK_TOOL_GOFUMPT"; ensure_go_sdk_tool goimports "$GO_SDK_TOOL_GOIMPORTS"; ensure_go_sdk_tool gocritic "$GO_SDK_TOOL_GOCRITIC"; ensure_go_sdk_tool gosec "$GO_SDK_TOOL_GOSEC"; ensure_go_sdk_tool staticcheck "$GO_SDK_TOOL_STATICCHECK"'
+}
+
+Write-Host '==> Ensuring verify-pins / SBOM helper CLIs'
+if ($gitBash) {
+    & $gitBash (Join-Path $RepoRoot 'scripts\ci\install-verify-pins-tools.sh')
+    & $gitBash (Join-Path $RepoRoot 'scripts\local\dev\heal-cargo-lock.sh')
+}
+
+Write-Host '==> Installing prek git hooks'
+Push-Location $RepoRoot
+try {
+    uv run prek install | Out-Null
+}
+finally {
+    Pop-Location
+}
 
 Write-Host '==> Ensuring rtk (optional output shortener used by many local hooks)'
 $rtk = Join-Path $localBin 'rtk.exe'
@@ -149,8 +253,9 @@ if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
     winget install --id BurntSushi.ripgrep.MSVC --exact --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-Null
 }
 
-Write-Host '  uv sync --all-extras'
-Write-Host '  prek install'
-Write-Host '  prek run -a'
 Write-Host ''
-Write-Host 'Optional: rtk (output shortener) - brew install rtk on macOS; hooks work without it.'
+Write-Host 'Windows hook setup complete. Open a new terminal, then from the repo root:'
+Write-Host '  .\.venv\Scripts\activate   # or rely on activate-venv.sh in prek hooks'
+Write-Host '  scripts\pre-commit-hooks\prek-loop.cmd --short --one-run'
+Write-Host ''
+Write-Host 'Optional: Docker Desktop for ShellCheck/PSSA docker paths (winget install Docker.DockerDesktop)'

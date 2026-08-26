@@ -182,3 +182,4 @@ fossa.debug.zip
 graphify-out/
 .codebase-memory/
 .rtk/
+.cursor\rules\cyt-injection.mdc
