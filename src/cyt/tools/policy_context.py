@@ -82,40 +82,16 @@ def prepare_hook_cyt_mcp_tool_pruning(
 ) -> None:
     """Classify cyt_mcp catalog chunks as MCP for partition/prune (hook or proxy)."""
     from cyt.config import load_config, tools_enabled, tools_hook_sources
-    from cyt.debug.session_agent_log import agent_debug_log
 
     cfg = config or load_config()
     enabled = tools_enabled(cfg)
     sources = tools_hook_sources(cfg)
     has_cyt_mcp = "cyt_mcp" in sources
-    # region agent log
-    agent_debug_log(
-        "policy_context.py:prepare_hook_cyt_mcp",
-        "gate check",
-        {
-            "tools_enabled": enabled,
-            "hook_sources": list(sources),
-            "has_cyt_mcp": has_cyt_mcp,
-            "context_count": sum(1 for c in contexts if c is not None),
-        },
-        hypothesis_id="A",
-    )
-    # endregion
     if not enabled or not has_cyt_mcp:
         return
     for ctx in contexts:
         if ctx is not None:
             apply_executor_tool_kind(ctx, "mcp")
-    # region agent log
-    agent_debug_log(
-        "policy_context.py:prepare_hook_cyt_mcp",
-        "applied tool_kind=mcp",
-        {
-            "tool_kinds": [getattr(c, "tool_kind", None) for c in contexts if c is not None],
-        },
-        hypothesis_id="B",
-    )
-    # endregion
 
 
 def prepare_hook_tool_pruning(

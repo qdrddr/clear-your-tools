@@ -215,28 +215,6 @@ def _run_catalog_pruning(
     )
     if for_hook:
         prepare_hook_tool_pruning(resolved_config, ctx, output_ctx, reinstate_ctx)
-    # region agent log
-    if for_hook:
-        from cyt.debug.session_agent_log import agent_debug_log
-
-        pinned_preview: dict[str, Any] = {}
-        scored_preview = data
-        if catalog_needs_partition(data, ctx):
-            scored_preview, pinned_preview = partition_catalog(data, ctx)
-        agent_debug_log(
-            "tools_filter.py:_run_catalog_pruning",
-            "partition preview before bm25",
-            {
-                "ctx_tool_kind": getattr(ctx, "tool_kind", None),
-                "reinstate_tool_kind": getattr(reinstate_ctx, "tool_kind", None),
-                "catalog_tool_count": catalog_tool_count(data),
-                "pinned_root_count": len(pinned_preview.get("json", [])),
-                "scored_root_count": len(scored_preview.get("json", [])),
-                "pipeline": pipeline,
-            },
-            hypothesis_id="C,D",
-        )
-    # endregion
     if pipeline == ["bm25"] and not skill_entries:
         from cyt.common.bm25_constants import configure_sdk_bm25_defaults
         from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
@@ -244,17 +222,6 @@ def _run_catalog_pruning(
         from cyt.pruners.bm25 import bm25_stage_usage
 
         configure_sdk_bm25_defaults(resolved_config)
-        # region agent log
-        if for_hook:
-            from cyt.debug.session_agent_log import agent_debug_log
-
-            agent_debug_log(
-                "tools_filter.py:_run_catalog_pruning",
-                "bm25 fast path",
-                {"pipeline": pipeline, "skill_entries": skill_entries},
-                hypothesis_id="G",
-            )
-        # endregion
         # BM25 recompose must use the scoring context. Passing output_policy_context
         # (e.g. prune_all_descriptions) here causes all MCP tool roots to survive.
         composite = prune_catalog_bm25_and_retrieve(
@@ -274,23 +241,6 @@ def _run_catalog_pruning(
         merged = composite.get("tools", [])
         if not isinstance(merged, list):
             merged = []
-        # region agent log
-        if for_hook:
-            from cyt.debug.session_agent_log import agent_debug_log
-
-            agent_debug_log(
-                "tools_filter.py:_run_catalog_pruning",
-                "bm25 composite result",
-                {
-                    "merged_tool_count": len(merged),
-                    "decomposed": dict(composite.get("decomposed", {})),
-                    "merged_names": [
-                        t.get("name") for t in merged[:8] if isinstance(t, dict)
-                    ],
-                },
-                hypothesis_id="F",
-            )
-        # endregion
         decomposed = {str(k): int(v) for k, v in dict(composite.get("decomposed", {})).items()}
         decomposed_breakdown = {
             str(stage): {str(k): int(v) for k, v in dict(counts).items()}
@@ -318,17 +268,6 @@ def _run_catalog_pruning(
             tool_properties_count_out,
         )
     tool_properties_count_in = _count_optional_property_chunks(data)
-    # region agent log
-    if for_hook:
-        from cyt.debug.session_agent_log import agent_debug_log
-
-        agent_debug_log(
-            "tools_filter.py:_run_catalog_pruning",
-            "multi-stage pipeline path",
-            {"pipeline": pipeline, "skill_entries_len": len(skill_entries or [])},
-            hypothesis_id="G",
-        )
-    # endregion
     (
         data,
         decomposed,
@@ -1065,35 +1004,6 @@ def filter_tools_for_query(
     )
     if for_hook:
         prepare_hook_tool_pruning(config, policy_ctx, output_policy_ctx)
-    # region agent log
-    if for_hook:
-        from cyt.debug.session_agent_log import agent_debug_log
-        from cyt.indexer.policies import anthropic_tool_is_mcp, effective_policy
-
-        sample_name = next(
-            (str(t.get("name", "")) for t in original_tools if t.get("name")),
-            "",
-        )
-        agent_debug_log(
-            "tools_filter.py:filter_tools_for_query",
-            "after prepare_hook",
-            {
-                "for_hook": for_hook,
-                "tools_in": tools_in,
-                "policy_ctx_tool_kind": getattr(policy_ctx, "tool_kind", None),
-                "output_ctx_tool_kind": getattr(output_policy_ctx, "tool_kind", None),
-                "sample_tool": sample_name,
-                "sample_is_mcp_name": anthropic_tool_is_mcp({"name": sample_name})
-                if sample_name
-                else None,
-                "sample_effective_policy": effective_policy(sample_name, policy_ctx)
-                if sample_name
-                else None,
-                "pass_through": request_pass_through(original_tools, output_policy_ctx),
-            },
-            hypothesis_id="B,E",
-        )
-    # endregion
     if request_pass_through(original_tools, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
@@ -1254,25 +1164,6 @@ def filter_tools_for_query(
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
     _log_tool_token_counts(tokens_in, tokens_out)
-    # region agent log
-    if for_hook:
-        from cyt.debug.session_agent_log import agent_debug_log
-
-        out_names = [str(t.get("name", "")) for t in pruned if t.get("name")]
-        agent_debug_log(
-            "tools_filter.py:filter_tools_for_query",
-            "prune result",
-            {
-                "status": "applied",
-                "tools_in": tools_in,
-                "tools_out": len(pruned),
-                "jira_out": sum(1 for n in out_names if "jira" in n.lower()),
-                "mlflow_out": sum(1 for n in out_names if "mlflow" in n.lower()),
-                "output_names": out_names[:8],
-            },
-            hypothesis_id="D,E",
-        )
-    # endregion
     return PruneResult(
         tools=pruned,
         status="applied",
