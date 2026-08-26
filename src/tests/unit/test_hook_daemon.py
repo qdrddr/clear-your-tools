@@ -68,9 +68,8 @@ def test_daemon_start_prints_status_when_not_unattended(
         hook_daemon.daemon_start(verbose=False, unattended=False)
 
     err = capsys.readouterr().err.strip()
-    assert (
-        err
-        == "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/connect"
+    assert err.startswith(
+        "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/connect started="
     )
 
 
@@ -411,6 +410,7 @@ def test_daemon_restart_stops_then_starts(pidfile_path: Path) -> None:
         verbose=True,
         foreground=False,
         unattended=True,
+        force_spawn=True,
     )
     assert result.port == 8835
     assert result.reused is False
@@ -439,7 +439,9 @@ def test_daemon_restart_prints_status_when_not_unattended(
         hook_daemon.daemon_restart(verbose=False, unattended=False)
 
     err = capsys.readouterr().err.strip()
-    assert err == "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect"
+    assert err.startswith(
+        "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect started="
+    )
 
 
 def test_daemon_stop_without_pidfile_scans_config_port() -> None:
@@ -465,3 +467,76 @@ def test_needs_credential_injection_includes_executor_token() -> None:
         },
     }
     assert hook_daemon._needs_credential_injection(config) is True
+
+
+def test_daemon_status_includes_started_timestamp(capsys: pytest.CaptureFixture[str]) -> None:
+    source = {"started_at": "2026-08-26T16:00:00+00:00", "pid": None, "reused": False}
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=source),
+        patch("cyt.hook.daemon.read_hook_daemon_entries", return_value=[source]),
+        patch("cyt.hook.daemon.find_hook_daemon_entry_for_port", return_value=source),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
+    ):
+        hook_daemon.daemon_status()
+
+    err = capsys.readouterr().err.strip()
+    assert err.startswith(
+        "hook daemon: running pid=null port=8834 url=http://127.0.0.1:8834/hook/connect started="
+    )
+    assert err.endswith("12:00:00-04:00")
+
+
+def test_daemon_start_and_status_use_same_started_timestamp(
+    pidfile_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    registry_started_at = "2026-08-26T16:14:44+00:00"
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
+        patch(
+            "cyt.runtime_registry._now_iso",
+            return_value=registry_started_at,
+        ),
+    ):
+        hook_daemon.daemon_start(verbose=False, unattended=False)
+
+    start_err = capsys.readouterr().err.strip()
+    capsys.readouterr()
+
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
+        patch("cyt.hook.daemon.read_hook_daemon_pidfile") as read_pidfile,
+        patch("cyt.hook.daemon.read_hook_daemon_entries") as read_entries,
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
+    ):
+        entry = json.loads(pidfile_path.read_text(encoding="utf-8"))[-1]
+        read_pidfile.return_value = entry
+        read_entries.return_value = [entry]
+        hook_daemon.daemon_status()
+
+    status_err = capsys.readouterr().err.strip()
+    assert "started=" in start_err
+    assert start_err.split("started=", 1)[1] == status_err.split("started=", 1)[1]

@@ -213,3 +213,27 @@ def test_remove_proxy_entry_does_not_drop_hook_daemon(
     assert len(remaining) == 1
     assert remaining[0]["owner"] == runtime_registry.OWNER_HOOK_DAEMON
     assert json.loads(pid_path.read_text(encoding="utf-8"))[0]["port"] == 8835
+
+
+def test_hook_daemon_reuse_preserves_started_at(registry_paths: tuple[Path, Path, Path]) -> None:
+    pid_path, _, _ = registry_paths
+    runtime_registry.upsert_hook_daemon_entry(
+        port=8834,
+        hook_url="http://127.0.0.1:8834/hook/inject",
+        pid=111,
+        reused=False,
+        mode="hooks_only",
+    )
+    original_started_at = runtime_registry.find_hook_daemon_entry_for_port(8834)["started_at"]
+
+    runtime_registry.upsert_hook_daemon_entry(
+        port=8834,
+        hook_url="http://127.0.0.1:8834/hook/inject",
+        pid=None,
+        reused=True,
+        mode="hooks_only",
+    )
+
+    payload = json.loads(pid_path.read_text(encoding="utf-8"))
+    assert payload[0]["started_at"] == original_started_at
+    assert payload[0]["reused"] is True

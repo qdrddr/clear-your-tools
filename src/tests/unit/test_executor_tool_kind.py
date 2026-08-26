@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -215,3 +216,94 @@ def test_prepare_hook_cyt_mcp_tool_pruning_noop_when_tools_disabled() -> None:
     }
     prepare_hook_cyt_mcp_tool_pruning(config, ctx)
     assert ctx.tool_kind is None
+
+
+def _cyt_mcp_tool(name: str, description: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "description": description,
+        "input_schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string", "description": description}},
+            "required": ["id"],
+        },
+        "cyt_catalog_source": "cyt_mcp",
+    }
+
+
+def test_cyt_mcp_hook_bm25_drops_unrelated_backends_for_mlflow_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: BM25 fast path must not pass output_policy_context as recompose ctx."""
+    from cyt.pruners.tools_filter import filter_tools_for_query
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    jira_ops = [
+        "searchIssues",
+        "getIssue",
+        "createIssue",
+        "updateIssue",
+        "postIssueComment",
+        "getTransitions",
+        "transitionIssue",
+        "linkIssues",
+        "unlinkIssues",
+        "getIssueComments",
+    ]
+    mlflow_ops = [
+        "search_traces",
+        "get_trace",
+        "list_runs",
+        "get_experiment",
+        "describe_run",
+        "create_experiment",
+        "update_experiment",
+        "delete_run",
+        "restore_run",
+        "link_traces_to_run",
+    ]
+    tools = [
+        *[_cyt_mcp_tool(f"atlassian-jira-dc_jira_{op}", f"JIRA issue {op}") for op in jira_ops],
+        *[_cyt_mcp_tool(f"mlflow-mcp_{op}", f"MLflow experiment run {op}") for op in mlflow_ops],
+    ]
+    config: dict[str, Any] = {
+        **_HOOK_CYT_MCP_CONFIG,
+        "models": {
+            "bm25": {
+                "index_dir": str(tmp_path / "bm25"),
+                "mmap": True,
+                "stem_language": "english",
+                "stopwords": "en",
+            },
+        },
+        "pruning": {
+            **_HOOK_CYT_MCP_CONFIG["pruning"],
+            "tools": {
+                **_HOOK_CYT_MCP_CONFIG["pruning"]["tools"],
+                "sequence": ["bm25"],
+                "policy": {"minimum_tools": 5},
+                "pipelines": {"bm25": {"index_dir": str(tmp_path / "bm25")}},
+            },
+        },
+    }
+    query = (
+        "how many sessions do i have in this mlflow experiment run "
+        "36a0307831424551acdafcce5f507018"
+    )
+
+    result = filter_tools_for_query(
+        tools,
+        query,
+        config=config,
+        for_hook=True,
+        catalog_bulk_id="cyt_mcp",
+    )
+
+    assert result.status == "applied"
+    assert result.tools is not None
+    names = [str(t.get("name", "")) for t in result.tools]
+    assert len(names) < len(tools)
+    mlflow_out = [n for n in names if n.startswith("mlflow-mcp_")]
+    jira_out = [n for n in names if "jira" in n]
+    assert len(mlflow_out) >= len(jira_out)

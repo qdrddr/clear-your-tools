@@ -65,3 +65,38 @@ def test_terminate_process_windows_uses_taskkill(monkeypatch: pytest.MonkeyPatch
             platform_process.terminate_process(999)
     assert calls
     assert calls[0][:3] == ["taskkill", "/PID", "999"]
+
+
+def test_process_start_time_unix_parses_ps_output() -> None:
+    ps_output = "Wed Aug 26 12:00:00 2026\n"
+    with (
+        patch.object(sys, "platform", "linux"),
+        patch.object(
+            platform_process.subprocess,
+            "run",
+            return_value=type("R", (), {"returncode": 0, "stdout": ps_output})(),
+        ),
+    ):
+        started = platform_process.process_start_time(12345)
+    assert started is not None
+    assert started.year == 2026
+    assert started.month == 8
+    assert started.day == 26
+    assert started.hour == 12
+
+
+def test_process_start_time_windows_parses_powershell_output() -> None:
+    ps_output = "2026-08-26T16:00:00.0000000Z\n"
+    with (
+        patch.object(sys, "platform", "win32"),
+        patch.object(
+            platform_process.subprocess,
+            "run",
+            return_value=type("R", (), {"returncode": 0, "stdout": ps_output})(),
+        ),
+    ):
+        started = platform_process.process_start_time(54321)
+    assert started is not None
+    assert started.year == 2026
+    assert started.month == 8
+    assert started.day == 26

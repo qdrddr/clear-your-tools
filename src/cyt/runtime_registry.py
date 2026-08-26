@@ -239,6 +239,12 @@ def upsert_hook_daemon_entry(
     mode: str,
     credentials_injected: bool = False,
 ) -> None:
+    existing = find_hook_daemon_entry_for_port(port)
+    started_at = _now_iso()
+    if reused and existing is not None:
+        existing_started_at = existing.get("started_at")
+        if isinstance(existing_started_at, str) and existing_started_at:
+            started_at = existing_started_at
     upsert_runtime_entry(
         {
             "pid": pid,
@@ -246,7 +252,7 @@ def upsert_hook_daemon_entry(
             "hook_url": hook_url,
             "mode": mode,
             "owner": OWNER_HOOK_DAEMON,
-            "started_at": _now_iso(),
+            "started_at": started_at,
             "reused": reused,
             "credentials_injected": credentials_injected,
         },

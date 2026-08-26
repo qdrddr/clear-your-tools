@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -58,12 +59,42 @@ def _log(verbose: bool, message: str) -> None:
         print(message, file=sys.stderr)
 
 
+def _format_started_at_for_status(value: datetime | str) -> str:
+    if isinstance(value, str):
+        started = datetime.fromisoformat(value)
+    else:
+        started = value
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    return started.astimezone().replace(microsecond=0).isoformat(sep=" ")
+
+
+def _resolve_started_at(port: int, source: dict[str, Any] | None) -> str | None:
+    if source is not None:
+        value = source.get("started_at")
+        if isinstance(value, str) and value:
+            try:
+                return _format_started_at_for_status(value)
+            except ValueError:
+                return value
+
+    from cyt.platform.process import process_start_time
+
+    listener_pid = _find_listen_pid(port)
+    if listener_pid is not None:
+        started = process_start_time(listener_pid)
+        if started is not None:
+            return _format_started_at_for_status(started)
+    return None
+
+
 def _running_status_line(
     *,
     port: int,
     hook_url: str,
     pid: int | None = None,
     reused: bool = False,
+    started_at: str | None = None,
 ) -> str:
     if reused:
         pid_text = "pid=null (reused)"
@@ -71,18 +102,23 @@ def _running_status_line(
         pid_text = f"pid={pid}"
     else:
         pid_text = "pid=null"
-    return f"hook daemon: running {pid_text} port={port} url={hook_url}"
+    line = f"hook daemon: running {pid_text} port={port} url={hook_url}"
+    if started_at:
+        line = f"{line} started={started_at}"
+    return line
 
 
 def _emit_start_status(result: HookDaemonStartResult, *, unattended: bool) -> None:
     if unattended:
         return
+    entry = find_hook_daemon_entry_for_port(result.port)
     print(
         _running_status_line(
             port=result.port,
             hook_url=result.hook_url,
             pid=result.pid,
             reused=result.reused,
+            started_at=_resolve_started_at(result.port, entry),
         ),
         file=sys.stderr,
     )
@@ -288,6 +324,7 @@ def daemon_start(
     verbose: bool = False,
     foreground: bool = False,
     unattended: bool = False,
+    force_spawn: bool = False,
 ) -> HookDaemonStartResult:
     """Ensure a hook-capable CYT server is available (reuse-first)."""
     if unattended:
@@ -321,6 +358,14 @@ def daemon_start(
         _report_missing_daemon_credentials(missing, unattended=unattended)
 
     reused_port = _find_reusable_hook_port(base_port)
+    if force_spawn and reused_port is not None:
+        _log(
+            verbose,
+            f"hook daemon: force spawn requested; stopping existing server on port {reused_port}",
+        )
+        _stop_hook_server_on_port(reused_port, verbose=verbose)
+        reused_port = None
+
     if reused_port is not None and needs_creds and not _hook_daemon_has_credentials(reused_port):
         _log(
             verbose,
@@ -562,6 +607,7 @@ def daemon_restart(
         verbose=verbose,
         foreground=False,
         unattended=unattended,
+        force_spawn=True,
     )
 
 
@@ -625,6 +671,7 @@ def daemon_status(*, config_path: Path | None = None) -> None:
                 hook_url=hook_url,
                 pid=pid,
                 reused=reused,
+                started_at=_resolve_started_at(port, source),
             ),
             file=sys.stderr,
         )
@@ -644,6 +691,7 @@ def daemon_status(*, config_path: Path | None = None) -> None:
                     hook_url=entry_hook_url,
                     pid=int(entry_pid) if entry_pid is not None else None,
                     reused=bool(entry.get("reused")),
+                    started_at=_resolve_started_at(entry_port, entry),
                 ),
                 file=sys.stderr,
             )

@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 
 _LOCAL_HOST = "127.0.0.1"
 
@@ -25,6 +26,13 @@ def find_listen_pid(port: int, *, host: str = _LOCAL_HOST) -> int | None:
     if sys.platform == "win32":
         return _find_listen_pid_windows(port, host=host)
     return _find_listen_pid_unix(port)
+
+
+def process_start_time(pid: int) -> datetime | None:
+    """Return the process start time for *pid*, or ``None`` when unavailable."""
+    if sys.platform == "win32":
+        return _process_start_time_windows(pid)
+    return _process_start_time_unix(pid)
 
 
 def process_command_line(pid: int) -> str | None:
@@ -102,6 +110,49 @@ def _find_listen_pid_windows(port: int, *, host: str = _LOCAL_HOST) -> int | Non
                 continue
         return int(pid_str)
     return None
+
+
+def _process_start_time_unix(pid: int) -> datetime | None:
+    cmd = ["ps", "-p", str(pid), "-o", "lstart="]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    try:
+        started = datetime.strptime(text, "%a %b %d %H:%M:%S %Y")
+    except ValueError:
+        return None
+    return started.replace(tzinfo=datetime.now().astimezone().tzinfo)
+
+
+def _process_start_time_windows(pid: int) -> datetime | None:
+    ps_cmd = (
+        f'(Get-CimInstance Win32_Process -Filter "ProcessId={pid}").CreationDate'
+        ".ToUniversalTime().ToString('o')"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _process_command_line_unix(pid: int) -> str | None:
