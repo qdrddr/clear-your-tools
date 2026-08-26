@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 
 _LOCAL_HOST = "127.0.0.1"
 

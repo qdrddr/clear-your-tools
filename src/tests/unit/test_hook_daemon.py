@@ -69,7 +69,7 @@ def test_daemon_start_prints_status_when_not_unattended(
 
     err = capsys.readouterr().err.strip()
     assert err.startswith(
-        "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/connect started="
+        "hook daemon: running pid=null (reused) port=8834 url=http://127.0.0.1:8834/hook/connect started=",
     )
 
 
@@ -440,7 +440,7 @@ def test_daemon_restart_prints_status_when_not_unattended(
 
     err = capsys.readouterr().err.strip()
     assert err.startswith(
-        "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect started="
+        "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect started=",
     )
 
 
@@ -489,7 +489,7 @@ def test_daemon_status_includes_started_timestamp(capsys: pytest.CaptureFixture[
 
     err = capsys.readouterr().err.strip()
     assert err.startswith(
-        "hook daemon: running pid=null port=8834 url=http://127.0.0.1:8834/hook/connect started="
+        "hook daemon: running pid=null port=8834 url=http://127.0.0.1:8834/hook/connect started=",
     )
     assert err.endswith("12:00:00-04:00")
 

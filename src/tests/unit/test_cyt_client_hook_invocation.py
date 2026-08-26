@@ -45,9 +45,7 @@ def test_cursor_pairing_hooks_dev_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sys
 
-    from cyt_client.hook_invocation import use_windows_hook_wrappers
 
     hooks_dir = tmp_path / "hooks"
     monkeypatch.setattr(

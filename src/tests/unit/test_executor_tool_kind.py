@@ -288,8 +288,7 @@ def test_cyt_mcp_hook_bm25_drops_unrelated_backends_for_mlflow_query(
         },
     }
     query = (
-        "how many sessions do i have in this mlflow experiment run "
-        "36a0307831424551acdafcce5f507018"
+        "how many sessions do i have in this mlflow experiment run 36a0307831424551acdafcce5f507018"
     )
 
     result = filter_tools_for_query(
