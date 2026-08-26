@@ -496,6 +496,46 @@ def test_validate_denies_search_without_repo(
     assert "Missing required: repo='/tmp/clear-your-tools'" in validation.reason
 
 
+def test_validate_denies_search_without_repo_windows_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "clear-your-tools"
+    repo.mkdir()
+    log_path = tmp_path / "session.jsonl"
+    _write_multi_tool_session(
+        log_path,
+        [
+            {
+                "name": "search",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "repo": {"type": "string"},
+                    },
+                    "required": ["query", "repo"],
+                },
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_gate.session_log_path",
+        lambda _payload: log_path,
+    )
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "semble_search",
+            "tool_input": {"query": "bm25 codebase primary location"},
+            "workspace_roots": [str(repo)],
+        },
+    )
+    assert validation.allowed is False
+    assert f"Missing required: repo={str(repo)!r}" in validation.reason
+
+
 def test_validate_denies_grep_path_with_fixup_hint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

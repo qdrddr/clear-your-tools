@@ -149,13 +149,50 @@ def build_cyt_mcp_mcp_server_entry(
 
 def _strip_env_prefix(command: str) -> str:
     text = command.strip()
-    if not text or text.startswith("uv "):
+    if not text:
+        return text
+    lowered = text.casefold()
+    if lowered.startswith("cmd /c"):
+        inner = text[6:].strip()
+        if inner.startswith('"') and inner.endswith('"'):
+            inner = inner[1:-1]
+        resolved: str | None = None
+        for part in inner.split("&&"):
+            stripped = part.strip()
+            if stripped.lower().startswith("set "):
+                continue
+            if stripped.lower().startswith("call "):
+                return stripped[5:].strip().strip('"')
+            resolved = stripped.strip('"')
+        return resolved or inner.strip('"')
+    if text.startswith("uv "):
         return text
     space = text.find(" ")
     if space <= 0 or "=" not in text[:space]:
         return text
     offset = space + 1
     return text[offset:].strip()
+
+
+_WINDOWS_DEV_WRAPPER_SUFFIXES = (
+    "cyt-client-dev.cmd",
+    "cyt-hook-daemon-start-dev.cmd",
+)
+
+
+def _inner_command_from_windows_wrapper(command: str) -> str | None:
+    normalized = command.strip().strip('"')
+    if not normalized.casefold().endswith(".cmd"):
+        return None
+    path = Path(normalized)
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.casefold() == "@echo off":
+            continue
+        return stripped
+    return None
 
 
 def repo_root_from_uv_run_hook_command(command: str) -> Path | None:
@@ -170,6 +207,13 @@ def repo_root_from_uv_run_hook_command(command: str) -> Path | None:
 
 def is_cyt_dev_hook_command(command: str) -> bool:
     normalized = _strip_env_prefix(command)
+    if normalized.casefold().endswith(".cmd"):
+        name = Path(normalized).name.casefold()
+        if any(name.endswith(suffix) for suffix in _WINDOWS_DEV_WRAPPER_SUFFIXES):
+            return True
+        inner = _inner_command_from_windows_wrapper(normalized)
+        if inner is not None:
+            normalized = inner
     if not normalized.startswith("uv run "):
         return False
     if "cyt-client" in normalized or "cyt_client/cli.py" in normalized:
@@ -207,9 +251,10 @@ def dev_invocation_from_hooks_file(hooks_path: Path) -> tuple[Path, str] | None:
     if not isinstance(payload, dict):
         return None
     for command in _iter_hook_commands(payload):
-        if not is_cyt_dev_hook_command(command):
+        resolved = _inner_command_from_windows_wrapper(command) or command
+        if not is_cyt_dev_hook_command(resolved):
             continue
-        repo = repo_root_from_uv_run_hook_command(command)
+        repo = repo_root_from_uv_run_hook_command(_strip_env_prefix(resolved))
         if repo is None:
             continue
         if (repo / CYT_MCP_SCRIPT_REL).is_file():

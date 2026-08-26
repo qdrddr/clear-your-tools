@@ -42,10 +42,13 @@ EOF
 done
 
 run_uv() {
-	if command -v rtk >/dev/null 2>&1; then
+	if command -v uv >/dev/null 2>&1; then
+		uv "$@"
+	elif command -v rtk >/dev/null 2>&1; then
 		rtk uv "$@"
 	else
-		uv "$@"
+		echo "error: missing required command: uv" >&2
+		exit 1
 	fi
 }
 

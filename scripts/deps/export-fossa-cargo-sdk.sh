@@ -41,6 +41,26 @@ require_cmd() {
 	}
 }
 
+resolve_python() {
+	local candidate
+	for candidate in python3 python; do
+		if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" -c "import sys" >/dev/null 2>&1; then
+			echo "${candidate}"
+			return 0
+		fi
+	done
+	if [[ -x "${REPO_ROOT}/.venv/Scripts/python.exe" ]]; then
+		echo "${REPO_ROOT}/.venv/Scripts/python.exe"
+		return 0
+	fi
+	if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+		echo "${REPO_ROOT}/.venv/bin/python"
+		return 0
+	fi
+	echo "error: missing python (install Python or run: uv sync)" >&2
+	exit 1
+}
+
 metadata_to_temp() {
 	local -a extra=()
 	if (($#)); then
@@ -57,13 +77,14 @@ metadata_to_temp() {
 }
 
 emit_cargo_entries() {
-	require_cmd python3
+	local python_bin
+	python_bin="$(resolve_python)"
 	local default_meta sdk_meta
 	default_meta="$(metadata_to_temp)"
 	sdk_meta="$(metadata_to_temp --manifest-path sdk/rust/cyt-indexer/Cargo.toml --no-default-features --features python,node)"
 	trap 'rm -f "${default_meta}" "${sdk_meta}"' RETURN
 
-	python3 - "${default_meta}" "${sdk_meta}" <<'PY'
+	"${python_bin}" - "${default_meta}" "${sdk_meta}" <<'PY'
 import json
 import sys
 

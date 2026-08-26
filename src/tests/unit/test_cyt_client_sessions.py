@@ -39,6 +39,25 @@ def test_sessions_dir_for_payload_uses_workspace(tmp_path: Path) -> None:
     assert sessions_dir_for_payload(payload) == tmp_path / ".cursor/cyt/sessions"
 
 
+def test_sessions_dir_for_payload_uses_windows_workspace_roots(tmp_path: Path) -> None:
+    payload = {
+        "workspace_roots": [str(tmp_path)],
+        "cyt_agent": "cursor",
+        "conversation_id": "win-session",
+    }
+    assert sessions_dir_for_payload(payload) == tmp_path / ".cursor/cyt/sessions"
+
+
+def test_session_log_path_windows_workspace(tmp_path: Path) -> None:
+    payload = {
+        "workspace_roots": [str(tmp_path)],
+        "conversation_id": "abc-123",
+        "cyt_agent": "cursor",
+    }
+    path = session_log_path(payload)
+    assert path == tmp_path / ".cursor/cyt/sessions/abc-123.jsonl"
+
+
 def test_append_and_read_session_log_with_meta(tmp_path: Path) -> None:
     path = tmp_path / "sess.jsonl"
     entries = [{"kind": "tool", "key": "tool:Shell", "hash": "abc", "full": False, "name": "Shell"}]
@@ -77,6 +96,7 @@ def test_session_log_path_resolves_under_agent_dir(
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     payload = {"cwd": str(tmp_path), "session_id": "sess-1", "cyt_agent": "claude"}
     path = session_log_path(payload)

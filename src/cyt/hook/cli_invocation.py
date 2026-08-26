@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shlex
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +20,16 @@ INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 CYT_CLIENT_CLI_SCRIPT_REL = "src/cyt_client/cli.py"
 CYT_PROXY_CLI_SCRIPT_REL = "src/cyt/proxy/cli.py"
 CYT_MCP_CLI_SCRIPT_REL = "src/cyt_mcp/cli.py"
+WINDOWS_CLIENT_WRAPPER = "cyt-client.cmd"
+WINDOWS_CLIENT_DEV_WRAPPER = "cyt-client-dev.cmd"
+WINDOWS_DAEMON_START_WRAPPER = "cyt-hook-daemon-start.cmd"
+WINDOWS_DAEMON_START_DEV_WRAPPER = "cyt-hook-daemon-start-dev.cmd"
+_WINDOWS_WRAPPER_NAMES = (
+    WINDOWS_CLIENT_WRAPPER,
+    WINDOWS_CLIENT_DEV_WRAPPER,
+    WINDOWS_DAEMON_START_WRAPPER,
+    WINDOWS_DAEMON_START_DEV_WRAPPER,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +40,21 @@ class HookCliInvocation:
     @property
     def is_dev(self) -> bool:
         return self.mode == "dev"
+
+
+def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
+    """Use ``.cmd`` wrappers only for installed (prod) hooks on Windows.
+
+    Dev mode uses inline ``uv run --directory …`` commands (same as macOS).
+    """
+    if sys.platform != "win32":
+        return False
+    invocation = invocation or detect_hook_cli_invocation()
+    return not invocation.is_dev
+
+
+def cursor_hooks_dir() -> Path:
+    return Path("~/.cursor/hooks").expanduser()
 
 
 def proxy_cli_script_path() -> Path:
@@ -107,10 +134,17 @@ def detect_hook_cli_invocation() -> HookCliInvocation:
 
 
 def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> str:
-    return shlex.join(["uv", "run", "--directory", str(repo_root), script_rel, *args])
+    if sys.platform == "win32":
+        # Always quote the directory: cmd.exe needs sane quoting, and downstream
+        # shlex.split must round-trip Windows paths with backslashes.
+        directory = str(repo_root).replace('"', '""')
+        tail = subprocess.list2cmdline([script_rel, *args])
+        return f'uv run --directory "{directory}" {tail}'
+    parts = ["uv", "run", "--directory", str(repo_root), script_rel, *args]
+    return shlex.join(parts)
 
 
-def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
+def _inline_cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     invocation = invocation or detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
         return build_uv_run_dev_command(
@@ -120,7 +154,7 @@ def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     return INSTALLED_CYT_CLIENT_COMMAND
 
 
-def cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
+def _inline_cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
     invocation = invocation or detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
         return build_uv_run_dev_command(
@@ -129,6 +163,102 @@ def cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> 
             *CYT_DAEMON_START_ARGS,
         )
     return INSTALLED_CYT_DAEMON_START_COMMAND
+
+
+def prefix_command_env(env: dict[str, str], command: str) -> str:
+    if not env:
+        return command
+    if sys.platform == "win32":
+        parts = [f'set "{key}={value}"' for key, value in env.items()]
+        return 'cmd /c "' + "&& ".join([*parts, f'call "{command}"']) + '"'
+    prefix = " ".join(f"{key}={value}" for key, value in env.items())
+    return f"{prefix} {command}"
+
+
+def _write_windows_wrapper(path: Path, inner_command: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ("@echo off", inner_command)
+    path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+
+
+def install_windows_hook_wrappers(
+    *,
+    invocation: HookCliInvocation | None = None,
+) -> dict[str, Path]:
+    """Write Cursor hook wrapper ``.cmd`` scripts and return name → path mapping."""
+    invocation = invocation or detect_hook_cli_invocation()
+    hooks_dir = cursor_hooks_dir()
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    client_inner = _inline_cyt_client_command(invocation=invocation)
+    daemon_inner = _inline_cyt_daemon_start_command(invocation=invocation)
+
+    client_name = WINDOWS_CLIENT_DEV_WRAPPER if invocation.is_dev else WINDOWS_CLIENT_WRAPPER
+    daemon_name = (
+        WINDOWS_DAEMON_START_DEV_WRAPPER if invocation.is_dev else WINDOWS_DAEMON_START_WRAPPER
+    )
+
+    client_path = hooks_dir / client_name
+    daemon_path = hooks_dir / daemon_name
+    _write_windows_wrapper(client_path, client_inner)
+    _write_windows_wrapper(daemon_path, daemon_inner)
+
+    for stale_name in _WINDOWS_WRAPPER_NAMES:
+        if stale_name in {client_name, daemon_name}:
+            continue
+        stale_path = hooks_dir / stale_name
+        if stale_path.is_file():
+            stale_path.unlink()
+
+    return {
+        "client": client_path,
+        "daemon_start": daemon_path,
+    }
+
+
+def remove_windows_hook_wrappers() -> list[Path]:
+    removed: list[Path] = []
+    hooks_dir = cursor_hooks_dir()
+    for name in _WINDOWS_WRAPPER_NAMES:
+        path = hooks_dir / name
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    return removed
+
+
+def is_windows_hook_wrapper_command(command: str) -> bool:
+    normalized = command.strip().strip('"').casefold()
+    if not normalized.endswith(".cmd"):
+        return False
+    name = Path(normalized).name.casefold()
+    return name in {wrapper.casefold() for wrapper in _WINDOWS_WRAPPER_NAMES}
+
+
+def cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
+    return _inline_cyt_client_command(invocation=invocation)
+
+
+def cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
+    return _inline_cyt_daemon_start_command(invocation=invocation)
+
+
+def cursor_hook_client_command(*, invocation: HookCliInvocation | None = None) -> str:
+    """Return the command string written into Cursor ``hooks.json``."""
+    invocation = invocation or detect_hook_cli_invocation()
+    if use_windows_hook_wrappers(invocation=invocation):
+        wrappers = install_windows_hook_wrappers(invocation=invocation)
+        return str(wrappers["client"])
+    return _inline_cyt_client_command(invocation=invocation)
+
+
+def cursor_hook_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
+    """Return the daemon start command written into Cursor ``hooks.json``."""
+    invocation = invocation or detect_hook_cli_invocation()
+    if use_windows_hook_wrappers(invocation=invocation):
+        wrappers = install_windows_hook_wrappers(invocation=invocation)
+        return str(wrappers["daemon_start"])
+    return _inline_cyt_daemon_start_command(invocation=invocation)
 
 
 def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -> str:
@@ -140,6 +270,41 @@ def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -
             *CYT_DAEMON_RESTART_ARGS,
         )
     return INSTALLED_CYT_DAEMON_RESTART_COMMAND
+
+
+def build_hook_spawn_command(
+    *,
+    port: int,
+    config_path: Path | None,
+    invocation: HookCliInvocation | None = None,
+) -> list[str]:
+    """Build argv for spawning a hook-capable CYT proxy server."""
+    invocation = invocation or detect_hook_cli_invocation()
+    args_tail = [
+        "proxy",
+        "--port",
+        str(port),
+        "--quiet",
+        "--no-resolve-credentials",
+    ]
+    if config_path is not None:
+        args_tail.extend(["--config", str(config_path)])
+
+    if invocation.is_dev and invocation.repo_root is not None:
+        uv = shutil.which("uv")
+        if uv is not None:
+            return [
+                uv,
+                "run",
+                "--directory",
+                str(invocation.repo_root),
+                proxy_cli_script_relpath(),
+                *args_tail,
+            ]
+        script = invocation.repo_root / proxy_cli_script_relpath()
+        return [sys.executable, str(script), *args_tail]
+
+    return [sys.executable, "-m", "cyt.proxy.cli", *args_tail]
 
 
 def cyt_mcp_mcp_server_entry(
@@ -175,7 +340,11 @@ def cyt_mcp_mcp_server_entry(
 
 
 def is_dev_cyt_hook_command(command: str) -> bool:
-    normalized = command.strip()
+    normalized = command.strip().strip('"')
+    if is_windows_hook_wrapper_command(normalized):
+        return normalized.casefold().endswith(WINDOWS_CLIENT_DEV_WRAPPER.casefold()) or (
+            WINDOWS_DAEMON_START_DEV_WRAPPER.casefold() in normalized.casefold()
+        )
     if not normalized.startswith("uv run "):
         return False
     if CYT_CLIENT_CLI_SCRIPT_REL in normalized:

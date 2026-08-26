@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -184,18 +183,13 @@ def _spawn_hook_server(
     verbose: bool,
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.Popen[bytes]:
-    cmd = [
-        sys.executable,
-        "-m",
-        "cyt.proxy.cli",
-        "proxy",
-        "--port",
-        str(port),
-        "--quiet",
-        "--no-resolve-credentials",
-    ]
-    if config_path is not None:
-        cmd.extend(["--config", str(config_path)])
+    from cyt.hook.cli_invocation import build_hook_spawn_command, detect_hook_cli_invocation
+
+    cmd = build_hook_spawn_command(
+        port=port,
+        config_path=config_path,
+        invocation=detect_hook_cli_invocation(),
+    )
     child_env = os.environ.copy()
     child_env[CYT_SKIP_KEYRING_ENV] = "1"
     if extra_env:
@@ -451,61 +445,32 @@ def daemon_start(
 
 
 def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    from cyt.platform.process import pid_alive
+
+    return pid_alive(pid)
 
 
 def _process_matches_cyt_proxy(pid: int) -> bool:
-    if sys.platform == "darwin":
-        cmd = ["ps", "-p", str(pid), "-o", "command="]
-    else:
-        cmd = ["ps", "-p", str(pid), "-o", "args="]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    except OSError:
-        return False
+    from cyt.platform.process import process_command_line
     from cyt.stop import is_cyt_proxy_command
 
-    return is_cyt_proxy_command(result.stdout.strip())
+    command = process_command_line(pid)
+    if not command:
+        return False
+    return is_cyt_proxy_command(command)
 
 
 def _find_listen_pid(port: int) -> int | None:
     """Return PID listening on ``LOCAL_HOST:port``, or ``None``."""
-    commands = (
-        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-        ["lsof", "-t", "-i", f":{port}"],
-    )
-    for cmd in commands:
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        except OSError:
-            continue
-        if result.returncode != 0:
-            continue
-        for line in result.stdout.strip().splitlines():
-            candidate = line.strip()
-            if candidate.isdigit():
-                return int(candidate)
-    return None
+    from cyt.platform.process import find_listen_pid
+
+    return find_listen_pid(port, host=LOCAL_HOST)
 
 
 def _terminate_pid(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        if not _pid_alive(pid):
-            return
-        time.sleep(0.1)
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        return
+    from cyt.platform.process import terminate_process
+
+    terminate_process(pid)
 
 
 def _stop_registry_entry(

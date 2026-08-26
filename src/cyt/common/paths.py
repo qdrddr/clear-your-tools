@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 __all__ = ["shorten_home_path"]
+
+
+def _path_starts_with_prefix(text: str, prefix: Path) -> bool:
+    """Return True when *text* resolves under *prefix* (handles ``\\`` and ``/``)."""
+    try:
+        Path(text).expanduser().resolve().relative_to(prefix.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def shorten_home_path(path: str) -> str:
@@ -13,13 +21,15 @@ def shorten_home_path(path: str) -> str:
     expanded = Path(path).expanduser()
     home = Path.home()
     try:
-        rel = expanded.relative_to(home)
+        rel = expanded.resolve().relative_to(home.resolve())
         return f"~/{rel.as_posix()}"
-    except ValueError:
-        text = str(expanded)
-        home_env = os.environ.get("HOME")
-        if home_env and text.startswith(home_env.rstrip("/") + "/"):
-            home_prefix = home_env.rstrip("/")
-            path_start = len(home_prefix) + 1
-            return "~/" + text[path_start:]
-        return text
+    except (OSError, ValueError):
+        pass
+    text = str(expanded)
+    if _path_starts_with_prefix(text, home):
+        try:
+            rel = expanded.resolve().relative_to(home.resolve())
+            return f"~/{rel.as_posix()}"
+        except (OSError, ValueError):
+            pass
+    return text

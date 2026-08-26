@@ -51,16 +51,29 @@ def cursor_rules_file_enabled() -> bool:
     return skills_hook_cursor_rule_file_enabled()
 
 
+def normalize_workspace_path_string(raw: str) -> str:
+    """Normalize Cursor workspace paths (including ``/c:/Users/...``) for the host OS."""
+    text = raw.strip()
+    if not text:
+        return text
+    # Cursor sometimes sends Git-Bash/MSYS paths on Windows: /c:/Users/...
+    if len(text) >= 4 and text[0] == "/" and text[2] == ":":
+        drive = text[1].upper()
+        rest = text[3:].lstrip("/\\")
+        return str(Path(f"{drive}:/{rest}"))
+    return text
+
+
 def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
     cwd = payload.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
-        return Path(cwd.strip())
+        return Path(normalize_workspace_path_string(cwd))
 
     roots = payload.get("workspace_roots")
     if isinstance(roots, list):
         for root in roots:
             if isinstance(root, str) and root.strip():
-                return Path(root.strip())
+                return Path(normalize_workspace_path_string(root))
     return None
 
 

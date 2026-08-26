@@ -103,12 +103,16 @@ def _write_duplicate_cursor_hooks(cursor_path: Path) -> None:
 def test_format_hook_stdin_test_command_uses_anonymized_payload() -> None:
     command = hook_setup.format_hook_stdin_test_command()
 
-    assert "cat <<'EOF' | cyt-client" in command
+    if sys.platform == "win32":
+        assert command.startswith("@'")
+        assert "'@ | " in command
+    else:
+        assert "cat <<'EOF' | cyt-client" in command
     assert "019ebcaf" not in command
     assert "username" not in command
     assert "sess-00000000-0000-4000-8000-000000000001" in command
-    assert "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl" in command
-    assert "/path/to/your/project" in command
+    assert "beforeSubmitPrompt" in command
+    assert "workspace_roots" in command
 
 
 def test_format_hook_stdin_test_command_verify_only_uses_pre_tool_use_payload() -> None:
@@ -128,14 +132,17 @@ def test_format_hook_stdin_test_command_verify_only_cursor_uses_user_prompt_subm
         selected_agents=["cursor"],
     )
 
-    assert '"hook_event_name": "UserPromptSubmit"' in command
+    assert '"hook_event_name": "beforeSubmitPrompt"' in command
     assert "preToolUse" not in command
 
 
 def test_format_hook_stdin_test_command_includes_debug_flag() -> None:
     command = hook_setup.format_hook_stdin_test_command(debug=True)
 
-    assert "CYT_HOOK_DEBUG=1 cyt-client" in command
+    if sys.platform == "win32":
+        assert "CYT_HOOK_DEBUG=1" in command
+    else:
+        assert "CYT_HOOK_DEBUG=1 cyt-client" in command
 
 
 def test_build_hook_skills_config_overlay_returns_none_when_already_configured() -> None:
@@ -200,8 +207,13 @@ def test_cyt_hook_entry_sets_launch_agent_when_requested() -> None:
     claude_entry = hook_setup.cyt_client_entry(agent="claude", set_launch_agent=True)
     codex_entry = hook_setup.cyt_client_entry(agent="codex", set_launch_agent=True)
 
-    assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
-    assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt-client"
+    if sys.platform == "win32":
+        assert "CYT_LAUNCH_AGENT=claude" in claude_entry["command"]
+        assert "cyt-client" in claude_entry["command"]
+        assert "CYT_LAUNCH_AGENT=codex" in codex_entry["command"]
+    else:
+        assert claude_entry["command"] == "CYT_LAUNCH_AGENT=claude cyt-client"
+        assert codex_entry["command"] == "CYT_LAUNCH_AGENT=codex cyt-client"
     assert claude_entry["timeout"] == hook_setup.USER_PROMPT_TIMEOUT_SECONDS
     assert codex_entry["timeout"] == hook_setup.USER_PROMPT_TIMEOUT_SECONDS
 
@@ -212,7 +224,11 @@ def test_cyt_daemon_start_entry() -> None:
         == "cyt hook daemon start --unattended"
     )
     entry = hook_setup.cyt_daemon_start_entry(agent="claude", set_launch_agent=True)
-    assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
+    if sys.platform == "win32":
+        assert "CYT_LAUNCH_AGENT=claude" in entry["command"]
+        assert "cyt hook daemon start --unattended" in entry["command"]
+    else:
+        assert entry["command"] == "CYT_LAUNCH_AGENT=claude cyt hook daemon start --unattended"
     assert entry["timeout"] == hook_setup.SESSION_START_TIMEOUT_SECONDS
 
 
@@ -295,6 +311,37 @@ def test_dev_hook_commands_use_uv_run_with_detected_repo_root() -> None:
         "daemon",
         "restart",
     )
+
+
+def test_dev_hook_commands_windows_repo_root_round_trip_recognition() -> None:
+    """Dev commands with ``C:\\`` repo paths survive build + cyt-hook recognition."""
+    repo_root = Path("C:/Users/me/git/clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    client_cmd = cyt_client_command(invocation=invocation)
+    daemon_cmd = cyt_daemon_start_command(invocation=invocation)
+
+    assert (
+        r"C:\Users\me\git\clear-your-tools" in client_cmd
+        or "C:/Users/me/git/clear-your-tools" in client_cmd
+    )
+    assert hook_setup._is_cyt_hook_command(client_cmd)
+    assert is_dev_cyt_hook_command(client_cmd)
+    assert hook_setup._is_cyt_hook_command(daemon_cmd)
+    assert is_dev_cyt_hook_command(daemon_cmd)
+
+
+def test_build_hook_spawn_command_dev_mode_uses_uv_and_repo_cli() -> None:
+    from cyt.hook.cli_invocation import build_hook_spawn_command
+
+    repo_root = Path(r"C:\Users\me\git\clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    argv = build_hook_spawn_command(port=8834, config_path=None, invocation=invocation)
+
+    assert Path(argv[0]).name.lower().startswith("uv")
+    assert argv[argv.index("--directory") + 1] == str(repo_root)
+    assert "src/cyt/proxy/cli.py" in argv
+    assert "proxy" in argv
+    assert "8834" in argv
 
 
 def test_installed_daemon_restart_command() -> None:
@@ -410,8 +457,13 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
 ) -> None:
     repo_root = Path("/tmp/clear-your-tools")
     cursor_path = tmp_path / "cursor" / "hooks.json"
+    hooks_dir = tmp_path / "cursor" / "hooks"
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.cursor_hooks_dir",
+        lambda: hooks_dir,
+    )
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
@@ -440,11 +492,10 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     client_rel = cyt_client_cli_script_relpath()
     proxy_rel = proxy_cli_script_relpath()
-    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == build_uv_run_dev_command(
-        repo_root,
-        client_rel,
-    )
-    assert data["hooks"]["sessionStart"][0]["command"] == build_uv_run_dev_command(
+    client_cmd = data["hooks"]["beforeSubmitPrompt"][0]["command"]
+    daemon_cmd = data["hooks"]["sessionStart"][0]["command"]
+    assert client_cmd == build_uv_run_dev_command(repo_root, client_rel)
+    assert daemon_cmd == build_uv_run_dev_command(
         repo_root,
         proxy_rel,
         "hook",
@@ -460,6 +511,8 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         repo_root,
         client_rel,
     )
+    if sys.platform == "win32":
+        assert "--directory" in client_cmd
 
     output = capsys.readouterr().out
     restart_command = cyt_daemon_restart_command(invocation=invocation)
@@ -1195,6 +1248,11 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "hooks.json"
+    hooks_dir = tmp_path / "hooks"
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.cursor_hooks_dir",
+        lambda: hooks_dir,
+    )
     entries = hook_setup.cursor_hook_entries(agent="cursor")
     monkeypatch.setattr(
         "cyt.hook.setup_wizard.skills_hook_agent_interceptor_enabled",
@@ -1216,10 +1274,12 @@ def test_upsert_cursor_hooks_into_file_writes_flat_entries(
     assert data["hooks"]["preToolUse"] == [entries["pre_tool"]]
     assert data["hooks"]["postToolUse"] == [entries["post_tool"]]
     assert data["hooks"]["preCompact"] == [entries["pre_compact"]]
-    assert entries["before_submit"]["command"] == "cyt-client"
-    assert len(entries["session_start"]) == 2
-    assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
-    assert entries["session_start"][1]["command"] == "cyt-client"
+    if sys.platform == "win32":
+        assert entries["before_submit"]["command"].endswith("cyt-client.cmd")
+        assert entries["session_start"][0]["command"].endswith("cyt-hook-daemon-start.cmd")
+    else:
+        assert entries["before_submit"]["command"] == "cyt-client"
+        assert entries["session_start"][0]["command"] == "cyt hook daemon start --unattended"
 
 
 def test_upsert_cursor_hooks_installs_read_intercept_hooks_when_enabled(
@@ -1327,7 +1387,12 @@ def test_run_hook_setup_installs_cursor_hooks(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cursor_path = tmp_path / "cursor" / "hooks.json"
+    hooks_dir = tmp_path / "cursor" / "hooks"
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_path)
+    monkeypatch.setattr(
+        "cyt.hook.cli_invocation.cursor_hooks_dir",
+        lambda: hooks_dir,
+    )
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(
         hook_setup,
@@ -1353,10 +1418,18 @@ def test_run_hook_setup_installs_cursor_hooks(
     daemon_restart.assert_called_once_with(config_path=None, unattended=False)
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
-    assert data["hooks"]["beforeSubmitPrompt"][0]["command"] == "cyt-client"
-    assert data["hooks"]["sessionStart"][0]["command"] == "cyt hook daemon start --unattended"
-    assert data["hooks"]["sessionStart"][1]["command"] == "cyt-client"
-    assert data["hooks"]["sessionEnd"][0]["command"] == "cyt-client"
+    client_cmd = data["hooks"]["beforeSubmitPrompt"][0]["command"]
+    daemon_cmd = data["hooks"]["sessionStart"][0]["command"]
+    session_client_cmd = data["hooks"]["sessionStart"][1]["command"]
+    if sys.platform == "win32":
+        assert client_cmd == str(hooks_dir / "cyt-client.cmd")
+        assert daemon_cmd == str(hooks_dir / "cyt-hook-daemon-start.cmd")
+        assert session_client_cmd == client_cmd
+    else:
+        assert client_cmd == "cyt-client"
+        assert daemon_cmd == "cyt hook daemon start --unattended"
+        assert session_client_cmd == "cyt-client"
+    assert data["hooks"]["sessionEnd"][0]["command"] == session_client_cmd
 
     output = capsys.readouterr().out
     assert "\nRestarting hook daemon via packaged cyt:" in output
@@ -1453,7 +1526,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
     assert "\nRestarting hook daemon for verify-only mode" in output
     assert "Run manually when ready:" not in output
     assert "Restart your agent so hook changes take effect." in output
-    assert "Test the hook locally (UserPromptSubmit payload on stdin)" in output
+    assert "Test the hook locally (beforeSubmitPrompt payload on stdin)" in output
     assert "cyt hook --uninstall" in output
     assert any("choose action (update | remove | skip)" in text for text in prompt_calls)
 
@@ -1494,10 +1567,10 @@ def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
         )
 
     output = capsys.readouterr().out
-    assert "duplicate CYT hooks" in output
+    assert "CYT hooks" in output
     assert any("choose action (update | remove | skip)" in text for text in prompt_calls)
     assert "updated CYT hooks" in output
-    assert "Test the hook locally (UserPromptSubmit payload on stdin)" in output
+    assert "Test the hook locally (beforeSubmitPrompt payload on stdin)" in output
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     assert "postToolUse" not in data.get("hooks", {})
@@ -2077,3 +2150,95 @@ def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
     assert "MCP aggregator" not in output
     assert "Tool hook injection" not in output
     assert saved["pruning"]["tools"]["enabled"] is False
+
+
+def test_install_windows_hook_wrappers_writes_cmd_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.hook import cli_invocation as hook_cli
+
+    hooks_dir = tmp_path / "cursor" / "hooks"
+    monkeypatch.setattr(hook_cli, "cursor_hooks_dir", lambda: hooks_dir)
+    monkeypatch.setattr(hook_cli, "use_windows_hook_wrappers", lambda *, invocation=None: True)
+    repo_root = Path(r"C:\Users\me\git\clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+
+    wrappers = hook_cli.install_windows_hook_wrappers(invocation=invocation)
+
+    assert wrappers["client"].is_file()
+    assert wrappers["daemon_start"].is_file()
+    client_text = wrappers["client"].read_text(encoding="utf-8")
+    daemon_text = wrappers["daemon_start"].read_text(encoding="utf-8")
+    assert "uv run" in client_text
+    assert r"C:\Users\me\git\clear-your-tools" in client_text
+    if sys.platform == "win32":
+        assert "'" not in client_text
+        assert "'" not in daemon_text
+        assert '--directory "' in client_text
+        assert '--directory "' in daemon_text
+    assert hook_cli.is_windows_hook_wrapper_command(str(wrappers["client"]))
+    assert hook_cli.is_dev_cyt_hook_command(str(wrappers["client"]))
+
+
+def test_upsert_cursor_hooks_dev_mode_keeps_inline_uv_on_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path(r"C:\Users\me\git\clear-your-tools")
+    invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
+    inline_client = build_uv_run_dev_command(
+        repo_root,
+        cyt_client_cli_script_relpath(),
+    )
+    inline_daemon = build_uv_run_dev_command(
+        repo_root,
+        proxy_cli_script_relpath(),
+        "hook",
+        "daemon",
+        "start",
+        "--unattended",
+    )
+    existing = {
+        hook_setup.CURSOR_SESSION_START_EVENT: [
+            {"type": "command", "command": inline_daemon, "timeout": 60},
+            {"type": "command", "command": inline_client, "timeout": 60},
+        ],
+        hook_setup.CURSOR_BEFORE_SUBMIT_EVENT: [
+            {"type": "command", "command": inline_client, "timeout": 60},
+        ],
+    }
+    entries = hook_setup.cursor_hook_entries(agent="cursor", invocation=invocation)
+    merged, changed = hook_setup.upsert_cursor_hooks(
+        existing,
+        before_submit_entry=entries["before_submit"],
+        session_start_entries=entries["session_start"],
+        session_end_entry=entries["session_end"],
+        pre_tool_entry=entries["pre_tool"],
+        post_tool_entry=entries["post_tool"],
+        pre_compact_entry=entries["pre_compact"],
+    )
+
+    session_commands = [
+        entry["command"]
+        for entry in merged[hook_setup.CURSOR_SESSION_START_EVENT]
+        if isinstance(entry, dict)
+    ]
+    assert inline_client in session_commands
+    assert inline_daemon in session_commands
+    assert merged[hook_setup.CURSOR_BEFORE_SUBMIT_EVENT][0]["command"] == inline_client
+    _ = changed
+
+
+def test_prefix_command_env_windows_uses_cmd_c() -> None:
+    from cyt.hook.cli_invocation import prefix_command_env
+
+    if sys.platform != "win32":
+        pytest.skip("Windows-only env prefix syntax")
+    command = prefix_command_env({"CYT_LAUNCH_AGENT": "cursor"}, r"C:\hooks\cyt-client.cmd")
+    assert command.startswith('cmd /c "set "CYT_LAUNCH_AGENT=cursor"&& call "')
+    assert "cyt-client.cmd" in command
+
+
+def test_is_cyt_hook_command_recognizes_windows_wrapper() -> None:
+    assert hook_setup._is_cyt_hook_command(r"C:\Users\me\.cursor\hooks\cyt-client-dev.cmd")

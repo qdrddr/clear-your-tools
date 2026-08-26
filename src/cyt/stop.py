@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,27 +27,11 @@ def is_cyt_proxy_command(command: str) -> bool:
 
 def _find_cyt_proxy_pids() -> list[int]:
     """Return PIDs for running ``cyt proxy`` processes."""
-    if sys.platform == "darwin":
-        cmd = ["ps", "-ax", "-o", "pid=,command="]
-    else:
-        cmd = ["ps", "-ax", "-o", "pid=,args="]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    except OSError:
-        return []
+    from cyt.platform.process import list_process_command_lines
+
     current_pid = os.getpid()
     pids: list[int] = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            continue
-        pid_str, command = parts
-        if not pid_str.isdigit():
-            continue
-        pid = int(pid_str)
+    for pid, command in list_process_command_lines():
         if pid == current_pid:
             continue
         if is_cyt_proxy_command(command):

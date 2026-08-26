@@ -25,7 +25,8 @@ for ($i = 0; $i -lt 30; $i++) {
         Invoke-WebRequest -Uri "http://127.0.0.1:8834/health" -UseBasicParsing -TimeoutSec 2 | Out-Null
         $healthy = $true
         break
-    } catch {
+    }
+    catch {
         Start-Sleep -Milliseconds 500
     }
 }
@@ -51,14 +52,14 @@ function Invoke-CytHook {
     Write-Host "---- hook run: $RunPrompt ----"
     $payload = @{
         conversation_id = $SessionId
-        generation_id = $generationId
-        model = "composer-2.5-fast"
-        model_id = "composer-2.5"
-        composer_mode = "agent"
-        prompt = $RunPrompt
-        session_id = $SessionId
+        generation_id   = $generationId
+        model           = "composer-2.5-fast"
+        model_id        = "composer-2.5"
+        composer_mode   = "agent"
+        prompt          = $RunPrompt
+        session_id      = $SessionId
         hook_event_name = "beforeSubmitPrompt"
-        cursor_version = "3.12.17"
+        cursor_version  = "3.12.17"
         workspace_roots = @($RepoRoot)
     } | ConvertTo-Json -Depth 6 -Compress
     $payload | & uv run src/cyt_client/cli.py
@@ -76,7 +77,8 @@ if (-not (Test-Path $SessionLog)) {
 Write-Host "OK session log exists: $SessionLog"
 if (Test-Path $RulesFile) {
     Write-Host "OK rules file exists: $RulesFile"
-} else {
+}
+else {
     Write-Warning "Rules file not created at $RulesFile (BM25 may have produced empty injection)"
 }
 
@@ -84,14 +86,16 @@ $aggregator = Join-Path $env:USERPROFILE ".config\cyt\mcp-aggregator.yaml"
 $mcpJson = Join-Path $env:USERPROFILE ".cursor\mcp.json"
 if (Test-Path $aggregator) {
     Write-Host "OK mcp aggregator config: $aggregator"
-} else {
+}
+else {
     Write-Warning "Missing mcp aggregator at $aggregator (run: cyt hook cursor)"
 }
 if (Test-Path $mcpJson) {
     $mcp = Get-Content $mcpJson -Raw | ConvertFrom-Json
     if ($mcp.mcpServers.'cyt-mcp') {
         Write-Host "OK cyt-mcp registered in $mcpJson"
-    } else {
+    }
+    else {
         Write-Warning "cyt-mcp not found in $mcpJson"
     }
 }

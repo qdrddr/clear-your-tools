@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from cyt.agents.cursor.skills_hook import (
     last_assistant_from_records,
@@ -25,6 +26,30 @@ def test_normalize_cursor_payload_maps_events_and_workspace() -> None:
     assert normalized["hook_event_name"] == "UserPromptSubmit"
     assert normalized["cwd"] == "/tmp/project"
     assert normalized["session_id"] == "conv-123"
+
+
+def test_normalize_cursor_payload_preserves_windows_workspace_root() -> None:
+    payload = {
+        "hookEventName": "beforeSubmitPrompt",
+        "workspace_roots": [r"C:\Users\me\git\clear-your-tools"],
+        "conversation_id": "conv-win",
+        "prompt": "hello",
+    }
+    normalized = normalize_cursor_payload(payload)
+    assert normalized["cwd"] == r"C:\Users\me\git\clear-your-tools"
+    assert normalized["session_id"] == "conv-win"
+
+
+def test_normalize_cursor_payload_converts_git_bash_workspace_root() -> None:
+    payload = {
+        "hookEventName": "beforeSubmitPrompt",
+        "workspace_roots": ["/c:/Users/me/git/clear-your-tools"],
+        "conversation_id": "conv-git-bash",
+        "prompt": "hello",
+    }
+    normalized = normalize_cursor_payload(payload)
+    assert normalized["cwd"] == str(Path("C:/Users/me/git/clear-your-tools"))
+    assert normalized["workspace_roots"] == [str(Path("C:/Users/me/git/clear-your-tools"))]
 
 
 def test_normalize_hook_payload_dispatches_cursor_by_cyt_agent() -> None:

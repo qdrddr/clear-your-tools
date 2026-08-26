@@ -29,11 +29,16 @@ from cyt.hook.cli_invocation import (
     INSTALLED_CYT_DAEMON_START_COMMAND,
     INSTALLED_CYT_DAEMON_START_COMMAND_BASE,
     HookCliInvocation,
+    cursor_hook_client_command,
+    cursor_hook_daemon_start_command,
     cyt_client_command,
     cyt_daemon_restart_command,
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
+    is_windows_hook_wrapper_command,
+    prefix_command_env,
+    remove_windows_hook_wrappers,
 )
 from cyt.launch.inject_via_prompt import ensure_hook_inject_via
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
@@ -75,18 +80,22 @@ CYT_CLIENT_COMMAND = INSTALLED_CYT_CLIENT_COMMAND
 CYT_DAEMON_START_COMMAND = INSTALLED_CYT_DAEMON_START_COMMAND
 CYT_DAEMON_START_COMMAND_BASE = INSTALLED_CYT_DAEMON_START_COMMAND_BASE
 HOOK_STDIN_TEST_PAYLOAD: dict[str, Any] = {
+    "conversation_id": "sess-00000000-0000-4000-8000-000000000001",
     "session_id": "sess-00000000-0000-4000-8000-000000000001",
     "turn_id": "turn-00000000-0000-4000-8000-000000000001",
-    "transcript_path": "/Users/you/.codex/sessions/2026/06/12/rollout-example.jsonl",
-    "cwd": "/path/to/your/project",
-    "hook_event_name": "UserPromptSubmit",
+    "transcript_path": str(
+        Path("~/.cursor/projects/example/agent-transcripts/example.jsonl").expanduser(),
+    ),
+    "workspace_roots": [str(Path.cwd())],
+    "cwd": str(Path.cwd()),
+    "hook_event_name": "beforeSubmitPrompt",
     "model": "example-model",
     "permission_mode": "default",
     "prompt": "say hi",
 }
 HOOK_STDIN_VERIFY_ONLY_TEST_PAYLOAD: dict[str, Any] = {
     "session_id": "sess-00000000-0000-4000-8000-000000000001",
-    "cwd": "/path/to/your/project",
+    "cwd": str(Path.cwd()),
     "hook_event_name": "preToolUse",
     "tool_name": "Shell",
     "tool_input": {"command": "echo hi"},
@@ -103,12 +112,20 @@ def format_hook_stdin_test_command(
     """Return a copy-paste shell snippet that pipes anonymized hook JSON to ``cyt-client``."""
     command = cyt_client_command(invocation=invocation)
     if debug:
-        command = f"CYT_HOOK_DEBUG=1 {command}"
+        command = prefix_command_env({"CYT_HOOK_DEBUG": "1"}, command)
     payload = _hook_stdin_test_payload(
         verify_only=verify_only,
         selected_agents=selected_agents or [],
     )
     payload_json = json.dumps(payload, indent=2)
+    if sys.platform == "win32":
+        return "\n".join(
+            (
+                "@'",
+                payload_json,
+                f"'@ | {command}",
+            ),
+        )
     return "\n".join(
         (
             f"cat <<'EOF' | {command}",
@@ -237,6 +254,7 @@ def cursor_before_submit_entry(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
+        use_cursor_wrappers=True,
     )
 
 
@@ -252,11 +270,13 @@ def cursor_session_start_entries(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
+            use_cursor_wrappers=True,
         ),
         cyt_session_end_entry(
             agent=agent,
             set_launch_agent=set_launch_agent,
             invocation=invocation,
+            use_cursor_wrappers=True,
         ),
     ]
 
@@ -285,6 +305,7 @@ def cursor_session_end_entry(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
+        use_cursor_wrappers=True,
     )
 
 
@@ -310,6 +331,7 @@ def cursor_hook_entries(
         agent=agent,
         set_launch_agent=set_launch_agent,
         invocation=invocation,
+        use_cursor_wrappers=True,
     )
     post_tool: dict[str, Any] = {
         **client_entry,
@@ -458,11 +480,11 @@ def default_hook_skills_directories(
 ) -> list[str]:
     agent_defaults: list[str] = []
     if include_claude:
-        agent_defaults.append(str(CLAUDE_SKILLS_DIR))
+        agent_defaults.append(CLAUDE_SKILLS_DIR.as_posix())
     if include_codex:
-        agent_defaults.append(str(CODEX_SKILLS_DIR))
+        agent_defaults.append(CODEX_SKILLS_DIR.as_posix())
     if include_cursor:
-        agent_defaults.append(str(CURSOR_SKILLS_DIR))
+        agent_defaults.append(CURSOR_SKILLS_DIR.as_posix())
 
     selected_agents = sum((include_claude, include_codex, include_cursor))
     if selected_agents == 1:
@@ -644,10 +666,14 @@ def cyt_client_entry(
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
+    use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    command = cyt_client_command(invocation=invocation)
+    if use_cursor_wrappers:
+        command = cursor_hook_client_command(invocation=invocation)
+    else:
+        command = cyt_client_command(invocation=invocation)
     if set_launch_agent and agent is not None:
-        command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
+        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
     return {"type": "command", "command": command, "timeout": USER_PROMPT_TIMEOUT_SECONDS}
 
 
@@ -656,10 +682,14 @@ def cyt_session_end_entry(
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
+    use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    command = cyt_client_command(invocation=invocation)
+    if use_cursor_wrappers:
+        command = cursor_hook_client_command(invocation=invocation)
+    else:
+        command = cyt_client_command(invocation=invocation)
     if set_launch_agent and agent is not None:
-        command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
+        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
     return {"type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECONDS}
 
 
@@ -668,10 +698,14 @@ def cyt_daemon_start_entry(
     agent: AgentName | None = None,
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
+    use_cursor_wrappers: bool = False,
 ) -> dict[str, Any]:
-    command = cyt_daemon_start_command(invocation=invocation)
+    if use_cursor_wrappers:
+        command = cursor_hook_daemon_start_command(invocation=invocation)
+    else:
+        command = cyt_daemon_start_command(invocation=invocation)
     if set_launch_agent and agent is not None:
-        command = f"{CYT_LAUNCH_AGENT_ENV}={agent} {command}"
+        command = prefix_command_env({CYT_LAUNCH_AGENT_ENV: agent}, command)
     return {"type": "command", "command": command, "timeout": SESSION_START_TIMEOUT_SECONDS}
 
 
@@ -703,6 +737,8 @@ def _is_cyt_hook_command(command: object) -> bool:
     if not isinstance(command, str):
         return False
     normalized = command.strip()
+    if is_windows_hook_wrapper_command(normalized):
+        return True
     if normalized == CYT_CLIENT_COMMAND or normalized.endswith(f" {CYT_CLIENT_COMMAND}"):
         return True
     if is_dev_cyt_hook_command(normalized):
@@ -739,12 +775,23 @@ def _cyt_hook_has_debug_flag(command: str) -> bool:
 
 
 def _format_existing_hook_status(commands: list[str]) -> str:
+    unique_commands = list(dict.fromkeys(commands))
+    if len(unique_commands) < len(commands):
+        debug_bits = {_cyt_hook_has_debug_flag(command) for command in unique_commands}
+        if len(debug_bits) == 1:
+            debug_label = "with --debug" if debug_bits.pop() else "without --debug"
+            duplicate_count = len(commands) - len(unique_commands)
+            return (
+                f"found {len(commands)} CYT hooks "
+                f"({duplicate_count} duplicate command(s), {debug_label})"
+            )
+        return f"found {len(commands)} CYT hooks (duplicate commands, mixed debug settings)"
     if len(commands) > 1:
         debug_bits = {_cyt_hook_has_debug_flag(command) for command in commands}
         if len(debug_bits) == 1:
             debug_label = "with --debug" if debug_bits.pop() else "without --debug"
-            return f"found {len(commands)} duplicate CYT hooks ({debug_label})"
-        return f"found {len(commands)} duplicate CYT hooks (mixed debug settings)"
+            return f"found {len(commands)} CYT hooks across events ({debug_label})"
+        return f"found {len(commands)} CYT hooks across events (mixed debug settings)"
     command = commands[0]
     debug_label = "with --debug" if _cyt_hook_has_debug_flag(command) else "without --debug"
     return f"CYT hook already configured ({debug_label})"
@@ -2473,6 +2520,11 @@ def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
             any_changed = True
         else:
             print(f"{label}: no CYT hook in {path}")
+
+    if "cursor" in selected_agents:
+        removed = remove_windows_hook_wrappers()
+        if removed:
+            print(f"Cursor: removed {len(removed)} Windows hook wrapper(s)")
 
     if any_changed:
         print("\nRestart your agent so hook changes take effect.")

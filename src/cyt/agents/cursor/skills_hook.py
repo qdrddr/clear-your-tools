@@ -20,13 +20,30 @@ def _normalize_cursor_hook_events(merged: dict[str, Any]) -> None:
         merged["hook_event_name"] = "SessionStart"
 
 
+def _normalize_cursor_workspace_path(raw: str) -> str:
+    text = raw.strip()
+    if len(text) >= 4 and text[0] == "/" and text[2] == ":":
+        drive = text[1].upper()
+        rest = text[3:].lstrip("/\\")
+        return str(Path(f"{drive}:/{rest}"))
+    return text
+
+
 def _apply_cursor_workspace_fields(merged: dict[str, Any]) -> None:
     if not merged.get("cwd"):
         roots = merged.get("workspace_roots")
         if isinstance(roots, list) and roots:
             first = roots[0]
             if isinstance(first, str) and first.strip():
-                merged["cwd"] = first.strip()
+                merged["cwd"] = _normalize_cursor_workspace_path(first)
+    elif isinstance(merged.get("cwd"), str):
+        merged["cwd"] = _normalize_cursor_workspace_path(str(merged["cwd"]))
+
+    if isinstance(merged.get("workspace_roots"), list):
+        merged["workspace_roots"] = [
+            _normalize_cursor_workspace_path(str(root)) if isinstance(root, str) else root
+            for root in merged["workspace_roots"]
+        ]
 
     if not merged.get("session_id"):
         conversation_id = merged.get("conversation_id")
