@@ -1,2 +1,6 @@
 uv.lock
 out.json
+
+# Maturin / Rust extension build artifacts (Windows)
+src/cyt_indexer/*.pdb
+src/cyt_indexer/_native.pyd

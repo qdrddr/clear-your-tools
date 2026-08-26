@@ -8,6 +8,11 @@ import shlex
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from cyt_client.hook_executable import (
+    is_uv_run_dev_hook_command,
+    repo_root_from_uv_run_hook_command,
+)
+
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 CYT_MCP_SERVER_KEY = "cyt-mcp"
 CYT_MCP_SCRIPT_REL = "src/cyt_mcp/cli.py"
@@ -195,16 +200,6 @@ def _inner_command_from_windows_wrapper(command: str) -> str | None:
     return None
 
 
-def repo_root_from_uv_run_hook_command(command: str) -> Path | None:
-    try:
-        parts = shlex.split(_strip_env_prefix(command))
-    except ValueError:
-        return None
-    if len(parts) < 4 or parts[0] != "uv" or parts[1] != "run" or parts[2] != "--directory":
-        return None
-    return Path(parts[3])
-
-
 def is_cyt_dev_hook_command(command: str) -> bool:
     normalized = _strip_env_prefix(command)
     if normalized.casefold().endswith(".cmd"):
@@ -214,15 +209,7 @@ def is_cyt_dev_hook_command(command: str) -> bool:
         inner = _inner_command_from_windows_wrapper(normalized)
         if inner is not None:
             normalized = inner
-    if not normalized.startswith("uv run "):
-        return False
-    if "cyt-client" in normalized or "cyt_client/cli.py" in normalized:
-        return True
-    if ("cyt/proxy/cli.py" in normalized or "src/cyt/proxy/cli.py" in normalized) and (
-        " hook daemon start" in normalized or " hook daemon restart" in normalized
-    ):
-        return True
-    return False
+    return is_uv_run_dev_hook_command(normalized)
 
 
 def _iter_hook_commands(hooks_payload: dict[str, Any]) -> list[str]:

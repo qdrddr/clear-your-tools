@@ -9,6 +9,7 @@ import pytest
 
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
+    build_uv_run_dev_command,
     cyt_mcp_cli_script_relpath,
     cyt_mcp_mcp_server_entry,
 )
@@ -79,7 +80,10 @@ def test_dev_invocation_from_hooks_file(tmp_path: Path) -> None:
                 "hooks": {
                     "sessionStart": [
                         {
-                            "command": (f"uv run --directory {repo_root} src/cyt_client/cli.py"),
+                            "command": build_uv_run_dev_command(
+                                repo_root,
+                                "src/cyt_client/cli.py",
+                            ),
                         },
                     ],
                 },

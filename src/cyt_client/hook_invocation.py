@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import shlex
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from cyt_client.hook_executable import (
+    build_installed_cyt_client_command,
+    build_installed_cyt_daemon_start_command,
+    build_uv_run_dev_command,
+)
 from cyt_client.mcp_entry import (
     CYT_MCP_SCRIPT_REL,
     _strip_env_prefix,
@@ -41,10 +44,9 @@ _WINDOWS_HOOK_WRAPPER_NAMES = (
 
 
 def use_windows_hook_wrappers(*, use_dev: bool) -> bool:
-    """Use ``.cmd`` wrappers only for installed (prod) hooks on Windows."""
-    if sys.platform != "win32":
-        return False
-    return not use_dev
+    """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
+    _ = use_dev
+    return sys.platform == "win32"
 
 
 def cursor_hooks_dir() -> Path:
@@ -103,7 +105,7 @@ def install_windows_hook_wrappers(
 def _inline_cyt_client_command(*, use_dev: bool, dev_repo_root: Path | None) -> str:
     if use_dev and dev_repo_root is not None:
         return build_uv_run_dev_command(dev_repo_root, CYT_CLIENT_SCRIPT_REL)
-    return INSTALLED_CYT_CLIENT_COMMAND
+    return build_installed_cyt_client_command()
 
 
 def _inline_cyt_daemon_start_command(*, use_dev: bool, dev_repo_root: Path | None) -> str:
@@ -116,7 +118,7 @@ def _inline_cyt_daemon_start_command(*, use_dev: bool, dev_repo_root: Path | Non
             "start",
             "--unattended",
         )
-    return INSTALLED_CYT_DAEMON_START_COMMAND
+    return build_installed_cyt_daemon_start_command(unattended=True)
 
 
 def _cursor_hook_client_command(
@@ -175,14 +177,9 @@ def runtime_dev_repo_from_mcp() -> Path | None:
 
 
 def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> str:
-    if sys.platform == "win32":
-        # Always quote the directory: cmd.exe needs sane quoting, and downstream
-        # shlex.split must round-trip Windows paths with backslashes.
-        directory = str(repo_root).replace('"', '""')
-        tail = subprocess.list2cmdline([script_rel, *args])
-        return f'uv run --directory "{directory}" {tail}'
-    parts = ["uv", "run", "--directory", str(repo_root), script_rel, *args]
-    return shlex.join(parts)
+    from cyt_client.hook_executable import build_uv_run_dev_command as _build
+
+    return _build(repo_root, script_rel, *args)
 
 
 def is_cyt_hook_command(command: object) -> bool:

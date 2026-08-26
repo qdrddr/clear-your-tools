@@ -166,13 +166,18 @@ def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
 
     payload = json.loads(hooks_path.read_text(encoding="utf-8"))
     pre_tool_cmd = payload["hooks"]["preToolUse"][0]["command"]
-    from cyt_client.mcp_entry import _strip_env_prefix
+    from cyt_client.mcp_entry import _inner_command_from_windows_wrapper, _strip_env_prefix
 
     resolved_cmd = _strip_env_prefix(pre_tool_cmd)
     if sys.platform == "win32":
-        assert "uv run" in resolved_cmd
-        assert str(repo_root) in resolved_cmd
-        assert "src/cyt_client/cli.py" in resolved_cmd
+        assert "cyt-client-dev.cmd" in pre_tool_cmd
+        wrapper = hooks_wrapper_dir / "cyt-client-dev.cmd"
+        assert wrapper.is_file()
+        inner = _inner_command_from_windows_wrapper(str(wrapper))
+        assert inner is not None
+        assert " run --directory " in inner
+        assert str(repo_root) in inner or repo_root.as_posix() in inner
+        assert "src/cyt_client/cli.py" in inner
     else:
         assert "uv run --directory" in resolved_cmd
         assert str(repo_root) in resolved_cmd

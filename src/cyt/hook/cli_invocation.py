@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import shlex
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from cyt_client.hook_executable import (
+    build_installed_cyt_client_command,
+    build_installed_cyt_daemon_restart_command,
+    build_installed_cyt_daemon_start_command,
+    build_uv_run_dev_command,
+    is_uv_run_dev_hook_command,
+    resolve_hook_executable,
+)
 
 CYT_DAEMON_START_ARGS = ("hook", "daemon", "start", "--unattended")
 CYT_DAEMON_RESTART_ARGS = ("hook", "daemon", "restart")
@@ -43,14 +51,9 @@ class HookCliInvocation:
 
 
 def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
-    """Use ``.cmd`` wrappers only for installed (prod) hooks on Windows.
-
-    Dev mode uses inline ``uv run --directory …`` commands (same as macOS).
-    """
-    if sys.platform != "win32":
-        return False
-    invocation = invocation or detect_hook_cli_invocation()
-    return not invocation.is_dev
+    """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
+    _ = invocation
+    return sys.platform == "win32"
 
 
 def cursor_hooks_dir() -> Path:
@@ -133,17 +136,6 @@ def detect_hook_cli_invocation() -> HookCliInvocation:
     return HookCliInvocation(mode="installed", repo_root=None)
 
 
-def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> str:
-    if sys.platform == "win32":
-        # Always quote the directory: cmd.exe needs sane quoting, and downstream
-        # shlex.split must round-trip Windows paths with backslashes.
-        directory = str(repo_root).replace('"', '""')
-        tail = subprocess.list2cmdline([script_rel, *args])
-        return f'uv run --directory "{directory}" {tail}'
-    parts = ["uv", "run", "--directory", str(repo_root), script_rel, *args]
-    return shlex.join(parts)
-
-
 def _inline_cyt_client_command(*, invocation: HookCliInvocation | None = None) -> str:
     invocation = invocation or detect_hook_cli_invocation()
     if invocation.is_dev and invocation.repo_root is not None:
@@ -151,7 +143,7 @@ def _inline_cyt_client_command(*, invocation: HookCliInvocation | None = None) -
             invocation.repo_root,
             cyt_client_cli_script_relpath(),
         )
-    return INSTALLED_CYT_CLIENT_COMMAND
+    return build_installed_cyt_client_command()
 
 
 def _inline_cyt_daemon_start_command(*, invocation: HookCliInvocation | None = None) -> str:
@@ -162,7 +154,7 @@ def _inline_cyt_daemon_start_command(*, invocation: HookCliInvocation | None = N
             proxy_cli_script_relpath(),
             *CYT_DAEMON_START_ARGS,
         )
-    return INSTALLED_CYT_DAEMON_START_COMMAND
+    return build_installed_cyt_daemon_start_command(unattended=True)
 
 
 def prefix_command_env(env: dict[str, str], command: str) -> str:
@@ -269,7 +261,7 @@ def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -
             proxy_cli_script_relpath(),
             *CYT_DAEMON_RESTART_ARGS,
         )
-    return INSTALLED_CYT_DAEMON_RESTART_COMMAND
+    return build_installed_cyt_daemon_restart_command()
 
 
 def build_hook_spawn_command(
@@ -291,8 +283,10 @@ def build_hook_spawn_command(
         args_tail.extend(["--config", str(config_path)])
 
     if invocation.is_dev and invocation.repo_root is not None:
-        uv = shutil.which("uv")
-        if uv is not None:
+        uv = resolve_hook_executable("uv")
+        if uv == "uv":
+            uv = shutil.which("uv") or ""
+        if uv:
             return [
                 uv,
                 "run",
@@ -345,10 +339,4 @@ def is_dev_cyt_hook_command(command: str) -> bool:
         return normalized.casefold().endswith(WINDOWS_CLIENT_DEV_WRAPPER.casefold()) or (
             WINDOWS_DAEMON_START_DEV_WRAPPER.casefold() in normalized.casefold()
         )
-    if not normalized.startswith("uv run "):
-        return False
-    if CYT_CLIENT_CLI_SCRIPT_REL in normalized:
-        return True
-    return CYT_PROXY_CLI_SCRIPT_REL in normalized and (
-        " hook daemon start" in normalized or " hook daemon restart" in normalized
-    )
+    return is_uv_run_dev_hook_command(normalized)
