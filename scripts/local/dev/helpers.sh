@@ -692,7 +692,9 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd uv
 		cd "${CYT_REPO_ROOT}/sdk/python" || die "cd failed"
 		info "verify sdk/python"
-		cyt_run uv run python - "${CYT_REPO_ROOT}" <<'PY'
+		# pytest loads _native.pyd; uv sync would rerun maturin develop and fail
+		# to overwrite the DLL on Windows while it is still locked (os error 32).
+		cyt_run env -u VIRTUAL_ENV -u CARGO_TARGET_DIR uv run --no-sync python - "${CYT_REPO_ROOT}" <<'PY'
 import json
 import sys
 from importlib import metadata
