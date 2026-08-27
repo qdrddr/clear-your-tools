@@ -43,6 +43,7 @@ from cyt_client.rules_file import (
     reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,
     sync_cursor_rules_file,
+    workspace_path_string,
     workspace_root_from_payload,
 )
 from cyt_client.session_capture import (
@@ -168,7 +169,8 @@ def _workspace_for_cursor_hook(payload: dict) -> Path | None:
     if workspace is None:
         return None
     if not is_valid_workspace_root(workspace):
-        _verbose_log(f"cyt-client: invalid workspace root: {workspace}")
+        label = workspace_path_string(payload) or str(workspace)
+        _verbose_log(f"cyt-client: invalid workspace root: {label}")
         return None
     return workspace
 

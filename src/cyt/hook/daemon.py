@@ -42,6 +42,10 @@ from cyt.runtime_registry import (
     upsert_proxy_entry,
 )
 
+__all__ = [
+    "sys",
+]
+
 HookDaemonOutcome = Literal["reused", "spawned", "already_running"]
 
 
@@ -402,7 +406,8 @@ def daemon_start(
     if foreground:
         from cyt.config import proxy_http2_settings
         from cyt.proxy.bootstrap import prepare_runtime
-        from cyt.proxy.cli_impl import run_async_cli, run_reverse_server
+        from cyt.proxy.cli_impl import run_reverse_server
+        from cyt.proxy.transport import run_async_cli
 
         if extra_env:
             os.environ.update(extra_env)

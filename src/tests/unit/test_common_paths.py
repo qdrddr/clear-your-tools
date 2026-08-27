@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cyt.common.paths import shorten_home_path
+from tests.conftest import isolate_user_home
 
 
 def test_shorten_home_path_uses_tilde_for_home_relative_path(
@@ -16,7 +17,7 @@ def test_shorten_home_path_uses_tilde_for_home_relative_path(
 ) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+    isolate_user_home(monkeypatch, home)
     project = home / "git" / "clear-your-tools"
     project.mkdir(parents=True)
     assert shorten_home_path(str(project)) == "~/git/clear-your-tools"

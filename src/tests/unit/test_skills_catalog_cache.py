@@ -73,7 +73,7 @@ def test_build_registry_complete_and_dedup() -> None:
         assert (Path(entry.nodes_dir) / "page_index.json").is_file()
         params_hash = skills_index_params_fingerprint(config)
         assert (Path(entry.bm25_chunk_dir) / "chunk_index.json").is_file()
-        assert entry.bm25_chunk_dir.endswith(f"chunks/bm25/{params_hash}")
+        assert Path(entry.bm25_chunk_dir).as_posix().endswith(f"chunks/bm25/{params_hash}")
         doc = json.loads((Path(entry.nodes_dir) / "page_index.json").read_text())
         assert "content_sha256" not in doc
         assert "built_at" not in doc

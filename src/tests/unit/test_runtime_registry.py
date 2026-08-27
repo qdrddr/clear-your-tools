@@ -224,7 +224,10 @@ def test_hook_daemon_reuse_preserves_started_at(registry_paths: tuple[Path, Path
         reused=False,
         mode="hooks_only",
     )
-    original_started_at = runtime_registry.find_hook_daemon_entry_for_port(8834)["started_at"]
+    entry = runtime_registry.find_hook_daemon_entry_for_port(8834)
+    if entry is None:
+        pytest.fail("expected hook daemon entry for port 8834")
+    started_at = entry["started_at"]
 
     runtime_registry.upsert_hook_daemon_entry(
         port=8834,
@@ -235,5 +238,5 @@ def test_hook_daemon_reuse_preserves_started_at(registry_paths: tuple[Path, Path
     )
 
     payload = json.loads(pid_path.read_text(encoding="utf-8"))
-    assert payload[0]["started_at"] == original_started_at
+    assert payload[0]["started_at"] == started_at
     assert payload[0]["reused"] is True

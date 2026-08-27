@@ -43,7 +43,7 @@ from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from unittest.mock import patch
 
 import pytest
@@ -1195,7 +1195,7 @@ def test_llm_prune_integration(
 ) -> None:
     if not _fixtures_available():
         pytest.skip("default ~/.config/cyt fixtures are not present on this machine")
-    agent = _parse_agent(request.config.getoption("--agent"))
+    agent = _parse_agent(cast(str, request.config.getoption("--agent")))
     rule_path = request.config.getoption("--rule")
     config = _integration_config(
         mode=mode,
@@ -1264,7 +1264,7 @@ def test_llm_prune_integration_real(
     )
     if not _real_fixtures_available(config):
         pytest.skip("real-mode ~/.config/cyt caches are not present on this machine")
-    agent = _parse_agent(request.config.getoption("--agent"))
+    agent = _parse_agent(cast(str, request.config.getoption("--agent")))
     rule_path = request.config.getoption("--rule")
     if not _llm_credentials_available(config):
         pytest.skip("pruning LLM credentials are not configured")

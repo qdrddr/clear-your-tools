@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
+from cyt_client.compat import is_windows
 from cyt_client.hook_executable import (
     build_installed_cyt_client_command,
     build_installed_cyt_daemon_start_command,
@@ -46,7 +46,7 @@ _WINDOWS_HOOK_WRAPPER_NAMES = (
 def use_windows_hook_wrappers(*, use_dev: bool) -> bool:
     """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
     _ = use_dev
-    return sys.platform == "win32"
+    return is_windows()
 
 
 def cursor_hooks_dir() -> Path:
@@ -56,7 +56,7 @@ def cursor_hooks_dir() -> Path:
 def prefix_command_env(env: dict[str, str], command: str) -> str:
     if not env:
         return command
-    if sys.platform == "win32":
+    if is_windows():
         parts = [f'set "{key}={value}"' for key, value in env.items()]
         return 'cmd /c "' + "&& ".join([*parts, f'call "{command}"']) + '"'
     prefix = " ".join(f"{key}={value}" for key, value in env.items())
@@ -174,12 +174,6 @@ def runtime_dev_repo_from_mcp() -> Path | None:
     if repo is not None and (repo / CYT_MCP_SCRIPT_REL).is_file():
         return repo
     return None
-
-
-def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> str:
-    from cyt_client.hook_executable import build_uv_run_dev_command as _build
-
-    return _build(repo_root, script_rel, *args)
 
 
 def is_cyt_hook_command(command: object) -> bool:

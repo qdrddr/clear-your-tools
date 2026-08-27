@@ -65,6 +65,11 @@ from cyt.skills.search import (
     search_skills,
     search_skills_with_trace,
 )
+
+__all__ = [
+    "search_skills",
+    "search_skills_with_trace",
+]
 from cyt.skills.stats import record_skills_injection
 from cyt.skills.trace import print_skills_search_trace, trace_to_debug_details
 from cyt.skills.transcript import (

@@ -8,7 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from cyt_client.agent import CYT_LAUNCH_AGENT_ENV
+from cyt_client.agent import (
+    CLAUDE_CODE_ENTRYPOINT_ENV,
+    CLAUDE_PROJECT_DIR_ENV,
+    CLAUDECODE_ENV,
+    CODEX_HOME_ENV,
+    CURSOR_VERSION_ENV,
+    CYT_LAUNCH_AGENT_ENV,
+)
 from cyt_client.skills import (
     attach_client_skills,
     collect_client_skills,
@@ -16,6 +23,19 @@ from cyt_client.skills import (
     skill_directories_for_payload,
 )
 from cyt_client.transcript import enrich_hook_payload
+from tests.conftest import isolate_user_home
+
+
+def _clear_harness_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        CODEX_HOME_ENV,
+        CURSOR_VERSION_ENV,
+        CLAUDE_PROJECT_DIR_ENV,
+        CLAUDECODE_ENV,
+        CLAUDE_CODE_ENTRYPOINT_ENV,
+        CYT_LAUNCH_AGENT_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -80,22 +100,29 @@ def test_skill_directories_include_project_and_home_for_agent(
     home_rel: str,
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        project = Path(tmp)
+        project = Path(tmp) / "project"
+        home = Path(tmp) / "home"
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, agent)
         payload = {"cwd": str(project)}
         directories = skill_directories_for_payload(payload)
         assert (project / project_rel).resolve() in directories
-        assert Path(home_rel).expanduser().resolve() in directories
+        assert (home / home_rel.removeprefix("~/")).resolve() in {
+            path.resolve() for path in directories
+        }
 
 
 def test_skill_directories_use_only_active_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        project = Path(tmp)
+        project = Path(tmp) / "project"
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, Path(tmp) / "home")
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "cursor")
         directories = skill_directories_for_payload({"cwd": str(project)})
-        joined = {str(path) for path in directories}
+        joined = {path.as_posix() for path in directories}
         assert any(".cursor/skills" in path for path in joined)
         assert not any(".claude/skills" in path for path in joined)
         assert not any(".codex/skills" in path for path in joined)
@@ -107,7 +134,8 @@ def test_collect_client_skills_reads_project_and_home_for_cursor(
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
         project = Path(tmp) / "project"
-        monkeypatch.setenv("HOME", str(home))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "cursor")
 
         _write_skill(
@@ -131,7 +159,8 @@ def test_collect_client_skills_reads_project_and_home(
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
         project = Path(tmp) / "project"
-        monkeypatch.setenv("HOME", str(home))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
 
         _write_skill(
@@ -156,7 +185,8 @@ def test_collect_client_skills_dedupes_identical_content(
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
         project = Path(tmp) / "project"
-        monkeypatch.setenv("HOME", str(home))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
         body = "---\nname: dup\ndescription: dup\n---\n\nSame\n"
         _write_skill(project / ".codex" / "skills" / "a.md", body)
@@ -169,7 +199,8 @@ def test_attach_client_skills_sets_payload_field(monkeypatch: pytest.MonkeyPatch
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
         project = Path(tmp) / "project"
-        monkeypatch.setenv("HOME", str(home))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
         _write_skill(
             project / ".codex" / "skills" / "demo.md",
@@ -182,7 +213,8 @@ def test_attach_client_skills_sets_payload_field(monkeypatch: pytest.MonkeyPatch
 
 def test_enrich_hook_payload_always_adds_cyt_skills(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        monkeypatch.setenv("HOME", str(Path(tmp) / "home"))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, Path(tmp) / "home")
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
         payload = {
             "hook_event_name": "UserPromptSubmit",
@@ -200,7 +232,8 @@ def test_enrich_hook_payload_adds_transcript_and_skills(monkeypatch: pytest.Monk
         transcript = Path(tmp) / "session.jsonl"
         transcript.write_text('{"id": 1}\n', encoding="utf-8")
         project = Path(tmp) / "project"
-        monkeypatch.setenv("HOME", str(home))
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
         monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "codex")
         _write_skill(
             project / ".codex" / "skills" / "demo.md",

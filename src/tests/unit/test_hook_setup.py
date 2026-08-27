@@ -2253,7 +2253,9 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
     before_submit_command = merged[hook_setup.CURSOR_BEFORE_SUBMIT_EVENT][0]["command"]
     if sys.platform == "win32":
         assert before_submit_command.endswith("cyt-client-dev.cmd")
-        assert any(str(command).endswith("cyt-hook-daemon-start-dev.cmd") for command in session_commands)
+        assert any(
+            str(command).endswith("cyt-hook-daemon-start-dev.cmd") for command in session_commands
+        )
         assert any(str(command).endswith("cyt-client-dev.cmd") for command in session_commands)
         client_wrapper = Path(before_submit_command)
         assert client_wrapper.is_file()

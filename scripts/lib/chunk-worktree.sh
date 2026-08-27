@@ -399,9 +399,14 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 	chunk_link_dir() {
 		local target="$1"
 		local link="$2"
-		local target_abs target_win link_win
+		local target_abs target_win link_win marker
 
 		target_abs="$(cd "${target}" && pwd -P)"
+		marker="${target_abs}/rust/cyt-indexer/Cargo.toml"
+		if [[ -f "${marker}" && -f "${link}/rust/cyt-indexer/Cargo.toml" ]] &&
+			cmp -s "${marker}" "${link}/rust/cyt-indexer/Cargo.toml"; then
+			return 0
+		fi
 		chunk_remove_path "${link}"
 
 		case "$(uname -s 2>/dev/null || true)" in
@@ -409,6 +414,10 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 			target_win="$(chunk_msys_to_win_path "${target_abs}")"
 			link_win="$(chunk_msys_to_win_path "$(cd "$(dirname "${link}")" && pwd -P)/$(basename "${link}")")"
 			if cmd //c mklink //J "${link_win}" "${target_win}" >/dev/null 2>&1; then
+				return 0
+			fi
+			if [[ -f "${marker}" && -f "${link}/rust/cyt-indexer/Cargo.toml" ]] &&
+				cmp -s "${marker}" "${link}/rust/cyt-indexer/Cargo.toml"; then
 				return 0
 			fi
 			echo "error: failed to create junction ${link_win} -> ${target_win}" >&2
@@ -448,10 +457,16 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		fi
 		chunk_link_dir "${root}/sdk" "${ws}/sdk"
 		# Always share the repo-root lockfile. Cargo may replace a symlink with a
-		# regular file under target/; remove stale copies so metadata --locked
-		# does not read an out-of-date target/.cyt-nopatch-ws/Cargo.lock.
+		# regular file under target/; refresh on Windows where symlinks are brittle.
 		rm -f "${ws}/Cargo.lock"
-		ln -sfn "${root}/Cargo.lock" "${ws}/Cargo.lock"
+		case "$(uname -s 2>/dev/null || true)" in
+		MINGW* | MSYS* | CYGWIN*)
+			cp -f "${root}/Cargo.lock" "${ws}/Cargo.lock"
+			;;
+		*)
+			ln -sfn "${root}/Cargo.lock" "${ws}/Cargo.lock"
+			;;
+		esac
 	}
 
 	chunk_maturin_manifest_path() {
@@ -494,11 +509,23 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 	}
 
 	# Run cargo against Cargo.lock (crates.io) without worktree path patches.
+	chunk_repair_cargo_advisory_db() {
+		local db="${HOME}/.cargo/advisory-db"
+		[[ -d "${db}" ]] || return 0
+		if [[ -d "${db}/.git" ]]; then
+			return 0
+		fi
+		rm -rf "${db}"
+	}
+
 	_chunk_cargo_exec() {
 		local root="$1"
 		shift
 		local rc=0 heal_rc=0
 
+		if [[ "${1:-}" == "audit" ]]; then
+			chunk_repair_cargo_advisory_db
+		fi
 		_chunk_cargo_exec_raw "${root}" "$@" || rc=$?
 		chunk_ensure_workspace_cargo_lock "${root}" || heal_rc=$?
 

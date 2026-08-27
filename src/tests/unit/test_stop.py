@@ -151,15 +151,15 @@ def test_proxies_conflicting_with_hook_setup_detects_proxy_registry_overlap() ->
 
 def test_find_cyt_proxy_pids_parses_ps_output(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cyt.stop.os.getpid", lambda: 999)
-    ps_output = "\n".join(
-        [
-            " 111 /usr/bin/python -m cyt.proxy.cli proxy --port 8834",
-            " 112 uv run src/cyt/proxy/cli.py proxy --port 8840",
-            " 222 /usr/bin/python -m cyt.proxy.cli stats totals",
-            " 999 /usr/bin/python -m cyt.proxy.cli stop",
+    with patch(
+        "cyt.platform.process.list_process_command_lines",
+        return_value=[
+            (111, "/usr/bin/python -m cyt.proxy.cli proxy --port 8834"),
+            (112, "uv run src/cyt/proxy/cli.py proxy --port 8840"),
+            (222, "/usr/bin/python -m cyt.proxy.cli stats totals"),
+            (999, "/usr/bin/python -m cyt.proxy.cli stop"),
         ],
-    )
-    with patch("cyt.stop.subprocess.run", return_value=type("R", (), {"stdout": ps_output})()):
+    ):
         pids = cyt_stop._find_cyt_proxy_pids()
 
     assert pids == [111, 112]

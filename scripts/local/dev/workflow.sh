@@ -260,7 +260,15 @@ EOF
 		cyt_step_done "${sim_label}"
 
 		cyt_step "${sim_label}" 2 "${sim_total}" "build SDK Python (maturin + pytest)"
-		cyt_build_sdk_python
+		# Prek-loop runs pytest-sdk-python / local-dev-sdk-python before this hook.
+		# On Windows, maturin develop cannot overwrite _native.pyd while pytest still
+		# holds the DLL; step 5 (uv build) compiles Rust again for the wheel smoke test.
+		if [[ -f "${CYT_REPO_ROOT}/sdk/python/src/cyt_indexer/_native.pyd" ]] ||
+			[[ -f "${CYT_REPO_ROOT}/sdk/python/src/cyt_indexer/_native.so" ]]; then
+			SKIP_MATURIN_DEVELOP=1 cyt_build_sdk_python
+		else
+			cyt_build_sdk_python
+		fi
 		cyt_step_done "${sim_label}"
 
 		cyt_step "${sim_label}" 3 "${sim_total}" "build Rust indexer (cargo build/test + catalog smoke)"
@@ -269,6 +277,7 @@ EOF
 
 		cyt_step "${sim_label}" 4 "${sim_total}" "prepare isolated install workspace"
 		SIM_DIR="${CYT_SIM_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/cyt-local-dev.XXXXXX")}"
+		SIM_DIR="$(cd "${SIM_DIR}" && pwd -P)"
 		KEEP_SIM_DIR="${KEEP_SIM_DIR:-}"
 		trap '[[ -n "${KEEP_SIM_DIR}" ]] || rm -rf "${SIM_DIR}"' EXIT
 		mkdir -p "${SIM_DIR}/dist-sdk" "${SIM_DIR}/dist-app" "${SIM_DIR}/npm-pack"
@@ -294,18 +303,18 @@ EOF
 		cyt_step "${sim_label}" 9 "${sim_total}" "install wheels in isolated venv"
 		SIM_VENV="${SIM_DIR}/venv"
 		cyt_run uv venv "${SIM_VENV}"
-		# shellcheck disable=SC1091
-		source "${SIM_VENV}/bin/activate"
+		SIM_PY="$(cyt_venv_python "${SIM_VENV}")"
 		SDK_WHL=("${SIM_DIR}"/dist-sdk/cyt_indexer_sdk-*.whl)
 		APP_WHL=("${SIM_DIR}"/dist-app/clear_your_tools-*.whl)
 		[[ -f "${SDK_WHL[0]}" ]] || die "SDK wheel not found under ${SIM_DIR}/dist-sdk"
 		[[ -f "${APP_WHL[0]}" ]] || die "app wheel not found under ${SIM_DIR}/dist-app"
-		cyt_run uv pip install "${SDK_WHL[0]}"
-		cyt_run uv pip install "${APP_WHL[0]}[all]"
+		cyt_run uv pip install --python "${SIM_PY}" "${SDK_WHL[0]}"
+		# Avoid `path.whl[all]` on Windows: uv wrongly parses `[all]` in file URLs (C:/Users/... → C:~/...).
+		cyt_run uv pip install --python "${SIM_PY}" "${APP_WHL[0]}"
 		cyt_step_done "${sim_label}"
 
 		cyt_step "${sim_label}" 10 "${sim_total}" "smoke imports"
-		cyt_run python - <<'PY'
+		cyt_run "${SIM_PY}" - <<'PY'
 from importlib import metadata
 
 from cyt_indexer._native import build_catalog_index as native_build
@@ -321,7 +330,6 @@ print("  cyt version:", getattr(cyt, "__version__", "?"))
 print("  cyt-indexer-sdk:", metadata.version("cyt-indexer-sdk"))
 PY
 
-		deactivate 2>/dev/null || true
 		cyt_step_done "${sim_label}"
 
 		if [[ -z "${CYT_LOCAL_DEV_SHORT:-}" ]]; then

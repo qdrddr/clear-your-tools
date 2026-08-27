@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt_client.agent import infer_harness_agent
+from cyt_client.paths import expand_home_path
 from cyt_client.rules_file import is_valid_workspace_root, workspace_root_from_payload
 from cyt_client.skills import _payload_cwd
 
@@ -26,7 +27,7 @@ _AGENT_SESSION_DIRS: dict[str, tuple[str, str]] = {
     "cursor": (".cursor/cyt/sessions", "~/.cursor/cyt/sessions"),
 }
 
-_CONFIG_SESSIONS_DIR = Path("~/.config/cyt/sessions").expanduser()
+_CONFIG_SESSIONS_DIR = expand_home_path("~/.config/cyt/sessions")
 _META_TYPE = "meta"
 _SESSION_ID_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _DEFAULT_MAX_AGE_SECONDS = 86400
@@ -60,7 +61,7 @@ def sessions_dir_for_agent(agent: str) -> Path:
     if agent not in _AGENT_SESSION_DIRS:
         return _CONFIG_SESSIONS_DIR
     _project_rel, home_rel = _AGENT_SESSION_DIRS[agent]
-    return Path(home_rel).expanduser()
+    return expand_home_path(home_rel)
 
 
 def index_of_latest_compaction(entries: list[dict[str, Any]]) -> int | None:
@@ -113,7 +114,7 @@ def sessions_dir_for_payload(payload: dict[str, Any]) -> Path:
 
     if agent is not None:
         _project_rel, home_rel = _AGENT_SESSION_DIRS[agent]
-        return Path(home_rel).expanduser()
+        return expand_home_path(home_rel)
 
     return _CONFIG_SESSIONS_DIR
 

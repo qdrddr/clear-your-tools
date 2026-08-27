@@ -40,8 +40,8 @@
     "build:js": "tsc",
     "build:native": "bash ../../scripts/local/dev/napi-build.sh",
     "test": "npm run build && npm run test:unit && npm run test:parity",
-    "test:parity": "node --test 'dist/test/parity/**/*.test.js'",
-    "test:unit": "node --test 'dist/test/unit/**/*.test.js'"
+    "test:parity": "bash scripts/run-node-tests.sh parity",
+    "test:unit": "bash scripts/run-node-tests.sh unit"
   },
   "devDependencies": {
     "@napi-rs/cli": "3.7.0",

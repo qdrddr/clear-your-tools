@@ -565,7 +565,7 @@ def test_bm25_index_dir_reads_canonical_path() -> None:
         },
         "models": {"bm25": {"index_dir": "/tmp/models-bm25", "mmap": False}},
     }
-    assert str(configs.bm25_index_dir(config)) == "/tmp/pruning-bm25"
+    assert configs.bm25_index_dir(config).as_posix() == "/tmp/pruning-bm25"
     assert configs.bm25_mmap_enabled(config) is False
 
 

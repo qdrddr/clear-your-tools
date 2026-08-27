@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt_client.agent import infer_harness_agent
+from cyt_client.paths import expand_home_path
 from cyt_client.rules_file import is_valid_workspace_root, workspace_root_from_payload
 from cyt_client.skills import _payload_cwd
 
@@ -62,7 +63,7 @@ def skip_hook_paths_for_payload(payload: dict[str, Any] | None) -> list[Path]:
 
     if agent is not None:
         _project_rel, home_rel = _AGENT_CYT_DIRS[agent]
-        paths.append(Path(home_rel).expanduser() / SKIP_FILENAME)
+        paths.append(expand_home_path(home_rel) / SKIP_FILENAME)
 
     return paths
 

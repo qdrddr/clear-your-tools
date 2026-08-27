@@ -56,6 +56,7 @@ LLM_STAGE_MAX_ATTEMPTS = 3
 
 __all__ = [
     "LLM_STAGE_MAX_ATTEMPTS",
+    "PruneResult",
     "filter_tools_for_query",
     "merge_api_tool_onto_original",
 ]

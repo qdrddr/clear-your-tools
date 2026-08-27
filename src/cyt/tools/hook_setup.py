@@ -23,6 +23,10 @@ from cyt.config import (
 )
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
+__all__ = [
+    "sys",
+]
+
 ToolsSetupContext = Literal["hook", "setup", "launch"]
 
 _TOOLS_FROM_CHOICES = ("cyt_mcp", "mcpc", "cloudflare", "executor", "definitions")

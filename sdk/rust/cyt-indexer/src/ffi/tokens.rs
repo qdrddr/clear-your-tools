@@ -26,7 +26,7 @@ pub unsafe extern "C" fn cyt_count_tokens(text: *const c_char) -> c_long {
                 set_error("token count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|n| n as c_long)
+            .map(|n| i32::try_from(n).unwrap_or(c_long::MAX) as c_long)
     })
     .unwrap_or(-1)
 }
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn cyt_count_json_tokens(json: *const c_char) -> c_long {
                 set_error("token count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|n| n as c_long)
+            .map(|n| i32::try_from(n).unwrap_or(c_long::MAX) as c_long)
     })
     .unwrap_or(-1)
 }

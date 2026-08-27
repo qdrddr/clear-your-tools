@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cyt_client.compat import is_windows
+
 CYT_CLIENT_SCRIPT_REL = "src/cyt_client/cli.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 
@@ -22,7 +24,7 @@ def resolve_hook_executable(name: str) -> str:
     found = shutil.which(stripped)
     if found:
         return str(Path(found).resolve())
-    if sys.platform == "win32":
+    if is_windows():
         home = Path.home()
         local_app = os.environ.get("LOCALAPPDATA", "")
         candidates = (
@@ -42,7 +44,7 @@ def quote_for_cmd_exe(token: str) -> str:
         return token
     if " " in token or "\t" in token:
         return f'"{token.replace(chr(34), chr(34) * 2)}"'
-    if sys.platform == "win32" and (len(token) > 1 and token[1] == ":" or token.startswith("\\")):
+    if is_windows() and ((len(token) > 1 and token[1] == ":") or token.startswith("\\")):
         return f'"{token.replace(chr(34), chr(34) * 2)}"'
     return token
 
@@ -50,10 +52,10 @@ def quote_for_cmd_exe(token: str) -> str:
 def build_uv_run_dev_command(repo_root: Path, script_rel: str, *args: str) -> str:
     """Build a dev ``uv run --directory …`` hook command with an absolute ``uv`` path on Windows."""
     uv = quote_for_cmd_exe(resolve_hook_executable("uv"))
-    if sys.platform == "win32":
+    if is_windows():
         directory = str(repo_root).replace('"', '""')
         tail = subprocess.list2cmdline([script_rel, *args])
-        return f"{uv} run --directory \"{directory}\" {tail}"
+        return f'{uv} run --directory "{directory}" {tail}'
     parts = [uv, "run", "--directory", str(repo_root), script_rel, *args]
     return shlex.join(parts)
 

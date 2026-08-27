@@ -9,7 +9,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from cyt import __version__
 from cyt.config import (
@@ -732,12 +732,15 @@ def _hook_invokes_handler(args: argparse.Namespace) -> bool:
 
 
 def _hook_agents_for_command(hook_cmd: str) -> list[HookAgentName] | None:
-    from cyt.hook.setup_wizard import HookAgentName as AgentName
 
     if hook_cmd == "all":
         return None
-    if hook_cmd in ("cursor", "claude", "codex"):
-        return [cast(AgentName, hook_cmd)]
+    if hook_cmd == "cursor":
+        return ["cursor"]
+    if hook_cmd == "claude":
+        return ["claude"]
+    if hook_cmd == "codex":
+        return ["codex"]
     raise SystemExit(
         "usage: cyt hook {all,cursor,claude,codex,daemon} ... "
         "(or cyt hook [--uninstall] | cyt hook <agent> --uninstall | --prompt TEXT | --test)",

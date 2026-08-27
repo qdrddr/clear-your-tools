@@ -41,6 +41,10 @@ from cyt.pruners.remote import (
     request_pruner_settings,
     resolve_remote_pruning_settings,
 )
+
+__all__ = [
+    "LlmPruningSettings",
+]
 from cyt.pruners.selector_xml import (
     SELECTOR_SOFT_BUDGET_MIN,
     SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,

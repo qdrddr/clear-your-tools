@@ -242,6 +242,47 @@ def _chunk_variants_for_startup(pipeline: str) -> list[str]:
     return variants
 
 
+def _normalize_document_path(document: dict[str, Any]) -> dict[str, Any]:
+    path = document.get("path")
+    if not isinstance(path, str):
+        return document
+    canonical = shorten_home_path(path)
+    if canonical == path:
+        return document
+    return {**document, "path": canonical}
+
+
+def _persist_metadata_source_path(entry_dir: Path, source_path: str) -> None:
+    metadata_path = _metadata_path(entry_dir)
+    if not metadata_path.is_file():
+        return
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(metadata, dict):
+        return
+    canonical = shorten_home_path(source_path)
+    if metadata.get("source_path") == canonical:
+        return
+    metadata["source_path"] = canonical
+    metadata_path.write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _persist_document_path(entry_dir: Path, document: dict[str, Any]) -> dict[str, Any]:
+    document = _normalize_document_path(document)
+    page_index_path = _nodes_dir(entry_dir) / "page_index.json"
+    if page_index_path.is_file():
+        page_index_path.write_text(
+            json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    return document
+
+
 def _load_document_json(
     entry_dir: Path,
     doc_id: str,
@@ -255,7 +296,7 @@ def _load_document_json(
     )
     if not isinstance(document, dict):
         raise ValueError(f"invalid page_index.json for {doc_id}")
-    return document
+    return _normalize_document_path(document)
 
 
 def _document_from_ref_or_disk(
@@ -319,13 +360,15 @@ def _ensure_entry_metadata(
         source_path=source_path,
     ):
         return _load_document_json(entry_dir, doc_id)
-    return finalize_skill_document_json(
+    document = finalize_skill_document_json(
         str(entry_dir),
         doc_id,
         pipeline=pipeline,
         index_params=index_params,
         source_path=source_path,
     )
+    _persist_metadata_source_path(entry_dir, source_path)
+    return _persist_document_path(entry_dir, document)
 
 
 def _build_page_index_memory(
@@ -489,6 +532,7 @@ def _entry_from_rust_ref(
             doc_id,
             str(source_path),
         )
+    document = _persist_document_path(entry_dir, document)
 
     return SkillEntryRef(
         source_path=str(source_path),
@@ -497,8 +541,8 @@ def _entry_from_rust_ref(
         cache_key=content_hash,
         entry_dir=str(entry_dir),
         nodes_dir=str(nodes_dir),
-        chunk_dir=str(chunk_dir),
-        bm25_chunk_dir=str(bm25_chunk_dir),
+        chunk_dir=str(chunk_dir.as_posix()),
+        bm25_chunk_dir=str(bm25_chunk_dir.as_posix()),
         pipeline=pipeline,
         index_params_hash=index_params_hash,
         disk_backed=disk_backed,

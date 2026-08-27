@@ -19,6 +19,7 @@ from cyt_client.cli import _handle_non_cursor_hook, _handle_pre_compact
 from cyt_client.rules_file import read_cursor_rules_injection
 from cyt_client.sessions import read_session_log_file, sessions_dir_for_agent
 from cyt_client.transcript import enrich_hook_payload
+from tests.conftest import isolate_user_home
 from tests.unit.gherkin.conftest import GherkinContext
 
 FEATURES = Path(__file__).resolve().parent / "features" / "pre_exposure_compaction.feature"
@@ -33,7 +34,13 @@ def given_agent(agent: str, gherkin_context: GherkinContext) -> None:
 
 
 @given("a preCompact hook payload with session id compact-sess")
-def given_precompact_payload(gherkin_context: GherkinContext) -> None:
+def given_precompact_payload(
+    gherkin_context: GherkinContext,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolate_user_home(monkeypatch, tmp_path)
+    gherkin_context.tmp_path = tmp_path
     gherkin_context.payload = {
         "hook_event_name": "preCompact",
         "session_id": "compact-sess",
@@ -54,7 +61,7 @@ def given_inject_via_proxy(
         "pruning:\n  inject_via:\n    claude: proxy\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
     gherkin_context.config["inject_via_proxy"] = True
 
@@ -74,7 +81,7 @@ def then_compaction_entry(gherkin_context: GherkinContext, tmp_path: Path) -> No
 @then("session log path should be under agent home")
 def then_agent_home_path(gherkin_context: GherkinContext, tmp_path: Path) -> None:
     log_path = sessions_dir_for_agent("claude") / "compact-sess.jsonl"
-    assert str(log_path).startswith(str(tmp_path / ".claude"))
+    assert Path(log_path).as_posix().startswith((tmp_path / ".claude").as_posix())
 
 
 @given("a Cursor workspace with injected rules file content")
@@ -106,7 +113,7 @@ def then_rules_placeholder(tmp_path: Path, gherkin_context: GherkinContext) -> N
 
 @given("a session log with pre and post compaction tool entries")
 def given_pre_post_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     log_path = tmp_path / ".cursor" / "cyt" / "sessions" / "slice-sess.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -124,7 +131,7 @@ def when_enrich_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     payload = {
         "hook_event_name": "UserPromptSubmit",
         "session_id": "slice-sess",
@@ -342,7 +349,7 @@ def given_proxy_persist_entries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     gherkin_context.payload = {
         "entries": [
             {"kind": "tool", "key": "tool:demo", "hash": "abc", "name": "demo"},
@@ -370,7 +377,7 @@ def when_proxy_persist(gherkin_context: GherkinContext) -> None:
 
 @then("session log should contain persisted tool and catalog lines")
 def then_proxy_persisted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     log_path = sessions_dir_for_agent("claude") / "proxy-sess.jsonl"
     _agent, entries = read_session_log_file(log_path)
     kinds = {entry.get("kind") for entry in entries}
@@ -400,7 +407,7 @@ def when_non_cursor_inject(
         "pruning:\n  inject_via:\n    claude: proxy\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
     with (
         patch("cyt_client.cli.inject_via_for_agent", return_value="proxy"),
@@ -431,7 +438,7 @@ def then_no_daemon(gherkin_context: GherkinContext) -> None:
 
 @given("a session log with pre and post compaction catalog hashes")
 def given_pre_post_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     log_path = sessions_dir_for_agent("claude") / "hash-sess.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -467,7 +474,7 @@ def when_read_hashes(
 ) -> None:
     from cyt_client.sessions import read_tool_catalog_hashes
 
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     log_path = sessions_dir_for_agent("claude") / "hash-sess.jsonl"
     gherkin_context.payload["hashes"] = read_tool_catalog_hashes(log_path)
 

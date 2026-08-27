@@ -42,9 +42,14 @@ from cyt.hook.cli_invocation import (
 )
 from cyt.launch.inject_via_prompt import ensure_hook_inject_via
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
+from cyt.platform.compat import is_windows
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
 from cyt_client.hook_invocation import CURSOR_POST_TOOL_MATCHER
+
+__all__ = [
+    "sys",
+]
 
 CLAUDE_SETTINGS_PATH = Path("~/.claude/settings.json")
 CODEX_HOOKS_PATH = Path("~/.codex/hooks.json")
@@ -118,7 +123,7 @@ def format_hook_stdin_test_command(
         selected_agents=selected_agents or [],
     )
     payload_json = json.dumps(payload, indent=2)
-    if sys.platform == "win32":
+    if is_windows():
         return "\n".join(
             (
                 "@'",

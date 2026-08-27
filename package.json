@@ -1,9 +1,9 @@
 {
   "devDependencies": {
-    "fallow": "^2.104.0",
+    "fallow": "2.104.0",
     "typescript": "6.0.3"
   },
   "allowScripts": {
-    "fallow@2.66.0": true
+    "fallow@2.104.0": true
   }
 }

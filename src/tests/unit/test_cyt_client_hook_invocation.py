@@ -46,7 +46,6 @@ def test_cursor_pairing_hooks_dev_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
 
-
     hooks_dir = tmp_path / "hooks"
     monkeypatch.setattr(
         "cyt_client.hook_invocation.cursor_hooks_dir",

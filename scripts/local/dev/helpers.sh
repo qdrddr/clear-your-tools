@@ -21,9 +21,28 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 	fi
 	export PATH="${CYT_VENV_BIN}:${PATH}"
 
-	die() {
-		echo "error: $*" >&2
-		exit 1
+	cyt_source_venv() {
+		local venv_root="$1"
+		if [[ -f "${venv_root}/Scripts/activate" ]]; then
+			# shellcheck disable=SC1091
+			source "${venv_root}/Scripts/activate"
+		elif [[ -f "${venv_root}/bin/activate" ]]; then
+			# shellcheck disable=SC1091
+			source "${venv_root}/bin/activate"
+		else
+			die "venv activate script not found under ${venv_root}"
+		fi
+	}
+
+	cyt_venv_python() {
+		local venv_root="$1"
+		if [[ -x "${venv_root}/Scripts/python.exe" ]]; then
+			printf '%s\n' "${venv_root}/Scripts/python.exe"
+		elif [[ -x "${venv_root}/bin/python" ]]; then
+			printf '%s\n' "${venv_root}/bin/python"
+		else
+			die "python not found under ${venv_root}"
+		fi
 	}
 
 	info() {
@@ -209,6 +228,37 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 			fi
 		done
 		die "missing required command: make or gmake"
+	}
+
+	cyt_cmake_generator_args() {
+		local triplet="${1:?triplet required}"
+		local generator make_prog cache
+		local -a extra=()
+
+		if command -v ninja >/dev/null 2>&1; then
+			generator=Ninja
+			make_prog="$(command -v ninja)"
+		else
+			generator="Unix Makefiles"
+			make_prog="$(cyt_cmake_make_program)"
+		fi
+
+		# Rust pc-windows-msvc artifacts ship MSVC import libs; link examples with cl, not LLVM clang.
+		if [[ "${triplet}" == *-pc-windows-msvc ]] && command -v cl >/dev/null 2>&1; then
+			extra+=(-DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl)
+		fi
+
+		cache="${CYT_REPO_ROOT}/sdk/c/build/CMakeCache.txt"
+		if [[ -f "${cache}" ]]; then
+			if ! grep -Fq "CMAKE_GENERATOR:INTERNAL=${generator}" "${cache}" 2>/dev/null; then
+				rm -rf "${CYT_REPO_ROOT}/sdk/c/build"
+			elif ((${#extra[@]})) &&
+				! grep -Fq "CMAKE_C_COMPILER:STRING=cl" "${cache}" 2>/dev/null; then
+				rm -rf "${CYT_REPO_ROOT}/sdk/c/build"
+			fi
+		fi
+
+		printf '%s\n' "-G" "${generator}" "-DCMAKE_MAKE_PROGRAM=${make_prog}" "${extra[@]}"
 	}
 
 	cyt_npm() {
@@ -563,16 +613,16 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		require_cmd ctest
 		require_cmd rustc
 		cd "${CYT_REPO_ROOT}" || die "cd failed"
-		local triplet make_prog
+		local triplet
+		mapfile -t cmake_generator_args < <(cyt_cmake_generator_args "${triplet}")
 		triplet="$(rustc -vV | sed -n 's/^host: //p')"
-		make_prog="$(cyt_cmake_make_program)"
 		info "build C FFI (sdk/c, ${triplet})"
 		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --target "${triplet}" --no-sync-header
 		info "cmake configure + build"
 		cyt_run env -u CARGO_TARGET_DIR cmake -S sdk/c -B sdk/c/build \
+			"${cmake_generator_args[@]}" \
 			-DCMAKE_BUILD_TYPE=Release \
-			-DCYT_RUST_TARGET="${triplet}" \
-			-DCMAKE_MAKE_PROGRAM="${make_prog}"
+			-DCYT_RUST_TARGET="${triplet}"
 		cyt_run env -u CARGO_TARGET_DIR cmake --build sdk/c/build
 		info "ctest sdk/c"
 		cyt_run env -u CARGO_TARGET_DIR ctest --test-dir sdk/c/build --output-on-failure
@@ -586,11 +636,46 @@ if [[ -z "${CYT_LOCAL_DEV_LIB_SOURCED:-}" ]]; then
 		cyt_run env -u CARGO_TARGET_DIR bash sdk/c/scripts/build-c-lib.sh --no-sync-header
 		cd "${CYT_REPO_ROOT}/sdk/go" || die "cd failed"
 		export CGO_ENABLED=1
-		local host_triplet
+		local host_triplet ensure_args=()
 		host_triplet="$(rustc -vV | sed -n 's/^host: //p')"
 		export PATH="${CYT_REPO_ROOT}/target/${host_triplet}/release:${PATH}"
+		if [[ -d "${HOME}/tools/llvm-mingw/bin" ]]; then
+			export PATH="${HOME}/tools/llvm-mingw/bin:${PATH}"
+		fi
+		case "$(uname -s 2>/dev/null || echo unknown)" in
+		MINGW* | MSYS* | CYGWIN*)
+			local mingw_prefix=""
+			case "${host_triplet}" in
+			aarch64-pc-windows-msvc)
+				export CC=aarch64-w64-mingw32-gcc
+				export CXX=aarch64-w64-mingw32-g++
+				mingw_prefix=aarch64-w64-mingw32
+				;;
+			x86_64-pc-windows-msvc)
+				export CC=x86_64-w64-mingw32-gcc
+				export CXX=x86_64-w64-mingw32-g++
+				mingw_prefix=x86_64-w64-mingw32
+				;;
+			esac
+			if [[ -n "${mingw_prefix}" && -d "${HOME}/tools/llvm-mingw/${mingw_prefix}/lib" ]]; then
+				export CGO_LDFLAGS="${CGO_LDFLAGS:-} -L${HOME}/tools/llvm-mingw/${mingw_prefix}/lib"
+				export LIBRARY_PATH="${HOME}/tools/llvm-mingw/${mingw_prefix}/lib${LIBRARY_PATH:+:${LIBRARY_PATH}}"
+			fi
+			;;
+		esac
+		case "${host_triplet}" in
+		*-pc-windows-msvc)
+			info "prepare Windows Go CGO import library"
+			cyt_run bash scripts/prepare-windows-cgo.sh \
+				"${CYT_REPO_ROOT}/target/${host_triplet}/release" \
+				"${CYT_REPO_ROOT}/sdk/go/native/${host_triplet}"
+			;;
+		*)
+			ensure_args=(-static-only)
+			;;
+		esac
 		info "go native ensure"
-		cyt_run go run ./cmd/cyt-native-ensure -static-only
+		cyt_run go run ./cmd/cyt-native-ensure "${ensure_args[@]}"
 		info "go test ./..."
 		cyt_run env -u CARGO_TARGET_DIR go test ./...
 	}

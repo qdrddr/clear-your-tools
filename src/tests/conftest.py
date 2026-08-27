@@ -3,10 +3,32 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+if os.name == "nt":
+    _temporary_directory = tempfile.TemporaryDirectory
+
+    def _windows_temporary_directory(
+        suffix: str | None = None,
+        prefix: str | None = None,
+        dir: str | os.PathLike[str] | None = None,  # noqa: A002
+        *,
+        ignore_cleanup_errors: bool = False,
+        delete: bool = True,
+    ) -> tempfile.TemporaryDirectory[str]:
+        return _temporary_directory(
+            suffix=suffix,
+            prefix=prefix,
+            dir=dir,
+            ignore_cleanup_errors=True,
+            delete=delete,
+        )
+
+    tempfile.TemporaryDirectory = _windows_temporary_directory  # type: ignore[misc,assignment]  # ty: ignore[invalid-assignment]
 
 from tests.support.credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
 
@@ -35,7 +57,20 @@ _SKIP_TXT_TEST_MARKERS = (
     "run_server_skips_pairing_when_skip",
 )
 
-_REPO_SKIP_TXT = Path(__file__).resolve().parents[2] / ".cursor" / "cyt" / "skip.txt"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_SKIP_TXT = _REPO_ROOT / ".cursor" / "cyt" / "skip.txt"
+
+
+def isolate_user_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    """Point HOME and USERPROFILE at the same directory (Windows + Unix)."""
+    home_str = str(home)
+    monkeypatch.setenv("HOME", home_str)
+    monkeypatch.setenv("USERPROFILE", home_str)
+
+
+def temporary_test_directory() -> tempfile.TemporaryDirectory[str]:  # pyright: ignore[reportGeneralTypeIssues]
+    """Windows-safe temp dir when tests leave brief indexer/catalog handles open."""
+    return tempfile.TemporaryDirectory(ignore_cleanup_errors=os.name == "nt")
 
 
 def _test_exercises_skip_txt(test_name: str) -> bool:
@@ -76,7 +111,7 @@ def _isolate_cyt_client_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def isolated_resolve_config_path() -> Path:
         cwd_config = Path.cwd() / cyt_client_config.CWD_CONFIG_NAME
-        if cwd_config.exists():
+        if cwd_config.exists() and Path.cwd().resolve() != _REPO_ROOT.resolve():
             return cwd_config
         return cyt_client_config.USER_CONFIG_PATH.expanduser().with_name(
             ".cyt-client-test-no-user-config.yaml",

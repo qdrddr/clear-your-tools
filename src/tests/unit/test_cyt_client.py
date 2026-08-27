@@ -583,7 +583,10 @@ def test_build_rules_mdc_includes_always_apply() -> None:
     assert "<agent-skills>demo</agent-skills>" in text
 
 
-def test_cursor_rules_file_enabled_from_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cursor_rules_file_enabled_from_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     from cyt_client.config import skills_hook_cursor_rule_file_enabled
     from cyt_client.rules_file import cursor_rules_file_enabled, sync_cursor_rules_file
 
@@ -591,33 +594,36 @@ def test_cursor_rules_file_enabled_from_config(monkeypatch: pytest.MonkeyPatch) 
     assert skills_hook_cursor_rule_file_enabled() is True
     assert cursor_rules_file_enabled() is True
 
-    with tempfile.TemporaryDirectory() as tmp:
-        config_path = Path(tmp) / "config.yaml"
-        config_path.write_text(
-            "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
-            encoding="utf-8",
-        )
-        monkeypatch.chdir(tmp)
-        assert skills_hook_cursor_rule_file_enabled() is False
-        assert cursor_rules_file_enabled() is False
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    config_path = workspace / "config.yaml"
+    config_path.write_text(
+        "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+    assert skills_hook_cursor_rule_file_enabled() is False
+    assert cursor_rules_file_enabled() is False
 
-        workspace = Path(tmp) / "repo"
-        workspace.mkdir()
-        assert sync_cursor_rules_file(workspace, "<agent-tools>demo</agent-tools>") is False
+    assert sync_cursor_rules_file(workspace, "<agent-tools>demo</agent-tools>") is False
 
 
-def test_cursor_rules_file_env_overrides_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cursor_rules_file_env_overrides_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     from cyt_client.rules_file import cursor_rules_file_enabled
 
-    with tempfile.TemporaryDirectory() as tmp:
-        config_path = Path(tmp) / "config.yaml"
-        config_path.write_text(
-            "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
-            encoding="utf-8",
-        )
-        monkeypatch.chdir(tmp)
-        monkeypatch.setenv("CYT_CURSOR_RULES_FILE", "1")
-        assert cursor_rules_file_enabled() is True
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    config_path = workspace / "config.yaml"
+    config_path.write_text(
+        "skills:\n  hook:\n    cursor_rule_file:\n      enabled: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+    monkeypatch.setenv("CYT_CURSOR_RULES_FILE", "1")
+    assert cursor_rules_file_enabled() is True
 
 
 def test_sync_cursor_rules_file_skips_unchanged_content() -> None:

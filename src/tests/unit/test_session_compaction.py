@@ -13,6 +13,7 @@ from cyt_client.session_compaction import (
     persist_compaction_to_session_log,
 )
 from cyt_client.sessions import read_session_log_file
+from tests.conftest import isolate_user_home
 
 
 def test_is_pre_compact_event() -> None:
@@ -24,7 +25,7 @@ def test_build_compaction_entry_marks_first_compaction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     payload = {
         "hook_event_name": "preCompact",
         "session_id": "sess-1",
@@ -43,7 +44,7 @@ def test_persist_compaction_from_pre_compact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     (tmp_path / ".claude" / "cyt" / "sessions").mkdir(parents=True)
     payload = {
         "hook_event_name": "preCompact",
@@ -63,7 +64,7 @@ def test_idempotent_pre_compact_compaction_appends(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    isolate_user_home(monkeypatch, tmp_path)
     payload = {
         "hook_event_name": "preCompact",
         "session_id": "sess-2",

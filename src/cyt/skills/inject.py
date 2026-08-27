@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import yaml
 
 from cyt.common.paths import shorten_home_path
@@ -70,11 +72,20 @@ def _skill_has_injection_body(match: MatchedSkill) -> bool:
     return bool(injection_markdown_body(match.markdown).strip())
 
 
+def _display_skill_path(file_path: str) -> str:
+    text = file_path.strip()
+    if not text:
+        return text
+    if text.startswith("~/") or (len(text) >= 2 and text[1] == ":") or Path(text).is_absolute():
+        return Path(shorten_home_path(text)).as_posix()
+    return text.replace("\\", "/")
+
+
 def format_skill_item(match: MatchedSkill, *, full: bool = False) -> str:
     """Format a single ``<skill>…</skill>`` block (no ``<agent-skills>`` wrapper)."""
     from cyt.tools.inject import _xml_single_quoted_attr
 
-    path = shorten_home_path(match.file_path)
+    path = _display_skill_path(match.file_path)
     if full:
         body = match.markdown.rstrip()
     else:

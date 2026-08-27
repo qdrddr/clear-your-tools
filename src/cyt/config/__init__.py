@@ -1191,8 +1191,10 @@ def _any_agent_uses_hook_tools(config: dict[str, Any]) -> bool:
 def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInjectVia:
     """Per-agent injection path (hook or proxy). Cursor defaults to hook."""
     mode = _inject_via_map(config).get(agent)
-    if mode in {"hook", "proxy"}:
-        return cast(ToolsInjectVia, mode)
+    if mode == "hook":
+        return "hook"
+    if mode == "proxy":
+        return "proxy"
     if agent == "cursor":
         return "hook"
     return "proxy"

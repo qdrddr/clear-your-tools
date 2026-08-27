@@ -130,6 +130,7 @@ __all__ = [
     "root_chunk_properties_empty",
     "root_tool_id_from_chunk",
     "scoring_policy",
+    "scoring_policy_context",
     "scoring_policy_context_from_config",
     "split_anthropic_tools",
     "stash_mcp_tools",

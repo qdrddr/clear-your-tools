@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -61,7 +62,7 @@ def given_pruning_mode(
     request: pytest.FixtureRequest,
 ) -> None:
     scenario_mode = _parse_scenario_mode(mode)
-    agent = _parse_agent(request.config.getoption("--agent"))
+    agent = _parse_agent(cast(str, request.config.getoption("--agent")))
     gherkin_context.mode = scenario_mode
     gherkin_context.agent = agent
     gherkin_context.rule_path = request.config.getoption("--rule")

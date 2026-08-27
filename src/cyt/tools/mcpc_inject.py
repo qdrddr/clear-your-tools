@@ -7,6 +7,10 @@ from collections import OrderedDict
 from typing import Any, cast
 
 from cyt.injection.mcpc_pre_exposed import McpcPreExposureFlags, compute_mcpc_pre_exposure_flags
+
+__all__ = [
+    "compute_mcpc_pre_exposure_flags",
+]
 from cyt.tools.inject import _xml_single_quoted_attr, ensure_agent_tools_starts_on_new_line
 from cyt.tools.serialize import minimize_json_single_quotes
 

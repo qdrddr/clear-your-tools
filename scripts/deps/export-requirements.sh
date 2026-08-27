@@ -92,7 +92,21 @@ export_requirements() {
 	write_requirements_file "${prod_out}" "production (FOSSA release gate)" "${prod_tmp}"
 	write_requirements_file "${dev_out}" "dev/CI (not shipped)" "${dev_tmp}"
 	write_fossa_deps "${prod_out}" "$(dirname "${prod_out}")/fossa-deps.yml"
+	normalize_text_file_lf "$(dirname "${prod_out}")/fossa-deps.yml"
 	rm -f "${prod_tmp}" "${dev_tmp}"
+}
+
+normalize_text_file_lf() {
+	local file="$1"
+	[[ -f "${file}" ]] || return 0
+	python - "${file}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+path.write_text(text.replace("\r\n", "\n").replace("\r", "\n"), encoding="utf-8", newline="\n")
+PY
 }
 
 # Drop uv's default header (embeds machine-specific --output-file paths) and normalize

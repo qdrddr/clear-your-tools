@@ -23,11 +23,24 @@ from tests.support.credential_helpers import (
 )
 
 
+def _temporary_test_dir() -> tempfile.TemporaryDirectory[str]:
+    """Windows-safe temp dir (BM25/pageindex may hold handles briefly on teardown)."""
+    return tempfile.TemporaryDirectory(ignore_cleanup_errors=os.name == "nt")
+
+
 @pytest.fixture(autouse=True)
 def _reset_credential_caches() -> Generator[None]:
     clear_keyring_cache()
     yield
     clear_keyring_cache()
+
+
+@pytest.fixture(autouse=True)
+def _release_skills_catalog_cache() -> Generator[None]:
+    yield
+    from cyt.skills.catalog import clear_registry_cache
+
+    clear_registry_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -91,7 +104,7 @@ def test_anthropic_user_prompt_resolves_model_from_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Claude Code: UserPromptSubmit has no model; transcript_path supplies it."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -141,7 +154,7 @@ def test_anthropic_user_prompt_resolves_model_from_transcript(
 
 
 def test_nested_payload_user_prompt_submit(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -175,7 +188,7 @@ def test_nested_payload_user_prompt_submit(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_session_start_is_ignored_without_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         payload = {
             "hook_event_name": "SessionStart",
@@ -211,7 +224,7 @@ def test_session_start_is_ignored_without_output(monkeypatch: pytest.MonkeyPatch
 
 
 def test_user_prompt_emits_json_hook_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -246,7 +259,7 @@ def test_user_prompt_emits_json_hook_output(monkeypatch: pytest.MonkeyPatch) -> 
 def test_codex_user_prompt_uses_payload_model_without_session_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -297,7 +310,7 @@ def test_codex_user_prompt_uses_payload_model_without_session_start(
 
 
 def test_cli_prompt_prints_injection_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -326,7 +339,7 @@ def test_cli_prompt_reports_configured_and_executed_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -357,7 +370,7 @@ def test_cli_prompt_reports_frontmatter_and_chunk_scores(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -387,7 +400,7 @@ def test_cli_prompt_debug_prints_blocked_gate_and_final_injection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -421,7 +434,7 @@ def test_cli_prompt_debug_prints_frontmatter_token_contributions(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -451,7 +464,7 @@ def test_cli_prompt_debug_prints_frontmatter_token_contributions(
 
 
 def test_debug_logs_stdin_when_skills_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         payload = {
             "hook_event_name": "SessionStart",
@@ -488,7 +501,7 @@ def test_hook_stdin_debug_writes_db_without_terminal_logs(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -539,7 +552,7 @@ def test_hook_stdin_debug_writes_db_without_terminal_logs(
 def test_cli_prompt_runs_when_skills_disabled_in_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -584,7 +597,7 @@ def test_user_prompt_uses_transcript_query_before_search_skills(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Hook enriches search query with last assistant turn from transcript_path."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -652,7 +665,7 @@ def test_user_prompt_uses_transcript_query_for_all_pipelines(
     pipeline: str,
 ) -> None:
     """Hook passes transcript-enriched query to search_skills for every pipeline."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -744,7 +757,7 @@ def test_hook_stdout_is_pure_json_when_search_prints_to_stdout(
     """Pruning diagnostics must not prefix hook stdout or Codex falls back to plain text."""
     from cyt.indexer.tokens import log_token_usage
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -923,7 +936,7 @@ def test_skills_test_reports_pruning_pipeline_keys(
 def test_hook_resolves_skills_key_from_keyring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -986,7 +999,7 @@ def test_hook_resolves_skills_key_from_keyring(
 
 def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> None:
     """Development ``cyt.skills.cli --stdin`` runs the hook handler."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
@@ -1019,7 +1032,7 @@ def test_hook_stdin_dispatches_to_handler(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_hook_records_stats_when_model_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory() as tmp:
+    with _temporary_test_dir() as tmp:
         root = Path(tmp)
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"

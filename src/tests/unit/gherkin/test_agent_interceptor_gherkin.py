@@ -334,7 +334,7 @@ def then_no_daemon(gherkin_context: GherkinContext) -> None:
 @then("preToolUse updated_input points to skinny file")
 def then_updated_input(gherkin_context: GherkinContext) -> None:
     updated = gherkin_context.payload["_stdout_json"].get("updated_input") or {}
-    assert ".cyt/skinny" in str(updated.get("path", ""))
+    assert ".cyt/skinny" in Path(str(updated.get("path", ""))).as_posix()
 
 
 @then("preToolUse has no updated_input")

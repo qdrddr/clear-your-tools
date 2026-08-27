@@ -64,17 +64,25 @@ def normalize_workspace_path_string(raw: str) -> str:
     return text
 
 
-def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
+def workspace_path_string(payload: dict[str, Any]) -> str | None:
+    """Return the raw workspace path string from a hook payload, if present."""
     cwd = payload.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
-        return Path(normalize_workspace_path_string(cwd))
+        return cwd.strip()
 
     roots = payload.get("workspace_roots")
     if isinstance(roots, list):
         for root in roots:
             if isinstance(root, str) and root.strip():
-                return Path(normalize_workspace_path_string(root))
+                return root.strip()
     return None
+
+
+def workspace_root_from_payload(payload: dict[str, Any]) -> Path | None:
+    path_string = workspace_path_string(payload)
+    if path_string is None:
+        return None
+    return Path(normalize_workspace_path_string(path_string))
 
 
 def is_valid_workspace_root(workspace: Path) -> bool:

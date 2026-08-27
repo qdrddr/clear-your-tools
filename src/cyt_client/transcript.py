@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
-from cyt_client.rules_file import rules_file_path, workspace_root_from_payload
+from cyt_client.rules_file import (
+    rules_file_path,
+    workspace_path_string,
+    workspace_root_from_payload,
+)
 from cyt_client.sessions import read_tool_catalog_hashes, session_log_path
 from cyt_client.skills import attach_client_skills
 
@@ -98,7 +102,7 @@ def _attach_cyt_cwd(data: dict[str, Any]) -> None:
     existing = cyt.get("cwd")
     if isinstance(existing, str) and existing.strip():
         return
-    cyt["cwd"] = str(workspace)
+    cyt["cwd"] = workspace_path_string(data) or str(workspace)
 
 
 def enrich_hook_payload(

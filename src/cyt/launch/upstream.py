@@ -7,6 +7,33 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.common.agents import LAUNCH_AGENTS, AgentName, unknown_launch_agent_message
+
+__all__ = [
+    "LAUNCH_AGENTS",
+    "AgentName",
+    "apply_upstream_cli",
+    "build_upstream_overlay",
+    "compatible_upstreams",
+    "direct_upstream_base_url",
+    "ensure_upstream_for_runtime",
+    "filter_upstreams_by_agent",
+    "filter_upstreams_for_launch",
+    "format_upstream_option",
+    "infer_upstream_kind_from_agent",
+    "infer_upstream_kind_from_url",
+    "launch_agent_for_upstream_kind",
+    "list_upstreams",
+    "log_auto_selected_upstream",
+    "parse_agent_name",
+    "persist_upstream_overlay",
+    "prompt_confirm_default_upstream",
+    "prompt_upstream_picker",
+    "prompt_upstream_setup",
+    "resolve_upstream_kind",
+    "select_upstream_endpoint",
+    "unknown_launch_agent_message",
+    "upstream_endpoint_name",
+]
 from cyt.config import (
     UPSTREAM_URL_DEFAULTS,
     load_config,

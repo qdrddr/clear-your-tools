@@ -10,6 +10,18 @@ import sys
 import time
 from datetime import datetime
 
+from cyt.platform.compat import is_windows
+
+__all__ = [
+    "find_listen_pid",
+    "list_process_command_lines",
+    "pid_alive",
+    "process_command_line",
+    "process_start_time",
+    "subprocess",
+    "terminate_process",
+]
+
 _LOCAL_HOST = "127.0.0.1"
 
 
@@ -23,35 +35,35 @@ def pid_alive(pid: int) -> bool:
 
 def find_listen_pid(port: int, *, host: str = _LOCAL_HOST) -> int | None:
     """Return PID listening on *host*:*port*, or ``None``."""
-    if sys.platform == "win32":
+    if is_windows():
         return _find_listen_pid_windows(port, host=host)
     return _find_listen_pid_unix(port)
 
 
 def process_start_time(pid: int) -> datetime | None:
     """Return the process start time for *pid*, or ``None`` when unavailable."""
-    if sys.platform == "win32":
+    if is_windows():
         return _process_start_time_windows(pid)
     return _process_start_time_unix(pid)
 
 
 def process_command_line(pid: int) -> str | None:
     """Return the command line for *pid*, or ``None`` when unavailable."""
-    if sys.platform == "win32":
+    if is_windows():
         return _process_command_line_windows(pid)
     return _process_command_line_unix(pid)
 
 
 def list_process_command_lines() -> list[tuple[int, str]]:
     """Return ``(pid, command_line)`` pairs for running processes."""
-    if sys.platform == "win32":
+    if is_windows():
         return _list_process_command_lines_windows()
     return _list_process_command_lines_unix()
 
 
 def terminate_process(pid: int, *, grace_seconds: float = 5.0) -> None:
     """Terminate *pid*, escalating when it does not exit gracefully."""
-    if sys.platform == "win32":
+    if is_windows():
         _terminate_process_windows(pid, grace_seconds=grace_seconds)
         return
     _terminate_process_unix(pid, grace_seconds=grace_seconds)

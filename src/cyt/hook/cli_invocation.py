@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import shlex
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from cyt.platform.compat import is_windows
 from cyt_client.hook_executable import (
     build_installed_cyt_client_command,
     build_installed_cyt_daemon_restart_command,
@@ -39,6 +39,37 @@ _WINDOWS_WRAPPER_NAMES = (
     WINDOWS_DAEMON_START_DEV_WRAPPER,
 )
 
+__all__ = [
+    "CYT_CLIENT_CLI_SCRIPT_REL",
+    "CYT_DAEMON_RESTART_ARGS",
+    "CYT_DAEMON_START_ARGS",
+    "CYT_MCP_CLI_SCRIPT_REL",
+    "CYT_PROXY_CLI_SCRIPT_REL",
+    "INSTALLED_CYT_CLIENT_COMMAND",
+    "INSTALLED_CYT_DAEMON_RESTART_COMMAND",
+    "INSTALLED_CYT_DAEMON_START_COMMAND",
+    "INSTALLED_CYT_DAEMON_START_COMMAND_BASE",
+    "INSTALLED_CYT_MCP_COMMAND",
+    "HookCliInvocation",
+    "build_installed_cyt_client_command",
+    "build_installed_cyt_daemon_restart_command",
+    "build_installed_cyt_daemon_start_command",
+    "build_uv_run_dev_command",
+    "cursor_hooks_dir",
+    "cyt_client_cli_script_relpath",
+    "cyt_client_command",
+    "cyt_daemon_restart_command",
+    "cyt_daemon_start_command",
+    "cyt_mcp_cli_script_relpath",
+    "cyt_mcp_mcp_server_entry",
+    "detect_hook_cli_invocation",
+    "is_uv_run_dev_hook_command",
+    "proxy_cli_script_path",
+    "repo_root_from_proxy_cli_script",
+    "resolve_hook_executable",
+    "use_windows_hook_wrappers",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class HookCliInvocation:
@@ -53,7 +84,7 @@ class HookCliInvocation:
 def use_windows_hook_wrappers(*, invocation: HookCliInvocation | None = None) -> bool:
     """Use ``.cmd`` wrappers on Windows so hooks resolve absolute executable paths."""
     _ = invocation
-    return sys.platform == "win32"
+    return is_windows()
 
 
 def cursor_hooks_dir() -> Path:
@@ -160,7 +191,7 @@ def _inline_cyt_daemon_start_command(*, invocation: HookCliInvocation | None = N
 def prefix_command_env(env: dict[str, str], command: str) -> str:
     if not env:
         return command
-    if sys.platform == "win32":
+    if is_windows():
         parts = [f'set "{key}={value}"' for key, value in env.items()]
         return 'cmd /c "' + "&& ".join([*parts, f'call "{command}"']) + '"'
     prefix = " ".join(f"{key}={value}" for key, value in env.items())

@@ -101,6 +101,15 @@ anyio==4.13.0 \
     #   sse-starlette
     #   starlette
     #   watchfiles
+ast-grep-cli==0.41.0 \
+    --hash=sha256:00570076cbf30e9c4c93f5577137c4d63245974420eff9e1fb3e3c6a9abefe97 \
+    --hash=sha256:8db8e877b365a553f83a2a0e158d8cfa17fc33f8033774ee3248665449dcad1b \
+    --hash=sha256:92d384608e5fd98a301a03a380e0ce011d46adcd5f6bcf53b0b9ba125faa43ad \
+    --hash=sha256:93085ee153855fa9b1f486884f8aad788fb111f1e6a96bcfde240071d5033199 \
+    --hash=sha256:9aee19fa53d582f4408ace5cffe3ff5635dff954c7ab78a15530c4acf5893a0e \
+    --hash=sha256:a7a4682cde7a1e1a8083dd8feed6f968d8f90a109e7c0917e1d5066807dfa46e \
+    --hash=sha256:b8e0eeeec751fa213abc57ea20af4fdd8ae955a43e390914df85985f6933eb53 \
+    --hash=sha256:c10f70cd6e45ded98773022d9ae0bebfc497b8b2e85ae17e15abca174e7d0f93
 ast-serialize==0.5.0 \
     --hash=sha256:061ee58bdb52341c8201a6df41182a977736bae3b7ded87ca7176ca25a8a47ab \
     --hash=sha256:0668aa9459cfa8c9c49ddd2163ebcf43088ba045ef7492af6fe22e0098303101 \
@@ -149,6 +158,9 @@ authlib==1.7.2 \
     --hash=sha256:2cea25fefcd4e7173bdf1372c0afc265c8034b23a8cd5dcb6a9164b826c64231 \
     --hash=sha256:3e1faedc9d87e7d56a164eca3ccb6ace0d61b94abe83e92242f8dc8bba9b4a9f
     # via fastmcp-slim
+basedpyright==1.39.6 \
+    --hash=sha256:5e0b9befbae6b26d0fbcc6645ac26923725e749d1224539e24f05ab07f9365ad \
+    --hash=sha256:d00ec5f8ba4e1a67dfc2fa3a9474229c89f61f207d14c02d320db78f57aa16ef
 beartype==0.22.9 \
     --hash=sha256:8f82b54aa723a2848a56008d18875f91c1db02c32ef6a62319a002e3e25a975f \
     --hash=sha256:d16c9bbc61ea14637596c5f6fbff2ee99cbe3573e46a716401734ef50c3060c2
@@ -991,6 +1003,17 @@ mypy-extensions==1.1.0 \
     --hash=sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505 \
     --hash=sha256:52e68efc3284861e772bbcd66823fde5ae21fd2fdb51c62a211403730b916558
     # via mypy
+nodejs-wheel-binaries==24.19.0 \
+    --hash=sha256:1c890adf4b7e6556ccc1ca66c866bb81884b6c9a581dee4e530dc7f78fb9d514 \
+    --hash=sha256:28d078b2ced9e2069516e652dc4b1380e7a1a7f2d3934eccd1611586d283ba4c \
+    --hash=sha256:352e048ab4dd35e7de5f338d1cc4fcbf77a0e93da30bf7336a8217ee246b31d7 \
+    --hash=sha256:4196a947bcc883f2003ab101762d729f3e99b5e86b75bd09151563403e2eceb8 \
+    --hash=sha256:4e029dadfae1295876063c96b236f673487e8c27379fe146c1e2250283520227 \
+    --hash=sha256:67e3abeb9c3830cae8c8487ae8a2af7cc27dfa75af06145cee5ca7d1857c81bd \
+    --hash=sha256:d9074c665ea68b04e183d82482c86dc907d3a9bd15eb6cf85542cb785266bb36 \
+    --hash=sha256:db217eef8cab8551667863379b08db4d9067403f6cbbe87481eb40edceb8aa9b \
+    --hash=sha256:e12cbfd69089504e42fb14194ce734a9dcf3eb38c820ca63dd511d36fb964e9c
+    # via basedpyright
 openai==2.24.0 \
     --hash=sha256:1e5769f540dbd01cb33bc4716a23e67b9d695161a734aff9c5f925e2bf99a673 \
     --hash=sha256:fed30480d7d6c884303287bde864980a4b137b60553ffbcf9ab4a233b7a73d94

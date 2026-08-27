@@ -31,7 +31,7 @@ pub unsafe extern "C" fn cyt_catalog_tool_count(data_json: *const c_char) -> c_l
                 set_error("catalog tool count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|count| count as c_long)
+            .map(|count| i32::try_from(count).unwrap_or(c_long::MAX) as c_long)
     })
     .unwrap_or(-1)
 }

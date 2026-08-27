@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt_client.agent import infer_harness_agent
+from cyt_client.paths import expand_home_path
 
 _AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
     "claude": (".claude/skills", "~/.claude/skills"),
@@ -44,7 +45,7 @@ def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:
     directories: list[Path] = []
     seen: set[Path] = set()
     for project_rel, home_rel in pairs:
-        for candidate in (cwd / project_rel, Path(home_rel).expanduser()):
+        for candidate in (cwd / project_rel, expand_home_path(home_rel)):
             try:
                 resolved = candidate.resolve()
             except OSError:

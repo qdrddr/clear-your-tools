@@ -7,8 +7,7 @@ import json
 import os
 import sys
 import time
-from collections.abc import AsyncIterator, Coroutine, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Coroutine
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +19,8 @@ import uvicorn
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.types import ASGIApp
+
+from cyt.platform.filelock import exclusive_file_lock
 
 INTERRUPTED_EXIT_CODE = 130
 
@@ -68,24 +69,10 @@ def append_debug_log_block(path: Path, *, label: str, content: str) -> None:
         f.write(block)
 
 
-@contextmanager
-def _debug_json_file_lock(fd: int) -> Iterator[None]:
-    try:
-        import fcntl
-    except ImportError:
-        yield
-        return
-    fcntl.flock(fd, fcntl.LOCK_EX)
-    try:
-        yield
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-
-
 def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
     """Append a request object to a JSON array debug file (never rotates/truncates)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as f, _debug_json_file_lock(f.fileno()):
+    with path.open("a+", encoding="utf-8") as f, exclusive_file_lock(f.fileno()):
         f.seek(0)
         content = f.read()
         if content.strip():
@@ -98,9 +85,9 @@ def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
         encoded = json.dumps(entries, indent=2, default=str)
         if not encoded.endswith("\n"):
             encoded += "\n"
-        tmp_path = path.with_name(f".{path.name}.tmp")
-        tmp_path.write_text(encoded, encoding="utf-8")
-        os.replace(tmp_path, path)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(encoded, encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def append_debug_snapshot(
