@@ -130,18 +130,6 @@ def _format_verify_connect_response(
 
 async def hook_connect(request: Request) -> Response:
     """Run hook injection or verify-only connect for JSON body."""
-    # #region agent log
-    import time
-
-    from cyt.common.agent_debug_log import agent_debug_log
-
-    _connect_start = time.perf_counter()
-    agent_debug_log(
-        "http_server.py:hook_connect",
-        "hook_connect request received",
-        hypothesis_id="A",
-    )
-    # #endregion
     configure_hook_quiet()
     parsed = await _read_hook_connect_payload(request)
     if isinstance(parsed, Response):
@@ -178,26 +166,7 @@ async def hook_connect(request: Request) -> Response:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
     if not result.stdout_text:
-        # #region agent log
-        agent_debug_log(
-            "http_server.py:hook_connect",
-            "hook_connect empty response",
-            data={"elapsed_ms": round((time.perf_counter() - _connect_start) * 1000, 1)},
-            hypothesis_id="A",
-        )
-        # #endregion
         return PlainTextResponse("", status_code=200)
-    # #region agent log
-    agent_debug_log(
-        "http_server.py:hook_connect",
-        "hook_connect complete",
-        data={
-            "stdout_bytes": len(result.stdout_text),
-            "elapsed_ms": round((time.perf_counter() - _connect_start) * 1000, 1),
-        },
-        hypothesis_id="A",
-    )
-    # #endregion
     return PlainTextResponse(result.stdout_text, status_code=200)
 
 

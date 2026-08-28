@@ -839,26 +839,10 @@ def _run_coordinated_user_prompt_injection(
     from cyt.pruning.hook_bridge import run_hook_coordinated_prune
     from cyt.skills.hook_quiet import hook_quiet_stderr
 
-    # #region agent log
-    import time
-
-    from cyt.common.agent_debug_log import agent_debug_log
-
-    _coord_start = time.perf_counter()
-    # #endregion
     query = skills_search_query_from_hook_payload(
         payload,
         allow_file_read=allow_transcript_file_read,
     )
-    # #region agent log
-    agent_debug_log(
-        "cli.py:_run_coordinated_user_prompt_injection",
-        "skills_search_query done",
-        data={"elapsed_ms": round((time.perf_counter() - _coord_start) * 1000, 1)},
-        hypothesis_id="D",
-    )
-    _budget_start = time.perf_counter()
-    # #endregion
     if not query:
         return [], ["user_prompt_missing_prompt"], {}
 
@@ -880,17 +864,6 @@ def _run_coordinated_user_prompt_injection(
         skills_max_tokens,
         budget_debug,
     ) = budgets
-    # #region agent log
-    agent_debug_log(
-        "cli.py:_run_coordinated_user_prompt_injection",
-        "_coordinated_injection_budgets done",
-        data={
-            "request_tokens": request_tokens,
-            "elapsed_ms": round((time.perf_counter() - _budget_start) * 1000, 1),
-        },
-        hypothesis_id="D",
-    )
-    # #endregion
 
     prompt = prompt_from_payload(payload) or query
     model = resolve_model(payload, allow_file_read=allow_transcript_file_read) or "hook"
@@ -1244,38 +1217,11 @@ def run_hook_payload(
     pruner_settings: PrunerSettingsCache | None = None,
 ) -> HookRunResult:
     """Run hook logic for *payload* and return formatted stdout without printing."""
-    # #region agent log
-    import time
-
-    from cyt.common.agent_debug_log import agent_debug_log
-
-    _run_start = time.perf_counter()
-    agent_debug_log(
-        "cli.py:run_hook_payload",
-        "run_hook_payload start",
-        data={"event": payload.get("hook_event_name")},
-        hypothesis_id="D",
-    )
-    # #endregion
     configure_hook_quiet()
-    # #region agent log
-    _cred_start = time.perf_counter()
-    # #endregion
     _ensure_hook_credentials(config, allow_prompt=False)
-    # #region agent log
-    agent_debug_log(
-        "cli.py:run_hook_payload",
-        "_ensure_hook_credentials done",
-        data={"elapsed_ms": round((time.perf_counter() - _cred_start) * 1000, 1)},
-        hypothesis_id="D",
-    )
-    # #endregion
     captured_request = request_payload if request_payload is not None else payload
     raw_stdin = json.dumps(captured_request)
     event_name = hook_event_name(payload)
-    # #region agent log
-    _dispatch_start = time.perf_counter()
-    # #endregion
     outcome, details, injection_text = _dispatch_hook_event(
         event_name,
         payload,
@@ -1288,18 +1234,6 @@ def run_hook_payload(
         io_guarded=io_guarded,
         pruner_settings=pruner_settings,
     )
-    # #region agent log
-    agent_debug_log(
-        "cli.py:run_hook_payload",
-        "_dispatch_hook_event done",
-        data={
-            "outcome": outcome,
-            "elapsed_ms": round((time.perf_counter() - _dispatch_start) * 1000, 1),
-            "total_ms": round((time.perf_counter() - _run_start) * 1000, 1),
-        },
-        hypothesis_id="D",
-    )
-    # #endregion
     session_log = None
     if isinstance(details, dict):
         raw_log = details.get("session_log")

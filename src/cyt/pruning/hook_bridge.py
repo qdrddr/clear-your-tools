@@ -165,20 +165,6 @@ def run_hook_coordinated_prune(
     if tools_allowed:
         with hook_timer.measure("hook:catalog-load"):
             catalog = load_tool_catalog(config)
-    # #region agent log
-    from cyt.common.agent_debug_log import agent_debug_log
-
-    agent_debug_log(
-        "hook_bridge.py:run_hook_coordinated_prune",
-        "catalog loaded",
-        data={
-            "catalog_count": len(catalog) if catalog else 0,
-            "catalog_missing": catalog is None,
-            "tools_allowed": tools_allowed,
-        },
-        hypothesis_id="C",
-    )
-    # #endregion
     if tools_allowed and catalog is None:
         missing = PruneResult(
             tools=None,
@@ -222,22 +208,10 @@ def run_hook_coordinated_prune(
         )
 
     prune_result = _merge_hook_prune_results(coordinated.prune_results) if tool_sources else None
-    # #region agent log
-    phase_timing = merge_phase_timings(hook_timer)
-    agent_debug_log(
-        "hook_bridge.py:run_hook_coordinated_prune",
-        "coordinated prune complete",
-        data={
-            "tool_sources": len(tool_sources),
-            "phase_timing": phase_timing,
-        },
-        hypothesis_id="A",
-    )
-    # #endregion
     return (
         prune_result,
         coordinated.skill_matches,
         catalog,
         coordinated.prune_results,
-        phase_timing,
+        merge_phase_timings(hook_timer),
     )

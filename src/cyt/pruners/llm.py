@@ -496,8 +496,6 @@ def call_llm(
     bulk_index: int = 0,
     selector_kind: str = "unknown",
 ) -> tuple[RelevantChunkSelections, StageTokenUsage]:
-    _log_bulk_index = bulk_index
-    _log_selector_kind = selector_kind
     del bulk_index, selector_kind
     configure_litellm_quiet()
     user_message = _llm_user_message(query, chunks_text)
@@ -519,19 +517,6 @@ def call_llm(
         request_kwargs["instructions"] = system_prompt
         request_kwargs["input"] = user_message
         request_kwargs["text_format"] = RelevantChunkSelections
-        # #region agent log
-        import time
-
-        from cyt.common.agent_debug_log import agent_debug_log
-
-        _llm_start = time.perf_counter()
-        agent_debug_log(
-            "llm.py:call_llm",
-            "LLM call start",
-            data={"model": settings.model_name, "selector_kind": _log_selector_kind, "bulk_index": _log_bulk_index},
-            hypothesis_id="A",
-        )
-        # #endregion
         response: Any = responses(**request_kwargs)
     else:
         request_kwargs["messages"] = [
@@ -540,28 +525,7 @@ def call_llm(
         ]
         request_kwargs["response_format"] = RelevantChunkSelections
         request_kwargs.update(_selector_completion_extras(settings))
-        # #region agent log
-        import time
-
-        from cyt.common.agent_debug_log import agent_debug_log
-
-        _llm_start = time.perf_counter()
-        agent_debug_log(
-            "llm.py:call_llm",
-            "LLM call start",
-            data={"model": settings.model_name, "selector_kind": _log_selector_kind, "bulk_index": _log_bulk_index},
-            hypothesis_id="A",
-        )
-        # #endregion
         response = completion(**request_kwargs)
-    # #region agent log
-    agent_debug_log(
-        "llm.py:call_llm",
-        "LLM call complete",
-        data={"elapsed_ms": round((time.perf_counter() - _llm_start) * 1000, 1)},
-        hypothesis_id="A",
-    )
-    # #endregion
 
     content_val, _ = _structured_selector_content(response)
 
