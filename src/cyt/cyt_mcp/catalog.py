@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import URLError
@@ -41,6 +42,12 @@ class _CytMcpCatalogState:
     tools: list[dict[str, Any]] = field(default_factory=list)
     updated_at: float = 0.0
     catalog_content_hash: str = ""
+
+
+@dataclass(frozen=True)
+class CytMcpLiveCatalog:
+    tools: list[dict[str, Any]]
+    degraded_servers: tuple[str, ...]
 
 
 _catalog_lock = threading.Lock()
@@ -144,6 +151,130 @@ def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _degraded_servers_from_payload(payload: dict[str, Any]) -> tuple[str, ...]:
+    raw = payload.get("degraded_servers")
+    if not isinstance(raw, list):
+        return ()
+    degraded: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            degraded.append(item.strip())
+    return tuple(degraded)
+
+
+def _tool_server_key(tool: dict[str, Any]) -> str:
+    server_key = tool.get("server_key")
+    if isinstance(server_key, str) and server_key.strip():
+        return server_key.strip()
+    name = str(tool.get("name") or "")
+    prefix, _, suffix = name.partition("_")
+    if prefix and suffix:
+        return prefix
+    return ""
+
+
+def _disk_catalog_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
+    envelope = read_disk_catalog(cache_key.slug)
+    if envelope is None:
+        return []
+    tools = envelope.get("tools")
+    if not isinstance(tools, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in tools:
+        if not isinstance(item, dict):
+            continue
+        tool = _normalize_tool(item)
+        if tool is not None:
+            normalized.append(tool)
+    return normalized
+
+
+def _server_keys_for_tools(tools: Sequence[dict[str, Any]]) -> set[str]:
+    return {key for key in (_tool_server_key(tool) for tool in tools) if key}
+
+
+def _preserve_tools_for_servers(
+    new_tools: list[dict[str, Any]],
+    fallback_sources: Sequence[Sequence[dict[str, Any]]],
+    server_keys: set[str],
+) -> list[dict[str, Any]]:
+    if not server_keys:
+        return new_tools
+    new_names = {str(tool.get("name", "")) for tool in new_tools if str(tool.get("name", ""))}
+    preserved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for source in fallback_sources:
+        for tool in source:
+            name = str(tool.get("name", ""))
+            if not name or name in new_names or name in seen:
+                continue
+            if _tool_server_key(tool) not in server_keys:
+                continue
+            preserved.append(copy.deepcopy(tool))
+            seen.add(name)
+    if not preserved:
+        return new_tools
+    return [*new_tools, *preserved]
+
+
+def _merge_degraded_backend_tools(
+    new_tools: list[dict[str, Any]],
+    existing_tools: list[dict[str, Any]],
+    degraded_servers: Sequence[str],
+    *,
+    disk_tools: Sequence[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Keep prior tools for backends that failed to mount on this live fetch."""
+    degraded = {
+        server.strip() for server in degraded_servers if isinstance(server, str) and server.strip()
+    }
+    fallback_sources: list[list[dict[str, Any]]] = []
+    if existing_tools:
+        fallback_sources.append(list(existing_tools))
+    if disk_tools:
+        fallback_sources.append(list(disk_tools))
+
+    servers_to_preserve = set(degraded)
+    if disk_tools:
+        disk_servers = _server_keys_for_tools(disk_tools)
+        live_servers = _server_keys_for_tools(new_tools)
+        servers_to_preserve |= disk_servers - live_servers
+
+    if not servers_to_preserve or not fallback_sources:
+        return new_tools
+
+    merged = _preserve_tools_for_servers(new_tools, fallback_sources, servers_to_preserve)
+    preserved_count = len(merged) - len(new_tools)
+    if preserved_count:
+        logger.info(
+            "cyt-mcp catalog preserved %d tools for backends: %s",
+            preserved_count,
+            ", ".join(sorted(servers_to_preserve)),
+        )
+    return merged
+
+
+def _hydrate_missing_servers_from_disk(
+    cache_key: _CytMcpCacheKey,
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    disk_tools = _disk_catalog_tools(cache_key)
+    if not disk_tools:
+        return tools
+    missing_servers = _server_keys_for_tools(disk_tools) - _server_keys_for_tools(tools)
+    if not missing_servers:
+        return tools
+    merged = _preserve_tools_for_servers(tools, [disk_tools], missing_servers)
+    if len(merged) > len(tools):
+        logger.info(
+            "cyt-mcp catalog hydrated %d tools from disk for backends: %s",
+            len(merged) - len(tools),
+            ", ".join(sorted(missing_servers)),
+        )
+    return merged
+
+
 def _fetch_catalog_from_http(url: str) -> dict[str, Any] | None:
     catalog_url = str(url or "").strip().rstrip("/")
     if not catalog_url:
@@ -162,7 +293,7 @@ def _fetch_catalog_from_http(url: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _fetch_catalog_live(config: dict[str, Any], cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
+def _fetch_catalog_live(config: dict[str, Any], cache_key: _CytMcpCacheKey) -> CytMcpLiveCatalog:
     catalog_url = tools_hook_cyt_mcp_catalog_url(config)
     payload: dict[str, Any] | None = None
     if catalog_url:
@@ -171,11 +302,14 @@ def _fetch_catalog_live(config: dict[str, Any], cache_key: _CytMcpCacheKey) -> l
         executable = tools_hook_cyt_mcp_executable(config)
         if not cyt_mcp_available(executable):
             logger.warning("cyt-mcp executable unavailable: %s", executable)
-            return []
+            return CytMcpLiveCatalog(tools=[], degraded_servers=())
         payload = run_cyt_mcp_catalog_json(executable, agent=cache_key.agent)
     if payload is None:
-        return []
-    return _normalize_catalog_payload(payload)
+        return CytMcpLiveCatalog(tools=[], degraded_servers=())
+    return CytMcpLiveCatalog(
+        tools=_normalize_catalog_payload(payload),
+        degraded_servers=_degraded_servers_from_payload(payload),
+    )
 
 
 def _write_catalog_disk(cache_key: _CytMcpCacheKey, tools: list[dict[str, Any]]) -> None:
@@ -238,17 +372,19 @@ def _blocking_fetch(cfg: dict[str, Any], cache_key: _CytMcpCacheKey) -> list[dic
     state = _get_state(cache_key)
     try:
         logger.info("cyt-mcp catalog fetch slug=%s blocking=true", cache_key.slug)
-        tools = _fetch_catalog_live(cfg, cache_key)
+        fetched = _fetch_catalog_live(cfg, cache_key)
     except Exception as exc:
         logger.warning("cyt-mcp catalog fetch failed: %s", exc)
         return _snapshot_tools(state)
-    if not tools:
+    if not fetched.tools:
         return _snapshot_tools(state)
-    content_hash = raw_catalog_content_hash(tools)
-    _apply_catalog_to_state(state, tools, content_hash=content_hash, config=cfg)
-    _write_catalog_disk(cache_key, tools)
+    apply_fetched_catalog(
+        cfg,
+        fetched.tools,
+        degraded_servers=fetched.degraded_servers,
+    )
     _ensure_scheduler_started(cfg)
-    return copy.deepcopy(tools)
+    return _snapshot_tools(state)
 
 
 def _get_cyt_mcp_catalog_impl(
@@ -288,7 +424,13 @@ def _get_cyt_mcp_catalog_impl(
     from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
 
     schedule_cyt_mcp_catalog_refresh(cfg)
-    return _snapshot_tools(state)
+    snapshot = _snapshot_tools(state)
+    hydrated = _hydrate_missing_servers_from_disk(cache_key, snapshot)
+    if len(hydrated) != len(snapshot):
+        content_hash = raw_catalog_content_hash(hydrated)
+        _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=cfg)
+        return copy.deepcopy(hydrated)
+    return snapshot
 
 
 def get_cyt_mcp_catalog(
@@ -321,9 +463,55 @@ def cyt_mcp_catalog_fingerprint(config: dict[str, Any] | None = None) -> str:
 def apply_fetched_catalog(
     config: dict[str, Any],
     tools: list[dict[str, Any]],
+    *,
+    degraded_servers: Sequence[str] | None = None,
 ) -> None:
     cache_key = _cache_key_for_config(config)
-    content_hash = raw_catalog_content_hash(tools)
     state = _get_state(cache_key)
-    _apply_catalog_to_state(state, tools, content_hash=content_hash, config=config)
-    _write_catalog_disk(cache_key, tools)
+    existing = _snapshot_tools(state)
+    disk_tools = _disk_catalog_tools(cache_key)
+    merged = _merge_degraded_backend_tools(
+        tools,
+        existing,
+        degraded_servers or (),
+        disk_tools=disk_tools,
+    )
+    # #region agent log
+    try:
+        import json as _json
+        import time as _time
+        from pathlib import Path as _Path
+
+        _log_path = _Path("debug-303753.log")
+        _log_path.parent.mkdir(parents=True, exist_ok=True)
+        with _log_path.open("a", encoding="utf-8") as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "303753",
+                        "runId": "post-fix",
+                        "hypothesisId": "B",
+                        "location": "cyt/cyt_mcp/catalog.py:apply_fetched_catalog",
+                        "message": "cyt-mcp catalog apply",
+                        "data": {
+                            "incoming_count": len(tools),
+                            "existing_count": len(existing),
+                            "disk_count": len(disk_tools),
+                            "merged_count": len(merged),
+                            "degraded_servers": list(degraded_servers or ()),
+                            "preserved_count": len(merged) - len(tools),
+                            "live_servers": sorted(_server_keys_for_tools(tools)),
+                            "merged_servers": sorted(_server_keys_for_tools(merged)),
+                        },
+                        "timestamp": int(_time.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
+    except OSError:
+        pass
+    # #endregion
+    content_hash = raw_catalog_content_hash(merged)
+    _apply_catalog_to_state(state, merged, content_hash=content_hash, config=config)
+    _write_catalog_disk(cache_key, merged)

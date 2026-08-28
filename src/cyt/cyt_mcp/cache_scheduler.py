@@ -113,9 +113,13 @@ def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
                 state.tools_in_progress = True
                 state.last_tools_refresh_start = now
                 try:
-                    tools = _fetch_catalog_live(config, cache_key)
-                    if tools:
-                        apply_fetched_catalog(config, tools)
+                    fetched = _fetch_catalog_live(config, cache_key)
+                    if fetched.tools:
+                        apply_fetched_catalog(
+                            config,
+                            fetched.tools,
+                            degraded_servers=fetched.degraded_servers,
+                        )
                 except Exception as exc:
                     logger.warning("cyt-mcp scheduler tools refresh failed: %s", exc)
                 finally:
