@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -15,6 +16,7 @@ LOCAL_HOST = "127.0.0.1"
 DEFAULT_PORT = 8834
 HEALTH_TIMEOUT_SECONDS = 1.5
 HEALTH_TTL_SECONDS = 30.0
+HOOK_PORT_PROBE_BATCH_SIZE = 20
 HOOK_CONNECT_PATH = "/hook/connect"
 HOOK_INJECT_PATH = HOOK_CONNECT_PATH  # backward-compatible alias
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
@@ -55,6 +57,43 @@ def is_hook_server(health: dict[str, Any] | None) -> bool:
         and health.get("status") == "ok"
         and health.get("hook") is True
     )
+
+
+def _is_hook_server_on_port(port: int) -> bool:
+    return is_hook_server(fetch_cyt_health(port))
+
+
+def _probe_hook_ports_parallel(ports: list[int]) -> int | None:
+    if not ports:
+        return None
+    if len(ports) == 1:
+        return ports[0] if _is_hook_server_on_port(ports[0]) else None
+
+    matches: list[int] = []
+    with ThreadPoolExecutor(max_workers=len(ports)) as executor:
+        futures = {executor.submit(_is_hook_server_on_port, port): port for port in ports}
+        for future in as_completed(futures):
+            port = futures[future]
+            try:
+                if future.result():
+                    matches.append(port)
+            except Exception:
+                continue
+    return min(matches) if matches else None
+
+
+def _find_hook_server_in_ports(
+    ports: list[int],
+    *,
+    batch_size: int = HOOK_PORT_PROBE_BATCH_SIZE,
+) -> int | None:
+    for batch_start in range(0, len(ports), batch_size):
+        end = batch_start + batch_size
+        batch = ports[batch_start:end]
+        match = _probe_hook_ports_parallel(batch)
+        if match is not None:
+            return match
+    return None
 
 
 def _read_hook_daemon_entries() -> list[dict[str, Any]]:
@@ -128,12 +167,25 @@ def _hook_scan_start_ports() -> list[int]:
     return starts
 
 
+def _scan_start_ports_for_hook_server(
+    start: int,
+    *,
+    max_attempts: int,
+    excluded_port: int | None = None,
+) -> int | None:
+    ports = [
+        start + offset
+        for offset in range(max_attempts)
+        if excluded_port is None or start + offset != excluded_port
+    ]
+    return _find_hook_server_in_ports(ports)
+
+
 def find_hook_server_port(*, max_attempts: int = 100) -> int | None:
     for start in _hook_scan_start_ports():
-        for attempt in range(max_attempts):
-            port = start + attempt
-            if is_hook_server(fetch_cyt_health(port)):
-                return port
+        match = _scan_start_ports_for_hook_server(start, max_attempts=max_attempts)
+        if match is not None:
+            return match
     return None
 
 
@@ -143,12 +195,13 @@ def find_hook_server_port_excluding(
     max_attempts: int = 100,
 ) -> int | None:
     for start in _hook_scan_start_ports():
-        for attempt in range(max_attempts):
-            port = start + attempt
-            if excluded_port is not None and port == excluded_port:
-                continue
-            if is_hook_server(fetch_cyt_health(port)):
-                return port
+        match = _scan_start_ports_for_hook_server(
+            start,
+            max_attempts=max_attempts,
+            excluded_port=excluded_port,
+        )
+        if match is not None:
+            return match
     return None
 
 

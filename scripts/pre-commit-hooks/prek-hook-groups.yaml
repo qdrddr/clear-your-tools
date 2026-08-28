@@ -39,13 +39,14 @@ groups:
     - verify-pins
     - uv-lock
     - uv-sync
+    - maturin-develop
     - verify-sdk
 
   rust:
     - build-c-lib-for-go
     - cargo-audit
     - cargo-build-sdk-release
-    - cargo-clippy
+    - cargo-clippy-cyt-indexer
     - cargo-deny
     - cargo-fmt
     - cargo-test-coverage
@@ -62,6 +63,7 @@ groups:
     - c-header-sync
     - export-rust-sbom
     - local-dev-core-rust
+    - maturin-develop
     - verify-sdk
 
   go:

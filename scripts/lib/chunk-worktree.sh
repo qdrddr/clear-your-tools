@@ -568,6 +568,21 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 	# Briefly strip [patch.crates-io] for tools that must not see path patches
 	# (maturin sdist, cargo publish). Restores patches via chunk_write_workspace_cargo_patches
 	# and heals Cargo.lock afterward — no full-file backup/restore.
+	_chunk_run_without_worktree_patches_restore() {
+		local root="$1"
+		local had_patches="$2"
+		local legacy_config="$3"
+		local legacy_backup="$4"
+		local workspace_toml="${root}/${WORKSPACE_CARGO_TOML_REL}"
+
+		if [[ -n "${legacy_backup}" && -f "${legacy_backup}" ]]; then
+			mv "${legacy_backup}" "${legacy_config}"
+		fi
+		if ((had_patches)) && [[ -f "${workspace_toml}" ]]; then
+			chunk_write_workspace_cargo_patches "${root}"
+		fi
+	}
+
 	chunk_run_without_worktree_patches() {
 		local root="$1"
 		shift
@@ -589,18 +604,16 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 			mv "${legacy_config}" "${legacy_backup}"
 		fi
 
+		trap '_chunk_run_without_worktree_patches_restore "${root}" "${had_patches}" "${legacy_config}" "${legacy_backup}"' EXIT INT TERM
+
 		if ! "$@"; then
 			rc=$?
 		fi
 
-		if [[ -n "${legacy_backup}" && -f "${legacy_backup}" ]]; then
-			mv "${legacy_backup}" "${legacy_config}"
-		fi
-		if ((had_patches)); then
-			chunk_write_workspace_cargo_patches "${root}"
-		fi
+		_chunk_run_without_worktree_patches_restore "${root}" "${had_patches}" "${legacy_config}" "${legacy_backup}"
 		chunk_ensure_workspace_cargo_lock "${root}" || rc=$?
 
+		trap - EXIT INT TERM
 		return "${rc}"
 	}
 

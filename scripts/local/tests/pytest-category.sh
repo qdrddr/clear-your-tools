@@ -11,6 +11,15 @@ cd "${ROOT}"
 
 category="${1:?usage: $0 unit|gherkin-unit|quality_metrics|coverage|mutation|qa|runtime}"
 
+ensure_native_import() {
+	if uv run python -c "import cyt_indexer._native" 2>/dev/null; then
+		return 0
+	fi
+	bash "${ROOT}/scripts/local/dev/maturin-develop.sh"
+}
+
+ensure_native_import
+
 case "${category}" in
 unit)
 	exec env -u CYT_RUN_INTEGRATION_TESTS -u CYT_RUN_RUNTIME_TESTS uv run pytest \

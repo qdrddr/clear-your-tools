@@ -11,7 +11,6 @@ from typing import Any
 from cyt.agents._registry import get_agent
 from cyt.agents.claude.launch import build_claude_env
 from cyt.agents.codex.launch import configure_provider, restore_provider
-from cyt.agents.cursor.launch import ensure_cursor_hooks_for_launch
 from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
     DEFAULT_REVERSE_PORT,
@@ -418,7 +417,7 @@ def _apply_interactive_launch_config(
     from cyt.hook.setup_wizard import ensure_pre_tool_hooks_for_launch, pre_tool_use_hooks_installed
     from cyt.proxy.setup_wizard import _prompt_yes_no
 
-    if not pre_tool_use_hooks_installed(agent):
+    if agent != "cursor" and not pre_tool_use_hooks_installed(agent):
         if _prompt_yes_no(
             f"Install CYT PreToolUse hooks for {agent}? (required for MCP tool validation)",
             default_yes=True,
@@ -498,10 +497,7 @@ def _run_cursor_launch_session(
 
     if sys.stdin.isatty():
         config = ensure_tools_hook_file_interactive(runtime.config_path, config)
-        ensure_cursor_hooks_for_launch()
         runtime.config = config
-    else:
-        ensure_cursor_hooks_for_launch(quiet=True)
 
     _warm_launch_tool_catalogs(config, agent="cursor")
     os.environ.setdefault("CYT_HOOK_CWD", str(Path.cwd()))

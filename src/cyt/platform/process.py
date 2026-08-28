@@ -33,11 +33,18 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+def find_listen_pids(port: int, *, host: str = _LOCAL_HOST) -> list[int]:
+    """Return PIDs listening on *host*:*port*."""
+    if is_windows():
+        return _find_listen_pids_windows(port, host=host)
+    pid = _find_listen_pid_unix(port)
+    return [pid] if pid is not None else []
+
+
 def find_listen_pid(port: int, *, host: str = _LOCAL_HOST) -> int | None:
     """Return PID listening on *host*:*port*, or ``None``."""
-    if is_windows():
-        return _find_listen_pid_windows(port, host=host)
-    return _find_listen_pid_unix(port)
+    pids = find_listen_pids(port, host=host)
+    return pids[0] if pids else None
 
 
 def process_start_time(pid: int) -> datetime | None:
@@ -88,7 +95,19 @@ def _find_listen_pid_unix(port: int) -> int | None:
     return None
 
 
-def _find_listen_pid_windows(port: int, *, host: str = _LOCAL_HOST) -> int | None:
+def _windows_listen_addr_matches(host_lower: str, addr_lower: str, port_token: str) -> bool:
+    if not addr_lower.endswith(port_token):
+        return False
+    if host_lower in ("0.0.0.0", "*"):
+        return True
+    if addr_lower.startswith(host_lower):
+        return True
+    if addr_lower.startswith(("[::]", "[::1]")):
+        return True
+    return host_lower == "127.0.0.1" and addr_lower.startswith("0.0.0.0")
+
+
+def _find_listen_pids_windows(port: int, *, host: str = _LOCAL_HOST) -> list[int]:
     try:
         result = subprocess.run(
             ["netstat", "-ano", "-p", "tcp"],
@@ -97,12 +116,13 @@ def _find_listen_pid_windows(port: int, *, host: str = _LOCAL_HOST) -> int | Non
             check=False,
         )
     except OSError:
-        return None
+        return []
     if result.returncode != 0:
-        return None
+        return []
 
     host_lower = host.casefold()
     port_token = f":{port}"
+    pids: list[int] = []
     for line in result.stdout.splitlines():
         stripped = line.strip()
         if "LISTENING" not in stripped.upper():
@@ -114,14 +134,15 @@ def _find_listen_pid_windows(port: int, *, host: str = _LOCAL_HOST) -> int | Non
         pid_str = parts[-1]
         if not pid_str.isdigit():
             continue
-        addr_lower = local_addr.casefold()
-        if not addr_lower.endswith(port_token):
+        if not _windows_listen_addr_matches(host_lower, local_addr.casefold(), port_token):
             continue
-        if host_lower not in ("0.0.0.0", "*") and not addr_lower.startswith(host_lower):
-            if not addr_lower.startswith("[::]") and host_lower != "127.0.0.1":
-                continue
-        return int(pid_str)
-    return None
+        pids.append(int(pid_str))
+    return list(dict.fromkeys(pids))
+
+
+def _find_listen_pid_windows(port: int, *, host: str = _LOCAL_HOST) -> int | None:
+    pids = _find_listen_pids_windows(port, host=host)
+    return pids[0] if pids else None
 
 
 def _process_start_time_unix(pid: int) -> datetime | None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -127,6 +128,33 @@ def test_unattended_suppresses_mcpc_logging_warnings(
     assert "mcpc json command failed" not in captured.out
 
 
+def test_daemon_start_unattended_reuses_without_credential_restart(
+    pidfile_path: Path,
+) -> None:
+    with (
+        patch(
+            "cyt.hook.daemon.load_config",
+            return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
+        ),
+        patch("cyt.hook.daemon._needs_credential_injection", return_value=True),
+        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon._stop_hook_server_on_port") as stop,
+        patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness") as cyt_mcp_ready,
+        patch("cyt.hook.daemon.report_mcpc_hook_readiness") as mcpc_ready,
+        patch("cyt.hook.daemon.report_cloudflare_hook_readiness") as cf_ready,
+        patch("cyt.hook.daemon._schedule_warm_caches") as warm,
+    ):
+        result = hook_daemon.daemon_start(verbose=False, unattended=True)
+
+    stop.assert_not_called()
+    cyt_mcp_ready.assert_not_called()
+    mcpc_ready.assert_not_called()
+    cf_ready.assert_not_called()
+    warm.assert_not_called()
+    assert result.reused is True
+    assert result.port == 8834
+
+
 def test_daemon_start_restarts_reused_server_when_credentials_required(
     pidfile_path: Path,
 ) -> None:
@@ -149,7 +177,7 @@ def test_daemon_start_restarts_reused_server_when_credentials_required(
         spawn.return_value = MagicMock(pid=12345)
         result = hook_daemon.daemon_start(verbose=False)
 
-    stop.assert_called_once_with(8834, verbose=False)
+    stop.assert_called_once_with(8834, verbose=False, force=True)
     spawn.assert_called_once()
     assert spawn.call_args.kwargs["extra_env"] == {OR_KEY: OR_TOKEN}
     assert result.reused is False
@@ -238,7 +266,7 @@ def test_resolve_spawn_credentials_exports_pipeline_keys(
     assert extra == {OR_KEY: OR_TOKEN}
 
 
-def test_unattended_missing_credentials_restarts_uncredentialed_server(
+def test_unattended_missing_credentials_reuses_running_server(
     pidfile_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -260,23 +288,17 @@ def test_unattended_missing_credentials_restarts_uncredentialed_server(
         patch("cyt.hook.daemon._hook_daemon_has_credentials", return_value=False),
         patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
         patch("cyt.hook.daemon._stop_hook_server_on_port") as stop,
-        patch("cyt.hook.daemon._find_spawn_port", return_value=8835),
         patch("cyt.hook.daemon._spawn_hook_server") as spawn,
-        patch("cyt.hook.daemon._wait_for_hook_server", return_value=True),
     ):
-        spawn.return_value = MagicMock(pid=12345)
         result = hook_daemon.daemon_start(verbose=True, unattended=True)
 
-    resolve.assert_called_once_with(
-        config,
-        allow_prompt=False,
-        require_all=False,
-    )
-    stop.assert_called_once_with(8834, verbose=False)
+    resolve.assert_not_called()
+    stop.assert_not_called()
+    spawn.assert_not_called()
     err = capsys.readouterr().err
     assert err == ""
-    assert result.reused is False
-    assert result.port == 8835
+    assert result.reused is True
+    assert result.port == 8834
 
 
 def test_unattended_skips_credential_reinjection(
@@ -374,7 +396,7 @@ def test_daemon_stop_clears_reused_pidfile(pidfile_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True):
+    with patch("cyt.hook.daemon._stop_hook_port", return_value=True):
         hook_daemon.daemon_stop(verbose=False)
     assert not pidfile_path.exists()
 
@@ -384,16 +406,17 @@ def test_daemon_stop_kills_reused_hook_server_on_port(pidfile_path: Path) -> Non
         json.dumps([{"pid": None, "reused": True, "port": 8834}]),
         encoding="utf-8",
     )
-    with patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop:
+    with patch("cyt.hook.daemon._stop_hook_port", return_value=True) as stop:
         hook_daemon.daemon_stop(verbose=True)
-        stop.assert_called_once_with(8834, verbose=True, label="hook daemon")
+        assert stop.call_count >= 1
+        stop.assert_any_call(8834, verbose=True)
     assert not pidfile_path.exists()
 
 
 def test_daemon_restart_stops_then_starts(pidfile_path: Path) -> None:
     with (
-        patch("cyt.hook.daemon.daemon_stop") as stop,
-        patch("cyt.hook.daemon.daemon_start") as start,
+        patch("cyt.hook.daemon._daemon_stop_locked") as stop,
+        patch("cyt.hook.daemon._daemon_start_locked") as start,
     ):
         start.return_value = hook_daemon.HookDaemonStartResult(
             outcome="spawned",
@@ -411,6 +434,7 @@ def test_daemon_restart_stops_then_starts(pidfile_path: Path) -> None:
         foreground=False,
         unattended=True,
         force_spawn=True,
+        ports_already_stopped=True,
     )
     assert result.port == 8835
     assert result.reused is False
@@ -422,6 +446,9 @@ def test_daemon_restart_prints_status_when_not_unattended(
 ) -> None:
     with (
         patch("cyt.hook.daemon.daemon_stop"),
+        patch("cyt.hook.daemon._wait_for_port_free", return_value=True),
+        patch("cyt.hook.daemon._stop_hook_server_on_port"),
+        patch("cyt.hook.daemon.read_hook_daemon_entries", return_value=[]),
         patch(
             "cyt.hook.daemon.load_config",
             return_value={"network": {"proxy": {"reverse": {"port": 8834}}}},
@@ -439,19 +466,21 @@ def test_daemon_restart_prints_status_when_not_unattended(
         hook_daemon.daemon_restart(verbose=False, unattended=False)
 
     err = capsys.readouterr().err.strip()
-    assert err.startswith(
-        "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect started=",
+    assert err.startswith("hook daemon: restarting...")
+    assert (
+        "hook daemon: running pid=12345 port=8835 url=http://127.0.0.1:8835/hook/connect started="
+        in err
     )
 
 
-def test_daemon_stop_without_pidfile_scans_config_port() -> None:
+def test_daemon_stop_without_pidfile_uses_config_port() -> None:
     with (
         patch("cyt.hook.daemon.read_hook_daemon_entries", return_value=[]),
         patch("cyt.hook.daemon._resolve_stop_ports", return_value=[8834]),
-        patch("cyt.hook.daemon._stop_hook_server_on_port", return_value=True) as stop,
+        patch("cyt.hook.daemon._stop_hook_port", return_value=True) as stop,
     ):
         hook_daemon.daemon_stop(verbose=True)
-        stop.assert_called_once_with(8834, verbose=True, label="hook daemon")
+        stop.assert_called_once_with(8834, verbose=True)
 
 
 def test_needs_credential_injection_includes_executor_token() -> None:
@@ -480,7 +509,7 @@ def test_daemon_status_includes_started_timestamp(capsys: pytest.CaptureFixture[
         patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=source),
         patch("cyt.hook.daemon.read_hook_daemon_entries", return_value=[source]),
         patch("cyt.hook.daemon.find_hook_daemon_entry_for_port", return_value=source),
-        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.find_hook_port_for_status", return_value=8834),
         patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
         patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
         patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
@@ -527,7 +556,7 @@ def test_daemon_start_and_status_use_same_started_timestamp(
         patch("cyt.hook.daemon._needs_credential_injection", return_value=False),
         patch("cyt.hook.daemon.read_hook_daemon_pidfile") as read_pidfile,
         patch("cyt.hook.daemon.read_hook_daemon_entries") as read_entries,
-        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.find_hook_port_for_status", return_value=8834),
         patch("cyt.hook.daemon.report_cyt_mcp_hook_readiness"),
         patch("cyt.hook.daemon.report_mcpc_hook_readiness"),
         patch("cyt.hook.daemon.report_cloudflare_hook_readiness"),
@@ -540,3 +569,74 @@ def test_daemon_start_and_status_use_same_started_timestamp(
     status_err = capsys.readouterr().err.strip()
     assert "started=" in start_err
     assert start_err.split("started=", 1)[1] == status_err.split("started=", 1)[1]
+
+
+def test_find_hook_port_for_status_probes_recorded_ports_before_base() -> None:
+    from cyt.hook.port import find_hook_port_for_status
+
+    entries = [{"port": 8840, "hook_url": "http://127.0.0.1:8840/hook/connect"}]
+    hook_health = {"name": "cyt", "status": "ok", "hook": True}
+
+    def fake_fetch(port: int, *, timeout: float | None = None) -> dict[str, Any] | None:
+        del timeout
+        return hook_health if port == 8840 else None
+
+    with patch("cyt.hook.port.fetch_cyt_health", side_effect=fake_fetch) as fetch:
+        port = find_hook_port_for_status(8834, entries, None)
+
+    assert port == 8840
+    assert {call.args[0] for call in fetch.call_args_list} == {8840, 8834}
+
+
+def test_find_hook_port_for_status_falls_back_to_base_port() -> None:
+    from cyt.hook.port import find_hook_port_for_status
+
+    with patch("cyt.hook.port.fetch_cyt_health", return_value=None) as fetch:
+        port = find_hook_port_for_status(8834, [], None)
+
+    assert port is None
+    fetch.assert_called_once_with(8834, timeout=0.3)
+
+
+def test_find_hook_server_port_probes_in_parallel_batches() -> None:
+    from cyt.hook.port import find_hook_server_port
+
+    hook_health = {"name": "cyt", "status": "ok", "hook": True}
+
+    def fake_fetch(port: int, *, timeout: float | None = None) -> dict[str, Any] | None:
+        del timeout
+        return hook_health if port == 8836 else None
+
+    with patch("cyt.hook.port.fetch_cyt_health", side_effect=fake_fetch) as fetch:
+        port = find_hook_server_port(8834, max_attempts=20)
+
+    assert port == 8836
+    assert fetch.call_count == 20
+
+
+def test_find_hook_server_port_returns_lowest_match_in_batch() -> None:
+    from cyt.hook.port import find_hook_server_port
+
+    hook_health = {"name": "cyt", "status": "ok", "hook": True}
+
+    def fake_fetch(port: int, *, timeout: float | None = None) -> dict[str, Any] | None:
+        del timeout
+        return hook_health if port in {8835, 8838} else None
+
+    with patch("cyt.hook.port.fetch_cyt_health") as fetch:
+        fetch.side_effect = fake_fetch
+        port = find_hook_server_port(8834, max_attempts=10)
+
+    assert port == 8835
+
+
+def test_find_hook_port_for_status_prefers_recorded_port_over_base() -> None:
+    from cyt.hook.port import find_hook_port_for_status
+
+    entries = [{"port": 8840, "hook_url": "http://127.0.0.1:8840/hook/connect"}]
+    hook_health = {"name": "cyt", "status": "ok", "hook": True}
+
+    with patch("cyt.hook.port.fetch_cyt_health", return_value=hook_health):
+        port = find_hook_port_for_status(8834, entries, None)
+
+    assert port == 8840

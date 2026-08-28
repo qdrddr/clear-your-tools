@@ -57,7 +57,7 @@ def _prevent_hallucinations_blocked_prompt(text: str) -> None:
         "skills directories",
         "cyt_launch_agent",
         "hook debug logging",
-        "restart the hook daemon",
+        "start the hook daemon",
     ):
         if fragment in lowered:
             raise AssertionError(f"{fragment} prompt should be skipped")
@@ -495,11 +495,11 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
 
     with (
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
-        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+        patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
         hook_setup.run_hook_setup(agents=["cursor"])
 
-    daemon_restart.assert_called_once_with(config_path=None, unattended=False)
+    daemon_start.assert_called_once_with(config_path=None, unattended=True)
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     client_rel = cyt_client_cli_script_relpath()
@@ -536,9 +536,9 @@ def test_run_hook_setup_installs_dev_cursor_hooks(
         )
 
     output = capsys.readouterr().out
-    restart_command = cyt_daemon_restart_command(invocation=invocation)
-    assert "\nRestarting hook daemon via development CLI:" in output
-    assert f"  {restart_command}" in output
+    start_command = cyt_daemon_start_command(invocation=invocation)
+    assert "\nStarting hook daemon via development CLI:" in output
+    assert f"  {start_command}" in output
 
 
 def test_merge_cyt_hook_upgrades_env_prefixed_legacy_stdin_command() -> None:
@@ -1432,11 +1432,11 @@ def test_run_hook_setup_installs_cursor_hooks(
 
     with (
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
-        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+        patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
         hook_setup.run_hook_setup(agents=["cursor"])
 
-    daemon_restart.assert_called_once_with(config_path=None, unattended=False)
+    daemon_start.assert_called_once_with(config_path=None, unattended=True)
 
     data = json.loads(cursor_path.read_text(encoding="utf-8"))
     client_cmd = data["hooks"]["beforeSubmitPrompt"][0]["command"]
@@ -1453,11 +1453,11 @@ def test_run_hook_setup_installs_cursor_hooks(
     assert data["hooks"]["sessionEnd"][0]["command"] == session_client_cmd
 
     output = capsys.readouterr().out
-    assert "\nRestarting hook daemon via packaged cyt:" in output
-    assert f"  {cyt_daemon_restart_command()}" in output
+    assert "\nStarting hook daemon via packaged cyt:" in output
+    assert f"  {cyt_daemon_start_command()}" in output
 
 
-def test_run_hook_setup_skips_cursor_daemon_restart_when_declined(
+def test_run_hook_setup_skips_cursor_daemon_start_when_declined(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1475,7 +1475,7 @@ def test_run_hook_setup_skips_cursor_daemon_restart_when_declined(
         lowered = text.lower()
         if "cyt_launch_agent" in lowered:
             return False
-        if "restart the hook daemon" in lowered:
+        if "start the hook daemon" in lowered:
             return False
         return True
 
@@ -1484,14 +1484,14 @@ def test_run_hook_setup_skips_cursor_daemon_restart_when_declined(
 
     with (
         patch("cyt.hook.setup_wizard.load_config", return_value={"skills": {"enabled": True}}),
-        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+        patch("cyt.hook.daemon.daemon_start") as daemon_start,
     ):
         hook_setup.run_hook_setup(agents=["cursor"])
 
-    daemon_restart.assert_not_called()
+    daemon_start.assert_not_called()
     output = capsys.readouterr().out
     assert "Skipped. Run manually when ready:" in output
-    assert f"  {cyt_daemon_restart_command()}" in output
+    assert f"  {cyt_daemon_start_command()}" in output
 
 
 def test_run_hook_setup_prevent_hallucinations_skips_prompts(
@@ -1521,7 +1521,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
         patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent") as setup_cyt_mcp,
-        patch("cyt.hook.daemon.daemon_restart") as daemon_restart,
+        patch("cyt.hook.daemon.daemon_start") as daemon_start,
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1533,7 +1533,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
             prevent_hallucinations=True,
         )
 
-    daemon_restart.assert_called_once_with(config_path=config_path, unattended=True)
+    daemon_start.assert_called_once_with(config_path=config_path, unattended=True)
     setup_cyt_mcp.assert_called_once()
     setup_kwargs = setup_cyt_mcp.call_args.kwargs
     assert setup_kwargs["migrate_backends"] is True
@@ -1544,7 +1544,7 @@ def test_run_hook_setup_prevent_hallucinations_skips_prompts(
     assert "Skills directories" not in output
     assert "CYT_LAUNCH_AGENT" not in output
     assert "hook debug logging" not in output
-    assert "\nRestarting hook daemon for verify-only mode" in output
+    assert "\nStarting hook daemon for verify-only mode" in output
     assert "Run manually when ready:" not in output
     assert "Restart your agent so hook changes take effect." in output
     assert "Test the hook locally (beforeSubmitPrompt payload on stdin)" in output
@@ -1575,7 +1575,7 @@ def test_run_hook_setup_prevent_hallucinations_prompts_for_existing_hooks(
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
         patch("cyt.tools.cyt_mcp_setup.setup_cyt_mcp_for_agent"),
-        patch("cyt.hook.daemon.daemon_restart"),
+        patch("cyt.hook.daemon.daemon_start"),
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1920,7 +1920,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
         ),
         patch("cyt.config.save_user_config", return_value=True),
         patch("cyt.config.sync_config_in_place"),
-        patch("cyt.hook.daemon.daemon_restart"),
+        patch("cyt.hook.daemon.daemon_start"),
         patch(
             "cyt.hook.setup_wizard.resolve_setup_config_path",
             return_value=config_path,
@@ -1943,7 +1943,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
 
 
-def test_should_propose_hook_daemon_restart() -> None:
+def test_should_propose_hook_daemon_start() -> None:
     hook_config = {
         "pruning": {"inject_via": {"cursor": "hook", "claude": "proxy", "codex": "proxy"}},
     }
@@ -1951,34 +1951,34 @@ def test_should_propose_hook_daemon_restart() -> None:
         "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "proxy"}},
     }
 
-    assert hook_setup._should_propose_hook_daemon_restart(
+    assert hook_setup._should_propose_hook_daemon_start(
         hook_config,
         ["cursor"],
         prevent_hallucinations=False,
     )
-    assert hook_setup._should_propose_hook_daemon_restart(
+    assert hook_setup._should_propose_hook_daemon_start(
         hook_config,
         ["cursor"],
         prevent_hallucinations=True,
     )
-    assert not hook_setup._should_propose_hook_daemon_restart(
+    assert not hook_setup._should_propose_hook_daemon_start(
         hook_config,
         ["claude"],
         prevent_hallucinations=False,
     )
-    assert hook_setup._should_propose_hook_daemon_restart(
+    assert hook_setup._should_propose_hook_daemon_start(
         hook_claude,
         ["claude"],
         prevent_hallucinations=False,
     )
-    assert hook_setup._should_propose_hook_daemon_restart(
+    assert hook_setup._should_propose_hook_daemon_start(
         hook_config,
         ["claude", "codex", "cursor"],
         prevent_hallucinations=False,
     )
 
 
-def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
+def test_run_hook_setup_skips_daemon_start_for_claude_proxy_inject_via(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2014,8 +2014,8 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
     _stub_tools_hook_wizard(monkeypatch)
 
     def fake_prompt_yes_no(text: str, *, default_yes: bool = True) -> bool:
-        if "Restart the hook daemon" in text:
-            raise AssertionError("daemon restart should not be prompted for proxy inject_via")
+        if "Start the hook daemon" in text:
+            raise AssertionError("daemon start should not be prompted for proxy inject_via")
         lowered = text.lower()
         if "debug" in lowered or "cyt_launch_agent" in lowered:
             return False
@@ -2023,12 +2023,12 @@ def test_run_hook_setup_skips_daemon_restart_for_claude_proxy_inject_via(
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", fake_prompt_yes_no)
 
-    with patch("cyt.hook.daemon.daemon_restart") as daemon_restart:
+    with patch("cyt.hook.daemon.daemon_start") as daemon_start:
         hook_setup.run_hook_setup(config_path=config_path, agents=["claude"])
 
-    daemon_restart.assert_not_called()
+    daemon_start.assert_not_called()
     output = capsys.readouterr().out
-    assert "Restart the hook daemon" not in output
+    assert "Start the hook daemon" not in output
 
 
 def test_configure_hook_skills_skips_directories_when_disabled(

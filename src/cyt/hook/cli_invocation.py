@@ -314,6 +314,10 @@ def build_hook_spawn_command(
         args_tail.extend(["--config", str(config_path)])
 
     if invocation.is_dev and invocation.repo_root is not None:
+        script = invocation.repo_root / proxy_cli_script_relpath()
+        # Parent is already running inside uv's venv — avoid a nested ``uv run`` (~15-20s).
+        if invoked_via_proxy_cli_script():
+            return [sys.executable, str(script), *args_tail]
         uv = resolve_hook_executable("uv")
         if uv == "uv":
             uv = shutil.which("uv") or ""
@@ -326,7 +330,6 @@ def build_hook_spawn_command(
                 proxy_cli_script_relpath(),
                 *args_tail,
             ]
-        script = invocation.repo_root / proxy_cli_script_relpath()
         return [sys.executable, str(script), *args_tail]
 
     return [sys.executable, "-m", "cyt.proxy.cli", *args_tail]

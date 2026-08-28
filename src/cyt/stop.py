@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -81,8 +82,10 @@ def _hook_daemon_exclude_sets(*, except_proxy_registry: bool = False) -> tuple[s
 def _proxy_listener_pid(port: int) -> int | None:
     from cyt.hook.daemon import _find_listen_pid
     from cyt.hook.port import fetch_cyt_health
-    from cyt.launch.proxy_guard import _is_cyt_health
+    from cyt.launch.proxy_guard import _is_cyt_health, is_port_in_use
 
+    if not is_port_in_use(port):
+        return None
     health = fetch_cyt_health(port)
     if not _is_cyt_health(health):
         return None
@@ -149,11 +152,29 @@ def _collect_default_port_proxy_pids(
     ordered: list[int],
 ) -> None:
     from cyt.config import DEFAULT_REVERSE_PORT
+    from cyt.launch.proxy_guard import is_port_in_use
 
-    for offset in range(100):
-        port = DEFAULT_REVERSE_PORT + offset
-        if port in exclude_ports:
-            continue
+    candidates = [
+        DEFAULT_REVERSE_PORT + offset
+        for offset in range(100)
+        if DEFAULT_REVERSE_PORT + offset not in exclude_ports
+    ]
+    if not candidates:
+        return
+
+    live_ports: list[int] = []
+    workers = min(20, len(candidates))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(is_port_in_use, port): port for port in candidates}
+        for future in as_completed(futures):
+            port = futures[future]
+            try:
+                if future.result():
+                    live_ports.append(port)
+            except Exception:
+                continue
+
+    for port in sorted(live_ports):
         _try_add_proxy_pid(
             _proxy_listener_pid(port),
             seen=seen,
@@ -259,6 +280,10 @@ def stop_proxy_registry_servers(*, verbose: bool = False) -> bool:
 
 def proxies_conflicting_with_hook_setup() -> bool:
     """Return True when reverse proxies conflict with hook installation."""
+    from cyt.runtime_registry import read_proxy_entries
+
+    if not read_proxy_entries():
+        return False
     if proxy_registry_has_live_servers():
         return True
     exclude_ports, exclude_pids = _hook_daemon_exclude_sets(except_proxy_registry=True)

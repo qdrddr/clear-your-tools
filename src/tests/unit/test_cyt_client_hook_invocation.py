@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -82,7 +81,7 @@ def test_cursor_pairing_hooks_dev_mode(
     assert str(repo) in daemon_cmd or "clear-your-tools" in daemon_cmd
 
 
-def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
+def test_pairing_does_not_modify_hooks_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -91,45 +90,21 @@ def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
     (repo_root / "src" / "cyt_mcp").mkdir(parents=True)
     (repo_root / "src" / "cyt_mcp" / "cli.py").write_text("# stub\n", encoding="utf-8")
 
+    hooks_before = {
+        "version": 1,
+        "hooks": {
+            "preToolUse": [
+                {"command": "CYT_LAUNCH_AGENT=cursor cyt-client", "timeout": 60},
+            ],
+            "beforeMCPExecution": [
+                {"command": "CYT_LAUNCH_AGENT=cursor cyt-client", "timeout": 60},
+            ],
+        },
+    }
     hooks_path = tmp_path / "hooks.json"
-    hooks_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "hooks": {
-                    "preToolUse": [
-                        {"command": "CYT_LAUNCH_AGENT=cursor cyt-client", "timeout": 60},
-                    ],
-                    "beforeMCPExecution": [
-                        {"command": "CYT_LAUNCH_AGENT=cursor cyt-client", "timeout": 60},
-                    ],
-                    "afterMCPExecution": [
-                        {
-                            "command": "CYT_LAUNCH_AGENT=cursor cyt-client",
-                            "matcher": "cyt-mcp_get-tool-definitions|mcp__cyt-mcp__get-tool-definitions",
-                            "timeout": 60,
-                        },
-                    ],
-                },
-            },
-        ),
-        encoding="utf-8",
-    )
+    hooks_path.write_text(json.dumps(hooks_before) + "\n", encoding="utf-8")
     mcp_path = tmp_path / "mcp.json"
-    mcp_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "cyt-mcp": build_cyt_mcp_mcp_server_entry(
-                        "cursor",
-                        dev_repo_root=repo_root,
-                        dev_script_rel="src/cyt_mcp/cli.py",
-                    ),
-                },
-            },
-        ),
-        encoding="utf-8",
-    )
+    mcp_path.write_text(json.dumps({"mcpServers": {}}) + "\n", encoding="utf-8")
     aggregator_path = tmp_path / "mcp-aggregator.yaml"
     aggregator_path.write_text(
         "\n".join(
@@ -151,11 +126,6 @@ def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
     monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": mcp_path})
     monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
-    hooks_wrapper_dir = tmp_path / "cursor" / "hooks"
-    monkeypatch.setattr(
-        "cyt_client.hook_invocation.cursor_hooks_dir",
-        lambda: hooks_wrapper_dir,
-    )
 
     repair_pairing(
         {"hook_event_name": "sessionStart", "session_id": "pair-dev"},
@@ -163,28 +133,9 @@ def test_pairing_replaces_prod_hooks_with_dev_from_mcp(
         runtime_repo=repo_root,
     )
 
-    payload = json.loads(hooks_path.read_text(encoding="utf-8"))
-    pre_tool_cmd = payload["hooks"]["preToolUse"][0]["command"]
-    from cyt_client.mcp_entry import _inner_command_from_windows_wrapper, _strip_env_prefix
-
-    resolved_cmd = _strip_env_prefix(pre_tool_cmd)
-    if sys.platform == "win32":
-        assert "cyt-client-dev.cmd" in pre_tool_cmd
-        wrapper = hooks_wrapper_dir / "cyt-client-dev.cmd"
-        assert wrapper.is_file()
-        inner = _inner_command_from_windows_wrapper(str(wrapper))
-        assert inner is not None
-        assert " run --directory " in inner
-        assert str(repo_root) in inner or repo_root.as_posix() in inner
-        assert "src/cyt_client/cli.py" in inner
-    else:
-        assert "uv run --directory" in resolved_cmd
-        assert str(repo_root) in resolved_cmd
-        assert "src/cyt_client/cli.py" in resolved_cmd
-    assert payload["hooks"]["postToolUse"][0]["command"] == pre_tool_cmd
-    assert "beforeMCPExecution" not in payload["hooks"]
-    assert "afterMCPExecution" not in payload["hooks"]
-    assert len(payload["hooks"]["preToolUse"]) == 1
+    assert json.loads(hooks_path.read_text(encoding="utf-8")) == hooks_before
+    mcp_payload = json.loads(mcp_path.read_text(encoding="utf-8"))
+    assert "cyt-mcp" in mcp_payload["mcpServers"]
 
 
 def test_resolve_pairing_dev_context_from_mcp_file(tmp_path: Path) -> None:

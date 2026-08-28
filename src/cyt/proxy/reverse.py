@@ -1286,6 +1286,13 @@ async def _proxy_request(
 
 
 def _configure_proxy_startup(config: dict[str, Any], *, debug: bool) -> None:
+    import os
+
+    from cyt.cache.warm import CYT_HOOK_DAEMON_CHILD_ENV
+
+    if os.environ.get(CYT_HOOK_DAEMON_CHILD_ENV) == "1":
+        return
+
     from cyt.cache import schedule_warm_caches
     from cyt.config import uses_cloudflare_tool_catalog, uses_executor_tool_catalog
     from cyt.executor.cache_scheduler import start_executor_cache_scheduler

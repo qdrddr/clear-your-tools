@@ -99,7 +99,7 @@ export SHORTEN_ROOT="$ROOT"
 trap 'echo; echo "Interrupted."; exit 130' INT TERM
 
 echo "Discovering prek hooks..." >&2
-mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
+mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | tr -d '\r' | awk '!seen[$0]++')
 ((${#ALL_HOOKS[@]})) || {
 	echo "No prek hooks found." >&2
 	exit 1
@@ -107,6 +107,7 @@ mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | awk '!seen[$0]++')
 
 declare -A ALL_HOOK_SET=()
 for hook in "${ALL_HOOKS[@]}"; do
+	hook="${hook//$'\r'/}"
 	ALL_HOOK_SET["$hook"]=1
 done
 
@@ -130,7 +131,8 @@ if group not in groups:
 hooks = groups[group] or []
 for hook in hooks:
     if hook:
-        print(hook)
+        # LF-only so Windows Git Bash does not leave stray CR in hook names.
+        sys.stdout.buffer.write(f"{hook}\n".encode())
 PY
 }
 
@@ -169,6 +171,7 @@ resolve_hooks() {
 
 		for hook in "${GROUP_HOOKS[@]}"; do
 			[[ -z $hook ]] && continue
+			hook="${hook//$'\r'/}"
 			if [[ -z ${ALL_HOOK_SET[$hook]+x} ]]; then
 				missing+=("$group:$hook")
 				continue
@@ -182,6 +185,11 @@ resolve_hooks() {
 
 	if ((${#missing[@]})); then
 		echo "Warning: groups list hooks not in prek config: ${missing[*]}" >&2
+	fi
+
+	if ((${#SELECTED_GROUPS[@]})) && ((${#HOOKS[@]} < 3)) && ((${#missing[@]} > 5)); then
+		echo "Hint: most group hooks did not match prek list (often Windows CRLF in hook names)." >&2
+		echo "      Re-run from Git Bash or update scripts/pre-commit-hooks/prek-loop.sh." >&2
 	fi
 
 	if ((${#HOOKS[@]} == 0)); then
@@ -293,6 +301,40 @@ run_hook() {
 	return "$exit_code"
 }
 
+hook_modified_files_only() {
+	[[ "${PREK_DETAILS}" == *"files were modified by this hook"* ]]
+}
+
+run_hook_with_retry() {
+	local hook="$1"
+	local first_details=""
+
+	if run_hook "$hook"; then
+		return 0
+	fi
+
+	if ! $ONE_RUN || ! hook_modified_files_only; then
+		return 1
+	fi
+
+	first_details="${PREK_DETAILS}"
+	if ! $NO_GIT_ADD; then
+		rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
+		rtk git add -A >/dev/null 2>&1 || true
+	fi
+	if run_hook "$hook"; then
+		return 0
+	fi
+
+	# Keep the first failure details when the retry also fails.
+	if [[ -n ${first_details} ]]; then
+		PREK_DETAILS="${first_details}
+
+(retry after staging hook output also failed)"
+	fi
+	return 1
+}
+
 if ((total == 0)); then
 	echo "Nothing to run."
 	exit 0
@@ -312,7 +354,7 @@ while true; do
 	for hook in "${HOOKS[@]}"; do
 		n=$((passed + failed + 1))
 		hook_failed=false
-		if run_hook "$hook"; then
+		if run_hook_with_retry "$hook"; then
 			passed=$((passed + 1))
 			result="Passed"
 		else

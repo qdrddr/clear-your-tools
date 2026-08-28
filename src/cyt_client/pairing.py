@@ -297,20 +297,13 @@ def repair_pairing(
                 runtime_repo=resolved_runtime,
             )
 
-    hooks_path = _AGENT_HOOK_PATHS.get(agent)
-    if hooks_path is not None:
-        _ensure_hooks_file(
-            hooks_path.expanduser(),
-            agent,
-            verbose=verbose,
-            runtime_repo=resolved_runtime,
-        )
+    # Cursor/Claude/Codex hooks.json is updated only via ``cyt hook <agent>`` (never here).
 
     _ = resolve_config_path()
 
 
 def repair_pairing_from_mcp_runtime(*, agent: str | None = None, verbose: bool = False) -> None:
-    """Repair hooks/MCP pairing when cyt-mcp starts (dev or prod runtime)."""
+    """Repair MCP pairing when cyt-mcp starts (dev or prod runtime)."""
     resolved_agent = (agent or "cursor").strip() or "cursor"
     runtime_repo = runtime_dev_repo_from_mcp()
     repair_pairing(

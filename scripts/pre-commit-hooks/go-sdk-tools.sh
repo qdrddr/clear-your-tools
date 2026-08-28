@@ -50,6 +50,18 @@ ensure_go_sdk_tool() {
 	(
 		if command -v flock >/dev/null 2>&1; then
 			flock -x 200
+		else
+			# Portable lock when flock is unavailable (e.g. Windows Git Bash).
+			lock_wait=0
+			while ! mkdir "${lock_file}.d" 2>/dev/null; do
+				sleep 0.05
+				lock_wait=$((lock_wait + 1))
+				if ((lock_wait > 600)); then
+					echo "go-sdk-tools: timed out waiting for ${install_spec} install lock" >&2
+					exit 1
+				fi
+			done
+			trap 'rmdir "${lock_file}.d" 2>/dev/null || true' EXIT
 		fi
 		if [[ ! -x "${bin_path}" ]]; then
 			GO111MODULE=on go install "${install_spec}"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Generator
 from pathlib import Path
@@ -183,15 +184,14 @@ def test_daemon_status_checks_credentials_before_running_line(
     with (
         patch("cyt.hook.daemon.load_config", return_value=config),
         patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=None),
-        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=8834),
+        patch("cyt.hook.daemon.find_hook_port_for_status", return_value=8834),
         patch(
-            "cyt.hook.credentials.report_and_ensure_hook_credentials",
-            return_value={EXECUTOR_TOKEN: "keyring"},
+            "cyt.hook.daemon._report_hook_credentials_status",
         ) as ensure,
     ):
         hook_daemon.daemon_status()
 
-    ensure.assert_called_once_with(config, exit_on_missing_non_tty=False)
+    ensure.assert_called_once_with(config)
     captured = capsys.readouterr()
     assert "hook daemon: running" in captured.err
 
@@ -205,17 +205,19 @@ def test_daemon_status_non_tty_missing_token_still_prints_daemon_line(
     with (
         patch("cyt.hook.daemon.load_config", return_value=config),
         patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=None),
-        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=None),
+        patch("cyt.hook.daemon.find_hook_port_for_status", return_value=None),
         patch(
-            "cyt.hook.credentials.inspect_named_credentials",
-            return_value=[(EXECUTOR_TOKEN, None)],
+            "cyt.hook.credentials.required_hook_daemon_env_var_names",
+            return_value=[EXECUTOR_TOKEN],
         ),
+        patch("cyt.launch.secrets.load_proxy_env"),
+        patch.dict(os.environ, {}, clear=True),
     ):
         hook_daemon.daemon_status()
 
     captured = capsys.readouterr()
-    assert f"\t{EXECUTOR_TOKEN}" in captured.out
-    assert captured.err.strip() == "hook daemon: not running"
+    assert f"Hook credentials missing: {EXECUTOR_TOKEN}" in captured.err
+    assert "hook daemon: not running" in captured.err
 
 
 def test_daemon_status_definitions_mode_no_executor_banner(
@@ -226,7 +228,7 @@ def test_daemon_status_definitions_mode_no_executor_banner(
     with (
         patch("cyt.hook.daemon.load_config", return_value=config),
         patch("cyt.hook.daemon.read_hook_daemon_pidfile", return_value=None),
-        patch("cyt.hook.daemon._find_reusable_hook_port", return_value=None),
+        patch("cyt.hook.daemon.find_hook_port_for_status", return_value=None),
     ):
         hook_daemon.daemon_status()
 

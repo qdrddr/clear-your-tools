@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Any
 
@@ -21,7 +22,13 @@ from cyt.config import (
 )
 from cyt.tools.budget import tools_inject_allowed
 
+CYT_HOOK_DAEMON_CHILD_ENV = "CYT_HOOK_DAEMON_CHILD"
+
 logger = logging.getLogger(__name__)
+
+
+def _skip_hook_daemon_child_warm() -> bool:
+    return os.environ.get(CYT_HOOK_DAEMON_CHILD_ENV) == "1"
 
 
 def _bootstrap_definitions_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -177,6 +184,8 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
 
 def warm_caches(config: dict[str, Any] | None = None) -> None:
     """Ensure on-disk indexes exist at startup; no-op when cache is disabled."""
+    if _skip_hook_daemon_child_warm():
+        return
     cfg = config or load_config()
     if not cache_enabled(cfg):
         return
@@ -198,6 +207,8 @@ def warm_caches(config: dict[str, Any] | None = None) -> None:
 
 def schedule_warm_caches(config: dict[str, Any] | None = None) -> None:
     """Warm caches in a background thread so hook startup stays non-blocking."""
+    if _skip_hook_daemon_child_warm():
+        return
     cfg = config or load_config()
     threading.Thread(
         target=warm_caches,

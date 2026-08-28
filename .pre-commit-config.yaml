@@ -472,6 +472,17 @@ repos:
         pass_filenames: false
         language: system
         files: ^(src/cyt/agents/.*\.py|src/cyt/skills/.*\.py|src/cyt/proxy/reverse\.py|scripts/pre-commit-hooks/check_agent_imports\.py)$
+      - id: maturin-develop
+        name: maturin develop (cyt-indexer _native)
+        entry: bash scripts/pre-commit-hooks/prek-hook.sh
+        args:
+          [
+            'cd "$(git rev-parse --show-toplevel)" && rtk bash scripts/local/dev/maturin-develop.sh',
+          ]
+        language: system
+        files: ^(sdk/(rust/cyt-indexer/|python/)|Cargo\.(toml|lock))
+        pass_filenames: false
+
       - id: pytest-unit
         name: pytest (unit)
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
@@ -603,7 +614,7 @@ repos:
         files: ^(sdk/(rust|python)/|pyproject\.toml)
         pass_filenames: false
 
-      - id: local-dev-core-rust
+      - id: cargo-clippy-cyt-indexer
         name: cargo clippy (cyt-indexer)
         entry: bash scripts/pre-commit-hooks/prek-hook.sh
         args:

@@ -88,7 +88,6 @@ def test_run_cursor_launch_session_starts_hook_not_proxy() -> None:
     with (
         patch.object(launch_cli, "sys") as mock_sys,
         patch.object(launch_cli, "ensure_tools_hook_file_interactive", side_effect=lambda _p, c: c),
-        patch.object(launch_cli, "ensure_cursor_hooks_for_launch"),
         patch.object(launch_cli, "_ensure_hook_server") as ensure_hook,
         patch.object(launch_cli, "ensure_proxy") as ensure_proxy,
         patch.object(launch_cli, "print_runtime_env_report"),

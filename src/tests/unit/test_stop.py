@@ -143,6 +143,10 @@ def test_stop_proxy_registry_servers_stops_hook_daemon_overlap() -> None:
 
 def test_proxies_conflicting_with_hook_setup_detects_proxy_registry_overlap() -> None:
     with (
+        patch(
+            "cyt.runtime_registry.read_proxy_entries",
+            return_value=[{"pid": 69783, "port": 8835}],
+        ),
         patch("cyt.stop.proxy_registry_has_live_servers", return_value=True),
         patch("cyt.stop._collect_proxy_pids", return_value=[]),
     ):

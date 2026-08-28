@@ -32,7 +32,6 @@ from cyt.hook.cli_invocation import (
     cursor_hook_client_command,
     cursor_hook_daemon_start_command,
     cyt_client_command,
-    cyt_daemon_restart_command,
     cyt_daemon_start_command,
     detect_hook_cli_invocation,
     is_dev_cyt_hook_command,
@@ -209,7 +208,7 @@ def _selected_agents_use_hook_injection(
     return False
 
 
-def _should_propose_hook_daemon_restart(
+def _should_propose_hook_daemon_start(
     config: dict[str, Any],
     selected_agents: list[HookAgentName],
     *,
@@ -219,34 +218,34 @@ def _should_propose_hook_daemon_restart(
     return _selected_agents_use_hook_injection(config, selected_agents)
 
 
-def _propose_hook_daemon_restart(
+def _propose_hook_daemon_start(
     *,
     config_path: Path | None = None,
     invocation: HookCliInvocation | None = None,
     selected_agents: list[HookAgentName],
     prevent_hallucinations: bool = False,
 ) -> None:
-    from cyt.hook.daemon import daemon_restart
+    from cyt.hook.daemon import daemon_start
 
     resolved_invocation = invocation or detect_hook_cli_invocation()
-    command = cyt_daemon_restart_command(invocation=resolved_invocation)
+    command = cyt_daemon_start_command(invocation=resolved_invocation)
     print("\n--- Hook Daemon ---")
     if prevent_hallucinations:
         mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
-        print(f"\n\nRestarting hook daemon for verify-only mode via {mode}:\n  {command}")
-        daemon_restart(config_path=config_path, unattended=True)
+        print(f"\n\nStarting hook daemon for verify-only mode via {mode}:\n  {command}")
+        daemon_start(config_path=config_path, unattended=True)
         return
     if "cursor" in selected_agents:
-        prompt = "Restart the hook daemon so Cursor session hooks pick up the new configuration?"
+        prompt = "Start the hook daemon so Cursor session hooks pick up the new configuration?"
     else:
-        prompt = "Restart the hook daemon so session hooks pick up the new configuration?"
+        prompt = "Start the hook daemon so session hooks pick up the new configuration?"
     print()
     if not _prompt_yes_no(prompt, default_yes=True):
         print(f"Skipped. Run manually when ready:\n  {command}")
         return
     mode = "development CLI" if resolved_invocation.is_dev else "packaged cyt"
-    print(f"\nRestarting hook daemon via {mode}:\n  {command}")
-    daemon_restart(config_path=config_path, unattended=False)
+    print(f"\nStarting hook daemon via {mode}:\n  {command}")
+    daemon_start(config_path=config_path, unattended=True)
 
 
 def cursor_before_submit_entry(
@@ -2333,12 +2332,12 @@ def _finish_hook_setup(
         ):
             print("\nRestart your agent so hook changes take effect.")
 
-    if _should_propose_hook_daemon_restart(
+    if _should_propose_hook_daemon_start(
         config,
         selected_agents,
         prevent_hallucinations=prevent_hallucinations,
     ):
-        _propose_hook_daemon_restart(
+        _propose_hook_daemon_start(
             config_path=config_path,
             invocation=invocation,
             selected_agents=selected_agents,
@@ -2362,6 +2361,11 @@ def run_hook_setup(
 ) -> None:
     """Install CYT agent hooks and ensure runtime credentials."""
     selected_agents = _resolve_hook_setup_agents(agents)
+    if len(selected_agents) == 1:
+        print(f"CYT hook setup ({selected_agents[0]})\n")
+    else:
+        print("CYT hook setup\n")
+
     resolved_config_path = resolve_setup_config_path(config_path)
     config = _load_hook_setup_config(
         config_path=config_path,
@@ -2369,10 +2373,6 @@ def run_hook_setup(
         selected_agents=selected_agents,
         prevent_hallucinations=prevent_hallucinations,
     )
-    if len(selected_agents) == 1:
-        print(f"CYT hook setup ({selected_agents[0]})\n")
-    else:
-        print("CYT hook setup\n")
 
     nested_targets, cursor_targets, include_claude, include_codex, include_cursor = (
         _collect_hook_setup_targets(selected_agents)

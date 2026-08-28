@@ -46,3 +46,4 @@ ffi) feature_args=(--no-default-features --features ffi) ;;
 esac
 
 chunk_cargo_locked "${ROOT}" test -p cyt-indexer --locked "${feature_args[@]}" "${args[@]}"
+bash "${ROOT}/scripts/local/dev/heal-cargo-lock.sh"
