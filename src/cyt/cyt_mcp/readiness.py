@@ -20,19 +20,30 @@ CytMcpCatalogProbe = Literal["ok", "empty", "unavailable"]
 CYT_MCP_INSTALL_HINT = "Please install cyt-mcp: uv tool install 'clear-your-tools[cyt-mcp]'"
 
 
-def probe_cyt_mcp_catalog(config: dict[str, Any] | None = None) -> CytMcpCatalogProbe | None:
+def probe_cyt_mcp_catalog(
+    config: dict[str, Any] | None = None,
+    *,
+    quick: bool = False,
+) -> CytMcpCatalogProbe | None:
     cfg = config or load_config()
     if not needs_cyt_mcp_catalog(cfg):
         return None
 
     catalog_url = tools_hook_cyt_mcp_catalog_url(cfg)
+    executable = tools_hook_cyt_mcp_executable(cfg)
+    if quick:
+        if catalog_url:
+            return "ok"
+        if not cyt_mcp_available(executable):
+            return "unavailable"
+        return "ok"
+
     if catalog_url:
         tools = get_cyt_mcp_catalog(cfg, blocking=True)
         if tools is None:
             return "unavailable"
         return "ok" if tools else "empty"
 
-    executable = tools_hook_cyt_mcp_executable(cfg)
     if not cyt_mcp_available(executable):
         return "unavailable"
 
@@ -50,10 +61,11 @@ def report_cyt_mcp_hook_readiness(
     config: dict[str, Any] | None = None,
     *,
     unattended: bool = False,
+    quick: bool = False,
 ) -> None:
     if unattended:
         return
-    probe = probe_cyt_mcp_catalog(config)
+    probe = probe_cyt_mcp_catalog(config, quick=quick)
     if probe is None:
         return
     if probe == "unavailable":

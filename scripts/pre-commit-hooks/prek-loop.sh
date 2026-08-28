@@ -279,12 +279,15 @@ parse_prek_output() {
 	PREK_DETAILS="${parsed#*$'\031'}"
 }
 
+LAST_HOOK_RAW_OUTPUT=""
+
 run_hook() {
 	local hook="$1"
 	local output exit_code=0
 
 	if [[ "${hook}" == "export-rust-sbom" ]]; then
 		output=$(rtk bash scripts/deps/export-rust-sbom-precommit.sh 2>&1) || exit_code=$?
+		LAST_HOOK_RAW_OUTPUT="${output}"
 		PREK_HOOK_STREAMED=false
 		if ((exit_code == 0)); then
 			PREK_STATUSES="Passed"
@@ -296,13 +299,37 @@ run_hook() {
 	fi
 
 	output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
+	LAST_HOOK_RAW_OUTPUT="${output}"
 	PREK_HOOK_STREAMED=false
 	parse_prek_output "$output"
 	return "$exit_code"
 }
 
+_hook_output_text() {
+	local text="${PREK_DETAILS}"
+	local log_path=""
+
+	if [[ "${LAST_HOOK_RAW_OUTPUT}" == *"files were modified by this hook"* ]]; then
+		printf '%s\n' "${LAST_HOOK_RAW_OUTPUT}"
+		return 0
+	fi
+	if [[ "${text}" == *"files were modified by this hook"* ]]; then
+		printf '%s\n' "${text}"
+		return 0
+	fi
+	if [[ "${text}" =~ \[full\ output:\ \"([^\"]+)\"\] ]]; then
+		log_path="${BASH_REMATCH[1]}"
+		log_path="${log_path/#\$HOME/${HOME}}"
+		if [[ -f "${log_path}" ]]; then
+			cat "${log_path}"
+		fi
+	fi
+}
+
 hook_modified_files_only() {
-	[[ "${PREK_DETAILS}" == *"files were modified by this hook"* ]]
+	local blob
+	blob="$(_hook_output_text)"
+	[[ "${blob}" == *"files were modified by this hook"* ]]
 }
 
 run_hook_with_retry() {

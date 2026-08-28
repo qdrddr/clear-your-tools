@@ -1551,16 +1551,16 @@ def _primary_hook_agent(selected_agents: list[HookAgentName]) -> HookAgentName |
     return None
 
 
-def _report_hook_tools_readiness(config: dict[str, Any]) -> None:
+def _report_hook_tools_readiness(config: dict[str, Any], *, quick: bool = False) -> None:
     if not tools_enabled(config):
         return
     sources = set(tools_hook_sources(config))
     if "cyt_mcp" in sources:
-        report_cyt_mcp_hook_readiness(config)
+        report_cyt_mcp_hook_readiness(config, quick=quick)
     if "mcpc" in sources:
-        report_mcpc_hook_readiness(config)
+        report_mcpc_hook_readiness(config, quick=quick)
     if "cloudflare" in sources:
-        report_cloudflare_hook_readiness(config)
+        report_cloudflare_hook_readiness(config, quick=quick)
 
 
 def _save_tools_hook_wizard_config(
@@ -2295,7 +2295,8 @@ def _run_standard_hook_setup_steps(
     )
     config = load_config(config_path)
     _ensure_hook_credentials(config)
-    _report_hook_tools_readiness(config)
+    # Wizard already validated cyt-mcp/MCP install; avoid a full catalog subprocess here.
+    _report_hook_tools_readiness(config, quick=True)
     if "cursor" in selected_agents:
         config = _configure_cursor_rule_file(resolved_config_path, config)
     return config

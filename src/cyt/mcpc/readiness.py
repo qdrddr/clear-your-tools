@@ -20,7 +20,11 @@ MCPC_EMPTY_SESSIONS_HINT = (
 )
 
 
-def probe_mcpc_sessions(config: dict[str, Any] | None = None) -> McpcSessionsProbe | None:
+def probe_mcpc_sessions(
+    config: dict[str, Any] | None = None,
+    *,
+    quick: bool = False,
+) -> McpcSessionsProbe | None:
     """Probe ``mcpc --json`` sessions when hook catalog source is mcpc."""
     cfg = config or load_config()
     if not uses_mcpc_tool_catalog(cfg):
@@ -29,6 +33,8 @@ def probe_mcpc_sessions(config: dict[str, Any] | None = None) -> McpcSessionsPro
     executable = tools_hook_mcpc_executable(cfg)
     if not mcpc_available(executable):
         return "unavailable"
+    if quick:
+        return "ok"
 
     payload = run_mcpc_json(executable, [])
     if not isinstance(payload, dict):
@@ -48,11 +54,12 @@ def report_mcpc_hook_readiness(
     config: dict[str, Any] | None = None,
     *,
     unattended: bool = False,
+    quick: bool = False,
 ) -> None:
     """Print MCPC readiness hints to stderr when hook uses the mcpc catalog."""
     if unattended:
         return
-    probe = probe_mcpc_sessions(config)
+    probe = probe_mcpc_sessions(config, quick=quick)
     if probe is None:
         return
     if probe == "unavailable":
