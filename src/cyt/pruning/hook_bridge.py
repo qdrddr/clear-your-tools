@@ -165,39 +165,6 @@ def run_hook_coordinated_prune(
     if tools_allowed:
         with hook_timer.measure("hook:catalog-load"):
             catalog = load_tool_catalog(config)
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        from pathlib import Path as _Path
-
-        _mlflow = 0
-        if catalog:
-            _mlflow = sum(1 for t in catalog if str(t.get("name", "")).startswith("mlflow-mcp_"))
-        _log_path = _Path("debug-303753.log")
-        with _log_path.open("a", encoding="utf-8") as _fh:
-            _fh.write(
-                _json.dumps(
-                    {
-                        "sessionId": "303753",
-                        "runId": "post-fix",
-                        "hypothesisId": "C",
-                        "location": "cyt/pruning/hook_bridge.py:run_hook_coordinated_prune",
-                        "message": "hook catalog loaded",
-                        "data": {
-                            "catalog_count": len(catalog) if catalog else 0,
-                            "mlflow_tool_count": _mlflow,
-                            "catalog_missing": catalog is None,
-                        },
-                        "timestamp": int(_time.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n",
-            )
-    except OSError:
-        pass
-    # #endregion
     if tools_allowed and catalog is None:
         missing = PruneResult(
             tools=None,

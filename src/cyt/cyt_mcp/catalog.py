@@ -476,42 +476,6 @@ def apply_fetched_catalog(
         degraded_servers or (),
         disk_tools=disk_tools,
     )
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        from pathlib import Path as _Path
-
-        _log_path = _Path("debug-303753.log")
-        _log_path.parent.mkdir(parents=True, exist_ok=True)
-        with _log_path.open("a", encoding="utf-8") as _fh:
-            _fh.write(
-                _json.dumps(
-                    {
-                        "sessionId": "303753",
-                        "runId": "post-fix",
-                        "hypothesisId": "B",
-                        "location": "cyt/cyt_mcp/catalog.py:apply_fetched_catalog",
-                        "message": "cyt-mcp catalog apply",
-                        "data": {
-                            "incoming_count": len(tools),
-                            "existing_count": len(existing),
-                            "disk_count": len(disk_tools),
-                            "merged_count": len(merged),
-                            "degraded_servers": list(degraded_servers or ()),
-                            "preserved_count": len(merged) - len(tools),
-                            "live_servers": sorted(_server_keys_for_tools(tools)),
-                            "merged_servers": sorted(_server_keys_for_tools(merged)),
-                        },
-                        "timestamp": int(_time.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n",
-            )
-    except OSError:
-        pass
-    # #endregion
     content_hash = raw_catalog_content_hash(merged)
     _apply_catalog_to_state(state, merged, content_hash=content_hash, config=config)
     _write_catalog_disk(cache_key, merged)
