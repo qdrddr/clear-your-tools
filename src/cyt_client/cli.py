@@ -7,9 +7,12 @@ import json
 import os
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any
+
+from cyt.common.agent_debug_log import agent_debug_log
 
 from cyt_client.agent import infer_harness_agent, looks_like_cursor_payload
 from cyt_client.config import inject_via_for_agent, verify_only_mode
@@ -379,6 +382,15 @@ def _handle_session_end(payload: dict, *, cursor_output: bool) -> None:
 
 
 def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C901
+    # #region agent log
+    _hook_total_start = time.perf_counter()
+    agent_debug_log(
+        "cli.py:_handle_cursor_before_submit",
+        "beforeSubmitPrompt start",
+        data={"prompt_len": len(str(payload.get("prompt", "")))},
+        hypothesis_id="E",
+    )
+    # #endregion
     workspace = _workspace_for_cursor_hook(payload)
     if workspace is None:
         _emit_cursor_continue()
@@ -411,7 +423,18 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
     prior_rules_injection = (
         "" if (_fresh_hook or verify_only) else read_cursor_rules_injection(workspace)
     )
+    # #region agent log
+    _enrich_start = time.perf_counter()
+    # #endregion
     payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
+    # #region agent log
+    agent_debug_log(
+        "cli.py:_handle_cursor_before_submit",
+        "enrich_hook_payload done",
+        data={"elapsed_ms": round((time.perf_counter() - _enrich_start) * 1000, 1)},
+        hypothesis_id="E",
+    )
+    # #endregion
     if is_prompt_submit_event(payload) and not (
         verify_only_mode() and inject_via_for_agent(agent) == "hook"
     ):
@@ -444,7 +467,21 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_hook_stdout(body)
         return
 
+    # #region agent log
+    _resolve_start = time.perf_counter()
+    # #endregion
     hook_url = resolve_hook_url()
+    # #region agent log
+    agent_debug_log(
+        "cli.py:_handle_cursor_before_submit",
+        "resolve_hook_url done",
+        data={
+            "hook_url": hook_url,
+            "elapsed_ms": round((time.perf_counter() - _resolve_start) * 1000, 1),
+        },
+        hypothesis_id="B",
+    )
+    # #endregion
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")
         _emit_cursor_continue()
@@ -494,16 +531,35 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         return
 
     try:
+        # #region agent log
+        _rules_start = time.perf_counter()
+        # #endregion
         sync_cursor_rules_file(
             workspace,
             injection,
             merge_sections=extract_rules_merge_sections(body),
         )
+        # #region agent log
+        agent_debug_log(
+            "cli.py:_handle_cursor_before_submit",
+            "sync_cursor_rules_file done",
+            data={"elapsed_ms": round((time.perf_counter() - _rules_start) * 1000, 1)},
+            hypothesis_id="E",
+        )
+        # #endregion
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to sync rules file: {exc}")
         _emit_cursor_continue()
         return
 
+    # #region agent log
+    agent_debug_log(
+        "cli.py:_handle_cursor_before_submit",
+        "beforeSubmitPrompt complete",
+        data={"total_elapsed_ms": round((time.perf_counter() - _hook_total_start) * 1000, 1)},
+        hypothesis_id="E",
+    )
+    # #endregion
     _emit_cursor_hook_stdout(body)
 
 

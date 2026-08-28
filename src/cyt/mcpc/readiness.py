@@ -69,6 +69,10 @@ def report_mcpc_hook_readiness(
         print(MCPC_EMPTY_SESSIONS_HINT, file=sys.stderr)
 
 
-def mcpc_hook_catalog_usable(config: dict[str, Any] | None = None) -> bool:
+def mcpc_hook_catalog_usable(
+    config: dict[str, Any] | None = None,
+    *,
+    quick: bool = True,
+) -> bool:
     """True when mcpc is configured and ``mcpc --json`` lists at least one session."""
-    return probe_mcpc_sessions(config) == "ok"
+    return probe_mcpc_sessions(config, quick=quick) == "ok"

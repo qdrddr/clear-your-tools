@@ -79,5 +79,9 @@ def report_cyt_mcp_hook_readiness(
         )
 
 
-def cyt_mcp_hook_catalog_usable(config: dict[str, Any] | None = None) -> bool:
-    return probe_cyt_mcp_catalog(config) == "ok"
+def cyt_mcp_hook_catalog_usable(
+    config: dict[str, Any] | None = None,
+    *,
+    quick: bool = True,
+) -> bool:
+    return probe_cyt_mcp_catalog(config, quick=quick) == "ok"

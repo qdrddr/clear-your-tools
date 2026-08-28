@@ -17,6 +17,8 @@
 
 # ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --group py rust ts uni
 # ./scripts/pre-commit-hooks/prek-loop.sh --short --one-run --group rust go c uni
+#
+# Run `scripts\pre-commit-hooks\prek-loop.sh --short --one-run` iteratively, do not omit or comment out issues, instead investigate root cause and fix the. Preserve the functionality.
 
 set -uo pipefail
 

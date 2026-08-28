@@ -65,7 +65,7 @@ def _bootstrap_mcpc_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | None:
     from cyt.mcpc.catalog import get_mcpc_catalog, load_mcpc_catalog_from_disk
     from cyt.mcpc.readiness import mcpc_hook_catalog_usable
 
-    if not mcpc_hook_catalog_usable(cfg):
+    if not mcpc_hook_catalog_usable(cfg, quick=False):
         return None
     load_mcpc_catalog_from_disk(cfg)
     tools = get_mcpc_catalog(cfg, blocking=False)
@@ -80,7 +80,7 @@ def _bootstrap_cyt_mcp_catalog(cfg: dict[str, Any]) -> list[dict[str, Any]] | No
     from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog, load_cyt_mcp_catalog_from_disk
     from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
 
-    if not cyt_mcp_hook_catalog_usable(cfg):
+    if not cyt_mcp_hook_catalog_usable(cfg, quick=False):
         load_cyt_mcp_catalog_from_disk(cfg)
         tools = get_cyt_mcp_catalog(cfg, blocking=False)
         if tools:

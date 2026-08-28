@@ -1,4 +1,5 @@
 @echo off
+:: Run `scripts\pre-commit-hooks\prek-loop.cmd --short --one-run` iteratively, do not omit or comment out issues, instead investigate root cause and fix the. Preserve the functionality.
 setlocal EnableExtensions
 
 set "BASH="
