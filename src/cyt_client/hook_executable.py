@@ -16,25 +16,46 @@ CYT_CLIENT_SCRIPT_REL = "src/cyt_client/cli.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 
 
+def _uv_tool_executable_candidates(name: str) -> tuple[Path, ...]:
+    """Return stable uv-tool install locations before PATH (e.g. an activated dev venv)."""
+    home = Path.home()
+    if is_windows():
+        local_app = os.environ.get("LOCALAPPDATA", "")
+        candidates: list[Path | None] = [
+            home / ".local" / "bin" / f"{name}.exe",
+            home / ".local" / "bin" / name,
+        ]
+        if local_app:
+            candidates.extend(
+                (
+                    Path(local_app)
+                    / "Roaming"
+                    / "uv"
+                    / "tools"
+                    / "clear-your-tools"
+                    / "Scripts"
+                    / f"{name}.exe",
+                    Path(local_app) / "Programs" / "uv" / f"{name}.exe",
+                ),
+            )
+        return tuple(path for path in candidates if path is not None)
+    return (
+        home / ".local" / "bin" / name,
+        home / ".local" / "share" / "uv" / "tools" / "clear-your-tools" / "bin" / name,
+    )
+
+
 def resolve_hook_executable(name: str) -> str:
     """Return an absolute path for *name* when discoverable, else the bare name."""
     stripped = str(name or "").strip()
     if not stripped:
         return name
+    for candidate in _uv_tool_executable_candidates(stripped):
+        if candidate.is_file():
+            return str(candidate.resolve())
     found = shutil.which(stripped)
     if found:
         return str(Path(found).resolve())
-    if is_windows():
-        home = Path.home()
-        local_app = os.environ.get("LOCALAPPDATA", "")
-        candidates = (
-            home / ".local" / "bin" / f"{stripped}.exe",
-            home / ".local" / "bin" / stripped,
-            Path(local_app) / "Programs" / "uv" / f"{stripped}.exe" if local_app else None,
-        )
-        for candidate in candidates:
-            if candidate is not None and candidate.is_file():
-                return str(candidate.resolve())
     return stripped
 
 

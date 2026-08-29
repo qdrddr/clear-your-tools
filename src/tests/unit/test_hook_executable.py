@@ -87,3 +87,45 @@ def test_resolve_hook_executable_falls_back_to_common_windows_locations(
     monkeypatch.setattr("cyt_client.hook_executable.shutil.which", lambda _name: None)
     monkeypatch.setattr("cyt_client.hook_executable.Path.home", lambda: tmp_path)
     assert resolve_hook_executable("uv") == str(uv_path.resolve())
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only uv tool precedence")
+def test_resolve_hook_executable_prefers_uv_tool_over_dev_venv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installed = tmp_path / ".local" / "bin" / "cyt.exe"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("", encoding="utf-8")
+    dev_venv = tmp_path / "git" / "clear-your-tools" / ".venv" / "Scripts" / "cyt.exe"
+    dev_venv.parent.mkdir(parents=True)
+    dev_venv.write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.hook_executable.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "cyt_client.hook_executable.shutil.which",
+        lambda _name: str(dev_venv),
+    )
+    assert resolve_hook_executable("cyt") == str(installed.resolve())
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only uv tool fallback")
+def test_resolve_hook_executable_falls_back_to_uv_tools_scripts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    local_app = tmp_path / "AppData" / "Local"
+    tool_script = (
+        local_app
+        / "Roaming"
+        / "uv"
+        / "tools"
+        / "clear-your-tools"
+        / "Scripts"
+        / "cyt-client.exe"
+    )
+    tool_script.parent.mkdir(parents=True)
+    tool_script.write_text("", encoding="utf-8")
+    monkeypatch.setattr("cyt_client.hook_executable.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("cyt_client.hook_executable.os.environ", {"LOCALAPPDATA": str(local_app)})
+    monkeypatch.setattr("cyt_client.hook_executable.shutil.which", lambda _name: None)
+    assert resolve_hook_executable("cyt-client") == str(tool_script.resolve())
