@@ -59,6 +59,26 @@ require_cmd() {
 	}
 }
 
+resolve_python() {
+	local candidate
+	for candidate in python3 python; do
+		if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" -c "import sys" >/dev/null 2>&1; then
+			echo "${candidate}"
+			return 0
+		fi
+	done
+	if [[ -x "${REPO_ROOT}/.venv/Scripts/python.exe" ]]; then
+		echo "${REPO_ROOT}/.venv/Scripts/python.exe"
+		return 0
+	fi
+	if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+		echo "${REPO_ROOT}/.venv/bin/python"
+		return 0
+	fi
+	echo "error: missing python (install Python or run: uv sync)" >&2
+	exit 1
+}
+
 export_requirements() {
 	local prod_out="$1"
 	local dev_out="$2"
@@ -98,8 +118,10 @@ export_requirements() {
 
 normalize_text_file_lf() {
 	local file="$1"
+	local python_bin
 	[[ -f "${file}" ]] || return 0
-	python - "${file}" <<'PY'
+	python_bin="$(resolve_python)"
+	"${python_bin}" - "${file}" <<'PY'
 import sys
 from pathlib import Path
 
