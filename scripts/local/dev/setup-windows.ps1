@@ -218,7 +218,7 @@ finally {
 Write-Host '==> Ensuring Go SDK linter binaries'
 $gitBash = (Get-Command bash -ErrorAction SilentlyContinue).Source
 if ($gitBash) {
-    & $gitBash -lc 'source scripts/pre-commit-hooks/go-sdk-tools.sh; ensure_go_sdk_tool gofumpt "$GO_SDK_TOOL_GOFUMPT"; ensure_go_sdk_tool goimports "$GO_SDK_TOOL_GOIMPORTS"; ensure_go_sdk_tool gocritic "$GO_SDK_TOOL_GOCRITIC"; ensure_go_sdk_tool gosec "$GO_SDK_TOOL_GOSEC"; ensure_go_sdk_tool staticcheck "$GO_SDK_TOOL_STATICCHECK"'
+    & $gitBash -lc 'source scripts/pre-commit-hooks/go-sdk-tools.sh; ensure_go_sdk_tool gofumpt "$GO_SDK_TOOL_GOFUMPT"; ensure_go_sdk_tool goimports "$GO_SDK_TOOL_GOIMPORTS"; ensure_go_critic_tool; ensure_go_sdk_tool gosec "$GO_SDK_TOOL_GOSEC"; ensure_go_sdk_tool staticcheck "$GO_SDK_TOOL_STATICCHECK"'
 }
 
 Write-Host '==> Ensuring verify-pins / SBOM helper CLIs'

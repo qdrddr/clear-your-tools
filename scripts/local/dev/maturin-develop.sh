@@ -8,6 +8,20 @@ SDK_DIR="${ROOT}/sdk/python"
 # shellcheck source=scripts/lib/chunk-worktree.sh
 source "${ROOT}/scripts/lib/chunk-worktree.sh"
 
+_cyt_maturin_develop_lock_dir=""
+
+_cyt_maturin_develop_lock() {
+	_cyt_maturin_develop_lock_dir="$(_cyt_acquire_lock_dir \
+		"${ROOT}/target/.cyt-maturin-develop.lock.d" \
+		"maturin develop" \
+		600)" || return 1
+}
+
+_cyt_maturin_develop_unlock() {
+	_cyt_release_lock_dir "${_cyt_maturin_develop_lock_dir:-}"
+	_cyt_maturin_develop_lock_dir=""
+}
+
 run_maturin_develop() {
 	# Root workflow hooks may export VIRTUAL_ENV=./.venv; force sdk/python project.
 	# Do not exec: chunk_run_without_worktree_patches must restore [patch.crates-io]
@@ -16,7 +30,7 @@ run_maturin_develop() {
 	case "$(uname -s 2>/dev/null || echo unknown)" in
 	MINGW* | MSYS* | CYGWIN*)
 		max_attempts=6
-		# pytest-unit loads _native.pyd; Windows may keep the DLL locked briefly.
+		# pytest loads _native.pyd; Windows may keep the DLL locked briefly.
 		sleep 3
 		;;
 	esac
@@ -41,4 +55,6 @@ run_maturin_develop() {
 	return 1
 }
 
+_cyt_maturin_develop_lock || exit 1
+trap '_cyt_maturin_develop_unlock' EXIT INT TERM
 chunk_run_without_worktree_patches "${ROOT}" run_maturin_develop

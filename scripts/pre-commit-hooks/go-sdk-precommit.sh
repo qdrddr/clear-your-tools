@@ -124,7 +124,7 @@ staticcheck)
 	;;
 critic)
 	mapfile -t files < <(rel_paths "$@")
-	gocritic_bin="$(ensure_go_sdk_tool gocritic "${GO_SDK_TOOL_GOCRITIC}")"
+	gocritic_bin="$(ensure_go_critic_tool)"
 	for f in "${files[@]}"; do
 		(
 			cd "$GO_DIR"

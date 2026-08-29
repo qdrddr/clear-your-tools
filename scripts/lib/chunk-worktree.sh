@@ -18,6 +18,84 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 	CHUNK_WORKTREE_LIB_SOURCED=1
 
 	CARGO_INDEXER_TOML_REL="sdk/rust/cyt-indexer/Cargo.toml"
+	_cyt_cargo_toml_lock_dir=""
+	_cyt_patch_restore_root=""
+	_cyt_patch_restore_had_patches=0
+	_cyt_patch_restore_legacy_config=""
+	_cyt_patch_restore_legacy_backup=""
+	_cyt_patch_restore_done=0
+
+	_cyt_lock_dir_is_stale() {
+		local lock_dir="$1"
+		local pid_file="${lock_dir}/pid"
+		local holder_pid=""
+
+		[[ -d "${lock_dir}" ]] || return 1
+
+		if [[ -f "${pid_file}" ]]; then
+			holder_pid="$(cat "${pid_file}" 2>/dev/null || true)"
+			if [[ -n "${holder_pid}" ]] && kill -0 "${holder_pid}" 2>/dev/null; then
+				return 1
+			fi
+			return 0
+		fi
+
+		find "${lock_dir}" -maxdepth 0 -mmin +10 2>/dev/null | grep -q .
+	}
+
+	_cyt_acquire_lock_dir() {
+		local lock_dir="$1"
+		local label="$2"
+		local lock_wait=0
+		local max_wait="${3:-1200}"
+
+		while ! mkdir "${lock_dir}" 2>/dev/null; do
+			if _cyt_lock_dir_is_stale "${lock_dir}"; then
+				rm -rf "${lock_dir}"
+				continue
+			fi
+			sleep 0.05
+			lock_wait=$((lock_wait + 1))
+			if ((lock_wait > max_wait)); then
+				echo "error: timed out waiting for ${label} lock" >&2
+				return 1
+			fi
+		done
+		echo $$ >"${lock_dir}/pid"
+		printf '%s\n' "${lock_dir}"
+	}
+
+	_cyt_release_lock_dir() {
+		local lock_dir="${1:-}"
+		[[ -n "${lock_dir}" ]] || return 0
+		rm -rf "${lock_dir}" 2>/dev/null || true
+	}
+
+	_cyt_cargo_toml_lock() {
+		local root="$1"
+		local lock_dir="${root}/target/.cyt-cargo-toml.lock.d"
+
+		[[ -n "${root}" ]] || return 1
+		mkdir -p "${root}/target"
+		_cyt_cargo_toml_lock_dir="$(_cyt_acquire_lock_dir "${lock_dir}" "Cargo.toml")" || return 1
+	}
+
+	_cyt_cargo_toml_unlock() {
+		_cyt_release_lock_dir "${_cyt_cargo_toml_lock_dir:-}"
+		_cyt_cargo_toml_lock_dir=""
+	}
+
+	_cyt_run_without_worktree_patches_trap() {
+		if ((_cyt_patch_restore_done)); then
+			return 0
+		fi
+		_cyt_patch_restore_done=1
+		_chunk_run_without_worktree_patches_restore \
+			"${_cyt_patch_restore_root}" \
+			"${_cyt_patch_restore_had_patches}" \
+			"${_cyt_patch_restore_legacy_config}" \
+			"${_cyt_patch_restore_legacy_backup}" || true
+	}
 
 	read_cargo_dep_version() {
 		local crate="$1"
@@ -303,14 +381,18 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		local workspace_toml="${root}/${WORKSPACE_CARGO_TOML_REL}"
 		local legacy_config="${root}/.cargo/config.toml"
 		local tools_version skills_version
-		local tmp
+		local tmp next
 
 		[[ -f "${workspace_toml}" ]] || return 0
+
+		_cyt_cargo_toml_lock "${root}" || return 1
+		trap '_cyt_cargo_toml_unlock' RETURN
 
 		tools_version="$(read_cargo_dep_version "chunk-your-tools" "${cargo_toml}")"
 		skills_version="$(read_cargo_dep_version "chunk-your-skills" "${cargo_toml}")"
 
 		tmp="$(mktemp)"
+		next="${workspace_toml}.next"
 		chunk_strip_workspace_patches "${workspace_toml}" >"${tmp}"
 		if [[ -n "${tools_version}" || -n "${skills_version}" ]]; then
 			{
@@ -324,15 +406,17 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 				if [[ -n "${tools_version}" ]]; then
 					echo "chunk-your-tools = { path = \"chunk-your-tools-v${tools_version}\" }"
 				fi
-			} >"${workspace_toml}.next"
+			} >"${next}"
 		else
-			cp "${tmp}" "${workspace_toml}.next"
+			cp "${tmp}" "${next}"
 		fi
 		rm -f "${tmp}"
-		if [[ -f "${workspace_toml}" ]] && cmp -s "${workspace_toml}" "${workspace_toml}.next"; then
-			rm -f "${workspace_toml}.next"
-		else
-			mv "${workspace_toml}.next" "${workspace_toml}"
+		if [[ -f "${next}" ]] &&
+			[[ -f "${workspace_toml}" ]] &&
+			cmp -s "${workspace_toml}" "${next}"; then
+			rm -f "${next}"
+		elif [[ -f "${next}" ]]; then
+			mv "${next}" "${workspace_toml}"
 		fi
 		if [[ -f "${legacy_config}" ]]; then
 			rm -f "${legacy_config}"
@@ -579,7 +663,7 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 			mv "${legacy_backup}" "${legacy_config}"
 		fi
 		if ((had_patches)) && [[ -f "${workspace_toml}" ]]; then
-			chunk_write_workspace_cargo_patches "${root}"
+			chunk_write_workspace_cargo_patches "${root}" || true
 		fi
 	}
 
@@ -592,28 +676,35 @@ if [[ -z "${CHUNK_WORKTREE_LIB_SOURCED:-}" ]]; then
 		local legacy_backup=""
 		local rc=0
 
+		_cyt_patch_restore_done=0
+		_cyt_patch_restore_root="${root}"
+
+		_cyt_cargo_toml_lock "${root}" || return 1
 		if [[ -f "${workspace_toml}" ]] &&
 			grep -q '^\[patch\.crates-io\]' "${workspace_toml}"; then
 			had_patches=1
 			chunk_strip_workspace_patches "${workspace_toml}" >"${workspace_toml}.tmp"
 			mv "${workspace_toml}.tmp" "${workspace_toml}"
 		fi
+		_cyt_cargo_toml_unlock
 
 		if [[ -f "${legacy_config}" ]]; then
 			legacy_backup="$(mktemp "${TMPDIR:-/tmp}/cyt-cargo-config.XXXXXX")"
 			mv "${legacy_config}" "${legacy_backup}"
 		fi
 
-		trap '_chunk_run_without_worktree_patches_restore "${root}" "${had_patches}" "${legacy_config}" "${legacy_backup}"' EXIT INT TERM
+		_cyt_patch_restore_had_patches="${had_patches}"
+		_cyt_patch_restore_legacy_config="${legacy_config}"
+		_cyt_patch_restore_legacy_backup="${legacy_backup}"
+		trap '_cyt_run_without_worktree_patches_trap' EXIT INT TERM
 
 		if ! "$@"; then
 			rc=$?
 		fi
 
-		_chunk_run_without_worktree_patches_restore "${root}" "${had_patches}" "${legacy_config}" "${legacy_backup}"
-		chunk_ensure_workspace_cargo_lock "${root}" || rc=$?
-
+		_cyt_run_without_worktree_patches_trap
 		trap - EXIT INT TERM
+		chunk_ensure_workspace_cargo_lock "${root}" || rc=$?
 		return "${rc}"
 	}
 
