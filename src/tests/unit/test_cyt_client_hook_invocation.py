@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from cyt_client.hook_executable import build_uv_run_dev_command
 from cyt_client.hook_invocation import (
-    build_uv_run_dev_command,
     cursor_pairing_hooks,
     is_cyt_hook_command,
     resolve_pairing_dev_context,

@@ -115,13 +115,7 @@ def test_resolve_hook_executable_falls_back_to_uv_tools_scripts(
 ) -> None:
     local_app = tmp_path / "AppData" / "Local"
     tool_script = (
-        local_app
-        / "Roaming"
-        / "uv"
-        / "tools"
-        / "clear-your-tools"
-        / "Scripts"
-        / "cyt-client.exe"
+        local_app / "Roaming" / "uv" / "tools" / "clear-your-tools" / "Scripts" / "cyt-client.exe"
     )
     tool_script.parent.mkdir(parents=True)
     tool_script.write_text("", encoding="utf-8")

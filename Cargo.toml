@@ -2,7 +2,3 @@
 members = ["sdk/rust/cyt-indexer"]
 exclude = ["chunk-your-tools"]
 resolver = "2"
-
-[patch.crates-io]
-chunk-your-skills = { path = "chunk-your-skills-v2.1.9" }
-chunk-your-tools = { path = "chunk-your-tools-v2.3.9" }
