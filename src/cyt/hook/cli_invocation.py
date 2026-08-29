@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from cyt.platform.compat import is_windows
@@ -250,11 +250,16 @@ def remove_windows_hook_wrappers() -> list[Path]:
     return removed
 
 
+def _windows_cmd_basename(command: str) -> str:
+    """Return the final ``.cmd`` filename from a Windows hook command path."""
+    return PureWindowsPath(command.strip().strip('"')).name.casefold()
+
+
 def is_windows_hook_wrapper_command(command: str) -> bool:
     normalized = command.strip().strip('"').casefold()
     if not normalized.endswith(".cmd"):
         return False
-    name = Path(normalized).name.casefold()
+    name = _windows_cmd_basename(normalized)
     return name in {wrapper.casefold() for wrapper in _WINDOWS_WRAPPER_NAMES}
 
 

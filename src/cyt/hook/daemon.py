@@ -42,6 +42,7 @@ from cyt.launch.proxy_guard import (
 )
 from cyt.launch.secrets import CYT_SKIP_KEYRING_ENV, resolve_hook_daemon_child_env
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
+from cyt.platform.compat import is_windows
 from cyt.runtime_registry import (
     find_hook_daemon_entry_for_port,
     read_hook_daemon_entries,
@@ -75,9 +76,9 @@ def _defer_sigint() -> Iterator[None]:
 
 def _hook_daemon_spawn_kwargs() -> dict[str, Any]:
     """Return ``Popen`` kwargs that detach hook daemon children on Windows."""
-    if sys.platform != "win32":
+    if not is_windows():
         return {}
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         flags |= subprocess.CREATE_NO_WINDOW
     return {"creationflags": flags}

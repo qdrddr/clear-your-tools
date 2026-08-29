@@ -28,7 +28,7 @@ if os.name == "nt":
             delete=delete,
         )
 
-    tempfile.TemporaryDirectory = _windows_temporary_directory  # type: ignore[misc,assignment]  # ty: ignore[invalid-assignment]
+    tempfile.TemporaryDirectory = _windows_temporary_directory  # type: ignore[misc,assignment]
 
 from tests.support.credential_helpers import apply_ci_credential_stubs, install_test_pre_dotenv
 

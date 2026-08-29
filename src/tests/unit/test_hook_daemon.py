@@ -520,7 +520,7 @@ def test_daemon_status_includes_started_timestamp(capsys: pytest.CaptureFixture[
     assert err.startswith(
         "hook daemon: running pid=null port=8834 url=http://127.0.0.1:8834/hook/connect started=",
     )
-    assert err.endswith("12:00:00-04:00")
+    assert err.endswith(hook_daemon._format_started_at_for_status("2026-08-26T16:00:00+00:00"))
 
 
 def test_daemon_start_and_status_use_same_started_timestamp(

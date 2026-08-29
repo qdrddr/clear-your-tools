@@ -6,8 +6,8 @@ use crate::build::{
 };
 use crate::ffi::error::{CYT_ERR_INVALID_ARG, CYT_ERR_NULL_PTR, clear_error, set_error};
 use crate::ffi::json_util::{
-    c_str_to_str, catalog_index_from_json, ffi_guard, json_array_or_empty, parse_json_cstr,
-    run_ffi, write_json_out, write_string_result,
+    c_str_to_str, catalog_index_from_json, ffi_guard, i64_to_c_long, json_array_or_empty,
+    parse_json_cstr, run_ffi, write_json_out, write_string_result,
 };
 use crate::tool_entries::{
     anthropic_tool_to_catalog_entry, anthropic_tools_to_catalog_entries, build_catalog_from_tools,
@@ -31,7 +31,7 @@ pub unsafe extern "C" fn cyt_catalog_tool_count(data_json: *const c_char) -> c_l
                 set_error("catalog tool count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|count| i32::try_from(count).unwrap_or(c_long::MAX) as c_long)
+            .map(i64_to_c_long)
     })
     .unwrap_or(-1)
 }

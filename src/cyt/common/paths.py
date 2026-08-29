@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from cyt.platform.compat import is_windows
+
 __all__ = ["expand_home_path", "shorten_home_path", "user_home"]
 
 
@@ -26,12 +28,12 @@ def expand_home_path(path: str) -> Path:
 
 
 def _normalize_windows_path(path: Path) -> Path:
-    if os.name != "nt":
+    if not is_windows():
         return path.resolve()
     import ctypes
 
     buffer = ctypes.create_unicode_buffer(32768)
-    get_long_path_name = ctypes.windll.kernel32.GetLongPathNameW
+    get_long_path_name = ctypes.windll.kernel32.GetLongPathNameW  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     if get_long_path_name(str(path), buffer, len(buffer)):
         return Path(buffer.value)
     return path.resolve()

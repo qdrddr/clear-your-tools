@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from cyt_client.compat import is_windows
@@ -143,11 +143,16 @@ def _cursor_hook_daemon_start_command(
     return _inline_cyt_daemon_start_command(use_dev=use_dev, dev_repo_root=dev_repo_root)
 
 
+def _windows_cmd_basename(command: str) -> str:
+    """Return the final ``.cmd`` filename from a Windows hook command path."""
+    return PureWindowsPath(command.strip().strip('"')).name.casefold()
+
+
 def is_windows_hook_wrapper_command(command: str) -> bool:
     normalized = command.strip().strip('"').casefold()
     if not normalized.endswith(".cmd"):
         return False
-    name = Path(normalized).name.casefold()
+    name = _windows_cmd_basename(normalized)
     return name in {wrapper.casefold() for wrapper in _WINDOWS_HOOK_WRAPPER_NAMES}
 
 

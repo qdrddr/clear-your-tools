@@ -18,11 +18,10 @@ from cyt_client.hook_executable import (
 )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only quoting")
 def test_build_uv_run_dev_command_uses_absolute_uv_on_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if sys.platform != "win32":
-        pytest.skip("Windows-only quoting")
     uv_path = Path(r"C:\Users\me\.local\bin\uv.exe")
     monkeypatch.setattr(
         "cyt_client.hook_executable.resolve_hook_executable",
@@ -54,12 +53,10 @@ def test_repo_root_from_uv_run_hook_command_accepts_absolute_uv_path() -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only quoting")
 def test_build_installed_commands_quote_absolute_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if sys.platform != "win32":
-        pytest.skip("Windows-only quoting")
-
     def fake_resolve(name: str) -> str:
         mapping = {
             "cyt-client": r"C:\Users\me\.local\bin\cyt-client.exe",
@@ -74,18 +71,16 @@ def test_build_installed_commands_quote_absolute_paths(
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only quoting")
 def test_quote_for_cmd_exe_quotes_windows_drive_paths() -> None:
-    if sys.platform != "win32":
-        pytest.skip("Windows-only quoting")
     assert quote_for_cmd_exe(r"C:\tools\uv.exe") == r'"C:\tools\uv.exe"'
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only fallback")
 def test_resolve_hook_executable_falls_back_to_common_windows_locations(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if sys.platform != "win32":
-        pytest.skip("Windows-only fallback")
     uv_path = tmp_path / ".local" / "bin" / "uv.exe"
     uv_path.parent.mkdir(parents=True)
     uv_path.write_text("", encoding="utf-8")

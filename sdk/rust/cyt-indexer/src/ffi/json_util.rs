@@ -10,9 +10,27 @@ use crate::runtime_config;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_long};
 use std::panic::catch_unwind;
 use std::ptr;
+
+/// Clamp a validated `i64` to the platform `c_long` range for FFI returns.
+#[cfg(windows)]
+pub const fn i64_to_c_long(value: i64) -> c_long {
+    if value > c_long::MAX as i64 {
+        c_long::MAX
+    } else if value < c_long::MIN as i64 {
+        c_long::MIN
+    } else {
+        value as c_long
+    }
+}
+
+/// Clamp a validated `i64` to the platform `c_long` range for FFI returns.
+#[cfg(not(windows))]
+pub const fn i64_to_c_long(value: i64) -> c_long {
+    value
+}
 
 pub unsafe fn c_str_to_str<'a>(ptr: *const c_char, name: &str) -> Result<&'a str, c_int> {
     if ptr.is_null() {

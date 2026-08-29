@@ -1,7 +1,9 @@
 //! Tiktoken token counting FFI exports.
 
 use crate::ffi::error::{CYT_ERR_INVALID_ARG, clear_error, set_error};
-use crate::ffi::json_util::{c_str_to_str, ffi_guard, parse_json_cstr, run_ffi, write_json_out};
+use crate::ffi::json_util::{
+    c_str_to_str, ffi_guard, i64_to_c_long, parse_json_cstr, run_ffi, write_json_out,
+};
 use crate::tiktoken::{self, AllowedSpecial};
 use std::os::raw::{c_char, c_int, c_long};
 
@@ -26,7 +28,7 @@ pub unsafe extern "C" fn cyt_count_tokens(text: *const c_char) -> c_long {
                 set_error("token count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|n| i32::try_from(n).unwrap_or(c_long::MAX) as c_long)
+            .map(i64_to_c_long)
     })
     .unwrap_or(-1)
 }
@@ -56,7 +58,7 @@ pub unsafe extern "C" fn cyt_count_json_tokens(json: *const c_char) -> c_long {
                 set_error("token count overflow");
                 CYT_ERR_INVALID_ARG
             })
-            .map(|n| i32::try_from(n).unwrap_or(c_long::MAX) as c_long)
+            .map(i64_to_c_long)
     })
     .unwrap_or(-1)
 }

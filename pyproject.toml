@@ -241,7 +241,7 @@ extra-paths = ["./typings"]
 [tool.mypy]
 explicit_package_bases = true
 namespace_packages = true
-mypy_path = "src"
+mypy_path = "${config_dir}/src:${config_dir}/typings"
 pretty = true
 python_version = "3.13"
 no_implicit_optional = true

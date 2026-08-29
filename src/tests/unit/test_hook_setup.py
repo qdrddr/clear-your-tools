@@ -2267,11 +2267,10 @@ def test_upsert_cursor_hooks_dev_mode_uses_windows_wrappers_on_windows(
     _ = changed
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only env prefix syntax")
 def test_prefix_command_env_windows_uses_cmd_c() -> None:
     from cyt.hook.cli_invocation import prefix_command_env
 
-    if sys.platform != "win32":
-        pytest.skip("Windows-only env prefix syntax")
     command = prefix_command_env({"CYT_LAUNCH_AGENT": "cursor"}, r"C:\hooks\cyt-client.cmd")
     assert command.startswith('cmd /c "set "CYT_LAUNCH_AGENT=cursor"&& call "')
     assert "cyt-client.cmd" in command
