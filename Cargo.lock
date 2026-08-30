@@ -254,8 +254,6 @@ dependencies = [
 [[package]]
 name = "chunk-your-skills"
 version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ab05438c0942c77ec0a909540a81a8dccf7c9fa17a2a2eb389f00f2906fbaf5"
 dependencies = [
  "cbindgen",
  "clap",
@@ -270,8 +268,6 @@ dependencies = [
 [[package]]
 name = "chunk-your-tools"
 version = "2.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2021c7ad789212a15023449b1f86667c30846f6dd36692616bf074fd59ba5a6"
 dependencies = [
  "cbindgen",
  "clap",

@@ -64,7 +64,7 @@ load_proxy_env()
 
 # Default fallbacks - single source of truth for hard-coded values
 DEFAULT_REVERSE_PORT: int = 8834
-DEFAULT_PRUNING_PIPELINE: list[str] = ["rerank"]
+DEFAULT_PRUNING_PIPELINE: list[str] = ["bm25"]
 DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
 CWD_CONFIG_NAME: str = "config.yaml"
