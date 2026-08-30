@@ -14,13 +14,13 @@ from cyt.hook.cli_invocation import (
     cyt_mcp_mcp_server_entry,
 )
 from cyt.tools import cyt_mcp_setup
+from cyt_client.hook_executable import repo_root_from_uv_run_hook_command
 from cyt_client.mcp_entry import (
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
     dev_invocation_from_hooks_file,
     is_cyt_dev_hook_command,
     is_cyt_mcp_frontend_server,
-    repo_root_from_uv_run_hook_command,
 )
 
 

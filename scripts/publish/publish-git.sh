@@ -225,7 +225,7 @@ if git diff --cached --quiet; then
 else
 	# sync-version already refreshed manifests and Cargo.lock; skip hooks that
 	# re-touch those files or rebuild native artifacts during the version commit.
-	SKIP=sync-version,heal-cargo-lock,export-requirements,export-rust-sbom,cargo-sort,cargo-build-sdk-release,verify-pins,maturin-develop,go-fumpt,go-imports,go-mod-tidy-repo,go-staticcheck-repo-mod,go-critic,go-sec-repo-mod,go-build-repo-mod,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-test-unit,typescript-test-parity \
+	SKIP=sync-version,heal-cargo-lock,export-requirements,export-rust-sbom,cargo-sort,cargo-build-sdk-release,verify-pins,maturin-develop,gitleaks,trufflehog,go-fumpt,go-imports,go-mod-tidy-repo,go-staticcheck-repo-mod,go-critic,go-sec-repo-mod,go-build-repo-mod,go-test-repo-mod,pytest-sdk-python,local-dev-sdk-python,local-dev-sdk-go,local-dev-core-rust,local-dev-sdk-typescript,local-dev-sdk-c,local-dev-app,verify-sdk,build-c-lib-for-go,typescript-build,typescript-npm-audit,typescript-sort-package-json,typescript-test-unit,typescript-test-parity \
 		git commit -m "version bump to ${tag}"
 fi
 
