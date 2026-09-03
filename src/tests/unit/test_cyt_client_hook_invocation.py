@@ -153,7 +153,8 @@ def test_pairing_repairs_workspace_mcp_entry(
     )
     (cyt_dir / "config").mkdir()
     (cyt_dir / "config" / "mcp-aggregator.yaml").write_text(
-        "default_agent: cursor\n", encoding="utf-8"
+        "default_agent: cursor\n",
+        encoding="utf-8",
     )
 
     global_mcp = tmp_path / "global-mcp.json"

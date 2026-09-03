@@ -74,7 +74,8 @@ def test_cache_key_uses_scope_fingerprints(tmp_path: Path, monkeypatch: pytest.M
     (cyt_dir / "mcp").mkdir()
     (cyt_dir / "config").mkdir()
     (cyt_dir / "config" / "mcp-aggregator.yaml").write_text(
-        "default_agent: cursor\n", encoding="utf-8"
+        "default_agent: cursor\n",
+        encoding="utf-8",
     )
     (cyt_dir / "mcp" / "cursor.json").write_text('{"mcpServers": {"ws": {}}}', encoding="utf-8")
 

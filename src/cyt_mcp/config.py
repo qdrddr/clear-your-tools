@@ -16,6 +16,8 @@ DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
 
 _MCP_VAR_PATTERN = re.compile(r"\$\{(userHome|workspaceFolder|env:([^}]+))\}")
 
+type McpJsonValue = str | int | float | bool | None | list[McpJsonValue] | dict[str, McpJsonValue]
+
 
 @dataclass(frozen=True)
 class HttpSettings:
@@ -63,7 +65,11 @@ def expand_mcp_value(value: str, *, workspace_folder: Path | None = None) -> str
     return expanded
 
 
-def expand_mcp_spec(spec: Any, *, workspace_folder: Path | None = None) -> Any:
+def expand_mcp_spec(
+    spec: McpJsonValue,
+    *,
+    workspace_folder: Path | None = None,
+) -> McpJsonValue:
     """Recursively expand MCP variables in a backend server spec."""
     if isinstance(spec, str):
         return expand_mcp_value(spec, workspace_folder=workspace_folder)
