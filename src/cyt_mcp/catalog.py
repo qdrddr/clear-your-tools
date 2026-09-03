@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+
+
+def _canonical_tool_entry(tool: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "name": str(tool.get("name") or ""),
+    }
+    if "description" in tool and tool["description"] is not None:
+        entry["description"] = str(tool["description"])
+    schema = tool.get("input_schema") or tool.get("inputSchema")
+    if isinstance(schema, dict):
+        entry["input_schema"] = schema
+    else:
+        entry["input_schema"] = {}
+    return entry
+
+
+def catalog_tools_content_hash(tools: list[dict[str, Any]]) -> str:
+    canonical = [_canonical_tool_entry(tool) for tool in tools]
+    canonical.sort(key=lambda item: item["name"])
+    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def catalog_payload(cache: RuntimeToolCache, *, agent: str) -> dict[str, Any]:

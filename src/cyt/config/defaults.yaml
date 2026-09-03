@@ -163,7 +163,6 @@ pruning:
       cyt_mcp:
         executable: cyt-mcp
         agent: cursor
-        catalog_url: ""
         cache:
           tools_refresh_seconds: 120
           disk_flush_seconds: 900

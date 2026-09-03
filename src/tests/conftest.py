@@ -138,11 +138,16 @@ def _ci_credential_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _deterministic_indexer_cache() -> Iterator[None]:
+def _deterministic_indexer_cache(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     """Disable async cache writes and clear registry state between tests."""
+    from cyt.indexer.bm25_search import configure_bm25_defaults
     from cyt.indexer.cache import configure_memory_cache
     from cyt.skills.catalog import clear_registry_cache
 
+    configure_bm25_defaults(
+        index_dir=str(tmp_path_factory.mktemp("bm25-index")),
+        mmap=False,
+    )
     configure_memory_cache({"async_disk_writes": False, "lazy_registry": False})
     clear_registry_cache()
     yield

@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.tools.base import Tool
 from mcp.types import Tool as McpWireTool
 
+from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
 
@@ -64,10 +65,18 @@ def build_catalog_from_tools(
     return catalog_entries, search_index
 
 
-async def refresh_catalog_cache(server: FastMCP, cache: RuntimeToolCache) -> None:
+async def refresh_catalog_cache(
+    server: FastMCP,
+    cache: RuntimeToolCache,
+    config: AggregatorConfig | None = None,
+) -> None:
     """Populate hook-daemon catalog + search index from raw backend tools."""
     backend_server = cast(Any, server)
     backend_tools = await backend_server._list_tools()
     catalog_entries, search_index = build_catalog_from_tools(backend_tools)
     cache.replace(catalog_entries, search_index=search_index)
     refresh_search_tool_schema(cache)
+    if config is not None:
+        from cyt_mcp.hook_daemon_push import schedule_catalog_push
+
+        schedule_catalog_push(cache, config)

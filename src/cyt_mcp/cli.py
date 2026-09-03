@@ -73,6 +73,7 @@ async def _run_catalog(config: AggregatorConfig) -> int:
 async def _run_server(config: AggregatorConfig) -> int:
     from cyt_client.pairing import repair_pairing_from_mcp_runtime
     from cyt_client.skip import hook_skip_enabled
+    from cyt_mcp.hook_daemon_push import deregister_catalog_push
 
     startup_payload = {
         "hook_event_name": "sessionStart",
@@ -85,12 +86,15 @@ async def _run_server(config: AggregatorConfig) -> int:
     cache = RuntimeToolCache()
     server = build_aggregator(config, cache)
     await refresh_runtime_cache(server, cache, config)
-    if config.transport == "http":
-        from cyt_mcp.transport import run_http
+    try:
+        if config.transport == "http":
+            from cyt_mcp.transport import run_http
 
-        await run_http(server, cache, config)
-    else:
-        await cast(Any, server).run_async("stdio", show_banner=False)
+            await run_http(server, cache, config)
+        else:
+            await cast(Any, server).run_async("stdio", show_banner=False)
+    finally:
+        deregister_catalog_push(config)
     return 0
 
 
@@ -125,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
             verify_only=config.verify_only,
             aggregator_path=config.aggregator_path,
             agent_mcp_path=config.agent_mcp_path,
+            catalog_scope=config.catalog_scope,
+            workspace_root=config.workspace_root,
         )
     try:
         return asyncio.run(_run_server(config))

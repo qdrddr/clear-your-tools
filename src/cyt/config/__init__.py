@@ -249,7 +249,6 @@ _DEFAULTS: dict[str, Any] = {
                 "cyt_mcp": {
                     "executable": DEFAULT_CYT_MCP_EXECUTABLE,
                     "agent": DEFAULT_CYT_MCP_AGENT,
-                    "catalog_url": DEFAULT_CYT_MCP_CATALOG_URL,
                     "cache": {
                         "tools_refresh_seconds": DEFAULT_CYT_MCP_CACHE_TOOLS_REFRESH_SECONDS,
                         "disk_flush_seconds": DEFAULT_CYT_MCP_CACHE_DISK_FLUSH_SECONDS,
@@ -1518,12 +1517,9 @@ def tools_hook_cyt_mcp_agent(config: dict[str, Any] | None = None) -> str:
 
 
 def tools_hook_cyt_mcp_catalog_url(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
-        "catalog_url",
-        DEFAULT_CYT_MCP_CATALOG_URL,
-    )
-    return str(value).strip().rstrip("/")
+    """Deprecated: cyt-mcp catalogs are push-registered; always returns empty."""
+    del config
+    return ""
 
 
 def tools_hook_cyt_mcp_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:

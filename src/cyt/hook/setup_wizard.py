@@ -2181,6 +2181,7 @@ def _apply_prevent_hallucinations_config(
             transport="stdio",
             migrate_backends=migrate_backends,
             verify_only=True,
+            configure_workspace=True,
         )
     return config
 

@@ -469,7 +469,6 @@ empty injection, and cleaned up on `sessionEnd`. Set `CYT_CURSOR_RULES_FILE=0` o
 | `pruning.tools.hook.tools_from` | `executor` \| `definitions` \| `cyt_mcp` \| `mcpc` \| `cloudflare` (scalar or YAML list) | `[cyt_mcp]` |
 | `pruning.tools.hook.cyt_mcp.executable` | CLI on PATH | `cyt-mcp` |
 | `pruning.tools.hook.cyt_mcp.agent` | harness for `cyt-mcp catalog --agent` | `cursor` |
-| `pruning.tools.hook.cyt_mcp.catalog_url` | optional HTTP catalog URL (hook daemon only) | `""` |
 | `pruning.tools.hook.executor_url` | URL | `http://localhost:4789` |
 | `pruning.tools.hook.executor_token_var` | env var name | `EXECUTOR_TOKEN` |
 | `pruning.tools.hook.cloudflare_url` | Cloudflare MCP portal URL (base or `/mcp` suffix) | `""` (user must set) |

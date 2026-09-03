@@ -1,4 +1,4 @@
-"""Tests for workspace-aware hook config and HTTP catalog merge."""
+"""Tests for workspace-aware hook config and catalog registry merge."""
 
 from __future__ import annotations
 
@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from cyt.hook.workspace_config import hook_catalog_url_for_payload, resolve_hook_request_config
+from cyt.hook.workspace_config import (
+    HOOK_WORKSPACE_CONFIG_KEY,
+    resolve_hook_request_config,
+    set_hook_workspace_in_config,
+)
 from cyt_mcp.catalog import merge_catalog_payloads
 
 
@@ -59,22 +63,7 @@ def test_resolve_hook_request_config_merges_workspace_yaml(
     assert merged["pruning"]["tools"]["hook"]["tools_from"] == ["cyt_mcp"]
 
 
-def test_hook_catalog_url_includes_workspace_query() -> None:
-    from urllib.parse import parse_qs, urlparse
-
-    config = {
-        "pruning": {
-            "tools": {
-                "hook": {
-                    "cyt_mcp": {
-                        "catalog_url": "http://127.0.0.1:8765/catalog",
-                    },
-                },
-            },
-        },
-    }
-    payload = {"workspace_roots": ["/repo/path"]}
-    url = hook_catalog_url_for_payload(config, payload)
-    assert "workspace=" in url
-    workspace = parse_qs(urlparse(url).query)["workspace"][0]
-    assert workspace.replace("\\", "/") == "/repo/path"
+def test_set_hook_workspace_in_config(tmp_path: Path) -> None:
+    config = {"pruning": {"tools": {"enabled": True}}}
+    merged = set_hook_workspace_in_config(config, tmp_path)
+    assert Path(merged[HOOK_WORKSPACE_CONFIG_KEY]) == tmp_path.resolve()

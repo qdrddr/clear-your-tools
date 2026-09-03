@@ -61,6 +61,7 @@ def test_scope_config_fingerprint_and_merged_slug(tmp_path: Path) -> None:
 
 def test_cache_key_uses_scope_fingerprints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from cyt.cyt_mcp.catalog import _cache_key_for_config
+    from cyt.hook.workspace_config import HOOK_WORKSPACE_CONFIG_KEY
 
     global_agg = tmp_path / "mcp-aggregator.yaml"
     global_defs = tmp_path / "mcp" / "cursor.json"
@@ -89,7 +90,7 @@ def test_cache_key_uses_scope_fingerprints(tmp_path: Path, monkeypatch: pytest.M
             "tools": {
                 "hook": {
                     "tools_from": ["cyt_mcp"],
-                    "cyt_mcp": {"agent": "cursor", "catalog_url": "http://127.0.0.1:8765/catalog"},
+                    "cyt_mcp": {"agent": "cursor"},
                 },
             },
         },
@@ -97,17 +98,8 @@ def test_cache_key_uses_scope_fingerprints(tmp_path: Path, monkeypatch: pytest.M
     key_global = _cache_key_for_config(config_global)
 
     config_merged = {
-        "pruning": {
-            "tools": {
-                "hook": {
-                    "tools_from": ["cyt_mcp"],
-                    "cyt_mcp": {
-                        "agent": "cursor",
-                        "catalog_url": f"http://127.0.0.1:8765/catalog?workspace={ws_root}",
-                    },
-                },
-            },
-        },
+        **config_global,
+        HOOK_WORKSPACE_CONFIG_KEY: str(ws_root),
     }
     key_merged = _cache_key_for_config(config_merged)
 

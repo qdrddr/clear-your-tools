@@ -1351,12 +1351,15 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        from cyt.hook.catalog_registry import load_catalog_registry_from_disk
+
         client = httpx.AsyncClient(timeout=None, http2=use_http2_upstream)
         app.state.http_client = client
         app.state.pruner_settings = pruner_settings
         if config is not None:
             app.state.cyt_config = config
             _configure_proxy_startup(config, debug=debug)
+        load_catalog_registry_from_disk(mark_stale=True)
         try:
             yield
         finally:
@@ -1378,7 +1381,12 @@ def create_app(
             payload.update(_catalog_health_payload(cyt_config))
         return JSONResponse(payload)
 
-    from cyt.hook.http_server import hook_connect
+    from cyt.hook.http_server import (
+        hook_catalog_deregister,
+        hook_catalog_register,
+        hook_catalog_status,
+        hook_connect,
+    )
 
     async def proxy(request: Request) -> Response:
         return await _proxy_request(
@@ -1400,6 +1408,9 @@ def create_app(
             Route("/health", health, methods=["GET"]),
             Route("/hook/connect", hook_connect, methods=["POST"]),
             Route("/hook/inject", hook_connect, methods=["POST"]),
+            Route("/hook/catalog/register", hook_catalog_register, methods=["POST"]),
+            Route("/hook/catalog/deregister", hook_catalog_deregister, methods=["POST"]),
+            Route("/hook/catalog/status", hook_catalog_status, methods=["GET"]),
             Route("/{path:path}", proxy, methods=METHODS),
         ],
         lifespan=lifespan,

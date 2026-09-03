@@ -7,12 +7,15 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
 DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
+GLOBAL_AGGREGATOR_PATH = DEFAULT_AGGREGATOR_PATH
+
+CatalogScope = Literal["global", "workspace"]
 
 _MCP_VAR_PATTERN = re.compile(r"\$\{(userHome|workspaceFolder|env:([^}]+))\}")
 
@@ -37,6 +40,8 @@ class AggregatorConfig:
     verify_only: bool
     aggregator_path: Path
     agent_mcp_path: Path
+    catalog_scope: CatalogScope = "global"
+    workspace_root: Path | None = None
 
 
 def _expand(path: str | Path) -> Path:
@@ -163,6 +168,56 @@ def load_http_settings(raw: dict[str, Any]) -> HttpSettings:
     return HttpSettings(host=host, port=port, mcp_path=mcp_path, catalog_path=catalog_path)
 
 
+def _infer_catalog_scope(
+    raw: dict[str, Any],
+    aggregator_path: Path,
+) -> CatalogScope:
+    explicit = raw.get("catalog_scope")
+    if isinstance(explicit, str) and explicit.strip().lower() == "workspace":
+        return "workspace"
+    if isinstance(explicit, str) and explicit.strip().lower() == "global":
+        return "global"
+    resolved = aggregator_path.resolve()
+    global_path = GLOBAL_AGGREGATOR_PATH.expanduser().resolve()
+    if resolved == global_path:
+        return "global"
+    parts = {part.lower() for part in resolved.parts}
+    if "cyt" in parts and "config" in parts:
+        return "workspace"
+    return "global"
+
+
+def _resolve_workspace_root_for_scope(
+    scope: CatalogScope,
+    *,
+    workspace_folder: Path | None,
+    aggregator_path: Path,
+) -> Path | None:
+    if scope != "workspace":
+        return None
+    if workspace_folder is not None:
+        try:
+            resolved = workspace_folder.expanduser().resolve()
+            if resolved.is_dir():
+                return resolved
+        except OSError:
+            pass
+    # Walk up from aggregator: .../.cursor/cyt/config/mcp-aggregator.yaml
+    current = aggregator_path.expanduser().resolve().parent
+    for _ in range(6):
+        if (current / ".git").exists() or (current / ".cursor").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    cwd = Path.cwd()
+    try:
+        resolved_cwd = cwd.resolve()
+        return resolved_cwd if resolved_cwd.is_dir() else None
+    except OSError:
+        return None
+
+
 def load_aggregator_config(
     *,
     agent: str | None = None,
@@ -178,13 +233,25 @@ def load_aggregator_config(
     codex_flag = bool(raw.get("codex_stubs_include_description", True))
     include_desc = codex_flag if resolved_agent == "codex" else False
     verify_only = bool(raw.get("verify_only", False))
+    resolved_agg_path = _expand(aggregator_path or DEFAULT_AGGREGATOR_PATH)
+    catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
+    workspace_root = _resolve_workspace_root_for_scope(
+        catalog_scope,
+        workspace_folder=workspace_folder,
+        aggregator_path=resolved_agg_path,
+    )
     return AggregatorConfig(
         agent=resolved_agent,
-        mcp_servers=load_mcp_servers(agent_path, workspace_folder=workspace_folder),
+        mcp_servers=load_mcp_servers(
+            agent_path,
+            workspace_folder=workspace_root or workspace_folder,
+        ),
         transport=transport,
         http=load_http_settings(raw),
         codex_stubs_include_description=include_desc,
         verify_only=verify_only,
-        aggregator_path=_expand(aggregator_path or DEFAULT_AGGREGATOR_PATH),
+        aggregator_path=resolved_agg_path,
         agent_mcp_path=agent_path,
+        catalog_scope=catalog_scope,
+        workspace_root=workspace_root,
     )

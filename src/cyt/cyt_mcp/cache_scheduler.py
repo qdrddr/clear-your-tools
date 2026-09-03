@@ -1,4 +1,4 @@
-"""Background scheduler for cyt-mcp catalog refresh and disk flush."""
+"""Background scheduler for cyt-mcp catalog registry maintenance."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from typing import Any
 from cyt.config import load_config, tools_hook_cyt_mcp_cache_settings, uses_cyt_mcp_tool_catalog
 from cyt.cyt_mcp.catalog import (
     _cache_key_for_config,
-    _fetch_catalog_live,
     _get_state,
+    _refresh_from_registry,
     apply_fetched_catalog,
 )
 from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash
@@ -113,15 +113,14 @@ def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
                 state.tools_in_progress = True
                 state.last_tools_refresh_start = now
                 try:
-                    fetched = _fetch_catalog_live(config, cache_key)
-                    if fetched.tools:
-                        apply_fetched_catalog(
-                            config,
-                            fetched.tools,
-                            degraded_servers=fetched.degraded_servers,
-                        )
+                    from cyt.hook.catalog_registry import prune_expired_registrations
+
+                    prune_expired_registrations()
+                    tools = _refresh_from_registry(config, cache_key, blocking=False)
+                    if tools:
+                        apply_fetched_catalog(config, tools)
                 except Exception as exc:
-                    logger.warning("cyt-mcp scheduler tools refresh failed: %s", exc)
+                    logger.warning("cyt-mcp scheduler registry refresh failed: %s", exc)
                 finally:
                     state.tools_in_progress = False
 

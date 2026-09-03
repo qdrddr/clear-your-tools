@@ -30,5 +30,5 @@ def build_aggregator(
         )
     if degraded:
         logger.warning("cyt-mcp: degraded backends: %s", ", ".join(degraded))
-    register_tool_list_changed_middleware(server, cache)
+    register_tool_list_changed_middleware(server, cache, config)
     return server

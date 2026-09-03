@@ -97,11 +97,15 @@ def then_mcp_entry_uses_uv(gherkin_context: GherkinContext) -> None:
     else:
         entry = gherkin_context.payload["mcp_entry"]
 
+    aggregator_path = gherkin_context.payload.get("aggregator_path")
+    aggregator_config = (
+        aggregator_path if aggregator_path is not None else DEFAULT_AGGREGATOR_PATH.expanduser()
+    )
     expected = build_cyt_mcp_mcp_server_entry(
         "cursor",
         dev_repo_root=repo_root,
         dev_script_rel=cyt_mcp_cli_script_relpath(),
-        aggregator_config=DEFAULT_AGGREGATOR_PATH.expanduser(),
+        aggregator_config=aggregator_config,
     )
     assert entry == expected
     assert entry["command"] == "uv"
@@ -166,6 +170,10 @@ def when_pairing_repairs(
     monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": mcp_path})
     monkeypatch.setattr(
         "cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH",
+        aggregator_path,
+    )
+    monkeypatch.setattr(
+        "cyt_client.pairing.DEFAULT_AGGREGATOR_PATH",
         aggregator_path,
     )
     monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)

@@ -128,6 +128,62 @@ def _format_verify_connect_response(
     return json.dumps(output, separators=(",", ":"))
 
 
+def _is_localhost_request(request: Request) -> bool:
+    client = request.client
+    if client is None:
+        return False
+    host = str(client.host or "").strip()
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+async def hook_catalog_register(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return JSONResponse({"error": "payload must be a JSON object"}, status_code=400)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    from cyt.hook.catalog_registry import RegisterStatus, register_catalog
+
+    result = register_catalog(payload)
+    if result.status == RegisterStatus.INVALID:
+        return JSONResponse({"error": result.message or "invalid request"}, status_code=400)
+    if result.status == RegisterStatus.UNKNOWN_HASH:
+        return JSONResponse({"error": result.message or "unknown hash"}, status_code=404)
+    if result.status == RegisterStatus.UNCHANGED:
+        return PlainTextResponse("", status_code=204)
+    return JSONResponse({"status": "stored"}, status_code=200)
+
+
+async def hook_catalog_deregister(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return JSONResponse({"error": "payload must be a JSON object"}, status_code=400)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    from cyt.hook.catalog_registry import deregister_catalog
+
+    removed = deregister_catalog(payload)
+    return PlainTextResponse("", status_code=200 if removed else 404)
+
+
+async def hook_catalog_status(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    from cyt.hook.catalog_registry import list_catalog_registrations
+
+    return JSONResponse({"registrations": list_catalog_registrations()})
+
+
 async def hook_connect(request: Request) -> Response:
     """Run hook injection or verify-only connect for JSON body."""
     configure_hook_quiet()
@@ -144,17 +200,17 @@ async def hook_connect(request: Request) -> Response:
     )
     debug = _hook_debug_enabled(request)
 
-    from cyt.hook.workspace_config import resolve_hook_request_config, with_dynamic_catalog_url
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
     from cyt.skills.cli import resolve_effective_hook_agent
 
     agent = resolve_effective_hook_agent(payload) or "cursor"
     spawn_config = getattr(request.app.state, "cyt_config", None)
-    config, _workspace = resolve_hook_request_config(
+    config, workspace = resolve_hook_request_config(
         payload,
         agent,
         base_config=spawn_config or config,
     )
-    config = with_dynamic_catalog_url(config, payload)
+    config = set_hook_workspace_in_config(config, workspace)
 
     if verify_only_mode(config) and inject_via_for_agent(config, agent) == "hook":
         return await _hook_connect_verify_only(payload, config, agent=agent)

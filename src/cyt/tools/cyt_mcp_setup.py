@@ -22,7 +22,6 @@ from cyt_client.mcp_entry import (
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
-    cyt_mcp_http_catalog_url,
     load_aggregator_transport_settings,
     normalize_cyt_mcp_transport,
 )
@@ -134,6 +133,7 @@ def write_mcp_aggregator_yaml_at(
     ]
     if workspace_scoped:
         lines.append(f"  {agent}: {backends}")
+        lines.append("catalog_scope: workspace")
     else:
         mcp_dir = DEFAULT_MCP_DIR.expanduser()
         lines.extend(
@@ -166,15 +166,8 @@ def cyt_mcp_hook_settings_overlay(
     transport: CytMcpTransport,
     agent: str,
 ) -> dict[str, Any]:
-    settings: dict[str, Any] = {"agent": agent.strip() or "cursor"}
-    if transport == "http":
-        _, host, port, _mcp_path, catalog_path = load_aggregator_transport_settings()
-        settings["catalog_url"] = cyt_mcp_http_catalog_url(
-            host=host,
-            port=port,
-            catalog_path=catalog_path,
-        )
-    return settings
+    del transport
+    return {"agent": agent.strip() or "cursor"}
 
 
 def _build_cyt_mcp_entry(
@@ -438,13 +431,6 @@ def setup_cyt_mcp_for_agent(
     )
 
     if not install_scope.has_workspace:
-        return
-
-    if transport == "stdio":
-        print(
-            "\nSkipping workspace-scoped cyt-mcp (HTTP transport required).",
-            file=sys.stderr,
-        )
         return
 
     if configure_workspace is None:

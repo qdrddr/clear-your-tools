@@ -1,9 +1,8 @@
-"""Load tool catalogs from cyt-mcp (CLI subprocess or HTTP)."""
+"""Load tool catalogs from cyt-mcp push registry (hook daemon)."""
 
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import threading
 import time
@@ -11,14 +10,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
-from urllib.request import urlopen
 
 from cyt.config import (
     load_config,
     tools_hook_cyt_mcp_agent,
-    tools_hook_cyt_mcp_catalog_url,
-    tools_hook_cyt_mcp_executable,
     uses_cyt_mcp_tool_catalog,
 )
 from cyt.cyt_mcp.catalog_disk import (
@@ -28,9 +23,12 @@ from cyt.cyt_mcp.catalog_disk import (
     scope_config_fingerprint,
     write_disk_catalog,
 )
-from cyt.cyt_mcp.cli import cyt_mcp_available, run_cyt_mcp_catalog_json
+from cyt.hook.workspace_config import hook_workspace_from_config
 
 logger = logging.getLogger(__name__)
+
+BLOCKING_REGISTRY_WAIT_SECONDS = 0.5
+BLOCKING_REGISTRY_POLL_SECONDS = 0.05
 
 
 @dataclass(frozen=True)
@@ -47,12 +45,6 @@ class _CytMcpCatalogState:
     catalog_content_hash: str = ""
 
 
-@dataclass(frozen=True)
-class CytMcpLiveCatalog:
-    tools: list[dict[str, Any]]
-    degraded_servers: tuple[str, ...]
-
-
 _catalog_lock = threading.Lock()
 _catalog_states: dict[_CytMcpCacheKey, _CytMcpCatalogState] = {}
 
@@ -61,20 +53,19 @@ def clear_cyt_mcp_catalog_cache() -> None:
     with _catalog_lock:
         _catalog_states.clear()
     from cyt.cyt_mcp.cache_scheduler import clear_cyt_mcp_cache_schedulers
+    from cyt.hook.catalog_registry import clear_catalog_registry
 
     clear_cyt_mcp_cache_schedulers()
+    clear_catalog_registry()
 
 
 def _runtime_active(config: dict[str, Any]) -> bool:
     return uses_cyt_mcp_tool_catalog(config)
 
 
-def _workspace_from_catalog_url(url: str) -> str:
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(str(url or "").strip())
-    values = parse_qs(parsed.query).get("workspace", [])
-    return str(values[0]).strip() if values else ""
+def _workspace_from_config(config: dict[str, Any]) -> str:
+    workspace = hook_workspace_from_config(config)
+    return str(workspace) if workspace is not None else ""
 
 
 def _global_scope_paths(agent: str) -> tuple[Path, Path]:
@@ -95,7 +86,7 @@ def _workspace_scope_paths(agent: str, workspace_root: str) -> tuple[Path, Path]
 
 def _cache_key_for_config(config: dict[str, Any]) -> _CytMcpCacheKey:
     agent = tools_hook_cyt_mcp_agent(config)
-    workspace = _workspace_from_catalog_url(tools_hook_cyt_mcp_catalog_url(config))
+    workspace = _workspace_from_config(config)
 
     global_agg, global_defs = _global_scope_paths(agent)
     global_fp = scope_config_fingerprint(global_agg, global_defs)
@@ -178,12 +169,9 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
     return normalized
 
 
-def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    tools_raw = payload.get("tools")
-    if not isinstance(tools_raw, list):
-        return []
+def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
-    for item in tools_raw:
+    for item in tools:
         if not isinstance(item, dict):
             continue
         tool = _normalize_tool(item)
@@ -192,15 +180,11 @@ def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return normalized
 
 
-def _degraded_servers_from_payload(payload: dict[str, Any]) -> tuple[str, ...]:
-    raw = payload.get("degraded_servers")
-    if not isinstance(raw, list):
-        return ()
-    degraded: list[str] = []
-    for item in raw:
-        if isinstance(item, str) and item.strip():
-            degraded.append(item.strip())
-    return tuple(degraded)
+def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    tools_raw = payload.get("tools")
+    if not isinstance(tools_raw, list):
+        return []
+    return _normalize_tools_list(tools_raw)
 
 
 def _tool_server_key(tool: dict[str, Any]) -> str:
@@ -221,14 +205,7 @@ def _disk_catalog_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
     tools = envelope.get("tools")
     if not isinstance(tools, list):
         return []
-    normalized: list[dict[str, Any]] = []
-    for item in tools:
-        if not isinstance(item, dict):
-            continue
-        tool = _normalize_tool(item)
-        if tool is not None:
-            normalized.append(tool)
-    return normalized
+    return _normalize_tools_list(tools)
 
 
 def _server_keys_for_tools(tools: Sequence[dict[str, Any]]) -> set[str]:
@@ -316,41 +293,27 @@ def _hydrate_missing_servers_from_disk(
     return merged
 
 
-def _fetch_catalog_from_http(url: str) -> dict[str, Any] | None:
-    catalog_url = str(url or "").strip().rstrip("/")
-    if not catalog_url:
-        return None
-    try:
-        with urlopen(catalog_url, timeout=30) as response:
-            raw = response.read().decode("utf-8")
-    except (OSError, URLError, TimeoutError, ValueError) as exc:
-        logger.warning("cyt-mcp catalog HTTP fetch failed: %s", exc)
-        return None
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("cyt-mcp catalog HTTP returned invalid JSON")
-        return None
-    return payload if isinstance(payload, dict) else None
+def _fetch_catalog_from_registry(
+    config: dict[str, Any],
+    *,
+    allow_stale: bool = True,
+) -> list[dict[str, Any]]:
+    from cyt.hook.catalog_registry import merge_catalog_for_hook
+
+    agent = tools_hook_cyt_mcp_agent(config)
+    workspace = hook_workspace_from_config(config)
+    tools = merge_catalog_for_hook(agent, workspace, allow_stale=allow_stale)
+    return _normalize_tools_list(tools)
 
 
-def _fetch_catalog_live(config: dict[str, Any], cache_key: _CytMcpCacheKey) -> CytMcpLiveCatalog:
-    catalog_url = tools_hook_cyt_mcp_catalog_url(config)
-    payload: dict[str, Any] | None = None
-    if catalog_url:
-        payload = _fetch_catalog_from_http(catalog_url)
-    if payload is None:
-        executable = tools_hook_cyt_mcp_executable(config)
-        if not cyt_mcp_available(executable):
-            logger.warning("cyt-mcp executable unavailable: %s", executable)
-            return CytMcpLiveCatalog(tools=[], degraded_servers=())
-        payload = run_cyt_mcp_catalog_json(executable, agent=cache_key.agent)
-    if payload is None:
-        return CytMcpLiveCatalog(tools=[], degraded_servers=())
-    return CytMcpLiveCatalog(
-        tools=_normalize_catalog_payload(payload),
-        degraded_servers=_degraded_servers_from_payload(payload),
-    )
+def _wait_for_registry_catalog(config: dict[str, Any]) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + BLOCKING_REGISTRY_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        tools = _fetch_catalog_from_registry(config, allow_stale=True)
+        if tools:
+            return tools
+        time.sleep(BLOCKING_REGISTRY_POLL_SECONDS)
+    return _fetch_catalog_from_registry(config, allow_stale=True)
 
 
 def _write_catalog_disk(cache_key: _CytMcpCacheKey, tools: list[dict[str, Any]]) -> None:
@@ -409,23 +372,35 @@ def _ensure_scheduler_started(cfg: dict[str, Any]) -> None:
     start_cyt_mcp_cache_scheduler(cfg)
 
 
-def _blocking_fetch(cfg: dict[str, Any], cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
+def _refresh_from_registry(
+    cfg: dict[str, Any],
+    cache_key: _CytMcpCacheKey,
+    *,
+    blocking: bool,
+) -> list[dict[str, Any]]:
     state = _get_state(cache_key)
-    try:
-        logger.info("cyt-mcp catalog fetch slug=%s blocking=true", cache_key.slug)
-        fetched = _fetch_catalog_live(cfg, cache_key)
-    except Exception as exc:
-        logger.warning("cyt-mcp catalog fetch failed: %s", exc)
-        return _snapshot_tools(state)
-    if not fetched.tools:
-        return _snapshot_tools(state)
-    apply_fetched_catalog(
-        cfg,
-        fetched.tools,
-        degraded_servers=fetched.degraded_servers,
-    )
+    if blocking:
+        tools = _wait_for_registry_catalog(cfg)
+    else:
+        tools = _fetch_catalog_from_registry(cfg, allow_stale=True)
+
+    if not tools:
+        snapshot = _snapshot_tools(state)
+        if snapshot:
+            return snapshot
+        disk_tools = _disk_catalog_tools(cache_key)
+        if disk_tools:
+            content_hash = raw_catalog_content_hash(disk_tools)
+            _apply_catalog_to_state(state, disk_tools, content_hash=content_hash, config=cfg)
+            return copy.deepcopy(disk_tools)
+        return []
+
+    hydrated = _hydrate_missing_servers_from_disk(cache_key, tools)
+    content_hash = raw_catalog_content_hash(hydrated)
+    _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=cfg)
+    _write_catalog_disk(cache_key, hydrated)
     _ensure_scheduler_started(cfg)
-    return _snapshot_tools(state)
+    return copy.deepcopy(hydrated)
 
 
 def _get_cyt_mcp_catalog_impl(
@@ -445,21 +420,18 @@ def _get_cyt_mcp_catalog_impl(
         with _catalog_lock:
             has_memory = bool(state.tools)
 
-    if not has_memory and (blocking or force):
-        return _blocking_fetch(cfg, cache_key)
+    if force or blocking or not has_memory:
+        tools = _refresh_from_registry(cfg, cache_key, blocking=blocking or not has_memory)
+        if tools:
+            return tools
+        if has_memory:
+            return _snapshot_tools(state)
+        if not blocking:
+            _ensure_scheduler_started(cfg)
+            from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
 
-    if force and has_memory:
-        return _blocking_fetch(cfg, cache_key)
-
-    if not has_memory:
-        _ensure_scheduler_started(cfg)
-        from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
-
-        schedule_cyt_mcp_catalog_refresh(cfg, force=True)
+            schedule_cyt_mcp_catalog_refresh(cfg, force=True)
         return None
-
-    if blocking:
-        return _blocking_fetch(cfg, cache_key)
 
     _ensure_scheduler_started(cfg)
     from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
@@ -511,12 +483,14 @@ def apply_fetched_catalog(
     state = _get_state(cache_key)
     existing = _snapshot_tools(state)
     disk_tools = _disk_catalog_tools(cache_key)
+    normalized = _normalize_tools_list(tools)
     merged = _merge_degraded_backend_tools(
-        tools,
+        normalized,
         existing,
         degraded_servers or (),
         disk_tools=disk_tools,
     )
-    content_hash = raw_catalog_content_hash(merged)
-    _apply_catalog_to_state(state, merged, content_hash=content_hash, config=config)
-    _write_catalog_disk(cache_key, merged)
+    hydrated = _hydrate_missing_servers_from_disk(cache_key, merged)
+    content_hash = raw_catalog_content_hash(hydrated)
+    _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=config)
+    _write_catalog_disk(cache_key, hydrated)

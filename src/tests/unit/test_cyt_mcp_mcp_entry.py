@@ -136,9 +136,9 @@ def test_write_agent_cyt_mcp_entry_dev_mode(
     assert payload["mcpServers"]["other"]["command"] == "echo"
 
 
-def test_prompt_cyt_mcp_transport_defaults_to_http(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prompt_cyt_mcp_transport_defaults_to_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cyt_mcp_setup, "_prompt", lambda _label, default: default)
-    assert cyt_mcp_setup.prompt_cyt_mcp_transport() == "http"
+    assert cyt_mcp_setup.prompt_cyt_mcp_transport() == "stdio"
 
 
 def test_write_agent_cyt_mcp_entry_http_mode(
@@ -152,10 +152,9 @@ def test_write_agent_cyt_mcp_entry_http_mode(
     assert payload["mcpServers"]["cyt-mcp"] == {"url": "http://127.0.0.1:8765/mcp"}
 
 
-def test_cyt_mcp_hook_settings_overlay_http() -> None:
+def test_cyt_mcp_hook_settings_overlay() -> None:
     overlay = cyt_mcp_setup.cyt_mcp_hook_settings_overlay(transport="http", agent="cursor")
-    assert overlay["agent"] == "cursor"
-    assert overlay["catalog_url"] == "http://127.0.0.1:8765/catalog"
+    assert overlay == {"agent": "cursor"}
 
 
 def test_is_cyt_mcp_frontend_server() -> None:

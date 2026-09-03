@@ -8,12 +8,10 @@ from typing import Any, Literal
 from cyt.config import (
     load_config,
     needs_cyt_mcp_catalog,
-    tools_hook_cyt_mcp_agent,
-    tools_hook_cyt_mcp_catalog_url,
     tools_hook_cyt_mcp_executable,
 )
 from cyt.cyt_mcp.catalog import get_cyt_mcp_catalog
-from cyt.cyt_mcp.cli import cyt_mcp_available, run_cyt_mcp_catalog_json
+from cyt.cyt_mcp.cli import cyt_mcp_available
 
 CytMcpCatalogProbe = Literal["ok", "empty", "unavailable"]
 
@@ -29,32 +27,23 @@ def probe_cyt_mcp_catalog(
     if not needs_cyt_mcp_catalog(cfg):
         return None
 
-    catalog_url = tools_hook_cyt_mcp_catalog_url(cfg)
     executable = tools_hook_cyt_mcp_executable(cfg)
     if quick:
-        if catalog_url:
+        from cyt.hook.catalog_registry import list_catalog_registrations
+
+        if list_catalog_registrations():
             return "ok"
-        if not cyt_mcp_available(executable):
-            return "unavailable"
+        if cyt_mcp_available(executable):
+            return "ok"
+        return "unavailable"
+
+    tools = get_cyt_mcp_catalog(cfg, blocking=False)
+    if tools:
         return "ok"
-
-    if catalog_url:
-        tools = get_cyt_mcp_catalog(cfg, blocking=True)
-        if tools is None:
-            return "unavailable"
-        return "ok" if tools else "empty"
-
-    if not cyt_mcp_available(executable):
+    blocking_tools = get_cyt_mcp_catalog(cfg, blocking=True)
+    if blocking_tools is None:
         return "unavailable"
-
-    agent = tools_hook_cyt_mcp_agent(cfg)
-    payload = run_cyt_mcp_catalog_json(executable, agent=agent)
-    if payload is None:
-        return "unavailable"
-    tools = payload.get("tools")
-    if not isinstance(tools, list) or not tools:
-        return "empty"
-    return "ok"
+    return "ok" if blocking_tools else "empty"
 
 
 def report_cyt_mcp_hook_readiness(

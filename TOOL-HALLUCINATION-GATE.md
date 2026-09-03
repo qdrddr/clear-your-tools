@@ -53,9 +53,11 @@ cyt hook all --prevent-hallucinations
 The wizard will:
 
 1. Enable the hallucination gate and disable skills/tools injection.
-2. Migrate backend MCP servers to `~/.config/cyt/mcp/<agent>.json`.
-3. Register a single **cyt-mcp** entry in the agent MCP config.
+2. Migrate backend MCP servers to `~/.config/cyt/mcp/<agent>.json` (global) and `.cursor/cyt/mcp/<agent>.json` (workspace when run from a repo).
+3. Register **cyt-mcp** (global) and **cyt-mcp-workspace** (workspace) entries in the agent MCP config.
 4. Install CYT hooks (`preToolUse`, `beforeSubmitPrompt`, `sessionStart`, …).
+
+Each cyt-mcp instance pushes its catalog to the hook daemon; verify-only builds the Type-2 session catalog from the merged registry (global + workspace).
 
 **Restart the agent** when the wizard finishes. It may also restart the hook daemon for verify-only mode.
 

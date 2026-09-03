@@ -697,6 +697,7 @@ def test_agent_config_ready_expands_tilde_paths(
     claude_dir.mkdir(parents=True)
     (claude_dir / "settings.json").write_text("{}\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     assert hook_setup._agent_config_ready(Path("~/.claude/settings.json")) is True
     assert hook_setup._agent_config_ready(Path("~/.missing/settings.json")) is False

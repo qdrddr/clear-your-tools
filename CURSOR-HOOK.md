@@ -118,7 +118,7 @@ One `cyt hook cursor` run from a repo configures **two** cyt-mcp servers in Curs
 Hooks stay **global only** (`~/.cursor/hooks.json`). Workspace behavior uses hook payload `workspace_roots`:
 
 - The hook daemon deep-merges `~/.config/cyt/config.yaml` with `.cursor/cyt/config/config.yaml` per request.
-- HTTP catalog fetch uses `GET /catalog?workspace=/abs/path` so hook injection sees global + workspace tools.
+- Each live cyt-mcp instance (global + workspace, stdio or HTTP) **pushes** its tool catalog to the hook daemon via `POST /hook/catalog/register`. The daemon merges global + workspace registrations per hook request.
 
 Remove workspace artifacts only:
 
