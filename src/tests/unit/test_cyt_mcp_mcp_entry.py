@@ -43,6 +43,24 @@ def test_build_dev_cyt_mcp_entry() -> None:
     }
 
 
+def test_build_dev_workspace_cyt_mcp_entry_uses_workspace_folder() -> None:
+    repo_root = Path("/tmp/clear-your-tools")
+    script_rel = cyt_mcp_cli_script_relpath()
+    entry = build_cyt_mcp_mcp_server_entry(
+        "cursor",
+        dev_repo_root=repo_root,
+        dev_script_rel=script_rel,
+        workspace_cwd="${workspaceFolder}",
+        aggregator_config="${workspaceFolder}/.cursor/cyt/config/mcp-aggregator.yaml",
+    )
+    assert entry["cwd"] == "${workspaceFolder}"
+    assert entry["args"][1:3] == ["--directory", "${workspaceFolder}"]
+    assert entry["args"][-2:] == [
+        "--config",
+        "${workspaceFolder}/.cursor/cyt/config/mcp-aggregator.yaml",
+    ]
+
+
 def test_cyt_mcp_mcp_server_entry_uses_dev_invocation() -> None:
     repo_root = Path("/tmp/clear-your-tools")
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)

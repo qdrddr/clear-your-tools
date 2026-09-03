@@ -348,6 +348,8 @@ def cyt_mcp_mcp_server_entry(
     http_host: str = "127.0.0.1",
     http_port: int = 8765,
     http_mcp_path: str = "/mcp",
+    aggregator_config: Path | str | None = None,
+    workspace_cwd: str | None = None,
 ) -> dict[str, Any]:
     from cyt_client.mcp_entry import build_cyt_mcp_mcp_server_entry, normalize_cyt_mcp_transport
 
@@ -362,6 +364,8 @@ def cyt_mcp_mcp_server_entry(
             http_host=http_host,
             http_port=http_port,
             http_mcp_path=http_mcp_path,
+            aggregator_config=aggregator_config,
+            workspace_cwd=workspace_cwd,
         )
     return build_cyt_mcp_mcp_server_entry(
         agent,
@@ -369,6 +373,8 @@ def cyt_mcp_mcp_server_entry(
         http_host=http_host,
         http_port=http_port,
         http_mcp_path=http_mcp_path,
+        aggregator_config=aggregator_config,
+        workspace_cwd=workspace_cwd,
     )
 
 

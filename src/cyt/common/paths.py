@@ -33,7 +33,7 @@ def _normalize_windows_path(path: Path) -> Path:
     import ctypes
 
     buffer = ctypes.create_unicode_buffer(32768)
-    get_long_path_name = ctypes.windll.kernel32.GetLongPathNameW  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    get_long_path_name = ctypes.windll.kernel32.GetLongPathNameW
     if get_long_path_name(str(path), buffer, len(buffer)):
         return Path(buffer.value)
     return path.resolve()

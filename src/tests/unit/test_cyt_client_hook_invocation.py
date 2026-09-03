@@ -138,6 +138,69 @@ def test_pairing_does_not_modify_hooks_file(
     assert "cyt-mcp" in mcp_payload["mcpServers"]
 
 
+def test_pairing_repairs_workspace_mcp_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    cyt_dir = repo_root / ".cursor" / "cyt"
+    cyt_dir.mkdir(parents=True)
+    (cyt_dir / "mcp").mkdir()
+    (cyt_dir / "mcp" / "cursor.json").write_text(
+        '{"mcpServers": {"backend": {"command": "echo"}}}',
+        encoding="utf-8",
+    )
+    (cyt_dir / "config").mkdir()
+    (cyt_dir / "config" / "mcp-aggregator.yaml").write_text(
+        "default_agent: cursor\n", encoding="utf-8"
+    )
+
+    global_mcp = tmp_path / "global-mcp.json"
+    global_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    workspace_mcp = repo_root / ".cursor" / "mcp.json"
+    workspace_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "transport: stdio",
+                "http:",
+                "  host: 127.0.0.1",
+                "  port: 8765",
+                "  mcp_path: /mcp",
+                "  catalog_path: /catalog",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("cyt_client.pairing._AGENT_MCP_PATHS", {"cursor": global_mcp})
+    monkeypatch.setattr("cyt_client.mcp_entry.DEFAULT_AGGREGATOR_PATH", aggregator_path)
+    monkeypatch.setattr("cyt_client.config.tools_from_includes_cyt_mcp", lambda: True)
+
+    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY
+
+    repair_pairing(
+        {
+            "hook_event_name": "sessionStart",
+            "session_id": "pair-ws",
+            "workspace_roots": [str(repo_root.resolve())],
+        },
+        verbose=False,
+    )
+
+    global_payload = json.loads(global_mcp.read_text(encoding="utf-8"))
+    workspace_payload = json.loads(workspace_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_SERVER_KEY in global_payload["mcpServers"]
+    assert CYT_MCP_WORKSPACE_SERVER_KEY in workspace_payload["mcpServers"]
+    ws_entry = workspace_payload["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]
+    assert "--config" in ws_entry.get("args", [])
+
+
 def test_resolve_pairing_dev_context_from_mcp_file(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()

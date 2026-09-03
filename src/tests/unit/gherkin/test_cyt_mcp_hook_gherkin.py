@@ -156,7 +156,10 @@ def when_apply_disk(gherkin_context: GherkinContext) -> None:
 
 @then("disk catalog should contain the same tool names")
 def then_disk_names(gherkin_context: GherkinContext) -> None:
-    envelope = read_disk_catalog("cursor")
+    from cyt.cyt_mcp.catalog import _cache_key_for_config
+
+    cache_key = _cache_key_for_config(gherkin_context.payload["config"])
+    envelope = read_disk_catalog(cache_key.slug)
     assert envelope is not None
     names = [tool["name"] for tool in envelope["tools"]]
     assert names == ["filesystem_read_file"]

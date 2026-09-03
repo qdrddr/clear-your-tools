@@ -78,7 +78,7 @@ def _hook_daemon_spawn_kwargs() -> dict[str, Any]:
     """Return ``Popen`` kwargs that detach hook daemon children on Windows."""
     if not is_windows():
         return {}
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         flags |= subprocess.CREATE_NO_WINDOW
     return {"creationflags": flags}

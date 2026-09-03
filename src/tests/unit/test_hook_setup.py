@@ -1904,6 +1904,8 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
 
     def capture_yes_no(text: str, *args: object, **kwargs: object) -> bool:
         yes_no_calls.append(text)
+        if "Configure workspace-scoped cyt-mcp" in text:
+            return False
         if "Migrate agent MCP config" in text:
             return True
         if "choose action" in text.lower():
@@ -1911,6 +1913,13 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
         raise AssertionError(f"unexpected yes/no prompt: {text!r}")
 
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", capture_yes_no)
+    import cyt.hook.install_scope as install_scope
+
+    monkeypatch.setattr(
+        install_scope.CytInstallScope,
+        "from_cwd",
+        classmethod(lambda cls, *, cwd=None: install_scope.CytInstallScope(workspace_root=None)),
+    )
     monkeypatch.setattr(hook_setup, "_prompt_choice", lambda text, *a, **k: "update")
 
     with (

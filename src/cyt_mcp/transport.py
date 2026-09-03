@@ -31,9 +31,52 @@ def register_catalog_route(
     path = config.http.catalog_path
 
     @server.custom_route(path, methods=["GET"])
-    async def _catalog_handler(_request: Request) -> JSONResponse:
+    async def _catalog_handler(request: Request) -> JSONResponse:
+        from cyt_mcp.aggregator import build_aggregator
+        from cyt_mcp.catalog import merge_catalog_payloads
+        from cyt_mcp.workspace_catalog import (
+            parse_workspace_root,
+            workspace_aggregator_path,
+            workspace_server_defs_path,
+        )
+
         payload = catalog_payload(cache, agent=config.agent)
-        return JSONResponse(payload)
+        workspace_raw = request.query_params.get("workspace") or request.headers.get(
+            "X-CYT-Workspace-Root",
+        )
+        workspace_root = parse_workspace_root(workspace_raw)
+        if workspace_root is None:
+            return JSONResponse(payload)
+
+        defs_path = workspace_server_defs_path(workspace_root, config.agent)
+        if defs_path is None:
+            return JSONResponse(payload)
+
+        from cyt_mcp.config import AggregatorConfig as AggCfg
+        from cyt_mcp.config import load_http_settings, load_mcp_servers
+
+        workspace_config_path = workspace_aggregator_path(workspace_root, config.agent)
+
+        workspace_servers = load_mcp_servers(defs_path, workspace_folder=workspace_root)
+        if not workspace_servers:
+            return JSONResponse(payload)
+
+        ws_config = AggCfg(
+            agent=config.agent,
+            mcp_servers=workspace_servers,
+            transport=config.transport,
+            http=load_http_settings({}),
+            codex_stubs_include_description=config.codex_stubs_include_description,
+            verify_only=config.verify_only,
+            aggregator_path=workspace_config_path,
+            agent_mcp_path=defs_path,
+        )
+        ws_cache = RuntimeToolCache()
+        ws_server = build_aggregator(ws_config, ws_cache)
+        await refresh_runtime_cache(ws_server, ws_cache, ws_config)
+        workspace_payload = catalog_payload(ws_cache, agent=config.agent)
+        merged = merge_catalog_payloads(payload, workspace_payload)
+        return JSONResponse(merged)
 
     _ = _catalog_handler
 

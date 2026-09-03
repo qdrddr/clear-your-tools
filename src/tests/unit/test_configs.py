@@ -163,6 +163,7 @@ def test_required_proxy_env_var_names_excludes_upstream_keys(
         },
     ]
     config["network"]["proxy"]["reverse"]["endpoints"] = ["openai"]
+    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
 
     required = configs.required_proxy_env_var_names(config)
 
@@ -187,6 +188,7 @@ def test_missing_proxy_env_var_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
+    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
 
     missing = configs.missing_proxy_env_var_names(config)
@@ -415,6 +417,7 @@ def test_require_proxy_env_raises_with_help_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
+    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
 
     with pytest.raises(RuntimeError, match="cyt setup"):

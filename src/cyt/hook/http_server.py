@@ -144,9 +144,17 @@ async def hook_connect(request: Request) -> Response:
     )
     debug = _hook_debug_enabled(request)
 
+    from cyt.hook.workspace_config import resolve_hook_request_config, with_dynamic_catalog_url
     from cyt.skills.cli import resolve_effective_hook_agent
 
     agent = resolve_effective_hook_agent(payload) or "cursor"
+    spawn_config = getattr(request.app.state, "cyt_config", None)
+    config, _workspace = resolve_hook_request_config(
+        payload,
+        agent,
+        base_config=spawn_config or config,
+    )
+    config = with_dynamic_catalog_url(config, payload)
 
     if verify_only_mode(config) and inject_via_for_agent(config, agent) == "hook":
         return await _hook_connect_verify_only(payload, config, agent=agent)

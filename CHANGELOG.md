@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Dual-scope CYT install: one `cyt hook <agent>` wizard configures Global User and workspace-scoped
+  cyt-mcp (`cyt-mcp` + `cyt-mcp-workspace`) with artifacts under `.<agent>/cyt/`.
+- HTTP `/catalog?workspace=` (or `X-CYT-Workspace-Root`) merges workspace server defs into hook injection catalog.
+- Hook daemon per-request config merge from `.<agent>/cyt/config/config.yaml` over global CYT config.
+- `cyt hook --uninstall-workspace` removes project-scoped cyt-mcp only.
+
 ## 1.0.0
 
 Major release: agent modules reorganization. Old import paths were removed without deprecation shims.

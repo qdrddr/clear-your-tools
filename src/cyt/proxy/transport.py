@@ -72,9 +72,14 @@ def append_debug_log_block(path: Path, *, label: str, content: str) -> None:
 def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
     """Append a request object to a JSON array debug file (never rotates/truncates)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as f, exclusive_file_lock(f.fileno()):
-        f.seek(0)
-        content = f.read()
+    lock_path = path.with_name(f".{path.name}.lock")
+    with (
+        lock_path.open("a", encoding="utf-8") as lock_f,
+        exclusive_file_lock(
+            lock_f.fileno(),
+        ),
+    ):
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
         if content.strip():
             entries = json.loads(content)
             if not isinstance(entries, list):
@@ -85,9 +90,9 @@ def append_debug_json_entry(path: Path, entry: dict[str, Any]) -> None:
         encoded = json.dumps(entries, indent=2, default=str)
         if not encoded.endswith("\n"):
             encoded += "\n"
-    tmp_path = path.with_name(f".{path.name}.tmp")
-    tmp_path.write_text(encoded, encoding="utf-8")
-    os.replace(tmp_path, path)
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        tmp_path.write_text(encoded, encoding="utf-8")
+        os.replace(tmp_path, path)
 
 
 def append_debug_snapshot(

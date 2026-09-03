@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,8 @@ import yaml
 
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
 DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
+
+_MCP_VAR_PATTERN = re.compile(r"\$\{(userHome|workspaceFolder|env:([^}]+))\}")
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,42 @@ class AggregatorConfig:
 
 def _expand(path: str | Path) -> Path:
     return Path(path).expanduser()
+
+
+def expand_mcp_value(value: str, *, workspace_folder: Path | None = None) -> str:
+    """Expand Cursor-style MCP config variables in *value*."""
+    workspace = (workspace_folder or Path.cwd()).resolve()
+    home = Path.home()
+
+    def repl(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if token == "userHome":
+            return str(home)
+        if token == "workspaceFolder":
+            return str(workspace)
+        env_name = match.group(2)
+        if env_name is not None:
+            return os.environ.get(env_name, "")
+        return match.group(0)
+
+    expanded = _MCP_VAR_PATTERN.sub(repl, value)
+    if expanded.startswith("~"):
+        return str(Path(expanded).expanduser())
+    return expanded
+
+
+def expand_mcp_spec(spec: Any, *, workspace_folder: Path | None = None) -> Any:
+    """Recursively expand MCP variables in a backend server spec."""
+    if isinstance(spec, str):
+        return expand_mcp_value(spec, workspace_folder=workspace_folder)
+    if isinstance(spec, list):
+        return [expand_mcp_spec(item, workspace_folder=workspace_folder) for item in spec]
+    if isinstance(spec, dict):
+        return {
+            key: expand_mcp_spec(item, workspace_folder=workspace_folder)
+            for key, item in spec.items()
+        }
+    return spec
 
 
 def load_aggregator_yaml(path: Path | None = None) -> dict[str, Any]:
@@ -63,14 +103,40 @@ def agent_mcp_config_path(raw: dict[str, Any], agent: str) -> Path:
     return DEFAULT_MCP_DIR.expanduser() / f"{agent}.json"
 
 
-def load_mcp_servers(path: Path) -> dict[str, Any]:
+def is_mcp_server_enabled(spec: object) -> bool:
+    """Return False when a Cursor-style MCP server entry is explicitly disabled."""
+    if not isinstance(spec, dict):
+        return False
+    enabled = spec.get("enabled", True)
+    if isinstance(enabled, str):
+        return enabled.strip().lower() not in {"false", "0", "no", "off"}
+    return bool(enabled)
+
+
+def _backend_server_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in spec.items() if key != "enabled"}
+
+
+def load_mcp_servers(path: Path, *, workspace_folder: Path | None = None) -> dict[str, Any]:
     if not path.is_file():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         return {}
     servers = payload.get("mcpServers")
-    return servers if isinstance(servers, dict) else {}
+    if not isinstance(servers, dict):
+        return {}
+    loaded: dict[str, Any] = {}
+    for name, spec in servers.items():
+        if not is_mcp_server_enabled(spec):
+            continue
+        if not isinstance(spec, dict):
+            continue
+        loaded[name] = expand_mcp_spec(
+            _backend_server_spec(spec),
+            workspace_folder=workspace_folder,
+        )
+    return loaded
 
 
 def load_http_settings(raw: dict[str, Any]) -> HttpSettings:
@@ -95,6 +161,7 @@ def load_aggregator_config(
     *,
     agent: str | None = None,
     aggregator_path: Path | None = None,
+    workspace_folder: Path | None = None,
 ) -> AggregatorConfig:
     raw = load_aggregator_yaml(aggregator_path)
     resolved_agent = resolve_agent_name(raw, agent)
@@ -107,7 +174,7 @@ def load_aggregator_config(
     verify_only = bool(raw.get("verify_only", False))
     return AggregatorConfig(
         agent=resolved_agent,
-        mcp_servers=load_mcp_servers(agent_path),
+        mcp_servers=load_mcp_servers(agent_path, workspace_folder=workspace_folder),
         transport=transport,
         http=load_http_settings(raw),
         codex_stubs_include_description=include_desc,

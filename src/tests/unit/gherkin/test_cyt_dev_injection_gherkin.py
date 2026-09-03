@@ -18,7 +18,10 @@ from cyt.hook.cli_invocation import (
     repo_root_from_proxy_cli_script,
 )
 from cyt.tools import cyt_mcp_setup
-from cyt_client.mcp_entry import build_cyt_mcp_mcp_server_entry
+from cyt_client.mcp_entry import (
+    DEFAULT_AGGREGATOR_PATH,
+    build_cyt_mcp_mcp_server_entry,
+)
 from cyt_client.pairing import repair_pairing
 from tests.unit.gherkin.conftest import GherkinContext
 
@@ -98,6 +101,7 @@ def then_mcp_entry_uses_uv(gherkin_context: GherkinContext) -> None:
         "cursor",
         dev_repo_root=repo_root,
         dev_script_rel=cyt_mcp_cli_script_relpath(),
+        aggregator_config=DEFAULT_AGGREGATOR_PATH.expanduser(),
     )
     assert entry == expected
     assert entry["command"] == "uv"

@@ -14,6 +14,7 @@ from cyt_client.hook_executable import (
 
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 CYT_MCP_SERVER_KEY = "cyt-mcp"
+CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-workspace"
 CYT_MCP_SCRIPT_REL = "src/cyt_mcp/cli.py"
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
 CytMcpTransport = Literal["stdio", "http"]
@@ -40,7 +41,7 @@ def cyt_mcp_http_mcp_url(
 
 def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
     """Return True when an agent MCP server entry is the cyt-mcp frontend (not a backend)."""
-    if str(name).strip() in {CYT_MCP_SERVER_KEY, "cyt_mcp"}:
+    if str(name).strip() in {CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY, "cyt_mcp"}:
         return True
     if not isinstance(spec, dict):
         return False
@@ -73,9 +74,18 @@ def cyt_mcp_http_catalog_url(
     host: str = DEFAULT_HTTP_HOST,
     port: int = DEFAULT_HTTP_PORT,
     catalog_path: str = DEFAULT_CATALOG_PATH,
+    workspace_root: str | Path | None = None,
 ) -> str:
+    from urllib.parse import urlencode
+
     path = catalog_path if catalog_path.startswith("/") else f"/{catalog_path}"
-    return f"http://{host}:{port}{path}"
+    base = f"http://{host}:{port}{path}"
+    if workspace_root is None:
+        return base
+    ws = str(workspace_root).strip()
+    if not ws:
+        return base
+    return f"{base}?{urlencode({'workspace': ws})}"
 
 
 def _parse_aggregator_scalar(raw: dict[str, str], key: str, default: str) -> str:
@@ -120,6 +130,15 @@ def load_aggregator_transport_settings(
     return transport, host, port, mcp_path, catalog_path
 
 
+def _append_config_arg(args: list[str], aggregator_config: Path | str | None) -> list[str]:
+    if aggregator_config is None:
+        return args
+    config_text = str(aggregator_config).strip()
+    if not config_text:
+        return args
+    return [*args, "--config", config_text]
+
+
 def build_cyt_mcp_mcp_server_entry(
     agent: str,
     *,
@@ -129,26 +148,36 @@ def build_cyt_mcp_mcp_server_entry(
     http_host: str = DEFAULT_HTTP_HOST,
     http_port: int = DEFAULT_HTTP_PORT,
     http_mcp_path: str = DEFAULT_MCP_PATH,
+    aggregator_config: Path | str | None = None,
+    workspace_cwd: str | None = None,
 ) -> dict[str, Any]:
     agent_name = agent.strip() or "cursor"
     if transport == "http":
         return {"url": cyt_mcp_http_mcp_url(host=http_host, port=http_port, mcp_path=http_mcp_path)}
     if dev_repo_root is not None and dev_script_rel:
-        return {
+        directory = workspace_cwd if workspace_cwd else str(dev_repo_root)
+        entry: dict[str, Any] = {
             "command": "uv",
-            "args": [
-                "run",
-                "--directory",
-                str(dev_repo_root),
-                dev_script_rel,
-                "--agent",
-                agent_name,
-            ],
+            "args": _append_config_arg(
+                [
+                    "run",
+                    "--directory",
+                    directory,
+                    dev_script_rel,
+                    "--agent",
+                    agent_name,
+                ],
+                aggregator_config,
+            ),
         }
-    return {
-        "command": INSTALLED_CYT_MCP_COMMAND,
-        "args": ["--agent", agent_name],
-    }
+    else:
+        entry = {
+            "command": INSTALLED_CYT_MCP_COMMAND,
+            "args": _append_config_arg(["--agent", agent_name], aggregator_config),
+        }
+    if workspace_cwd:
+        entry["cwd"] = workspace_cwd
+    return entry
 
 
 def _strip_env_prefix(command: str) -> str:
@@ -286,13 +315,23 @@ def mcp_entries_equivalent(existing: object, desired: dict[str, Any]) -> bool:
     return all(existing_dict.get(key) == value for key, value in desired.items())
 
 
-def codex_cyt_mcp_toml_block(agent: str, entry: dict[str, Any]) -> str:
+def codex_cyt_mcp_toml_block(
+    agent: str,
+    entry: dict[str, Any],
+    *,
+    server_key: str = CYT_MCP_SERVER_KEY,
+) -> str:
+    section = f"[mcp_servers.{server_key}]"
     url = entry.get("url")
     if isinstance(url, str) and url.strip():
-        return f'\n[mcp_servers.cyt-mcp]\nurl = "{url.strip()}"\n'
+        return f'\n{section}\nurl = "{url.strip()}"\n'
     command = str(entry.get("command", INSTALLED_CYT_MCP_COMMAND))
     args = entry.get("args")
     if not isinstance(args, list):
         args = ["--agent", agent]
     args_json = json.dumps(args)
-    return f'\n[mcp_servers.cyt-mcp]\ncommand = "{command}"\nargs = {args_json}\n'
+    lines = [f"\n{section}", f'command = "{command}"', f"args = {args_json}"]
+    cwd = entry.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        lines.append(f'cwd = "{cwd.strip()}"')
+    return "\n".join(lines) + "\n"

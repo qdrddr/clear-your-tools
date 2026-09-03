@@ -155,7 +155,10 @@ def test_apply_fetched_catalog_keeps_mlflow_when_backend_degraded(
     ]
     apply_fetched_catalog(config, partial_live, degraded_servers=["mlflow-mcp"])
 
-    envelope = read_disk_catalog("cursor")
+    from cyt.cyt_mcp.catalog import _cache_key_for_config
+
+    cache_key = _cache_key_for_config(config)
+    envelope = read_disk_catalog(cache_key.slug)
     assert envelope is not None
     names = [tool["name"] for tool in envelope["tools"]]
     assert "mlflow-mcp_search_traces" in names

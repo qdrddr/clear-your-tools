@@ -392,6 +392,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Remove CYT hooks from agent config file(s)",
     )
+    hook_uninstall_parent.add_argument(
+        "--uninstall-workspace",
+        action="store_true",
+        help="Remove workspace-scoped cyt-mcp from the current project only",
+    )
 
     hook_parser = subparsers.add_parser(
         "hook",
@@ -748,7 +753,7 @@ def _hook_agents_for_command(hook_cmd: str) -> list[HookAgentName] | None:
 
 
 def _run_hook_uninstall_command(args: argparse.Namespace) -> None:
-    from cyt.hook.setup_wizard import run_hook_uninstall
+    from cyt.hook.setup_wizard import run_hook_uninstall, run_hook_uninstall_workspace
 
     hook_cmd = getattr(args, "hook_command", None)
     agents = (
@@ -756,6 +761,9 @@ def _run_hook_uninstall_command(args: argparse.Namespace) -> None:
         if isinstance(hook_cmd, str) and hook_cmd in ("cursor", "claude", "codex")
         else None
     )
+    if getattr(args, "uninstall_workspace", False):
+        run_hook_uninstall_workspace(agents=agents)
+        return
     run_hook_uninstall(agents=agents)
 
 
@@ -806,7 +814,7 @@ def _run_hook_setup_command(args: argparse.Namespace) -> None:
 
 
 def _run_hook_command(args: argparse.Namespace) -> None:
-    if getattr(args, "uninstall", False):
+    if getattr(args, "uninstall", False) or getattr(args, "uninstall_workspace", False):
         _run_hook_uninstall_command(args)
         return
     if getattr(args, "hook_command", None) == "daemon":

@@ -2501,6 +2501,35 @@ def ensure_pre_tool_hooks_for_launch(agent: AgentName, *, quiet: bool = False) -
     return changed
 
 
+def run_hook_uninstall_workspace(
+    *,
+    agents: list[HookAgentName] | None = None,
+    workspace_root: Path | None = None,
+) -> None:
+    """Remove workspace-scoped cyt-mcp artifacts from the current or given project."""
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.tools.cyt_mcp_setup import remove_workspace_cyt_mcp_for_agent
+
+    selected_agents = _resolve_hook_setup_agents(agents)
+    scope = CytInstallScope(
+        workspace_root=workspace_root or CytInstallScope.from_cwd().workspace_root,
+    )
+    if not scope.has_workspace:
+        print("No workspace project detected; nothing to uninstall.")
+        return
+
+    print("CYT workspace MCP uninstall\n")
+    any_changed = False
+    for agent in selected_agents:
+        if remove_workspace_cyt_mcp_for_agent(agent, scope):
+            any_changed = True
+
+    if any_changed:
+        print("\nRestart your agent so MCP changes take effect.")
+    else:
+        print("\nNo workspace MCP files were modified.")
+
+
 def run_hook_uninstall(*, agents: list[HookAgentName] | None = None) -> None:
     """Remove CYT agent hooks from Claude, Codex, and/or Cursor config files."""
     selected_agents = _resolve_hook_setup_agents(agents)

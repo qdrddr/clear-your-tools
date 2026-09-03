@@ -22,12 +22,29 @@ from cyt_client.hook_invocation import (
 )
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
+    CYT_MCP_WORKSPACE_SERVER_KEY,
+    DEFAULT_AGGREGATOR_PATH,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,
     mcp_entries_equivalent,
 )
+from cyt_client.rules_file import workspace_root_from_payload
 from cyt_client.skip import hook_skip_enabled
+
+CURSOR_WORKSPACE_FOLDER = "${workspaceFolder}"
+
+_WORKSPACE_AGENT_MCP_PATHS: dict[str, str] = {
+    "cursor": ".cursor/mcp.json",
+    "claude": ".mcp.json",
+    "codex": ".codex/config.toml",
+}
+
+_AGENT_CYT_DIRS: dict[str, str] = {
+    "cursor": ".cursor",
+    "claude": ".claude",
+    "codex": ".codex",
+}
 
 _AGENT_MCP_PATHS: dict[str, Path] = {
     "cursor": Path("~/.cursor/mcp.json"),
@@ -76,8 +93,11 @@ def _canonical_cyt_mcp_entry(
     agent: str,
     *,
     runtime_repo: Path | None = None,
+    aggregator_config: Path | str | None = None,
+    workspace_cwd: str | None = None,
 ) -> dict[str, Any]:
-    transport, host, port, mcp_path, _catalog_path = load_aggregator_transport_settings()
+    agg_path = aggregator_config if isinstance(aggregator_config, Path) else None
+    transport, host, port, mcp_path, _catalog_path = load_aggregator_transport_settings(agg_path)
     use_dev, dev_repo_root = _resolve_dev_context(agent, runtime_repo=runtime_repo)
     dev_script_rel: str | None = None
     if use_dev and dev_repo_root is not None:
@@ -90,7 +110,27 @@ def _canonical_cyt_mcp_entry(
         http_host=host,
         http_port=port,
         http_mcp_path=mcp_path,
+        aggregator_config=aggregator_config,
+        workspace_cwd=workspace_cwd,
     )
+
+
+def _workspace_agent_mcp_path(workspace_root: Path, agent: str) -> Path:
+    rel = _WORKSPACE_AGENT_MCP_PATHS.get(agent, ".cursor/mcp.json")
+    return workspace_root / rel
+
+
+def _resolve_workspace_server_defs_path(workspace_root: Path, agent: str) -> Path | None:
+    from cyt_mcp.workspace_catalog import workspace_server_defs_path
+
+    return workspace_server_defs_path(workspace_root, agent)
+
+
+def _workspace_aggregator_config_ref(agent: str, workspace_root: Path) -> str:
+    if agent == "cursor":
+        return f"{CURSOR_WORKSPACE_FOLDER}/.cursor/cyt/config/mcp-aggregator.yaml"
+    rel_dir = _AGENT_CYT_DIRS.get(agent, ".cursor")
+    return str(workspace_root / rel_dir / "cyt" / "config" / "mcp-aggregator.yaml")
 
 
 def _ensure_json_mcp_server(
@@ -99,6 +139,9 @@ def _ensure_json_mcp_server(
     *,
     verbose: bool,
     runtime_repo: Path | None = None,
+    server_key: str = CYT_MCP_SERVER_KEY,
+    aggregator_config: Path | str | None = None,
+    workspace_cwd: str | None = None,
 ) -> bool:
     if not path.parent.exists():
         return False
@@ -114,17 +157,22 @@ def _ensure_json_mcp_server(
     servers = raw.get("mcpServers")
     if not isinstance(servers, dict):
         servers = {}
-    desired = _canonical_cyt_mcp_entry(agent, runtime_repo=runtime_repo)
-    existing = servers.get(CYT_MCP_SERVER_KEY)
+    desired = _canonical_cyt_mcp_entry(
+        agent,
+        runtime_repo=runtime_repo,
+        aggregator_config=aggregator_config,
+        workspace_cwd=workspace_cwd,
+    )
+    existing = servers.get(server_key)
     if mcp_entries_equivalent(existing, desired):
         return False
     merged = dict(existing) if isinstance(existing, dict) else {}
     merged.update(desired)
-    servers[CYT_MCP_SERVER_KEY] = merged
+    servers[server_key] = merged
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
     if verbose:
-        print(f"cyt-client pairing: updated {CYT_MCP_SERVER_KEY} in {path}", flush=True)
+        print(f"cyt-client pairing: updated {server_key} in {path}", flush=True)
     return True
 
 
@@ -134,13 +182,21 @@ def _ensure_codex_mcp_server(
     *,
     verbose: bool,
     runtime_repo: Path | None = None,
+    server_key: str = CYT_MCP_SERVER_KEY,
+    aggregator_config: Path | str | None = None,
+    workspace_cwd: str | None = None,
 ) -> bool:
     if not path.parent.exists():
         return False
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    marker = "[mcp_servers.cyt-mcp]"
-    desired = _canonical_cyt_mcp_entry(agent, runtime_repo=runtime_repo)
-    block = codex_cyt_mcp_toml_block(agent, desired)
+    marker = f"[mcp_servers.{server_key}]"
+    desired = _canonical_cyt_mcp_entry(
+        agent,
+        runtime_repo=runtime_repo,
+        aggregator_config=aggregator_config,
+        workspace_cwd=workspace_cwd,
+    )
+    block = codex_cyt_mcp_toml_block(agent, desired, server_key=server_key)
     if marker in text:
         before, _, after = text.partition(marker)
         next_section = after.find("\n[mcp_servers.")
@@ -148,11 +204,11 @@ def _ensure_codex_mcp_server(
             text = before.rstrip() + after[next_section:]
         else:
             text = before.rstrip() + "\n"
-    elif "cyt-mcp" in text and block.strip() in text:
+    elif server_key in text and block.strip() in text:
         return False
     _atomic_write_text(path, text.rstrip() + block)
     if verbose:
-        print(f"cyt-client pairing: added cyt-mcp to {path}", flush=True)
+        print(f"cyt-client pairing: added {server_key} to {path}", flush=True)
     return True
 
 
@@ -254,6 +310,70 @@ def _session_id_from_payload(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _repair_global_mcp_pairing(
+    agent: str,
+    *,
+    verbose: bool,
+    runtime_repo: Path | None,
+) -> None:
+    mcp_path = _AGENT_MCP_PATHS.get(agent)
+    if mcp_path is None:
+        return
+    expanded = mcp_path.expanduser()
+    global_agg = DEFAULT_AGGREGATOR_PATH.expanduser()
+    if agent == "codex":
+        _ensure_codex_mcp_server(
+            expanded,
+            agent,
+            verbose=verbose,
+            runtime_repo=runtime_repo,
+            aggregator_config=global_agg,
+        )
+        return
+    _ensure_json_mcp_server(
+        expanded,
+        agent,
+        verbose=verbose,
+        runtime_repo=runtime_repo,
+        aggregator_config=global_agg,
+    )
+
+
+def _repair_workspace_mcp_pairing(
+    agent: str,
+    workspace_root: Path,
+    *,
+    verbose: bool,
+    runtime_repo: Path | None,
+) -> None:
+    defs_path = _resolve_workspace_server_defs_path(workspace_root, agent)
+    if defs_path is None:
+        return
+    ws_mcp = _workspace_agent_mcp_path(workspace_root, agent)
+    agg_ref = _workspace_aggregator_config_ref(agent, workspace_root)
+    workspace_cwd = CURSOR_WORKSPACE_FOLDER if agent == "cursor" else None
+    if agent == "codex":
+        _ensure_codex_mcp_server(
+            ws_mcp,
+            agent,
+            verbose=verbose,
+            runtime_repo=runtime_repo,
+            server_key=CYT_MCP_WORKSPACE_SERVER_KEY,
+            aggregator_config=agg_ref,
+            workspace_cwd=workspace_cwd,
+        )
+        return
+    _ensure_json_mcp_server(
+        ws_mcp,
+        agent,
+        verbose=verbose,
+        runtime_repo=runtime_repo,
+        server_key=CYT_MCP_WORKSPACE_SERVER_KEY,
+        aggregator_config=agg_ref,
+        workspace_cwd=workspace_cwd,
+    )
+
+
 def repair_pairing(
     payload: dict[str, Any],
     *,
@@ -279,23 +399,16 @@ def repair_pairing(
 
     resolved_runtime = runtime_repo or runtime_dev_repo_from_client()
 
-    mcp_path = _AGENT_MCP_PATHS.get(agent)
-    if mcp_path is not None:
-        expanded = mcp_path.expanduser()
-        if agent == "codex":
-            _ensure_codex_mcp_server(
-                expanded,
-                agent,
-                verbose=verbose,
-                runtime_repo=resolved_runtime,
-            )
-        else:
-            _ensure_json_mcp_server(
-                expanded,
-                agent,
-                verbose=verbose,
-                runtime_repo=resolved_runtime,
-            )
+    _repair_global_mcp_pairing(agent, verbose=verbose, runtime_repo=resolved_runtime)
+
+    workspace_root = workspace_root_from_payload(payload)
+    if workspace_root is not None:
+        _repair_workspace_mcp_pairing(
+            agent,
+            workspace_root,
+            verbose=verbose,
+            runtime_repo=resolved_runtime,
+        )
 
     # Cursor/Claude/Codex hooks.json is updated only via ``cyt hook <agent>`` (never here).
 

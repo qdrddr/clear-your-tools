@@ -106,6 +106,28 @@ cyt hook daemon restart
 cyt hook cursor
 ```
 
+## Dual-scope MCP (Global User + workspace)
+
+One `cyt hook cursor` run from a repo configures **two** cyt-mcp servers in Cursor:
+
+| Layer | Agent MCP file | Server defs | CYT config | Aggregator |
+| --- | --- | --- | --- | --- |
+| **Global User** | `~/.cursor/mcp.json` (`cyt-mcp`) | `~/.config/cyt/mcp/cursor.json` | `~/.config/cyt/config.yaml` | `~/.config/cyt/mcp-aggregator.yaml` |
+| **Workspace-scoped** | `.cursor/mcp.json` (`cyt-mcp-workspace`) | `.cursor/cyt/mcp/cursor.json` | `.cursor/cyt/config/config.yaml` | `.cursor/cyt/config/mcp-aggregator.yaml` |
+
+Hooks stay **global only** (`~/.cursor/hooks.json`). Workspace behavior uses hook payload `workspace_roots`:
+
+- The hook daemon deep-merges `~/.config/cyt/config.yaml` with `.cursor/cyt/config/config.yaml` per request.
+- HTTP catalog fetch uses `GET /catalog?workspace=/abs/path` so hook injection sees global + workspace tools.
+
+Remove workspace artifacts only:
+
+```bash
+cyt hook cursor --uninstall-workspace
+```
+
+Committing `.cursor/cyt/` is optional (the wizard does not edit `.gitignore`).
+
 ## Build Your Own
 
 Want granular pruning in your own harness? The underlying chunkers are open-source (Apache 2.0) with

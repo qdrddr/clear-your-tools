@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -21,9 +22,10 @@ from cyt.config import (
     uses_cyt_mcp_tool_catalog,
 )
 from cyt.cyt_mcp.catalog_disk import (
-    normalize_cyt_mcp_agent_slug,
+    merged_hook_catalog_slug,
     raw_catalog_content_hash,
     read_disk_catalog,
+    scope_config_fingerprint,
     write_disk_catalog,
 )
 from cyt.cyt_mcp.cli import cyt_mcp_available, run_cyt_mcp_catalog_json
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 class _CytMcpCacheKey:
     agent: str
     slug: str
+    workspace: str = ""
 
 
 @dataclass
@@ -66,10 +69,48 @@ def _runtime_active(config: dict[str, Any]) -> bool:
     return uses_cyt_mcp_tool_catalog(config)
 
 
+def _workspace_from_catalog_url(url: str) -> str:
+    from urllib.parse import parse_qs, urlparse
+
+    parsed = urlparse(str(url or "").strip())
+    values = parse_qs(parsed.query).get("workspace", [])
+    return str(values[0]).strip() if values else ""
+
+
+def _global_scope_paths(agent: str) -> tuple[Path, Path]:
+    agg = Path("~/.config/cyt/mcp-aggregator.yaml").expanduser()
+    defs = Path(f"~/.config/cyt/mcp/{agent.strip() or 'cursor'}.json").expanduser()
+    return agg, defs
+
+
+def _workspace_scope_paths(agent: str, workspace_root: str) -> tuple[Path, Path] | None:
+    from cyt_mcp.workspace_catalog import workspace_aggregator_path, workspace_server_defs_path
+
+    root = Path(workspace_root).expanduser()
+    defs = workspace_server_defs_path(root, agent)
+    if defs is None:
+        return None
+    return workspace_aggregator_path(root, agent), defs
+
+
 def _cache_key_for_config(config: dict[str, Any]) -> _CytMcpCacheKey:
     agent = tools_hook_cyt_mcp_agent(config)
-    slug = normalize_cyt_mcp_agent_slug(agent)
-    return _CytMcpCacheKey(agent=agent, slug=slug)
+    workspace = _workspace_from_catalog_url(tools_hook_cyt_mcp_catalog_url(config))
+
+    global_agg, global_defs = _global_scope_paths(agent)
+    global_fp = scope_config_fingerprint(global_agg, global_defs)
+
+    if workspace:
+        ws_paths = _workspace_scope_paths(agent, workspace)
+        if ws_paths is not None:
+            ws_fp = scope_config_fingerprint(*ws_paths)
+            slug = merged_hook_catalog_slug(global_fp, ws_fp)
+        else:
+            slug = global_fp
+    else:
+        slug = global_fp
+
+    return _CytMcpCacheKey(agent=agent, slug=slug, workspace=workspace)
 
 
 def cyt_mcp_catalog_slug(config: dict[str, Any] | None = None) -> str:
