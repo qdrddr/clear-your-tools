@@ -440,6 +440,13 @@ def setup_cyt_mcp_for_agent(
     if not install_scope.has_workspace:
         return
 
+    if transport == "stdio":
+        print(
+            "\nSkipping workspace-scoped cyt-mcp (HTTP transport required).",
+            file=sys.stderr,
+        )
+        return
+
     if configure_workspace is None:
         if sys.stdin.isatty():
             configure_workspace = _prompt_yes_no(

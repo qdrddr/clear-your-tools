@@ -126,7 +126,7 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
 
     cyt_mcp_setup.setup_cyt_mcp_for_agent(
         "cursor",
-        transport="stdio",
+        transport="http",
         migrate_backends=True,
         configure_workspace=True,
     )
@@ -145,8 +145,63 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
     user_mcp = json.loads(global_mcp.read_text(encoding="utf-8"))
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_SERVER_KEY in user_mcp["mcpServers"]
+    assert "url" in user_mcp["mcpServers"][CYT_MCP_SERVER_KEY]
     assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data["mcpServers"]
-    assert "--config" in project_mcp_data["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]["args"]
+    assert "url" in project_mcp_data["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]
+
+
+def test_setup_cyt_mcp_skips_workspace_when_stdio(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    global_mcp = home / ".cursor" / "mcp.json"
+    global_mcp.parent.mkdir(parents=True)
+    global_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    project_mcp = tmp_path / ".cursor" / "mcp.json"
+    project_mcp.parent.mkdir(parents=True)
+    project_mcp.write_text(
+        json.dumps({"mcpServers": {"backend-b": {"command": "echo", "args": ["b"]}}}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cyt_mcp_setup,
+        "DEFAULT_AGGREGATOR_PATH",
+        home / "cyt" / "mcp-aggregator.yaml",
+    )
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
+    import cyt.hook.install_scope as install_scope
+
+    monkeypatch.setattr(
+        install_scope,
+        "GLOBAL_AGGREGATOR_PATH",
+        home / "cyt" / "mcp-aggregator.yaml",
+    )
+    monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
+    monkeypatch.setitem(
+        install_scope.GLOBAL_AGENT_MCP_PATHS,
+        "cursor",
+        Path(str(home / ".cursor" / "mcp.json")),
+    )
+    monkeypatch.setattr(
+        install_scope.CytInstallScope,
+        "from_cwd",
+        classmethod(lambda cls, *, cwd=None: CytInstallScope(workspace_root=tmp_path.resolve())),
+    )
+
+    cyt_mcp_setup.setup_cyt_mcp_for_agent(
+        "cursor",
+        transport="stdio",
+        migrate_backends=False,
+        configure_workspace=True,
+    )
+
+    assert not (tmp_path / ".cursor" / "cyt").exists()
+    project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
+    assert CYT_MCP_WORKSPACE_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 
 def test_remove_workspace_cyt_mcp_for_agent(tmp_path: Path) -> None:

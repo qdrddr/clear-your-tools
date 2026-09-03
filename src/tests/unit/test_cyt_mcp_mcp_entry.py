@@ -136,9 +136,9 @@ def test_write_agent_cyt_mcp_entry_dev_mode(
     assert payload["mcpServers"]["other"]["command"] == "echo"
 
 
-def test_prompt_cyt_mcp_transport_defaults_to_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prompt_cyt_mcp_transport_defaults_to_http(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cyt_mcp_setup, "_prompt", lambda _label, default: default)
-    assert cyt_mcp_setup.prompt_cyt_mcp_transport() == "stdio"
+    assert cyt_mcp_setup.prompt_cyt_mcp_transport() == "http"
 
 
 def test_write_agent_cyt_mcp_entry_http_mode(
