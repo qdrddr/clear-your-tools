@@ -151,13 +151,14 @@ def _collect_default_port_proxy_pids(
     seen: set[int],
     ordered: list[int],
 ) -> None:
-    from cyt.config import DEFAULT_REVERSE_PORT
+    from cyt.config import default_reverse_port
     from cyt.launch.proxy_guard import is_port_in_use
 
+    base_port = default_reverse_port()
     candidates = [
-        DEFAULT_REVERSE_PORT + offset
+        base_port + offset
         for offset in range(100)
-        if DEFAULT_REVERSE_PORT + offset not in exclude_ports
+        if base_port + offset not in exclude_ports
     ]
     if not candidates:
         return

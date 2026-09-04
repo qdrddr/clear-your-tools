@@ -35,7 +35,7 @@ __all__ = [
     "upstream_endpoint_name",
 ]
 from cyt.config import (
-    UPSTREAM_URL_DEFAULTS,
+    upstream_url_defaults,
     load_config,
     load_user_config_overlay,
     resolve_config_path,
@@ -86,7 +86,7 @@ def list_upstreams(config: dict[str, Any]) -> list[dict[str, Any]]:
 def infer_upstream_kind_from_url(url: str) -> str | None:
     """Return canonical kind when *url* matches a bundled default upstream URL."""
     normalized = normalize_upstream_url(url)
-    for kind, default_url in UPSTREAM_URL_DEFAULTS.items():
+    for kind, default_url in upstream_url_defaults().items():
         if kind in ("anthropic", "openai") and normalize_upstream_url(default_url) == normalized:
             return kind
     return None
@@ -284,10 +284,11 @@ def prompt_confirm_default_upstream(agent: AgentName) -> tuple[str, str, str]:
 
 def prompt_upstream_setup() -> tuple[str, str, str]:
     """Interactive upstream setup for bare ``cyt proxy`` with no config."""
+    defaults = upstream_url_defaults()
     print(
         "Configure upstream API endpoint (kind + URL).\n"
-        f"Common URLs: anthropic={UPSTREAM_URL_DEFAULTS['anthropic']}, "
-        f"openai={UPSTREAM_URL_DEFAULTS['openai']}",
+        f"Common URLs: anthropic={defaults.get('anthropic', '')}, "
+        f"openai={defaults.get('openai', '')}",
         file=sys.stderr,
     )
     url = normalize_upstream_url(
@@ -439,9 +440,10 @@ def direct_upstream_base_url(config: dict[str, Any], endpoint: str) -> str:
         url = entry.get("url")
         if isinstance(url, str) and url.strip():
             return normalize_upstream_url(url)
-    if endpoint in UPSTREAM_URL_DEFAULTS:
-        return UPSTREAM_URL_DEFAULTS[endpoint]
+    defaults = upstream_url_defaults()
+    if endpoint in defaults:
+        return defaults[endpoint]
     kind = entry.get("kind") if isinstance(entry, dict) else None
-    if isinstance(kind, str) and kind in UPSTREAM_URL_DEFAULTS:
-        return UPSTREAM_URL_DEFAULTS[kind]
-    return UPSTREAM_URL_DEFAULTS["anthropic"]
+    if isinstance(kind, str) and kind in defaults:
+        return defaults[kind]
+    return defaults.get("anthropic", "https://api.anthropic.com")

@@ -8,17 +8,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.config import (
-    DEFAULT_INJECT_VIA_BY_AGENT,
-    DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
-    DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
-    DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
-    DEFAULT_TOOLS_HOOK_TOOLS_FROM,
+    _default_at,
+    inject_via_agents,
     inject_via_for_agent,
     load_config,
     save_user_config,
     tools_hook_cloudflare_url,
     tools_hook_cyt_mcp_agent,
+    tools_hook_executor_url,
     tools_hook_file_missing,
+    tools_hook_mcp_definitions_file,
     tools_hook_sources,
 )
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
@@ -174,14 +173,17 @@ def prompt_tools_hook_config(
         print("\n--- Tool hook injection ---")
 
     existing_sources = tools_hook_sources(existing)
-    current_from = existing_sources[0] if existing_sources else DEFAULT_TOOLS_HOOK_TOOLS_FROM
+    bundled_tools_from = _default_at("pruning", "tools", "hook", "tools_from")
+    if isinstance(bundled_tools_from, str):
+        bundled_tools_from = [bundled_tools_from]
+    current_from = existing_sources[0] if existing_sources else str(bundled_tools_from[0])
     from_default = _hook_from_default(current_from, context=context)
 
-    executor_default = str(hook.get("executor_url", DEFAULT_TOOLS_HOOK_EXECUTOR_URL))
+    executor_default = str(hook.get("executor_url") or tools_hook_executor_url(load_config()))
     definitions_default = str(
-        hook.get("mcp_definitions_file", DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE),
+        hook.get("mcp_definitions_file") or tools_hook_mcp_definitions_file(load_config()),
     )
-    cloudflare_default = str(hook.get("cloudflare_url", DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL))
+    cloudflare_default = str(hook.get("cloudflare_url") or tools_hook_cloudflare_url(load_config()))
 
     if active_inject == "hook":
         print(
@@ -299,7 +301,7 @@ def ensure_tools_hook_file_interactive(
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")
     overlay: dict[str, Any] = {
         "pruning": {
-            "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
+            "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
             "tools": tools_overlay,
         },
     }

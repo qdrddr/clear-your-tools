@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from cyt import __version__
 from cyt.config import (
-    DEFAULT_REVERSE_PORT,
+    default_reverse_port,
     load_config,
     load_user_config_overlay,
     proxy_http2_settings,
@@ -271,7 +271,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--port",
         type=int,
         default=None,
-        help=f"Reverse listen port (default from config, else {DEFAULT_REVERSE_PORT})",
+        help=f"Reverse listen port (default from config, else {default_reverse_port()})",
     )
     proxy_parser.add_argument(
         "--config",

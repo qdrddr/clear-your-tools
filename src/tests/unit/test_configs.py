@@ -3,11 +3,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 import cyt.config as configs
+
+
+@pytest.fixture(autouse=True)
+def _reset_bundled_defaults_cache() -> Iterator[None]:
+    configs.clear_bundled_defaults_cache()
+    yield
+    configs.clear_bundled_defaults_cache()
 
 
 @pytest.fixture
@@ -93,7 +101,8 @@ def test_load_config_creates_user_config_when_missing(
 
     assert user_config.exists()
     assert loaded["network"]["proxy"]["reverse"]["port"] == 8834
-    assert loaded["stats"]["database"]["path"] == configs.DEFAULT_STATS_DB_PATH
+    bundled = configs.load_bundled_defaults_yaml()
+    assert loaded["stats"]["database"]["path"] == bundled["stats"]["database"]["path"]
     written = configs._load_yaml_dict(user_config)
     ssl = written["network"]["proxy"]["reverse"]["http2"]["ssl"]
     assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
@@ -140,6 +149,7 @@ def test_load_config_layers_bundled_defaults_under_user_overrides(
         "_load_bundled_defaults_yaml",
         lambda: configs._load_yaml_dict(bundled),
     )
+    configs.clear_bundled_defaults_cache()
 
     user_config = isolated_config_paths["user_config"]
     user_config.parent.mkdir(parents=True, exist_ok=True)
@@ -549,12 +559,9 @@ def test_selector_soft_budget_reads_config() -> None:
 
 
 def test_selector_soft_budget_defaults() -> None:
-    assert (
-        configs.tools_selector_soft_budget({}) == configs.DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL
-    )
-    assert (
-        configs.skills_selector_soft_budget({}) == configs.DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL
-    )
+    bundled = configs.load_bundled_defaults_yaml()
+    assert configs.tools_selector_soft_budget({}) == bundled["pruning"]["tools"]["selector_soft_budget"]
+    assert configs.skills_selector_soft_budget({}) == bundled["skills"]["selector_soft_budget"]
 
 
 def test_bm25_index_dir_reads_canonical_path() -> None:
@@ -615,3 +622,145 @@ def test_remote_pruning_pipeline_configured_accepts_canonical_paths() -> None:
         },
     }
     assert configs.remote_pruning_pipeline_configured(configured) is True
+
+
+def test_bundled_defaults_is_sole_base(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled = isolated_config_paths["root"] / "bundled.yaml"
+    bundled.write_text(
+        "pruning:\n  max_batch_workers: 17\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        configs,
+        "_load_bundled_defaults_yaml",
+        lambda: configs._load_yaml_dict(bundled),
+    )
+    configs.clear_bundled_defaults_cache()
+
+    missing = isolated_config_paths["root"] / "missing.yaml"
+    loaded = configs.load_config(missing)
+    merged = configs._merged_config({})
+
+    assert loaded["pruning"]["max_batch_workers"] == 17
+    assert merged["pruning"]["max_batch_workers"] == 17
+    assert configs.max_prune_batch_workers({}) == 17
+
+
+def test_bundled_defaults_cache_invalidation(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundled_a = isolated_config_paths["root"] / "bundled-a.yaml"
+    bundled_b = isolated_config_paths["root"] / "bundled-b.yaml"
+    bundled_a.write_text("pruning:\n  max_batch_workers: 3\n", encoding="utf-8")
+    bundled_b.write_text("pruning:\n  max_batch_workers: 9\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        configs,
+        "_load_bundled_defaults_yaml",
+        lambda: configs._load_yaml_dict(bundled_a),
+    )
+    configs.clear_bundled_defaults_cache()
+    assert configs.max_prune_batch_workers({}) == 3
+
+    monkeypatch.setattr(
+        configs,
+        "_load_bundled_defaults_yaml",
+        lambda: configs._load_yaml_dict(bundled_b),
+    )
+    configs.clear_bundled_defaults_cache()
+    assert configs.max_prune_batch_workers({}) == 9
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("defaults", "is_persistent"),
+        ("pruning", "inject_via_default"),
+        ("pruning", "max_batch_workers"),
+        ("pruning", "tools", "enabled"),
+        ("pruning", "tools", "sequence"),
+        ("pruning", "tools", "hook", "tools_from"),
+        ("models", "bm25", "mmap"),
+        ("cache", "enabled"),
+        ("stats", "rollup_on_query"),
+        ("hallucination_gate", "enabled"),
+        ("skills", "enabled"),
+        ("network", "proxy", "reverse", "port"),
+    ],
+)
+def test_bundled_defaults_required_paths(path: tuple[str, ...]) -> None:
+    node: object = configs.load_bundled_defaults_yaml()
+    for key in path:
+        assert isinstance(node, dict), f"missing path {'.'.join(path)}"
+        assert key in node, f"missing path {'.'.join(path)}"
+        node = node[key]
+
+
+def _yaml_at(bundled: dict, path: tuple[str, ...]) -> object:
+    node: object = bundled
+    for key in path:
+        assert isinstance(node, dict), f"missing path {'.'.join(path)}"
+        assert key in node, f"missing path {'.'.join(path)}"
+        node = node[key]
+    return node
+
+
+def test_legacy_default_constants_exist_in_bundled_yaml() -> None:
+    from tests.unit.legacy_config_default_paths import INJECT_VIA_AGENTS, LEGACY_DEFAULT_PATHS
+
+    bundled = configs.load_bundled_defaults_yaml()
+    for name, path in LEGACY_DEFAULT_PATHS.items():
+        _yaml_at(bundled, path)
+    inject_via = _yaml_at(bundled, ("pruning", "inject_via"))
+    assert isinstance(inject_via, dict)
+    for agent in INJECT_VIA_AGENTS:
+        assert agent in inject_via, f"missing pruning.inject_via.{agent} (was DEFAULT_INJECT_VIA_BY_AGENT)"
+
+
+def test_legacy_defaults_dict_paths_exist_in_bundled_yaml() -> None:
+    """Every key from the removed ``_DEFAULTS`` dict exists in defaults.yaml."""
+    import subprocess
+    from pathlib import Path
+    from typing import Any
+
+    text = subprocess.check_output(
+        ["git", "show", "HEAD:src/cyt/config/__init__.py"],
+        text=True,
+    )
+    cut = text.index("_DEFAULTS: dict[str, Any] = {")
+    end = cut
+    level = 0
+    for i, ch in enumerate(text[cut:], cut):
+        if ch == "{":
+            level += 1
+        elif ch == "}":
+            level -= 1
+            if level == 0:
+                end = i + 1
+                break
+    prelude = text[: text.index("DEFAULT_REVERSE_PORT")] + "ToolPolicy = str\n"
+    block = text[text.index("DEFAULT_REVERSE_PORT") : end]
+    ns: dict[str, Any] = {"__builtins__": __builtins__, "Any": Any, "Path": Path}
+    exec(prelude + block, ns, ns)  # noqa: S102
+    old_defaults = ns["_DEFAULTS"]
+
+    def flatten(d: object, prefix: str = "") -> dict[str, object]:
+        out: dict[str, object] = {}
+        if isinstance(d, dict):
+            for k, v in d.items():
+                key = f"{prefix}.{k}" if prefix else str(k)
+                out.update(flatten(v, key))
+        elif isinstance(d, list):
+            out[prefix] = d
+        else:
+            out[prefix] = d
+        return out
+
+    bundled = configs.load_bundled_defaults_yaml()
+    for dot_path in flatten(old_defaults):
+        parts = tuple(dot_path.split("."))
+        _yaml_at(bundled, parts)

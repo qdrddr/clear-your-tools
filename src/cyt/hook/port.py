@@ -11,7 +11,7 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from cyt.config import DEFAULT_REVERSE_PORT, load_config, resolve_reverse_port
+from cyt.config import default_reverse_port, load_config, resolve_reverse_port
 from cyt.launch.proxy_guard import (
     HEALTH_TIMEOUT_SECONDS,
     LOCAL_HOST,
@@ -135,7 +135,7 @@ def resolve_hook_base_port(*, config_path: Path | None = None) -> int:
         config = load_config(config_path)
         return resolve_reverse_port(config, None)
     except (OSError, ValueError, KeyError, TypeError):
-        return DEFAULT_REVERSE_PORT
+        return default_reverse_port()
 
 
 def find_hook_server_port(

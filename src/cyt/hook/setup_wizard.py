@@ -12,7 +12,7 @@ from typing import Any, Literal, TypedDict, cast
 from cyt.agents._types import CYT_LAUNCH_AGENT_ENV, AgentName
 from cyt.cloudflare.readiness import report_cloudflare_hook_readiness
 from cyt.config import (
-    DEFAULT_INJECT_VIA_BY_AGENT,
+    inject_via_agents,
     inject_via_for_agent,
     load_config,
     load_user_config_overlay,
@@ -540,14 +540,14 @@ def build_hook_skills_config_overlay(
 ) -> dict[str, Any] | None:
     """Build a skills overlay for hook mode, or ``None`` when no config write is needed."""
     from cyt.config import (
-        DEFAULT_INJECT_VIA_BY_AGENT,
+        inject_via_agents,
         inject_via_for_agent,
         tools_hook_cyt_mcp_agent,
     )
 
     hook_agent = tools_hook_cyt_mcp_agent(config or {})
     inject_ok = inject_via_for_agent(config or {}, hook_agent) == "hook"
-    inject_overlay = {"pruning": {"inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook")}}
+    inject_overlay = {"pruning": {"inject_via": dict.fromkeys(inject_via_agents(), "hook")}}
 
     if not enabled:
         if existing_skills.get("enabled") is False and inject_ok:
@@ -1580,7 +1580,7 @@ def _save_tools_hook_wizard_config(
             resolved_config_path,
             {
                 "pruning": {
-                    "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
+                    "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
                     "tools": {"enabled": False},
                 },
             },
@@ -1599,7 +1599,7 @@ def _save_tools_hook_wizard_config(
         resolved_config_path,
         {
             "pruning": {
-                "inject_via": dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook"),
+                "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
                 "tools": {"enabled": True, **tools_overlay},
             },
         },

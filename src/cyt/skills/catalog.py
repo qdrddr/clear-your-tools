@@ -13,9 +13,9 @@ from cyt.cache.policy import cache_policy_for_config
 from cyt.common.agents import AgentName
 from cyt.common.paths import shorten_home_path
 from cyt.config import (
-    DEFAULT_SKILLS_CATALOG_DIR,
     _cache_settings,
     _config_with_bundled_defaults,
+    _default_at,
     _merged_config,
     cache_skills_dir,
     load_config,
@@ -460,7 +460,7 @@ def load_entry_skills_index(entry: SkillEntryRef) -> dict[str, Any]:
 
 def _registry_catalog_root(cfg: dict[str, Any]) -> Path:
     skills_catalog = Path(skills_catalog_dir(cfg))
-    default_catalog = Path(DEFAULT_SKILLS_CATALOG_DIR).expanduser()
+    default_catalog = Path(str(_default_at("skills", "catalog_dir"))).expanduser()
     if skills_catalog != default_catalog:
         return skills_catalog
     cache = _cache_settings(_merged_config(cfg))

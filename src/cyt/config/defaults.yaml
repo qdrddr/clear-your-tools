@@ -1,7 +1,6 @@
 defaults:
-  # inprocess: []
-  # is_persistent: true
-  # reranking_enabled: true
+  is_persistent: true
+  reranking_enabled: false
 models:
   providers:
     - provider_nick: openai
@@ -143,11 +142,13 @@ models:
           input_cost_per_token: 5e-08
           output_cost_per_token: 0
   bm25:
+    index_dir: ~/.config/cyt/bm25
     mmap: true
     stem_language: english
     stopwords: en
 
 pruning:
+  inject_via_default: proxy
   inject_via:
     cursor: hook
     claude: proxy
@@ -296,9 +297,6 @@ hallucination_gate:
 
 skills:
   enabled: false
-  permissions:
-    deny: []
-    allow: []
   selector_soft_budget: 2000
   selector_bulk_max_tokens: 32000
   frontmatter_upper_limit: 0.70

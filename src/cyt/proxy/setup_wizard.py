@@ -8,29 +8,30 @@ import re
 import sys
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urlparse
 
 from cyt.config import (
-    DEFAULT_MCP_TOOL_POLICY,
-    DEFAULT_MIN_TOOLS_PRUNING,
-    DEFAULT_REVERSE_PORT,
-    DEFAULT_SKILLS_ENABLED,
-    DEFAULT_STATS_DB_PATH,
-    DEFAULT_SYSTEM_TOOL_POLICY,
     POLICY_CHOICES,
-    UPSTREAM_URL_DEFAULTS,
     USER_ENV_PATH,
     ToolPolicy,
     deep_merge,
     default_model_nick,
+    default_reverse_port,
     inject_via_map_for_mode,
     load_bundled_defaults_yaml,
     load_user_config_overlay,
     merge_model_entry,
+    pruning_mcp_tool_policy,
+    pruning_system_tool_policy,
     provider_nick_for_dns,
     provider_registry,
+    reranker_minimum_tools,
     save_user_config,
+    skills_directories,
+    skills_enabled,
+    stats_db_path,
+    upstream_url_defaults,
 )
 from cyt.proxy.model_names import is_syncable_model_name
 
@@ -41,12 +42,6 @@ SKILLS_PIPELINE_CHOICES: tuple[str, ...] = ("bm25", "rerank", "llm")
 SKILLS_PIPELINE_DEFAULT = "bm25"
 SKILLS_INJECT_VIA_CHOICES: tuple[str, ...] = ("proxy", "hook")
 SKILLS_INJECT_VIA_DEFAULT = "proxy"
-DEFAULT_SKILLS_DIRECTORIES: tuple[str, ...] = (
-    "~/.claude/skills",
-    ".claude/skills",
-    "~/.codex/skills",
-    ".codex/skills",
-)
 TOKENS_PER_MILLION = 1_000_000
 # Values at or above this (without scientific notation) are treated as USD per 1M tokens.
 _USD_PER_MILLION_THRESHOLD = 1e-4
@@ -1389,7 +1384,7 @@ def _default_minimum_tools(config: dict[str, Any]) -> int:
             policy = tools.get("policy")
             if isinstance(policy, dict) and policy.get("minimum_tools") is not None:
                 return int(policy["minimum_tools"])
-    return DEFAULT_MIN_TOOLS_PRUNING
+    return reranker_minimum_tools(config)
 
 
 def _pipeline_choice_labels(
@@ -1421,7 +1416,7 @@ def _pipeline_from_display_label(label: str) -> list[str]:
 def _prompt_pipeline(
     *,
     recommended_index: int = 0,
-    minimum_tools: int = DEFAULT_MIN_TOOLS_PRUNING,
+    minimum_tools: int = reranker_minimum_tools({}),
 ) -> list[str]:
     print("\n--- Pruning pipeline ---")
     pipeline_labels = _pipeline_choice_labels(
@@ -1521,7 +1516,7 @@ def _prompt_upstreams(
         url = normalize_upstream_url(
             _prompt_required(
                 "URL (required)",
-                UPSTREAM_URL_DEFAULTS.get(kind, UPSTREAM_URL_DEFAULTS["anthropic"]),
+                upstream_url_defaults().get(kind, upstream_url_defaults().get("anthropic", "")),
             ),
         )
         upstream: dict[str, Any] = {
@@ -1541,7 +1536,7 @@ def _default_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
     raw = skills_cfg.get("directories")
     if isinstance(raw, list) and raw:
         return [str(path) for path in raw if str(path).strip()]
-    return list(DEFAULT_SKILLS_DIRECTORIES)
+    return skills_directories({})
 
 
 def _default_inject_via(existing: dict[str, Any]) -> str:
@@ -1581,7 +1576,7 @@ def _prompt_skills(
 ) -> dict[str, Any]:
     existing_skills = existing.get("skills")
     skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
-    default_enabled = bool(skills_cfg.get("enabled", DEFAULT_SKILLS_ENABLED))
+    default_enabled = skills_enabled(existing if existing else {})
     print("\n--- Skills injection ---")
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:
@@ -1837,7 +1832,7 @@ def run_setup(config_path: Path) -> None:
 
     print("--- Proxy Port ---")
     reverse_cfg = _reverse_proxy_section(existing)
-    default_port = reverse_cfg.get("port", DEFAULT_REVERSE_PORT)
+    default_port = reverse_cfg.get("port", default_reverse_port())
     reverse_port = _prompt_int("Reverse proxy port", int(default_port))
 
     upstreams, endpoints = _prompt_upstreams(existing)
@@ -1892,11 +1887,11 @@ def run_setup(config_path: Path) -> None:
     print("\n--- Tool policies ---")
     system_policy = _prompt_policy(
         "System tools policy",
-        DEFAULT_SYSTEM_TOOL_POLICY,
+        cast(ToolPolicy, pruning_system_tool_policy(existing if existing else {})),
     )
     mcp_policy = _prompt_policy(
         "MCP tools policy",
-        DEFAULT_MCP_TOOL_POLICY,
+        cast(ToolPolicy, pruning_mcp_tool_policy(existing if existing else {})),
     )
 
     inject_mode = _prompt_inject_via(existing)
@@ -1911,7 +1906,10 @@ def run_setup(config_path: Path) -> None:
         inject_mode=inject_mode,
     )
 
-    stats_db = _prompt("Stats database path", DEFAULT_STATS_DB_PATH)
+    stats_db = _prompt(
+        "Stats database path",
+        stats_db_path(existing if existing else {}),
+    )
 
     overlay = build_setup_overlay(
         pipeline=pipeline,

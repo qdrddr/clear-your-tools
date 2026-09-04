@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import importlib.resources
 import json
 import logging
@@ -62,10 +63,7 @@ def process_env_before_dotenv() -> dict[str, str]:
 
 load_proxy_env()
 
-# Default fallbacks - single source of truth for hard-coded values
-DEFAULT_REVERSE_PORT: int = 8834
-DEFAULT_PRUNING_PIPELINE: list[str] = ["bm25"]
-DEFAULT_STATS_DB_PATH: str = "~/.config/cyt/stats.db"
+# Path and validation constants (not config defaults — those live in defaults.yaml).
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
 CWD_CONFIG_NAME: str = "config.yaml"
 ToolPolicy = Literal[
@@ -83,100 +81,9 @@ POLICY_CHOICES: tuple[ToolPolicy, ...] = (
     "prune_all_descriptions",
 )
 VALID_TOOL_POLICIES: frozenset[str] = frozenset(POLICY_CHOICES)
-UPSTREAM_URL_DEFAULTS: dict[str, str] = {
-    "anthropic": "https://api.anthropic.com",
-    "openai": "https://api.openai.com",
-    "gemini": "https://generativelanguage.googleapis.com",
-}
-DEFAULT_SYSTEM_TOOL_POLICY: ToolPolicy = "prune_optional"
-DEFAULT_MCP_TOOL_POLICY: ToolPolicy = "prune_all"
-DEFAULT_DEBUG_LOG_MAX_BODY_BYTES: int = 1_048_576
-DEFAULT_DEBUG_LOG_DIR: str = ".debug"
-DEFAULT_MIN_TOOLS_PRUNING: int = 50
-DEFAULT_MIN_TOOLS_LLM_PRUNINER: int = DEFAULT_MIN_TOOLS_PRUNING
-DEFAULT_MIN_TOOLS_RERANKER_PRUNINER: int = DEFAULT_MIN_TOOLS_PRUNING
-DEFAULT_BM25_INDEX_DIR: str = "~/.config/cyt/bm25"
-DEFAULT_BM25_STEM_LANGUAGE: str = "english"
-DEFAULT_BM25_STOPWORDS: str = "en"
-DEFAULT_BM25_SCORE_TOOL: float = 0.3
-DEFAULT_BM25_PRUNE_ENUMS: bool = True
-DEFAULT_BM25_SCORE_TOOL_ENUM: float = 0.1
-DEFAULT_BM25_SCORE_SKILLS: float = 0.5
-DEFAULT_SKILLS_ENABLED: bool = False
-DEFAULT_SKILLS_PIPELINE: str = "bm25"
-DEFAULT_SKILLS_CATALOG_DIR: str = "~/.config/cyt/skills"
-DEFAULT_CACHE_ENABLED: bool = True
-DEFAULT_CACHE_BM25_DIR: str = DEFAULT_BM25_INDEX_DIR
-DEFAULT_CACHE_SKILLS_DIR: str = DEFAULT_SKILLS_CATALOG_DIR
-DEFAULT_CACHE_TOOLS_DIR: str = "~/.config/cyt/tools"
-DEFAULT_INJECT_VIA_BY_AGENT: dict[str, str] = {
-    "cursor": "hook",
-    "claude": "proxy",
-    "codex": "proxy",
-}
-DEFAULT_INJECT_VIA: str = "proxy"  # legacy scalar fallback when map key missing (non-cursor agents)
-DEFAULT_INJECT_INTO_USER_MESSAGE: bool = True
-DEFAULT_SKILLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT: float = 0.70
-DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST: int = 20000
-DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD: int = 50
-DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION: float = 10.0
-DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER: float = 5.0
-DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED: bool = True
-DEFAULT_SKILLS_HOOK_AGENT_INTERCEPTOR_ENABLED: bool = False
-DEFAULT_SKILLS_HOOK_AGENT_INTERCEPTOR_MIN_ITEMS: int = 3
-DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION: float = 0.02
-DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION: float = 0.5
-DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION: float = 0.1
-DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD: float = 0.20
-DEFAULT_TOOLS_ENABLED: bool = True
-DEFAULT_TOOLS_INJECT_VIA: str = DEFAULT_INJECT_VIA
-DEFAULT_TOOLS_HOOK_TOOLS_FROM: str = "cyt_mcp"
-DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST: list[str] = ["cyt_mcp"]
 VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset(
     {"executor", "definitions", "mcpc", "cloudflare", "cyt_mcp"},
 )
-DEFAULT_TOOLS_HOOK_EXECUTOR_URL: str = "http://localhost:4789"
-DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR: str = "EXECUTOR_TOKEN"
-DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL: str = ""
-DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR: str = "CF_ACCESS_CLIENT_ID"
-DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR: str = "CF_ACCESS_CLIENT_SECRET"
-DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE: str = "~/.config/cyt/mcp-definitions.json"
-DEFAULT_CLOUDFLARE_CACHE_CATALOG_REFRESH_SECONDS: float = 120.0
-DEFAULT_CLOUDFLARE_CACHE_SERVER_HEALTH_REFRESH_SECONDS: float = 120.0
-DEFAULT_CLOUDFLARE_CACHE_DISK_FLUSH_SECONDS: float = 900.0
-DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED: bool = True
-DEFAULT_CONNECTION_HEALTH_FLAPPING_WINDOW_SIZE: int = 12
-DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_DEGRADED: int = 1
-DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_TRANSITIONS: int = 2
-DEFAULT_CONNECTION_HEALTH_FLAPPING_BASE_QUARANTINE_SECONDS: float = 90.0
-DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_DEGRADED_SECONDS: float = 45.0
-DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_TRANSITION_SECONDS: float = 30.0
-DEFAULT_CONNECTION_HEALTH_FLAPPING_MAX_QUARANTINE_SECONDS: float = 600.0
-DEFAULT_CONNECTION_HEALTH_FLAPPING_RECOVERY_HEALTHY_SAMPLES: int = 6
-DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_EPISODE_SECONDS: float = 60.0
-DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS: float = 1.0
-DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY: int = 4
-DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS: float = 120.0
-DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS: float = 900.0
-DEFAULT_MCPC_EXECUTABLE: str = "mcpc"
-DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS: float = 1.0
-DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS: float = 120.0
-DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS: float = 120.0
-DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS: float = 900.0
-DEFAULT_MCPC_SKILLS_OWN_ENABLED: bool = True
-DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED: bool = True
-DEFAULT_MCPC_RESOURCES_ENABLED: bool = True
-DEFAULT_MCPC_RESOURCES_MIME_TYPES: list[str] = ["text/markdown"]
-DEFAULT_CYT_MCP_EXECUTABLE: str = "cyt-mcp"
-DEFAULT_CYT_MCP_AGENT: str = "cursor"
-DEFAULT_CYT_MCP_CATALOG_URL: str = ""
-DEFAULT_CYT_MCP_CACHE_TOOLS_REFRESH_SECONDS: float = 120.0
-DEFAULT_CYT_MCP_CACHE_DISK_FLUSH_SECONDS: float = 900.0
-DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL: int = 2000
-DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL: int = 2000
-DEFAULT_SELECTOR_BULK_MAX_TOKENS: int = 32000
-DEFAULT_MAX_PRUNE_BATCH_WORKERS: int = 5
 VALID_PRUNING_STAGES: frozenset[str] = frozenset({"rerank", "llm", "bm25"})
 ToolsInjectVia = Literal["proxy", "hook"]
 ToolsHookSource = Literal["executor", "definitions", "mcpc", "cloudflare", "cyt_mcp"]
@@ -200,173 +107,148 @@ def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-_DEFAULTS: dict[str, Any] = {
-    "defaults": {
-        "is_persistent": True,
-        "reranking_enabled": False,
-    },
-    "models": {
-        "bm25": {
-            "index_dir": DEFAULT_BM25_INDEX_DIR,
-            "mmap": True,
-            "stem_language": DEFAULT_BM25_STEM_LANGUAGE,
-            "stopwords": DEFAULT_BM25_STOPWORDS,
-        },
-    },
-    "pruning": {
-        "inject_via": dict(DEFAULT_INJECT_VIA_BY_AGENT),
-        "tools": {
-            "enabled": DEFAULT_TOOLS_ENABLED,
-            "hook": {
-                "tools_from": list(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST),
-                "executor_url": DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
-                "executor_token_var": DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
-                "cloudflare_url": DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
-                "cloudflare_access_client_id_var": (
-                    DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR
-                ),
-                "cloudflare_access_client_secret_var": (
-                    DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR
-                ),
-                "mcp_definitions_file": DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
-                "mcpc": {
-                    "executable": DEFAULT_MCPC_EXECUTABLE,
-                    "cache": {
-                        "session_refresh_seconds": DEFAULT_MCPC_CACHE_SESSION_REFRESH_SECONDS,
-                        "tools_refresh_seconds": DEFAULT_MCPC_CACHE_TOOLS_REFRESH_SECONDS,
-                        "skills_refresh_seconds": DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS,
-                        "disk_flush_seconds": DEFAULT_MCPC_CACHE_DISK_FLUSH_SECONDS,
-                    },
-                    "skills": {
-                        "in_session": {"enabled": DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED},
-                        "own": {"enabled": DEFAULT_MCPC_SKILLS_OWN_ENABLED},
-                    },
-                    "resources": {
-                        "enabled": DEFAULT_MCPC_RESOURCES_ENABLED,
-                        "mimeType": list(DEFAULT_MCPC_RESOURCES_MIME_TYPES),
-                    },
-                },
-                "cyt_mcp": {
-                    "executable": DEFAULT_CYT_MCP_EXECUTABLE,
-                    "agent": DEFAULT_CYT_MCP_AGENT,
-                    "cache": {
-                        "tools_refresh_seconds": DEFAULT_CYT_MCP_CACHE_TOOLS_REFRESH_SECONDS,
-                        "disk_flush_seconds": DEFAULT_CYT_MCP_CACHE_DISK_FLUSH_SECONDS,
-                    },
-                },
-                "executor_cache": {
-                    "health_refresh_seconds": DEFAULT_EXECUTOR_CACHE_HEALTH_REFRESH_SECONDS,
-                    "health_probe_concurrency": DEFAULT_EXECUTOR_CACHE_HEALTH_PROBE_CONCURRENCY,
-                    "catalog_schema_refresh_seconds": (
-                        DEFAULT_EXECUTOR_CACHE_CATALOG_SCHEMA_REFRESH_SECONDS
-                    ),
-                    "disk_flush_seconds": DEFAULT_EXECUTOR_CACHE_DISK_FLUSH_SECONDS,
-                },
-                "cloudflare_cache": {
-                    "catalog_refresh_seconds": (DEFAULT_CLOUDFLARE_CACHE_CATALOG_REFRESH_SECONDS),
-                    "server_health_refresh_seconds": (
-                        DEFAULT_CLOUDFLARE_CACHE_SERVER_HEALTH_REFRESH_SECONDS
-                    ),
-                    "disk_flush_seconds": DEFAULT_CLOUDFLARE_CACHE_DISK_FLUSH_SECONDS,
-                },
-                "connection_health": {
-                    "flapping": {
-                        "enabled": DEFAULT_CONNECTION_HEALTH_FLAPPING_ENABLED,
-                        "window_size": DEFAULT_CONNECTION_HEALTH_FLAPPING_WINDOW_SIZE,
-                        "min_degraded": DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_DEGRADED,
-                        "min_transitions": DEFAULT_CONNECTION_HEALTH_FLAPPING_MIN_TRANSITIONS,
-                        "base_quarantine_seconds": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_BASE_QUARANTINE_SECONDS
-                        ),
-                        "per_degraded_seconds": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_DEGRADED_SECONDS
-                        ),
-                        "per_transition_seconds": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_TRANSITION_SECONDS
-                        ),
-                        "max_quarantine_seconds": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_MAX_QUARANTINE_SECONDS
-                        ),
-                        "recovery_healthy_samples": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_RECOVERY_HEALTHY_SAMPLES
-                        ),
-                        "per_episode_seconds": (
-                            DEFAULT_CONNECTION_HEALTH_FLAPPING_PER_EPISODE_SECONDS
-                        ),
-                    },
-                },
-            },
-            "policy": {
-                "system_tool": DEFAULT_SYSTEM_TOOL_POLICY,
-                "mcp_tool": DEFAULT_MCP_TOOL_POLICY,
-                "minimum_tools": DEFAULT_MIN_TOOLS_PRUNING,
-                "per_tool": {},
-            },
-            "sequence": list(DEFAULT_PRUNING_PIPELINE),
-            "pipelines": {
-                "bm25": {
-                    "index_dir": DEFAULT_BM25_INDEX_DIR,
-                    "score_tool": DEFAULT_BM25_SCORE_TOOL,
-                    "prune_enums": DEFAULT_BM25_PRUNE_ENUMS,
-                    "score_tool_enum": DEFAULT_BM25_SCORE_TOOL_ENUM,
-                    "score_skills": DEFAULT_BM25_SCORE_SKILLS,
-                    "policy": {
-                        "system_tool": "prune_optional_descriptions",
-                        "mcp_tool": "prune_all_descriptions",
-                    },
-                },
-                "rerank": {
-                    "model_nick": "rerank-qwen3-8b",
-                },
-                "llm": {
-                    "model_nick": "mercury-2",
-                },
-            },
-        },
-    },
-    "stats": {
-        "enabled": True,
-        "store_full_tools": False,
-        "rollup_on_query": True,
-        "backup_before_rollup": True,
-        "database": {
-            "path": DEFAULT_STATS_DB_PATH,
-        },
-    },
-    "network": {
-        "proxy": {
-            "reverse": {
-                "port": DEFAULT_REVERSE_PORT,
-                "inject_into_user_message": DEFAULT_INJECT_INTO_USER_MESSAGE,
-                "debug_log_max_body_bytes": DEFAULT_DEBUG_LOG_MAX_BODY_BYTES,
-                "debug_log_dir": DEFAULT_DEBUG_LOG_DIR,
-                "http2": {
-                    "upstream": False,
-                    "serve": False,
-                    "ssl": {
-                        "keyfile": None,
-                        "certfile": None,
-                    },
-                },
-            },
-        },
-    },
-    "skills": {
-        "enabled": DEFAULT_SKILLS_ENABLED,
-        "pipeline": DEFAULT_SKILLS_PIPELINE,
-        "directories": [
-            "~/.claude/skills",
-            ".claude/skills",
-            "~/.codex/skills",
-            ".codex/skills",
-        ],
-    },
-}
+def _load_yaml_dict(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as f:
+        loaded = yaml.safe_load(f)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_bundled_defaults_yaml() -> dict[str, Any]:
+    """Load packaged ``defaults.yaml`` (wheel) or sibling file (editable install)."""
+    try:
+        ref = importlib.resources.files("cyt.config").joinpath(BUNDLED_DEFAULTS_NAME)
+        if ref.is_file():
+            loaded = yaml.safe_load(ref.read_text(encoding="utf-8"))
+            return loaded if isinstance(loaded, dict) else {}
+    except (FileNotFoundError, ModuleNotFoundError, TypeError, OSError):
+        pass
+    bundled_path = Path(__file__).with_name(BUNDLED_DEFAULTS_NAME)
+    if bundled_path.exists():
+        return _load_yaml_dict(bundled_path)
+    return {}
+
+
+def _strip_permissions_blocks(config: dict[str, Any]) -> None:
+    """Remove permission policy from a config dict (runtime defaults must not carry it)."""
+    for key in ("skills", "mcp"):
+        block = config.get(key)
+        if isinstance(block, dict):
+            block.pop("permissions", None)
+    agents = config.get("agents")
+    if not isinstance(agents, dict):
+        return
+    for agent_block in agents.values():
+        if not isinstance(agent_block, dict):
+            continue
+        for key in ("skills", "mcp"):
+            sub = agent_block.get(key)
+            if isinstance(sub, dict):
+                sub.pop("permissions", None)
+
+
+@functools.cache
+def _bundled_defaults() -> dict[str, Any]:
+    bundled = copy.deepcopy(_load_bundled_defaults_yaml())
+    _strip_permissions_blocks(bundled)
+    return bundled
+
+
+def clear_bundled_defaults_cache() -> None:
+    """Invalidate cached bundled defaults (for tests monkeypatching yaml load)."""
+    _bundled_defaults.cache_clear()
+
+
+def _bundled_get(*keys: str) -> Any:
+    """Read a value from bundled defaults (returns ``None`` when the path is absent)."""
+    node: Any = _bundled_defaults()
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _default_at(*keys: str) -> Any:
+    """Read a required value from ``defaults.yaml``."""
+    node: Any = _bundled_defaults()
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError(f"defaults.yaml missing key path: {'.'.join(keys)}")
+        node = node[key]
+    return node
+
+
+def _merged_at(config: dict[str, Any], *keys: str) -> Any:
+    """Read a required value from merged config (bundled defaults + overlay)."""
+    return _require_nested(_merged_config(config), *keys)
+
+
+def _require_nested(node: Any, *keys: str) -> Any:
+    """Read a required nested key path from an already-resolved mapping."""
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError(f"config missing key path: {'.'.join(keys)}")
+        node = node[key]
+    return node
+
+
+def _bundled_dict(*keys: str) -> dict[str, Any]:
+    value = _default_at(*keys)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _bundled_list(*keys: str) -> list[Any]:
+    value = _bundled_get(*keys)
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def inject_via_agents() -> dict[str, str]:
+    """Default per-agent inject_via map from bundled defaults."""
+    raw = _default_at("pruning", "inject_via")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(agent): str(mode) for agent, mode in raw.items()}
+
+
+def upstream_url_defaults() -> dict[str, str]:
+    """Default upstream URLs keyed by endpoint/kind from bundled network config."""
+    result: dict[str, str] = {}
+    reverse = _default_at("network", "proxy", "reverse")
+    if not isinstance(reverse, dict):
+        return result
+    upstreams = reverse.get("upstreams")
+    if not isinstance(upstreams, list):
+        return result
+    for item in upstreams:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not url:
+            continue
+        for key in ("kind", "endpoint"):
+            label = item.get(key)
+            if label:
+                result[str(label)] = str(url)
+    return result
+
+
+def default_reverse_port() -> int:
+    """Default reverse proxy listen port from bundled defaults."""
+    return int(_default_at("network", "proxy", "reverse", "port"))
+
+
+def _resolve_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Return *config* when provided (including ``{}``); otherwise load from disk."""
+    return load_config() if config is None else config
 
 
 def _merged_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Layer *config* over built-in defaults for partial config dicts."""
-    return deep_merge(_DEFAULTS, config)
+    """Layer *config* over bundled defaults for partial config dicts."""
+    return deep_merge(_bundled_defaults(), config)
 
 
 def resolve_config_path(path: Path | None = None) -> Path:
@@ -461,30 +343,6 @@ def _bundled_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any] | No
     return result or None
 
 
-def _strip_permissions_blocks(config: dict[str, Any]) -> None:
-    """Remove permission policy from a config dict (runtime defaults must not carry it)."""
-    for key in ("skills", "mcp"):
-        block = config.get(key)
-        if isinstance(block, dict):
-            block.pop("permissions", None)
-    agents = config.get("agents")
-    if not isinstance(agents, dict):
-        return
-    for agent_block in agents.values():
-        if not isinstance(agent_block, dict):
-            continue
-        for key in ("skills", "mcp"):
-            sub = agent_block.get(key)
-            if isinstance(sub, dict):
-                sub.pop("permissions", None)
-
-
-def _bundled_defaults_without_permissions() -> dict[str, Any]:
-    bundled = copy.deepcopy(_load_bundled_defaults_yaml())
-    _strip_permissions_blocks(bundled)
-    return bundled
-
-
 def bundled_user_config_sections() -> dict[str, Any]:
     """Packaged-default sections that belong in the on-disk user config file."""
     bundled = _load_bundled_defaults_yaml()
@@ -520,29 +378,27 @@ def _force_deep_assign(target: dict[str, Any], source: dict[str, Any]) -> None:
 
 def _default_user_config_dict() -> dict[str, Any]:
     """Starter config written when no config file exists anywhere."""
-    return deep_merge(
-        deep_merge(_DEFAULTS, bundled_user_config_sections()),
-        {
-            "network": {
-                "proxy": {
-                    "reverse": {
-                        "port": DEFAULT_REVERSE_PORT,
-                        "upstreams": [
-                            {
-                                "endpoint": "anthropic",
-                                "url": UPSTREAM_URL_DEFAULTS["anthropic"],
-                                "kind": "anthropic",
-                            },
-                        ],
-                        "endpoints": ["anthropic"],
-                    },
-                },
-            },
-            "stats": {
-                "database": {"path": DEFAULT_STATS_DB_PATH},
-            },
-        },
-    )
+    bundled = _load_bundled_defaults_yaml()
+    result: dict[str, Any] = {}
+    defaults_section = bundled.get("defaults")
+    if isinstance(defaults_section, dict):
+        result["defaults"] = copy.deepcopy(defaults_section)
+    result = deep_merge(result, bundled_user_config_sections())
+    reverse = _default_at("network", "proxy", "reverse")
+    if isinstance(reverse, dict):
+        reverse_seed: dict[str, Any] = {}
+        if "port" in reverse:
+            reverse_seed["port"] = reverse["port"]
+        if "upstreams" in reverse:
+            reverse_seed["upstreams"] = copy.deepcopy(reverse["upstreams"])
+        if "endpoints" in reverse:
+            reverse_seed["endpoints"] = copy.deepcopy(reverse["endpoints"])
+        if reverse_seed:
+            result = deep_merge(result, {"network": {"proxy": {"reverse": reverse_seed}}})
+    stats_path = _bundled_get("stats", "database", "path")
+    if stats_path is not None:
+        result = deep_merge(result, {"stats": {"database": {"path": stats_path}}})
+    return result
 
 
 def _write_default_user_config(config_path: Path) -> None:
@@ -553,12 +409,6 @@ def _write_default_user_config(config_path: Path) -> None:
         sort_keys=False,
     )
     config_path.write_text(content, encoding="utf-8")
-
-
-def _load_yaml_dict(path: Path) -> dict[str, Any]:
-    with path.open(encoding="utf-8") as f:
-        loaded = yaml.safe_load(f)
-    return loaded if isinstance(loaded, dict) else {}
 
 
 def _config_fingerprint(data: dict[str, Any]) -> str:
@@ -624,29 +474,14 @@ def load_bundled_defaults_yaml() -> dict[str, Any]:
     return _load_bundled_defaults_yaml()
 
 
-def _load_bundled_defaults_yaml() -> dict[str, Any]:
-    """Load packaged ``defaults.yaml`` (wheel) or sibling file (editable install)."""
-    try:
-        ref = importlib.resources.files("cyt.config").joinpath(BUNDLED_DEFAULTS_NAME)
-        if ref.is_file():
-            loaded = yaml.safe_load(ref.read_text(encoding="utf-8"))
-            return loaded if isinstance(loaded, dict) else {}
-    except (FileNotFoundError, ModuleNotFoundError, TypeError, OSError):
-        pass
-    bundled_path = Path(__file__).with_name(BUNDLED_DEFAULTS_NAME)
-    if bundled_path.exists():
-        return _load_yaml_dict(bundled_path)
-    return {}
-
-
 def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
-    """Layer built-in defaults, bundled ``defaults.yaml``, then *user_config*.
+    """Layer bundled ``defaults.yaml``, then *user_config*.
 
     Permission policy is excluded from bundled defaults at runtime; effective
     permissions come from on-disk ``config.yaml`` overlays only.
     """
-    merged = deep_merge(_DEFAULTS, _bundled_defaults_without_permissions())
-    return deep_merge(merged, user_config)
+    merged = deep_merge(_bundled_defaults(), user_config)
+    return merged
 
 
 def load_config(path: Path | None = None) -> dict[str, Any]:
@@ -717,7 +552,7 @@ def proxy_http2_settings(config: dict[str, Any]) -> dict[str, Any]:
     merged = _merged_config(config)
     proxy_cfg = merged["network"]["proxy"]
     reverse_cfg = reverse_proxy_cfg(proxy_cfg)
-    default_http2 = _DEFAULTS["network"]["proxy"]["reverse"]["http2"]
+    default_http2 = _bundled_dict("network", "proxy", "reverse", "http2")
     http2_cfg = reverse_cfg.get("http2")
     if http2_cfg is None:
         http2_cfg = proxy_cfg.get("http2", default_http2)
@@ -740,11 +575,11 @@ def stats_db_path(config: dict[str, Any]) -> str:
 
 
 def stats_rollup_on_query(config: dict[str, Any]) -> bool:
-    return bool(_merged_config(config)["stats"].get("rollup_on_query", True))
+    return bool(_merged_at(config, "stats", "rollup_on_query"))
 
 
 def stats_backup_before_rollup(config: dict[str, Any]) -> bool:
-    return bool(_merged_config(config)["stats"].get("backup_before_rollup", True))
+    return bool(_merged_at(config, "stats", "backup_before_rollup"))
 
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
@@ -758,7 +593,10 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
         if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
             raise ValueError("pruning.tools.sequence must be a list of stage names")
         return cast(list[str], sequence)
-    return list(DEFAULT_PRUNING_PIPELINE)
+    sequence = _require_nested(merged, "pruning", "tools", "sequence")
+    if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
+        raise ValueError("pruning.tools.sequence must be a list of stage names")
+    return list(sequence)
 
 
 def _resolve_pruning_stages(
@@ -912,7 +750,7 @@ def pruning_system_tool_policy(
         keys=("pruning", "tools", "policy", "system_tool"),
     )
     if policy is None:
-        return DEFAULT_SYSTEM_TOOL_POLICY
+        return cast(ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "system_tool"))
     return cast(ToolPolicy, policy)
 
 
@@ -930,7 +768,7 @@ def pruning_mcp_tool_policy(
         keys=("pruning", "tools", "policy", "mcp_tool"),
     )
     if policy is None:
-        return DEFAULT_MCP_TOOL_POLICY
+        return cast(ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "mcp_tool"))
     return cast(ToolPolicy, policy)
 
 
@@ -1091,17 +929,19 @@ def _bm25_index_dir_resolved(
     merged: dict[str, Any],
     user: dict[str, Any],
 ) -> str:
-    cache = merged.get("cache")
-    if isinstance(cache, dict) and cache.get("enabled", DEFAULT_CACHE_ENABLED):
-        bm25_dir = cache.get("bm25_dir")
-        if bm25_dir is not None:
-            return str(bm25_dir)
     index_dir = _resolve_user_then_merged(
         merged,
         user,
         keys=("pruning", "tools", "pipelines", "bm25", "index_dir"),
     )
-    return str(index_dir) if index_dir is not None else DEFAULT_BM25_INDEX_DIR
+    if index_dir is not None:
+        return str(index_dir)
+    cache = merged.get("cache")
+    if isinstance(cache, dict) and bool(cache.get("enabled")):
+        bm25_dir = cache.get("bm25_dir")
+        if bm25_dir is not None:
+            return str(bm25_dir)
+    return str(_default_at("pruning", "tools", "pipelines", "bm25", "index_dir"))
 
 
 def _bm25_settings(
@@ -1118,30 +958,25 @@ def _bm25_settings(
 
 
 def bm25_index_dir(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     user = load_user_config_overlay() if config is None else None
-    path = _bm25_settings(cfg, user_config=user).get("index_dir", DEFAULT_BM25_INDEX_DIR)
+    path = _bm25_settings(cfg, user_config=user)["index_dir"]
     return Path(str(path)).expanduser()
 
 
 def bm25_mmap_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    user = load_user_config_overlay() if config is None else None
-    return bool(_bm25_settings(cfg, user_config=user).get("mmap", True))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "models", "bm25", "mmap"))
 
 
 def bm25_stem_language(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    user = load_user_config_overlay() if config is None else None
-    value = _bm25_settings(cfg, user_config=user).get("stem_language", DEFAULT_BM25_STEM_LANGUAGE)
-    return str(value)
+    cfg = _resolve_config(config)
+    return str(_merged_at(cfg, "models", "bm25", "stem_language"))
 
 
 def bm25_stopwords(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    user = load_user_config_overlay() if config is None else None
-    value = _bm25_settings(cfg, user_config=user).get("stopwords", DEFAULT_BM25_STOPWORDS)
-    return str(value)
+    cfg = _resolve_config(config)
+    return str(_merged_at(cfg, "models", "bm25", "stopwords"))
 
 
 def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -1149,26 +984,23 @@ def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def bm25_score_tool(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    value = _bm25_pruning_settings(cfg).get("score_tool", DEFAULT_BM25_SCORE_TOOL)
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool"))
 
 
 def bm25_prune_enums(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    return bool(_bm25_pruning_settings(cfg).get("prune_enums", DEFAULT_BM25_PRUNE_ENUMS))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "prune_enums"))
 
 
 def bm25_score_tool_enum(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    value = _bm25_pruning_settings(cfg).get("score_tool_enum", DEFAULT_BM25_SCORE_TOOL_ENUM)
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool_enum"))
 
 
 def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    value = _bm25_pruning_settings(cfg).get("score_skills", DEFAULT_BM25_SCORE_SKILLS)
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_skills"))
 
 
 def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -1178,7 +1010,7 @@ def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
 def rerank_score_skills(config: dict[str, Any] | None = None) -> float:
     from cyt.common.runtime_constants import RERANK_SCORE
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     value = _rerank_pruning_settings(cfg).get("score_skills", RERANK_SCORE)
     return float(value)
 
@@ -1190,7 +1022,7 @@ def _llm_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
 def llm_score(config: dict[str, Any] | None = None) -> int:
     from cyt.common.runtime_constants import LLM_SCORE
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     value = _llm_pruning_settings(cfg).get("score_tool", LLM_SCORE)
     return int(value)
 
@@ -1198,7 +1030,7 @@ def llm_score(config: dict[str, Any] | None = None) -> int:
 def llm_enum_score(config: dict[str, Any] | None = None) -> int:
     from cyt.common.runtime_constants import LLM_ENUM_SCORE
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     value = _llm_pruning_settings(cfg).get("score_tool_enum", LLM_ENUM_SCORE)
     return int(value)
 
@@ -1230,28 +1062,28 @@ def inject_via_map_for_mode(mode: str) -> dict[str, str]:
     """Build per-agent inject_via map from a wizard choice (hook | proxy)."""
     normalized = mode.strip().lower()
     if normalized == "hook":
-        return dict.fromkeys(DEFAULT_INJECT_VIA_BY_AGENT, "hook")
-    return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+        return dict.fromkeys(inject_via_agents(), "hook")
+    return dict(inject_via_agents())
 
 
 def _inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     merged = _merged_config(cfg)
     pruning = merged.get("pruning")
     if not isinstance(pruning, dict):
-        return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+        return dict(inject_via_agents())
     raw = pruning.get("inject_via")
     if isinstance(raw, dict):
-        result = dict(DEFAULT_INJECT_VIA_BY_AGENT)
+        result = dict(inject_via_agents())
         for agent, value in raw.items():
             agent_key = str(agent).strip()
-            if agent_key not in DEFAULT_INJECT_VIA_BY_AGENT:
+            if agent_key not in inject_via_agents():
                 continue
             mode = str(value).strip().lower()
             if mode in {"hook", "proxy"}:
                 result[agent_key] = mode
         return result
-    return dict(DEFAULT_INJECT_VIA_BY_AGENT)
+    return dict(inject_via_agents())
 
 
 def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -1261,33 +1093,29 @@ def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
 
 def _any_agent_uses_hook_tools(config: dict[str, Any]) -> bool:
     return any(
-        inject_via_for_agent(config, agent) == "hook" for agent in DEFAULT_INJECT_VIA_BY_AGENT
+        inject_via_for_agent(config, agent) == "hook" for agent in inject_via_agents()
     )
 
 
 def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInjectVia:
-    """Per-agent injection path (hook or proxy). Cursor defaults to hook."""
-    mode = _inject_via_map(config).get(agent)
+    """Per-agent injection path (hook or proxy)."""
+    cfg = _resolve_config(config)
+    mode = _inject_via_map(cfg).get(agent)
     if mode == "hook":
         return "hook"
     if mode == "proxy":
         return "proxy"
-    if agent == "cursor":
-        return "hook"
-    return "proxy"
+    fallback = str(_merged_at(cfg, "pruning", "inject_via_default")).strip().lower()
+    return "hook" if fallback == "hook" else "proxy"
 
 
 def hallucination_gate_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    block = merged.get("hallucination_gate")
-    if isinstance(block, dict):
-        return bool(block.get("enabled", False))
-    return False
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "hallucination_gate", "enabled"))
 
 
 def verify_only_mode(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return hallucination_gate_enabled(cfg) and not skills_enabled(cfg) and not tools_enabled(cfg)
 
 
@@ -1304,7 +1132,7 @@ def any_agent_needs_proxy(config: dict[str, Any] | None = None) -> bool:
 
 
 def needs_cyt_mcp_catalog(config: dict[str, Any] | None = None, agent: str | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     resolved_agent = agent or tools_hook_cyt_mcp_agent(cfg)
     if tools_enabled(cfg) and inject_via_for_agent(cfg, resolved_agent) == "hook":
         return "cyt_mcp" in tools_hook_sources(cfg)
@@ -1315,7 +1143,7 @@ def needs_cyt_mcp_catalog(config: dict[str, Any] | None = None, agent: str | Non
 
 def inject_via(config: dict[str, Any] | None = None) -> ToolsInjectVia:
     """Legacy helper: inject path for the cyt_mcp hook agent."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return inject_via_for_agent(cfg, tools_hook_cyt_mcp_agent(cfg))
 
 
@@ -1324,7 +1152,7 @@ def tools_inject_via(
     *,
     agent: str | None = None,
 ) -> ToolsInjectVia:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     resolved = agent or tools_hook_cyt_mcp_agent(cfg)
     return inject_via_for_agent(cfg, resolved)
 
@@ -1334,8 +1162,8 @@ def skills_inject_via(config: dict[str, Any] | None = None, *, agent: str | None
 
 
 def tools_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    return bool(_tools(_merged_config(cfg)).get("enabled", DEFAULT_TOOLS_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "pruning", "tools", "enabled"))
 
 
 def inject_into_user_message(
@@ -1344,12 +1172,12 @@ def inject_into_user_message(
     agent: str | None = None,
 ) -> bool:
     """When true (proxy only), inject pruned MCP tools and skills into the latest user turn."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     resolved = agent or tools_hook_cyt_mcp_agent(cfg)
     if inject_via_for_agent(cfg, resolved) != "proxy":
         return False
-    reverse_cfg = reverse_proxy_cfg(_merged_config(config or load_config())["network"]["proxy"])
-    value = reverse_cfg.get("inject_into_user_message", DEFAULT_INJECT_INTO_USER_MESSAGE)
+    reverse_cfg = reverse_proxy_cfg(_merged_config(cfg)["network"]["proxy"])
+    value = reverse_cfg.get("inject_into_user_message", _merged_at(cfg, "network", "proxy", "reverse", "inject_into_user_message"))
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
@@ -1372,18 +1200,15 @@ def _normalize_tools_hook_source(value: str) -> ToolsHookSource | None:
 
 def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookSource, ...]:
     """Normalized ``pruning.tools.hook.tools_from`` list (scalar or YAML array)."""
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "tools_from",
-        DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST,
-    )
+    cfg = _resolve_config(config)
+    value = _merged_at(cfg, "pruning", "tools", "hook", "tools_from")
     raw_items: list[Any]
     if isinstance(value, str):
         raw_items = [value]
     elif isinstance(value, list):
         raw_items = value
     else:
-        raw_items = list(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST)
+        raise ValueError("pruning.tools.hook.tools_from must be a string or list of strings")
 
     seen: set[ToolsHookSource] = set()
     normalized: list[ToolsHookSource] = []
@@ -1396,7 +1221,17 @@ def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookS
     if not normalized:
         if any(str(item).strip() for item in raw_items):
             return ("executor",)
-        return cast(tuple[ToolsHookSource, ...], tuple(DEFAULT_TOOLS_HOOK_TOOLS_FROM_LIST))
+        default_sources = _merged_at(cfg, "pruning", "tools", "hook", "tools_from")
+        if isinstance(default_sources, str):
+            default_sources = [default_sources]
+        return cast(
+            tuple[ToolsHookSource, ...],
+            tuple(
+                source
+                for item in default_sources
+                if (source := _normalize_tools_hook_source(str(item))) is not None
+            ),
+        )
     return tuple(normalized)
 
 
@@ -1407,7 +1242,7 @@ def tools_hook_tools_from(config: dict[str, Any] | None = None) -> ToolsHookSour
 
 
 def uses_definitions_tool_catalog(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return (
         tools_enabled(cfg)
         and _any_agent_uses_hook_tools(cfg)
@@ -1416,51 +1251,35 @@ def uses_definitions_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 
 
 def tools_hook_executor_url(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "executor_url",
-        DEFAULT_TOOLS_HOOK_EXECUTOR_URL,
-    )
+    cfg = _resolve_config(config)
+    value = _merged_at(cfg, "pruning", "tools", "hook", "executor_url")
     return str(value).strip().rstrip("/")
 
 
 def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "executor_token_var",
-        DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_TOOLS_HOOK_EXECUTOR_TOKEN_VAR
+    cfg = _resolve_config(config)
+    text = str(_merged_at(cfg, "pruning", "tools", "hook", "executor_token_var")).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "executor_token_var"))
 
 
 def tools_hook_cloudflare_url(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "cloudflare_url",
-        DEFAULT_TOOLS_HOOK_CLOUDFLARE_URL,
-    )
+    cfg = _resolve_config(config)
+    value = _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_url")
     return str(value).strip().rstrip("/")
 
 
 def tools_hook_cloudflare_access_client_id_var(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "cloudflare_access_client_id_var",
-        DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_ID_VAR
+    cfg = _resolve_config(config)
+    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_id_var")).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "cloudflare_access_client_id_var"))
 
 
 def tools_hook_cloudflare_access_client_secret_var(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_settings(_merged_config(cfg)).get(
-        "cloudflare_access_client_secret_var",
-        DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_TOOLS_HOOK_CLOUDFLARE_ACCESS_CLIENT_SECRET_VAR
+    cfg = _resolve_config(config)
+    text = str(
+        _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_secret_var"),
+    ).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "cloudflare_access_client_secret_var"))
 
 
 def tools_hook_cloudflare_configured(config: dict[str, Any] | None = None) -> bool:
@@ -1468,17 +1287,17 @@ def tools_hook_cloudflare_configured(config: dict[str, Any] | None = None) -> bo
 
 
 def tools_hook_cloudflare_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     hook = _tools_hook_settings(_merged_config(cfg))
     cache = hook.get("cloudflare_cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["cloudflare_cache"]
+    defaults = _bundled_dict("pruning", "tools", "hook", "cloudflare_cache")
     return deep_merge(defaults, cache)
 
 
 def uses_cloudflare_tool_catalog(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return (
         tools_enabled(cfg)
         and _any_agent_uses_hook_tools(cfg)
@@ -1499,71 +1318,51 @@ def _tools_hook_mcpc_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def tools_hook_mcpc_executable(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_mcpc_settings(_merged_config(cfg)).get(
-        "executable",
-        DEFAULT_MCPC_EXECUTABLE,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_MCPC_EXECUTABLE
+    cfg = _resolve_config(config)
+    text = str(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "executable")).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "mcpc", "executable"))
 
 
 def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Merged ``pruning.tools.hook.mcpc.cache`` refresh intervals."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     mcpc = _tools_hook_mcpc_settings(_merged_config(cfg))
     cache = mcpc.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["mcpc"]["cache"]
+    defaults = _bundled_dict("pruning", "tools", "hook", "mcpc", "cache")
     return deep_merge(defaults, cache)
 
 
 def mcpc_skills_own_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    skills = _tools_hook_mcpc_settings(_merged_config(cfg)).get("skills")
-    if not isinstance(skills, dict):
-        return DEFAULT_MCPC_SKILLS_OWN_ENABLED
-    own = skills.get("own")
-    if not isinstance(own, dict):
-        return DEFAULT_MCPC_SKILLS_OWN_ENABLED
-    return bool(own.get("enabled", DEFAULT_MCPC_SKILLS_OWN_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "own", "enabled"))
 
 
 def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    skills = _tools_hook_mcpc_settings(_merged_config(cfg)).get("skills")
-    if not isinstance(skills, dict):
-        return DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED
-    in_session = skills.get("in_session")
-    if not isinstance(in_session, dict):
-        return DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED
-    return bool(in_session.get("enabled", DEFAULT_MCPC_SKILLS_IN_SESSION_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "in_session", "enabled"))
 
 
 def mcpc_resources_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    resources = _tools_hook_mcpc_settings(_merged_config(cfg)).get("resources")
-    if not isinstance(resources, dict):
-        return DEFAULT_MCPC_RESOURCES_ENABLED
-    return bool(resources.get("enabled", DEFAULT_MCPC_RESOURCES_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "enabled"))
 
 
 def mcpc_resources_mime_types(config: dict[str, Any] | None = None) -> list[str]:
-    cfg = config or load_config()
-    resources = _tools_hook_mcpc_settings(_merged_config(cfg)).get("resources")
-    if not isinstance(resources, dict):
-        return list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
-    mime_types = resources.get("mimeType")
+    cfg = _resolve_config(config)
+    mime_types = _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "mimeType")
     if not isinstance(mime_types, list):
-        return list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
-    normalized = [str(item).strip() for item in mime_types if str(item).strip()]
-    return normalized or list(DEFAULT_MCPC_RESOURCES_MIME_TYPES)
+        raise ValueError("pruning.tools.hook.mcpc.resources.mimeType must be a list")
+    return [str(item).strip() for item in mime_types if str(item).strip()]
 
 
 def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
     cache = tools_hook_mcpc_cache_settings(config)
-    return float(cache.get("skills_refresh_seconds") or DEFAULT_MCPC_CACHE_SKILLS_REFRESH_SECONDS)
+    value = cache.get("skills_refresh_seconds")
+    if value is None:
+        return float(_default_at("pruning", "tools", "hook", "mcpc", "cache", "skills_refresh_seconds"))
+    return float(value)
 
 
 def _tools_hook_cyt_mcp_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -1575,23 +1374,15 @@ def _tools_hook_cyt_mcp_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def tools_hook_cyt_mcp_executable(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
-        "executable",
-        DEFAULT_CYT_MCP_EXECUTABLE,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_CYT_MCP_EXECUTABLE
+    cfg = _resolve_config(config)
+    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cyt_mcp", "executable")).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "cyt_mcp", "executable"))
 
 
 def tools_hook_cyt_mcp_agent(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _tools_hook_cyt_mcp_settings(_merged_config(cfg)).get(
-        "agent",
-        DEFAULT_CYT_MCP_AGENT,
-    )
-    text = str(value).strip()
-    return text or DEFAULT_CYT_MCP_AGENT
+    cfg = _resolve_config(config)
+    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cyt_mcp", "agent")).strip()
+    return text or str(_default_at("pruning", "tools", "hook", "cyt_mcp", "agent"))
 
 
 def mcp_permissions_overlay(
@@ -1602,7 +1393,7 @@ def mcp_permissions_overlay(
     """Return raw ``mcp.permissions`` block from config (global or agent overlay)."""
     from cyt.permissions.merge import _agent_mcp_permissions, _mcp_permissions_from_config
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     if agent is None:
         block = _mcp_permissions_from_config(cfg)
     else:
@@ -1618,7 +1409,7 @@ def skills_permissions_overlay(
     """Return raw ``skills.permissions`` block from config (global or agent overlay)."""
     from cyt.permissions.merge import _agent_skills_permissions, _skills_permissions_from_config
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     if agent is None:
         block = _skills_permissions_from_config(cfg)
     else:
@@ -1633,18 +1424,18 @@ def tools_hook_cyt_mcp_catalog_url(config: dict[str, Any] | None = None) -> str:
 
 
 def tools_hook_cyt_mcp_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     cyt_mcp = _tools_hook_cyt_mcp_settings(_merged_config(cfg))
     cache = cyt_mcp.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["cyt_mcp"]["cache"]
+    defaults = _bundled_dict("pruning", "tools", "hook", "cyt_mcp", "cache")
     return deep_merge(defaults, cache)
 
 
 def connection_health_flapping_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Merged ``pruning.tools.hook.connection_health.flapping`` settings."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     hook = _tools_hook_settings(_merged_config(cfg))
     connection_health = hook.get("connection_health")
     if not isinstance(connection_health, dict):
@@ -1652,32 +1443,29 @@ def connection_health_flapping_settings(config: dict[str, Any] | None = None) ->
     flapping = connection_health.get("flapping")
     if not isinstance(flapping, dict):
         flapping = {}
-    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["connection_health"]["flapping"]
+    defaults = _bundled_dict("pruning", "tools", "hook", "connection_health", "flapping")
     return deep_merge(defaults, flapping)
 
 
 def tools_hook_executor_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Merged ``pruning.tools.hook.executor_cache`` refresh intervals."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     hook = _tools_hook_settings(_merged_config(cfg))
     executor_cache = hook.get("executor_cache")
     if not isinstance(executor_cache, dict):
         executor_cache = {}
-    defaults = _DEFAULTS["pruning"]["tools"]["hook"]["executor_cache"]
+    defaults = _bundled_dict("pruning", "tools", "hook", "executor_cache")
     return deep_merge(defaults, executor_cache)
 
 
 def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
-    path = _tools_hook_settings(_merged_config(cfg)).get(
-        "mcp_definitions_file",
-        DEFAULT_TOOLS_HOOK_MCP_DEFINITIONS_FILE,
-    )
+    cfg = _resolve_config(config)
+    path = _merged_at(cfg, "pruning", "tools", "hook", "mcp_definitions_file")
     return Path(str(path)).expanduser()
 
 
 def resolved_tools_hook_file(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return tools_hook_mcp_definitions_file(cfg)
 
 
@@ -1694,7 +1482,7 @@ def _tools_hook_source_usable(source: ToolsHookSource, config: dict[str, Any]) -
 
 
 def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     agent = tools_hook_cyt_mcp_agent(cfg)
     if not tools_enabled(cfg):
         return False
@@ -1707,7 +1495,7 @@ def tools_hook_file_missing(config: dict[str, Any] | None = None) -> bool:
 
 
 def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> list[str]:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     agent = tools_hook_cyt_mcp_agent(cfg)
     if not tools_enabled(cfg):
         return []
@@ -1724,7 +1512,7 @@ def required_tools_hook_env_var_names(config: dict[str, Any] | None = None) -> l
 
 
 def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     agent = tools_hook_cyt_mcp_agent(cfg)
     return (
         tools_enabled(cfg)
@@ -1734,7 +1522,7 @@ def uses_executor_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 
 
 def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     agent = tools_hook_cyt_mcp_agent(cfg)
     return (
         tools_enabled(cfg)
@@ -1744,7 +1532,7 @@ def uses_mcpc_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 
 
 def uses_cyt_mcp_tool_catalog(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     agent = tools_hook_cyt_mcp_agent(cfg)
     if (
         tools_enabled(cfg)
@@ -1756,20 +1544,19 @@ def uses_cyt_mcp_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 
 
 def launch_needs_proxy(config: dict[str, Any] | None = None, agent: str | None = None) -> bool:
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     resolved = agent or "claude"
     return inject_via_for_agent(cfg, resolved) == "proxy"
 
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    return bool(_skills_settings(_merged_config(cfg)).get("enabled", DEFAULT_SKILLS_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "skills", "enabled"))
 
 
 def skills_pipeline(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get("pipeline", DEFAULT_SKILLS_PIPELINE)
-    return str(value)
+    cfg = _resolve_config(config)
+    return str(_merged_at(cfg, "skills", "pipeline"))
 
 
 def skills_pipeline_uses_llm(config: dict[str, Any] | None = None) -> bool:
@@ -1805,8 +1592,8 @@ def effective_skills_pipeline(
 
 
 def skills_catalog_dir(config: dict[str, Any] | None = None) -> str:
-    cfg = config or load_config()
-    path = _skills_settings(_merged_config(cfg)).get("catalog_dir", DEFAULT_SKILLS_CATALOG_DIR)
+    cfg = _resolve_config(config)
+    path = _merged_at(cfg, "skills", "catalog_dir")
     return str(Path(str(path)).expanduser())
 
 
@@ -1816,166 +1603,107 @@ def _cache_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def cache_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    return bool(_cache_settings(cfg).get("enabled", DEFAULT_CACHE_ENABLED))
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "cache", "enabled"))
 
 
 def cache_bm25_dir(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
-    cache = _cache_settings(cfg)
-    path = cache.get("bm25_dir", DEFAULT_CACHE_BM25_DIR)
+    cfg = _resolve_config(config)
+    path = _merged_at(cfg, "cache", "bm25_dir")
     return Path(str(path)).expanduser()
 
 
 def cache_skills_dir(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
-    cache = _cache_settings(cfg)
-    path = cache.get("skills_dir", DEFAULT_CACHE_SKILLS_DIR)
+    cfg = _resolve_config(config)
+    path = _merged_at(cfg, "cache", "skills_dir")
     return Path(str(path)).expanduser()
 
 
 def cache_tools_dir(config: dict[str, Any] | None = None) -> Path:
-    cfg = config or load_config()
-    cache = _cache_settings(cfg)
-    path = cache.get("tools_dir", DEFAULT_CACHE_TOOLS_DIR)
+    cfg = _resolve_config(config)
+    path = _merged_at(cfg, "cache", "tools_dir")
     return Path(str(path)).expanduser()
 
 
 def cache_memory_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return the ``cache.memory`` block for Rust in-memory cache tuning."""
-    cache = _cache_settings(config or load_config())
+    cache = _cache_settings(_resolve_config(config))
     memory = cache.get("memory")
     return dict(memory) if isinstance(memory, dict) else {}
 
 
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get(
-        "max_tokens_per_request",
-        DEFAULT_SKILLS_MAX_TOKENS_PER_REQUEST,
-    )
-    return int(value)
+    cfg = _resolve_config(config)
+    return int(_merged_at(cfg, "skills", "max_tokens_per_request"))
 
 
 def skills_bm25_node_fallback_threshold(config: dict[str, Any] | None = None) -> int:
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get(
-        "bm25_node_fallback_threshold",
-        DEFAULT_SKILLS_BM25_NODE_FALLBACK_THRESHOLD,
-    )
-    return int(value)
+    cfg = _resolve_config(config)
+    return int(_merged_at(cfg, "skills", "bm25_node_fallback_threshold"))
 
 
 def skills_hook_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_hook_settings(merged).get(
-        "request_budget_fraction",
-        DEFAULT_SKILLS_HOOK_REQUEST_BUDGET_FRACTION,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "hook", "request_budget_fraction"))
 
 
 def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_hook_settings(merged).get(
-        "inject_cap_multiplier_of_request_tokens",
-        DEFAULT_SKILLS_HOOK_INJECT_CAP_MULTIPLIER,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "hook", "inject_cap_multiplier_of_request_tokens"))
 
 
 def skills_hook_cursor_rule_file_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    cursor_rule = _skills_hook_settings(merged).get("cursor_rule_file")
-    if isinstance(cursor_rule, dict) and "enabled" in cursor_rule:
-        return bool(cursor_rule["enabled"])
-    return DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "skills", "hook", "cursor_rule_file", "enabled"))
 
 
 def skills_hook_agent_interceptor_enabled(config: dict[str, Any] | None = None) -> bool:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    interceptor = _skills_hook_settings(merged).get("agent_interceptor")
-    if isinstance(interceptor, dict) and "enabled" in interceptor:
-        return bool(interceptor["enabled"])
-    return DEFAULT_SKILLS_HOOK_AGENT_INTERCEPTOR_ENABLED
+    cfg = _resolve_config(config)
+    return bool(_merged_at(cfg, "skills", "hook", "agent_interceptor", "enabled"))
 
 
 def skills_hook_agent_interceptor_min_items(config: dict[str, Any] | None = None) -> int:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    interceptor = _skills_hook_settings(merged).get("agent_interceptor")
-    if isinstance(interceptor, dict):
-        raw = interceptor.get("min_items")
-        if raw is not None:
-            return int(raw)
-    return DEFAULT_SKILLS_HOOK_AGENT_INTERCEPTOR_MIN_ITEMS
+    cfg = _resolve_config(config)
+    return int(_merged_at(cfg, "skills", "hook", "agent_interceptor", "min_items"))
 
 
 def skills_proxy_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_proxy_settings(merged).get(
-        "request_budget_fraction",
-        DEFAULT_SKILLS_PROXY_REQUEST_BUDGET_FRACTION,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "proxy", "request_budget_fraction"))
 
 
 def skills_proxy_inject_cap_fraction(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_proxy_settings(merged).get(
-        "inject_cap_fraction_of_savings",
-        DEFAULT_SKILLS_PROXY_INJECT_CAP_FRACTION,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "proxy", "inject_cap_fraction_of_savings"))
 
 
 def skills_proxy_savings_budget_fraction(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_proxy_settings(merged).get(
-        "savings_budget_fraction",
-        DEFAULT_SKILLS_PROXY_SAVINGS_BUDGET_FRACTION,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "proxy", "savings_budget_fraction"))
 
 
 def skills_proxy_savings_rate_threshold(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    merged = _merged_config(cfg)
-    value = _skills_proxy_settings(merged).get(
-        "savings_rate_threshold",
-        DEFAULT_SKILLS_PROXY_SAVINGS_RATE_THRESHOLD,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "proxy", "savings_rate_threshold"))
 
 
 def skills_frontmatter_upper_limit(config: dict[str, Any] | None = None) -> float:
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get(
-        "frontmatter_upper_limit",
-        DEFAULT_SKILLS_FRONTMATTER_UPPER_LIMIT,
-    )
-    return float(value)
+    cfg = _resolve_config(config)
+    return float(_merged_at(cfg, "skills", "frontmatter_upper_limit"))
 
 
 def skills_directories(config: dict[str, Any] | None = None) -> list[str]:
-    cfg = config or load_config()
-    dirs = _skills_settings(_merged_config(cfg)).get("directories", [])
+    cfg = _resolve_config(config)
+    dirs = _merged_at(cfg, "skills", "directories")
     if not isinstance(dirs, list):
-        return []
+        raise ValueError("skills.directories must be a list")
     return [str(Path(str(d)).expanduser()) for d in dirs if d]
 
 
 def skills_pageindex_config(config: dict[str, Any] | None = None) -> dict[str, Any] | None:
     from cyt.indexer.pageindex import page_index_config_from_app
 
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     return page_index_config_from_app(_skills_settings(_merged_config(cfg)))
 
 
@@ -2242,7 +1970,7 @@ def _stage_minimum_tools(
     user_config: dict[str, Any] | None = None,
 ) -> int:
     """Resolve stage threshold from ``pruning.tools.policy.minimum_tools``."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     merged = _merged_config(cfg)
     user = _user_overlay_for_config(cfg, user_config=user_config)
 
@@ -2262,27 +1990,19 @@ def _stage_minimum_tools(
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
 
-    return DEFAULT_MIN_TOOLS_PRUNING
+    return int(_require_nested(merged, "pruning", "tools", "policy", "minimum_tools"))
 
 
 def tools_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
     """Resolve LLM tools selector soft budget from ``pruning.tools.selector_soft_budget``."""
-    cfg = config or load_config()
-    value = _tools(_merged_config(cfg)).get(
-        "selector_soft_budget",
-        DEFAULT_SELECTOR_SOFT_BUDGET_TOOLS_TOTAL,
-    )
-    return int(value)
+    cfg = _resolve_config(config)
+    return int(_merged_at(cfg, "pruning", "tools", "selector_soft_budget"))
 
 
 def skills_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
     """Resolve LLM skills selector soft budget from ``skills.selector_soft_budget``."""
-    cfg = config or load_config()
-    value = _skills_settings(_merged_config(cfg)).get(
-        "selector_soft_budget",
-        DEFAULT_SELECTOR_SOFT_BUDGET_SKILLS_TOTAL,
-    )
-    return int(value)
+    cfg = _resolve_config(config)
+    return int(_merged_at(cfg, "skills", "selector_soft_budget"))
 
 
 def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
@@ -2295,12 +2015,12 @@ def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
             return max(1, int(env_raw))
         except ValueError:
             pass
-    cfg = config or load_config()
-    raw = cfg.get("pruning", {}).get("max_batch_workers", DEFAULT_MAX_PRUNE_BATCH_WORKERS)
+    cfg = _resolve_config(config)
+    raw = _merged_at(cfg, "pruning", "max_batch_workers")
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):
-        return DEFAULT_MAX_PRUNE_BATCH_WORKERS
+        return int(_default_at("pruning", "max_batch_workers"))
 
 
 def selector_bulk_max_tokens(
@@ -2309,17 +2029,11 @@ def selector_bulk_max_tokens(
     selector_kind: str = "tools",
 ) -> int:
     """Resolve LLM selector bulk token limit from config."""
-    cfg = config or load_config()
+    cfg = _resolve_config(config)
     if selector_kind == "skills":
-        value = _skills_settings(_merged_config(cfg)).get(
-            "selector_bulk_max_tokens",
-            DEFAULT_SELECTOR_BULK_MAX_TOKENS,
-        )
+        value = _merged_at(cfg, "skills", "selector_bulk_max_tokens")
     else:
-        value = _tools(_merged_config(cfg)).get(
-            "selector_bulk_max_tokens",
-            DEFAULT_SELECTOR_BULK_MAX_TOKENS,
-        )
+        value = _merged_at(cfg, "pruning", "tools", "selector_bulk_max_tokens")
     return int(value)
 
 
@@ -2516,7 +2230,7 @@ def resolve_model(
     config: dict[str, Any] | None = None,
 ) -> tuple[str, str | None, str | None]:
     """Return (model_name, api_key, base_url) for a given nick and type."""
-    merged = _merged_config(config or load_config())
+    merged = _merged_config(_resolve_config(config))
     for entry in merged.get("models", {}).get(model_kind, {}).get(model_type, []):
         if entry.get("nick") == model_nick:
             if model_type == "remote":

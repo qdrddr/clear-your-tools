@@ -231,10 +231,8 @@ def _format_mcp_server_inventory(
 
 
 def run_permissions_show(args: argparse.Namespace) -> None:
-    from cyt.permissions.merge import effective_permissions
-
     agent = _policy_agent(args)
-    effective = effective_permissions(agent=agent, workspace_root=_workspace_root(args))
+    effective = _effective_for_args(args)
     payload = {
         "agent": agent,
         "mcp": {"deny": list(effective.mcp.deny), "allow": list(effective.mcp.allow)},
@@ -496,7 +494,14 @@ def _skills_handler(action: str) -> Callable[[argparse.Namespace], None]:
         if action == "list":
             from cyt.permissions.inventory.skills import list_skills
 
-            enabled, disabled = list_skills(agent=policy_agent, workspace_root=ws)
+            global_cfg = None
+            if getattr(args, "config", None) is not None:
+                global_cfg = _load_yaml_dict(Path(args.config).expanduser())
+            enabled, disabled = list_skills(
+                agent=policy_agent,
+                workspace_root=ws,
+                global_config=global_cfg,
+            )
             if args.json:
                 _print_json(
                     {

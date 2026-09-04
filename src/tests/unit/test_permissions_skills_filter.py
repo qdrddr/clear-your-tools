@@ -79,6 +79,45 @@ def test_parse_skill_permission_entry_distinguishes_name_and_path() -> None:
     assert path_rule.value == "my-skill"
 
 
+def test_permission_lists_normalize_yaml_path_object_form() -> None:
+    from cyt.permissions.schema import PermissionLists
+
+    parsed = PermissionLists.from_raw(
+        {"deny": [{"path": "~/.codex/skills/.system"}, "upgrade-guide"], "allow": []},
+    )
+    assert parsed.deny == ("path:~/.codex/skills/.system", "upgrade-guide")
+
+
+def test_permission_lists_normalize_yaml_name_object_form() -> None:
+    from cyt.permissions.schema import PermissionLists
+
+    parsed = PermissionLists.from_raw({"deny": [{"name": "upgrade-guide"}], "allow": []})
+    assert parsed.deny == ("upgrade-guide",)
+
+
+def test_codex_system_skills_denied_with_yaml_path_object_form(tmp_path: Path) -> None:
+    from cyt.permissions.match import is_skill_path_denied
+    from cyt.permissions.merge import effective_permissions
+
+    system_root = tmp_path / ".codex" / "skills" / ".system"
+    system_skill = system_root / "imagegen" / "SKILL.md"
+    system_skill.parent.mkdir(parents=True)
+    system_skill.write_text("---\nname: imagegen\n---\n", encoding="utf-8")
+
+    config = {
+        "skills": {
+            "permissions": {"deny": [{"path": str(system_root)}]},
+        },
+    }
+    effective = effective_permissions(
+        agent="all",
+        global_config=config,
+        workspace_config={},
+    )
+    assert effective.skills.deny == (f"path:{system_root}",)
+    assert is_skill_path_denied(system_skill, effective.skills.deny, base=tmp_path)
+
+
 def test_filter_matched_skills_by_permissions() -> None:
     matches = [
         MatchedSkill(

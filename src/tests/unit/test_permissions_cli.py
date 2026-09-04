@@ -141,6 +141,45 @@ def test_permissions_show_defaults_to_all_agent(capsys: pytest.CaptureFixture[st
     assert payload["agent"] == "all"
 
 
+def test_permissions_show_with_yaml_path_object_deny(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "skills:\n  permissions:\n    deny:\n      - path: ~/.codex/skills/.system\n",
+        encoding="utf-8",
+    )
+    run_permissions_show(_args(json=True, config=config_path))
+    payload = json.loads(capsys.readouterr().out)
+    assert "path:~/.codex/skills/.system" in payload["skills"]["deny"]
+
+
+def test_permissions_skills_list_with_yaml_path_object_deny(tmp_path: Path) -> None:
+    from cyt.permissions.cli import _skills_handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "skills:",
+                "  directories:",
+                f"    - {tmp_path / '.codex' / 'skills'}",
+                "  permissions:",
+                "    deny:",
+                f"      - path: {tmp_path / '.codex' / 'skills' / '.system'}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    system_skill = tmp_path / ".codex" / "skills" / ".system" / "demo" / "SKILL.md"
+    system_skill.parent.mkdir(parents=True)
+    system_skill.write_text("---\nname: demo\n---\n", encoding="utf-8")
+
+    handler = _skills_handler("list")
+    handler(_args(config=config_path, workspace=tmp_path))
+
+
 def test_mcp_servers_list_shows_source_prefixes(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

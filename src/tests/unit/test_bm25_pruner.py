@@ -383,18 +383,18 @@ def test_bm25_catalog_dict_returns_stage_usage(
 
 def test_bm25_score_threshold_constant_matches_config_defaults() -> None:
     from cyt.config import (
-        DEFAULT_BM25_PRUNE_ENUMS,
-        DEFAULT_BM25_SCORE_TOOL,
-        DEFAULT_BM25_SCORE_TOOL_ENUM,
         bm25_prune_enums,
         bm25_score_tool,
         bm25_score_tool_enum,
+        load_bundled_defaults_yaml,
     )
 
-    assert BM25_SCORE == DEFAULT_BM25_SCORE_TOOL
-    assert bm25_score_tool() == DEFAULT_BM25_SCORE_TOOL
-    assert bm25_score_tool_enum() == DEFAULT_BM25_SCORE_TOOL_ENUM
-    assert bm25_prune_enums() == DEFAULT_BM25_PRUNE_ENUMS
+    bundled = load_bundled_defaults_yaml()
+    bm25_pipeline = bundled["pruning"]["tools"]["pipelines"]["bm25"]
+    assert BM25_SCORE == bm25_pipeline["score_tool"]
+    assert bm25_score_tool() == bm25_pipeline["score_tool"]
+    assert bm25_score_tool_enum() == bm25_pipeline["score_tool_enum"]
+    assert bm25_prune_enums() == bm25_pipeline["prune_enums"]
 
 
 def test_normalize_bm25_similarity_maps_to_unit_interval() -> None:

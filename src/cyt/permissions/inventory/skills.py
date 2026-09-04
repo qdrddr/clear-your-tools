@@ -112,10 +112,15 @@ def list_skills(
     agent: str = "cursor",
     workspace_root: Path | None = None,
     config: dict | None = None,
+    global_config: dict | None = None,
 ) -> tuple[list[SkillInventoryItem], list[SkillInventoryItem]]:
     cfg = config or load_config()
     policy_agent = (agent or "all").strip().lower() or "all"
-    effective = effective_permissions(agent=policy_agent, workspace_root=workspace_root)
+    effective = effective_permissions(
+        agent=policy_agent,
+        workspace_root=workspace_root,
+        global_config=global_config,
+    )
     enabled: list[SkillInventoryItem] = []
     disabled: list[SkillInventoryItem] = []
     for name, path, from_frontmatter in enumerate_skill_names(cfg, agent=policy_agent):

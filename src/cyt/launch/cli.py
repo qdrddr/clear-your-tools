@@ -13,7 +13,7 @@ from cyt.agents.claude.launch import build_claude_env
 from cyt.agents.codex.launch import configure_provider, restore_provider
 from cyt.common.agents import LAUNCH_AGENTS, launch_agent_usage_hint
 from cyt.config import (
-    DEFAULT_REVERSE_PORT,
+    default_reverse_port,
     inject_via_for_agent,
     launch_needs_proxy,
     load_config,
@@ -66,7 +66,7 @@ def add_shared_upstream_args(parser: argparse.ArgumentParser) -> None:
         "--port",
         type=int,
         default=None,
-        help=f"Reverse listen port (default from config, else {DEFAULT_REVERSE_PORT})",
+        help=f"Reverse listen port (default from config, else {default_reverse_port()})",
     )
     parser.add_argument(
         "--config",
@@ -107,7 +107,7 @@ def add_launch_options(parser: argparse.ArgumentParser) -> None:
         if action.dest == "port":
             action.help = (
                 f"Base reverse port for launch scan (default: configured proxy port, "
-                f"else {DEFAULT_REVERSE_PORT}; spawns on base port when free)"
+                f"else {default_reverse_port()}; spawns on base port when free)"
             )
             break
     parser.add_argument(

@@ -10,9 +10,6 @@ from typing import Any
 
 from cyt.common.token_usage import StageTokenUsage, empty_usage
 from cyt.config import (
-    DEFAULT_BM25_PRUNE_ENUMS,
-    DEFAULT_BM25_SCORE_TOOL,
-    DEFAULT_BM25_SCORE_TOOL_ENUM,
     bm25_prune_enums,
     bm25_score_tool,
     bm25_score_tool_enum,
@@ -35,9 +32,9 @@ from cyt.pruners.policies import (
 
 logger = logging.getLogger(__name__)
 
-BM25_SCORE: float = DEFAULT_BM25_SCORE_TOOL
-BM25_ENUM_SCORE: float = DEFAULT_BM25_SCORE_TOOL_ENUM
-BM25_ENUMS: bool = DEFAULT_BM25_PRUNE_ENUMS
+BM25_SCORE: float = bm25_score_tool()
+BM25_ENUM_SCORE: float = bm25_score_tool_enum()
+BM25_ENUMS: bool = bm25_prune_enums()
 BM25_STATS_ID: str = "bm25"
 
 

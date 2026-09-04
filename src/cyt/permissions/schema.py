@@ -40,12 +40,31 @@ class EffectivePermissions:
     skills: SkillsPermissions = field(default_factory=SkillsPermissions)
 
 
+def _normalize_permission_entry(item: object) -> str | None:
+    """Normalize a YAML deny/allow list item to a cyt permission string."""
+    if isinstance(item, dict):
+        if len(item) != 1:
+            return None
+        key, value = next(iter(item.items()))
+        key_text = str(key).strip().lower()
+        value_text = str(value or "").strip()
+        if not value_text:
+            return None
+        if key_text == "path":
+            return f"path:{value_text}"
+        if key_text == "name":
+            return value_text
+        return None
+    text = str(item or "").strip()
+    return text or None
+
+
 def _string_list(raw: object) -> tuple[str, ...]:
     if not isinstance(raw, list):
         return ()
     items: list[str] = []
     for item in raw:
-        text = str(item or "").strip()
+        text = _normalize_permission_entry(item)
         if text:
             items.append(text)
     return tuple(items)
