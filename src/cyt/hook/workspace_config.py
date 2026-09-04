@@ -46,7 +46,15 @@ def resolve_hook_request_config(
     if workspace_config_path is None or not workspace_config_path.is_file():
         return global_config, workspace
 
-    workspace_overlay = _load_yaml_dict(workspace_config_path)
+    from cyt.migrations.migrate import maybe_migrate_config_file
+    from cyt.migrations.workspace_paths import ensure_canonical_workspace_config
+
+    ensure_canonical_workspace_config(scope)
+    resolved_path = scope.resolve_workspace_cyt_config_path(agent_name)
+    if resolved_path is None or not resolved_path.is_file():
+        return global_config, workspace
+    maybe_migrate_config_file(resolved_path, scope="workspace")
+    workspace_overlay = _load_yaml_dict(resolved_path)
     if not workspace_overlay:
         return global_config, workspace
 

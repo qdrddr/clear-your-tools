@@ -13,12 +13,19 @@ from cyt.hook.cli_invocation import (
     cyt_mcp_cli_script_relpath,
     detect_hook_cli_invocation,
 )
-from cyt.hook.install_scope import GLOBAL_AGENT_MCP_PATHS, CytInstallScope
+from cyt.hook.install_scope import (
+    GLOBAL_AGENT_MCP_PATHS,
+    WORKSPACE_ALL_AGENTS_CYT_DIR,
+    WORKSPACE_CYT_CONFIG_SUBDIR,
+    CytInstallScope,
+)
 from cyt.permissions.paths import PermissionScope
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
+    LEGACY_CYT_MCP_SERVER_KEY,
+    LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     CytMcpTransport,
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
@@ -145,6 +152,16 @@ def write_mcp_aggregator_yaml(
     )
 
 
+def _workspace_agent_mcp_yaml_ref(aggregator_path: Path, backends_path: Path) -> str:
+    """Return a portable agents.* path relative to the workspace aggregator directory."""
+    agg_dir = aggregator_path.expanduser().resolve().parent
+    backend_resolved = backends_path.expanduser().resolve()
+    try:
+        return backend_resolved.relative_to(agg_dir).as_posix()
+    except ValueError:
+        return backend_resolved.as_posix()
+
+
 def write_mcp_aggregator_yaml_at(
     path: Path,
     agent: str,
@@ -162,7 +179,8 @@ def write_mcp_aggregator_yaml_at(
         "agents:",
     ]
     if workspace_scoped:
-        lines.append(f"  {agent}: {backends}")
+        backends_ref = _workspace_agent_mcp_yaml_ref(path, backends)
+        lines.append(f"  {agent}: {backends_ref}")
         lines.append("catalog_scope: workspace")
     else:
         mcp_dir = DEFAULT_MCP_DIR.expanduser()
@@ -247,6 +265,22 @@ def _write_codex_cyt_mcp_entry(
         text = ""
     marker = f"[mcp_servers.{server_key}]"
     block = codex_cyt_mcp_toml_block(agent, entry, server_key=server_key)
+    legacy_marker = f"[mcp_servers.{LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY}]"
+    if legacy_marker in text and server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
+        before, _, after = text.partition(legacy_marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
+    legacy_user_marker = f"[mcp_servers.{LEGACY_CYT_MCP_SERVER_KEY}]"
+    if legacy_user_marker in text and server_key == CYT_MCP_SERVER_KEY:
+        before, _, after = text.partition(legacy_user_marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
     if marker in text:
         before, _, after = text.partition(marker)
         next_section = after.find("\n[mcp_servers.")
@@ -285,6 +319,10 @@ def _write_json_cyt_mcp_entry(
         if not isinstance(existing, dict):
             existing = {}
         servers = dict(existing)
+        if server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
+            servers.pop(LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY, None)
+        if server_key == CYT_MCP_SERVER_KEY:
+            servers.pop(LEGACY_CYT_MCP_SERVER_KEY, None)
         servers[server_key] = entry
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
@@ -350,10 +388,11 @@ def write_agent_cyt_mcp_entry(
 
 
 def _workspace_aggregator_config_path(scope: CytInstallScope, agent: str) -> str:
-    if agent == "cursor":
-        return f"{CURSOR_WORKSPACE_FOLDER}/.cursor/cyt/config/mcp-aggregator.yaml"
     agg = scope.workspace_aggregator_path(agent)
     assert agg is not None
+    rel = f"{WORKSPACE_ALL_AGENTS_CYT_DIR}/{WORKSPACE_CYT_CONFIG_SUBDIR}/mcp-aggregator.yaml"
+    if agent == "cursor":
+        return f"{CURSOR_WORKSPACE_FOLDER}/{rel}"
     return str(agg)
 
 
@@ -376,27 +415,16 @@ def _ensure_shared_workspace_config(
 def _migrate_workspace_legacy_files(
     cyt_dir: Path,
     config_dir: Path,
-    defs_path: Path,
     agent: str,
     *,
     shared_config: Path | None,
-    agg_path: Path,
 ) -> None:
-    cyt_dir.mkdir(parents=True, exist_ok=True)
-    config_dir.mkdir(parents=True, exist_ok=True)
-    defs_path.parent.mkdir(parents=True, exist_ok=True)
-    legacy_defs = cyt_dir / f"{agent}.json"
-    if legacy_defs.is_file() and not defs_path.is_file():
-        legacy_defs.rename(defs_path)
     if shared_config is not None:
         _ensure_shared_workspace_config(
             shared_config,
             legacy_agent_config=config_dir / "config.yaml",
             legacy_root_config=cyt_dir / "config.yaml",
         )
-    legacy_agg = cyt_dir / "mcp-aggregator.yaml"
-    if legacy_agg.is_file() and not agg_path.is_file():
-        legacy_agg.rename(agg_path)
 
 
 def setup_cyt_mcp_workspace_for_agent(
@@ -420,13 +448,21 @@ def setup_cyt_mcp_workspace_for_agent(
     if cyt_dir is None or mcp_path is None or defs_path is None or agg_path is None:
         return
 
+    from cyt.migrations.workspace_paths import (
+        ensure_canonical_workspace_aggregator,
+        ensure_canonical_workspace_config,
+        ensure_canonical_workspace_server_defs,
+    )
+
+    ensure_canonical_workspace_config(scope)
+    ensure_canonical_workspace_aggregator(scope)
+    ensure_canonical_workspace_server_defs(scope, agent)
+
     _migrate_workspace_legacy_files(
         cyt_dir,
         cyt_dir / "config",
-        defs_path,
         agent,
         shared_config=scope.workspace_all_agents_cyt_config_path(),
-        agg_path=agg_path,
     )
 
     if migrate_backends:
@@ -450,6 +486,7 @@ def setup_cyt_mcp_workspace_for_agent(
         write_mcp_aggregator_yaml_at(
             agg_path,
             agent,
+            backends_path=defs_path,
             transport=transport,
             verify_only=verify_only,
             http_port=DEFAULT_WORKSPACE_HTTP_PORT,
@@ -537,13 +574,32 @@ def remove_workspace_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bo
             raw = {}
         if isinstance(raw, dict):
             servers = raw.get("mcpServers")
-            if isinstance(servers, dict) and CYT_MCP_WORKSPACE_SERVER_KEY in servers:
+            if isinstance(servers, dict):
                 servers = dict(servers)
-                del servers[CYT_MCP_WORKSPACE_SERVER_KEY]
-                raw["mcpServers"] = servers
-                _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
-                changed = True
-                print(f"Removed {CYT_MCP_WORKSPACE_SERVER_KEY} from {mcp_path}", file=sys.stderr)
+                removed_keys = [
+                    key
+                    for key in (
+                        CYT_MCP_WORKSPACE_SERVER_KEY,
+                        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+                    )
+                    if key in servers
+                ]
+                if removed_keys:
+                    for key in removed_keys:
+                        del servers[key]
+                    raw["mcpServers"] = servers
+                    _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
+                    changed = True
+                    print(
+                        f"Removed {', '.join(removed_keys)} from {mcp_path}",
+                        file=sys.stderr,
+                    )
+
+    defs_path = scope.workspace_all_agents_cyt_mcp_defs_path(agent)
+    if defs_path is not None and defs_path.is_file():
+        defs_path.unlink()
+        changed = True
+        print(f"Removed workspace MCP server defs {defs_path}", file=sys.stderr)
 
     cyt_dir = scope.workspace_cyt_dir(agent)
     if cyt_dir is not None and cyt_dir.is_dir():
@@ -551,6 +607,6 @@ def remove_workspace_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bo
 
         shutil.rmtree(cyt_dir)
         changed = True
-        print(f"Removed workspace CYT directory {cyt_dir}", file=sys.stderr)
+        print(f"Removed legacy workspace CYT directory {cyt_dir}", file=sys.stderr)
 
     return changed

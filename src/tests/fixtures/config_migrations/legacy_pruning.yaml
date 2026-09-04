@@ -1,0 +1,12 @@
+# Legacy pruning.pipeline shape (pre-002).
+pruning:
+  pipeline:
+    - bm25
+    - rerank
+  policy:
+    minimum_tools: 40
+    system_tool: prune_optional
+  llm:
+    model:
+      remote:
+        model_nick: mercury-2

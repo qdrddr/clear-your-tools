@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from cyt.hook import setup_wizard as hook_setup
+from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
@@ -1949,7 +1950,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     backend_payload = json.loads((mcp_target_dir / "cursor.json").read_text(encoding="utf-8"))
     assert "example-backend" in backend_payload["mcpServers"]
     agent_payload = json.loads(mcp_source.read_text(encoding="utf-8"))
-    assert set(agent_payload["mcpServers"]) == {"cyt-mcp"}
+    assert set(agent_payload["mcpServers"]) == {CYT_MCP_SERVER_KEY}
     assert "verify_only: true" in aggregator_path.read_text(encoding="utf-8")
 
 

@@ -85,9 +85,13 @@ def _load_global_config_for_permissions(
     path: Path | None = None,
 ) -> dict[str, Any]:
     """Load on-disk user config for permissions (not bundled runtime defaults)."""
+    from cyt.migrations.migrate import maybe_migrate_config_file
+
     config_path = resolve_config_path(path or DEFAULT_USER_CONFIG_PATH)
     if not config_path.is_file():
         load_config(config_path)
+    elif config_path.is_file():
+        maybe_migrate_config_file(config_path, scope="global")
     return _load_yaml_dict(config_path)
 
 
@@ -95,11 +99,10 @@ def load_workspace_all_agents_config_overlay(
     *,
     workspace_root: Path | None = None,
 ) -> dict[str, Any]:
-    scope = CytInstallScope(
-        workspace_root=workspace_root or CytInstallScope.from_cwd().workspace_root,
-    )
-    path = scope.resolve_workspace_all_agents_cyt_config_path()
-    if path is None:
+    from cyt.migrations.migrate import maybe_migrate_workspace_config
+
+    path = maybe_migrate_workspace_config(workspace_root=workspace_root)
+    if path is None or not path.is_file():
         return {}
     return _load_yaml_dict(path)
 
@@ -119,6 +122,9 @@ def load_workspace_config_overlay(
     path = scope.legacy_workspace_cyt_config_path(agent)
     if path is None:
         return {}
+    from cyt.migrations.migrate import maybe_migrate_config_file
+
+    maybe_migrate_config_file(path, scope="workspace")
     return _load_yaml_dict(path)
 
 
@@ -238,6 +244,31 @@ def _effective_permissions_for_agent(
         mcp=McpPermissions(deny=_union_string_lists(*mcp_layers), allow=mcp_allow),
         skills=SkillsPermissions(deny=_union_string_lists(*skills_layers), allow=skills_allow),
     )
+
+
+def effective_mcp_permissions_global_only(
+    *,
+    agent: str,
+    global_config: dict[str, Any] | None = None,
+) -> McpPermissions:
+    """MCP permissions for user/global cyt-mcp — global config only, no workspace overlay."""
+    from cyt.permissions.paths import normalize_agent
+
+    global_cfg = (
+        global_config
+        if global_config is not None
+        else _load_global_config_for_permissions(DEFAULT_USER_CONFIG_PATH)
+    )
+    resolved_agent = normalize_agent(agent)
+    deny = _union_string_lists(
+        _mcp_permissions_from_config(global_cfg).deny,
+        _agent_mcp_permissions(global_cfg, resolved_agent).deny,
+    )
+    allow = _union_string_lists(
+        _mcp_permissions_from_config(global_cfg).allow,
+        _agent_mcp_permissions(global_cfg, resolved_agent).allow,
+    )
+    return McpPermissions(deny=deny, allow=allow)
 
 
 def effective_permissions(

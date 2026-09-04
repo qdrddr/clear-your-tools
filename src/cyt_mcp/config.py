@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
 DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
@@ -106,12 +109,33 @@ def resolve_agent_name(raw: dict[str, Any], explicit: str | None) -> str:
     raise ValueError("--agent is required when default_agent is not set in mcp-aggregator.yaml")
 
 
-def agent_mcp_config_path(raw: dict[str, Any], agent: str) -> Path:
+def _resolve_yaml_path(value: str, *, relative_to: Path | None) -> Path:
+    """Resolve a path from mcp-aggregator.yaml (absolute, ~/, or relative to *relative_to*)."""
+    text = value.strip()
+    if text.startswith("~"):
+        return Path(text).expanduser().resolve()
+    candidate = Path(text)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if relative_to is not None:
+        return (relative_to / text).resolve()
+    return candidate.expanduser().resolve()
+
+
+def agent_mcp_config_path(
+    raw: dict[str, Any],
+    agent: str,
+    *,
+    aggregator_path: Path | None = None,
+) -> Path:
     agents = raw.get("agents")
     if isinstance(agents, dict):
         mapped = agents.get(agent)
         if isinstance(mapped, str) and mapped.strip():
-            return _expand(mapped)
+            relative_to = None
+            if aggregator_path is not None:
+                relative_to = aggregator_path.expanduser().resolve().parent
+            return _resolve_yaml_path(mapped, relative_to=relative_to)
     return DEFAULT_MCP_DIR.expanduser() / f"{agent}.json"
 
 
@@ -130,6 +154,72 @@ def is_mcp_server_enabled(spec: object) -> bool:
 
 def _backend_server_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in spec.items() if key != "enabled"}
+
+
+def listed_mcp_server_names(path: Path) -> frozenset[str]:
+    """Return every MCP server key in *path*, regardless of ``enabled`` state."""
+    if not path.is_file():
+        return frozenset()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return frozenset()
+    if not isinstance(payload, dict):
+        return frozenset()
+    servers = payload.get("mcpServers")
+    if not isinstance(servers, dict):
+        return frozenset()
+    return frozenset(str(name).strip() for name in servers if str(name).strip())
+
+
+def _detect_workspace_for_global_exclusion(
+    workspace_folder: Path | None,
+) -> Path | None:
+    if workspace_folder is not None:
+        try:
+            resolved = workspace_folder.expanduser().resolve()
+            if resolved.is_dir():
+                return resolved
+        except OSError:
+            pass
+    from cyt.hook.install_scope import detect_workspace_root
+
+    return detect_workspace_root()
+
+
+def _workspace_claimed_server_names(
+    agent: str,
+    workspace_root: Path | None,
+) -> frozenset[str]:
+    if workspace_root is None:
+        return frozenset()
+    from cyt.hook.install_scope import CytInstallScope
+
+    scope = CytInstallScope(workspace_root=workspace_root)
+    defs_path = scope.resolve_workspace_server_defs_path(agent)
+    if defs_path is None:
+        return frozenset()
+    return listed_mcp_server_names(defs_path)
+
+
+def _exclude_workspace_claimed_servers(
+    servers: dict[str, Any],
+    *,
+    agent: str,
+    workspace_folder: Path | None,
+) -> dict[str, Any]:
+    """Drop global servers that appear in workspace MCP defs so workspace owns them."""
+    workspace_root = _detect_workspace_for_global_exclusion(workspace_folder)
+    claimed = _workspace_claimed_server_names(agent, workspace_root)
+    if not claimed:
+        return servers
+    excluded = sorted(name for name in servers if name in claimed)
+    if excluded:
+        logger.info(
+            "cyt-mcp global: excluding MCP servers claimed by workspace defs: %s",
+            ", ".join(excluded),
+        )
+    return {name: spec for name, spec in servers.items() if name not in claimed}
 
 
 def load_mcp_servers(
@@ -165,20 +255,6 @@ def load_mcp_servers(
     return loaded
 
 
-def _resolve_mcp_deny(
-    agent: str,
-    *,
-    workspace_root: Path | None,
-) -> tuple[str, ...]:
-    try:
-        from cyt.permissions.merge import effective_permissions
-
-        effective = effective_permissions(agent=agent, workspace_root=workspace_root)
-        return effective.mcp.deny
-    except Exception:
-        return ()
-
-
 def load_http_settings(raw: dict[str, Any]) -> HttpSettings:
     http = raw.get("http")
     block = http if isinstance(http, dict) else {}
@@ -197,6 +273,16 @@ def load_http_settings(raw: dict[str, Any]) -> HttpSettings:
     return HttpSettings(host=host, port=port, mcp_path=mcp_path, catalog_path=catalog_path)
 
 
+def _is_workspace_aggregator_path(resolved: Path) -> bool:
+    parts = {part.lower() for part in resolved.parts}
+    if parts & {".agents", "agents"} and "cyt" in parts and "config" in parts:
+        return True
+    return any(
+        agent_dir in parts and "cyt" in parts and "config" in parts
+        for agent_dir in (".cursor", ".claude", ".codex")
+    )
+
+
 def _infer_catalog_scope(
     raw: dict[str, Any],
     aggregator_path: Path,
@@ -210,10 +296,99 @@ def _infer_catalog_scope(
     global_path = GLOBAL_AGGREGATOR_PATH.expanduser().resolve()
     if resolved == global_path:
         return "global"
-    parts = {part.lower() for part in resolved.parts}
-    if "cyt" in parts and "config" in parts:
+    if _is_workspace_aggregator_path(resolved):
         return "workspace"
     return "global"
+
+
+def _resolve_global_agent_mcp_path(configured: Path, agent: str) -> Path:
+    """Ensure global cyt-mcp loads user-scoped backend defs, not cwd-relative workspace paths."""
+    canonical = DEFAULT_MCP_DIR.expanduser() / f"{agent.strip() or 'cursor'}.json"
+    if configured.is_absolute():
+        return configured
+    logger.warning(
+        "Global aggregator agents.%s uses relative path %s; using %s",
+        agent,
+        configured,
+        canonical,
+    )
+    return canonical
+
+
+def _global_default_agent_mcp_path(agent: str) -> Path:
+    return (DEFAULT_MCP_DIR.expanduser() / f"{agent.strip() or 'cursor'}.json").resolve()
+
+
+def _resolve_workspace_agent_mcp_path(
+    configured: Path,
+    agent: str,
+    workspace_root: Path | None,
+) -> Path:
+    """Ensure workspace cyt-mcp loads repo-scoped backend defs, not global defaults."""
+    if workspace_root is None:
+        logger.warning(
+            "Workspace catalog scope but workspace root could not be resolved; "
+            "backend MCP defs may be incorrect",
+        )
+        return configured
+
+    from cyt.hook.install_scope import CytInstallScope
+
+    scope = CytInstallScope(workspace_root=workspace_root)
+    resolved = scope.resolve_workspace_server_defs_path(agent)
+    if resolved is not None:
+        return resolved
+
+    canonical = scope.workspace_server_defs_path(agent)
+    if canonical is None:
+        return configured
+
+    try:
+        configured_resolved = configured.expanduser().resolve()
+    except OSError:
+        configured_resolved = configured
+
+    global_default = _global_default_agent_mcp_path(agent)
+    if not configured.is_absolute() or configured_resolved == global_default:
+        logger.warning(
+            "Workspace aggregator agents.%s uses %s; using %s",
+            agent,
+            configured,
+            canonical,
+        )
+        return canonical
+
+    try:
+        configured_resolved.relative_to(workspace_root.resolve())
+    except ValueError:
+        logger.warning(
+            "Workspace aggregator agents.%s points outside workspace (%s); using %s",
+            agent,
+            configured,
+            canonical,
+        )
+        return canonical
+
+    return configured_resolved
+
+
+def _resolve_mcp_deny(
+    agent: str,
+    *,
+    catalog_scope: CatalogScope,
+    workspace_root: Path | None,
+) -> tuple[str, ...]:
+    try:
+        if catalog_scope == "global":
+            from cyt.permissions.merge import effective_mcp_permissions_global_only
+
+            return effective_mcp_permissions_global_only(agent=agent).deny
+        from cyt.permissions.merge import effective_permissions
+
+        effective = effective_permissions(agent=agent, workspace_root=workspace_root)
+        return effective.mcp.deny
+    except Exception:
+        return ()
 
 
 def _resolve_workspace_root_for_scope(
@@ -231,7 +406,7 @@ def _resolve_workspace_root_for_scope(
                 return resolved
         except OSError:
             pass
-    # Walk up from aggregator: .../.cursor/cyt/config/mcp-aggregator.yaml
+    # Walk up from aggregator: .../.agents/cyt/config/mcp-aggregator.yaml
     current = aggregator_path.expanduser().resolve().parent
     for _ in range(6):
         if (current / ".git").exists() or (current / ".cursor").exists():
@@ -255,28 +430,51 @@ def load_aggregator_config(
 ) -> AggregatorConfig:
     raw = load_aggregator_yaml(aggregator_path)
     resolved_agent = resolve_agent_name(raw, agent)
-    agent_path = agent_mcp_config_path(raw, resolved_agent)
+    resolved_agg_path = _expand(aggregator_path or DEFAULT_AGGREGATOR_PATH)
+    agent_path = agent_mcp_config_path(
+        raw,
+        resolved_agent,
+        aggregator_path=resolved_agg_path,
+    )
     transport = str(raw.get("transport", "stdio")).strip().lower() or "stdio"
     if transport not in {"stdio", "http"}:
         transport = "stdio"
     codex_flag = bool(raw.get("codex_stubs_include_description", True))
     include_desc = codex_flag if resolved_agent == "codex" else False
     verify_only = bool(raw.get("verify_only", False))
-    resolved_agg_path = _expand(aggregator_path or DEFAULT_AGGREGATOR_PATH)
     catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
+    if catalog_scope == "global":
+        agent_path = _resolve_global_agent_mcp_path(agent_path, resolved_agent)
     workspace_root = _resolve_workspace_root_for_scope(
         catalog_scope,
         workspace_folder=workspace_folder,
         aggregator_path=resolved_agg_path,
     )
-    mcp_deny = _resolve_mcp_deny(resolved_agent, workspace_root=workspace_root)
+    if catalog_scope == "workspace":
+        agent_path = _resolve_workspace_agent_mcp_path(
+            agent_path,
+            resolved_agent,
+            workspace_root,
+        )
+    mcp_deny = _resolve_mcp_deny(
+        resolved_agent,
+        catalog_scope=catalog_scope,
+        workspace_root=workspace_root,
+    )
+    loaded_servers = load_mcp_servers(
+        agent_path,
+        workspace_folder=workspace_root or workspace_folder,
+        deny_entries=mcp_deny,
+    )
+    if catalog_scope == "global":
+        loaded_servers = _exclude_workspace_claimed_servers(
+            loaded_servers,
+            agent=resolved_agent,
+            workspace_folder=workspace_folder,
+        )
     return AggregatorConfig(
         agent=resolved_agent,
-        mcp_servers=load_mcp_servers(
-            agent_path,
-            workspace_folder=workspace_root or workspace_folder,
-            deny_entries=mcp_deny,
-        ),
+        mcp_servers=loaded_servers,
         transport=transport,
         http=load_http_settings(raw),
         codex_stubs_include_description=include_desc,

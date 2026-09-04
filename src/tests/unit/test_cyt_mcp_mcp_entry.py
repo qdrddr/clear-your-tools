@@ -16,6 +16,8 @@ from cyt.hook.cli_invocation import (
 from cyt.tools import cyt_mcp_setup
 from cyt_client.hook_executable import repo_root_from_uv_run_hook_command
 from cyt_client.mcp_entry import (
+    CYT_MCP_SERVER_KEY,
+    LEGACY_CYT_MCP_SERVER_KEY,
     backend_mcp_servers,
     build_cyt_mcp_mcp_server_entry,
     dev_invocation_from_hooks_file,
@@ -51,13 +53,13 @@ def test_build_dev_workspace_cyt_mcp_entry_uses_workspace_folder() -> None:
         dev_repo_root=repo_root,
         dev_script_rel=script_rel,
         workspace_cwd="${workspaceFolder}",
-        aggregator_config="${workspaceFolder}/.cursor/cyt/config/mcp-aggregator.yaml",
+        aggregator_config="${workspaceFolder}/.agents/cyt/config/mcp-aggregator.yaml",
     )
     assert entry["cwd"] == "${workspaceFolder}"
     assert entry["args"][1:3] == ["--directory", "${workspaceFolder}"]
     assert entry["args"][-2:] == [
         "--config",
-        "${workspaceFolder}/.cursor/cyt/config/mcp-aggregator.yaml",
+        "${workspaceFolder}/.agents/cyt/config/mcp-aggregator.yaml",
     ]
 
 
@@ -130,7 +132,7 @@ def test_write_agent_cyt_mcp_entry_dev_mode(
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     cyt_mcp_setup.write_agent_cyt_mcp_entry("cursor", invocation=invocation)
     payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    entry = payload["mcpServers"]["cyt-mcp"]
+    entry = payload["mcpServers"][CYT_MCP_SERVER_KEY]
     assert entry["command"] == "uv"
     assert entry["args"][1:3] == ["--directory", str(repo_root)]
     assert payload["mcpServers"]["other"]["command"] == "echo"
@@ -149,7 +151,7 @@ def test_write_agent_cyt_mcp_entry_http_mode(
     monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_path)
     cyt_mcp_setup.write_agent_cyt_mcp_entry("cursor", transport="http")
     payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    assert payload["mcpServers"]["cyt-mcp"] == {"url": "http://127.0.0.1:8765/mcp"}
+    assert payload["mcpServers"][CYT_MCP_SERVER_KEY] == {"url": "http://127.0.0.1:8765/mcp"}
 
 
 def test_cyt_mcp_hook_settings_overlay() -> None:
@@ -164,6 +166,7 @@ def test_is_cyt_mcp_frontend_server() -> None:
         "args": ["run", "--directory", "/tmp/repo", "src/cyt_mcp/cli.py", "--agent", "cursor"],
     }
     backend = {"command": "npx", "args": ["-y", "some-mcp-server"]}
+    assert is_cyt_mcp_frontend_server("cyt-mcp-usr", prod)
     assert is_cyt_mcp_frontend_server("cyt-mcp", prod)
     assert is_cyt_mcp_frontend_server("other", dev)
     assert not is_cyt_mcp_frontend_server("wiseinfotec", backend)
@@ -242,11 +245,31 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     cyt_mcp_setup.setup_cyt_mcp_for_agent("cursor", invocation=invocation, transport="stdio")
     agent_payload = json.loads(source.read_text(encoding="utf-8"))
-    assert set(agent_payload["mcpServers"]) == {"cyt-mcp"}
-    assert agent_payload["mcpServers"]["cyt-mcp"]["command"] == "uv"
+    assert set(agent_payload["mcpServers"]) == {CYT_MCP_SERVER_KEY}
+    assert agent_payload["mcpServers"][CYT_MCP_SERVER_KEY]["command"] == "uv"
     backend_payload = json.loads((target_dir / "cursor.json").read_text(encoding="utf-8"))
     assert "codebase-memory-mcp" in backend_payload["mcpServers"]
-    assert "cyt-mcp" not in backend_payload["mcpServers"]
+    assert CYT_MCP_SERVER_KEY not in backend_payload["mcpServers"]
+    assert LEGACY_CYT_MCP_SERVER_KEY not in backend_payload["mcpServers"]
+
+
+def test_write_mcp_aggregator_yaml_workspace_uses_relative_backend_path(
+    tmp_path: Path,
+) -> None:
+    aggregator_path = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    backends_path = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    backends_path.parent.mkdir(parents=True, exist_ok=True)
+    backends_path.write_text('{"mcpServers": {}}', encoding="utf-8")
+
+    cyt_mcp_setup.write_mcp_aggregator_yaml_at(
+        aggregator_path,
+        "cursor",
+        backends_path=backends_path,
+        workspace_scoped=True,
+    )
+
+    text = aggregator_path.read_text(encoding="utf-8")
+    assert "cursor: mcp/cursor.json" in text
 
 
 def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_false(

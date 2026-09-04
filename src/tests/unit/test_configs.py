@@ -108,6 +108,50 @@ def test_load_config_creates_user_config_when_missing(
     assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
     per_tool = written.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
     assert per_tool == {}
+    from cyt.migrations import current_head
+
+    assert written["cyt"]["schema_version"] == current_head()
+
+
+def test_load_config_auto_migrates_legacy_pruning_pipeline(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_config = isolated_config_paths["user_config"]
+    user_config.parent.mkdir(parents=True, exist_ok=True)
+    user_config.write_text(
+        "pruning:\n  pipeline:\n    - bm25\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("CYT_SKIP_CONFIG_MIGRATE", raising=False)
+
+    configs.load_config()
+
+    written = configs._load_yaml_dict(user_config)
+    assert written["pruning"]["tools"]["sequence"] == ["bm25"]
+    assert "pipeline" not in written.get("pruning", {})
+    from cyt.migrations import current_head
+
+    assert written["cyt"]["schema_version"] == current_head()
+
+
+def test_load_config_honors_skip_migrate_env(
+    isolated_config_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_config = isolated_config_paths["user_config"]
+    user_config.parent.mkdir(parents=True, exist_ok=True)
+    user_config.write_text(
+        "pruning:\n  pipeline:\n    - bm25\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CYT_SKIP_CONFIG_MIGRATE", "1")
+
+    configs.load_config()
+
+    written = configs._load_yaml_dict(user_config)
+    assert "pipeline" in written.get("pruning", {})
+    assert "cyt" not in written
 
 
 def test_load_config_uses_cwd_config(isolated_config_paths: dict[str, Path]) -> None:

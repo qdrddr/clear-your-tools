@@ -23,6 +23,8 @@ from cyt_client.hook_invocation import (
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
+    LEGACY_CYT_MCP_SERVER_KEY,
+    LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     DEFAULT_AGGREGATOR_PATH,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
@@ -127,10 +129,10 @@ def _resolve_workspace_server_defs_path(workspace_root: Path, agent: str) -> Pat
 
 
 def _workspace_aggregator_config_ref(agent: str, workspace_root: Path) -> str:
+    rel = ".agents/cyt/config/mcp-aggregator.yaml"
     if agent == "cursor":
-        return f"{CURSOR_WORKSPACE_FOLDER}/.cursor/cyt/config/mcp-aggregator.yaml"
-    rel_dir = _AGENT_CYT_DIRS.get(agent, ".cursor")
-    return str(workspace_root / rel_dir / "cyt" / "config" / "mcp-aggregator.yaml")
+        return f"{CURSOR_WORKSPACE_FOLDER}/{rel}"
+    return str(workspace_root / rel)
 
 
 def _ensure_json_mcp_server(
@@ -168,6 +170,11 @@ def _ensure_json_mcp_server(
         return False
     merged = dict(existing) if isinstance(existing, dict) else {}
     merged.update(desired)
+    servers = dict(servers)
+    if server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
+        servers.pop(LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY, None)
+    if server_key == CYT_MCP_SERVER_KEY:
+        servers.pop(LEGACY_CYT_MCP_SERVER_KEY, None)
     servers[server_key] = merged
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
@@ -197,6 +204,22 @@ def _ensure_codex_mcp_server(
         workspace_cwd=workspace_cwd,
     )
     block = codex_cyt_mcp_toml_block(agent, desired, server_key=server_key)
+    legacy_marker = f"[mcp_servers.{LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY}]"
+    if legacy_marker in text and server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
+        before, _, after = text.partition(legacy_marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
+    legacy_user_marker = f"[mcp_servers.{LEGACY_CYT_MCP_SERVER_KEY}]"
+    if legacy_user_marker in text and server_key == CYT_MCP_SERVER_KEY:
+        before, _, after = text.partition(legacy_user_marker)
+        next_section = after.find("\n[mcp_servers.")
+        if next_section >= 0:
+            text = before.rstrip() + after[next_section:]
+        else:
+            text = before.rstrip() + "\n"
     if marker in text:
         before, _, after = text.partition(marker)
         next_section = after.find("\n[mcp_servers.")

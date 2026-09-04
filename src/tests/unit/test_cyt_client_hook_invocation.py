@@ -135,7 +135,9 @@ def test_pairing_does_not_modify_hooks_file(
 
     assert json.loads(hooks_path.read_text(encoding="utf-8")) == hooks_before
     mcp_payload = json.loads(mcp_path.read_text(encoding="utf-8"))
-    assert "cyt-mcp" in mcp_payload["mcpServers"]
+    from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
+
+    assert CYT_MCP_SERVER_KEY in mcp_payload["mcpServers"]
 
 
 def test_pairing_repairs_workspace_mcp_entry(

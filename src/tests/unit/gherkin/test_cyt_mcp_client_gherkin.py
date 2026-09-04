@@ -11,6 +11,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from cyt.common.agents import AgentName
+from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
 from cyt_client.tool_gate import normalize_mcp_tool_name, validate_pre_tool_call
 from tests.unit.gherkin.conftest import GherkinContext
 
@@ -255,7 +256,7 @@ def _run_pairing_scenario(
 @then("cursor mcp.json should contain a cyt-mcp server entry")
 def then_mcp_has_cyt_mcp(gherkin_context: GherkinContext) -> None:
     data = json.loads(gherkin_context.payload["_mcp_after"])
-    assert "cyt-mcp" in data.get("mcpServers", {})
+    assert CYT_MCP_SERVER_KEY in data.get("mcpServers", {})
 
 
 @then("cursor mcp.json should not be modified")

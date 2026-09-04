@@ -23,7 +23,9 @@ _GATED_CATALOGS = frozenset({"mcpc", "cyt_mcp", "definitions"})
 _PRE_TOOL_EVENTS = frozenset({"preToolUse", "PreToolUse"})
 _BEFORE_READ_FILE_EVENTS = frozenset({"beforeReadFile", "BeforeReadFile"})
 _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
-_CYT_MCP_SERVER_NAMES = frozenset({"cyt-mcp", "cyt_mcp"})
+_CYT_MCP_SERVER_NAMES = frozenset(
+    {"cyt-mcp-usr", "cyt-mcp", "cyt-mcp-ws", "cyt-mcp-workspace", "cyt_mcp"},
+)
 _SHELL_TOOL_NAMES = frozenset({"Shell", "shell", "Bash", "bash"})
 
 

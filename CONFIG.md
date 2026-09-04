@@ -538,7 +538,29 @@ for skills injection.
 
 ## Schema migration
 
-Canonical config shape (since vNext):
+On-disk `config.yaml` files (global and workspace) carry a schema stamp:
+
+```yaml
+cyt:
+  schema_version: "004_permissions_agents_layout"
+  migrated_at: "2026-09-04T18:00:00Z"
+```
+
+When CYT loads config and the stamp is behind the packaged head revision, it **auto-migrates** the file (with a `.bak.<timestamp>` backup). Disable with `CYT_SKIP_CONFIG_MIGRATE=1`.
+
+Manual commands:
+
+```bash
+cyt config current              # show version + pending steps
+cyt config history              # list revision chain
+cyt config migrate --dry-run    # preview without writing
+cyt config migrate              # upgrade global ~/.config/cyt/config.yaml
+cyt config migrate --workspace  # upgrade .agents/cyt/config/config.yaml
+```
+
+Revision scripts live under [`src/cyt/migrations/versions/`](src/cyt/migrations/versions/) (Alembic-style linear chain).
+
+### Canonical shape (vNext)
 
 | Old path | New path |
 | -------- | -------- |
@@ -548,7 +570,8 @@ Canonical config shape (since vNext):
 | `pruning.<id>.model.remote.model_nick` | `pruning.tools.pipelines.<id>.model_nick` |
 | Inline model `provider`, `key_var_name`, … | `models.providers[]` + model `provider_nick` |
 
-Old keys continue to work; resolution lives in `src/cyt/config/legacy.py` for easy removal later.
+Unmigrated configs still work at runtime via read-time normalization in [`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) until `cyt config migrate` rewrites the file.
+
 `save_user_config` skips disk writes when the merged config is unchanged (no rearrange-on-save).
 
 ---

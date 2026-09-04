@@ -13,8 +13,10 @@ from cyt_client.hook_executable import (
 )
 
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
-CYT_MCP_SERVER_KEY = "cyt-mcp"
-CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-workspace"
+CYT_MCP_SERVER_KEY = "cyt-mcp-usr"
+LEGACY_CYT_MCP_SERVER_KEY = "cyt-mcp"
+CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-ws"
+LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-workspace"
 CYT_MCP_SCRIPT_REL = "src/cyt_mcp/cli.py"
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
 CytMcpTransport = Literal["stdio", "http"]
@@ -41,7 +43,13 @@ def cyt_mcp_http_mcp_url(
 
 def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
     """Return True when an agent MCP server entry is the cyt-mcp frontend (not a backend)."""
-    if str(name).strip() in {CYT_MCP_SERVER_KEY, CYT_MCP_WORKSPACE_SERVER_KEY, "cyt_mcp"}:
+    if str(name).strip() in {
+        CYT_MCP_SERVER_KEY,
+        LEGACY_CYT_MCP_SERVER_KEY,
+        CYT_MCP_WORKSPACE_SERVER_KEY,
+        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+        "cyt_mcp",
+    }:
         return True
     if not isinstance(spec, dict):
         return False
@@ -289,12 +297,16 @@ def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     servers = payload.get("mcpServers")
     if not isinstance(servers, dict):
         return None
-    spec = servers.get(CYT_MCP_SERVER_KEY)
-    if not isinstance(spec, dict):
+    spec: dict[str, Any] | None = None
+    for key in (CYT_MCP_SERVER_KEY, LEGACY_CYT_MCP_SERVER_KEY):
+        candidate = servers.get(key)
+        if isinstance(candidate, dict):
+            spec = cast(dict[str, Any], candidate)
+            break
+    if spec is None:
         return None
-    spec_dict: dict[str, Any] = cast(dict[str, Any], spec)
-    command = spec_dict.get("command")
-    args = spec_dict.get("args")
+    command = spec.get("command")
+    args = spec.get("args")
     if command != "uv" or not isinstance(args, list):
         return None
     joined = " ".join(str(arg) for arg in args)

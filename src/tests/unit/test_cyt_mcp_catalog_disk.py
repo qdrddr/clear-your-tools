@@ -70,15 +70,12 @@ def test_cache_key_uses_scope_fingerprints(tmp_path: Path, monkeypatch: pytest.M
     global_defs.write_text('{"mcpServers": {}}', encoding="utf-8")
 
     ws_root = tmp_path / "repo"
-    cyt_dir = ws_root / ".cursor" / "cyt"
-    cyt_dir.mkdir(parents=True)
-    (cyt_dir / "mcp").mkdir()
-    (cyt_dir / "config").mkdir()
-    (cyt_dir / "config" / "mcp-aggregator.yaml").write_text(
-        "default_agent: cursor\n",
-        encoding="utf-8",
-    )
-    (cyt_dir / "mcp" / "cursor.json").write_text('{"mcpServers": {"ws": {}}}', encoding="utf-8")
+    ws_defs = ws_root / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_agg = ws_root / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    ws_agg.parent.mkdir(parents=True, exist_ok=True)
+    ws_agg.write_text("default_agent: cursor\n", encoding="utf-8")
+    ws_defs.write_text('{"mcpServers": {"ws": {}}}', encoding="utf-8")
 
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog._global_scope_paths",

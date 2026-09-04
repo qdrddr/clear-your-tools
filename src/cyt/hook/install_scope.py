@@ -102,6 +102,24 @@ class CytInstallScope:
             return None
         return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml"
 
+    def workspace_all_agents_cyt_aggregator_path(self) -> Path | None:
+        cyt_dir = self.workspace_all_agents_cyt_dir()
+        if cyt_dir is None:
+            return None
+        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml"
+
+    def workspace_all_agents_cyt_mcp_defs_path(self, agent: str) -> Path | None:
+        cyt_dir = self.workspace_all_agents_cyt_dir()
+        if cyt_dir is None:
+            return None
+        name = agent.strip() or "cursor"
+        return (
+            cyt_dir
+            / WORKSPACE_CYT_CONFIG_SUBDIR
+            / WORKSPACE_CYT_MCP_SUBDIR
+            / f"{name}.json"
+        )
+
     def resolve_workspace_all_agents_cyt_config_path(self) -> Path | None:
         path = self.workspace_all_agents_cyt_config_path()
         if path is None or not path.is_file():
@@ -115,6 +133,25 @@ class CytInstallScope:
         return (
             cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml",
             cyt_dir / "config.yaml",
+        )
+
+    def _legacy_workspace_aggregator_paths(self, agent: str) -> tuple[Path, ...]:
+        cyt_dir = self._agent_cyt_dir(agent)
+        if cyt_dir is None:
+            return ()
+        return (
+            cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml",
+            cyt_dir / "mcp-aggregator.yaml",
+        )
+
+    def _legacy_workspace_server_defs_paths(self, agent: str) -> tuple[Path, ...]:
+        cyt_dir = self._agent_cyt_dir(agent)
+        if cyt_dir is None:
+            return ()
+        name = agent.strip() or "cursor"
+        return (
+            cyt_dir / WORKSPACE_CYT_MCP_SUBDIR / f"{name}.json",
+            cyt_dir / f"{name}.json",
         )
 
     def legacy_workspace_cyt_config_path(self, agent: str) -> Path | None:
@@ -137,11 +174,18 @@ class CytInstallScope:
         return self.workspace_root / rel
 
     def workspace_server_defs_path(self, agent: str) -> Path | None:
-        cyt_dir = self._agent_cyt_dir(agent)
-        if cyt_dir is None:
-            return None
-        name = agent.strip() or "cursor"
-        return cyt_dir / WORKSPACE_CYT_MCP_SUBDIR / f"{name}.json"
+        """Canonical workspace MCP server defs (shared directory, per-agent file)."""
+        return self.workspace_all_agents_cyt_mcp_defs_path(agent)
+
+    def resolve_workspace_server_defs_path(self, agent: str) -> Path | None:
+        """Resolve workspace MCP defs, preferring ``.agents/cyt/config/mcp/<agent>.json``."""
+        canonical = self.workspace_all_agents_cyt_mcp_defs_path(agent)
+        if canonical is not None and canonical.is_file():
+            return canonical
+        for legacy in self._legacy_workspace_server_defs_paths(agent):
+            if legacy.is_file():
+                return legacy
+        return None
 
     def workspace_cyt_config_path(self, agent: str) -> Path | None:
         """Canonical workspace CYT config path (shared across agents)."""
@@ -155,21 +199,17 @@ class CytInstallScope:
         return self.legacy_workspace_cyt_config_path(agent)
 
     def workspace_aggregator_path(self, agent: str) -> Path | None:
-        cyt_dir = self._agent_cyt_dir(agent)
-        if cyt_dir is None:
-            return None
-        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml"
+        """Canonical workspace MCP aggregator path (shared across agents)."""
+        return self.workspace_all_agents_cyt_aggregator_path()
 
     def resolve_workspace_aggregator_path(self, agent: str) -> Path | None:
-        cyt_dir = self._agent_cyt_dir(agent)
-        if cyt_dir is None:
-            return None
-        for path in (
-            cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml",
-            cyt_dir / "mcp-aggregator.yaml",
-        ):
-            if path.is_file():
-                return path
+        """Resolve workspace aggregator, preferring ``.agents/cyt/config/mcp-aggregator.yaml``."""
+        shared = self.workspace_all_agents_cyt_aggregator_path()
+        if shared is not None and shared.is_file():
+            return shared
+        for legacy in self._legacy_workspace_aggregator_paths(agent):
+            if legacy.is_file():
+                return legacy
         return None
 
     def workspace_cyt_dir(self, agent: str) -> Path | None:

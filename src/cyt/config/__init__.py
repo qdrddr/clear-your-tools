@@ -414,6 +414,9 @@ def _force_deep_assign(target: dict[str, Any], source: dict[str, Any]) -> None:
 
 def _default_user_config_dict() -> dict[str, Any]:
     """Starter config written when no config file exists anywhere."""
+    from cyt.migrations import current_head
+    from cyt.migrations.base import set_schema_stamp
+
     bundled = _load_bundled_defaults_yaml()
     result: dict[str, Any] = {}
     defaults_section = bundled.get("defaults")
@@ -434,6 +437,7 @@ def _default_user_config_dict() -> dict[str, Any]:
     stats_path = _bundled_get("stats", "database", "path")
     if stats_path is not None:
         result = deep_merge(result, {"stats": {"database": {"path": stats_path}}})
+    set_schema_stamp(result, current_head())
     return result
 
 
@@ -516,7 +520,10 @@ def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]
     Permission policy is excluded from bundled defaults at runtime; effective
     permissions come from on-disk ``config.yaml`` overlays only.
     """
-    merged = deep_merge(_bundled_defaults(), user_config)
+    from cyt.migrations.legacy import normalize_legacy_config
+
+    normalized = normalize_legacy_config(user_config)
+    merged = deep_merge(_bundled_defaults(), normalized)
     return merged
 
 
@@ -532,9 +539,12 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     explicit path was given, creates ``~/.config/cyt/config.yaml`` with
     built-in defaults.
     """
+    from cyt.migrations.migrate import maybe_migrate_config_file
+
     config_path = resolve_config_path(path)
     user_config: dict[str, Any] = {}
     if config_path.exists():
+        maybe_migrate_config_file(config_path, scope="global")
         user_config = _load_yaml_dict(config_path)
     elif path is None and config_path == DEFAULT_USER_CONFIG_PATH.expanduser():
         _write_default_user_config(config_path)
@@ -2123,17 +2133,9 @@ def litellm_model_name(entry: dict[str, Any]) -> str:
 
 
 def _normalize_provider_entry(item: dict[str, Any]) -> dict[str, Any] | None:
-    if "provider_nick" in item:
-        nick = str(item["provider_nick"])
-        provider = item.get("provider") or item.get("name") or nick
-        return {**item, "provider": provider}
-    if len(item) == 1:
-        key, nested = next(iter(item.items()))
-        if isinstance(nested, dict):
-            nick = str(nested.get("provider_nick", key))
-            provider = nested.get("provider") or nested.get("name") or key
-            return {**nested, "provider_nick": nick, "provider": provider}
-    return None
+    from cyt.migrations.providers import normalize_provider_entry
+
+    return normalize_provider_entry(item)
 
 
 def provider_dns_matches_domain(provider_dns_name: str, domain: str) -> bool:

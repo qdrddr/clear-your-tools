@@ -12,9 +12,14 @@ _AGENT_CYT_DIRS: dict[str, str] = {
 
 
 def workspace_server_defs_path(workspace_root: Path, agent: str) -> Path | None:
-    """Return ``.<agent>/cyt/mcp/<agent>.json`` under *workspace_root* when it exists."""
-    rel_dir = _AGENT_CYT_DIRS.get((agent or "cursor").strip() or "cursor", ".cursor")
+    """Return ``.agents/cyt/config/mcp/<agent>.json`` when present, else legacy paths."""
     name = (agent or "cursor").strip() or "cursor"
+    canonical = (
+        workspace_root / ".agents" / "cyt" / "config" / "mcp" / f"{name}.json"
+    )
+    if canonical.is_file():
+        return canonical
+    rel_dir = _AGENT_CYT_DIRS.get(name, ".cursor")
     cyt_dir = workspace_root / rel_dir / "cyt"
     for path in (cyt_dir / "mcp" / f"{name}.json", cyt_dir / f"{name}.json"):
         if path.is_file():
@@ -23,6 +28,11 @@ def workspace_server_defs_path(workspace_root: Path, agent: str) -> Path | None:
 
 
 def workspace_aggregator_path(workspace_root: Path, agent: str) -> Path:
+    canonical = (
+        workspace_root / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    )
+    if canonical.is_file():
+        return canonical
     rel_dir = _AGENT_CYT_DIRS.get((agent or "cursor").strip() or "cursor", ".cursor")
     cyt_dir = workspace_root / rel_dir / "cyt"
     for path in (
@@ -31,7 +41,7 @@ def workspace_aggregator_path(workspace_root: Path, agent: str) -> Path:
     ):
         if path.is_file():
             return path
-    return cyt_dir / "config" / "mcp-aggregator.yaml"
+    return canonical
 
 
 def parse_workspace_root(raw: str | None) -> Path | None:

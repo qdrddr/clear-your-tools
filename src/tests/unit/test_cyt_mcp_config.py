@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cyt_mcp.config import expand_mcp_value, is_mcp_server_enabled, load_mcp_servers
+from cyt_mcp.config import (
+    expand_mcp_value,
+    is_mcp_server_enabled,
+    listed_mcp_server_names,
+    load_aggregator_config,
+    load_mcp_servers,
+)
 
 
 def test_load_mcp_servers_filters_deny_entries(tmp_path: Path) -> None:
@@ -101,3 +107,270 @@ def test_load_mcp_servers_enabled_false_filtered_when_in_deny(tmp_path: Path) ->
     )
     servers = load_mcp_servers(path, deny_entries=("blocked",))
     assert set(servers) == {"active"}
+
+
+def test_listed_mcp_server_names_includes_disabled_entries(tmp_path: Path) -> None:
+    path = tmp_path / "mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "enabled": False},
+                    "active": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    assert listed_mcp_server_names(path) == frozenset({"fff", "active"})
+
+
+def test_global_load_excludes_workspace_claimed_servers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo", "enabled": False},
+                    "workspace-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    global_defs = tmp_path / "global-mcp.json"
+    global_defs.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fff": {"command": "echo"},
+                    "global-only": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    agg = tmp_path / "mcp-aggregator.yaml"
+    agg.write_text(
+        "\n".join(
+            [
+                "agent: cursor",
+                f"agents:",
+                f"  cursor: {global_defs.as_posix()}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(agent="cursor", aggregator_path=agg)
+
+    assert config.catalog_scope == "global"
+    assert set(config.mcp_servers) == {"global-only"}
+
+
+def test_global_load_keeps_servers_when_no_workspace_defs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    global_defs = tmp_path / "global-mcp.json"
+    global_defs.write_text(
+        json.dumps({"mcpServers": {"fff": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    agg = tmp_path / "mcp-aggregator.yaml"
+    agg.write_text(
+        "\n".join(
+            [
+                "agent: cursor",
+                f"agents:",
+                f"  cursor: {global_defs.as_posix()}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(agent="cursor", aggregator_path=agg)
+
+    assert set(config.mcp_servers) == {"fff"}
+
+
+def test_workspace_load_keeps_servers_listed_in_workspace_defs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"fff": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    agg.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_text(
+        "\n".join(
+            [
+                "agent: cursor",
+                "catalog_scope: workspace",
+                f"agents:",
+                f"  cursor: {ws_defs.as_posix()}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(agent="cursor", aggregator_path=agg)
+
+    assert config.catalog_scope == "workspace"
+    assert set(config.mcp_servers) == {"fff"}
+
+
+def test_workspace_load_uses_canonical_defs_when_aggregator_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"workspace-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    global_defs = Path.home() / ".config" / "cyt" / "mcp" / "cursor.json"
+    if global_defs.is_file():
+        global_payload = json.loads(global_defs.read_text(encoding="utf-8"))
+    else:
+        global_payload = {"mcpServers": {"global-only": {"command": "echo"}}}
+    global_stub = tmp_path / "global-mcp.json"
+    global_stub.write_text(json.dumps(global_payload), encoding="utf-8")
+
+    agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(
+        agent="cursor",
+        aggregator_path=agg,
+        workspace_folder=tmp_path,
+    )
+
+    assert config.catalog_scope == "workspace"
+    assert config.agent_mcp_path == ws_defs.resolve()
+    assert set(config.mcp_servers) == {"workspace-only"}
+
+
+def test_workspace_load_rejects_global_agent_path_in_aggregator(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"workspace-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    global_defs = tmp_path / "global-mcp.json"
+    global_defs.write_text(
+        json.dumps({"mcpServers": {"global-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    agg.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_text(
+        "\n".join(
+            [
+                "agent: cursor",
+                "catalog_scope: workspace",
+                "agents:",
+                f"  cursor: {global_defs.as_posix()}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(
+        agent="cursor",
+        aggregator_path=agg,
+        workspace_folder=tmp_path,
+    )
+
+    assert config.agent_mcp_path == ws_defs.resolve()
+    assert set(config.mcp_servers) == {"workspace-only"}
+
+
+def test_workspace_load_resolves_relative_agent_path_from_aggregator_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    ws_defs.parent.mkdir(parents=True)
+    ws_defs.write_text(
+        json.dumps({"mcpServers": {"relative-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    agg.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "catalog_scope: workspace",
+                "agents:",
+                "  cursor: mcp/cursor.json",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(
+        agent="cursor",
+        aggregator_path=agg,
+        workspace_folder=tmp_path,
+    )
+
+    assert config.agent_mcp_path == ws_defs.resolve()
+    assert set(config.mcp_servers) == {"relative-only"}
+
+
+def test_global_load_ignores_workspace_permissions_deny(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    ws_config_dir = tmp_path / ".agents" / "cyt" / "config"
+    ws_config_dir.mkdir(parents=True)
+    (ws_config_dir / "config.yaml").write_text(
+        "mcp:\n  permissions:\n    deny:\n      - fff\n",
+        encoding="utf-8",
+    )
+    global_defs = tmp_path / "global-mcp.json"
+    global_defs.write_text(
+        json.dumps({"mcpServers": {"fff": {"command": "echo"}, "global-only": {"command": "echo"}}}),
+        encoding="utf-8",
+    )
+    agg = tmp_path / "mcp-aggregator.yaml"
+    agg.write_text(
+        "\n".join(
+            [
+                "agent: cursor",
+                "agents:",
+                f"  cursor: {global_defs.as_posix()}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    config = load_aggregator_config(agent="cursor", aggregator_path=agg)
+
+    assert config.catalog_scope == "global"
+    assert set(config.mcp_servers) == {"fff", "global-only"}

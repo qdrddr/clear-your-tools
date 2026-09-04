@@ -184,3 +184,4 @@ graphify-out/
 .rtk/
 .cursor/rules/cyt-injection.mdc
 .agents/
+.cursor\rules\cyt-injection.mdc

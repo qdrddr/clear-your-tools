@@ -32,11 +32,11 @@ def test_resolve_workspace_cyt_config_prefers_shared_agents_path(tmp_path: Path)
 
 def test_cyt_install_scope_workspace_paths(tmp_path: Path) -> None:
     scope = CytInstallScope(workspace_root=tmp_path)
-    assert scope.workspace_server_defs_path("cursor") == tmp_path / ".cursor/cyt/mcp/cursor.json"
+    assert scope.workspace_server_defs_path("cursor") == tmp_path / ".agents/cyt/config/mcp/cursor.json"
     assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".agents/cyt/config/config.yaml"
     assert (
         scope.workspace_aggregator_path("cursor")
-        == tmp_path / ".cursor/cyt/config/mcp-aggregator.yaml"
+        == tmp_path / ".agents/cyt/config/mcp-aggregator.yaml"
     )
     assert scope.global_hooks_path("cursor") == Path("~/.cursor/hooks.json").expanduser()
 
@@ -150,7 +150,7 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
     assert "backend-a" in global_payload["mcpServers"]
     assert CYT_MCP_SERVER_KEY not in global_payload["mcpServers"]
 
-    workspace_defs = tmp_path / ".cursor" / "cyt" / "mcp" / "cursor.json"
+    workspace_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
     assert workspace_defs.is_file()
     workspace_payload = json.loads(workspace_defs.read_text(encoding="utf-8"))
     assert "backend-b" in workspace_payload["mcpServers"]
@@ -212,7 +212,7 @@ def test_setup_cyt_mcp_configures_workspace_with_stdio(
         configure_workspace=True,
     )
 
-    assert (tmp_path / ".cursor" / "cyt" / "mcp" / "cursor.json").is_file()
+    assert (tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json").is_file()
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
 
@@ -264,11 +264,12 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
         verify_only=True,
     )
 
-    workspace_agg = tmp_path / ".cursor" / "cyt" / "config" / "mcp-aggregator.yaml"
+    workspace_agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
     assert workspace_agg.is_file()
     workspace_text = workspace_agg.read_text(encoding="utf-8")
     assert "verify_only: true" in workspace_text
     assert "catalog_scope: workspace" in workspace_text
+    assert "cursor: mcp/cursor.json" in workspace_text
     global_agg = home / "cyt" / "mcp-aggregator.yaml"
     assert "verify_only: true" in global_agg.read_text(encoding="utf-8")
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
@@ -277,10 +278,11 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
 
 def test_remove_workspace_cyt_mcp_for_agent(tmp_path: Path) -> None:
     scope = CytInstallScope(workspace_root=tmp_path)
-    cyt_root = tmp_path / ".cursor" / "cyt"
-    mcp_dir = cyt_root / "mcp"
-    mcp_dir.mkdir(parents=True)
-    (mcp_dir / "cursor.json").write_text('{"mcpServers": {}}', encoding="utf-8")
+    defs_path = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
+    defs_path.parent.mkdir(parents=True)
+    defs_path.write_text('{"mcpServers": {}}', encoding="utf-8")
+    legacy_cyt = tmp_path / ".cursor" / "cyt"
+    legacy_cyt.mkdir(parents=True)
     project_mcp = tmp_path / ".cursor" / "mcp.json"
     project_mcp.parent.mkdir(parents=True, exist_ok=True)
     project_mcp.write_text(
@@ -290,6 +292,7 @@ def test_remove_workspace_cyt_mcp_for_agent(tmp_path: Path) -> None:
 
     changed = cyt_mcp_setup.remove_workspace_cyt_mcp_for_agent("cursor", scope)
     assert changed is True
-    assert not cyt_root.exists()
+    assert not defs_path.is_file()
+    assert not legacy_cyt.exists()
     payload = json.loads(project_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_WORKSPACE_SERVER_KEY not in payload["mcpServers"]
