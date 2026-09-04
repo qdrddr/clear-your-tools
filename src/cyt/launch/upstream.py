@@ -35,11 +35,11 @@ __all__ = [
     "upstream_endpoint_name",
 ]
 from cyt.config import (
-    upstream_url_defaults,
     load_config,
     load_user_config_overlay,
     resolve_config_path,
     save_user_config,
+    upstream_url_defaults,
 )
 from cyt.proxy.setup_wizard import (
     UPSTREAM_KIND_ALIASES,

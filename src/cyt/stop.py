@@ -156,9 +156,7 @@ def _collect_default_port_proxy_pids(
 
     base_port = default_reverse_port()
     candidates = [
-        base_port + offset
-        for offset in range(100)
-        if base_port + offset not in exclude_ports
+        base_port + offset for offset in range(100) if base_port + offset not in exclude_ports
     ]
     if not candidates:
         return

@@ -750,7 +750,9 @@ def pruning_system_tool_policy(
         keys=("pruning", "tools", "policy", "system_tool"),
     )
     if policy is None:
-        return cast(ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "system_tool"))
+        return cast(
+            ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "system_tool"),
+        )
     return cast(ToolPolicy, policy)
 
 
@@ -1092,9 +1094,7 @@ def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
 
 
 def _any_agent_uses_hook_tools(config: dict[str, Any]) -> bool:
-    return any(
-        inject_via_for_agent(config, agent) == "hook" for agent in inject_via_agents()
-    )
+    return any(inject_via_for_agent(config, agent) == "hook" for agent in inject_via_agents())
 
 
 def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInjectVia:
@@ -1177,7 +1177,10 @@ def inject_into_user_message(
     if inject_via_for_agent(cfg, resolved) != "proxy":
         return False
     reverse_cfg = reverse_proxy_cfg(_merged_config(cfg)["network"]["proxy"])
-    value = reverse_cfg.get("inject_into_user_message", _merged_at(cfg, "network", "proxy", "reverse", "inject_into_user_message"))
+    value = reverse_cfg.get(
+        "inject_into_user_message",
+        _merged_at(cfg, "network", "proxy", "reverse", "inject_into_user_message"),
+    )
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
@@ -1270,7 +1273,9 @@ def tools_hook_cloudflare_url(config: dict[str, Any] | None = None) -> str:
 
 def tools_hook_cloudflare_access_client_id_var(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_id_var")).strip()
+    text = str(
+        _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_id_var"),
+    ).strip()
     return text or str(_default_at("pruning", "tools", "hook", "cloudflare_access_client_id_var"))
 
 
@@ -1279,7 +1284,9 @@ def tools_hook_cloudflare_access_client_secret_var(config: dict[str, Any] | None
     text = str(
         _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_secret_var"),
     ).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "cloudflare_access_client_secret_var"))
+    return text or str(
+        _default_at("pruning", "tools", "hook", "cloudflare_access_client_secret_var"),
+    )
 
 
 def tools_hook_cloudflare_configured(config: dict[str, Any] | None = None) -> bool:
@@ -1341,7 +1348,9 @@ def mcpc_skills_own_enabled(config: dict[str, Any] | None = None) -> bool:
 
 def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "in_session", "enabled"))
+    return bool(
+        _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "in_session", "enabled"),
+    )
 
 
 def mcpc_resources_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -1361,7 +1370,9 @@ def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
     cache = tools_hook_mcpc_cache_settings(config)
     value = cache.get("skills_refresh_seconds")
     if value is None:
-        return float(_default_at("pruning", "tools", "hook", "mcpc", "cache", "skills_refresh_seconds"))
+        return float(
+            _default_at("pruning", "tools", "hook", "mcpc", "cache", "skills_refresh_seconds"),
+        )
     return float(value)
 
 

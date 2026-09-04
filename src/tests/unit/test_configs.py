@@ -560,7 +560,10 @@ def test_selector_soft_budget_reads_config() -> None:
 
 def test_selector_soft_budget_defaults() -> None:
     bundled = configs.load_bundled_defaults_yaml()
-    assert configs.tools_selector_soft_budget({}) == bundled["pruning"]["tools"]["selector_soft_budget"]
+    assert (
+        configs.tools_selector_soft_budget({})
+        == bundled["pruning"]["tools"]["selector_soft_budget"]
+    )
     assert configs.skills_selector_soft_budget({}) == bundled["skills"]["selector_soft_budget"]
 
 
@@ -718,7 +721,9 @@ def test_legacy_default_constants_exist_in_bundled_yaml() -> None:
     inject_via = _yaml_at(bundled, ("pruning", "inject_via"))
     assert isinstance(inject_via, dict)
     for agent in INJECT_VIA_AGENTS:
-        assert agent in inject_via, f"missing pruning.inject_via.{agent} (was DEFAULT_INJECT_VIA_BY_AGENT)"
+        assert agent in inject_via, (
+            f"missing pruning.inject_via.{agent} (was DEFAULT_INJECT_VIA_BY_AGENT)"
+        )
 
 
 def test_legacy_defaults_dict_paths_exist_in_bundled_yaml() -> None:
@@ -745,7 +750,7 @@ def test_legacy_defaults_dict_paths_exist_in_bundled_yaml() -> None:
     prelude = text[: text.index("DEFAULT_REVERSE_PORT")] + "ToolPolicy = str\n"
     block = text[text.index("DEFAULT_REVERSE_PORT") : end]
     ns: dict[str, Any] = {"__builtins__": __builtins__, "Any": Any, "Path": Path}
-    exec(prelude + block, ns, ns)  # noqa: S102
+    exec(prelude + block, ns, ns)
     old_defaults = ns["_DEFAULTS"]
 
     def flatten(d: object, prefix: str = "") -> dict[str, object]:

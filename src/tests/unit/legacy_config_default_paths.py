@@ -38,7 +38,12 @@ LEGACY_DEFAULT_PATHS: dict[str, tuple[str, ...]] = {
         "hook",
         "inject_cap_multiplier_of_request_tokens",
     ),
-    "DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED": ("skills", "hook", "cursor_rule_file", "enabled"),
+    "DEFAULT_SKILLS_HOOK_CURSOR_RULE_FILE_ENABLED": (
+        "skills",
+        "hook",
+        "cursor_rule_file",
+        "enabled",
+    ),
     "DEFAULT_SKILLS_HOOK_AGENT_INTERCEPTOR_ENABLED": (
         "skills",
         "hook",
