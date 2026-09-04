@@ -435,6 +435,9 @@ def _bundled_agent_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any
         copied = _copy_permissions_block(agent_block, "skills")
         if copied is not None:
             agents_overlay.setdefault(agent_name, {}).update(copied)
+        copied_mcp = _copy_permissions_block(agent_block, "mcp")
+        if copied_mcp is not None:
+            agents_overlay.setdefault(agent_name, {}).update(copied_mcp)
     return agents_overlay
 
 
@@ -456,6 +459,30 @@ def _bundled_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any] | No
         result["agents"] = agents_overlay
 
     return result or None
+
+
+def _strip_permissions_blocks(config: dict[str, Any]) -> None:
+    """Remove permission policy from a config dict (runtime defaults must not carry it)."""
+    for key in ("skills", "mcp"):
+        block = config.get(key)
+        if isinstance(block, dict):
+            block.pop("permissions", None)
+    agents = config.get("agents")
+    if not isinstance(agents, dict):
+        return
+    for agent_block in agents.values():
+        if not isinstance(agent_block, dict):
+            continue
+        for key in ("skills", "mcp"):
+            sub = agent_block.get(key)
+            if isinstance(sub, dict):
+                sub.pop("permissions", None)
+
+
+def _bundled_defaults_without_permissions() -> dict[str, Any]:
+    bundled = copy.deepcopy(_load_bundled_defaults_yaml())
+    _strip_permissions_blocks(bundled)
+    return bundled
 
 
 def bundled_user_config_sections() -> dict[str, Any]:
@@ -613,8 +640,12 @@ def _load_bundled_defaults_yaml() -> dict[str, Any]:
 
 
 def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
-    """Layer built-in defaults, bundled ``defaults.yaml``, then *user_config*."""
-    merged = deep_merge(_DEFAULTS, _load_bundled_defaults_yaml())
+    """Layer built-in defaults, bundled ``defaults.yaml``, then *user_config*.
+
+    Permission policy is excluded from bundled defaults at runtime; effective
+    permissions come from on-disk ``config.yaml`` overlays only.
+    """
+    merged = deep_merge(_DEFAULTS, _bundled_defaults_without_permissions())
     return deep_merge(merged, user_config)
 
 

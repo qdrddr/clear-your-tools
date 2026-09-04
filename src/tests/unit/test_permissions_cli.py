@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from cyt.permissions.cli import run_permissions_export, run_permissions_show
+from cyt.permissions.cli import _mcp_servers_handler, run_permissions_export, run_permissions_show
 from cyt.permissions.editor import disable_mcp_server, disable_skill, enable_mcp_server
+from cyt.permissions.inventory.mcp import McpServerInventoryItem
 from cyt.permissions.paths import permissions_config_path
 
 
@@ -85,7 +86,7 @@ def test_enable_mcp_server_shows_upstream_deny_notice(
         ),
         encoding="utf-8",
     )
-    workspace_path = tmp_path / ".cursor" / "cyt" / "config" / "config.yaml"
+    workspace_path = tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
     workspace_path.parent.mkdir(parents=True)
     workspace_path.write_text("agents: {}\n", encoding="utf-8")
 
@@ -138,3 +139,28 @@ def test_permissions_show_defaults_to_all_agent(capsys: pytest.CaptureFixture[st
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["agent"] == "all"
+
+
+def test_mcp_servers_list_shows_source_prefixes(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    enabled = [
+        McpServerInventoryItem(name="code-review-graph", enabled=True, source="workspace"),
+        McpServerInventoryItem(name="codebase-memory", enabled=True, source="user"),
+    ]
+
+    def _fake_list_mcp_servers(**kwargs: object) -> tuple[list[McpServerInventoryItem], list]:
+        return enabled, []
+
+    monkeypatch.setattr(
+        "cyt.permissions.inventory.mcp.list_mcp_servers",
+        _fake_list_mcp_servers,
+    )
+    handler = _mcp_servers_handler("list")
+    handler(_args(scope="effective", agent="cursor"))
+    captured = capsys.readouterr()
+    assert "inventory=user" not in captured.out
+    assert "inventory=effective" in captured.out
+    assert "W  code-review-graph" in captured.out
+    assert "U  codebase-memory" in captured.out

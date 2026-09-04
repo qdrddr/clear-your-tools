@@ -4,9 +4,35 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from cyt.permissions.merge import effective_permissions
+
+
+def test_effective_permissions_loads_global_config_from_disk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "skills:",
+                "  permissions:",
+                "    deny:",
+                "      - from-file",
+                "    allow: []",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cyt.permissions.merge.DEFAULT_USER_CONFIG_PATH",
+        config_path,
+    )
+    effective = effective_permissions(agent="all")
+    assert "from-file" in effective.skills.deny
 
 
 def test_effective_permissions_unions_deny_across_layers(tmp_path: Path) -> None:
@@ -129,6 +155,13 @@ def test_permissions_config_path_uses_shared_workspace_for_all(tmp_path: Path) -
     from cyt.permissions.paths import permissions_config_path
 
     path = permissions_config_path("workspace", agent="all", workspace_root=tmp_path)
+    assert path == tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
+
+
+def test_permissions_config_path_uses_shared_workspace_for_agent(tmp_path: Path) -> None:
+    from cyt.permissions.paths import permissions_config_path
+
+    path = permissions_config_path("workspace", agent="cursor", workspace_root=tmp_path)
     assert path == tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
 
 

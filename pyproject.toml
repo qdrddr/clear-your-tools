@@ -64,12 +64,12 @@ all = [
 ]
 
 [project.scripts]
-cyt = "cyt.proxy.cli_impl:main"
+cyt = "cyt.proxy.cli_router:main"
 cyt-client = "cyt_client.cli:main"
 cyt-rerank = "cyt.pruners.rerank:main"
 cyt-llm-prune = "cyt.pruners.llm:main"
 cyt-bm25-prune = "cyt.pruners.bm25:main"
-cyt-mcp = "cyt_mcp.cli:main"
+cyt-mcp = "cyt_mcp.cli_router:main"
 
 [build-system]
 requires = ["hatchling==1.31.0"]

@@ -2,25 +2,27 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from types import ModuleType
 
 from cyt.platform.compat import is_windows
 
 
-def _win_lock(fd: int, mode: int, length: int = 1) -> None:
-    import msvcrt
+def _msvcrt() -> ModuleType:
+    return importlib.import_module("msvcrt")
 
-    msvcrt.locking(fd, mode, length)
+
+def _win_lock(fd: int, mode: int, length: int = 1) -> None:
+    _msvcrt().locking(fd, mode, length)
 
 
 @contextmanager
 def exclusive_file_lock(fd: int) -> Iterator[None]:
     """Take an exclusive lock on an open file descriptor."""
     if is_windows():
-        import msvcrt
-
-        _win_lock(fd, msvcrt.LK_LOCK)
+        _win_lock(fd, _msvcrt().LK_LOCK)
     else:
         import fcntl
 
@@ -29,9 +31,7 @@ def exclusive_file_lock(fd: int) -> Iterator[None]:
         yield
     finally:
         if is_windows():
-            import msvcrt
-
-            _win_lock(fd, msvcrt.LK_UNLCK)
+            _win_lock(fd, _msvcrt().LK_UNLCK)
         else:
             import fcntl
 
@@ -41,9 +41,7 @@ def exclusive_file_lock(fd: int) -> Iterator[None]:
 def release_exclusive_file_lock(fd: int) -> None:
     """Release an exclusive lock held on *fd*."""
     if is_windows():
-        import msvcrt
-
-        _win_lock(fd, msvcrt.LK_UNLCK)
+        _win_lock(fd, _msvcrt().LK_UNLCK)
         return
 
     import fcntl
@@ -54,10 +52,8 @@ def release_exclusive_file_lock(fd: int) -> None:
 def try_exclusive_file_lock(fd: int) -> bool:
     """Try to take an exclusive lock without blocking."""
     if is_windows():
-        import msvcrt
-
         try:
-            _win_lock(fd, msvcrt.LK_NBLCK)
+            _win_lock(fd, _msvcrt().LK_NBLCK)
             return True
         except OSError:
             return False

@@ -108,6 +108,22 @@ class CytInstallScope:
             return None
         return path
 
+    def _legacy_workspace_cyt_config_paths(self, agent: str) -> tuple[Path, ...]:
+        cyt_dir = self._agent_cyt_dir(agent)
+        if cyt_dir is None:
+            return ()
+        return (
+            cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml",
+            cyt_dir / "config.yaml",
+        )
+
+    def legacy_workspace_cyt_config_path(self, agent: str) -> Path | None:
+        """Return a legacy per-agent workspace config file when present."""
+        for path in self._legacy_workspace_cyt_config_paths(agent):
+            if path.is_file():
+                return path
+        return None
+
     def _agent_cyt_dir(self, agent: str) -> Path | None:
         if self.workspace_root is None:
             return None
@@ -128,22 +144,15 @@ class CytInstallScope:
         return cyt_dir / WORKSPACE_CYT_MCP_SUBDIR / f"{name}.json"
 
     def workspace_cyt_config_path(self, agent: str) -> Path | None:
-        cyt_dir = self._agent_cyt_dir(agent)
-        if cyt_dir is None:
-            return None
-        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml"
+        """Canonical workspace CYT config path (shared across agents)."""
+        return self.workspace_all_agents_cyt_config_path()
 
     def resolve_workspace_cyt_config_path(self, agent: str) -> Path | None:
-        cyt_dir = self._agent_cyt_dir(agent)
-        if cyt_dir is None:
-            return None
-        for path in (
-            cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml",
-            cyt_dir / "config.yaml",
-        ):
-            if path.is_file():
-                return path
-        return None
+        """Resolve workspace config, preferring ``.agents/cyt/config/config.yaml``."""
+        shared = self.resolve_workspace_all_agents_cyt_config_path()
+        if shared is not None:
+            return shared
+        return self.legacy_workspace_cyt_config_path(agent)
 
     def workspace_aggregator_path(self, agent: str) -> Path | None:
         cyt_dir = self._agent_cyt_dir(agent)

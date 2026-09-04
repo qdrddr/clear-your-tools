@@ -6,7 +6,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from cyt.permissions.inventory.mcp import list_mcp_servers, load_mcp_server_names
+from cyt.permissions.inventory.mcp import (
+    list_mcp_servers,
+    load_mcp_server_names,
+    load_mcp_server_sources,
+)
 from cyt.permissions.inventory.skills import (
     directory_belongs_to_agent,
     enumerate_skill_names,
@@ -52,20 +56,50 @@ def test_load_mcp_server_names_merges_global_and_workspace(tmp_path: Path) -> No
         ]
 
 
+def test_load_mcp_server_sources_tracks_config_layer(tmp_path: Path) -> None:
+    global_path = tmp_path / "global" / "cursor.json"
+    workspace_path = tmp_path / "workspace" / "cursor.json"
+    global_path.parent.mkdir(parents=True)
+    workspace_path.parent.mkdir(parents=True)
+    global_path.write_text(
+        json.dumps({"mcpServers": {"shared-server": {}, "global-only": {}}}),
+        encoding="utf-8",
+    )
+    workspace_path.write_text(
+        json.dumps({"mcpServers": {"shared-server": {}, "workspace-only": {}}}),
+        encoding="utf-8",
+    )
+
+    with patch(
+        "cyt.permissions.inventory.mcp.mcp_server_defs_path",
+        side_effect=lambda *, agent, scope, workspace_root=None: {
+            ("cursor", "global"): global_path,
+            ("cursor", "workspace"): workspace_path,
+        }[(agent, scope)],
+    ):
+        assert load_mcp_server_sources(agent="cursor", scope="effective") == {
+            "global-only": "user",
+            "workspace-only": "workspace",
+            "shared-server": "workspace",
+        }
+
+
 def test_list_mcp_servers_includes_deny_only_servers() -> None:
     effective = EffectivePermissions(
         mcp=McpPermissions(deny=("missing-server",), allow=()),
     )
     with (
         patch(
-            "cyt.permissions.inventory.mcp.load_mcp_server_names",
-            return_value=["visible-server"],
+            "cyt.permissions.inventory.mcp.load_mcp_server_sources",
+            return_value={"visible-server": "workspace"},
         ),
         patch("cyt.permissions.inventory.mcp.effective_permissions", return_value=effective),
     ):
         enabled, disabled = list_mcp_servers(agent="cursor", policy_agent="cursor")
     assert [item.name for item in enabled] == ["visible-server"]
+    assert enabled[0].source == "workspace"
     assert [item.name for item in disabled] == ["missing-server"]
+    assert disabled[0].source is None
 
 
 def test_directory_belongs_to_agent() -> None:

@@ -7,34 +7,27 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from cyt.permissions.compile_claude import compile_claude_permissions
-from cyt.permissions.editor import (
-    disable_mcp_server,
-    disable_mcp_tool,
-    disable_skill,
-    enable_mcp_server,
-    enable_mcp_tool,
-    enable_skill,
-    parse_server_tool_arg,
-)
-from cyt.permissions.inventory.mcp import list_mcp_servers, list_mcp_tools_for_server
-from cyt.permissions.inventory.skills import SkillInventoryItem, list_skills
-from cyt.permissions.match import is_mcp_server_denied, is_mcp_tool_denied
-from cyt.permissions.merge import effective_permissions
+from cyt.permissions.inventory.mcp import McpServerInventoryItem
 from cyt.permissions.paths import (
     InventoryScope,
     PermissionAgentTarget,
     PermissionScope,
+    inventory_scope_label,
     is_all_agents,
     normalize_agent_target,
+    normalize_cli_inventory_scope,
+    normalize_cli_permission_scope,
     resolve_inventory_agent,
 )
-from cyt.permissions.schema import EffectivePermissions
 
-_WRITE_SCOPES: tuple[PermissionScope, ...] = ("global", "workspace")
-_LIST_SCOPES: tuple[str, ...] = ("global", "workspace", "effective")
+if TYPE_CHECKING:
+    from cyt.permissions.inventory.skills import SkillInventoryItem
+    from cyt.permissions.schema import EffectivePermissions
+
+_WRITE_SCOPES: tuple[str, ...] = ("user", "workspace")
+_LIST_SCOPES: tuple[str, ...] = ("user", "workspace", "effective")
 
 
 def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
@@ -55,7 +48,7 @@ def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
         "--config",
         type=Path,
         default=None,
-        help="Override global config path (global scope only)",
+        help="Override user config path (--scope user only)",
     )
     parser.add_argument(
         "--workspace",
@@ -153,21 +146,19 @@ def _agent_target(args: argparse.Namespace) -> PermissionAgentTarget:
 
 
 def _write_scope(args: argparse.Namespace) -> PermissionScope:
-    scope = str(getattr(args, "scope", "global") or "global")
-    if scope not in _WRITE_SCOPES:
-        raise SystemExit(f"--scope {scope!r} is read-only; use global or workspace for writes")
-    return scope
+    scope = str(getattr(args, "scope", "user") or "user")
+    try:
+        return normalize_cli_permission_scope(scope)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _inventory_scope(args: argparse.Namespace) -> InventoryScope:
     scope = str(getattr(args, "scope", "effective") or "effective")
-    if scope == "global":
-        return "global"
-    if scope == "workspace":
-        return "workspace"
-    if scope == "effective":
-        return "effective"
-    raise SystemExit(f"--scope {scope!r} is invalid; use global, workspace, or effective")
+    try:
+        return normalize_cli_inventory_scope(scope)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _workspace_root(args: argparse.Namespace) -> Path | None:
@@ -206,7 +197,42 @@ def _print_sections(
         print("  (none)")
 
 
+def _format_mcp_server_line(item: McpServerInventoryItem) -> str:
+    prefix = {"user": "U", "workspace": "W"}.get(item.source or "", "-")
+    return f"{prefix}  {item.name}"
+
+
+def _format_mcp_server_inventory(
+    enabled: Sequence[McpServerInventoryItem],
+    disabled: Sequence[McpServerInventoryItem],
+    *,
+    json_mode: bool,
+) -> None:
+    if json_mode:
+        _print_json(
+            {
+                "enabled": [{"name": item.name, "source": item.source} for item in enabled],
+                "disabled": [{"name": item.name, "source": item.source} for item in disabled],
+            },
+        )
+        return
+    print("Enabled:")
+    if enabled:
+        for item in enabled:
+            print(f"  {_format_mcp_server_line(item)}")
+    else:
+        print("  (none)")
+    print("Disabled:")
+    if disabled:
+        for item in disabled:
+            print(f"  {_format_mcp_server_line(item)}")
+    else:
+        print("  (none)")
+
+
 def run_permissions_show(args: argparse.Namespace) -> None:
+    from cyt.permissions.merge import effective_permissions
+
     agent = _policy_agent(args)
     effective = effective_permissions(agent=agent, workspace_root=_workspace_root(args))
     payload = {
@@ -225,6 +251,9 @@ def run_permissions_show(args: argparse.Namespace) -> None:
 
 
 def run_permissions_export(args: argparse.Namespace) -> None:
+    from cyt.permissions.compile_claude import compile_claude_permissions
+    from cyt.permissions.merge import effective_permissions
+
     if args.format != "claude":
         raise SystemExit(f"Unsupported export format: {args.format}")
     agent = _policy_agent(args)
@@ -262,6 +291,7 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
 
 def _effective_for_args(args: argparse.Namespace) -> EffectivePermissions:
     from cyt.permissions.merge import (
+        effective_permissions,
         load_workspace_all_agents_config_overlay,
         load_workspace_config_overlay,
     )
@@ -288,6 +318,8 @@ def _effective_for_args(args: argparse.Namespace) -> EffectivePermissions:
 
 
 def _print_enable_mcp_server_notice(args: argparse.Namespace, server: str) -> None:
+    from cyt.permissions.match import is_mcp_server_denied
+
     effective = _effective_for_args(args)
     if not is_mcp_server_denied(server, effective.mcp.deny):
         return
@@ -298,6 +330,8 @@ def _print_enable_mcp_server_notice(args: argparse.Namespace, server: str) -> No
 
 
 def _print_enable_mcp_tool_notice(args: argparse.Namespace, server: str, tool: str) -> None:
+    from cyt.permissions.match import is_mcp_server_denied, is_mcp_tool_denied
+
     effective = _effective_for_args(args)
     if not is_mcp_tool_denied(server, tool, effective.mcp.deny):
         return
@@ -332,6 +366,8 @@ def _mcp_servers_handler(action: str) -> Callable[[argparse.Namespace], None]:
         ws = _workspace_root(args)
         inv_scope = _inventory_scope(args)
         if action == "list":
+            from cyt.permissions.inventory.mcp import list_mcp_servers
+
             enabled, disabled = list_mcp_servers(
                 agent=agent,
                 scope=inv_scope,
@@ -339,24 +375,19 @@ def _mcp_servers_handler(action: str) -> Callable[[argparse.Namespace], None]:
                 policy_agent=_policy_agent(args),
             )
             if args.json:
-                _print_json(
-                    {
-                        "enabled": [item.name for item in enabled],
-                        "disabled": [item.name for item in disabled],
-                    },
-                )
+                _format_mcp_server_inventory(enabled, disabled, json_mode=True)
                 return
-            _print_sections(
-                f"MCP servers (agent={agent}, inventory={inv_scope})",
-                [item.name for item in enabled],
-                [item.name for item in disabled],
-                json_mode=False,
+            print(
+                f"MCP servers (agent={agent}, inventory={inventory_scope_label(inv_scope)})",
             )
+            _format_mcp_server_inventory(enabled, disabled, json_mode=False)
             return
 
         scope = _write_scope(args)
         target = _agent_target(args)
         policy_agent = _policy_agent(args)
+        from cyt.permissions.editor import disable_mcp_server, enable_mcp_server
+
         path = (
             enable_mcp_server(
                 args.server,
@@ -385,6 +416,8 @@ def _mcp_servers_handler(action: str) -> Callable[[argparse.Namespace], None]:
 
 
 def run_permissions_mcp_tools_list(args: argparse.Namespace) -> None:
+    from cyt.permissions.inventory.mcp import list_mcp_tools_for_server
+
     agent = _resolved_agent(args)
     ws = _workspace_root(args)
     inv_scope = _inventory_scope(args)
@@ -404,7 +437,7 @@ def run_permissions_mcp_tools_list(args: argparse.Namespace) -> None:
         _print_json({"enabled": fmt_enabled, "disabled": fmt_disabled})
         return
     _print_sections(
-        f"MCP tools for {server} (agent={agent}, inventory={inv_scope})",
+        f"MCP tools for {server} (agent={agent}, inventory={inventory_scope_label(inv_scope)})",
         fmt_enabled,
         fmt_disabled,
         json_mode=False,
@@ -420,6 +453,12 @@ def _mcp_tools_handler(action: str) -> Callable[[argparse.Namespace], None]:
         ws = _workspace_root(args)
         scope = _write_scope(args)
         target = _agent_target(args)
+        from cyt.permissions.editor import (
+            disable_mcp_tool,
+            enable_mcp_tool,
+            parse_server_tool_arg,
+        )
+
         server, tool = parse_server_tool_arg(args.server_tool)
         path = (
             enable_mcp_tool(
@@ -455,6 +494,8 @@ def _skills_handler(action: str) -> Callable[[argparse.Namespace], None]:
         policy_agent = _policy_agent(args)
         ws = _workspace_root(args)
         if action == "list":
+            from cyt.permissions.inventory.skills import list_skills
+
             enabled, disabled = list_skills(agent=policy_agent, workspace_root=ws)
             if args.json:
                 _print_json(
@@ -481,6 +522,8 @@ def _skills_handler(action: str) -> Callable[[argparse.Namespace], None]:
             raise SystemExit("Provide skill_name or --path")
         if skill_path is not None and skill_name:
             raise SystemExit("Use skill_name or --path, not both")
+        from cyt.permissions.editor import disable_skill, enable_skill
+
         path = (
             enable_skill(
                 str(skill_name or ""),
@@ -512,3 +555,20 @@ def run_permissions(args: argparse.Namespace) -> None:
     if handler is None:
         raise SystemExit("usage: cyt permissions {show|export|mcp|skills} ...")
     handler(args)
+
+
+def build_permissions_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="cyt permissions")
+    permissions_sub = parser.add_subparsers(dest="permissions_command", required=True)
+    register_permissions_subcommands(permissions_sub)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_permissions_parser()
+    args = parser.parse_args(argv)
+    run_permissions(args)
+
+
+if __name__ == "__main__":
+    main()

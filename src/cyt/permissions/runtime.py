@@ -27,10 +27,7 @@ def resolve_effective_permissions(
     workspace_root: Path | str | None = None,
 ) -> EffectivePermissions:
     cfg = config or load_config()
-    from cyt.config import _config_with_bundled_defaults
-
-    merged_cfg = _config_with_bundled_defaults(cfg)
-    resolved_agent = (agent or tools_hook_cyt_mcp_agent(merged_cfg)).strip() or "cursor"
+    resolved_agent = (agent or tools_hook_cyt_mcp_agent(cfg)).strip() or "cursor"
     ws = workspace_root
     if ws is None:
         hook_ws = hook_workspace_from_config(cfg)
@@ -38,7 +35,6 @@ def resolve_effective_permissions(
     workspace_path = Path(str(ws)).expanduser() if ws else None
     return effective_permissions(
         agent=resolved_agent,
-        global_config=merged_cfg,
         workspace_root=workspace_path,
     )
 

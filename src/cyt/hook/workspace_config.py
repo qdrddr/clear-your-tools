@@ -27,7 +27,7 @@ def resolve_hook_request_config(
     *,
     base_config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Path | None]:
-    """Deep-merge global CYT config + ``.<agent>/cyt/config/config.yaml`` when workspace present."""
+    """Deep-merge global CYT config + ``.agents/cyt/config/config.yaml`` when workspace present."""
     workspace = workspace_root_from_payload(payload)
     global_config = (
         base_config if base_config is not None else load_config(DEFAULT_USER_CONFIG_PATH)

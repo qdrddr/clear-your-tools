@@ -41,7 +41,7 @@ def test_resolve_hook_request_config_merges_workspace_yaml(
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text("pruning:\n  tools:\n    enabled: true\n", encoding="utf-8")
 
-    ws_cfg = tmp_path / ".cursor" / "cyt" / "config" / "config.yaml"
+    ws_cfg = tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
     ws_cfg.parent.mkdir(parents=True)
     ws_cfg.write_text(
         "pruning:\n  tools:\n    hook:\n      tools_from: [cyt_mcp]\n",

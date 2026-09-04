@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from cyt.config import DEFAULT_USER_CONFIG_PATH, deep_merge, load_config
+from cyt.config import DEFAULT_USER_CONFIG_PATH, deep_merge, load_config, resolve_config_path
 from cyt.hook.install_scope import CytInstallScope
 from cyt.permissions.schema import (
     EffectivePermissions,
@@ -81,6 +81,16 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _load_global_config_for_permissions(
+    path: Path | None = None,
+) -> dict[str, Any]:
+    """Load on-disk user config for permissions (not bundled runtime defaults)."""
+    config_path = resolve_config_path(path or DEFAULT_USER_CONFIG_PATH)
+    if not config_path.is_file():
+        load_config(config_path)
+    return _load_yaml_dict(config_path)
+
+
 def load_workspace_all_agents_config_overlay(
     *,
     workspace_root: Path | None = None,
@@ -106,8 +116,8 @@ def load_workspace_config_overlay(
     scope = CytInstallScope(
         workspace_root=workspace_root or CytInstallScope.from_cwd().workspace_root,
     )
-    path = scope.resolve_workspace_cyt_config_path(agent)
-    if path is None or not path.is_file():
+    path = scope.legacy_workspace_cyt_config_path(agent)
+    if path is None:
         return {}
     return _load_yaml_dict(path)
 
@@ -242,7 +252,9 @@ def effective_permissions(
 
     raw_agent = (agent or "all").strip().lower() or "all"
     global_cfg = (
-        global_config if global_config is not None else load_config(DEFAULT_USER_CONFIG_PATH)
+        global_config
+        if global_config is not None
+        else _load_global_config_for_permissions(DEFAULT_USER_CONFIG_PATH)
     )
 
     if is_all_agents(raw_agent):

@@ -357,6 +357,48 @@ def _workspace_aggregator_config_path(scope: CytInstallScope, agent: str) -> str
     return str(agg)
 
 
+def _ensure_shared_workspace_config(
+    shared_config: Path,
+    *,
+    legacy_agent_config: Path,
+    legacy_root_config: Path,
+) -> None:
+    shared_config.parent.mkdir(parents=True, exist_ok=True)
+    if shared_config.is_file():
+        return
+    for legacy in (legacy_agent_config, legacy_root_config):
+        if legacy.is_file():
+            legacy.rename(shared_config)
+            return
+    _atomic_write_text(shared_config, "{}\n")
+
+
+def _migrate_workspace_legacy_files(
+    cyt_dir: Path,
+    config_dir: Path,
+    defs_path: Path,
+    agent: str,
+    *,
+    shared_config: Path | None,
+    agg_path: Path,
+) -> None:
+    cyt_dir.mkdir(parents=True, exist_ok=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    defs_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_defs = cyt_dir / f"{agent}.json"
+    if legacy_defs.is_file() and not defs_path.is_file():
+        legacy_defs.rename(defs_path)
+    if shared_config is not None:
+        _ensure_shared_workspace_config(
+            shared_config,
+            legacy_agent_config=config_dir / "config.yaml",
+            legacy_root_config=cyt_dir / "config.yaml",
+        )
+    legacy_agg = cyt_dir / "mcp-aggregator.yaml"
+    if legacy_agg.is_file() and not agg_path.is_file():
+        legacy_agg.rename(agg_path)
+
+
 def setup_cyt_mcp_workspace_for_agent(
     agent: str,
     scope: CytInstallScope,
@@ -378,23 +420,14 @@ def setup_cyt_mcp_workspace_for_agent(
     if cyt_dir is None or mcp_path is None or defs_path is None or agg_path is None:
         return
 
-    cyt_dir.mkdir(parents=True, exist_ok=True)
-    config_dir = cyt_dir / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    defs_path.parent.mkdir(parents=True, exist_ok=True)
-    legacy_defs = cyt_dir / f"{agent}.json"
-    if legacy_defs.is_file() and not defs_path.is_file():
-        legacy_defs.rename(defs_path)
-    legacy_config = cyt_dir / "config.yaml"
-    legacy_agg = cyt_dir / "mcp-aggregator.yaml"
-    workspace_config = scope.workspace_cyt_config_path(agent)
-    if workspace_config is not None:
-        if legacy_config.is_file() and not workspace_config.is_file():
-            legacy_config.rename(workspace_config)
-        elif not workspace_config.is_file():
-            _atomic_write_text(workspace_config, "{}\n")
-    if legacy_agg.is_file() and not agg_path.is_file():
-        legacy_agg.rename(agg_path)
+    _migrate_workspace_legacy_files(
+        cyt_dir,
+        cyt_dir / "config",
+        defs_path,
+        agent,
+        shared_config=scope.workspace_all_agents_cyt_config_path(),
+        agg_path=agg_path,
+    )
 
     if migrate_backends:
         migrate_agent_backends_from(

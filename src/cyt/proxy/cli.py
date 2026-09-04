@@ -33,4 +33,9 @@ def _bootstrap_script_path() -> None:
 
 if __name__ == "__main__":
     _bootstrap_script_path()
-    runpy.run_path(str(_IMPL), run_name="__main__")
+    if len(sys.argv) >= 2 and sys.argv[1] == "permissions":
+        from cyt.permissions.cli import main as permissions_main
+
+        permissions_main(sys.argv[2:])
+    else:
+        runpy.run_path(str(_IMPL), run_name="__main__")

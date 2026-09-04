@@ -17,10 +17,23 @@ def test_detect_workspace_root_from_git(tmp_path: Path) -> None:
     assert detect_workspace_root(cwd=tmp_path) == tmp_path.resolve()
 
 
+def test_resolve_workspace_cyt_config_prefers_shared_agents_path(tmp_path: Path) -> None:
+    scope = CytInstallScope(workspace_root=tmp_path)
+    shared = tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("skills: {}\n", encoding="utf-8")
+    legacy = tmp_path / ".cursor" / "cyt" / "config" / "config.yaml"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("agents: {}\n", encoding="utf-8")
+
+    assert scope.resolve_workspace_cyt_config_path("cursor") == shared
+    assert scope.legacy_workspace_cyt_config_path("cursor") == legacy
+
+
 def test_cyt_install_scope_workspace_paths(tmp_path: Path) -> None:
     scope = CytInstallScope(workspace_root=tmp_path)
     assert scope.workspace_server_defs_path("cursor") == tmp_path / ".cursor/cyt/mcp/cursor.json"
-    assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".cursor/cyt/config/config.yaml"
+    assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".agents/cyt/config/config.yaml"
     assert (
         scope.workspace_aggregator_path("cursor")
         == tmp_path / ".cursor/cyt/config/mcp-aggregator.yaml"

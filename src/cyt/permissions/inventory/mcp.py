@@ -6,7 +6,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from cyt.permissions.match import (
     explicit_denied_servers,
@@ -23,11 +23,14 @@ from cyt.permissions.paths import (
     resolve_inventory_agent,
 )
 
+McpServerSource = Literal["user", "workspace"]
+
 
 @dataclass(frozen=True)
 class McpServerInventoryItem:
     name: str
     enabled: bool
+    source: McpServerSource | None = None
 
 
 @dataclass(frozen=True)
@@ -51,8 +54,24 @@ def load_mcp_server_names(
     workspace_root: Path | None = None,
 ) -> list[str]:
     """Return backend MCP server names from cyt MCP JSON for *scope*."""
+    return sorted(
+        load_mcp_server_sources(
+            agent=agent,
+            scope=scope,
+            workspace_root=workspace_root,
+        ),
+    )
+
+
+def load_mcp_server_sources(
+    *,
+    agent: str,
+    scope: InventoryScope = "effective",
+    workspace_root: Path | None = None,
+) -> dict[str, McpServerSource]:
+    """Return backend MCP server names and their config layer (no MCP runtime)."""
     resolved = resolve_inventory_agent(agent)
-    names: set[str] = set()
+    sources: dict[str, McpServerSource] = {}
     for layer in _inventory_layers(scope):
         if layer == "workspace":
             from cyt.hook.install_scope import CytInstallScope
@@ -65,8 +84,11 @@ def load_mcp_server_names(
             scope=layer,
             workspace_root=workspace_root,
         )
-        names.update(_read_mcp_server_names_from_path(path))
-    return sorted(names)
+        source: McpServerSource = "user" if layer == "global" else "workspace"
+        for name in _read_mcp_server_names_from_path(path):
+            if source == "workspace" or name not in sources:
+                sources[name] = source
+    return sources
 
 
 def _read_mcp_server_names_from_path(path: Path) -> list[str]:
@@ -93,7 +115,12 @@ def list_mcp_servers(
 ) -> tuple[list[McpServerInventoryItem], list[McpServerInventoryItem]]:
     resolved = resolve_inventory_agent(agent)
     policy = (policy_agent or agent or "all").strip().lower() or "all"
-    names = set(load_mcp_server_names(agent=resolved, scope=scope, workspace_root=workspace_root))
+    sources = load_mcp_server_sources(
+        agent=resolved,
+        scope=scope,
+        workspace_root=workspace_root,
+    )
+    names = set(sources)
     effective = effective_permissions(agent=policy, workspace_root=workspace_root)
     deny_entries = effective.mcp.deny
     for server_name in explicit_denied_servers(deny_entries):
@@ -105,6 +132,7 @@ def list_mcp_servers(
         item = McpServerInventoryItem(
             name=name,
             enabled=not is_mcp_server_denied(name, deny_entries),
+            source=sources.get(name),
         )
         if item.enabled:
             enabled.append(item)

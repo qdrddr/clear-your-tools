@@ -385,11 +385,7 @@ agents:
         allow: []
     skills:
       permissions:
-        deny:
-          - path:.codex/skills/.system
-          - path:~/.codex/skills/.system
-          - path:.claude/skills/.system
-          - path:~/.claude/skills/.system
+        deny: []
         allow: []
   claude:
     mcp:
@@ -398,11 +394,7 @@ agents:
         allow: []
     skills:
       permissions:
-        deny:
-          - path:.codex/skills/.system
-          - path:~/.codex/skills/.system
-          - path:.cursor/skills/.system
-          - path:~/.cursor/skills/.system
+        deny: []
         allow: []
   codex:
     mcp:
@@ -412,8 +404,5 @@ agents:
     skills:
       permissions:
         deny:
-          - path:.claude/skills/.system
-          - path:~/.claude/skills/.system
-          - path:.cursor/skills/.system
-          - path:~/.cursor/skills/.system
+          - path:~/.codex/skills/.system
         allow: []
