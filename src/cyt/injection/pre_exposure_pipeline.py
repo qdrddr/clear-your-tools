@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from cyt.config import uses_mcpc_tool_catalog
@@ -126,6 +127,20 @@ def gate_and_filter_skills(
     )
     payload_gated = filter_pre_exposed_skills(session_gated, ctx.payload_text)
     gated = filter_pre_exposed_skills(payload_gated, ctx.combined_text)
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.permissions.runtime import (
+        filter_matched_skills_by_permissions,
+        resolve_effective_permissions,
+    )
+
+    effective = resolve_effective_permissions(config=config)
+    workspace = hook_workspace_from_config(config)
+    workspace_base = Path(str(workspace)).expanduser() if workspace else None
+    gated = filter_matched_skills_by_permissions(
+        gated,
+        effective.skills.deny,
+        base=workspace_base,
+    )
     from cyt.injection.session_log_build import skill_item_key
 
     gated_keys = {skill_item_key(match) for match in gated}

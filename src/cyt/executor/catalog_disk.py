@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from cyt.platform.compat import is_windows
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +196,9 @@ def write_disk_catalog(
     replaced = False
     try:
         tmp_path.write_text(data, encoding="utf-8")
-        tmp_path.replace(path)
+        if is_windows() and path.exists():
+            path.unlink()
+        os.replace(tmp_path, path)
         replaced = True
     finally:
         if not replaced:

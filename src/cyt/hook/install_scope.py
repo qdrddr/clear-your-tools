@@ -24,6 +24,9 @@ GLOBAL_AGENT_MCP_PATHS: dict[str, Path] = {
     "codex": Path("~/.codex/config.toml"),
 }
 
+# Shared workspace CYT directory for cross-agent policy (permissions, etc.).
+WORKSPACE_ALL_AGENTS_CYT_DIR = ".agents/cyt"
+
 # Agent-native directory name under workspace root for CYT artifacts.
 _AGENT_CYT_DIRS: dict[str, str] = {
     "cursor": ".cursor",
@@ -53,6 +56,7 @@ def detect_workspace_root(*, cwd: Path | None = None) -> Path | None:
         root / ".cursor",
         root / ".claude",
         root / ".codex",
+        root / ".agents",
     )
     if any(marker.exists() for marker in markers):
         return root
@@ -86,6 +90,23 @@ class CytInstallScope:
 
     def global_aggregator_path(self) -> Path:
         return _expand(GLOBAL_AGGREGATOR_PATH)
+
+    def workspace_all_agents_cyt_dir(self) -> Path | None:
+        if self.workspace_root is None:
+            return None
+        return self.workspace_root / WORKSPACE_ALL_AGENTS_CYT_DIR
+
+    def workspace_all_agents_cyt_config_path(self) -> Path | None:
+        cyt_dir = self.workspace_all_agents_cyt_dir()
+        if cyt_dir is None:
+            return None
+        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml"
+
+    def resolve_workspace_all_agents_cyt_config_path(self) -> Path | None:
+        path = self.workspace_all_agents_cyt_config_path()
+        if path is None or not path.is_file():
+            return None
+        return path
 
     def _agent_cyt_dir(self, agent: str) -> Path | None:
         if self.workspace_root is None:

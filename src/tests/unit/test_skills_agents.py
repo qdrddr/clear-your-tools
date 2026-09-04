@@ -124,9 +124,9 @@ def test_build_registry_excludes_other_agent_system_skills(
         assert any("shared" in path for path in claude_paths)
         assert not any("codex-only" in path for path in claude_paths)
 
-        assert any("codex-only" in path for path in codex_paths)
         assert any("shared" in path for path in codex_paths)
         assert not any("claude-only" in path for path in codex_paths)
+        assert not any("codex-only" in path for path in codex_paths)
 
 
 def test_build_registry_includes_all_system_skills_without_agent_filter(
@@ -150,6 +150,12 @@ def test_build_registry_includes_all_system_skills_without_agent_filter(
                     str(root / ".codex" / "skills"),
                 ],
                 "pageindex": {"enable_bm25_chunking": True},
+                "permissions": {"deny": [], "allow": []},
+            },
+            "agents": {
+                "cursor": {"skills": {"permissions": {"deny": [], "allow": []}}},
+                "claude": {"skills": {"permissions": {"deny": [], "allow": []}}},
+                "codex": {"skills": {"permissions": {"deny": [], "allow": []}}},
             },
         }
 

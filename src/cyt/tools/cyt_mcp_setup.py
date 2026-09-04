@@ -14,6 +14,7 @@ from cyt.hook.cli_invocation import (
     detect_hook_cli_invocation,
 )
 from cyt.hook.install_scope import GLOBAL_AGENT_MCP_PATHS, CytInstallScope
+from cyt.permissions.paths import PermissionScope
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
@@ -73,8 +74,17 @@ def _extract_mcp_servers_from_json(path: Path) -> dict[str, Any]:
     return servers if isinstance(servers, dict) else {}
 
 
-def migrate_agent_backends_from(source_path: Path, target_path: Path) -> Path:
+def migrate_agent_backends_from(
+    source_path: Path,
+    target_path: Path,
+    *,
+    agent: str = "cursor",
+    permission_scope: PermissionScope = "global",
+    workspace_root: Path | None = None,
+) -> Path:
     """Copy backend MCP servers from *source_path* into *target_path*."""
+    from cyt.permissions.mcp_defs import disabled_server_names, import_disabled_servers_to_deny
+
     servers = backend_mcp_servers(_extract_mcp_servers_from_json(source_path))
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if not servers:
@@ -84,6 +94,21 @@ def migrate_agent_backends_from(source_path: Path, target_path: Path) -> Path:
     payload = {"mcpServers": servers}
     _atomic_write_text(target_path, json.dumps(payload, indent=2) + "\n")
     print(f"Migrated backend MCP servers to {target_path}", file=sys.stderr)
+
+    disabled = disabled_server_names(servers)
+    if disabled:
+        config_path = import_disabled_servers_to_deny(
+            disabled,
+            scope="workspace" if permission_scope == "workspace" else "global",
+            agent=agent,
+            workspace_root=workspace_root,
+        )
+        if config_path is not None:
+            print(
+                f"Synced disabled MCP servers to permissions deny in {config_path}: "
+                + ", ".join(disabled),
+                file=sys.stderr,
+            )
     return target_path
 
 
@@ -93,7 +118,12 @@ def migrate_agent_backends(agent: str) -> Path:
     scope = CytInstallScope.from_cwd()
     target = DEFAULT_MCP_DIR.expanduser() / f"{agent}.json"
     source_path = scope.global_agent_mcp_path(agent)
-    return migrate_agent_backends_from(source_path, target)
+    return migrate_agent_backends_from(
+        source_path,
+        target,
+        agent=agent,
+        permission_scope="global",
+    )
 
 
 def write_mcp_aggregator_yaml(
@@ -367,7 +397,13 @@ def setup_cyt_mcp_workspace_for_agent(
         legacy_agg.rename(agg_path)
 
     if migrate_backends:
-        migrate_agent_backends_from(mcp_path, defs_path)
+        migrate_agent_backends_from(
+            mcp_path,
+            defs_path,
+            agent=agent,
+            permission_scope="workspace",
+            workspace_root=scope.workspace_root,
+        )
         write_mcp_aggregator_yaml_at(
             agg_path,
             agent,

@@ -13,6 +13,10 @@ from cyt.cache.policy import cache_policy_for_config
 from cyt.common.agents import AgentName
 from cyt.common.paths import shorten_home_path
 from cyt.config import (
+    DEFAULT_SKILLS_CATALOG_DIR,
+    _cache_settings,
+    _config_with_bundled_defaults,
+    _merged_config,
     cache_skills_dir,
     load_config,
     skills_catalog_dir,
@@ -34,7 +38,7 @@ from cyt.indexer.pageindex import (
     repair_skill_variant_chunks,
     update_skill_document_source_path,
 )
-from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_agent
+from cyt.skills.agents import resolve_skills_agent
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +86,6 @@ def _registry_cache_key(
     expanded_dirs = skills_directories(cfg)
     sources: list[tuple[str, int, int]] = []
     for source_path in _walk_skill_md_files(expanded_dirs):
-        if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
-            continue
         stat = source_path.stat()
         sources.append((str(source_path.resolve()), stat.st_mtime_ns, stat.st_size))
     return (
@@ -341,7 +343,9 @@ def _metadata_matches(
         return False
     canonical = shorten_home_path(source_path)
     stored_path = metadata.get("source_path")
-    return stored_path == canonical or stored_path == source_path
+    if not isinstance(stored_path, str):
+        return False
+    return shorten_home_path(stored_path) == canonical
 
 
 def _ensure_entry_metadata(
@@ -455,10 +459,14 @@ def load_entry_skills_index(entry: SkillEntryRef) -> dict[str, Any]:
 
 
 def _registry_catalog_root(cfg: dict[str, Any]) -> Path:
-    cache = cfg.get("cache")
-    if isinstance(cache, dict) and "skills_dir" in cache:
+    skills_catalog = Path(skills_catalog_dir(cfg))
+    default_catalog = Path(DEFAULT_SKILLS_CATALOG_DIR).expanduser()
+    if skills_catalog != default_catalog:
+        return skills_catalog
+    cache = _cache_settings(_merged_config(cfg))
+    if cache.get("skills_dir"):
         return cache_skills_dir(cfg)
-    return Path(skills_catalog_dir(cfg))
+    return skills_catalog
 
 
 def _entry_from_rust_ref(
@@ -533,6 +541,8 @@ def _entry_from_rust_ref(
             str(source_path),
         )
     document = _persist_document_path(entry_dir, document)
+    if disk_backed:
+        _persist_metadata_source_path(entry_dir, str(source_path))
 
     return SkillEntryRef(
         source_path=str(source_path),
@@ -559,7 +569,7 @@ def build_registry(
     client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
     """Scan skill sources and return in-memory entry metadata."""
-    cfg = config or load_config()
+    cfg = _config_with_bundled_defaults(config) if config is not None else load_config()
     cache_key = _registry_cache_key(
         cfg,
         agent=agent,
@@ -645,16 +655,12 @@ def _build_registry_from_client_skills(
     upstream_kind: str | None = None,
 ) -> list[SkillEntryRef]:
     """Build a skills registry from cyt-client payload content instead of config dirs."""
-    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
-
     seen_content: set[str] = set()
     inline_sources: list[dict[str, str]] = []
     original_by_hash: dict[str, Path] = {}
 
     for skill in client_skills:
         original_path = Path(skill["path"]).expanduser()
-        if is_excluded_agent_system_skill(original_path, active_agent=active_agent):
-            continue
         content = skill["content"]
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if content_hash in seen_content:
@@ -686,11 +692,23 @@ def _build_registry_uncached(
 ) -> list[SkillEntryRef]:
     """Build skills registry without the process-level cache."""
     if client_skills is not None:
-        return _build_registry_from_client_skills(
+        client_entries = _build_registry_from_client_skills(
             cfg,
             client_skills,
             agent=agent,
             upstream_kind=upstream_kind,
+        )
+        from cyt.hook.workspace_config import hook_workspace_from_config
+        from cyt.permissions.runtime import filter_skill_entries, resolve_effective_permissions
+
+        active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+        effective = resolve_effective_permissions(config=cfg, agent=active_agent)
+        workspace = hook_workspace_from_config(cfg)
+        workspace_base = Path(str(workspace)).expanduser() if workspace else None
+        return filter_skill_entries(
+            client_entries,
+            effective.skills.deny,
+            base=workspace_base,
         )
 
     expanded_dirs = skills_directories(cfg)
@@ -707,8 +725,6 @@ def _build_registry_uncached(
     source_by_hash: dict[str, Path] = {}
 
     for source_path in _walk_skill_md_files(expanded_dirs):
-        if is_excluded_agent_system_skill(source_path, active_agent=active_agent):
-            continue
         content_hash = content_sha256_for_file(source_path)
         if content_hash in seen_content:
             continue
@@ -741,4 +757,13 @@ def _build_registry_uncached(
             ),
         )
 
-    return entries
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.permissions.runtime import filter_skill_entries, resolve_effective_permissions
+
+    effective = resolve_effective_permissions(
+        config=cfg,
+        agent=active_agent,
+    )
+    workspace = hook_workspace_from_config(cfg)
+    workspace_base = Path(str(workspace)).expanduser() if workspace else None
+    return filter_skill_entries(entries, effective.skills.deny, base=workspace_base)

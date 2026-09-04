@@ -554,6 +554,10 @@ def _build_parser() -> argparse.ArgumentParser:
     add_executor_parser(subparsers)
     add_cloudflare_parser(subparsers)
 
+    from cyt.permissions.cli import add_permissions_parser
+
+    add_permissions_parser(subparsers)
+
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
@@ -874,6 +878,10 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
     "cloudflare": (
         "cloudflare_handler",
         "usage: cyt cloudflare save [--file PATH] [--config PATH]",
+    ),
+    "permissions": (
+        "permissions_handler",
+        "usage: cyt permissions {show|export|mcp|skills} ...",
     ),
 }
 

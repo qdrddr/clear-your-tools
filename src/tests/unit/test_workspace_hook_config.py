@@ -67,3 +67,38 @@ def test_set_hook_workspace_in_config(tmp_path: Path) -> None:
     config = {"pruning": {"tools": {"enabled": True}}}
     merged = set_hook_workspace_in_config(config, tmp_path)
     assert Path(merged[HOOK_WORKSPACE_CONFIG_KEY]) == tmp_path.resolve()
+
+
+def test_effective_permissions_unions_global_and_workspace_layers(tmp_path: Path) -> None:
+    from cyt.permissions.merge import effective_mcp_permissions, effective_skills_permissions
+
+    global_cfg = {
+        "mcp": {"permissions": {"deny": ["global-mcp"], "allow": []}},
+        "skills": {"permissions": {"deny": ["global-skill"], "allow": []}},
+        "agents": {
+            "cursor": {
+                "mcp": {"permissions": {"deny": ["agent-mcp"]}},
+                "skills": {"permissions": {"deny": ["agent-skill"]}},
+            },
+        },
+    }
+    workspace_cfg = {
+        "mcp": {"permissions": {"deny": ["workspace-mcp"]}},
+        "skills": {"permissions": {"deny": ["workspace-skill"]}},
+    }
+
+    mcp = effective_mcp_permissions(
+        agent="cursor",
+        global_config=global_cfg,
+        workspace_config=workspace_cfg,
+        workspace_root=tmp_path,
+    )
+    skills = effective_skills_permissions(
+        agent="cursor",
+        global_config=global_cfg,
+        workspace_config=workspace_cfg,
+        workspace_root=tmp_path,
+    )
+
+    assert set(mcp.deny) == {"global-mcp", "agent-mcp", "workspace-mcp"}
+    assert set(skills.deny) == {"global-skill", "agent-skill", "workspace-skill"}

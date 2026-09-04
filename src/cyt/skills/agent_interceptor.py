@@ -15,7 +15,7 @@ from cyt.config import (
 )
 from cyt.injection.session_log_build import build_skill_log_entry, skill_match_is_content_complete
 from cyt.pruners.remote import PrunerSettingsCache
-from cyt.skills.agents import is_excluded_agent_system_skill, resolve_skills_agent
+from cyt.skills.agents import resolve_skills_agent
 from cyt.skills.catalog import (
     SkillEntryRef,
     build_registry_from_inline_sources,
@@ -52,6 +52,14 @@ def _allow_response(
     if skill_log_entry is not None:
         payload["skill_log_entry"] = skill_log_entry
     return payload
+
+
+def _deny_response(*, user_message: str = "Skill read denied by CYT permissions") -> dict[str, Any]:
+    return {
+        "agent_interceptor": True,
+        "permission": "deny",
+        "user_message": user_message,
+    }
 
 
 def _resolve_skill_directories(config: dict[str, Any], payload: dict[str, Any]) -> list[Path]:
@@ -206,12 +214,27 @@ def run_skill_read_intercept(
         return _allow_response()
 
     agent = resolve_skills_agent(payload=payload)
-    if is_excluded_agent_system_skill(skill_path, active_agent=agent):
-        return _allow_response()
 
     directories = _resolve_skill_directories(config, payload)
     if not _path_under_directories(skill_path, directories):
         return _allow_response()
+
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.permissions.inventory.skills import skill_policy_name_from_path
+    from cyt.permissions.match import is_skill_permission_denied
+    from cyt.permissions.runtime import resolve_effective_permissions
+
+    effective = resolve_effective_permissions(config=config, agent=agent)
+    workspace = hook_workspace_from_config(config)
+    workspace_base = Path(str(workspace)).expanduser() if workspace else None
+    policy_name, _ = skill_policy_name_from_path(skill_path)
+    if is_skill_permission_denied(
+        skill_name=policy_name,
+        skill_path=skill_path,
+        deny_entries=effective.skills.deny,
+        base=workspace_base,
+    ):
+        return _deny_response(user_message=f"Skill {policy_name!r} is disabled by CYT permissions")
 
     query = str(payload.get("cyt_intercept_query") or "").strip()
     if not query:

@@ -8,6 +8,23 @@ from pathlib import Path
 from cyt_mcp.config import expand_mcp_value, is_mcp_server_enabled, load_mcp_servers
 
 
+def test_load_mcp_servers_filters_deny_entries(tmp_path: Path) -> None:
+    path = tmp_path / "mcp.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "allowed": {"command": "echo"},
+                    "blocked": {"command": "echo"},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    servers = load_mcp_servers(path, deny_entries=("blocked",))
+    assert set(servers) == {"allowed"}
+
+
 def test_expand_mcp_value_user_home_and_workspace(tmp_path: Path) -> None:
     home = Path.home()
     value = expand_mcp_value(
@@ -51,44 +68,36 @@ def test_is_mcp_server_enabled_respects_explicit_false() -> None:
     assert is_mcp_server_enabled({"command": "echo", "enabled": "false"}) is False
 
 
-def test_load_mcp_servers_skips_disabled_servers(tmp_path: Path) -> None:
-    path = tmp_path / "cursor.json"
+def test_load_mcp_servers_ignores_enabled_key_without_deny(tmp_path: Path) -> None:
+    """Runtime policy uses config.yaml deny only; enabled:false in JSON is not authoritative."""
+    path = tmp_path / "mcp.json"
     path.write_text(
         json.dumps(
             {
                 "mcpServers": {
-                    "active": {"command": "echo", "args": ["ok"]},
-                    "disabled": {"command": "echo", "args": ["no"], "enabled": False},
+                    "disabled-in-json": {"command": "echo", "enabled": False},
+                    "active": {"command": "echo"},
                 },
             },
         ),
         encoding="utf-8",
     )
-
     servers = load_mcp_servers(path)
-
-    assert set(servers) == {"active"}
-    assert "enabled" not in servers["active"]
+    assert set(servers) == {"disabled-in-json", "active"}
 
 
-def test_load_mcp_servers_keeps_disabled_entries_in_file_but_not_runtime(
-    tmp_path: Path,
-) -> None:
-    """Migration preserves enabled:false in JSON; load_mcp_servers omits at runtime."""
-    path = tmp_path / "cursor.json"
+def test_load_mcp_servers_enabled_false_filtered_when_in_deny(tmp_path: Path) -> None:
+    path = tmp_path / "mcp.json"
     path.write_text(
         json.dumps(
             {
                 "mcpServers": {
-                    "fff": {
-                        "command": "fff-mcp",
-                        "enabled": False,
-                    },
+                    "blocked": {"command": "echo", "enabled": False},
+                    "active": {"command": "echo"},
                 },
             },
         ),
         encoding="utf-8",
     )
-
-    assert json.loads(path.read_text(encoding="utf-8"))["mcpServers"]["fff"]["enabled"] is False
-    assert load_mcp_servers(path) == {}
+    servers = load_mcp_servers(path, deny_entries=("blocked",))
+    assert set(servers) == {"active"}

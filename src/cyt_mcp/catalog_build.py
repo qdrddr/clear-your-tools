@@ -52,14 +52,22 @@ def mcp_tool_to_search_index_entry(mcp_tool: McpWireTool) -> dict[str, Any]:
 
 def build_catalog_from_tools(
     tools: Sequence[Tool],
+    *,
+    deny_entries: tuple[str, ...] | list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     catalog_entries: list[dict[str, Any]] = []
     search_index: dict[str, dict[str, Any]] = {}
+    deny_filter = deny_entries or ()
     for tool in tools:
         mcp_tool = tool.to_mcp_tool()
         name = str(mcp_tool.name)
         if name == MCP_WIRE_SEARCH_TOOL_NAME:
             continue
+        if deny_filter:
+            from cyt.permissions.match import is_catalog_tool_denied
+
+            if is_catalog_tool_denied(name, deny_filter):
+                continue
         catalog_entries.append(mcp_tool_to_catalog_dict(mcp_tool))
         search_index[name] = mcp_tool_to_search_index_entry(mcp_tool)
     return catalog_entries, search_index
@@ -73,7 +81,11 @@ async def refresh_catalog_cache(
     """Populate hook-daemon catalog + search index from raw backend tools."""
     backend_server = cast(Any, server)
     backend_tools = await backend_server._list_tools()
-    catalog_entries, search_index = build_catalog_from_tools(backend_tools)
+    deny_entries = config.mcp_deny if config is not None else ()
+    catalog_entries, search_index = build_catalog_from_tools(
+        backend_tools,
+        deny_entries=deny_entries,
+    )
     cache.replace(catalog_entries, search_index=search_index)
     refresh_search_tool_schema(cache)
     if config is not None:

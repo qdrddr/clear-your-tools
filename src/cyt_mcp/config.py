@@ -42,6 +42,7 @@ class AggregatorConfig:
     agent_mcp_path: Path
     catalog_scope: CatalogScope = "global"
     workspace_root: Path | None = None
+    mcp_deny: tuple[str, ...] = ()
 
 
 def _expand(path: str | Path) -> Path:
@@ -115,7 +116,10 @@ def agent_mcp_config_path(raw: dict[str, Any], agent: str) -> Path:
 
 
 def is_mcp_server_enabled(spec: object) -> bool:
-    """Return False when a Cursor-style MCP server entry is explicitly disabled."""
+    """Return False when a Cursor-style MCP server entry is explicitly disabled.
+
+    Used for wizard migration and JSON sync only — runtime loading uses config.yaml deny.
+    """
     if not isinstance(spec, dict):
         return False
     enabled = spec.get("enabled", True)
@@ -128,7 +132,12 @@ def _backend_server_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in spec.items() if key != "enabled"}
 
 
-def load_mcp_servers(path: Path, *, workspace_folder: Path | None = None) -> dict[str, Any]:
+def load_mcp_servers(
+    path: Path,
+    *,
+    workspace_folder: Path | None = None,
+    deny_entries: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, Any]:
     if not path.is_file():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -139,15 +148,35 @@ def load_mcp_servers(path: Path, *, workspace_folder: Path | None = None) -> dic
         return {}
     loaded: dict[str, Any] = {}
     for name, spec in servers.items():
-        if not is_mcp_server_enabled(spec):
-            continue
         if not isinstance(spec, dict):
             continue
         loaded[name] = expand_mcp_spec(
             _backend_server_spec(spec),
             workspace_folder=workspace_folder,
         )
+    if deny_entries:
+        from cyt.permissions.match import is_mcp_server_denied
+
+        loaded = {
+            name: spec
+            for name, spec in loaded.items()
+            if not is_mcp_server_denied(name, deny_entries)
+        }
     return loaded
+
+
+def _resolve_mcp_deny(
+    agent: str,
+    *,
+    workspace_root: Path | None,
+) -> tuple[str, ...]:
+    try:
+        from cyt.permissions.merge import effective_permissions
+
+        effective = effective_permissions(agent=agent, workspace_root=workspace_root)
+        return effective.mcp.deny
+    except Exception:
+        return ()
 
 
 def load_http_settings(raw: dict[str, Any]) -> HttpSettings:
@@ -240,11 +269,13 @@ def load_aggregator_config(
         workspace_folder=workspace_folder,
         aggregator_path=resolved_agg_path,
     )
+    mcp_deny = _resolve_mcp_deny(resolved_agent, workspace_root=workspace_root)
     return AggregatorConfig(
         agent=resolved_agent,
         mcp_servers=load_mcp_servers(
             agent_path,
             workspace_folder=workspace_root or workspace_folder,
+            deny_entries=mcp_deny,
         ),
         transport=transport,
         http=load_http_settings(raw),
@@ -254,4 +285,5 @@ def load_aggregator_config(
         agent_mcp_path=agent_path,
         catalog_scope=catalog_scope,
         workspace_root=workspace_root,
+        mcp_deny=mcp_deny,
     )

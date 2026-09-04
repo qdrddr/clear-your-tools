@@ -414,6 +414,50 @@ def _bundled_network_reverse_overlay(bundled: dict[str, Any]) -> dict[str, Any] 
     return reverse_overlay or None
 
 
+def _copy_permissions_block(source: dict[str, Any], key: str) -> dict[str, Any] | None:
+    block = source.get(key)
+    if not isinstance(block, dict):
+        return None
+    permissions = block.get("permissions")
+    if not isinstance(permissions, dict):
+        return None
+    return {key: {"permissions": copy.deepcopy(permissions)}}
+
+
+def _bundled_agent_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any]:
+    agents = bundled.get("agents")
+    if not isinstance(agents, dict):
+        return {}
+    agents_overlay: dict[str, Any] = {}
+    for agent_name, agent_block in agents.items():
+        if not isinstance(agent_block, dict):
+            continue
+        copied = _copy_permissions_block(agent_block, "skills")
+        if copied is not None:
+            agents_overlay.setdefault(agent_name, {}).update(copied)
+    return agents_overlay
+
+
+def _bundled_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any] | None:
+    result: dict[str, Any] = {}
+
+    skills_overlay = (
+        _copy_permissions_block(bundled, "skills") if isinstance(bundled, dict) else None
+    )
+    if skills_overlay is not None:
+        result.update(skills_overlay)
+
+    mcp_overlay = _copy_permissions_block(bundled, "mcp") if isinstance(bundled, dict) else None
+    if mcp_overlay is not None:
+        result.update(mcp_overlay)
+
+    agents_overlay = _bundled_agent_permissions_overlay(bundled)
+    if agents_overlay:
+        result["agents"] = agents_overlay
+
+    return result or None
+
+
 def bundled_user_config_sections() -> dict[str, Any]:
     """Packaged-default sections that belong in the on-disk user config file."""
     bundled = _load_bundled_defaults_yaml()
@@ -424,6 +468,9 @@ def bundled_user_config_sections() -> dict[str, Any]:
 
     if reverse_overlay := _bundled_network_reverse_overlay(bundled):
         result.setdefault("network", {}).setdefault("proxy", {})["reverse"] = reverse_overlay
+
+    if permissions_overlay := _bundled_permissions_overlay(bundled):
+        result = deep_merge(result, permissions_overlay)
 
     return result
 
@@ -1514,6 +1561,38 @@ def tools_hook_cyt_mcp_agent(config: dict[str, Any] | None = None) -> str:
     )
     text = str(value).strip()
     return text or DEFAULT_CYT_MCP_AGENT
+
+
+def mcp_permissions_overlay(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Return raw ``mcp.permissions`` block from config (global or agent overlay)."""
+    from cyt.permissions.merge import _agent_mcp_permissions, _mcp_permissions_from_config
+
+    cfg = config or load_config()
+    if agent is None:
+        block = _mcp_permissions_from_config(cfg)
+    else:
+        block = _agent_mcp_permissions(cfg, agent.strip())
+    return {"deny": list(block.deny), "allow": list(block.allow)}
+
+
+def skills_permissions_overlay(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Return raw ``skills.permissions`` block from config (global or agent overlay)."""
+    from cyt.permissions.merge import _agent_skills_permissions, _skills_permissions_from_config
+
+    cfg = config or load_config()
+    if agent is None:
+        block = _skills_permissions_from_config(cfg)
+    else:
+        block = _agent_skills_permissions(cfg, agent.strip())
+    return {"deny": list(block.deny), "allow": list(block.allow)}
 
 
 def tools_hook_cyt_mcp_catalog_url(config: dict[str, Any] | None = None) -> str:

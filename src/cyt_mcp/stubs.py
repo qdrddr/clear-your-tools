@@ -29,15 +29,27 @@ def _stub_from_tool(tool: Tool, *, include_description: bool) -> Tool:
 class StubListTransform(Transform):
     """Expose minimal backend stubs and full get-tool-definitions to MCP clients."""
 
-    def __init__(self, cache: RuntimeToolCache, *, include_description: bool = False) -> None:
+    def __init__(
+        self,
+        cache: RuntimeToolCache,
+        *,
+        include_description: bool = False,
+        deny_entries: tuple[str, ...] | list[str] | None = None,
+    ) -> None:
         self._cache = cache
         self._include_description = include_description
+        self._deny_entries = deny_entries or ()
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         stubs: list[Tool] = []
         for tool in tools:
             mcp_tool = tool.to_mcp_tool()
             name = str(mcp_tool.name)
+            if self._deny_entries and name != MCP_WIRE_SEARCH_TOOL_NAME:
+                from cyt.permissions.match import is_catalog_tool_denied
+
+                if is_catalog_tool_denied(name, self._deny_entries):
+                    continue
             if name == MCP_WIRE_SEARCH_TOOL_NAME:
                 refreshed = self._cache.search_tool()
                 search_stub = (refreshed or tool).model_copy(update={"output_schema": None})

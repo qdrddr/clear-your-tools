@@ -26,7 +26,11 @@ def build_aggregator(
     if not config.verify_only:
         register_search_tool(server, cache, agent=config.agent)
         server.add_transform(
-            StubListTransform(cache, include_description=config.codex_stubs_include_description),
+            StubListTransform(
+                cache,
+                include_description=config.codex_stubs_include_description,
+                deny_entries=config.mcp_deny,
+            ),
         )
     if degraded:
         logger.warning("cyt-mcp: degraded backends: %s", ", ".join(degraded))

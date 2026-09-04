@@ -128,6 +128,52 @@ cyt hook cursor --uninstall-workspace
 
 Committing `.cursor/cyt/` is optional (the wizard does not edit `.gitignore`).
 
+## MCP & skills permissions
+
+Disable MCP servers/tools or skills without editing MCP JSON or moving `SKILL.md` files. Policy lives in cyt config only:
+
+| Layer | Config path |
+| --- | --- |
+| **Global** | `~/.config/cyt/config.yaml` |
+| **Workspace** | `.cursor/cyt/config/config.yaml` |
+
+Example global policy:
+
+```yaml
+mcp:
+  permissions:
+    deny:
+      - jcodemunch
+      - fff/find_files
+skills:
+  permissions:
+    deny:
+      - noisy-skill
+agents:
+  cursor:
+    mcp:
+      permissions:
+        deny: [gitnexus]
+```
+
+Effective deny lists are the **union** of global, `agents.<agent>`, and workspace layers (not deep-merged arrays).
+
+```bash
+cyt permissions show
+cyt permissions mcp servers list
+cyt permissions mcp servers disable jcodemunch --scope global --agent all
+cyt permissions mcp tools disable fff/find_files --scope workspace
+cyt permissions skills list
+cyt permissions skills disable noisy-skill
+cyt permissions export --format claude --output ~/.claude/settings.json
+```
+
+Use `--scope global|workspace` for writes, `--scope effective` (default) for list/show. After MCP changes, restart the agent or refresh cyt-mcp.
+
+The legacy `enabled` key in `cyt/mcp/<agent>.json` is kept in sync for compatibility but is **not used at runtime** — only `config.yaml` permissions deny lists control which servers load. Wizard migration copies `enabled: false` entries into config deny automatically.
+
+The same commands work via `cyt-mcp permissions ...`.
+
 ## Build Your Own
 
 Want granular pruning in your own harness? The underlying chunkers are open-source (Apache 2.0) with

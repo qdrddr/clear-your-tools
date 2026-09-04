@@ -34,6 +34,16 @@ def test_build_catalog_excludes_search_tool() -> None:
     assert "codebase-memory-mcp_query_graph" in search_index
 
 
+def test_stub_list_transform_filters_denied_tools() -> None:
+    cache = RuntimeToolCache()
+    transform = StubListTransform(cache, include_description=False, deny_entries=("blocked",))
+    allowed = Tool.from_function(lambda: None, name="allowed_tool")
+    denied = Tool.from_function(lambda: None, name="blocked_tool")
+    stubs = asyncio.run(transform.list_tools([allowed, denied]))
+    names = [stub.to_mcp_tool().name for stub in stubs]
+    assert names == ["allowed_tool"]
+
+
 def test_stub_list_transform_does_not_populate_catalog() -> None:
     cache = RuntimeToolCache()
     transform = StubListTransform(cache, include_description=False)

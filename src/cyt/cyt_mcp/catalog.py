@@ -180,6 +180,16 @@ def _normalize_tools_list(tools: Sequence[Any]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _filter_tools_by_permissions(
+    config: dict[str, Any],
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    from cyt.permissions.runtime import filter_catalog_tool_dicts, resolve_effective_permissions
+
+    effective = resolve_effective_permissions(config=config)
+    return filter_catalog_tool_dicts(tools, effective.mcp.deny)
+
+
 def _normalize_catalog_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     tools_raw = payload.get("tools")
     if not isinstance(tools_raw, list):
@@ -387,20 +397,22 @@ def _refresh_from_registry(
     if not tools:
         snapshot = _snapshot_tools(state)
         if snapshot:
-            return snapshot
+            return _filter_tools_by_permissions(cfg, snapshot)
         disk_tools = _disk_catalog_tools(cache_key)
         if disk_tools:
-            content_hash = raw_catalog_content_hash(disk_tools)
-            _apply_catalog_to_state(state, disk_tools, content_hash=content_hash, config=cfg)
-            return copy.deepcopy(disk_tools)
+            filtered = _filter_tools_by_permissions(cfg, disk_tools)
+            content_hash = raw_catalog_content_hash(filtered)
+            _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
+            return copy.deepcopy(filtered)
         return []
 
     hydrated = _hydrate_missing_servers_from_disk(cache_key, tools)
-    content_hash = raw_catalog_content_hash(hydrated)
-    _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=cfg)
-    _write_catalog_disk(cache_key, hydrated)
+    filtered = _filter_tools_by_permissions(cfg, hydrated)
+    content_hash = raw_catalog_content_hash(filtered)
+    _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
+    _write_catalog_disk(cache_key, filtered)
     _ensure_scheduler_started(cfg)
-    return copy.deepcopy(hydrated)
+    return copy.deepcopy(filtered)
 
 
 def _get_cyt_mcp_catalog_impl(
@@ -423,9 +435,9 @@ def _get_cyt_mcp_catalog_impl(
     if force or blocking or not has_memory:
         tools = _refresh_from_registry(cfg, cache_key, blocking=blocking or not has_memory)
         if tools:
-            return tools
+            return _filter_tools_by_permissions(cfg, tools)
         if has_memory:
-            return _snapshot_tools(state)
+            return _filter_tools_by_permissions(cfg, _snapshot_tools(state))
         if not blocking:
             _ensure_scheduler_started(cfg)
             from cyt.cyt_mcp.cache_scheduler import schedule_cyt_mcp_catalog_refresh
@@ -441,9 +453,10 @@ def _get_cyt_mcp_catalog_impl(
     hydrated = _hydrate_missing_servers_from_disk(cache_key, snapshot)
     if len(hydrated) != len(snapshot):
         content_hash = raw_catalog_content_hash(hydrated)
-        _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=cfg)
-        return copy.deepcopy(hydrated)
-    return snapshot
+        filtered = _filter_tools_by_permissions(cfg, hydrated)
+        _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=cfg)
+        return copy.deepcopy(filtered)
+    return _filter_tools_by_permissions(cfg, snapshot)
 
 
 def get_cyt_mcp_catalog(
@@ -491,6 +504,7 @@ def apply_fetched_catalog(
         disk_tools=disk_tools,
     )
     hydrated = _hydrate_missing_servers_from_disk(cache_key, merged)
-    content_hash = raw_catalog_content_hash(hydrated)
-    _apply_catalog_to_state(state, hydrated, content_hash=content_hash, config=config)
-    _write_catalog_disk(cache_key, hydrated)
+    filtered = _filter_tools_by_permissions(config, hydrated)
+    content_hash = raw_catalog_content_hash(filtered)
+    _apply_catalog_to_state(state, filtered, content_hash=content_hash, config=config)
+    _write_catalog_disk(cache_key, filtered)

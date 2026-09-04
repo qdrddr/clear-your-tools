@@ -36,6 +36,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
+    permissions = sub.add_parser(
+        "permissions",
+        help="Manage MCP permissions (alias for cyt permissions)",
+    )
+    permissions_sub = permissions.add_subparsers(dest="permissions_command", required=True)
+    from cyt.permissions.cli import register_permissions_subcommands
+
+    register_permissions_subcommands(permissions_sub)
+
     catalog = sub.add_parser("catalog", help="Export full tool catalog JSON")
     catalog.add_argument("--agent", help="Agent harness")
     catalog.add_argument("--json", action="store_true", help="Print JSON to stdout")
@@ -103,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "permissions":
+            from cyt.permissions.cli import run_permissions
+
+            run_permissions(args)
+            return 0
+
         if args.command == "catalog":
             config = load_aggregator_config(agent=args.agent, aggregator_path=args.config)
             return asyncio.run(_run_catalog(config))

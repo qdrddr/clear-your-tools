@@ -296,6 +296,9 @@ hallucination_gate:
 
 skills:
   enabled: false
+  permissions:
+    deny: []
+    allow: []
   selector_soft_budget: 2000
   selector_bulk_max_tokens: 32000
   frontmatter_upper_limit: 0.70
@@ -351,6 +354,11 @@ skills:
     - .codex/skills
     - .cursor/skills
     - ~/.cursor/skills
+  permissions:
+    deny:
+      - path:.codex/skills/.system
+      - path:~/.codex/skills/.system
+    allow: []
 
 launch:
   claude:
@@ -363,3 +371,49 @@ launch:
   codex:
     endpoint: null
     env_key: CODEX_OPENAI_API_KEY
+
+mcp:
+  permissions:
+    deny: []
+    allow: []
+
+agents:
+  cursor:
+    mcp:
+      permissions:
+        deny: []
+        allow: []
+    skills:
+      permissions:
+        deny:
+          - path:.codex/skills/.system
+          - path:~/.codex/skills/.system
+          - path:.claude/skills/.system
+          - path:~/.claude/skills/.system
+        allow: []
+  claude:
+    mcp:
+      permissions:
+        deny: []
+        allow: []
+    skills:
+      permissions:
+        deny:
+          - path:.codex/skills/.system
+          - path:~/.codex/skills/.system
+          - path:.cursor/skills/.system
+          - path:~/.cursor/skills/.system
+        allow: []
+  codex:
+    mcp:
+      permissions:
+        deny: []
+        allow: []
+    skills:
+      permissions:
+        deny:
+          - path:.claude/skills/.system
+          - path:~/.claude/skills/.system
+          - path:.cursor/skills/.system
+          - path:~/.cursor/skills/.system
+        allow: []
