@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cyt.config import (
     _default_user_config_dict,
     bundled_user_config_sections,
@@ -31,7 +33,7 @@ def test_bundled_user_config_sections_includes_permissions() -> None:
 
 
 def test_load_config_does_not_inject_permissions_from_bundled_defaults(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text("skills:\n  enabled: false\n", encoding="utf-8")

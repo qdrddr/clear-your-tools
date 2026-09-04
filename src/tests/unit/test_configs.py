@@ -713,10 +713,10 @@ def _yaml_at(bundled: dict, path: tuple[str, ...]) -> object:
 
 
 def test_legacy_default_constants_exist_in_bundled_yaml() -> None:
-    from tests.unit.legacy_config_default_paths import INJECT_VIA_AGENTS, LEGACY_DEFAULT_PATHS
+    from tests.unit.test_legacy_config_default_paths import INJECT_VIA_AGENTS, LEGACY_DEFAULT_PATHS
 
     bundled = configs.load_bundled_defaults_yaml()
-    for name, path in LEGACY_DEFAULT_PATHS.items():
+    for _name, path in LEGACY_DEFAULT_PATHS.items():
         _yaml_at(bundled, path)
     inject_via = _yaml_at(bundled, ("pruning", "inject_via"))
     assert isinstance(inject_via, dict)
@@ -727,45 +727,9 @@ def test_legacy_default_constants_exist_in_bundled_yaml() -> None:
 
 
 def test_legacy_defaults_dict_paths_exist_in_bundled_yaml() -> None:
-    """Every key from the removed ``_DEFAULTS`` dict exists in defaults.yaml."""
-    import subprocess
-    from pathlib import Path
-    from typing import Any
-
-    text = subprocess.check_output(
-        ["git", "show", "HEAD:src/cyt/config/__init__.py"],
-        text=True,
-    )
-    cut = text.index("_DEFAULTS: dict[str, Any] = {")
-    end = cut
-    level = 0
-    for i, ch in enumerate(text[cut:], cut):
-        if ch == "{":
-            level += 1
-        elif ch == "}":
-            level -= 1
-            if level == 0:
-                end = i + 1
-                break
-    prelude = text[: text.index("DEFAULT_REVERSE_PORT")] + "ToolPolicy = str\n"
-    block = text[text.index("DEFAULT_REVERSE_PORT") : end]
-    ns: dict[str, Any] = {"__builtins__": __builtins__, "Any": Any, "Path": Path}
-    exec(prelude + block, ns, ns)
-    old_defaults = ns["_DEFAULTS"]
-
-    def flatten(d: object, prefix: str = "") -> dict[str, object]:
-        out: dict[str, object] = {}
-        if isinstance(d, dict):
-            for k, v in d.items():
-                key = f"{prefix}.{k}" if prefix else str(k)
-                out.update(flatten(v, key))
-        elif isinstance(d, list):
-            out[prefix] = d
-        else:
-            out[prefix] = d
-        return out
+    """Every legacy DEFAULT_* path exists in defaults.yaml."""
+    from tests.unit.test_legacy_config_default_paths import LEGACY_DEFAULT_PATHS
 
     bundled = configs.load_bundled_defaults_yaml()
-    for dot_path in flatten(old_defaults):
-        parts = tuple(dot_path.split("."))
-        _yaml_at(bundled, parts)
+    for path in LEGACY_DEFAULT_PATHS.values():
+        _yaml_at(bundled, path)

@@ -112,6 +112,19 @@ def test_build_registry_excludes_other_agent_system_skills(
                 ],
                 "pageindex": {"enable_bm25_chunking": True},
             },
+            "agents": {
+                "codex": {
+                    "skills": {
+                        "permissions": {
+                            "deny": [
+                                "path:.codex/skills/.system",
+                                "path:~/.codex/skills/.system",
+                            ],
+                            "allow": [],
+                        },
+                    },
+                },
+            },
         }
 
         claude_entries = build_registry(config, agent="claude")

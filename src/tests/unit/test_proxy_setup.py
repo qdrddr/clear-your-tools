@@ -1311,6 +1311,8 @@ class TestPromptSkills:
                 ".claude/skills",
                 "~/.codex/skills",
                 ".codex/skills",
+                ".cursor/skills",
+                "~/.cursor/skills",
             ],
         }
 

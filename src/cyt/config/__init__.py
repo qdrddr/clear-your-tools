@@ -13,11 +13,47 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+import yaml
+from dotenv import load_dotenv
+
 if TYPE_CHECKING:
     from cyt_core.types.policies import PolicyContext
 
-import yaml
-from dotenv import load_dotenv
+ConfigScalar = str | int | float | bool | None
+ConfigValue = ConfigScalar | dict[str, "ConfigValue"] | list["ConfigValue"]
+
+
+def _config_int(value: ConfigValue) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return int(value)
+    raise TypeError(f"expected int-compatible config value, got {type(value)!r}")
+
+
+def _config_float(value: ConfigValue) -> float:
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value)
+    raise TypeError(f"expected float-compatible config value, got {type(value)!r}")
+
+
+def _config_bool(value: ConfigValue) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    raise TypeError(f"expected bool-compatible config value, got {type(value)!r}")
+
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +139,7 @@ def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
         elif key in overlay:
             result[key] = overlay[key]
         else:
-            result[key] = base[key]
+            result[key] = copy.deepcopy(base[key])
     return result
 
 
@@ -158,9 +194,9 @@ def clear_bundled_defaults_cache() -> None:
     _bundled_defaults.cache_clear()
 
 
-def _bundled_get(*keys: str) -> Any:
+def _bundled_get(*keys: str) -> ConfigValue | None:
     """Read a value from bundled defaults (returns ``None`` when the path is absent)."""
-    node: Any = _bundled_defaults()
+    node: ConfigValue = _bundled_defaults()
     for key in keys:
         if not isinstance(node, dict) or key not in node:
             return None
@@ -168,9 +204,9 @@ def _bundled_get(*keys: str) -> Any:
     return node
 
 
-def _default_at(*keys: str) -> Any:
+def _default_at(*keys: str) -> ConfigValue:
     """Read a required value from ``defaults.yaml``."""
-    node: Any = _bundled_defaults()
+    node: ConfigValue = _bundled_defaults()
     for key in keys:
         if not isinstance(node, dict) or key not in node:
             raise KeyError(f"defaults.yaml missing key path: {'.'.join(keys)}")
@@ -178,12 +214,12 @@ def _default_at(*keys: str) -> Any:
     return node
 
 
-def _merged_at(config: dict[str, Any], *keys: str) -> Any:
+def _merged_at(config: dict[str, Any], *keys: str) -> ConfigValue:
     """Read a required value from merged config (bundled defaults + overlay)."""
     return _require_nested(_merged_config(config), *keys)
 
 
-def _require_nested(node: Any, *keys: str) -> Any:
+def _require_nested(node: ConfigValue, *keys: str) -> ConfigValue:
     """Read a required nested key path from an already-resolved mapping."""
     for key in keys:
         if not isinstance(node, dict) or key not in node:
@@ -238,7 +274,7 @@ def upstream_url_defaults() -> dict[str, str]:
 
 def default_reverse_port() -> int:
     """Default reverse proxy listen port from bundled defaults."""
-    return int(_default_at("network", "proxy", "reverse", "port"))
+    return _config_int(_default_at("network", "proxy", "reverse", "port"))
 
 
 def _resolve_config(config: dict[str, Any] | None) -> dict[str, Any]:
@@ -575,11 +611,11 @@ def stats_db_path(config: dict[str, Any]) -> str:
 
 
 def stats_rollup_on_query(config: dict[str, Any]) -> bool:
-    return bool(_merged_at(config, "stats", "rollup_on_query"))
+    return _config_bool(_merged_at(config, "stats", "rollup_on_query"))
 
 
 def stats_backup_before_rollup(config: dict[str, Any]) -> bool:
-    return bool(_merged_at(config, "stats", "backup_before_rollup"))
+    return _config_bool(_merged_at(config, "stats", "backup_before_rollup"))
 
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
@@ -596,7 +632,7 @@ def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     sequence = _require_nested(merged, "pruning", "tools", "sequence")
     if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
         raise ValueError("pruning.tools.sequence must be a list of stage names")
-    return list(sequence)
+    return cast(list[str], sequence)
 
 
 def _resolve_pruning_stages(
@@ -751,7 +787,8 @@ def pruning_system_tool_policy(
     )
     if policy is None:
         return cast(
-            ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "system_tool"),
+            ToolPolicy,
+            _require_nested(merged, "pruning", "tools", "policy", "system_tool"),
         )
     return cast(ToolPolicy, policy)
 
@@ -968,7 +1005,7 @@ def bm25_index_dir(config: dict[str, Any] | None = None) -> Path:
 
 def bm25_mmap_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "models", "bm25", "mmap"))
+    return _config_bool(_merged_at(cfg, "models", "bm25", "mmap"))
 
 
 def bm25_stem_language(config: dict[str, Any] | None = None) -> str:
@@ -987,22 +1024,24 @@ def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def bm25_score_tool(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool"))
+    return _config_float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool"))
 
 
 def bm25_prune_enums(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "prune_enums"))
+    return _config_bool(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "prune_enums"))
 
 
 def bm25_score_tool_enum(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool_enum"))
+    return _config_float(
+        _merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool_enum"),
+    )
 
 
 def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_skills"))
+    return _config_float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_skills"))
 
 
 def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -1111,7 +1150,7 @@ def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInje
 
 def hallucination_gate_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "hallucination_gate", "enabled"))
+    return _config_bool(_merged_at(cfg, "hallucination_gate", "enabled"))
 
 
 def verify_only_mode(config: dict[str, Any] | None = None) -> bool:
@@ -1163,7 +1202,7 @@ def skills_inject_via(config: dict[str, Any] | None = None, *, agent: str | None
 
 def tools_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "pruning", "tools", "enabled"))
+    return _config_bool(_merged_at(cfg, "pruning", "tools", "enabled"))
 
 
 def inject_into_user_message(
@@ -1226,14 +1265,15 @@ def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookS
             return ("executor",)
         default_sources = _merged_at(cfg, "pruning", "tools", "hook", "tools_from")
         if isinstance(default_sources, str):
-            default_sources = [default_sources]
-        return cast(
-            tuple[ToolsHookSource, ...],
-            tuple(
-                source
-                for item in default_sources
-                if (source := _normalize_tools_hook_source(str(item))) is not None
-            ),
+            source_items = [default_sources]
+        elif isinstance(default_sources, list):
+            source_items = [str(item) for item in default_sources]
+        else:
+            source_items = []
+        return tuple(
+            source
+            for item in source_items
+            if (source := _normalize_tools_hook_source(str(item))) is not None
         )
     return tuple(normalized)
 
@@ -1343,7 +1383,9 @@ def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict
 
 def mcpc_skills_own_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "own", "enabled"))
+    return _config_bool(
+        _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "own", "enabled"),
+    )
 
 
 def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -1355,7 +1397,7 @@ def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool
 
 def mcpc_resources_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "enabled"))
+    return _config_bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "enabled"))
 
 
 def mcpc_resources_mime_types(config: dict[str, Any] | None = None) -> list[str]:
@@ -1370,7 +1412,7 @@ def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
     cache = tools_hook_mcpc_cache_settings(config)
     value = cache.get("skills_refresh_seconds")
     if value is None:
-        return float(
+        return _config_float(
             _default_at("pruning", "tools", "hook", "mcpc", "cache", "skills_refresh_seconds"),
         )
     return float(value)
@@ -1562,7 +1604,7 @@ def launch_needs_proxy(config: dict[str, Any] | None = None, agent: str | None =
 
 def skills_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "skills", "enabled"))
+    return _config_bool(_merged_at(cfg, "skills", "enabled"))
 
 
 def skills_pipeline(config: dict[str, Any] | None = None) -> str:
@@ -1615,7 +1657,7 @@ def _cache_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def cache_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "cache", "enabled"))
+    return _config_bool(_merged_at(cfg, "cache", "enabled"))
 
 
 def cache_bm25_dir(config: dict[str, Any] | None = None) -> Path:
@@ -1645,62 +1687,64 @@ def cache_memory_settings(config: dict[str, Any] | None = None) -> dict[str, Any
 
 def skills_max_tokens_per_request(config: dict[str, Any] | None = None) -> int:
     cfg = _resolve_config(config)
-    return int(_merged_at(cfg, "skills", "max_tokens_per_request"))
+    return _config_int(_merged_at(cfg, "skills", "max_tokens_per_request"))
 
 
 def skills_bm25_node_fallback_threshold(config: dict[str, Any] | None = None) -> int:
     cfg = _resolve_config(config)
-    return int(_merged_at(cfg, "skills", "bm25_node_fallback_threshold"))
+    return _config_int(_merged_at(cfg, "skills", "bm25_node_fallback_threshold"))
 
 
 def skills_hook_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "hook", "request_budget_fraction"))
+    return _config_float(_merged_at(cfg, "skills", "hook", "request_budget_fraction"))
 
 
 def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "hook", "inject_cap_multiplier_of_request_tokens"))
+    return _config_float(
+        _merged_at(cfg, "skills", "hook", "inject_cap_multiplier_of_request_tokens"),
+    )
 
 
 def skills_hook_cursor_rule_file_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "skills", "hook", "cursor_rule_file", "enabled"))
+    return _config_bool(_merged_at(cfg, "skills", "hook", "cursor_rule_file", "enabled"))
 
 
 def skills_hook_agent_interceptor_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return bool(_merged_at(cfg, "skills", "hook", "agent_interceptor", "enabled"))
+    return _config_bool(_merged_at(cfg, "skills", "hook", "agent_interceptor", "enabled"))
 
 
 def skills_hook_agent_interceptor_min_items(config: dict[str, Any] | None = None) -> int:
     cfg = _resolve_config(config)
-    return int(_merged_at(cfg, "skills", "hook", "agent_interceptor", "min_items"))
+    return _config_int(_merged_at(cfg, "skills", "hook", "agent_interceptor", "min_items"))
 
 
 def skills_proxy_request_budget_fraction(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "proxy", "request_budget_fraction"))
+    return _config_float(_merged_at(cfg, "skills", "proxy", "request_budget_fraction"))
 
 
 def skills_proxy_inject_cap_fraction(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "proxy", "inject_cap_fraction_of_savings"))
+    return _config_float(_merged_at(cfg, "skills", "proxy", "inject_cap_fraction_of_savings"))
 
 
 def skills_proxy_savings_budget_fraction(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "proxy", "savings_budget_fraction"))
+    return _config_float(_merged_at(cfg, "skills", "proxy", "savings_budget_fraction"))
 
 
 def skills_proxy_savings_rate_threshold(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "proxy", "savings_rate_threshold"))
+    return _config_float(_merged_at(cfg, "skills", "proxy", "savings_rate_threshold"))
 
 
 def skills_frontmatter_upper_limit(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return float(_merged_at(cfg, "skills", "frontmatter_upper_limit"))
+    return _config_float(_merged_at(cfg, "skills", "frontmatter_upper_limit"))
 
 
 def skills_directories(config: dict[str, Any] | None = None) -> list[str]:
@@ -2001,19 +2045,19 @@ def _stage_minimum_tools(
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
 
-    return int(_require_nested(merged, "pruning", "tools", "policy", "minimum_tools"))
+    return _config_int(_require_nested(merged, "pruning", "tools", "policy", "minimum_tools"))
 
 
 def tools_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
     """Resolve LLM tools selector soft budget from ``pruning.tools.selector_soft_budget``."""
     cfg = _resolve_config(config)
-    return int(_merged_at(cfg, "pruning", "tools", "selector_soft_budget"))
+    return _config_int(_merged_at(cfg, "pruning", "tools", "selector_soft_budget"))
 
 
 def skills_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
     """Resolve LLM skills selector soft budget from ``skills.selector_soft_budget``."""
     cfg = _resolve_config(config)
-    return int(_merged_at(cfg, "skills", "selector_soft_budget"))
+    return _config_int(_merged_at(cfg, "skills", "selector_soft_budget"))
 
 
 def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
@@ -2029,9 +2073,9 @@ def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
     cfg = _resolve_config(config)
     raw = _merged_at(cfg, "pruning", "max_batch_workers")
     try:
-        return max(1, int(raw))
+        return max(1, _config_int(raw))
     except (TypeError, ValueError):
-        return int(_default_at("pruning", "max_batch_workers"))
+        return _config_int(_default_at("pruning", "max_batch_workers"))
 
 
 def selector_bulk_max_tokens(
@@ -2045,7 +2089,7 @@ def selector_bulk_max_tokens(
         value = _merged_at(cfg, "skills", "selector_bulk_max_tokens")
     else:
         value = _merged_at(cfg, "pruning", "tools", "selector_bulk_max_tokens")
-    return int(value)
+    return _config_int(value)
 
 
 def llm_minimum_tools(

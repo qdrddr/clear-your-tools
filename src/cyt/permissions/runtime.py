@@ -14,10 +14,26 @@ from cyt.permissions.match import (
     is_mcp_server_denied,
     is_skill_permission_denied,
 )
-from cyt.permissions.merge import effective_permissions
+from cyt.permissions.merge import _load_global_config_for_permissions, effective_permissions
 from cyt.permissions.schema import EffectivePermissions
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.nodes import skill_name
+
+
+def _config_has_permissions_overlay(config: dict[str, Any]) -> bool:
+    skills = config.get("skills")
+    if isinstance(skills, dict) and "permissions" in skills:
+        return True
+    agents = config.get("agents")
+    if isinstance(agents, dict):
+        for agent_block in agents.values():
+            if not isinstance(agent_block, dict):
+                continue
+            skills_block = agent_block.get("skills")
+            if isinstance(skills_block, dict) and "permissions" in skills_block:
+                return True
+    mcp = config.get("mcp")
+    return isinstance(mcp, dict) and "permissions" in mcp
 
 
 def resolve_effective_permissions(
@@ -33,8 +49,18 @@ def resolve_effective_permissions(
         hook_ws = hook_workspace_from_config(cfg)
         ws = hook_ws
     workspace_path = Path(str(ws)).expanduser() if ws else None
+    global_cfg: dict[str, Any]
+    workspace_config: dict[str, Any] | None
+    if config is None or not _config_has_permissions_overlay(config):
+        global_cfg = _load_global_config_for_permissions()
+        workspace_config = None
+    else:
+        global_cfg = config
+        workspace_config = {} if workspace_path is None else None
     return effective_permissions(
         agent=resolved_agent,
+        global_config=global_cfg,
+        workspace_config=workspace_config,
         workspace_root=workspace_path,
     )
 

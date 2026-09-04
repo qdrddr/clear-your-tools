@@ -8,7 +8,7 @@ import re
 import sys
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from cyt.config import (
@@ -28,7 +28,6 @@ from cyt.config import (
     pruning_system_tool_policy,
     reranker_minimum_tools,
     save_user_config,
-    skills_directories,
     skills_enabled,
     stats_db_path,
     upstream_url_defaults,
@@ -1533,10 +1532,22 @@ def _prompt_upstreams(
 
 
 def _default_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
+    from cyt.common.paths import shorten_home_path
+    from cyt.config import _bundled_list
+
     raw = skills_cfg.get("directories")
     if isinstance(raw, list) and raw:
-        return [str(path) for path in raw if str(path).strip()]
-    return skills_directories({})
+        paths = [str(path) for path in raw if str(path).strip()]
+    else:
+        paths = [str(path) for path in _bundled_list("skills", "directories")]
+
+    normalized: list[str] = []
+    for path in paths:
+        if path.startswith((".", "~/")):
+            normalized.append(path.replace("\\", "/"))
+            continue
+        normalized.append(shorten_home_path(path).replace("\\", "/"))
+    return normalized
 
 
 def _default_inject_via(existing: dict[str, Any]) -> str:
@@ -1887,11 +1898,11 @@ def run_setup(config_path: Path) -> None:
     print("\n--- Tool policies ---")
     system_policy = _prompt_policy(
         "System tools policy",
-        cast(ToolPolicy, pruning_system_tool_policy(existing if existing else {})),
+        pruning_system_tool_policy(existing if existing else {}),
     )
     mcp_policy = _prompt_policy(
         "MCP tools policy",
-        cast(ToolPolicy, pruning_mcp_tool_policy(existing if existing else {})),
+        pruning_mcp_tool_policy(existing if existing else {}),
     )
 
     inject_mode = _prompt_inject_via(existing)

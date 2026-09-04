@@ -175,8 +175,12 @@ def prompt_tools_hook_config(
     existing_sources = tools_hook_sources(existing)
     bundled_tools_from = _default_at("pruning", "tools", "hook", "tools_from")
     if isinstance(bundled_tools_from, str):
-        bundled_tools_from = [bundled_tools_from]
-    current_from = existing_sources[0] if existing_sources else str(bundled_tools_from[0])
+        bundled_from_items = [bundled_tools_from]
+    elif isinstance(bundled_tools_from, list):
+        bundled_from_items = [str(item) for item in bundled_tools_from]
+    else:
+        bundled_from_items = ["executor"]
+    current_from = existing_sources[0] if existing_sources else bundled_from_items[0]
     from_default = _hook_from_default(current_from, context=context)
 
     executor_default = str(hook.get("executor_url") or tools_hook_executor_url(load_config()))

@@ -683,6 +683,22 @@ def _build_registry_from_client_skills(
     )
 
 
+def _filter_agent_system_skills(
+    entries: list[SkillEntryRef],
+    *,
+    active_agent: AgentName | None,
+) -> list[SkillEntryRef]:
+    if active_agent is None:
+        return entries
+    from cyt.skills.agents import is_excluded_agent_system_skill
+
+    return [
+        entry
+        for entry in entries
+        if not is_excluded_agent_system_skill(entry.source_path, active_agent=active_agent)
+    ]
+
+
 def _build_registry_uncached(
     cfg: dict[str, Any],
     *,
@@ -705,10 +721,13 @@ def _build_registry_uncached(
         effective = resolve_effective_permissions(config=cfg, agent=active_agent)
         workspace = hook_workspace_from_config(cfg)
         workspace_base = Path(str(workspace)).expanduser() if workspace else None
-        return filter_skill_entries(
-            client_entries,
-            effective.skills.deny,
-            base=workspace_base,
+        return _filter_agent_system_skills(
+            filter_skill_entries(
+                client_entries,
+                effective.skills.deny,
+                base=workspace_base,
+            ),
+            active_agent=active_agent,
         )
 
     expanded_dirs = skills_directories(cfg)
@@ -766,4 +785,7 @@ def _build_registry_uncached(
     )
     workspace = hook_workspace_from_config(cfg)
     workspace_base = Path(str(workspace)).expanduser() if workspace else None
-    return filter_skill_entries(entries, effective.skills.deny, base=workspace_base)
+    return _filter_agent_system_skills(
+        filter_skill_entries(entries, effective.skills.deny, base=workspace_base),
+        active_agent=active_agent,
+    )
