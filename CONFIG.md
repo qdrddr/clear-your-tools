@@ -546,7 +546,8 @@ cyt:
   migrated_at: "2026-09-04T18:00:00Z"
 ```
 
-When CYT loads config and the stamp is behind the packaged head revision, it **auto-migrates** the file (with a `.bak.<timestamp>` backup). Disable with `CYT_SKIP_CONFIG_MIGRATE=1`.
+When CYT loads config and the stamp is behind the packaged head revision, it **auto-migrates** the
+file (with a `.bak.<timestamp>` backup). Disable with `CYT_SKIP_CONFIG_MIGRATE=1`.
 
 Manual commands:
 
@@ -570,7 +571,9 @@ Revision scripts live under [`src/cyt/migrations/versions/`](src/cyt/migrations/
 | `pruning.<id>.model.remote.model_nick` | `pruning.tools.pipelines.<id>.model_nick` |
 | Inline model `provider`, `key_var_name`, … | `models.providers[]` + model `provider_nick` |
 
-Unmigrated configs still work at runtime via read-time normalization in [`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) until `cyt config migrate` rewrites the file.
+Unmigrated configs still work at runtime via read-time normalization in
+[`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) until `cyt config migrate` rewrites
+the file.
 
 `save_user_config` skips disk writes when the merged config is unchanged (no rearrange-on-save).
 

@@ -317,11 +317,14 @@ User-facing guides (pricing overrides, `rerank` → `llm` pipeline, OpenRouter v
 | `cyt.schema_version`                                        | On-disk schema revision (auto-migrated on load)            |
 
 Legacy paths (`pruning.pipeline`, `pruning.policy`, `pruning.<stage>`, …) resolve via
-[`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) at read time. Run `cyt config migrate` to rewrite on-disk YAML to the canonical shape.
+[`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) at read time. Run
+`cyt config migrate` to rewrite on-disk YAML to the canonical shape.
 
 ### Adding a config migration
 
-1. Copy [`src/cyt/migrations/templates/revision.py.mako`](src/cyt/migrations/templates/revision.py.mako) to `src/cyt/migrations/versions/00N_description.py` exporting `revision`, `down_revision`, `applies_to`, `upgrade`, `downgrade`.
+1. Copy [`src/cyt/migrations/templates/revision.py.mako`](src/cyt/migrations/templates/revision.py.mako)
+   to `src/cyt/migrations/versions/00N_description.py` exporting `revision`, `down_revision`,
+   `applies_to`, `upgrade`, `downgrade`.
 2. Register the module name in [`src/cyt/migrations/versions/__init__.py`](src/cyt/migrations/versions/__init__.py) `_REVISION_MODULE_NAMES`.
 3. Implement idempotent `upgrade()` (skip when canonical keys already present).
 4. Add unit tests under `src/tests/unit/test_config_migration_*.py`.

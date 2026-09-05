@@ -118,7 +118,9 @@ One `cyt hook cursor` run from a repo configures **two** cyt-mcp servers in Curs
 Hooks stay **global only** (`~/.cursor/hooks.json`). Workspace behavior uses hook payload `workspace_roots`:
 
 - The hook daemon deep-merges `~/.config/cyt/config.yaml` with `.cursor/cyt/config/config.yaml` per request.
-- Each live cyt-mcp instance (global + workspace, stdio or HTTP) **pushes** its tool catalog to the hook daemon via `POST /hook/catalog/register`. The daemon merges global + workspace registrations per hook request.
+- Each live cyt-mcp instance (global + workspace, stdio or HTTP) **pushes** its tool catalog to
+  the hook daemon via `POST /hook/catalog/register`. The daemon merges global + workspace
+  registrations per hook request.
 
 Remove workspace artifacts only:
 
@@ -168,9 +170,12 @@ cyt permissions skills disable noisy-skill
 cyt permissions export --format claude --output ~/.claude/settings.json
 ```
 
-Use `--scope global|workspace` for writes, `--scope effective` (default) for list/show. After MCP changes, restart the agent or refresh cyt-mcp.
+Use `--scope global|workspace` for writes, `--scope effective` (default) for list/show. After MCP
+changes, restart the agent or refresh cyt-mcp.
 
-The legacy `enabled` key in `cyt/mcp/<agent>.json` is kept in sync for compatibility but is **not used at runtime** — only `config.yaml` permissions deny lists control which servers load. Wizard migration copies `enabled: false` entries into config deny automatically.
+The legacy `enabled` key in `cyt/mcp/<agent>.json` is kept in sync for compatibility but is
+**not used at runtime** — only `config.yaml` permissions deny lists control which servers load.
+Wizard migration copies `enabled: false` entries into config deny automatically.
 
 The same commands work via `cyt-mcp permissions ...`.
 

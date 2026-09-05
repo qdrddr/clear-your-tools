@@ -26,7 +26,7 @@ def exclusive_file_lock(fd: int) -> Iterator[None]:
     else:
         import fcntl
 
-        fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        fcntl.flock(fd, fcntl.LOCK_EX)
     try:
         yield
     finally:
@@ -35,7 +35,7 @@ def exclusive_file_lock(fd: int) -> Iterator[None]:
         else:
             import fcntl
 
-            fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def release_exclusive_file_lock(fd: int) -> None:
@@ -46,7 +46,7 @@ def release_exclusive_file_lock(fd: int) -> None:
 
     import fcntl
 
-    fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def try_exclusive_file_lock(fd: int) -> bool:
@@ -61,7 +61,7 @@ def try_exclusive_file_lock(fd: int) -> bool:
     import fcntl
 
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
     except BlockingIOError:
         return False

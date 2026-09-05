@@ -550,12 +550,16 @@ def test_enrich_hook_payload_adds_cyt_rules_injection_from_cursor_rules_file() -
 
 def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str]) -> None:
     with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
         transcript = Path(tmp) / "session.jsonl"
         transcript.write_text('{"id": 1, "name": "Damien"}\n', encoding="utf-8")
         payload = {
-            "hook_event_name": "UserPromptSubmit",
+            "hook_event_name": "beforeSubmitPrompt",
             "transcript_path": str(transcript),
             "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
         }
         with patch(
             "cyt_client.cli._resolve_hook_url_for_submit",
