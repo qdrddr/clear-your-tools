@@ -570,6 +570,7 @@ class TestBuildUpstreamCliOverlay:
             ("claude", "anthropic"),
             ("claude-code", "anthropic"),
             ("codex", "openai"),
+            ("openrouter", "anthropic"),
         ],
     )
     def test_upstream_kind_aliases(self, alias: str, canonical: str) -> None:
@@ -579,6 +580,39 @@ class TestBuildUpstreamCliOverlay:
     def test_normalize_upstream_kind(self) -> None:
         assert normalize_upstream_kind("Claude-Code") == "anthropic"
         assert normalize_upstream_kind("CODEX") == "openai"
+        assert normalize_upstream_kind("openrouter") == "anthropic"
+
+    def test_upstreams_for_config_normalizes_legacy_openrouter_kind(self) -> None:
+        serialized = upstreams_for_config(
+            [
+                {
+                    "endpoint": "openrouter",
+                    "kind": "openrouter",
+                    "url": "https://openrouter.ai/api",
+                },
+            ],
+        )
+        assert serialized[0]["kind"] == "anthropic"
+
+    def test_print_configured_upstreams_accepts_legacy_openrouter_kind(self) -> None:
+        import contextlib
+        from io import StringIO
+
+        from cyt.proxy.setup_wizard import _print_configured_upstreams
+
+        upstreams = [
+            {
+                "endpoint": "openrouter",
+                "kind": "openrouter",
+                "url": "https://openrouter.ai/api",
+            },
+        ]
+        buffer = StringIO()
+        with contextlib.redirect_stdout(buffer):
+            _print_configured_upstreams(upstreams)
+        out = buffer.getvalue()
+        assert "openrouter" in out
+        assert "anthropic" in out
 
     def test_upstreams_for_config_normalizes_kind_aliases(self) -> None:
         serialized = upstreams_for_config(

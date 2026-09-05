@@ -43,7 +43,7 @@ from cyt.proxy.pruning_debug import (
 from cyt.proxy.pruning_debug import (
     format_removed_chunks_lines as _format_removed_chunks_lines,
 )
-from cyt.proxy.setup_wizard import normalize_upstream_kind, upstream_entry_endpoint
+from cyt.proxy.setup_wizard import upstream_entry_endpoint, upstream_protocol_kind
 from cyt.proxy.transform_context import ProxyTransformContext
 from cyt.proxy.transport import (
     agent_trace_log_path,
@@ -343,8 +343,10 @@ def build_routes(proxy_cfg: dict[str, Any]) -> dict[str, tuple[str, str | None]]
         if endpoint not in upstreams:
             raise ValueError(f"No upstream configured for endpoint: {endpoint}")
         entry = upstreams[endpoint]
-        kind_raw = entry.get("kind")
-        kind = normalize_upstream_kind(str(kind_raw)) if kind_raw is not None else None
+        try:
+            kind = upstream_protocol_kind(entry)
+        except ValueError:
+            kind = None
         url = entry.get("url") or entry.get("host_url") or entry.get("base_url")
         if not url:
             raise ValueError(f"No url configured for upstream: {endpoint}")

@@ -262,7 +262,7 @@ network:
           url: https://api.openai.com
           kind: openai
         - endpoint: openrouter
-          kind: openrouter
+          kind: anthropic
           url: https://openrouter.ai/api
           provider_nick: openrouter-ai
       endpoints:

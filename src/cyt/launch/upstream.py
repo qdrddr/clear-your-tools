@@ -83,11 +83,17 @@ def list_upstreams(config: dict[str, Any]) -> list[dict[str, Any]]:
     return [entry for entry in upstreams if isinstance(entry, dict)]
 
 
+_CANONICAL_UPSTREAM_URLS: dict[str, str] = {
+    "anthropic": "https://api.anthropic.com",
+    "openai": "https://api.openai.com",
+}
+
+
 def infer_upstream_kind_from_url(url: str) -> str | None:
-    """Return canonical kind when *url* matches a bundled default upstream URL."""
+    """Return canonical kind when *url* matches a first-party provider API base URL."""
     normalized = normalize_upstream_url(url)
-    for kind, default_url in upstream_url_defaults().items():
-        if kind in ("anthropic", "openai") and normalize_upstream_url(default_url) == normalized:
+    for kind, default_url in _CANONICAL_UPSTREAM_URLS.items():
+        if normalize_upstream_url(default_url) == normalized:
             return kind
     return None
 

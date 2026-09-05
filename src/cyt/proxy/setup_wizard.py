@@ -359,6 +359,23 @@ def upstream_url_default(upstreams: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def upstream_protocol_kind(upstream: dict[str, Any]) -> str:
+    """Return wire-protocol kind (``anthropic`` or ``openai``) for an upstream entry."""
+    url = str(upstream.get("url") or upstream.get("host_url") or "").strip()
+    kind_raw = upstream.get("kind")
+    if kind_raw is not None and str(kind_raw).strip():
+        return normalize_upstream_kind(str(kind_raw), url=url or None)
+    if url:
+        from cyt.launch.upstream import infer_upstream_kind_from_url
+
+        if inferred := infer_upstream_kind_from_url(url):
+            return inferred
+    endpoint = upstream_entry_endpoint(upstream)
+    if endpoint != "?":
+        return normalize_upstream_kind(endpoint, url=url or None)
+    raise ValueError("Upstream entry missing kind")
+
+
 def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Serialize upstream entries for saved config."""
     result: list[dict[str, Any]] = []
@@ -367,10 +384,15 @@ def upstreams_for_config(upstreams: list[dict[str, Any]]) -> list[dict[str, Any]
         endpoint = upstream_entry_endpoint(upstream)
         if endpoint != "?":
             entry["endpoint"] = endpoint
+        raw_url = upstream.get("url") or upstream.get("host_url")
+        url_text = str(raw_url).strip() if raw_url else ""
         if "kind" in upstream:
-            entry["kind"] = normalize_upstream_kind(str(upstream["kind"]))
-        if url := upstream.get("url") or upstream.get("host_url"):
-            entry["url"] = normalize_upstream_url(str(url))
+            entry["kind"] = normalize_upstream_kind(
+                str(upstream["kind"]),
+                url=url_text or None,
+            )
+        if url_text:
+            entry["url"] = normalize_upstream_url(url_text)
         result.append(entry)
     return result
 
@@ -425,6 +447,8 @@ UPSTREAM_KIND_ALIASES: dict[str, str] = {
     "claude": "anthropic",
     "claude-code": "anthropic",
     "codex": "openai",
+    # Legacy configs stored gateway/provider names in ``kind`` instead of wire protocol.
+    "openrouter": "anthropic",
 }
 
 
@@ -432,17 +456,24 @@ def _upstream_kind_allowed_display() -> str:
     return ", ".join([*UPSTREAM_KIND_CHOICES, *sorted(UPSTREAM_KIND_ALIASES)])
 
 
-def normalize_upstream_kind(raw: str) -> str:
+def normalize_upstream_kind(raw: str, *, url: str | None = None) -> str:
     """Return canonical upstream kind (``anthropic`` or ``openai``).
 
-    Accepts aliases ``claude`` / ``claude-code`` (anthropic) and ``codex`` (openai).
+    Accepts aliases ``claude`` / ``claude-code`` (anthropic), ``codex`` (openai), and
+    legacy gateway names such as ``openrouter`` (anthropic-compatible proxy path).
+    When *url* is provided, canonical provider URLs may also disambiguate unknown kinds.
     """
     kind = raw.strip().lower()
     kind = UPSTREAM_KIND_ALIASES.get(kind, kind)
-    if kind not in UPSTREAM_KIND_CHOICES:
-        allowed = _upstream_kind_allowed_display()
-        raise ValueError(f"Invalid upstream kind {raw!r}; expected one of: {allowed}")
-    return kind
+    if kind in UPSTREAM_KIND_CHOICES:
+        return kind
+    if url:
+        from cyt.launch.upstream import infer_upstream_kind_from_url
+
+        if inferred := infer_upstream_kind_from_url(normalize_upstream_url(url)):
+            return inferred
+    allowed = _upstream_kind_allowed_display()
+    raise ValueError(f"Invalid upstream kind {raw!r}; expected one of: {allowed}")
 
 
 def derive_second_level_domain_from_hostname(hostname: str) -> str:
@@ -517,9 +548,12 @@ def apply_upstream_cli_to_config(
             continue
         if upstream_entry_endpoint(entry) != new_name:
             continue
-        existing_kind = normalize_upstream_kind(str(entry.get("kind", "")))
         existing_url = normalize_upstream_url(
             str(entry.get("url") or entry.get("host_url") or entry.get("base_url") or ""),
+        )
+        existing_kind = normalize_upstream_kind(
+            str(entry.get("kind", "")),
+            url=existing_url or None,
         )
         if existing_kind == new_kind and existing_url == new_url:
             endpoints = _reverse_proxy_section(existing).get("endpoints", [])
@@ -1451,14 +1485,12 @@ def _existing_upstream_setup(
 
 def _upstream_display_fields(upstream: dict[str, Any]) -> tuple[str, str, str]:
     endpoint = upstream_entry_endpoint(upstream)
-    kind_raw = upstream.get("kind")
-    if kind_raw:
-        kind = normalize_upstream_kind(str(kind_raw))
-    elif endpoint != "?":
-        kind = normalize_upstream_kind(endpoint)
-    else:
-        kind = "?"
     url = str(upstream.get("url") or upstream.get("host_url") or "?").strip() or "?"
+    try:
+        kind = upstream_protocol_kind(upstream)
+    except ValueError:
+        kind_raw = upstream.get("kind")
+        kind = str(kind_raw).strip() if kind_raw else "?"
     return endpoint, kind, url
 
 
