@@ -736,7 +736,11 @@ def _openai_finish_transform(
             )
             logs = []
         session_log_entries.extend(logs)
-        tools_text = format_agent_tools(gated, include_tool_description=False)
+        tools_text = format_agent_tools(
+            gated,
+            include_tool_description=False,
+            session_text=proxy_session_text,
+        )
         if tools_text:
             original = append_injection_to_body(original, tools_text, kind="openai")
     elif not user_message_inject and pre_ctx is not None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from cyt_mcp.config import (
     expand_mcp_value,
     is_mcp_server_enabled,
@@ -127,7 +129,7 @@ def test_listed_mcp_server_names_includes_disabled_entries(tmp_path: Path) -> No
 
 def test_global_load_excludes_workspace_claimed_servers(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
@@ -160,7 +162,7 @@ def test_global_load_excludes_workspace_claimed_servers(
         "\n".join(
             [
                 "agent: cursor",
-                f"agents:",
+                "agents:",
                 f"  cursor: {global_defs.as_posix()}",
             ],
         ),
@@ -176,7 +178,7 @@ def test_global_load_excludes_workspace_claimed_servers(
 
 def test_global_load_keeps_servers_when_no_workspace_defs(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     global_defs = tmp_path / "global-mcp.json"
     global_defs.write_text(
@@ -188,7 +190,7 @@ def test_global_load_keeps_servers_when_no_workspace_defs(
         "\n".join(
             [
                 "agent: cursor",
-                f"agents:",
+                "agents:",
                 f"  cursor: {global_defs.as_posix()}",
             ],
         ),
@@ -203,7 +205,7 @@ def test_global_load_keeps_servers_when_no_workspace_defs(
 
 def test_workspace_load_keeps_servers_listed_in_workspace_defs(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
@@ -219,7 +221,7 @@ def test_workspace_load_keeps_servers_listed_in_workspace_defs(
             [
                 "agent: cursor",
                 "catalog_scope: workspace",
-                f"agents:",
+                "agents:",
                 f"  cursor: {ws_defs.as_posix()}",
             ],
         ),
@@ -235,7 +237,7 @@ def test_workspace_load_keeps_servers_listed_in_workspace_defs(
 
 def test_workspace_load_uses_canonical_defs_when_aggregator_missing(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
@@ -267,7 +269,7 @@ def test_workspace_load_uses_canonical_defs_when_aggregator_missing(
 
 def test_workspace_load_rejects_global_agent_path_in_aggregator(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
@@ -308,7 +310,7 @@ def test_workspace_load_rejects_global_agent_path_in_aggregator(
 
 def test_workspace_load_resolves_relative_agent_path_from_aggregator_dir(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_defs = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
@@ -343,7 +345,7 @@ def test_workspace_load_resolves_relative_agent_path_from_aggregator_dir(
 
 def test_global_load_ignores_workspace_permissions_deny(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
     ws_config_dir = tmp_path / ".agents" / "cyt" / "config"
@@ -354,7 +356,9 @@ def test_global_load_ignores_workspace_permissions_deny(
     )
     global_defs = tmp_path / "global-mcp.json"
     global_defs.write_text(
-        json.dumps({"mcpServers": {"fff": {"command": "echo"}, "global-only": {"command": "echo"}}}),
+        json.dumps(
+            {"mcpServers": {"fff": {"command": "echo"}, "global-only": {"command": "echo"}}},
+        ),
         encoding="utf-8",
     )
     agg = tmp_path / "mcp-aggregator.yaml"

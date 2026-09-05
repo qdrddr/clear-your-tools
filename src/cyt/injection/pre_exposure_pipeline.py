@@ -14,11 +14,13 @@ from cyt.injection.pre_exposed import (
     filter_pre_exposed_tools,
 )
 from cyt.injection.pre_exposure_context import PreExposureContext
+from cyt.injection.rules_refresh import bypass_injection_pre_exposure
 from cyt.injection.session_gate import (
     gate_resources_for_session,
     gate_skills_for_session,
     gate_tools_for_session,
 )
+from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.session_log_build import CatalogKind, tool_item_key
 from cyt.resources.inject import MatchedResource
 from cyt.skills.search import MatchedSkill
@@ -44,11 +46,13 @@ def gate_and_filter_tools(
     ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None = None,
     source_id: str | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
     """Session gate (b) plus verbatim filter on combined corpus."""
-    index = ctx.index
-    session_text = ctx.payload_text
-    combined_text = ctx.combined_text
+    refresh_rules = payload is not None and bypass_injection_pre_exposure(payload)
+    index = SessionLogIndex(entries=()) if refresh_rules else ctx.index
+    session_text = "" if refresh_rules else ctx.payload_text
+    combined_text = "" if refresh_rules else ctx.combined_text
     surviving_instruction_sessions: set[str] | None = None
     working_tools = tools
 
@@ -64,7 +68,7 @@ def gate_and_filter_tools(
         )
         payload_gated = filter_pre_exposed_tools(
             session_gated,
-            ctx.payload_text,
+            session_text,
             include_tool_description=True,
         )
         gated = filter_pre_exposed_mcpc_tools(payload_gated, combined_text)
@@ -79,7 +83,7 @@ def gate_and_filter_tools(
         )
         payload_gated = filter_pre_exposed_tools(
             session_gated,
-            ctx.payload_text,
+            session_text,
             include_tool_description=True,
         )
         gated = filter_pre_exposed_tools(payload_gated, combined_text)

@@ -14,6 +14,7 @@ RULES_REL_PATH = Path(".cursor/rules/cyt-injection.mdc")
 GITIGNORE_ENTRY = ".cursor/rules/cyt-injection.mdc"
 _RULES_DESCRIPTION = "CYT pruned skills and tools for this prompt"
 _RULES_PLACEHOLDER_BODY = "Re-read this file as it constantly updates."
+CYT_FORCE_RULES_REFRESH_FIELD = "cyt_force_rules_refresh"
 _custom_rules_rel_path: Path | None = None
 
 _SKILLS_BLOCK_RE = re.compile(
@@ -24,7 +25,11 @@ _TOOLS_BLOCK_RE = re.compile(
     r"<agent-tools[^>]*>.*?</agent-tools>",
     re.DOTALL,
 )
-_INNER_SOURCE_TAGS = ("mcpc", "executor", "definitions")
+_AGENT_TOOLS_LEGACY_DESCRIPTION_RE = re.compile(
+    r"<agent-tools\b[^>]*\sdescription\s*=",
+    re.IGNORECASE,
+)
+_INNER_SOURCE_TAGS = ("cyt-mcp", "mcpc", "cloudflare", "executor", "definitions")
 _INNER_SOURCE_RE = {
     tag: re.compile(rf"<{tag}[^>]*>.*?</{tag}>", re.DOTALL) for tag in _INNER_SOURCE_TAGS
 }
@@ -64,17 +69,26 @@ def normalize_workspace_path_string(raw: str) -> str:
     return text
 
 
+def _payload_layers(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    layers = [payload]
+    nested = payload.get("payload")
+    if isinstance(nested, dict):
+        layers.append(nested)
+    return layers
+
+
 def workspace_path_string(payload: dict[str, Any]) -> str | None:
     """Return the raw workspace path string from a hook payload, if present."""
-    cwd = payload.get("cwd")
-    if isinstance(cwd, str) and cwd.strip():
-        return cwd.strip()
+    for layer in _payload_layers(payload):
+        cwd = layer.get("cwd")
+        if isinstance(cwd, str) and cwd.strip():
+            return normalize_workspace_path_string(cwd)
 
-    roots = payload.get("workspace_roots")
-    if isinstance(roots, list):
-        for root in roots:
-            if isinstance(root, str) and root.strip():
-                return root.strip()
+        roots = layer.get("workspace_roots")
+        if isinstance(roots, list):
+            for root in roots:
+                if isinstance(root, str) and root.strip():
+                    return normalize_workspace_path_string(root)
     return None
 
 
@@ -115,6 +129,44 @@ def build_rules_mdc(injection: str) -> str:
 def build_rules_mdc_placeholder() -> str:
     """Session lifecycle rules file (frontmatter + re-read reminder, no pruned injection)."""
     return build_rules_mdc(_RULES_PLACEHOLDER_BODY)
+
+
+def is_rules_placeholder_body(body: str) -> bool:
+    return body.strip() == _RULES_PLACEHOLDER_BODY
+
+
+def is_substantive_rules_injection(body: str) -> bool:
+    text = body.strip()
+    if not text or is_rules_placeholder_body(text):
+        return False
+    lowered = text.casefold()
+    return "<agent-tools" in lowered or "<agent-skills" in lowered
+
+
+def rules_injection_needs_format_refresh(body: str) -> bool:
+    """True when on-disk rules use the pre-scope-grouping injection layout."""
+    text = body.strip()
+    if not is_substantive_rules_injection(text):
+        return False
+    if _AGENT_TOOLS_LEGACY_DESCRIPTION_RE.search(text):
+        return True
+    lowered = text.casefold()
+    if "<cyt-mcp>" in lowered and ("<tool " in lowered or "<tool>" in lowered):
+        if "<cyt-mcp-ws>" not in lowered and "<cyt-mcp-usr>" not in lowered:
+            return True
+    return False
+
+
+def read_prior_rules_injection_for_hook(workspace: Path) -> tuple[str, bool]:
+    """Return prior rules body for the hook and whether pre-exposure should be bypassed."""
+    body = read_cursor_rules_injection(workspace)
+    if (
+        not body.strip()
+        or is_rules_placeholder_body(body)
+        or rules_injection_needs_format_refresh(body)
+    ):
+        return "", True
+    return body, False
 
 
 def _strip_rules_mdc_frontmatter(content: str) -> str:

@@ -139,6 +139,17 @@ def _apply_catalog_to_state(
         schedule_master_catalog_refresh(config)
 
 
+def _normalize_catalog_scope(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    scope = raw.strip().lower()
+    if scope in {"user", "global"}:
+        return "user"
+    if scope == "workspace":
+        return "workspace"
+    return None
+
+
 def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
     name = str(tool.get("name") or "").strip()
     if not name:
@@ -153,6 +164,9 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
         "input_schema": schema,
         "cyt_catalog_source": "cyt_mcp",
     }
+    cyt_scope = _normalize_catalog_scope(tool.get("cyt_catalog_scope"))
+    if cyt_scope is not None:
+        normalized["cyt_catalog_scope"] = cyt_scope
     if tool.get("description") is not None:
         normalized["description"] = str(tool["description"])
     server_key = tool.get("server_key")

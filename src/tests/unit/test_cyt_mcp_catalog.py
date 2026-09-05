@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+from cyt.cyt_mcp.catalog import _normalize_tool
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+
+
+def test_normalize_tool_maps_global_scope_alias_to_user() -> None:
+    normalized = _normalize_tool(
+        {"name": "demo_tool", "input_schema": {}, "cyt_catalog_scope": "global"},
+    )
+    assert normalized is not None
+    assert normalized["cyt_catalog_scope"] == "user"
+
+
+def test_normalize_tool_preserves_workspace_scope() -> None:
+    normalized = _normalize_tool(
+        {"name": "demo_tool", "input_schema": {}, "cyt_catalog_scope": "workspace"},
+    )
+    assert normalized is not None
+    assert normalized["cyt_catalog_scope"] == "workspace"
 
 
 def test_catalog_payload_uses_full_backend_defs() -> None:

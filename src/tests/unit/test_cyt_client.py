@@ -558,7 +558,7 @@ def test_cli_enriches_transcript_before_post(capsys: pytest.CaptureFixture[str])
             "prompt": "hello",
         }
         with patch(
-            "cyt_client.cli.resolve_hook_url",
+            "cyt_client.cli._resolve_hook_url_for_submit",
             return_value="http://127.0.0.1:8834/hook/inject",
         ):
             with patch("cyt_client.cli.post_hook_inject", return_value=(200, b"")) as post:
@@ -806,7 +806,7 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
             "workspace_roots": [str(workspace)],
         }
         with patch(
-            "cyt_client.cli.resolve_hook_url",
+            "cyt_client.cli._resolve_hook_url_for_submit",
             return_value="http://127.0.0.1:8834/hook/inject",
         ):
             inject_response = json.dumps(
@@ -843,6 +843,50 @@ def test_cli_before_submit_deletes_stale_rules_file_before_inject(
         }
 
 
+def test_cli_before_submit_keeps_placeholder_on_empty_injection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from cyt_client.rules_file import build_rules_mdc_placeholder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp) / "project"
+        workspace.mkdir()
+        rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
+        rules_path.parent.mkdir(parents=True)
+        rules_path.write_text(build_rules_mdc_placeholder(), encoding="utf-8")
+        payload = {
+            "hook_event_name": "beforeSubmitPrompt",
+            "prompt": "hello",
+            "conversation_id": "conv-1",
+            "workspace_roots": [str(workspace)],
+        }
+        with patch(
+            "cyt_client.cli._resolve_hook_url_for_submit",
+            return_value="http://127.0.0.1:8834/hook/inject",
+        ):
+            inject_response = json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": "",
+                    },
+                },
+            ).encode()
+            with patch(
+                "cyt_client.cli.post_hook_inject",
+                return_value=(200, inject_response),
+            ):
+                from cyt_client.cli import main
+
+                with patch("sys.stdin.buffer.read", return_value=json.dumps(payload).encode()):
+                    main(["--verbose"])
+
+        captured = capsys.readouterr()
+        assert rules_path.is_file()
+        assert rules_path.read_text(encoding="utf-8") == build_rules_mdc_placeholder()
+        assert "keeping session lifecycle placeholder" in captured.err
+
+
 def test_cli_before_submit_deletes_rules_file_on_empty_injection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -851,7 +895,7 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
         workspace.mkdir()
         rules_path = workspace / ".cursor" / "rules" / "cyt-injection.mdc"
         rules_path.parent.mkdir(parents=True)
-        rules_path.write_text("existing pruned tools", encoding="utf-8")
+        rules_path.write_text("<agent-tools>existing pruned tools</agent-tools>", encoding="utf-8")
         payload = {
             "hook_event_name": "beforeSubmitPrompt",
             "prompt": "hello",
@@ -859,7 +903,7 @@ def test_cli_before_submit_deletes_rules_file_on_empty_injection(
             "workspace_roots": [str(workspace)],
         }
         with patch(
-            "cyt_client.cli.resolve_hook_url",
+            "cyt_client.cli._resolve_hook_url_for_submit",
             return_value="http://127.0.0.1:8834/hook/inject",
         ):
             inject_response = json.dumps(
@@ -906,7 +950,7 @@ def test_cli_before_submit_fresh_skips_prior_rules_injection(
             "workspace_roots": [str(workspace)],
         }
         with patch(
-            "cyt_client.cli.resolve_hook_url",
+            "cyt_client.cli._resolve_hook_url_for_submit",
             return_value="http://127.0.0.1:8834/hook/inject",
         ):
             inject_response = json.dumps(

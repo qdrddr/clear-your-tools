@@ -23,9 +23,9 @@ from cyt_client.hook_invocation import (
 from cyt_client.mcp_entry import (
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
+    DEFAULT_AGGREGATOR_PATH,
     LEGACY_CYT_MCP_SERVER_KEY,
     LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
-    DEFAULT_AGGREGATOR_PATH,
     build_cyt_mcp_mcp_server_entry,
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,

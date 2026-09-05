@@ -17,6 +17,7 @@ from cyt.cyt_mcp.readiness import cyt_mcp_hook_catalog_usable
 from cyt.indexer.tokens import count_json_tokens
 from cyt.injection.pre_exposure_context import PreExposureContext
 from cyt.injection.pre_exposure_pipeline import gate_and_filter_tools
+from cyt.injection.rules_refresh import bypass_injection_pre_exposure
 from cyt.injection.session_log import SessionLogIndex
 from cyt.injection.session_text import session_text_from_hook_payload
 from cyt.injection.tool_catalog_emit import append_tool_catalog_to_details
@@ -82,6 +83,7 @@ def _format_hook_tool_injection(
         gated,
         include_executor_workspace_note=uses_executor_tool_catalog(config),
         workspace_paths=workspace_paths,
+        session_text=session_text,
     )
 
 
@@ -99,6 +101,12 @@ def _partition_tools_by_source(
     }
 
 
+def _format_session_text(payload: dict[str, Any], ctx: PreExposureContext) -> str:
+    if bypass_injection_pre_exposure(payload):
+        return ""
+    return ctx.combined_text
+
+
 def _gate_source_tools(
     tools: list[dict[str, Any]],
     *,
@@ -106,6 +114,7 @@ def _gate_source_tools(
     config: dict[str, Any],
     ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None,
+    payload: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str] | None]:
     gated, filtered_logs, surviving_instruction_sessions = gate_and_filter_tools(
         tools,
@@ -113,6 +122,7 @@ def _gate_source_tools(
         ctx=ctx,
         catalog_tools=catalog_tools,
         source_id=source_id,
+        payload=payload,
     )
     return gated, filtered_logs, surviving_instruction_sessions
 
@@ -134,7 +144,11 @@ def _format_gated_source_section(
             surviving_instruction_sessions=surviving_instruction_sessions,
         )
     if source_id == "cyt_mcp":
-        return format_cyt_mcp_source_section(gated, workspace_paths=workspace_paths)
+        return format_cyt_mcp_source_section(
+            gated,
+            workspace_paths=workspace_paths,
+            session_text=combined_text,
+        )
     if source_id == "cloudflare":
         return format_cloudflare_source_section(
             gated,
@@ -152,10 +166,11 @@ def _gate_and_build_source_sections(
     ctx: PreExposureContext,
     catalog_tools: list[dict[str, Any]] | None,
     workspace_paths: list[str],
+    payload: dict[str, Any],
+    format_session_text: str,
 ) -> tuple[dict[str, str], list[dict[str, Any]]]:
     sections: dict[str, str] = {}
     all_logs: list[dict[str, Any]] = []
-    combined_text = ctx.combined_text
     for source_id, tools in source_tools.items():
         if not tools:
             continue
@@ -165,6 +180,7 @@ def _gate_and_build_source_sections(
             config=config,
             ctx=ctx,
             catalog_tools=catalog_tools,
+            payload=payload,
         )
         all_logs.extend(logs)
         if not gated:
@@ -174,7 +190,7 @@ def _gate_and_build_source_sections(
             gated,
             config=config,
             workspace_paths=workspace_paths,
-            combined_text=combined_text,
+            combined_text=format_session_text,
             surviving_instruction_sessions=surviving_sessions,
         )
         if section:
@@ -198,12 +214,13 @@ def _legacy_gate_and_format(
         ctx=ctx,
         catalog_tools=catalog_tools,
         source_id=source_id,
+        payload=payload,
     )
     formatted = _format_hook_tool_injection(
         gated,
         config,
         payload,
-        session_text=ctx.combined_text,
+        session_text=_format_session_text(payload, ctx),
         surviving_instruction_sessions=surviving_instruction_sessions,
     )
     return formatted, filtered_logs
@@ -222,6 +239,7 @@ def gate_and_format_hook_tools(
     """Apply session-log gate, pre-exposure, and format hook tool injection."""
     ctx = PreExposureContext.for_hook_payload(payload)
     workspace_paths = workspace_paths_for_tools_inject(payload)
+    format_session_text = _format_session_text(payload, ctx)
 
     if prune_results and len(prune_results) > 1:
         source_tools = {
@@ -235,8 +253,14 @@ def gate_and_format_hook_tools(
             ctx=ctx,
             catalog_tools=catalog_tools,
             workspace_paths=workspace_paths,
+            payload=payload,
+            format_session_text=format_session_text,
         )
-        formatted = format_multi_source_agent_tools(sections, workspace_paths=workspace_paths)
+        formatted = format_multi_source_agent_tools(
+            sections,
+            workspace_paths=workspace_paths,
+            session_text=format_session_text,
+        )
         return formatted, all_logs
 
     by_source = _partition_tools_by_source(pruned_tools)
@@ -247,9 +271,15 @@ def gate_and_format_hook_tools(
             ctx=ctx,
             catalog_tools=catalog_tools,
             workspace_paths=workspace_paths,
+            payload=payload,
+            format_session_text=format_session_text,
         )
         if sections:
-            formatted = format_multi_source_agent_tools(sections, workspace_paths=workspace_paths)
+            formatted = format_multi_source_agent_tools(
+                sections,
+                workspace_paths=workspace_paths,
+                session_text=format_session_text,
+            )
             return formatted, all_logs
 
     return _legacy_gate_and_format(

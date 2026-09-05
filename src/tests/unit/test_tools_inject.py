@@ -5,7 +5,7 @@ from __future__ import annotations
 from cyt.tools.inject import ensure_agent_tools_starts_on_new_line, format_agent_tools
 
 
-def test_format_agent_tools_moves_description_to_xml_attr() -> None:
+def test_format_agent_tools_puts_description_as_inner_text() -> None:
     tools = [
         {
             "name": "mcp__filesystem__read_file",
@@ -19,7 +19,8 @@ def test_format_agent_tools_moves_description_to_xml_attr() -> None:
 
     text = format_agent_tools(tools)
 
-    assert text.startswith("\n<agent-tools description='Pruned MCP tool definitions below")
+    assert text.startswith("\n<agent-tools>\nPruned MCP tool definitions below")
+    assert "description='Pruned MCP tool definitions below" not in text.split("\n", 2)[0]
     assert "<tool name='mcp__filesystem__read_file' description='Read a file from disk'>" in text
     assert "'description':" not in text
     assert "'input_schema':{'type':'object'" in text
@@ -73,8 +74,8 @@ def test_format_agent_tools_omits_tool_description_when_requested() -> None:
     assert "'input_schema':{'type':'object'" in text
 
 
-def test_format_agent_tools_intro_in_description_avoids_pruned_suffix_on_user_text() -> None:
-    """Pruned intro lives on the tag attribute, not as plain text after the user query."""
+def test_format_agent_tools_intro_avoids_pruned_suffix_on_user_text() -> None:
+    """Pruned intro lives inside the block after the opening tag, not before user query."""
     tools = [
         {
             "name": "mcp__context7__resolve-library-id",
@@ -89,13 +90,27 @@ def test_format_agent_tools_intro_in_description_avoids_pruned_suffix_on_user_te
         f"{user_query}{ensure_agent_tools_starts_on_new_line(text, after=user_query)}"
     )
 
-    assert "description='Pruned MCP tool definitions below" in text
+    assert "Pruned MCP tool definitions below" in text
     assert "Pruned MCP tool definitions below" not in user_then_inject.split("<agent-tools", 1)[0]
     assert "clear-your-toolsPruned" not in user_then_inject
 
 
+def test_format_agent_tools_omits_intro_when_pre_exposed() -> None:
+    tools = [
+        {
+            "name": "mcp__demo__tool",
+            "description": "Demo",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+    first = format_agent_tools(tools)
+    second = format_agent_tools(tools, session_text=first)
+    assert "Pruned MCP tool definitions below" in first
+    assert "Pruned MCP tool definitions below" not in second
+
+
 def test_ensure_agent_tools_starts_on_new_line() -> None:
-    block = "<agent-tools description='demo'>\n</agent-tools>"
+    block = "<agent-tools>\ndemo\n</agent-tools>"
     assert ensure_agent_tools_starts_on_new_line(block, after="hello") == "\n" + block
     assert ensure_agent_tools_starts_on_new_line(block, after="hello\n") == "\n" + block
     assert ensure_agent_tools_starts_on_new_line("\n" + block, after="hello\n") == "\n" + block
@@ -112,7 +127,7 @@ def test_format_agent_tools_includes_executor_workspace_note_when_requested() ->
 
     text = format_agent_tools(tools, include_executor_workspace_note=True)
 
-    assert "project&apos;s workspace_roots" in text
+    assert "project's workspace_roots" in text
     assert "When using tools with executor" in text
 
 

@@ -32,7 +32,10 @@ def test_resolve_workspace_cyt_config_prefers_shared_agents_path(tmp_path: Path)
 
 def test_cyt_install_scope_workspace_paths(tmp_path: Path) -> None:
     scope = CytInstallScope(workspace_root=tmp_path)
-    assert scope.workspace_server_defs_path("cursor") == tmp_path / ".agents/cyt/config/mcp/cursor.json"
+    assert (
+        scope.workspace_server_defs_path("cursor")
+        == tmp_path / ".agents/cyt/config/mcp/cursor.json"
+    )
     assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".agents/cyt/config/config.yaml"
     assert (
         scope.workspace_aggregator_path("cursor")

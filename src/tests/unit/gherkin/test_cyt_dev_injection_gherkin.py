@@ -188,7 +188,7 @@ def when_pairing_repairs(
     )
     gherkin_context.payload["mcp_entry"] = json.loads(mcp_path.read_text(encoding="utf-8"))[
         "mcpServers"
-    ]["cyt-mcp"]
+    ][CYT_MCP_SERVER_KEY]
 
 
 @given("cursor mcp.json contains cyt-mcp frontend and a backend server")

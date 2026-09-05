@@ -113,12 +113,7 @@ class CytInstallScope:
         if cyt_dir is None:
             return None
         name = agent.strip() or "cursor"
-        return (
-            cyt_dir
-            / WORKSPACE_CYT_CONFIG_SUBDIR
-            / WORKSPACE_CYT_MCP_SUBDIR
-            / f"{name}.json"
-        )
+        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / WORKSPACE_CYT_MCP_SUBDIR / f"{name}.json"
 
     def resolve_workspace_all_agents_cyt_config_path(self) -> Path | None:
         path = self.workspace_all_agents_cyt_config_path()

@@ -89,7 +89,8 @@ def when_format_mcpc(gherkin_context: GherkinContext, path: str) -> None:
 @then("formatted text should include MCPC server and CLI sections")
 def then_mcpc_sections(gherkin_context: GherkinContext) -> None:
     text = gherkin_context.stdout
-    assert text.startswith("\n<agent-tools description='Pruned MCP tool definitions below")
+    assert text.startswith("\n<agent-tools")
+    assert "Pruned MCP tool definitions below" in text
     assert "<mcpc>" in text
     assert "MCPC CLI" in text
     assert "mcpc @session tools-call" in text

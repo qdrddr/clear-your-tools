@@ -285,6 +285,22 @@ def dev_invocation_from_hooks_file(hooks_path: Path) -> tuple[Path, str] | None:
     return None
 
 
+def _cyt_mcp_spec_from_servers(servers: dict[str, Any]) -> dict[str, Any] | None:
+    for key in (CYT_MCP_SERVER_KEY, LEGACY_CYT_MCP_SERVER_KEY):
+        candidate = servers.get(key)
+        if isinstance(candidate, dict):
+            return cast(dict[str, Any], candidate)
+    return None
+
+
+def _dev_repo_from_uv_args(args: list[Any]) -> tuple[Path, str] | None:
+    if len(args) >= 4 and args[0] == "run" and args[1] == "--directory":
+        repo = Path(str(args[2]))
+        if (repo / CYT_MCP_SCRIPT_REL).is_file():
+            return repo, CYT_MCP_SCRIPT_REL
+    return None
+
+
 def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     if not mcp_path.is_file():
         return None
@@ -297,12 +313,7 @@ def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     servers = payload.get("mcpServers")
     if not isinstance(servers, dict):
         return None
-    spec: dict[str, Any] | None = None
-    for key in (CYT_MCP_SERVER_KEY, LEGACY_CYT_MCP_SERVER_KEY):
-        candidate = servers.get(key)
-        if isinstance(candidate, dict):
-            spec = cast(dict[str, Any], candidate)
-            break
+    spec = _cyt_mcp_spec_from_servers(servers)
     if spec is None:
         return None
     command = spec.get("command")
@@ -312,11 +323,7 @@ def dev_invocation_from_mcp_file(mcp_path: Path) -> tuple[Path, str] | None:
     joined = " ".join(str(arg) for arg in args)
     if CYT_MCP_SCRIPT_REL not in joined and "cyt_mcp/cli.py" not in joined:
         return None
-    if len(args) >= 4 and args[0] == "run" and args[1] == "--directory":
-        repo = Path(str(args[2]))
-        if (repo / CYT_MCP_SCRIPT_REL).is_file():
-            return repo, CYT_MCP_SCRIPT_REL
-    return None
+    return _dev_repo_from_uv_args(args)
 
 
 def mcp_entries_equivalent(existing: object, desired: dict[str, Any]) -> bool:

@@ -50,19 +50,12 @@ def _xml_single_quoted_attr(value: str) -> str:
 
 def _agent_tools_open_tag(
     *,
-    include_tool_description: bool = True,
-    include_executor_workspace_note: bool = False,
     workspace_paths: list[str] | None = None,
 ) -> str:
-    intro = _agent_tools_description(
-        include_tool_description=include_tool_description,
-        include_executor_workspace_note=include_executor_workspace_note,
-    )
-    attrs = [f"description='{_xml_single_quoted_attr(intro)}'"]
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) == 1:
-        attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
-    return f"<agent-tools {' '.join(attrs)}>"
+        return f"<agent-tools path='{_xml_single_quoted_attr(paths[0])}'>"
+    return "<agent-tools>"
 
 
 def _format_workspace_roots_block(workspace_paths: list[str]) -> str:
@@ -126,6 +119,7 @@ def format_agent_tools(
     include_tool_description: bool = True,
     include_executor_workspace_note: bool = False,
     workspace_paths: list[str] | None = None,
+    session_text: str = "",
 ) -> str:
     if not pruned_tools:
         return ""
@@ -137,13 +131,15 @@ def format_agent_tools(
     if not item_lines:
         return ""
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
-    lines = [
-        _agent_tools_open_tag(
-            include_tool_description=include_tool_description,
-            include_executor_workspace_note=include_executor_workspace_note,
-            workspace_paths=paths,
-        ),
-    ]
+    intro = _agent_tools_description(
+        include_tool_description=include_tool_description,
+        include_executor_workspace_note=include_executor_workspace_note,
+    )
+    lines = [_agent_tools_open_tag(workspace_paths=paths)]
+    from cyt.injection.header_pre_exposed import agent_tools_intro_pre_exposed
+
+    if not agent_tools_intro_pre_exposed(session_text, intro):
+        lines.append(intro)
     if len(paths) > 1:
         roots_block = _format_workspace_roots_block(paths)
         if roots_block:

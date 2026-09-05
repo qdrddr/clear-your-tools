@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from cyt.injection.header_pre_exposed import (
+    agent_tools_intro_pre_exposed,
+    cyt_mcp_note_pre_exposed,
+)
 from cyt.tools.inject import (
     _AGENT_TOOLS_DESCRIPTION_BASE,
     _EXECUTOR_WORKSPACE_NOTE,
+    _agent_tools_open_tag,
     _format_workspace_roots_block,
-    _xml_single_quoted_attr,
     ensure_agent_tools_starts_on_new_line,
     format_tool_item,
 )
@@ -40,6 +44,48 @@ _CYT_MCP_EMPTY_NOTE = (
     "No relevant cyt-mcp tools matched this prompt. Do not use `get-tool-definitions` — "
     "there is nothing to look up. This block is kept stable for prompt-prefix cache."
 )
+
+
+def _normalize_tool_scope(tool: dict[str, Any]) -> str:
+    raw = tool.get("cyt_catalog_scope")
+    if isinstance(raw, str) and raw.strip().lower() == "workspace":
+        return "workspace"
+    return "user"
+
+
+def _partition_cyt_mcp_tools_by_scope(
+    tools: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    workspace_tools = [tool for tool in tools if _normalize_tool_scope(tool) == "workspace"]
+    ws_names = {
+        str(tool.get("name") or "") for tool in workspace_tools if str(tool.get("name") or "")
+    }
+    user_tools = [
+        tool
+        for tool in tools
+        if _normalize_tool_scope(tool) != "workspace"
+        and str(tool.get("name") or "") not in ws_names
+    ]
+    return workspace_tools, user_tools
+
+
+def _format_scope_tool_block(
+    tag: str,
+    tools: list[dict[str, Any]],
+    *,
+    include_tool_description: bool = True,
+) -> str:
+    if not tools:
+        return ""
+    item_lines = [
+        line
+        for tool in tools
+        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
+    ]
+    if not item_lines:
+        return ""
+    body = "\n".join(item_lines)
+    return f"<{tag}>\n{body}\n</{tag}>"
 
 
 def format_cloudflare_source_section(
@@ -173,30 +219,50 @@ def format_cyt_mcp_source_section(
     *,
     workspace_paths: list[str] | None = None,
     include_tool_description: bool = True,
+    session_text: str = "",
 ) -> str:
     if not tools:
         return f"<cyt-mcp>\n{_CYT_MCP_EMPTY_NOTE}\n</cyt-mcp>"
-    item_lines = [
-        line
-        for tool in tools
-        if (line := format_tool_item(tool, include_tool_description=include_tool_description))
-    ]
-    if not item_lines:
+
+    workspace_tools, user_tools = _partition_cyt_mcp_tools_by_scope(tools)
+    ws_block = _format_scope_tool_block(
+        "cyt-mcp-ws",
+        workspace_tools,
+        include_tool_description=include_tool_description,
+    )
+    usr_block = _format_scope_tool_block(
+        "cyt-mcp-usr",
+        user_tools,
+        include_tool_description=include_tool_description,
+    )
+    if not ws_block and not usr_block:
         return ""
-    body = "\n".join(item_lines)
-    prompt = _CYT_MCP_WORKSPACE_NOTE
+
+    prompt = ""
+    if not cyt_mcp_note_pre_exposed(session_text, _CYT_MCP_WORKSPACE_NOTE):
+        prompt = _CYT_MCP_WORKSPACE_NOTE
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
+    roots = ""
     if len(paths) > 1:
         roots = _format_workspace_roots_block(paths)
-        if roots:
-            prompt = f"{prompt}\n{roots}"
-    return _join_section(prompt, "cyt-mcp", body)
+
+    inner_parts = [part for part in (prompt.strip(), roots, ws_block, usr_block) if part]
+    inner = "\n".join(inner_parts)
+    return f"<cyt-mcp>\n{inner}\n</cyt-mcp>"
+
+
+def _multi_source_agent_tools_description() -> str:
+    return (
+        f"{_AGENT_TOOLS_DESCRIPTION_BASE} Multiple tool sources are grouped in "
+        "<mcpc>, <cyt-mcp>, <cloudflare>, <executor>, and <definitions> sections."
+    )
 
 
 def format_multi_source_agent_tools(
     sections: dict[str, str],
     *,
     workspace_paths: list[str] | None = None,
+    session_text: str = "",
 ) -> str:
     """Join non-empty source sections inside one ``<agent-tools>`` wrapper."""
     ordered = [
@@ -209,14 +275,12 @@ def format_multi_source_agent_tools(
     inner = "\n".join(part for part in ordered if part)
     if not inner.strip():
         return ""
-    description = (
-        f"{_AGENT_TOOLS_DESCRIPTION_BASE} Multiple tool sources are grouped in "
-        "<mcpc>, <cyt-mcp>, <cloudflare>, <executor>, and <definitions> sections."
-    )
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
-    attrs = [f"description='{_xml_single_quoted_attr(description)}'"]
-    if len(paths) == 1:
-        attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
-    open_tag = f"<agent-tools {' '.join(attrs)}>"
-    wrapped = "\n".join([open_tag, inner, "</agent-tools>"])
+    lines = [_agent_tools_open_tag(workspace_paths=paths)]
+    description = _multi_source_agent_tools_description()
+    if not agent_tools_intro_pre_exposed(session_text, description):
+        lines.append(description)
+    lines.append(inner)
+    lines.append("</agent-tools>")
+    wrapped = "\n".join(lines)
     return ensure_agent_tools_starts_on_new_line(wrapped)

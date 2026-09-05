@@ -277,14 +277,14 @@ def _format_gated_agent_tools(
         from cyt.injection.pre_exposed import filter_pre_exposed_tools
 
         gated = filter_pre_exposed_tools(mcp_tools, session_text)
-        return format_agent_tools(gated), []
+        return format_agent_tools(gated, session_text=session_text), []
     gated, logs, _sessions = gate_and_filter_tools(
         mcp_tools,
         config=config,
         ctx=ctx,
         catalog_tools=catalog_tools,
     )
-    return format_agent_tools(gated), logs
+    return format_agent_tools(gated, session_text=ctx.combined_text), logs
 
 
 def _anthropic_user_message_tools_inject(

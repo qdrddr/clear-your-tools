@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,9 @@ from cyt_client.rules_file import (
     extract_verify_only_flag,
     format_phase_timing_verbose,
     hook_stdout_bytes_for_agent,
+    is_substantive_rules_injection,
     is_valid_workspace_root,
-    read_cursor_rules_injection,
+    read_prior_rules_injection_for_hook,
     reset_cursor_rules_file_to_placeholder,
     set_rules_file_rel_path,
     sync_cursor_rules_file,
@@ -173,6 +175,20 @@ def _workspace_for_cursor_hook(payload: dict) -> Path | None:
         _verbose_log(f"cyt-client: invalid workspace root: {label}")
         return None
     return workspace
+
+
+def _resolve_hook_url_for_submit(*, retries: int = 6, delay_seconds: float = 0.15) -> str | None:
+    """Resolve hook URL with brief retries (sessionStart may still be starting the daemon)."""
+    for attempt in range(retries):
+        hook_url = resolve_hook_url()
+        if hook_url is not None:
+            if attempt:
+                _verbose_log(f"cyt-client: hook server available after {attempt + 1} attempt(s)")
+            return hook_url
+        if attempt + 1 < retries:
+            time.sleep(delay_seconds)
+            clear_hook_url_cache()
+    return None
 
 
 def _post_hook_inject_resilient(
@@ -387,8 +403,12 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
     agent = _effective_agent(payload)
     verify_only = _verify_only_for_agent(payload)
     if inject_via_for_agent(agent) == "proxy" and not verify_only_mode():
-        prior_rules_injection = "" if _fresh_hook else read_cursor_rules_injection(workspace)
-        payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
+        prior_rules_injection, force_rules_refresh = read_prior_rules_injection_for_hook(workspace)
+        payload_bytes = enrich_hook_payload(
+            raw,
+            rules_injection=prior_rules_injection,
+            force_rules_refresh=force_rules_refresh,
+        )
         if is_prompt_submit_event(payload):
             try:
                 enriched = json.loads(payload_bytes)
@@ -408,10 +428,16 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_continue()
         return
 
-    prior_rules_injection = (
-        "" if (_fresh_hook or verify_only) else read_cursor_rules_injection(workspace)
+    prior_rules_injection, force_rules_refresh = (
+        ("", False)
+        if (_fresh_hook or verify_only)
+        else read_prior_rules_injection_for_hook(workspace)
     )
-    payload_bytes = enrich_hook_payload(raw, rules_injection=prior_rules_injection)
+    payload_bytes = enrich_hook_payload(
+        raw,
+        rules_injection=prior_rules_injection,
+        force_rules_refresh=force_rules_refresh,
+    )
     if is_prompt_submit_event(payload) and not (
         verify_only_mode() and inject_via_for_agent(agent) == "hook"
     ):
@@ -444,14 +470,18 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         _emit_cursor_hook_stdout(body)
         return
 
-    hook_url = resolve_hook_url()
+    hook_url = _resolve_hook_url_for_submit()
     if hook_url is None:
         _verbose_log("cyt-client: hook server unavailable")
+        if force_rules_refresh:
+            reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_continue()
         return
 
     result = _post_hook_inject_resilient(hook_url, payload_bytes)
     if result is None:
+        if force_rules_refresh:
+            reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_continue()
         return
     status, body, _hook_url = result
@@ -461,6 +491,8 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
         error_preview = body[:300].decode(errors="replace") if body else ""
         if error_preview:
             _verbose_log(f"cyt-client: hook error body: {error_preview}")
+        if force_rules_refresh:
+            reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_continue()
         return
 
@@ -482,14 +514,17 @@ def _handle_cursor_before_submit(raw: bytes, payload: dict) -> None:  # noqa: C9
 
     injection = extract_additional_context(body)
     if not injection.strip():
-        if prior_rules_injection.strip():
+        if is_substantive_rules_injection(prior_rules_injection):
             _verbose_log(
                 "cyt-client: hook returned no additionalContext; "
                 "tools already present in rules file (pre-exposure skip)",
             )
         else:
-            _verbose_log("cyt-client: hook returned no additionalContext; skipping rules file sync")
-            delete_cursor_rules_file(workspace)
+            _verbose_log(
+                "cyt-client: hook returned no additionalContext; "
+                "keeping session lifecycle placeholder",
+            )
+            reset_cursor_rules_file_to_placeholder(workspace)
         _emit_cursor_hook_stdout(body)
         return
 

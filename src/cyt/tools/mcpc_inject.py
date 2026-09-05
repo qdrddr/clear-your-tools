@@ -46,19 +46,11 @@ def _format_mcpc_section(*, prompt: str, body: str) -> str:
 def _agent_tools_open_tag(
     *,
     workspace_paths: list[str] | None = None,
-    include_description: bool = True,
 ) -> str:
-    attrs: list[str] = []
-    if include_description:
-        intro = _mcpc_agent_tools_description()
-        attrs.append(f"description='{_xml_single_quoted_attr(intro)}'")
     paths = [path.strip() for path in (workspace_paths or []) if path.strip()]
     if len(paths) == 1:
-        attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
-    elif paths:
-        attrs.append(f"path='{_xml_single_quoted_attr(paths[0])}'")
-    attr_text = f" {' '.join(attrs)}" if attrs else ""
-    return f"<agent-tools{attr_text}>"
+        return f"<agent-tools path='{_xml_single_quoted_attr(paths[0])}'>"
+    return "<agent-tools>"
 
 
 def _pruned_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
@@ -332,12 +324,9 @@ def format_mcpc_agent_tools(
     omit_intro = pre_exposure.omit_agent_tools_description or not include_agent_tools_description
     mcpc_prompt = "" if _MCPC_WORKSPACE_NOTE.strip() in session_text else _MCPC_WORKSPACE_NOTE
     mcpc_section = _format_mcpc_section(prompt=mcpc_prompt, body="\n".join(server_blocks))
-    lines = [
-        _agent_tools_open_tag(
-            workspace_paths=workspace_paths,
-            include_description=not omit_intro,
-        ),
-        mcpc_section,
-        "</agent-tools>",
-    ]
+    lines = [_agent_tools_open_tag(workspace_paths=workspace_paths)]
+    if not omit_intro:
+        lines.append(_mcpc_agent_tools_description())
+    lines.append(mcpc_section)
+    lines.append("</agent-tools>")
     return ensure_agent_tools_starts_on_new_line("\n".join(lines))

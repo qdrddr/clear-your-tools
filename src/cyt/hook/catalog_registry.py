@@ -403,17 +403,34 @@ def _entry_tools(
     return []
 
 
+def _stamp_catalog_scope(
+    tools: list[dict[str, Any]],
+    scope: CatalogScope,
+) -> list[dict[str, Any]]:
+    """Stamp ``cyt_catalog_scope`` on tools (registry ``global`` → canonical ``user``)."""
+    cyt_scope = "workspace" if scope == "workspace" else "user"
+    stamped: list[dict[str, Any]] = []
+    for tool in tools:
+        item = copy.deepcopy(tool)
+        item["cyt_catalog_scope"] = cyt_scope
+        stamped.append(item)
+    return stamped
+
+
 def merge_catalog_for_hook(
     agent: str,
     workspace_root: str | Path | None,
     *,
     allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    """Merge global + workspace cyt-mcp registrations for hook injection."""
+    """Merge user-scoped + workspace cyt-mcp registrations for hook injection."""
     normalized_agent = _normalize_agent(agent)
     global_key = _registry_key(normalized_agent, "global", None)
     global_entry = _get_entry(global_key)
-    global_tools = _entry_tools(global_entry, allow_stale=allow_stale)
+    global_tools = _stamp_catalog_scope(
+        _entry_tools(global_entry, allow_stale=allow_stale),
+        "global",
+    )
 
     ws_path: str | None = None
     if workspace_root is not None:
@@ -423,7 +440,10 @@ def merge_catalog_for_hook(
     if ws_path:
         ws_key = _registry_key(normalized_agent, "workspace", ws_path)
         ws_entry = _get_entry(ws_key)
-        workspace_tools = _entry_tools(ws_entry, allow_stale=allow_stale)
+        workspace_tools = _stamp_catalog_scope(
+            _entry_tools(ws_entry, allow_stale=allow_stale),
+            "workspace",
+        )
 
     if not global_tools and not workspace_tools:
         return []

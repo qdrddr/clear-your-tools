@@ -9,7 +9,10 @@ from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.rules_file import (
+    CYT_FORCE_RULES_REFRESH_FIELD,
+    is_rules_placeholder_body,
     rules_file_path,
+    rules_injection_needs_format_refresh,
     workspace_path_string,
     workspace_root_from_payload,
 )
@@ -80,9 +83,11 @@ def _attach_cyt_rules_injection(data: dict[str, Any]) -> bool:
     if not path.is_file():
         return False
     body = _strip_rules_mdc_frontmatter(path.read_text(encoding="utf-8"))
-    if not body:
+    if is_rules_placeholder_body(body) or rules_injection_needs_format_refresh(body):
+        if body.strip():
+            data[CYT_FORCE_RULES_REFRESH_FIELD] = True
         return False
-    data[CYT_RULES_INJECTION_FIELD] = body
+    data[CYT_RULES_INJECTION_FIELD] = body.strip()
     return True
 
 
@@ -109,6 +114,7 @@ def enrich_hook_payload(
     payload_bytes: bytes,
     *,
     rules_injection: str | None = None,
+    force_rules_refresh: bool = False,
 ) -> bytes:
     """Attach ``cyt_hook_payload``, ``cyt_agent``, ``cyt.cwd``, ``cyt_transcript``, ``cyt_rules_injection``, and ``cyt_skills``."""
     if not payload_bytes.strip():
@@ -134,8 +140,12 @@ def enrich_hook_payload(
     if rules_injection is not None:
         if rules_injection.strip():
             data[CYT_RULES_INJECTION_FIELD] = rules_injection.strip()
+        elif force_rules_refresh:
+            data[CYT_FORCE_RULES_REFRESH_FIELD] = True
     else:
         _attach_cyt_rules_injection(data)
+    if force_rules_refresh:
+        data[CYT_FORCE_RULES_REFRESH_FIELD] = True
     attach_client_skills(data)
     _attach_cyt_session_log(data)
 

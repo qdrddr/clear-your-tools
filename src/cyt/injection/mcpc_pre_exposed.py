@@ -36,10 +36,11 @@ def _plain_or_escaped_attr_pre_exposed(session_text: str, attr_name: str, value:
 
 
 def _agent_tools_description_pre_exposed(session_text: str) -> bool:
+    from cyt.injection.header_pre_exposed import agent_tools_intro_pre_exposed
     from cyt.tools.mcpc_inject import _mcpc_agent_tools_description
 
     intro = _mcpc_agent_tools_description()
-    return _plain_or_escaped_attr_pre_exposed(session_text, "description", intro)
+    return agent_tools_intro_pre_exposed(session_text, intro)
 
 
 def _server_attr_pre_exposed(

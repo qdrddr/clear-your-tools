@@ -79,5 +79,6 @@ def test_compute_mcpc_pre_exposure_flags_detects_agent_tools_intro() -> None:
     from cyt.tools.mcpc_inject import _mcpc_agent_tools_description
 
     intro = _mcpc_agent_tools_description()
-    flags = compute_mcpc_pre_exposure_flags([_tool()], intro)
+    session_text = f"<agent-tools>\n{intro}\n</agent-tools>"
+    flags = compute_mcpc_pre_exposure_flags([_tool()], session_text)
     assert flags.omit_agent_tools_description is True

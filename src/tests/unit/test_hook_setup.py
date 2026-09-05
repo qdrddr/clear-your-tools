@@ -11,7 +11,6 @@ from unittest.mock import patch
 import pytest
 
 from cyt.hook import setup_wizard as hook_setup
-from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
 from cyt.hook.cli_invocation import (
     HookCliInvocation,
     build_uv_run_dev_command,
@@ -26,6 +25,7 @@ from cyt.hook.cli_invocation import (
     proxy_cli_script_relpath,
     repo_root_from_proxy_cli_script,
 )
+from cyt_client.mcp_entry import CYT_MCP_SERVER_KEY
 
 
 @pytest.fixture(autouse=True)

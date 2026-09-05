@@ -67,6 +67,11 @@ def test_register_and_merge_global_workspace(tmp_path: Path) -> None:
     assert names == {"global_tool", "ws_tool"}
     ws_tool = next(tool for tool in merged if tool["name"] == "global_tool")
     assert ws_tool["input_schema"] == {"type": "object", "properties": {}}
+    assert ws_tool["cyt_catalog_scope"] == "workspace"
+    ws_only = next(tool for tool in merged if tool["name"] == "ws_tool")
+    assert ws_only["cyt_catalog_scope"] == "workspace"
+    user_only = merge_catalog_for_hook("cursor", None)
+    assert user_only[0]["cyt_catalog_scope"] == "user"
 
 
 def test_hash_only_heartbeat_returns_unchanged() -> None:
