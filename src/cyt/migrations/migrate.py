@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,10 @@ from cyt.migrations.runner import (
     upgrade_config_dict,
     write_backup,
 )
-from cyt.migrations.workspace_paths import resolve_workspace_config_path
+from cyt.migrations.workspace_paths import (
+    ensure_canonical_workspace_config,
+    resolve_workspace_config_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,4 +129,70 @@ def maybe_migrate_workspace_config(
     if path is None:
         return None
     maybe_migrate_config_file(path, scope="workspace")
+    return path
+
+
+def ensure_config_file_current(
+    path: Path,
+    *,
+    scope: ConfigScope,
+    create_if_missing: bool = False,
+) -> MigrationResult | None:
+    """Check schema version and migrate on-disk config to HEAD when behind.
+
+    Prints to stderr only when migration runs or when pending migrations are
+    blocked by ``CYT_SKIP_CONFIG_MIGRATE``.
+    """
+    path = path.expanduser()
+    if not path.is_file():
+        if create_if_missing:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_config_dict(path, {})
+        else:
+            return None
+
+    raw = _load_yaml_dict(path)
+    pending = pending_revisions(raw, scope=scope)
+    if not pending and read_schema_version(raw) == current_head():
+        return MigrationResult(
+            cfg=raw,
+            from_revision=read_schema_version(raw),
+            to_revision=read_schema_version(raw),
+            steps=(),
+            changed=False,
+        )
+
+    if skip_auto_migrate():
+        if pending:
+            print(
+                f"config: {path} has pending migrations (CYT_SKIP_CONFIG_MIGRATE=1)",
+                file=sys.stderr,
+            )
+        return None
+
+    result = migrate_config_file(path, scope=scope, dry_run=False, backup=True)
+    if result is not None and result.changed:
+        print(
+            f"config: migrated {path} {result.from_revision} -> {result.to_revision}",
+            file=sys.stderr,
+        )
+        if result.steps:
+            print(f"  steps: {', '.join(result.steps)}", file=sys.stderr)
+    return result
+
+
+def ensure_workspace_config_current(
+    *,
+    workspace_root: Path | None = None,
+) -> Path | None:
+    """Promote legacy workspace config and migrate to HEAD when behind."""
+    scope = CytInstallScope(
+        workspace_root=workspace_root or CytInstallScope.from_cwd().workspace_root,
+    )
+    if not scope.has_workspace:
+        return None
+    path = ensure_canonical_workspace_config(scope)
+    if path is None or not path.is_file():
+        return path
+    ensure_config_file_current(path, scope="workspace")
     return path

@@ -9,6 +9,11 @@ from unittest.mock import patch
 from cyt.common.token_usage import empty_usage
 from cyt.skills.catalog import _iter_chunk_ids, _iter_content_chunk_ids, build_registry
 from cyt.skills.search import search_skills, search_skills_with_pipeline
+from tests.support.skills_helpers import isolated_skills_agents_block
+
+
+def _with_test_agents(config: dict) -> dict:
+    return {**config, "agents": isolated_skills_agents_block()}
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -26,17 +31,19 @@ def test_search_returns_matches_for_relevant_query() -> None:
             "---\nname: create-hook\ndescription: Agent hooks for Claude Code.\n---\n"
             "# Create Hook\n\nAgent hooks for Claude Code.\n\n## Usage\n\nSubmit prompts with hooks.\n",
         )
-        config = {
-            "skills": {
-                "enabled": True,
-                "pipeline": "bm25",
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "max_tokens_per_request": 4000,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "enabled": True,
+                    "pipeline": "bm25",
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "max_tokens_per_request": 4000,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         matches = search_skills("agent hooks prompt submit", entries, config=config)
         assert matches
@@ -50,13 +57,15 @@ def test_search_empty_query_returns_no_matches() -> None:
         skills_dir = root / "skills"
         catalog_dir = root / "catalog"
         _write_skill(skills_dir / "skill.md", "# Skill\n\nBody\n")
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
             },
-        }
+        )
         entries = build_registry(config)
         assert search_skills("", entries, config=config) == []
         assert search_skills("   ", entries, config=config) == []
@@ -71,14 +80,16 @@ def test_search_below_threshold_filters_matches() -> None:
             skills_dir / "unrelated.md",
             "# Zebra\n\nCompletely unrelated topic about databases only.\n",
         )
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.99}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.99}}}},
-        }
+        )
         entries = build_registry(config)
         with patch("cyt.skills.bm25.bm25_score_skills", return_value=0.99):
             matches = search_skills("quantum physics rockets", entries, config=config)
@@ -95,16 +106,18 @@ def test_frontmatter_gate_excludes_similar_skill() -> None:
             "---\nname: create-hook\ndescription: Agent hooks for Claude Code.\n---\n"
             "# Create Hook\n\nAgent hooks for Claude Code.\n\n## Usage\n\nSubmit prompts with hooks.\n",
         )
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "frontmatter_upper_limit": 0.0,
-                "max_tokens_per_request": 4000,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "frontmatter_upper_limit": 0.0,
+                    "max_tokens_per_request": 4000,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         matches = search_skills(
             "create-hook agent hooks for claude code",
@@ -124,16 +137,18 @@ def test_frontmatter_gate_allows_dissimilar_skill() -> None:
             "---\nname: create-hook\ndescription: Agent hooks for Claude Code.\n---\n"
             "# Zebra Migration\n\nDatabase shard rebalancing procedures.\n",
         )
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "frontmatter_upper_limit": 0.4,
-                "max_tokens_per_request": 4000,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "frontmatter_upper_limit": 0.4,
+                    "max_tokens_per_request": 4000,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         matches = search_skills(
             "database shard rebalancing zebra migration",
@@ -159,16 +174,18 @@ def test_frontmatter_gate_trace_reports_scores() -> None:
             "---\nname: other\ndescription: Unrelated database topic.\n---\n"
             "# Other\n\nDatabase shard rebalancing only.\n",
         )
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "frontmatter_upper_limit": 0.4,
-                "max_tokens_per_request": 4000,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "frontmatter_upper_limit": 0.4,
+                    "max_tokens_per_request": 4000,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         from cyt.skills.bm25 import frontmatter_gate_trace
 
@@ -211,16 +228,18 @@ def test_match_name_preserved_after_content_only_search() -> None:
             "---\nname: create-hook\ndescription: Agent hooks for Claude Code.\n---\n"
             "# Zebra Migration\n\nDatabase shard rebalancing procedures.\n",
         )
-        config = {
-            "skills": {
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "frontmatter_upper_limit": 0.4,
-                "max_tokens_per_request": 4000,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "frontmatter_upper_limit": 0.4,
+                    "max_tokens_per_request": 4000,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         matches = search_skills(
             "database shard rebalancing zebra migration",
@@ -241,17 +260,19 @@ def test_search_rerank_pipeline_dispatches_to_rerank_skill_nodes() -> None:
             "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
             "# Create Hook\n\nAgent hooks for Claude Code.\n",
         )
-        config = {
-            "skills": {
-                "pipeline": "rerank",
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "max_tokens_per_request": 4000,
-                "bm25_node_fallback_threshold": 0,
-                "pageindex": {"enable_bm25_chunking": False},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "pipeline": "rerank",
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "max_tokens_per_request": 4000,
+                    "bm25_node_fallback_threshold": 0,
+                    "pageindex": {"enable_bm25_chunking": False},
+                },
+                "pruning": {"tools": {"pipelines": {"rerank": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"rerank": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         with patch(
             "cyt.skills.rerank.rerank_skill_nodes_with_trace",
@@ -272,16 +293,18 @@ def test_search_llm_pipeline_dispatches_to_llm_skill_nodes() -> None:
             "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
             "# Create Hook\n\nAgent hooks for Claude Code.\n",
         )
-        config = {
-            "skills": {
-                "pipeline": "llm",
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "max_tokens_per_request": 4000,
-                "bm25_node_fallback_threshold": 0,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "pipeline": "llm",
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "max_tokens_per_request": 4000,
+                    "bm25_node_fallback_threshold": 0,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
             },
-        }
+        )
         entries = build_registry(config)
         with patch(
             "cyt.skills.llm.llm_skill_nodes_with_trace",
@@ -302,17 +325,19 @@ def test_search_with_pipeline_reports_bm25_node_fallback() -> None:
             "---\nname: create-hook\ndescription: Agent hooks.\n---\n"
             "# Create Hook\n\nAgent hooks for Claude Code.\n",
         )
-        config = {
-            "skills": {
-                "pipeline": "rerank",
-                "catalog_dir": str(catalog_dir),
-                "directories": [str(skills_dir)],
-                "max_tokens_per_request": 4000,
-                "bm25_node_fallback_threshold": 50,
-                "pageindex": {"enable_bm25_chunking": True},
+        config = _with_test_agents(
+            {
+                "skills": {
+                    "pipeline": "rerank",
+                    "catalog_dir": str(catalog_dir),
+                    "directories": [str(skills_dir)],
+                    "max_tokens_per_request": 4000,
+                    "bm25_node_fallback_threshold": 50,
+                    "pageindex": {"enable_bm25_chunking": True},
+                },
+                "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
             },
-            "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
-        }
+        )
         entries = build_registry(config)
         _matches, pipeline_run = search_skills_with_pipeline(
             "agent hooks prompt submit",

@@ -1565,13 +1565,17 @@ def _prompt_upstreams(
 
 def _default_skills_directories(skills_cfg: dict[str, Any]) -> list[str]:
     from cyt.common.paths import shorten_home_path
-    from cyt.config import _bundled_list
+    from cyt.config import _bundled_list, inject_via_agents
 
     raw = skills_cfg.get("directories")
     if isinstance(raw, list) and raw:
         paths = [str(path) for path in raw if str(path).strip()]
     else:
         paths = [str(path) for path in _bundled_list("skills", "directories")]
+        for agent in inject_via_agents():
+            paths.extend(
+                str(path) for path in _bundled_list("agents", agent, "skills", "directories")
+            )
 
     normalized: list[str] = []
     for path in paths:
@@ -1616,14 +1620,14 @@ def _prompt_skills(
     existing: dict[str, Any],
     *,
     tool_pipeline: list[str] | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     existing_skills = existing.get("skills")
     skills_cfg = existing_skills if isinstance(existing_skills, dict) else {}
     default_enabled = skills_enabled(existing if existing else {})
     print("\n--- Skills injection ---")
     enabled = _prompt_yes_no("Enable skills injection?", default_yes=default_enabled)
     if not enabled:
-        return {"enabled": False}
+        return {"enabled": False}, {}
     if tool_pipeline:
         pipeline = skills_pipeline_default_from_tool_pipeline(tool_pipeline)
     else:
@@ -1633,11 +1637,19 @@ def _prompt_skills(
         else:
             pipeline = SKILLS_PIPELINE_DEFAULT
     directories = _prompt_skills_directories(skills_cfg)
-    return {
+    from cyt.config import split_skill_directories_by_scope
+
+    global_dirs, by_agent = split_skill_directories_by_scope(directories)
+    skills_overlay = {
         "enabled": True,
         "pipeline": pipeline,
-        "directories": directories,
+        "directories": global_dirs or ["~/.agents/skills"],
     }
+    agents_overlay: dict[str, Any] = {}
+    for agent, agent_dirs in by_agent.items():
+        if agent_dirs:
+            agents_overlay[agent] = {"skills": {"directories": agent_dirs}}
+    return skills_overlay, agents_overlay
 
 
 def _upsert_provider_metadata(
@@ -1870,6 +1882,9 @@ def _prompt_env_secrets(
 def run_setup(config_path: Path) -> None:
     """Run the interactive setup wizard and write config (and optional .env)."""
     config_path = config_path.expanduser()
+    from cyt.migrations.migrate import ensure_config_file_current
+
+    ensure_config_file_current(config_path, scope="global")
     existing = load_user_config_overlay(config_path)
     print(f"CYT proxy setup → {config_path}\n")
 
@@ -1939,7 +1954,7 @@ def run_setup(config_path: Path) -> None:
 
     inject_mode = _prompt_inject_via(existing)
 
-    skills_overlay = _prompt_skills(existing, tool_pipeline=pipeline)
+    skills_overlay, agents_overlay = _prompt_skills(existing, tool_pipeline=pipeline)
 
     from cyt.tools.hook_setup import prompt_tools_hook_config
 
@@ -1968,6 +1983,8 @@ def run_setup(config_path: Path) -> None:
         skills=skills_overlay,
         inject_via=inject_mode,
     )
+    if agents_overlay:
+        overlay["agents"] = agents_overlay
     overlay["pruning"]["tools"].update(tools_overlay)
 
     merged = merge_setup_overlay(existing, overlay)

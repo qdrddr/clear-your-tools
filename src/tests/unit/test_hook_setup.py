@@ -159,12 +159,20 @@ def test_build_hook_skills_config_overlay_returns_none_when_already_configured()
     overlay = hook_setup.build_hook_skills_config_overlay(
         {
             "enabled": True,
-            "directories": ["~/.claude/skills", "~/.codex/skills"],
+            "directories": ["~/.agents/skills"],
         },
         ["~/.claude/skills", "~/.codex/skills"],
         config={
             "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
-            "skills": {"enabled": True},
+            "skills": {"enabled": True, "directories": ["~/.agents/skills"]},
+            "agents": {
+                "claude": {"skills": {"directories": ["~/.claude/skills"]}},
+                "codex": {"skills": {"directories": ["~/.codex/skills"]}},
+            },
+        },
+        existing_agents={
+            "claude": {"skills": {"directories": ["~/.claude/skills"]}},
+            "codex": {"skills": {"directories": ["~/.codex/skills"]}},
         },
     )
 
@@ -188,7 +196,10 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
         },
         "skills": {
             "enabled": True,
-            "directories": ["~/.claude/skills"],
+            "directories": ["~/.agents/skills"],
+        },
+        "agents": {
+            "claude": {"skills": {"directories": ["~/.claude/skills"]}},
         },
     }
 
@@ -799,8 +810,16 @@ def test_save_hook_skills_directories_skips_when_already_configured(tmp_path: Pa
         "  pipeline: llm\n"
         "  enabled: true\n"
         "  directories:\n"
-        "    - ~/.claude/skills\n"
-        "    - ~/.codex/skills\n"
+        "    - ~/.agents/skills\n"
+        "agents:\n"
+        "  claude:\n"
+        "    skills:\n"
+        "      directories:\n"
+        "        - ~/.claude/skills\n"
+        "  codex:\n"
+        "    skills:\n"
+        "      directories:\n"
+        "        - ~/.codex/skills\n"
         "pruning:\n"
         "  inject_via:\n"
         "    cursor: hook\n"
@@ -812,7 +831,11 @@ def test_save_hook_skills_directories_skips_when_already_configured(tmp_path: Pa
         "skills": {
             "pipeline": "llm",
             "enabled": True,
-            "directories": ["~/.claude/skills", "~/.codex/skills"],
+            "directories": ["~/.agents/skills"],
+        },
+        "agents": {
+            "claude": {"skills": {"directories": ["~/.claude/skills"]}},
+            "codex": {"skills": {"directories": ["~/.codex/skills"]}},
         },
         "pruning": {"inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"}},
     }

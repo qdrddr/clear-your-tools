@@ -14,22 +14,24 @@ from cyt.config import (
 
 def test_bundled_defaults_yaml_includes_codex_system_path_denies() -> None:
     bundled = load_bundled_defaults_yaml()
-    deny = bundled["skills"]["permissions"]["deny"]
+    deny = bundled["agents"]["codex"]["skills"]["permissions"]["deny"]
     assert "path:.codex/skills/.system" in deny
     assert "path:~/.codex/skills/.system" in deny
 
 
 def test_default_user_config_includes_codex_system_path_denies() -> None:
     config = _default_user_config_dict()
-    deny = config["skills"]["permissions"]["deny"]
+    deny = config["agents"]["codex"]["skills"]["permissions"]["deny"]
     assert "path:.codex/skills/.system" in deny
     assert "path:~/.codex/skills/.system" in deny
 
 
 def test_bundled_user_config_sections_includes_permissions() -> None:
     sections = bundled_user_config_sections()
-    assert "skills" in sections
-    assert "path:.codex/skills/.system" in sections["skills"]["permissions"]["deny"]
+    assert "agents" in sections
+    assert (
+        "path:.codex/skills/.system" in sections["agents"]["codex"]["skills"]["permissions"]["deny"]
+    )
 
 
 def test_load_config_does_not_inject_permissions_from_bundled_defaults(

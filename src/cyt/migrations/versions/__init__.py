@@ -12,6 +12,7 @@ _REVISION_MODULE_NAMES = (
     "002_pruning_tools_namespace",
     "003_model_provider_registry",
     "004_permissions_agents_layout",
+    "005_skills_agent_directories",
 )
 
 

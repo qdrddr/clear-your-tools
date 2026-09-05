@@ -1336,18 +1336,16 @@ class TestPromptSkills:
     ) -> None:
         responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        skills = _prompt_skills({}, tool_pipeline=["rerank"])
+        skills, agents = _prompt_skills({}, tool_pipeline=["rerank"])
         assert skills == {
             "enabled": True,
             "pipeline": "rerank",
-            "directories": [
-                "~/.claude/skills",
-                ".claude/skills",
-                "~/.codex/skills",
-                ".codex/skills",
-                ".cursor/skills",
-                "~/.cursor/skills",
-            ],
+            "directories": ["~/.agents/skills"],
+        }
+        assert agents == {
+            "cursor": {"skills": {"directories": ["~/.cursor/skills", ".cursor/skills"]}},
+            "claude": {"skills": {"directories": ["~/.claude/skills", ".claude/skills"]}},
+            "codex": {"skills": {"directories": ["~/.codex/skills", ".codex/skills"]}},
         }
 
     def test_defaults_to_bm25_pipeline_without_tool_pipeline(
@@ -1356,14 +1354,14 @@ class TestPromptSkills:
     ) -> None:
         responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        skills = _prompt_skills({})
+        skills, _agents = _prompt_skills({})
         assert skills["pipeline"] == "bm25"
         assert "inject_via" not in skills
 
     def test_defaults_to_tool_pruning_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
         responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        skills = _prompt_skills({}, tool_pipeline=["rerank"])
+        skills, _agents = _prompt_skills({}, tool_pipeline=["rerank"])
         assert skills["pipeline"] == "rerank"
         assert "inject_via" not in skills
 
@@ -1373,7 +1371,7 @@ class TestPromptSkills:
     ) -> None:
         responses = iter(["y", ""])
         monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-        skills = _prompt_skills(
+        skills, _agents = _prompt_skills(
             {"skills": {"enabled": True, "pipeline": "llm"}},
             tool_pipeline=["rerank"],
         )
@@ -1395,8 +1393,9 @@ class TestPipelineLabels:
 
     def test_disable_skips_pipeline(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("builtins.input", lambda _prompt: "n")
-        skills = _prompt_skills({"skills": {"enabled": True, "pipeline": "llm"}})
+        skills, agents = _prompt_skills({"skills": {"enabled": True, "pipeline": "llm"}})
         assert skills == {"enabled": False}
+        assert agents == {}
 
 
 class TestRunSetupKeyring:

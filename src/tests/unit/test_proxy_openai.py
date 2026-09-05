@@ -17,6 +17,7 @@ from cyt.proxy.openai_responses import (
     extract_user_query_from_input,
     transform_openai_request,
 )
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
@@ -599,6 +600,7 @@ def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> No
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
     body = {
         "model": "gpt-test",

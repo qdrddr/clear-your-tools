@@ -106,15 +106,19 @@ def test_build_registry_excludes_other_agent_system_skills(
                 "enabled": True,
                 "pipeline": "bm25",
                 "catalog_dir": str(root / "catalog"),
-                "directories": [
-                    str(root / ".claude" / "skills"),
-                    str(root / ".codex" / "skills"),
-                ],
+                "directories": [],
                 "pageindex": {"enable_bm25_chunking": True},
             },
             "agents": {
+                "cursor": {"skills": {"directories": []}},
+                "claude": {
+                    "skills": {
+                        "directories": [str(root / ".claude" / "skills")],
+                    },
+                },
                 "codex": {
                     "skills": {
+                        "directories": [str(root / ".codex" / "skills")],
                         "permissions": {
                             "deny": [
                                 "path:.codex/skills/.system",
@@ -137,7 +141,7 @@ def test_build_registry_excludes_other_agent_system_skills(
         assert any("shared" in path for path in claude_paths)
         assert not any("codex-only" in path for path in claude_paths)
 
-        assert any("shared" in path for path in codex_paths)
+        assert not any("shared" in path for path in codex_paths)
         assert not any("claude-only" in path for path in codex_paths)
         assert not any("codex-only" in path for path in codex_paths)
 
@@ -158,21 +162,28 @@ def test_build_registry_includes_all_system_skills_without_agent_filter(
                 "enabled": True,
                 "pipeline": "bm25",
                 "catalog_dir": str(root / "catalog"),
-                "directories": [
-                    str(root / ".claude" / "skills"),
-                    str(root / ".codex" / "skills"),
-                ],
+                "directories": [],
                 "pageindex": {"enable_bm25_chunking": True},
                 "permissions": {"deny": [], "allow": []},
             },
             "agents": {
-                "cursor": {"skills": {"permissions": {"deny": [], "allow": []}}},
-                "claude": {"skills": {"permissions": {"deny": [], "allow": []}}},
-                "codex": {"skills": {"permissions": {"deny": [], "allow": []}}},
+                "cursor": {"skills": {"directories": [], "permissions": {"deny": [], "allow": []}}},
+                "claude": {
+                    "skills": {
+                        "directories": [str(root / ".claude" / "skills")],
+                        "permissions": {"deny": [], "allow": []},
+                    },
+                },
+                "codex": {
+                    "skills": {
+                        "directories": [str(root / ".codex" / "skills")],
+                        "permissions": {"deny": [], "allow": []},
+                    },
+                },
             },
         }
 
-        entries = build_registry(config)
+        entries = build_registry(config, agent="all")
         paths = {entry.source_path for entry in entries}
         assert any("claude-only" in path for path in paths)
         assert any("codex-only" in path for path in paths)

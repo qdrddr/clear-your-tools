@@ -3,6 +3,7 @@
 #
 # Run prek hooks one at a time, staging fixes after each, until all pass.
 # Without --short, each hook prints a one-line Passed/Failed summary; details on failure only.
+# Hook output streams live (cargo test hooks 87–94 can take many minutes each).
 # With --short, passing hooks are silent unless they fail (CYT_LOCAL_DEV_SHORT=1 for workflow.sh).
 # Groups are optional; see scripts/pre-commit-hooks/prek-hook-groups.yaml:
 #   py, rust, go, c, ts, uni
@@ -78,6 +79,23 @@ done
 ROOT="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 cd "$ROOT" || exit 1
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=scripts/lib/chunk-worktree.sh
+source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
+
+PREK_LOOP_LOCK_DIR=""
+_cyt_prek_loop_lock() {
+	PREK_LOOP_LOCK_DIR="$(_cyt_acquire_lock_dir "${ROOT}/target/.prek-loop.lock.d" "prek-loop" 14400)" || exit 1
+}
+
+_cyt_prek_loop_unlock() {
+	_cyt_release_lock_dir "${PREK_LOOP_LOCK_DIR:-}"
+	PREK_LOOP_LOCK_DIR=""
+}
+
+_cyt_prek_loop_lock
+
 # Integration tests call real external APIs; never run them in automated hook loops.
 unset CYT_RUN_INTEGRATION_TESTS
 unset CYT_RUN_QA_TESTS
@@ -94,11 +112,11 @@ if $RUN_RUNTIME; then
 	export CYT_RUN_RUNTIME_TESTS=1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GROUPS_FILE="$SCRIPT_DIR/prek-hook-groups.yaml"
 export SHORTEN_ROOT="$ROOT"
 
-trap 'echo; echo "Interrupted."; exit 130' INT TERM
+trap '_cyt_prek_loop_unlock' EXIT
+trap '_cyt_prek_loop_unlock; echo; echo "Interrupted."; exit 130' INT TERM
 
 echo "Discovering prek hooks..." >&2
 mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | tr -d '\r' | awk '!seen[$0]++')
@@ -283,14 +301,43 @@ parse_prek_output() {
 
 LAST_HOOK_RAW_OUTPUT=""
 
+_run_hook_capture() {
+	local label="$1"
+	shift
+	local tmp output exit_code=0
+
+	if $SHORT; then
+		output=$("$@" 2>&1) || exit_code=$?
+		PREK_HOOK_STREAMED=false
+		printf '%s' "${output}"
+		return "${exit_code}"
+	fi
+
+	tmp="$(mktemp "${TMPDIR:-/tmp}/prek-hook.${label}.XXXXXX")"
+	set +o pipefail
+	"$@" 2>&1 | tee "${tmp}"
+	exit_code=${PIPESTATUS[0]}
+	set -o pipefail
+	output="$(cat "${tmp}")"
+	rm -f "${tmp}"
+	PREK_HOOK_STREAMED=true
+	LAST_HOOK_RAW_OUTPUT="${output}"
+	printf '%s' "${output}"
+	return "${exit_code}"
+}
+
 run_hook() {
 	local hook="$1"
 	local output exit_code=0
 
 	if [[ "${hook}" == "export-rust-sbom" ]]; then
-		output=$(rtk bash scripts/deps/export-rust-sbom-precommit.sh 2>&1) || exit_code=$?
+		output=$(_run_hook_capture "export-rust-sbom" rtk bash scripts/deps/export-rust-sbom-precommit.sh) || exit_code=$?
 		LAST_HOOK_RAW_OUTPUT="${output}"
-		PREK_HOOK_STREAMED=false
+		if $SHORT; then
+			PREK_HOOK_STREAMED=false
+		else
+			PREK_HOOK_STREAMED=true
+		fi
 		if ((exit_code == 0)); then
 			PREK_STATUSES="Passed"
 		else
@@ -300,9 +347,13 @@ run_hook() {
 		return "${exit_code}"
 	fi
 
-	output=$(rtk uv run prek run "$hook" --all-files 2>&1) || exit_code=$?
+	output=$(_run_hook_capture "${hook}" rtk uv run prek run "${hook}" --all-files) || exit_code=$?
 	LAST_HOOK_RAW_OUTPUT="${output}"
-	PREK_HOOK_STREAMED=false
+	if $SHORT; then
+		PREK_HOOK_STREAMED=false
+	else
+		PREK_HOOK_STREAMED=true
+	fi
 	parse_prek_output "$output"
 	return "$exit_code"
 }
@@ -383,6 +434,7 @@ while true; do
 	for hook in "${HOOKS[@]}"; do
 		n=$((passed + failed + 1))
 		hook_failed=false
+		echo "Running [$n/$total] $hook ..." >&2
 		if run_hook_with_retry "$hook"; then
 			passed=$((passed + 1))
 			result="Passed"

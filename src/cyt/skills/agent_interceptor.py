@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from cyt.config import (
-    skills_directories,
+    skills_directories_for_agent,
     skills_enabled,
     skills_hook_agent_interceptor_min_items,
 )
@@ -86,7 +86,7 @@ def _resolve_skill_directories(config: dict[str, Any], payload: dict[str, Any]) 
             for candidate in (cwd / project_rel, Path(home_rel).expanduser()):
                 _append_resolved_directory(directories, seen, candidate)
 
-    for raw in skills_directories(config):
+    for raw in skills_directories_for_agent(config, agent=agent):
         _append_resolved_directory(directories, seen, Path(raw).expanduser())
     return directories
 

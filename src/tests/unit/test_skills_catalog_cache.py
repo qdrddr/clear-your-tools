@@ -62,6 +62,11 @@ def test_build_registry_complete_and_dedup() -> None:
                 "directories": [str(skills_dir), str(dup_dir)],
                 "pageindex": {"enable_bm25_chunking": True},
             },
+            "agents": {
+                "cursor": {"skills": {"directories": []}},
+                "claude": {"skills": {"directories": []}},
+                "codex": {"skills": {"directories": []}},
+            },
         }
 
         entries = build_registry(config)
@@ -106,6 +111,11 @@ def test_build_registry_process_cache_reuses_entries(monkeypatch: pytest.MonkeyP
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "pageindex": {"enable_bm25_chunking": True},
+            },
+            "agents": {
+                "cursor": {"skills": {"directories": []}},
+                "claude": {"skills": {"directories": []}},
+                "codex": {"skills": {"directories": []}},
             },
         }
         clear_registry_cache()

@@ -346,16 +346,9 @@ skills:
     savings_budget_fraction: 0.1
     savings_rate_threshold: 0.20
   directories:
-    - ~/.claude/skills
-    - .claude/skills
-    - ~/.codex/skills
-    - .codex/skills
-    - .cursor/skills
-    - ~/.cursor/skills
+    - ~/.agents/skills
   permissions:
-    deny:
-      - path:.codex/skills/.system
-      - path:~/.codex/skills/.system
+    deny: []
     allow: []
 
 launch:
@@ -382,6 +375,9 @@ agents:
         deny: []
         allow: []
     skills:
+      directories:
+        - ~/.cursor/skills
+        - .cursor/skills
       permissions:
         deny: []
         allow: []
@@ -391,6 +387,9 @@ agents:
         deny: []
         allow: []
     skills:
+      directories:
+        - ~/.claude/skills
+        - .claude/skills
       permissions:
         deny: []
         allow: []
@@ -400,7 +399,11 @@ agents:
         deny: []
         allow: []
     skills:
+      directories:
+        - ~/.codex/skills
+        - .codex/skills
       permissions:
         deny:
+          - path:.codex/skills/.system
           - path:~/.codex/skills/.system
         allow: []

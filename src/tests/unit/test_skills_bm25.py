@@ -10,6 +10,7 @@ from unittest.mock import patch
 from cyt.skills.bm25 import bm25_skill_chunks
 from cyt.skills.catalog import build_registry
 from cyt.skills.transcript import skills_search_query_from_hook_payload
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -35,6 +36,7 @@ def _skills_config(root: Path) -> dict:
             "pageindex": {"enable_bm25_chunking": True},
         },
         "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+        "agents": isolated_skills_agents_block(),
     }
 
 
@@ -174,6 +176,7 @@ def test_transcript_enriched_query_improves_bm25_match() -> None:
                 "pageindex": {"enable_bm25_chunking": True},
             },
             "pruning": {"tools": {"pipelines": {"bm25": {"score_skills": 0.0}}}},
+            "agents": isolated_skills_agents_block(),
         }
         entries = build_registry(config)
 

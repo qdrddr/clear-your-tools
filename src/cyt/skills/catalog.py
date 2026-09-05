@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from cyt.cache.policy import cache_policy_for_config
-from cyt.common.agents import AgentName
+from cyt.common.agents import AgentName, SkillsScanAgent
 from cyt.common.paths import shorten_home_path
 from cyt.config import (
     _cache_settings,
@@ -20,7 +20,7 @@ from cyt.config import (
     cache_skills_dir,
     load_config,
     skills_catalog_dir,
-    skills_directories,
+    skills_directories_for_agent,
     skills_index_params_fingerprint,
     skills_pageindex_config,
     skills_pipeline,
@@ -64,26 +64,46 @@ def _client_skills_cache_fingerprint(skills: list[dict[str, str]]) -> tuple[tupl
     return tuple(sorted(rows))
 
 
+def _registry_scan_and_filter_agents(
+    *,
+    agent: SkillsScanAgent,
+    upstream_kind: str | None,
+) -> tuple[SkillsScanAgent, AgentName | None]:
+    if agent == "all":
+        return "all", None
+    filter_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    if agent is not None:
+        scan_agent: SkillsScanAgent = agent
+    elif filter_agent is not None:
+        scan_agent = filter_agent
+    else:
+        scan_agent = None
+    return scan_agent, filter_agent
+
+
 def _registry_cache_key(
     cfg: dict[str, Any],
     *,
-    agent: AgentName | None,
+    agent: SkillsScanAgent,
     upstream_kind: str | None,
     client_skills: list[dict[str, str]] | None = None,
 ) -> tuple[Any, ...]:
-    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    _scan_agent, filter_agent = _registry_scan_and_filter_agents(
+        agent=agent,
+        upstream_kind=upstream_kind,
+    )
     catalog_root = str(_registry_catalog_root(cfg))
     if client_skills is not None:
         return (
             catalog_root,
             skills_pipeline(cfg),
             skills_index_params_fingerprint(cfg),
-            active_agent,
+            filter_agent,
             "client",
             _client_skills_cache_fingerprint(client_skills),
         )
 
-    expanded_dirs = skills_directories(cfg)
+    expanded_dirs = skills_directories_for_agent(cfg, agent=_scan_agent)
     sources: list[tuple[str, int, int]] = []
     for source_path in _walk_skill_md_files(expanded_dirs):
         stat = source_path.stat()
@@ -92,7 +112,7 @@ def _registry_cache_key(
         catalog_root,
         skills_pipeline(cfg),
         skills_index_params_fingerprint(cfg),
-        active_agent,
+        filter_agent,
         "config",
         tuple(sorted(sources)),
     )
@@ -564,7 +584,7 @@ def _entry_from_rust_ref(
 def build_registry(
     config: dict[str, Any] | None = None,
     *,
-    agent: AgentName | None = None,
+    agent: SkillsScanAgent = None,
     upstream_kind: str | None = None,
     client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
@@ -651,7 +671,7 @@ def _build_registry_from_client_skills(
     cfg: dict[str, Any],
     client_skills: list[dict[str, str]],
     *,
-    agent: AgentName | None = None,
+    agent: SkillsScanAgent = None,
     upstream_kind: str | None = None,
 ) -> list[SkillEntryRef]:
     """Build a skills registry from cyt-client payload content instead of config dirs."""
@@ -702,11 +722,15 @@ def _filter_agent_system_skills(
 def _build_registry_uncached(
     cfg: dict[str, Any],
     *,
-    agent: AgentName | None = None,
+    agent: SkillsScanAgent = None,
     upstream_kind: str | None = None,
     client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
     """Build skills registry without the process-level cache."""
+    scan_agent, filter_agent = _registry_scan_and_filter_agents(
+        agent=agent,
+        upstream_kind=upstream_kind,
+    )
     if client_skills is not None:
         client_entries = _build_registry_from_client_skills(
             cfg,
@@ -717,8 +741,7 @@ def _build_registry_uncached(
         from cyt.hook.workspace_config import hook_workspace_from_config
         from cyt.permissions.runtime import filter_skill_entries, resolve_effective_permissions
 
-        active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
-        effective = resolve_effective_permissions(config=cfg, agent=active_agent)
+        effective = resolve_effective_permissions(config=cfg, agent=filter_agent)
         workspace = hook_workspace_from_config(cfg)
         workspace_base = Path(str(workspace)).expanduser() if workspace else None
         return _filter_agent_system_skills(
@@ -727,11 +750,10 @@ def _build_registry_uncached(
                 effective.skills.deny,
                 base=workspace_base,
             ),
-            active_agent=active_agent,
+            active_agent=filter_agent,
         )
 
-    expanded_dirs = skills_directories(cfg)
-    active_agent = resolve_skills_agent(agent=agent, upstream_kind=upstream_kind)
+    expanded_dirs = skills_directories_for_agent(cfg, agent=scan_agent)
 
     catalog_root = _registry_catalog_root(cfg)
     pipeline = skills_pipeline(cfg)
@@ -781,11 +803,11 @@ def _build_registry_uncached(
 
     effective = resolve_effective_permissions(
         config=cfg,
-        agent=active_agent,
+        agent=filter_agent,
     )
     workspace = hook_workspace_from_config(cfg)
     workspace_base = Path(str(workspace)).expanduser() if workspace else None
     return _filter_agent_system_skills(
         filter_skill_entries(entries, effective.skills.deny, base=workspace_base),
-        active_agent=active_agent,
+        active_agent=filter_agent,
     )

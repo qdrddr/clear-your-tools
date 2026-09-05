@@ -5,18 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cyt.config import load_config, skills_directories
+from cyt.config import load_config, skills_directories_for_agent
 from cyt.permissions.match import is_skill_permission_denied
 from cyt.permissions.merge import effective_permissions
-from cyt.permissions.paths import is_all_agents, normalize_agent
+from cyt.skills.agents import directory_belongs_to_agent
 from cyt.skills.catalog import _walk_skill_md_files
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 
-_DEFAULT_AGENT_SKILL_DIRS: dict[str, tuple[str, ...]] = {
-    "cursor": ("~/.cursor/skills", ".cursor/skills"),
-    "claude": ("~/.claude/skills", ".claude/skills"),
-    "codex": ("~/.codex/skills", ".codex/skills"),
-}
+__all__ = [
+    "SkillInventoryItem",
+    "directory_belongs_to_agent",
+    "enumerate_skill_names",
+    "list_skills",
+    "skill_policy_name_from_path",
+    "skills_directories_for_agent",
+]
 
 
 @dataclass(frozen=True)
@@ -49,39 +52,6 @@ def skill_policy_name_from_path(path: Path, *, frontmatter: str | None = None) -
     if path.name.lower() == "skill.md":
         return path.parent.name, False
     return path.stem, False
-
-
-def directory_belongs_to_agent(directory: str, agent: str) -> bool:
-    """Return True when *directory* is a skills tree for *agent*."""
-    parts = [part.casefold() for part in Path(directory).expanduser().parts]
-    agent_name = normalize_agent(agent).casefold()
-    dotted = f".{agent_name}"
-    for index, part in enumerate(parts):
-        if part != "skills" or index == 0:
-            continue
-        parent = parts[index - 1]
-        if parent == agent_name or parent == dotted:
-            return True
-    return False
-
-
-def skills_directories_for_agent(
-    config: dict | None = None,
-    *,
-    agent: str | None = None,
-) -> list[str]:
-    """Return configured skills directories scoped to one agent harness."""
-    cfg = config or load_config()
-    all_dirs = skills_directories(cfg)
-    if agent is None or is_all_agents(agent):
-        return all_dirs
-    resolved = normalize_agent(agent)
-    filtered = [
-        directory for directory in all_dirs if directory_belongs_to_agent(directory, resolved)
-    ]
-    if filtered:
-        return filtered
-    return [str(Path(path).expanduser()) for path in _DEFAULT_AGENT_SKILL_DIRS.get(resolved, ())]
 
 
 def enumerate_skill_names(

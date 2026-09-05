@@ -1758,11 +1758,99 @@ def skills_frontmatter_upper_limit(config: dict[str, Any] | None = None) -> floa
 
 
 def skills_directories(config: dict[str, Any] | None = None) -> list[str]:
+    """Global skill directories shared across all agents."""
     cfg = _resolve_config(config)
     dirs = _merged_at(cfg, "skills", "directories")
+    return _expand_skill_directory_list(dirs)
+
+
+def _expand_skill_directory_list(dirs: object) -> list[str]:
     if not isinstance(dirs, list):
         raise ValueError("skills.directories must be a list")
     return [str(Path(str(d)).expanduser()) for d in dirs if d]
+
+
+def _agent_skill_directories_raw(config: dict[str, Any], agent: str) -> list[str]:
+    merged = _merged_config(config)
+    agents = merged.get("agents")
+    if isinstance(agents, dict):
+        agent_block = agents.get(agent)
+        if isinstance(agent_block, dict):
+            skills = agent_block.get("skills")
+            if isinstance(skills, dict):
+                raw = skills.get("directories")
+                if isinstance(raw, list):
+                    return [str(path) for path in raw if str(path).strip()]
+    bundled = _default_at("agents", agent, "skills", "directories")
+    if isinstance(bundled, list) and bundled:
+        return [str(path) for path in bundled if str(path).strip()]
+    return []
+
+
+def skills_agent_directories(config: dict[str, Any] | None = None, *, agent: str) -> list[str]:
+    """Per-agent skill directories from ``agents.<agent>.skills.directories``."""
+    cfg = _resolve_config(config)
+    return _expand_skill_directory_list(_agent_skill_directories_raw(cfg, agent))
+
+
+def skills_directories_for_agent(
+    config: dict[str, Any] | None = None,
+    *,
+    agent: str | None = None,
+) -> list[str]:
+    """Return global + agent-specific skill directories for *agent* (or all agents)."""
+    from cyt.permissions.paths import is_all_agents, normalize_agent
+
+    cfg = _resolve_config(config)
+    global_dirs = skills_directories(cfg)
+
+    if agent is not None and is_all_agents(agent):
+        merged_all: list[str] = []
+        seen_all: set[str] = set()
+        for directory in global_dirs:
+            if directory not in seen_all:
+                merged_all.append(directory)
+                seen_all.add(directory)
+        for agent_name in inject_via_agents():
+            for directory in skills_agent_directories(cfg, agent=agent_name):
+                if directory not in seen_all:
+                    merged_all.append(directory)
+                    seen_all.add(directory)
+        return merged_all
+
+    if agent is None:
+        return global_dirs
+
+    resolved = normalize_agent(agent)
+    merged: list[str] = []
+    seen: set[str] = set()
+    for directory in [*global_dirs, *skills_agent_directories(cfg, agent=resolved)]:
+        if directory not in seen:
+            merged.append(directory)
+            seen.add(directory)
+    return merged
+
+
+def split_skill_directories_by_scope(
+    directories: list[str],
+) -> tuple[list[str], dict[str, list[str]]]:
+    """Split directory paths into global vs per-agent buckets."""
+    from cyt.skills.agents import directory_belongs_to_agent
+
+    global_dirs: list[str] = []
+    by_agent: dict[str, list[str]] = {agent: [] for agent in inject_via_agents()}
+    for raw in directories:
+        text = str(raw).strip()
+        if not text:
+            continue
+        assigned = False
+        for agent in by_agent:
+            if directory_belongs_to_agent(text, agent):
+                by_agent[agent].append(text)
+                assigned = True
+        if not assigned:
+            global_dirs.append(text)
+    return global_dirs, by_agent
 
 
 def skills_pageindex_config(config: dict[str, Any] | None = None) -> dict[str, Any] | None:

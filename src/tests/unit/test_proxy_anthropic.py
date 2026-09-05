@@ -15,6 +15,7 @@ from cyt.proxy.anthropic import (
     format_search_query,
     transform_anthropic_request,
 )
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 _TOOL_PRUNE_CONFIG = {
     "pruning": {
@@ -310,6 +311,7 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
     body = {
         "model": "claude-test",
@@ -358,6 +360,7 @@ def test_transform_anthropic_request_inject_into_user_message(
             "tools": {"pipelines": {"bm25": {"score_skills": 0.0}}},
         },
         "stats": {"database": {"path": str(tmp_path / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
     body = {
         "model": "claude-test",

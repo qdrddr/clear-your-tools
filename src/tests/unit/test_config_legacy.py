@@ -16,7 +16,7 @@ def test_legacy_shim_moves_pruning_pipeline_without_stamping_version() -> None:
 
 def test_legacy_shim_skips_when_already_migrated() -> None:
     cfg = {
-        "cyt": {"schema_version": "004_permissions_agents_layout"},
+        "cyt": {"schema_version": "005_skills_agent_directories"},
         "pruning": {"tools": {"sequence": ["llm"]}},
     }
     out = normalize_legacy_config(cfg)

@@ -14,7 +14,6 @@ from cyt.permissions.inventory.mcp import (
 from cyt.permissions.inventory.skills import (
     directory_belongs_to_agent,
     enumerate_skill_names,
-    skills_directories_for_agent,
 )
 from cyt.permissions.match import explicit_denied_servers
 from cyt.permissions.schema import EffectivePermissions, McpPermissions
@@ -109,33 +108,44 @@ def test_directory_belongs_to_agent() -> None:
     assert directory_belongs_to_agent("~/.codex/skills", "codex")
 
 
-def test_skills_directories_for_agent_uses_defaults_when_missing_from_config() -> None:
+def test_skills_directories_for_agent_uses_per_agent_defaults() -> None:
+    from cyt.config import skills_directories_for_agent
+
     config = {
         "skills": {
-            "directories": ["~/.codex/skills", ".codex/skills"],
+            "directories": ["~/.agents/skills"],
+        },
+        "agents": {
+            "cursor": {"skills": {"directories": ["~/.cursor/skills", ".cursor/skills"]}},
+        },
+    }
+    cursor_dirs = skills_directories_for_agent(config, agent="cursor")
+    assert "~/.agents/skills" in cursor_dirs[0] or cursor_dirs[0].endswith(".agents/skills")
+    assert any(
+        ".cursor/skills" in directory or directory.endswith(".cursor/skills")
+        for directory in cursor_dirs
+    )
+
+
+def test_skills_directories_for_agent_merges_global_and_agent_paths() -> None:
+    from cyt.config import skills_directories_for_agent
+
+    config = {
+        "skills": {
+            "directories": ["~/.agents/skills"],
+        },
+        "agents": {
+            "cursor": {"skills": {"directories": ["~/.cursor/skills"]}},
+            "codex": {"skills": {"directories": ["~/.codex/skills"]}},
+            "claude": {"skills": {"directories": []}},
         },
     }
     cursor_dirs = skills_directories_for_agent(config, agent="cursor")
     assert len(cursor_dirs) == 2
-    assert all(directory_belongs_to_agent(directory, "cursor") for directory in cursor_dirs)
-
-
-def test_skills_directories_for_agent_filters_by_harness() -> None:
-    config = {
-        "skills": {
-            "directories": [
-                "~/.cursor/skills",
-                ".cursor/skills",
-                "~/.codex/skills",
-                ".codex/skills",
-            ],
-        },
-    }
-    cursor_dirs = skills_directories_for_agent(config, agent="cursor")
-    assert len(cursor_dirs) == 2
-    assert all(directory_belongs_to_agent(directory, "cursor") for directory in cursor_dirs)
+    codex_dirs = skills_directories_for_agent(config, agent="codex")
+    assert len(codex_dirs) == 2
     all_dirs = skills_directories_for_agent(config, agent="all")
-    assert len(all_dirs) == 4
+    assert len(all_dirs) == 3
 
 
 def test_enumerate_skill_names_scopes_to_agent(tmp_path: Path) -> None:
@@ -147,7 +157,12 @@ def test_enumerate_skill_names_scopes_to_agent(tmp_path: Path) -> None:
     (codex_dir / "SKILL.md").write_text("---\nname: codex-skill\n---\n", encoding="utf-8")
     config = {
         "skills": {
-            "directories": [str(cursor_dir.parent), str(codex_dir.parent)],
+            "directories": [],
+        },
+        "agents": {
+            "cursor": {"skills": {"directories": [str(cursor_dir.parent)]}},
+            "codex": {"skills": {"directories": [str(codex_dir.parent)]}},
+            "claude": {"skills": {"directories": []}},
         },
     }
     cursor_names = [name for name, _, _ in enumerate_skill_names(config, agent="cursor")]

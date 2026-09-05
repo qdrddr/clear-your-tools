@@ -21,6 +21,7 @@ from tests.support.credential_helpers import (
     install_test_pre_dotenv,
     isolate_credential_env_paths,
 )
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 
 def _temporary_test_dir() -> tempfile.TemporaryDirectory[str]:
@@ -81,6 +82,7 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             },
         },
         "stats": {"database": {"path": str(root / "stats.db")}},
+        "agents": isolated_skills_agents_block(),
     }
 
 

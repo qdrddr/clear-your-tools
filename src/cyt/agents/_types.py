@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Final, Literal
 
 AgentName = Literal["claude", "codex", "cursor"]
+SkillsScanAgent = AgentName | Literal["all"] | None
 
 LAUNCH_AGENTS: Final[tuple[AgentName, ...]] = ("claude", "codex", "cursor")
 
@@ -16,6 +17,7 @@ __all__ = [
     "CYT_LAUNCH_AGENT_ENV",
     "LAUNCH_AGENTS",
     "AgentName",
+    "SkillsScanAgent",
     "launch_agent_usage_hint",
     "unknown_launch_agent_message",
 ]

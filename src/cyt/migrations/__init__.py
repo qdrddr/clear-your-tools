@@ -5,6 +5,8 @@ from __future__ import annotations
 from cyt.migrations.env import current_head, revision_chain
 from cyt.migrations.legacy import normalize_legacy_config
 from cyt.migrations.migrate import (
+    ensure_config_file_current,
+    ensure_workspace_config_current,
     maybe_migrate_config_file,
     maybe_migrate_workspace_config,
     migrate_config_file,
@@ -32,6 +34,8 @@ __all__ = [
     "ensure_canonical_workspace_aggregator",
     "ensure_canonical_workspace_config",
     "ensure_canonical_workspace_server_defs",
+    "ensure_config_file_current",
+    "ensure_workspace_config_current",
     "maybe_migrate_config_file",
     "maybe_migrate_workspace_config",
     "migrate_config_file",

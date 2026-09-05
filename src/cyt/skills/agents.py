@@ -6,7 +6,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from cyt.agents._types import CYT_AGENT_FIELD, CYT_LAUNCH_AGENT_ENV, AgentName
+from cyt.agents._types import (
+    CYT_AGENT_FIELD,
+    CYT_LAUNCH_AGENT_ENV,
+    AgentName,
+    SkillsScanAgent,
+)
 from cyt.launch.upstream import parse_agent_name
 
 __all__ = [
@@ -14,6 +19,7 @@ __all__ = [
     "SYSTEM_SKILLS_DIR_NAME",
     "agent_from_upstream_kind",
     "agent_system_skill_owner",
+    "directory_belongs_to_agent",
     "is_excluded_agent_system_skill",
     "launch_agent_env",
     "resolve_skills_agent",
@@ -25,6 +31,20 @@ _UPSTREAM_KIND_TO_AGENT: dict[str, AgentName] = {
     "anthropic": "claude",
     "openai": "codex",
 }
+
+
+def directory_belongs_to_agent(directory: str, agent: str) -> bool:
+    """Return True when *directory* is a skills tree for *agent*."""
+    parts = [part.casefold() for part in Path(directory).expanduser().parts]
+    agent_name = agent.strip().casefold()
+    dotted = f".{agent_name}"
+    for index, part in enumerate(parts):
+        if part != "skills" or index == 0:
+            continue
+        parent = parts[index - 1]
+        if parent == agent_name or parent == dotted:
+            return True
+    return False
 
 
 def agent_from_upstream_kind(upstream_kind: str | None) -> AgentName | None:
@@ -41,10 +61,12 @@ def agent_from_upstream_kind(upstream_kind: str | None) -> AgentName | None:
 
 def resolve_skills_agent(
     *,
-    agent: AgentName | None = None,
+    agent: SkillsScanAgent = None,
     upstream_kind: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> AgentName | None:
+    if agent == "all":
+        return None
     if agent is not None:
         return agent
 

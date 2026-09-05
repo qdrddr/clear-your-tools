@@ -12,4 +12,4 @@ def test_config_history_prints(capsys: pytest.CaptureFixture[str]) -> None:
     main(["history"])
     out = capsys.readouterr().out
     assert "001_add_schema_version" in out
-    assert "004_permissions_agents_layout" in out
+    assert "005_skills_agent_directories" in out

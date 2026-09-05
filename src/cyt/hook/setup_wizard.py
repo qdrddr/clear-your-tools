@@ -531,17 +531,68 @@ def _ensure_skill_directories_exist(directories: list[str]) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def _merge_hook_agent_skills_overlays(
+    by_agent: dict[str, list[str]],
+    existing_agents: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    agents_overlay: dict[str, Any] = {}
+    agents_changed = False
+    for agent, agent_dirs in by_agent.items():
+        if not agent_dirs:
+            continue
+        existing_agent_block = existing_agents.get(agent)
+        existing_agent_skills = (
+            existing_agent_block.get("skills") if isinstance(existing_agent_block, dict) else None
+        )
+        existing_agent_dirs: list[str] = []
+        if isinstance(existing_agent_skills, dict):
+            raw = existing_agent_skills.get("directories")
+            if isinstance(raw, list):
+                existing_agent_dirs = [str(path) for path in raw if str(path).strip()]
+        merged_agent_dirs, agent_changed = merge_skills_directory_lists(
+            existing_agent_dirs,
+            agent_dirs,
+        )
+        if agent_changed:
+            agents_changed = True
+        agents_overlay[agent] = {"skills": {"directories": merged_agent_dirs}}
+    return agents_overlay, agents_changed
+
+
+def _hook_skills_directories_match_config(
+    merged_config: dict[str, Any],
+    directories: list[str],
+    *,
+    global_changed: bool,
+    agents_changed: bool,
+) -> bool:
+    from cyt.config import inject_via_agents, skills_agent_directories, skills_directories
+
+    configured_global = {str(Path(path).expanduser()) for path in skills_directories(merged_config)}
+    configured_agent: set[str] = set()
+    for agent in inject_via_agents():
+        configured_agent.update(skills_agent_directories(merged_config, agent=agent))
+    requested = {str(Path(path).expanduser()) for path in directories if str(path).strip()}
+    return (
+        requested.issubset(configured_global | configured_agent)
+        and not global_changed
+        and not agents_changed
+    )
+
+
 def build_hook_skills_config_overlay(
     existing_skills: dict[str, Any],
     directories: list[str] | None = None,
     *,
     enabled: bool = True,
     config: dict[str, Any] | None = None,
+    existing_agents: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build a skills overlay for hook mode, or ``None`` when no config write is needed."""
     from cyt.config import (
         inject_via_agents,
         inject_via_for_agent,
+        split_skill_directories_by_scope,
         tools_hook_cyt_mcp_agent,
     )
 
@@ -557,23 +608,38 @@ def build_hook_skills_config_overlay(
     if directories is None:
         return None
 
-    existing_dirs = existing_skills.get("directories")
-    if not isinstance(existing_dirs, list):
-        existing_dirs = []
+    merged_config = config or {}
+    global_dirs, by_agent = split_skill_directories_by_scope(directories)
 
-    merged_dirs, dirs_changed = merge_skills_directory_lists(existing_dirs, directories)
+    existing_global = existing_skills.get("directories")
+    if not isinstance(existing_global, list):
+        existing_global = []
+    merged_global, global_changed = merge_skills_directory_lists(existing_global, global_dirs)
+
+    agents_cfg = existing_agents if isinstance(existing_agents, dict) else {}
+    agents_overlay, agents_changed = _merge_hook_agent_skills_overlays(by_agent, agents_cfg)
+
+    dirs_ok = _hook_skills_directories_match_config(
+        merged_config,
+        directories,
+        global_changed=global_changed,
+        agents_changed=agents_changed,
+    )
+
     enabled_ok = existing_skills.get("enabled") is True
-
-    if enabled_ok and inject_ok and not dirs_changed:
+    if enabled_ok and inject_ok and dirs_ok:
         return None
 
-    return {
+    overlay: dict[str, Any] = {
         **inject_overlay,
         "skills": {
             "enabled": True,
-            "directories": merged_dirs,
+            "directories": merged_global or ["~/.agents/skills"],
         },
     }
+    if agents_overlay:
+        overlay["agents"] = agents_overlay
+    return overlay
 
 
 def _save_hook_skills_directories(
@@ -589,6 +655,9 @@ def _save_hook_skills_directories(
         directories,
         enabled=True,
         config=load_config(config_path),
+        existing_agents=user_overlay.get("agents")
+        if isinstance(user_overlay.get("agents"), dict)
+        else None,
     )
     if overlay is None:
         return False
@@ -2369,6 +2438,15 @@ def run_hook_setup(
         print("CYT hook setup\n")
 
     resolved_config_path = resolve_setup_config_path(config_path)
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.migrations.migrate import (
+        ensure_config_file_current,
+        ensure_workspace_config_current,
+    )
+
+    ensure_config_file_current(resolved_config_path, scope="global")
+    if CytInstallScope.from_cwd().has_workspace:
+        ensure_workspace_config_current()
     config = _load_hook_setup_config(
         config_path=config_path,
         resolved_config_path=resolved_config_path,

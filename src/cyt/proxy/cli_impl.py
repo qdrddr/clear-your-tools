@@ -17,6 +17,7 @@ from cyt.config import (
     load_config,
     load_user_config_overlay,
     proxy_http2_settings,
+    resolve_config_path,
     resolve_setup_config_path,
     stats_backup_before_rollup,
     stats_db_path,
@@ -773,10 +774,16 @@ def _run_hook_uninstall_command(args: argparse.Namespace) -> None:
 
 def _run_hook_daemon_command(args: argparse.Namespace) -> None:
     from cyt.hook.daemon import daemon_restart, daemon_start, daemon_status, daemon_stop
+    from cyt.migrations.migrate import ensure_config_file_current
 
     daemon_cmd = getattr(args, "daemon_command", None)
     verbose = bool(getattr(args, "verbose", False))
     config_path = getattr(args, "config", None)
+    if daemon_cmd in {"start", "restart"}:
+        ensure_config_file_current(
+            resolve_config_path(config_path),
+            scope="global",
+        )
     if daemon_cmd == "start":
         daemon_start(
             config_path=config_path,

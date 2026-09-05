@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cyt.skills.catalog import build_registry, clear_registry_cache
 from cyt.skills.client_skills import build_registry_for_hook_payload, client_skills_from_payload
+from tests.support.skills_helpers import isolated_skills_agents_block
 
 
 def _write_skill(path: Path, body: str) -> None:
@@ -20,8 +21,10 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
         "skills": {
             "enabled": True,
             "pipeline": "bm25",
+            "catalog_dir": str(catalog_dir),
             "directories": [str(skills_dir)],
         },
+        "agents": isolated_skills_agents_block(),
     }
 
 
