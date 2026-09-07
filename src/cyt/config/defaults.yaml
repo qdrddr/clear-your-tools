@@ -174,7 +174,12 @@ policies:
       optional_properties: []
     conditional:
       - triggers:
-          [tool.name, tool.description, required_property.name, required_property.description]
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
         retain:
           required_properties: [name, description]
           optional_properties: []
@@ -201,7 +206,12 @@ policies:
       optional_properties: []
     conditional:
       - triggers:
-          [tool.name, tool.description, required_property.name, required_property.description]
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
         retain:
           required_properties: [name, description]
           optional_properties: []
@@ -230,7 +240,12 @@ policies:
       optional_properties: []
     conditional:
       - triggers:
-          [tool.name, tool.description, required_property.name, required_property.description]
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
         retain:
           required_properties: [name, description]
           optional_properties: []
@@ -259,7 +274,12 @@ policies:
       optional_properties: []
     conditional:
       - triggers:
-          [tool.name, tool.description, required_property.name, required_property.description]
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
         retain:
           required_properties: [name, description]
           optional_properties: []
@@ -521,5 +541,6 @@ agents:
         - .codex/skills
       permissions:
         deny:
+          - path:.codex/skills/.system
           - path:~/.codex/skills/.system
         allow: []

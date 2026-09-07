@@ -20,7 +20,10 @@ def test_upgrade_replaces_codex_boolean_with_stub_by_agent() -> None:
 
 def test_migrate_renames_legacy_filename(tmp_path: Path) -> None:
     legacy = tmp_path / "mcp-aggregator.yaml"
-    legacy.write_text("default_agent: cursor\ncodex_stubs_include_description: true\n", encoding="utf-8")
+    legacy.write_text(
+        "default_agent: cursor\ncodex_stubs_include_description: true\n",
+        encoding="utf-8",
+    )
     migrated = migrate_mcp_config_file(legacy)
     assert migrated is not None
     canonical = tmp_path / "mcp-config.yaml"

@@ -241,6 +241,7 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
     )
     monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", source)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     invocation = HookCliInvocation(mode="dev", repo_root=repo_root)
     cyt_mcp_setup.setup_cyt_mcp_for_agent("cursor", invocation=invocation, transport="stdio")
@@ -278,6 +279,7 @@ def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_false(
 ) -> None:
     aggregator_path = tmp_path / "mcp-config.yaml"
     mcp_dir = tmp_path / "mcp"
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
 
@@ -294,6 +296,7 @@ def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_true(
 ) -> None:
     aggregator_path = tmp_path / "mcp-config.yaml"
     mcp_dir = tmp_path / "mcp"
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
 

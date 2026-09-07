@@ -18,7 +18,7 @@ from cyt.config import (
     tools_hook_mcp_definitions_file,
 )
 from cyt.proxy.setup_wizard import _prompt
-from cyt.tools.hook_setup import build_pruning_tools_hook_save_overlay
+from cyt.tools.hook_setup import build_tools_hook_save_overlay
 
 _CONFIG_SUFFIXES = {".yaml", ".yml"}
 
@@ -50,9 +50,7 @@ def add_cloudflare_parser(subparsers: argparse._SubParsersAction) -> None:
         "--file",
         type=Path,
         default=None,
-        help=(
-            "Output definitions file (default: pruning.tools.hook.mcp_definitions_file from config)"
-        ),
+        help=("Output definitions file (default: tools.hook.mcp_definitions_file from config)"),
     )
     save_parser.add_argument(
         "--config",
@@ -79,21 +77,19 @@ def _resolve_cloudflare_url(
     if not sys.stdin.isatty():
         raise SystemExit(
             "Cloudflare portal URL not configured. "
-            "Run interactively or set pruning.tools.hook.cloudflare_url in config.yaml.",
+            "Run interactively or set tools.hook.cloudflare_url in config.yaml.",
         )
 
     print("\nCloudflare portal URL not configured.")
     while True:
         url_text = _prompt("Cloudflare portal URL", "https://mcp.example.com").strip().rstrip("/")
         if url_text:
-            overlay = build_pruning_tools_hook_save_overlay(
+            overlay = build_tools_hook_save_overlay(
                 tools_from=["cloudflare"],
                 executor_url=tools_hook_executor_url(config),
                 mcp_definitions_file=str(tools_hook_mcp_definitions_file(config)),
             )
-            overlay.setdefault("pruning", {}).setdefault("tools", {}).setdefault("hook", {})[
-                "cloudflare_url"
-            ] = url_text
+            overlay.setdefault("tools", {}).setdefault("hook", {})["cloudflare_url"] = url_text
             if save_user_config(config_path, overlay, apply_bundled_sections=False):
                 print(f"Saved cloudflare URL to {config_path}")
             return url_text
@@ -134,13 +130,13 @@ def run_cloudflare_save(args: argparse.Namespace) -> None:
     print(f"Wrote {len(tools)} tools to {output_path}")
 
     if str(output_path) != str(tools_hook_mcp_definitions_file(config)):
-        overlay = build_pruning_tools_hook_save_overlay(
+        overlay = build_tools_hook_save_overlay(
             tools_from=["cloudflare"],
             executor_url=tools_hook_executor_url(config),
             mcp_definitions_file=str(output_path),
         )
-        overlay.setdefault("pruning", {}).setdefault("tools", {}).setdefault("hook", {})[
-            "cloudflare_url"
-        ] = tools_hook_cloudflare_url(config)
+        overlay.setdefault("tools", {}).setdefault("hook", {})["cloudflare_url"] = (
+            tools_hook_cloudflare_url(config)
+        )
         if save_user_config(config_path, overlay, apply_bundled_sections=False):
             print(f"Updated definitions file in {config_path}")

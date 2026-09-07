@@ -516,33 +516,39 @@ _BASIC_STUB_RETAIN: RetainSpec = {
 }
 
 
-def test_aggregator_config(
+def sample_aggregator_config(
     *,
     agent: str = "cursor",
     stub_name: str = "basic",
     stub_retain: RetainSpec | None = None,
     codex_stubs_include_description: bool = False,
     aggregator_path: Path | None = None,
-    **kwargs: Any,
+    mcp_servers: dict[str, Any] | None = None,
+    catalog_scope: CatalogScope = "global",
+    workspace_root: Path | None = None,
+    verify_only: bool = False,
+    transport: str = "stdio",
+    mcp_deny: tuple[str, ...] = (),
 ) -> AggregatorConfig:
     """Build a minimal :class:`AggregatorConfig` for unit tests."""
     retain = stub_retain if stub_retain is not None else _BASIC_STUB_RETAIN
-    defaults: dict[str, Any] = {
-        "agent": agent,
-        "mcp_servers": {},
-        "transport": "stdio",
-        "http": HttpSettings(
+    return AggregatorConfig(
+        agent=agent,
+        mcp_servers={} if mcp_servers is None else mcp_servers,
+        transport=transport,
+        http=HttpSettings(
             host="127.0.0.1",
             port=8765,
             mcp_path="/mcp",
             catalog_path="/catalog",
         ),
-        "stub_name": stub_name,
-        "stub_retain": retain,
-        "codex_stubs_include_description": codex_stubs_include_description,
-        "verify_only": False,
-        "aggregator_path": aggregator_path or DEFAULT_MCP_CONFIG_PATH,
-        "agent_mcp_path": DEFAULT_MCP_DIR / f"{agent}.json",
-    }
-    defaults.update(kwargs)
-    return AggregatorConfig(**defaults)
+        stub_name=stub_name,
+        stub_retain=retain,
+        codex_stubs_include_description=codex_stubs_include_description,
+        verify_only=verify_only,
+        aggregator_path=aggregator_path or DEFAULT_MCP_CONFIG_PATH,
+        agent_mcp_path=DEFAULT_MCP_DIR / f"{agent}.json",
+        catalog_scope=catalog_scope,
+        workspace_root=workspace_root,
+        mcp_deny=mcp_deny,
+    )

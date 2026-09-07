@@ -8,8 +8,6 @@ from cyt.common.runtime_constants import EMPTY_OPTIONAL_FALLBACK_K, RERANK_SCORE
 from cyt.config import (
     load_config,
     output_policy_context_for_terminal_stage,
-    resolve_policy_as_enum,
-    resolved_policies,
     scoring_policy_context,
 )
 from cyt.indexer.policies import (

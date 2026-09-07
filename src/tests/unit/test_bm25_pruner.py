@@ -390,7 +390,7 @@ def test_bm25_score_threshold_constant_matches_config_defaults() -> None:
     )
 
     bundled = load_bundled_defaults_yaml()
-    bm25_pipeline = bundled["pruning"]["tools"]["pipelines"]["bm25"]
+    bm25_pipeline = bundled["tools"]["pipelines"]["bm25"]
     assert BM25_SCORE == bm25_pipeline["score_tool"]
     assert bm25_score_tool() == bm25_pipeline["score_tool"]
     assert bm25_score_tool_enum() == bm25_pipeline["score_tool_enum"]

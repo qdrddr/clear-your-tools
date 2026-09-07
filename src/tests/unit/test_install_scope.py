@@ -38,8 +38,7 @@ def test_cyt_install_scope_workspace_paths(tmp_path: Path) -> None:
     )
     assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".agents/cyt/config/config.yaml"
     assert (
-        scope.workspace_aggregator_path("cursor")
-        == tmp_path / ".agents/cyt/config/mcp-config.yaml"
+        scope.workspace_aggregator_path("cursor") == tmp_path / ".agents/cyt/config/mcp-config.yaml"
     )
     assert scope.global_hooks_path("cursor") == Path("~/.cursor/hooks.json").expanduser()
 
@@ -234,18 +233,16 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
     project_mcp.parent.mkdir(parents=True)
     project_mcp.write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
 
-    monkeypatch.setattr(
-        cyt_mcp_setup,
-        "DEFAULT_MCP_CONFIG_PATH",
-        home / "cyt" / "mcp-config.yaml",
-    )
+    mcp_config_path = home / "cyt" / "mcp-config.yaml"
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", mcp_config_path)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", mcp_config_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
     import cyt.hook.install_scope as install_scope
 
     monkeypatch.setattr(
         install_scope,
         "GLOBAL_MCP_CONFIG_PATH",
-        home / "cyt" / "mcp-config.yaml",
+        mcp_config_path,
     )
     monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
     monkeypatch.setitem(

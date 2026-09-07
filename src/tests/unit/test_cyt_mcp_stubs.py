@@ -14,12 +14,15 @@ from cyt_mcp.search import (
     refresh_search_tool_schema,
     register_search_tool,
 )
+from cyt_mcp.stub_catalog import DEFAULT_STUBS
 from cyt_mcp.stubs import StubListTransform, _stub_from_tool
+
+_BASIC_RETAIN = DEFAULT_STUBS[0]["always"]
 
 
 def test_stub_minimal_schema() -> None:
     tool = Tool.from_function(lambda path: path, name="filesystem_read_file")
-    stub = _stub_from_tool(tool, include_description=False)
+    stub = _stub_from_tool(tool, retain=_BASIC_RETAIN)
     mcp = stub.to_mcp_tool()
     assert mcp.inputSchema == {"type": "object", "properties": {}}
 

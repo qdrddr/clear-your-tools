@@ -8,7 +8,9 @@ from cyt.migrations.versions import load_revision_modules
 
 
 def _upgrade_007(cfg: dict[str, Any]) -> dict[str, Any]:
-    module = next(m for m in load_revision_modules() if m.revision == "007_config_layout_restructure")
+    module = next(
+        m for m in load_revision_modules() if m.revision == "007_config_layout_restructure"
+    )
     return module.upgrade(cfg, scope="global")
 
 

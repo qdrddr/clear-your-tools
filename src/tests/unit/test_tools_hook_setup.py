@@ -16,7 +16,7 @@ def test_prompt_tools_hook_config_preserves_multi_source_list_when_not_hook_mode
 ) -> None:
     config = load_config()
     config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
+    config["tools"]["hook"]["tools_from"] = ["mcpc", "executor"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
 
@@ -28,7 +28,7 @@ def test_prompt_tools_hook_config_preserves_single_source_as_list_when_not_hook_
 ) -> None:
     config = load_config()
     config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "proxy", "codex": "proxy"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc"]
+    config["tools"]["hook"]["tools_from"] = ["mcpc"]
 
     overlay = prompt_tools_hook_config(config, context="setup", inject_mode="proxy")
 
@@ -39,7 +39,7 @@ def test_prompt_tools_hook_config_saves_single_source_as_list_in_hook_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = load_config()
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc"]
+    config["tools"]["hook"]["tools_from"] = ["mcpc"]
     monkeypatch.setattr(hook_setup, "_prompt", lambda _label, default: default)
 
     overlay = prompt_tools_hook_config(config, context="hook")
@@ -79,8 +79,8 @@ def test_ensure_tools_hook_file_interactive_prompts_for_missing_cloudflare_url(
     config_path = tmp_path / "config.yaml"
     config = load_config()
     config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
-    config["pruning"]["tools"]["hook"]["cloudflare_url"] = ""
+    config["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["tools"]["hook"]["cloudflare_url"] = ""
 
     monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(hook_setup, "_prompt_yes_no", lambda *_args, **_kwargs: True)
@@ -113,6 +113,7 @@ def test_prompt_tools_hook_config_clears_stale_verify_only_in_aggregator(
         ),
         encoding="utf-8",
     )
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
     monkeypatch.setattr(hook_setup, "_prompt", lambda _label, default: default)

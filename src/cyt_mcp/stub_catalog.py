@@ -147,7 +147,7 @@ def resolve_stub_retain(raw: dict[str, Any], agent: str) -> RetainSpec:
         stub = resolved_stubs({}).get(DEFAULT_STUB_NAME, cast(StubDef, DEFAULT_STUBS[0]))
     always = stub.get("always")
     if isinstance(always, dict):
-        return cast(RetainSpec, always)
+        return always
     return cast(RetainSpec, DEFAULT_STUBS[0]["always"])
 
 

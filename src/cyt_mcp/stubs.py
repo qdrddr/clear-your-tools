@@ -21,7 +21,7 @@ _MINIMAL_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 def _tool_input_schema(tool: Tool) -> dict[str, Any]:
     mcp_tool = tool.to_mcp_tool()
-    params = mcp_tool.inputSchema
+    params: Any = mcp_tool.inputSchema
     if isinstance(params, dict):
         return dict(params)
     return dict(_MINIMAL_OBJECT_SCHEMA)
@@ -46,9 +46,7 @@ def _minimal_required_schema(full_schema: dict[str, Any]) -> dict[str, Any]:
         prop = properties.get(name)
         if isinstance(prop, dict):
             minimal_props[name] = {
-                key: prop[key]
-                for key in ("type", "enum", "items", "anyOf", "oneOf")
-                if key in prop
+                key: prop[key] for key in ("type", "enum", "items", "anyOf", "oneOf") if key in prop
             } or {"type": prop.get("type", "string")}
         else:
             minimal_props[name] = {"type": "string"}

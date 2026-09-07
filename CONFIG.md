@@ -66,16 +66,15 @@ Configure thresholds in [`~/.config/cyt/config.yaml`](~/.config/cyt/config.yaml)
 [`defaults.yaml`](src/cyt/config/defaults.yaml); see [Configuration](#configuration) below).
 
 ```yaml
-pruning:
-  tools:
-    policy:
-      minimum_tools: 50
-    sequence:
-      - rerank
-      # - llm
+tools:
+  policy:
+    minimum_tools: 50
+  sequence:
+    - rerank
+    # - llm
 ```
 
-Legacy `pruning.pipeline`, `pruning.policy.*`, and `models.rerankers.minimum_tools` /
+Legacy `pruning.tools.*`, `pruning.pipeline`, `pruning.policy.*`, and `models.rerankers.minimum_tools` /
 `models.llm.minimum_tools` still work; see [Schema migration](#schema-migration) below.
 
 </details>
@@ -126,19 +125,18 @@ Default pipeline is **`rerank` only**. To use the LLM pruner instead (or after r
 
 ```yaml
 # ~/.config/cyt/config.yaml
-pruning:
-  tools:
-    sequence:
-      - llm          # LLM only (no reranker)
-      # - rerank     # or: [rerank, llm] for two-stage filtering
-    policy:
-      minimum_tools: 50   # remote stages run when tool count ≥ this (default 50)
-    pipelines:
-      llm:
-        model_nick: mercury-2   # catalog nick under models.llm.remote
+tools:
+  sequence:
+    - llm          # LLM only (no reranker)
+    # - rerank     # or: [rerank, llm] for two-stage filtering
+  policy:
+    minimum_tools: 50   # remote stages run when tool count ≥ this (default 50)
+  pipelines:
+    llm:
+      model_nick: mercury-2   # catalog nick under models.llm.remote
 ```
 
-Legacy `pruning.pipeline`, `pruning.llm.model.remote.model_nick`, and
+Legacy `pruning.tools.*`, `pruning.pipeline`, `pruning.llm.model.remote.model_nick`, and
 `defaults.remote.llm_model_nick` still work.
 
 Rerank & LLM prunners can use any providers that supported by underlying [LiteLLM Client SDK](https://docs.litellm.ai/docs/providers).
@@ -206,7 +204,7 @@ rest of the config surface.
 Policy **definitions** live in bundled `defaults.yaml` under the top-level `policies:` list
 (`always_include`, `prune_optional`, `prune_all`, `prune_optional_descriptions`,
 `prune_all_descriptions`). User `config.yaml` keeps **references** by name under
-`pruning.tools.policy` (and optional per-pipeline overrides). Custom policies may be added in
+`tools.policy` (and optional per-pipeline overrides). Custom policies may be added in
 user config; entries with the same `name` merge over bundled defaults.
 
 Two tool categories with different default references:
@@ -219,19 +217,18 @@ Two tool categories with different default references:
 Set references in `config.yaml`:
 
 ```yaml
-pruning:
-  tools:
-    policy:
-      system_tool: prune_optional
-      mcp_tool: prune_all
-    pipelines:
-      bm25:
-        policy:
-          system_tool: prune_optional_descriptions
-          mcp_tool: prune_all_descriptions
+tools:
+  policy:
+    system_tool: prune_optional
+    mcp_tool: prune_all
+  pipelines:
+    bm25:
+      policy:
+        system_tool: prune_optional_descriptions
+        mcp_tool: prune_all_descriptions
 ```
 
-Legacy `defaults.system_tool_policy` / `defaults.mcp_tool_policy` are still supported.
+Legacy `pruning.tools.policy.*` and `defaults.system_tool_policy` / `defaults.mcp_tool_policy` are still supported.
 
 </details>
 
@@ -611,15 +608,19 @@ Revision scripts live under [`src/cyt/migrations/versions/`](src/cyt/migrations/
 
 | Old path | New path |
 | -------- | -------- |
-| `pruning.pipeline` | `pruning.tools.sequence` |
-| `pruning.policy.*`, `pruning.per_tool` | `pruning.tools.policy.*` |
-| `pruning.bm25` / `rerank` / `llm` | `pruning.tools.pipelines.<id>` |
-| `pruning.<id>.model.remote.model_nick` | `pruning.tools.pipelines.<id>.model_nick` |
+| `pruning.pipeline` | `tools.sequence` |
+| `pruning.policy.*`, `pruning.per_tool` | `tools.policy.*` |
+| `pruning.bm25` / `rerank` / `llm` | `tools.pipelines.<id>` |
+| `pruning.tools.*` | `tools.*` |
+| `pruning.inject_via.<agent>` | `agents.<agent>.tools.inject_via` |
+| `mcp.permissions` | `tools.permissions` |
+| `tools.hook.cyt_mcp.agent` | `defaults.cyt_mcp_agent` |
+| `skills.hook.cursor_rule_file` | `agents.cursor.hook.cursor_rule_file` |
+| `hallucination_gate` | `defaults.hallucination_gate` |
+| `agents.<agent>.mcp` | `agents.<agent>.tools` |
 | Inline model `provider`, `key_var_name`, … | `models.providers[]` + model `provider_nick` |
 
-Unmigrated configs still work at runtime via read-time normalization in
-[`src/cyt/migrations/legacy.py`](src/cyt/migrations/legacy.py) until `cyt config migrate` rewrites
-the file.
+Legacy `pruning.*` paths remain readable until `cyt config migrate` rewrites the file.
 
 `save_user_config` skips disk writes when the merged config is unchanged (no rearrange-on-save).
 

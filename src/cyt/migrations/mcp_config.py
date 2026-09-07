@@ -62,7 +62,9 @@ def upgrade_mcp_config_dict(cfg: dict[str, Any]) -> dict[str, Any]:
         tools["stub_by_agent"] = by_agent
 
     merged_by_agent = dict(DEFAULT_STUB_BY_AGENT)
-    merged_by_agent.update({str(k): str(v) for k, v in by_agent.items() if str(k).strip() and str(v).strip()})
+    merged_by_agent.update(
+        {str(k): str(v) for k, v in by_agent.items() if str(k).strip() and str(v).strip()},
+    )
 
     if codex_flag is not None:
         merged_by_agent["codex"] = "codex" if bool(codex_flag) else "basic"

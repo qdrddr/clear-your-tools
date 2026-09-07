@@ -74,7 +74,7 @@ def test_ensure_launch_inject_via_proxy_prompts_saves_and_stops_daemon(
     reconfigure.assert_called_once_with(config)
     assert updated is config
     assert inject_via_for_agent(updated, "claude") == "proxy"
-    assert "claude: proxy" in config_path.read_text(encoding="utf-8")
+    assert "inject_via: proxy" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_launch_inject_via_proxy_keeps_hook_when_declined(
@@ -94,7 +94,7 @@ def test_ensure_launch_inject_via_proxy_keeps_hook_when_declined(
 
     daemon_stop.assert_not_called()
     assert inject_via(updated) == "hook"
-    assert "claude: hook" in config_path.read_text(encoding="utf-8")
+    assert "inject_via: hook" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_hook_inject_via_prompts_saves_stops_proxies_and_starts_daemon(
@@ -124,7 +124,7 @@ def test_ensure_hook_inject_via_prompts_saves_stops_proxies_and_starts_daemon(
     reconfigure.assert_called_once_with(config)
     assert updated is config
     assert inject_via(updated) == "hook"
-    assert "cursor: hook" in config_path.read_text(encoding="utf-8")
+    assert "inject_via: hook" in config_path.read_text(encoding="utf-8")
 
 
 def test_ensure_hook_inject_via_prompts_to_stop_proxies_when_already_hook(

@@ -44,7 +44,7 @@ def test_resolve_hook_request_config_merges_workspace_yaml(
     ws_cfg = tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
     ws_cfg.parent.mkdir(parents=True)
     ws_cfg.write_text(
-        "pruning:\n  tools:\n    hook:\n      tools_from: [cyt_mcp]\n",
+        "tools:\n  hook:\n    tools_from: [cyt_mcp]\n",
         encoding="utf-8",
     )
 
@@ -60,7 +60,7 @@ def test_resolve_hook_request_config_merges_workspace_yaml(
     payload = {"workspace_roots": [str(tmp_path.resolve())]}
     merged, workspace = resolve_hook_request_config(payload, "cursor")
     assert workspace == tmp_path.resolve()
-    assert merged["pruning"]["tools"]["hook"]["tools_from"] == ["cyt_mcp"]
+    assert merged["tools"]["hook"]["tools_from"] == ["cyt_mcp"]
 
 
 def test_set_hook_workspace_in_config(tmp_path: Path) -> None:

@@ -50,6 +50,14 @@ def _nested_bool_from_yaml(text: str, path: tuple[str, ...]) -> bool | None:
     return None
 
 
+def _nested_bool_from_yaml_paths(text: str, paths: tuple[tuple[str, ...], ...]) -> bool | None:
+    for path in paths:
+        value = _nested_bool_from_yaml(text, path)
+        if value is not None:
+            return value
+    return None
+
+
 def resolve_config_path() -> Path:
     """Match ``cyt.config.resolve_config_path`` file selection (no explicit path)."""
     cwd_config = Path.cwd() / CWD_CONFIG_NAME
@@ -81,6 +89,14 @@ def _nested_scalar_from_yaml(text: str, path: tuple[str, ...]) -> str | None:
     return None
 
 
+def _nested_scalar_from_yaml_paths(text: str, paths: tuple[tuple[str, ...], ...]) -> str | None:
+    for path in paths:
+        value = _nested_scalar_from_yaml(text, path)
+        if value:
+            return value
+    return None
+
+
 def tools_from_includes_cyt_mcp() -> bool:
     config_path = resolve_config_path()
     if not config_path.is_file():
@@ -89,7 +105,13 @@ def tools_from_includes_cyt_mcp() -> bool:
         text = config_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    raw = _nested_scalar_from_yaml(text, ("pruning", "tools", "hook", "tools_from"))
+    raw = _nested_scalar_from_yaml_paths(
+        text,
+        (
+            ("tools", "hook", "tools_from"),
+            ("pruning", "tools", "hook", "tools_from"),
+        ),
+    )
     if raw:
         normalized = raw.replace("-", "_").casefold()
         return normalized in {"cyt_mcp", "cytmcp"}
@@ -115,7 +137,7 @@ def skills_hook_agent_interceptor_enabled() -> bool:
 
 
 def skills_hook_cursor_rule_file_enabled() -> bool:
-    """Return ``skills.hook.cursor_rule_file.enabled`` (default: true)."""
+    """Return cursor rule-file hook flag (canonical or legacy path; default: true)."""
     config_path = resolve_config_path()
     if not config_path.is_file():
         return _DEFAULT_CURSOR_RULE_FILE_ENABLED
@@ -125,9 +147,12 @@ def skills_hook_cursor_rule_file_enabled() -> bool:
     except OSError:
         return _DEFAULT_CURSOR_RULE_FILE_ENABLED
 
-    value = _nested_bool_from_yaml(
+    value = _nested_bool_from_yaml_paths(
         text,
-        ("skills", "hook", "cursor_rule_file", "enabled"),
+        (
+            ("agents", "cursor", "hook", "cursor_rule_file", "enabled"),
+            ("skills", "hook", "cursor_rule_file", "enabled"),
+        ),
     )
     if value is None:
         return _DEFAULT_CURSOR_RULE_FILE_ENABLED
@@ -135,25 +160,13 @@ def skills_hook_cursor_rule_file_enabled() -> bool:
 
 
 def _inject_via_for_agent_from_yaml(text: str, agent: str) -> str | None:
-    """Read pruning.inject_via.<agent> from simple YAML."""
-    stack: list[tuple[int, str]] = []
-    target_path = ("pruning", "inject_via", agent)
-    for line in text.splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        key, _, value = line.strip().partition(":")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        while stack and indent <= stack[-1][0]:
-            stack.pop()
-        if len(stack) >= len(target_path) or key != target_path[len(stack)]:
-            continue
-        if len(stack) + 1 == len(target_path):
-            return value.casefold() if value else None
-        if value:
-            continue
-        stack.append((indent, key))
+    """Read per-agent inject_via from canonical or legacy YAML paths."""
+    canonical = _nested_scalar_from_yaml(text, ("agents", agent, "tools", "inject_via"))
+    if canonical:
+        return canonical.casefold()
+    legacy = _nested_scalar_from_yaml(text, ("pruning", "inject_via", agent))
+    if legacy:
+        return legacy.casefold()
     return None
 
 
@@ -180,7 +193,13 @@ def hallucination_gate_enabled() -> bool:
         text = config_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    value = _nested_bool_from_yaml(text, ("hallucination_gate", "enabled"))
+    value = _nested_bool_from_yaml_paths(
+        text,
+        (
+            ("defaults", "hallucination_gate", "enabled"),
+            ("hallucination_gate", "enabled"),
+        ),
+    )
     return bool(value)
 
 
@@ -206,7 +225,13 @@ def tools_enabled() -> bool:
         text = config_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    value = _nested_bool_from_yaml(text, ("pruning", "tools", "enabled"))
+    value = _nested_bool_from_yaml_paths(
+        text,
+        (
+            ("tools", "enabled"),
+            ("pruning", "tools", "enabled"),
+        ),
+    )
     if value is None:
         return False
     return value

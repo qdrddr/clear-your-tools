@@ -20,6 +20,10 @@ from cyt.config import (
     tools_hook_mcp_definitions_file,
     tools_hook_sources,
 )
+from cyt.config.sections import (
+    build_agents_inject_via_overlay,
+    tools_dict,
+)
 from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
 
 __all__ = [
@@ -105,7 +109,7 @@ def build_tools_hook_config_overlay(
     executor_token_var: str | None = None,
     cyt_mcp: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a ``pruning.tools`` overlay fragment (``hook`` settings only)."""
+    """Return a ``tools.hook`` overlay fragment."""
     hook: dict[str, Any] = {
         "tools_from": tools_from,
         "executor_url": executor_url,
@@ -119,6 +123,24 @@ def build_tools_hook_config_overlay(
     return {"hook": hook}
 
 
+def build_tools_hook_save_overlay(
+    *,
+    tools_from: list[str],
+    executor_url: str,
+    mcp_definitions_file: str,
+    executor_token_var: str | None = None,
+) -> dict[str, Any]:
+    """Return a full user-config overlay for ``tools.hook``."""
+    return {
+        "tools": build_tools_hook_config_overlay(
+            tools_from=tools_from,
+            executor_url=executor_url,
+            mcp_definitions_file=mcp_definitions_file,
+            executor_token_var=executor_token_var,
+        ),
+    }
+
+
 def build_pruning_tools_hook_save_overlay(
     *,
     tools_from: list[str],
@@ -126,17 +148,13 @@ def build_pruning_tools_hook_save_overlay(
     mcp_definitions_file: str,
     executor_token_var: str | None = None,
 ) -> dict[str, Any]:
-    """Return a full user-config overlay for ``pruning.tools.hook``."""
-    return {
-        "pruning": {
-            "tools": build_tools_hook_config_overlay(
-                tools_from=tools_from,
-                executor_url=executor_url,
-                mcp_definitions_file=mcp_definitions_file,
-                executor_token_var=executor_token_var,
-            ),
-        },
-    }
+    """Deprecated alias for :func:`build_tools_hook_save_overlay`."""
+    return build_tools_hook_save_overlay(
+        tools_from=tools_from,
+        executor_url=executor_url,
+        mcp_definitions_file=mcp_definitions_file,
+        executor_token_var=executor_token_var,
+    )
 
 
 def _tools_from_overlay_value(sources: tuple[str, ...], *, fallback: str) -> list[str]:
@@ -152,11 +170,8 @@ def prompt_tools_hook_config(
     inject_mode: str | None = None,
     agent: str | None = None,
 ) -> dict[str, Any]:
-    """Prompt for tools hook settings; return pruning.tools overlay fragment."""
-    pruning = existing.get("pruning")
-    pruning_cfg = pruning if isinstance(pruning, dict) else {}
-    tools_cfg = pruning_cfg.get("tools")
-    tools = tools_cfg if isinstance(tools_cfg, dict) else {}
+    """Prompt for tools hook settings; return ``tools.hook`` overlay fragment."""
+    tools = tools_dict(existing)
     hook_cfg = tools.get("hook")
     hook = hook_cfg if isinstance(hook_cfg, dict) else {}
 
@@ -173,7 +188,7 @@ def prompt_tools_hook_config(
         print("\n--- Tool hook injection ---")
 
     existing_sources = tools_hook_sources(existing)
-    bundled_tools_from = _default_at("pruning", "tools", "hook", "tools_from")
+    bundled_tools_from = _default_at("tools", "hook", "tools_from")
     if isinstance(bundled_tools_from, str):
         bundled_from_items = [bundled_tools_from]
     elif isinstance(bundled_tools_from, list):
@@ -304,10 +319,8 @@ def ensure_tools_hook_file_interactive(
         return config
     tools_overlay = prompt_tools_hook_config(config, context="launch", inject_mode="hook")
     overlay: dict[str, Any] = {
-        "pruning": {
-            "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
-            "tools": tools_overlay,
-        },
+        **build_agents_inject_via_overlay(dict.fromkeys(inject_via_agents(), "hook")),
+        "tools": tools_overlay,
     }
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         return load_config(config_path)

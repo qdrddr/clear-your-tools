@@ -38,7 +38,10 @@ def test_resolve_policy_as_enum_from_definition() -> None:
     cfg = load_config()
     policy = resolve_policy("prune_all_descriptions", cfg)
     assert policy is not None
-    assert policy_def_to_enum(policy, fallback_name="prune_all_descriptions") == "prune_all_descriptions"
+    assert (
+        policy_def_to_enum(policy, fallback_name="prune_all_descriptions")
+        == "prune_all_descriptions"
+    )
 
 
 def test_user_policy_overlay_merges_not_replaces() -> None:
@@ -55,5 +58,5 @@ def test_user_policy_overlay_merges_not_replaces() -> None:
         },
     )
     catalog = resolved_policies(cfg)
-    assert catalog["prune_optional"]["description"] == "user override"
+    assert catalog["prune_optional"].get("description") == "user override"
     assert "prune_all" in catalog

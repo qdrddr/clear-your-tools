@@ -17,7 +17,7 @@ from cyt.config import (
 )
 from cyt.executor.http import fetch_executor_tools_for_cli
 from cyt.proxy.setup_wizard import _prompt
-from cyt.tools.hook_setup import build_pruning_tools_hook_save_overlay
+from cyt.tools.hook_setup import build_tools_hook_save_overlay
 
 _CONFIG_SUFFIXES = {".yaml", ".yml"}
 
@@ -46,9 +46,7 @@ def add_executor_parser(subparsers: argparse._SubParsersAction) -> None:
         "--file",
         type=Path,
         default=None,
-        help=(
-            "Output definitions file (default: pruning.tools.hook.mcp_definitions_file from config)"
-        ),
+        help=("Output definitions file (default: tools.hook.mcp_definitions_file from config)"),
     )
     save_parser.add_argument(
         "--config",
@@ -70,14 +68,14 @@ def _resolve_executor_url(
     if not sys.stdin.isatty():
         raise SystemExit(
             "Executor URL not configured. "
-            "Run interactively or set pruning.tools.hook.executor_url in config.yaml.",
+            "Run interactively or set tools.hook.executor_url in config.yaml.",
         )
 
     print("\nExecutor URL not configured.")
     while True:
         url_text = _prompt("Executor base URL", "http://localhost:4789").strip().rstrip("/")
         if url_text:
-            overlay = build_pruning_tools_hook_save_overlay(
+            overlay = build_tools_hook_save_overlay(
                 tools_from=["executor"],
                 executor_url=url_text,
                 mcp_definitions_file=str(tools_hook_mcp_definitions_file(config)),
@@ -117,7 +115,7 @@ def run_executor_save(args: argparse.Namespace) -> None:
     print(f"Wrote {len(tools)} tools to {output_path}")
 
     if str(output_path) != str(tools_hook_mcp_definitions_file(config)):
-        overlay = build_pruning_tools_hook_save_overlay(
+        overlay = build_tools_hook_save_overlay(
             tools_from=["executor"],
             executor_url=tools_hook_executor_url(config),
             mcp_definitions_file=str(output_path),

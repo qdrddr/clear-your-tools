@@ -47,7 +47,7 @@ def test_ensure_config_file_current_migrates_legacy_and_prints(
     assert result is not None
     assert result.changed is True
     written = _load_yaml_dict(user_config_path)
-    assert written["pruning"]["tools"]["sequence"] == ["bm25"]
+    assert written["tools"]["sequence"] == ["bm25"]
     assert read_schema_version(written) == current_head()
     err = capsys.readouterr().err
     assert "config: migrated" in err
@@ -123,7 +123,7 @@ def test_ensure_workspace_config_current_promotes_and_migrates(
     assert canonical.is_file()
     assert not legacy.is_file()
     raw = yaml.safe_load(canonical.read_text(encoding="utf-8"))
-    assert raw["pruning"]["tools"]["sequence"] == ["bm25"]
+    assert raw["tools"]["sequence"] == ["bm25"]
     assert read_schema_version(raw) == current_head()
     err = capsys.readouterr().err
     assert "config: migrated" in err

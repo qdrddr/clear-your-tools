@@ -612,6 +612,25 @@ def test_cursor_rules_file_enabled_from_config(
     assert sync_cursor_rules_file(workspace, "<agent-tools>demo</agent-tools>") is False
 
 
+def test_cursor_rules_file_enabled_from_canonical_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from cyt_client.config import skills_hook_cursor_rule_file_enabled
+    from cyt_client.rules_file import cursor_rules_file_enabled
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    config_path = workspace / "config.yaml"
+    config_path.write_text(
+        "agents:\n  cursor:\n    hook:\n      cursor_rule_file:\n        enabled: true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace)
+    assert skills_hook_cursor_rule_file_enabled() is True
+    assert cursor_rules_file_enabled() is True
+
+
 def test_cursor_rules_file_env_overrides_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

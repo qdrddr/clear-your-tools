@@ -23,6 +23,11 @@ from cyt.config import (
     tools_enabled,
     tools_hook_sources,
 )
+from cyt.config.sections import (
+    build_agents_inject_via_overlay,
+    build_cursor_rule_file_overlay,
+    build_defaults_hallucination_gate_overlay,
+)
 from cyt.cyt_mcp.readiness import report_cyt_mcp_hook_readiness
 from cyt.hook.cli_invocation import (
     INSTALLED_CYT_CLIENT_COMMAND,
@@ -598,7 +603,9 @@ def build_hook_skills_config_overlay(
 
     hook_agent = tools_hook_cyt_mcp_agent(config or {})
     inject_ok = inject_via_for_agent(config or {}, hook_agent) == "hook"
-    inject_overlay = {"pruning": {"inject_via": dict.fromkeys(inject_via_agents(), "hook")}}
+    inject_overlay = build_agents_inject_via_overlay(
+        dict.fromkeys(inject_via_agents(), "hook"),
+    )
 
     if not enabled:
         if existing_skills.get("enabled") is False and inject_ok:
@@ -638,7 +645,14 @@ def build_hook_skills_config_overlay(
         },
     }
     if agents_overlay:
-        overlay["agents"] = agents_overlay
+        merged_agents = dict(inject_overlay.get("agents", {}))
+        for agent, block in agents_overlay.items():
+            existing_block = merged_agents.get(agent)
+            if isinstance(existing_block, dict) and isinstance(block, dict):
+                merged_agents[agent] = {**existing_block, **block}
+            else:
+                merged_agents[agent] = block
+        overlay["agents"] = merged_agents
     return overlay
 
 
@@ -1648,10 +1662,8 @@ def _save_tools_hook_wizard_config(
         if save_user_config(
             resolved_config_path,
             {
-                "pruning": {
-                    "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
-                    "tools": {"enabled": False},
-                },
+                **build_agents_inject_via_overlay(dict.fromkeys(inject_via_agents(), "hook")),
+                "tools": {"enabled": False},
             },
             apply_bundled_sections=False,
         ):
@@ -1667,10 +1679,8 @@ def _save_tools_hook_wizard_config(
     if save_user_config(
         resolved_config_path,
         {
-            "pruning": {
-                "inject_via": dict.fromkeys(inject_via_agents(), "hook"),
-                "tools": {"enabled": True, **tools_overlay},
-            },
+            **build_agents_inject_via_overlay(dict.fromkeys(inject_via_agents(), "hook")),
+            "tools": {"enabled": True, **tools_overlay},
         },
         apply_bundled_sections=False,
     ):
@@ -2154,10 +2164,8 @@ def _apply_injection_hook_config(
 
     del agents
     overlay: dict[str, Any] = {
-        "hallucination_gate": {"enabled": False},
-        "pruning": {
-            "tools": {"enabled": True},
-        },
+        **build_defaults_hallucination_gate_overlay(enabled=False),
+        "tools": {"enabled": True},
     }
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         sync_config_in_place(config, config_path)
@@ -2184,7 +2192,7 @@ def _configure_cursor_rule_file(
     else:
         enabled = True
 
-    overlay = {"skills": {"hook": {"cursor_rule_file": {"enabled": enabled}}}}
+    overlay = build_cursor_rule_file_overlay(enabled=enabled)
     if save_user_config(config_path, overlay, apply_bundled_sections=False):
         sync_config_in_place(config, config_path)
         print(
@@ -2219,15 +2227,13 @@ def _apply_prevent_hallucinations_config(
                 continue
             inject_map[name] = _prompt_prevent_hallucinations_inject_via(name, config)
     overlay = {
-        "hallucination_gate": {"enabled": True},
+        **build_defaults_hallucination_gate_overlay(enabled=True),
         "skills": {
             "enabled": False,
-            "hook": {"cursor_rule_file": {"enabled": False}},
         },
-        "pruning": {
-            "tools": {"enabled": False},
-            "inject_via": inject_map,
-        },
+        **build_cursor_rule_file_overlay(enabled=False),
+        **build_agents_inject_via_overlay(inject_map),
+        "tools": {"enabled": False},
     }
     save_user_config(config_path, overlay, apply_bundled_sections=False)
     sync_config_in_place(config, config_path)

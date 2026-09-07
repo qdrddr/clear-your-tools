@@ -19,14 +19,9 @@ from dotenv import load_dotenv
 from cyt.config.policy_catalog import (
     POLICY_CHOICES,
     VALID_TOOL_POLICIES,
-    PolicyDef,
     ToolPolicy,
     apply_policy_catalog_merge,
-    merge_policies_by_name,
-    policy_def_to_enum,
-    resolve_policy,
     resolve_policy_as_enum,
-    resolved_policies,
     validate_policy_reference,
 )
 from cyt.config.sections import (
@@ -35,11 +30,13 @@ from cyt.config.sections import (
     global_mcp_permissions_raw,
     hallucination_gate_enabled_raw,
     inject_via_default_mode,
+    inject_via_for_agent_from_config,
     inject_via_map_from_config,
     max_batch_workers_raw,
     tools_at,
-    tools_value,
     tools_dict,
+    tools_enabled_raw,
+    tools_value,
 )
 
 if TYPE_CHECKING:
@@ -246,10 +243,11 @@ def _bundled_dict(*keys: str) -> dict[str, Any]:
 
 def _tools_default_at(*keys: str) -> ConfigValue:
     """Read a required value from bundled ``tools`` (legacy ``pruning.tools`` fallback)."""
-    value = tools_at(_bundled_defaults(), *keys)
+    bundled = _bundled_defaults()
+    value = tools_at(bundled, *keys)
     if value is not None:
-        return value
-    return _tools_default_at(*keys)
+        return cast(ConfigValue, value)
+    return _require_nested(bundled, "pruning", "tools", *keys)
 
 
 def _tools_bundled_dict(*keys: str) -> dict[str, Any]:
@@ -262,7 +260,7 @@ def _tools_merged_at(config: dict[str, Any], *keys: str) -> ConfigValue:
     merged = _merged_config(config)
     value = tools_at(merged, *keys)
     if value is not None:
-        return value
+        return cast(ConfigValue, value)
     return _require_nested(merged, "pruning", "tools", *keys)
 
 
@@ -907,8 +905,6 @@ def _per_tool_policy(
     config: dict[str, Any] | None = None,
 ) -> ToolPolicy | None:
     tools = tools_dict(config_root)
-    if not isinstance(tools, dict):
-        return None
     policy_section = tools.get("policy")
     if isinstance(policy_section, dict):
         per_tool = policy_section.get("per_tool")
@@ -1023,8 +1019,7 @@ def output_policy_context_for_terminal_stage(
     ctx.system_policy = resolve_policy_as_enum(ctx.system_policy, merged)
     ctx.mcp_policy = resolve_policy_as_enum(ctx.mcp_policy, merged)
     ctx.per_tool = {
-        tool_id: resolve_policy_as_enum(policy, merged)
-        for tool_id, policy in ctx.per_tool.items()
+        tool_id: resolve_policy_as_enum(policy, merged) for tool_id, policy in ctx.per_tool.items()
     }
 
     if system is not None:
@@ -1206,7 +1201,7 @@ def inject_via_map_for_mode(mode: str) -> dict[str, str]:
 def _inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
     cfg = _resolve_config(config)
     merged = _merged_config(cfg)
-    return inject_via_map_from_config(merged)
+    return inject_via_map_from_config(merged, overlay=cfg)
 
 
 def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -1221,21 +1216,23 @@ def _any_agent_uses_hook_tools(config: dict[str, Any]) -> bool:
 def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInjectVia:
     """Per-agent injection path (hook or proxy)."""
     cfg = _resolve_config(config)
-    mode = _inject_via_map(cfg).get(agent)
+    merged = _merged_config(cfg)
+    mode = inject_via_for_agent_from_config(merged, agent, overlay=cfg)
     if mode == "hook":
         return "hook"
     if mode == "proxy":
         return "proxy"
-    fallback = inject_via_default_mode(_merged_config(cfg))
+    fallback = inject_via_default_mode(merged)
     return "hook" if fallback == "hook" else "proxy"
 
 
 def hallucination_gate_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    raw = hallucination_gate_enabled_raw(_merged_config(cfg))
+    merged = _merged_config(cfg)
+    raw = hallucination_gate_enabled_raw(merged, overlay=cfg)
     if raw is None:
         return False
-    return _config_bool(raw)
+    return _config_bool(cast(ConfigValue, raw))
 
 
 def verify_only_mode(config: dict[str, Any] | None = None) -> bool:
@@ -1287,7 +1284,11 @@ def skills_inject_via(config: dict[str, Any] | None = None, *, agent: str | None
 
 def tools_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_tools_merged_at(cfg, "enabled"))
+    merged = _merged_config(cfg)
+    raw = tools_enabled_raw(merged, overlay=cfg)
+    if raw is None:
+        return _config_bool(_tools_merged_at(cfg, "enabled"))
+    return _config_bool(cast(ConfigValue, raw))
 
 
 def inject_into_user_message(
@@ -1424,7 +1425,7 @@ def tools_hook_cloudflare_cache_settings(config: dict[str, Any] | None = None) -
     cache = hook.get("cloudflare_cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _tools_bundled_dict( "hook", "cloudflare_cache")
+    defaults = _tools_bundled_dict("hook", "cloudflare_cache")
     return deep_merge(defaults, cache)
 
 
@@ -1462,7 +1463,7 @@ def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict
     cache = mcpc.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _tools_bundled_dict( "hook", "mcpc", "cache")
+    defaults = _tools_bundled_dict("hook", "mcpc", "cache")
     return deep_merge(defaults, cache)
 
 
@@ -1570,7 +1571,7 @@ def tools_hook_cyt_mcp_cache_settings(config: dict[str, Any] | None = None) -> d
     cache = cyt_mcp.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _tools_bundled_dict( "hook", "cyt_mcp", "cache")
+    defaults = _tools_bundled_dict("hook", "cyt_mcp", "cache")
     return deep_merge(defaults, cache)
 
 
@@ -1584,7 +1585,7 @@ def connection_health_flapping_settings(config: dict[str, Any] | None = None) ->
     flapping = connection_health.get("flapping")
     if not isinstance(flapping, dict):
         flapping = {}
-    defaults = _tools_bundled_dict( "hook", "connection_health", "flapping")
+    defaults = _tools_bundled_dict("hook", "connection_health", "flapping")
     return deep_merge(defaults, flapping)
 
 
@@ -1595,7 +1596,7 @@ def tools_hook_executor_cache_settings(config: dict[str, Any] | None = None) -> 
     executor_cache = hook.get("executor_cache")
     if not isinstance(executor_cache, dict):
         executor_cache = {}
-    defaults = _tools_bundled_dict( "hook", "executor_cache")
+    defaults = _tools_bundled_dict("hook", "executor_cache")
     return deep_merge(defaults, executor_cache)
 
 
@@ -1797,10 +1798,11 @@ def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> f
 
 def skills_hook_cursor_rule_file_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    raw = cursor_rule_file_enabled_raw(_merged_config(cfg))
+    merged = _merged_config(cfg)
+    raw = cursor_rule_file_enabled_raw(merged, overlay=cfg)
     if raw is None:
         return True
-    return _config_bool(raw)
+    return _config_bool(cast(ConfigValue, raw))
 
 
 def skills_hook_agent_interceptor_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -2210,7 +2212,7 @@ def _stage_minimum_tools(
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
 
-    return _config_int(_tools_require_nested(config, "policy", "minimum_tools"))
+    return _config_int(_tools_require_nested(merged, "policy", "minimum_tools"))
 
 
 def tools_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
@@ -2236,11 +2238,14 @@ def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
         except ValueError:
             pass
     cfg = _resolve_config(config)
-    raw = max_batch_workers_raw(_merged_config(cfg))
-    try:
-        return max(1, _config_int(raw))
-    except (TypeError, ValueError):
-        return _config_int(_tools_default_at("max_batch_workers"))
+    merged = _merged_config(cfg)
+    raw = max_batch_workers_raw(merged, overlay=cfg)
+    if raw is not None:
+        try:
+            return max(1, _config_int(cast(ConfigValue, raw)))
+        except (TypeError, ValueError):
+            pass
+    return _config_int(_tools_default_at("max_batch_workers"))
 
 
 def selector_bulk_max_tokens(
@@ -2459,3 +2464,6 @@ def resolve_model(
             full_model_name = entry.get("name")
             return f"{full_model_name}", None, None
     raise ValueError(f"Unknown model nick: {model_nick}, kind: {model_kind}, type: {model_type}")
+
+
+__all__ = ["POLICY_CHOICES", "ToolPolicy"]

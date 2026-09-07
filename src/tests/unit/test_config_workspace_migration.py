@@ -89,8 +89,8 @@ def test_fixture_legacy_pruning_migrates_to_head() -> None:
     )
     raw = yaml.safe_load(fixture.read_text(encoding="utf-8"))
     result = upgrade_config_dict(raw, scope="global")
-    assert result.cfg["pruning"]["tools"]["sequence"] == ["bm25", "rerank"]
-    assert result.cfg["pruning"]["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
+    assert result.cfg["tools"]["sequence"] == ["bm25", "rerank"]
+    assert result.cfg["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
     assert read_schema_version(result.cfg) == current_head()
 
 
@@ -122,4 +122,4 @@ def test_migrate_workspace_legacy_file_in_place_when_canonical_exists(
 
     result = migrate_config_file(legacy, scope="workspace", backup=False)
     assert result is not None
-    assert result.cfg["pruning"]["tools"]["sequence"] == ["bm25"]
+    assert result.cfg["tools"]["sequence"] == ["bm25"]

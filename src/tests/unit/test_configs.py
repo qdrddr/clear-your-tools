@@ -614,10 +614,7 @@ def test_selector_soft_budget_reads_config() -> None:
 
 def test_selector_soft_budget_defaults() -> None:
     bundled = configs.load_bundled_defaults_yaml()
-    assert (
-        configs.tools_selector_soft_budget({})
-        == bundled["tools"]["selector_soft_budget"]
-    )
+    assert configs.tools_selector_soft_budget({}) == bundled["tools"]["selector_soft_budget"]
     assert configs.skills_selector_soft_budget({}) == bundled["skills"]["selector_soft_budget"]
 
 

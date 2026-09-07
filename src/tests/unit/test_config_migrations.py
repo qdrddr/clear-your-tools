@@ -55,8 +55,8 @@ def test_migrate_legacy_pruning_pipeline(tmp_path: Path) -> None:
     result = migrate_config_file(path, scope="global", backup=False)
     assert result is not None
     assert result.changed is True
-    assert result.cfg["pruning"]["tools"]["sequence"] == ["bm25", "rerank"]
-    assert result.cfg["pruning"]["tools"]["policy"]["minimum_tools"] == 40
+    assert result.cfg["tools"]["sequence"] == ["bm25", "rerank"]
+    assert result.cfg["tools"]["policy"]["minimum_tools"] == 40
     assert "pipeline" not in result.cfg.get("pruning", {})
     assert read_schema_version(result.cfg) == current_head()
 

@@ -1060,12 +1060,12 @@ class TestBuildSetupOverlay:
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
-        assert overlay["pruning"]["tools"]["sequence"] == ["rerank"]
-        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
-        assert "llm" not in overlay["pruning"]["tools"]["pipelines"]
-        assert overlay["pruning"]["tools"]["policy"]["system_tool"] == "prune_optional"
-        assert overlay["pruning"]["tools"]["policy"]["mcp_tool"] == "prune_all"
-        assert overlay["pruning"]["tools"]["policy"]["minimum_tools"] == 50
+        assert overlay["tools"]["sequence"] == ["rerank"]
+        assert overlay["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert "llm" not in overlay["tools"]["pipelines"]
+        assert overlay["tools"]["policy"]["system_tool"] == "prune_optional"
+        assert overlay["tools"]["policy"]["mcp_tool"] == "prune_all"
+        assert overlay["tools"]["policy"]["minimum_tools"] == 50
         assert overlay["defaults"]["reranking_enabled"] is True
         assert overlay["models"]["llm"]["remote"] == []
         rerank_remote = overlay["models"]["rerankers"]["remote"][0]
@@ -1103,9 +1103,9 @@ class TestBuildSetupOverlay:
             endpoints=["anthropic"],
             stats_db_path="~/.config/cyt/stats.db",
         )
-        assert overlay["pruning"]["tools"]["sequence"] == ["bm25"]
-        assert overlay["pruning"]["tools"]["policy"]["mcp_tool"] == "prune_all"
-        assert "rerank" not in overlay["pruning"]["tools"]["pipelines"]
+        assert overlay["tools"]["sequence"] == ["bm25"]
+        assert overlay["tools"]["policy"]["mcp_tool"] == "prune_all"
+        assert "rerank" not in overlay["tools"]["pipelines"]
         assert overlay["defaults"] == {}
         assert "rerankers" not in overlay["models"]
 
@@ -1132,8 +1132,8 @@ class TestBuildSetupOverlay:
         assert nicks == {"mercury-2"}
         provider_nicks = {provider["provider_nick"] for provider in overlay["models"]["providers"]}
         assert provider_nicks == {"openrouter", "deepinfra"}
-        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
-        assert overlay["pruning"]["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
+        assert overlay["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert overlay["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
 
     def test_setup_overlay_writes_only_pruner_llm_models(self) -> None:
         overlay = build_setup_overlay(
@@ -1199,8 +1199,8 @@ class TestBuildSetupOverlay:
             stats_db_path="~/.config/cyt/stats.db",
             skills={"enabled": True, "pipeline": "rerank"},
         )
-        assert overlay["pruning"]["tools"]["sequence"] == ["bm25"]
-        assert overlay["pruning"]["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
+        assert overlay["tools"]["sequence"] == ["bm25"]
+        assert overlay["tools"]["pipelines"]["rerank"]["model_nick"] == "rerank-qwen3-8b"
         assert overlay["models"]["rerankers"]["remote"][0]["nick"] == "rerank-qwen3-8b"
 
 
@@ -1247,12 +1247,8 @@ class TestSaveUserConfig:
         )
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundled = bundled_user_config_sections()
-        loaded_per_tool = (
-            loaded.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
-        )
-        bundled_per_tool = (
-            bundled.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
-        )
+        loaded_per_tool = loaded.get("tools", {}).get("policy", {}).get("per_tool")
+        bundled_per_tool = bundled.get("tools", {}).get("policy", {}).get("per_tool")
         assert loaded_per_tool == bundled_per_tool
         assert "Agent" not in loaded_per_tool
         ssl = loaded["network"]["proxy"]["reverse"]["http2"]["ssl"]

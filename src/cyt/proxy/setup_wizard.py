@@ -32,6 +32,7 @@ from cyt.config import (
     stats_db_path,
     upstream_url_defaults,
 )
+from cyt.config.sections import build_agents_inject_via_overlay, tools_at
 from cyt.proxy.model_names import is_syncable_model_name
 
 LOCAL_SERVE_HOST = "127.0.0.1"
@@ -1054,23 +1055,20 @@ def build_setup_overlay(
     if llm_pruner_model is not None:
         pipelines["llm"] = {"model_nick": str(llm_pruner_model["nick"])}
 
-    pruning: dict[str, Any] = {
-        "inject_via": inject_via_map_for_mode(inject_via),
-        "tools": {
-            "sequence": pipeline,
-            "policy": policy,
-            "pipelines": pipelines,
-        },
+    tools: dict[str, Any] = {
+        "sequence": pipeline,
+        "policy": policy,
+        "pipelines": pipelines,
     }
 
     defaults: dict[str, Any] = {}
     if "rerank" in pipeline:
         defaults["reranking_enabled"] = True
 
-    return {
+    overlay: dict[str, Any] = {
         "defaults": defaults,
         "models": models,
-        "pruning": pruning,
+        "tools": tools,
         "network": {
             "proxy": {
                 "reverse": {
@@ -1082,7 +1080,9 @@ def build_setup_overlay(
         },
         "stats": {"database": {"path": stats_db_path}},
         **({"skills": skills} if skills is not None else {}),
+        **build_agents_inject_via_overlay(inject_via_map_for_mode(inject_via)),
     }
+    return overlay
 
 
 def print_proxy_urls(port: int, endpoints: list[str], *, host: str = LOCAL_SERVE_HOST) -> None:
@@ -1409,14 +1409,10 @@ def _prompt_custom_model(
 
 
 def _default_minimum_tools(config: dict[str, Any]) -> int:
-    """Return configured ``pruning.tools.policy.minimum_tools`` or bundled default."""
-    pruning = config.get("pruning")
-    if isinstance(pruning, dict):
-        tools = pruning.get("tools")
-        if isinstance(tools, dict):
-            policy = tools.get("policy")
-            if isinstance(policy, dict) and policy.get("minimum_tools") is not None:
-                return int(policy["minimum_tools"])
+    """Return configured ``tools.policy.minimum_tools`` or bundled default."""
+    policy = tools_at(config, "policy")
+    if isinstance(policy, dict) and policy.get("minimum_tools") is not None:
+        return int(policy["minimum_tools"])
     return reranker_minimum_tools(config)
 
 
@@ -1896,7 +1892,7 @@ def run_setup(config_path: Path) -> None:
     upstreams, endpoints = _prompt_upstreams(existing)
 
     minimum_tools = _prompt_int(
-        "\npruning.tools.policy.minimum_tools",
+        "\ntools.policy.minimum_tools",
         _default_minimum_tools(existing),
     )
 
@@ -1985,7 +1981,7 @@ def run_setup(config_path: Path) -> None:
     )
     if agents_overlay:
         overlay["agents"] = agents_overlay
-    overlay["pruning"]["tools"].update(tools_overlay)
+    overlay["tools"].update(tools_overlay)
 
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):

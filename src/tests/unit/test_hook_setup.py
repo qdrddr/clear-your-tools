@@ -191,15 +191,17 @@ def test_build_hook_skills_config_overlay_updates_inject_via_from_proxy() -> Non
     )
 
     assert overlay == {
-        "pruning": {
-            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+        "agents": {
+            "cursor": {"tools": {"inject_via": "hook"}},
+            "claude": {
+                "tools": {"inject_via": "hook"},
+                "skills": {"directories": ["~/.claude/skills"]},
+            },
+            "codex": {"tools": {"inject_via": "hook"}},
         },
         "skills": {
             "enabled": True,
             "directories": ["~/.agents/skills"],
-        },
-        "agents": {
-            "claude": {"skills": {"directories": ["~/.claude/skills"]}},
         },
     }
 
@@ -212,8 +214,10 @@ def test_build_hook_skills_config_overlay_disables_skills() -> None:
     )
 
     assert overlay == {
-        "pruning": {
-            "inject_via": {"cursor": "hook", "claude": "hook", "codex": "hook"},
+        "agents": {
+            "cursor": {"tools": {"inject_via": "hook"}},
+            "claude": {"tools": {"inject_via": "hook"}},
+            "codex": {"tools": {"inject_via": "hook"}},
         },
         "skills": {"enabled": False},
     }
@@ -762,9 +766,8 @@ def test_save_hook_skills_directories_writes_config(tmp_path: Path) -> None:
     assert "~/.claude/skills" in text
     assert "~/.codex/skills" in text
     assert "enabled: true" in text
-    assert "pruning:" in text
-    assert "cursor: hook" in text
-    assert "claude: hook" in text
+    assert "agents:" in text
+    assert "inject_via: hook" in text or "hook" in text
 
 
 def test_save_hook_skills_directories_preserves_pipeline_and_updates_inject_via(
@@ -796,8 +799,7 @@ def test_save_hook_skills_directories_preserves_pipeline_and_updates_inject_via(
     assert changed is True
     text = config_path.read_text(encoding="utf-8")
     assert "pipeline: llm" in text
-    assert "cursor: hook" in text
-    assert "claude: hook" in text
+    assert "inject_via: hook" in text
     assert "inject_via: proxy" not in text
     assert "enabled: true" in text
     assert "~/.claude/skills" in text
@@ -1684,8 +1686,8 @@ def test_run_hook_setup_prevent_hallucinations_prompts_claude_inject_via(
     assert "Tool detection (claude)" in output
     assert any("Detect tools for claude via (hook | proxy)" in text for text in prompt_calls)
     assert "Test the hook locally (preToolUse payload on stdin)" in output
-    assert saved["hallucination_gate"]["enabled"] is True
-    assert saved["pruning"]["inject_via"]["claude"] == "hook"
+    assert saved["defaults"]["hallucination_gate"]["enabled"] is True
+    assert saved["agents"]["claude"]["tools"]["inject_via"] == "hook"
     setup_cyt_mcp.assert_called_once()
     assert setup_cyt_mcp.call_args.kwargs["verify_only"] is True
     write_aggregator.assert_not_called()
@@ -1745,8 +1747,8 @@ def test_apply_injection_hook_config_restores_cursor_rule_file_and_tools(
 
     assert saved_overlays == [
         {
-            "hallucination_gate": {"enabled": False},
-            "pruning": {"tools": {"enabled": True}},
+            "defaults": {"hallucination_gate": {"enabled": False}},
+            "tools": {"enabled": True},
         },
     ]
 
@@ -1817,7 +1819,7 @@ def test_configure_cursor_rule_file_prompts_and_saves_enabled(
         )
 
     assert saved_overlays == [
-        {"skills": {"hook": {"cursor_rule_file": {"enabled": True}}}},
+        {"agents": {"cursor": {"hook": {"cursor_rule_file": {"enabled": True}}}}},
     ]
     output = capsys.readouterr().out
     assert "Cursor rules file" in output
@@ -1848,7 +1850,7 @@ def test_configure_cursor_rule_file_non_tty_defaults_to_enabled(tmp_path: Path) 
         )
 
     assert saved_overlays == [
-        {"skills": {"hook": {"cursor_rule_file": {"enabled": True}}}},
+        {"agents": {"cursor": {"hook": {"cursor_rule_file": {"enabled": True}}}}},
     ]
 
 
@@ -1887,7 +1889,7 @@ def test_configure_cursor_rule_file_auto_disables_without_injection(
         )
 
     assert saved_overlays == [
-        {"skills": {"hook": {"cursor_rule_file": {"enabled": False}}}},
+        {"agents": {"cursor": {"hook": {"cursor_rule_file": {"enabled": False}}}}},
     ]
     assert prompt_calls == []
     output = capsys.readouterr().out
@@ -1905,7 +1907,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     cursor_hooks_path = tmp_path / "cursor" / "hooks.json"
     mcp_source = tmp_path / "cursor" / "mcp.json"
     mcp_target_dir = tmp_path / "cyt_mcp"
-    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path = tmp_path / "mcp-config.yaml"
     config_path = tmp_path / "config.yaml"
     mcp_source.parent.mkdir(parents=True)
     mcp_source.write_text(
@@ -1922,6 +1924,7 @@ def test_run_hook_setup_prevent_hallucinations_migrates_mcp_for_cursor(
     monkeypatch.setattr(hook_setup, "CURSOR_HOOKS_PATH", cursor_hooks_path)
     monkeypatch.setitem(cyt_mcp_setup._AGENT_SOURCE_PATHS, "cursor", mcp_source)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(hook_setup, "_ensure_hook_credentials", lambda _config: None)
     monkeypatch.setattr(hook_setup.sys.stdin, "isatty", lambda: True)
@@ -2204,7 +2207,7 @@ def test_save_tools_hook_wizard_config_skips_tool_sources_when_disabled(
     assert "Tools injection" in output
     assert "MCP aggregator" not in output
     assert "Tool hook injection" not in output
-    assert saved["pruning"]["tools"]["enabled"] is False
+    assert saved["tools"]["enabled"] is False
 
 
 def test_install_windows_hook_wrappers_writes_cmd_files(

@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt_mcp.config import AggregatorConfig, CatalogScope, HttpSettings, load_aggregator_config, test_aggregator_config
+from cyt_mcp.config import (
+    AggregatorConfig,
+    CatalogScope,
+    load_aggregator_config,
+    sample_aggregator_config,
+)
 from cyt_mcp.hook_daemon_push import (
     _RETRY_DELAYS_SECONDS,
     _instance_key,
@@ -24,7 +29,7 @@ def _config(
     workspace_root: Path | None = None,
     aggregator_path: Path | None = None,
 ) -> AggregatorConfig:
-    return test_aggregator_config(
+    return sample_aggregator_config(
         catalog_scope=catalog_scope,
         workspace_root=workspace_root,
         aggregator_path=aggregator_path,

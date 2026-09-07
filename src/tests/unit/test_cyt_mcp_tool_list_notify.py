@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastmcp.server.middleware import MiddlewareContext
 
-from cyt_mcp.config import AggregatorConfig, test_aggregator_config
+from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.tool_list_notify import ToolListChangedMiddleware
 
 
 def _test_config() -> AggregatorConfig:
-    return test_aggregator_config()
+    return sample_aggregator_config()
 
 
 def _initialize_context(*, session_id: str = "sess-1") -> MiddlewareContext[Any]:

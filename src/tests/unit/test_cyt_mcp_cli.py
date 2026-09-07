@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from cyt_mcp.cli import _run_catalog, _run_search, _run_server
-from cyt_mcp.config import AggregatorConfig, test_aggregator_config
+from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 
 def _stdio_config() -> AggregatorConfig:
-    return test_aggregator_config()
+    return sample_aggregator_config()
 
 
 def test_run_server_stdio_uses_run_async() -> None:

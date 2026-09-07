@@ -1,4 +1,4 @@
-"""Interactive ``pruning.inject_via`` alignment for launch and hook setup."""
+"""Interactive inject_via alignment for launch and hook setup."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.config import inject_via_for_agent, save_user_config, sync_config_in_place
+from cyt.config.sections import build_agents_inject_via_overlay
 from cyt.proxy.setup_wizard import _prompt_yes_no
 
 InjectViaMode = Literal["hook", "proxy"]
@@ -69,7 +70,7 @@ def apply_inject_via_switch(
         inject_map = dict.fromkeys(names, target)
     save_user_config(
         config_path,
-        {"pruning": {"inject_via": inject_map}},
+        build_agents_inject_via_overlay(dict(inject_map)),
         apply_bundled_sections=False,
     )
     sync_config_in_place(config, config_path)
@@ -143,7 +144,7 @@ def ensure_launch_inject_via_proxy(
             config,
             target="proxy",
             prompt=(
-                f"Agent launch uses proxy injection. Switch pruning.inject_via.{agent} to proxy?"
+                f"Agent launch uses proxy injection. Switch agents.{agent}.tools.inject_via to proxy?"
             ),
             agents=("claude", "codex") if agent in {"claude", "codex"} else (agent,),
         )
@@ -187,7 +188,7 @@ def ensure_hook_inject_via(
         config_path,
         config,
         target="hook",
-        prompt=("This installation uses hook injection. Switch pruning.inject_via to hook?"),
+        prompt=("This installation uses hook injection. Switch agents.*.tools.inject_via to hook?"),
         start_runtime=True,
     )
     if already_hook:

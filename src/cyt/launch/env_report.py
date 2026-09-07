@@ -214,7 +214,7 @@ def _injection_path_lines(config: dict[str, Any]) -> list[str]:
 
     mode = inject_via_map(config)
     return [
-        f"  injection path: {mode}  (pruning.inject_via)",
+        f"  injection path: {mode}  (agents.*.tools.inject_via)",
     ]
 
 
@@ -247,7 +247,7 @@ def _cursor_recipe_lines() -> list[str]:
         "# Manual Cursor recipe",
         "cursor .",
         "# Pruned skills/tools inject via ~/.cursor/hooks.json + cyt-client rules file",
-        "# Requires pruning.inject_via: hook",
+        "# Requires agents.*.tools.inject_via: hook",
     ]
 
 

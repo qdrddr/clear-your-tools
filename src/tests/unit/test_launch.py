@@ -555,7 +555,7 @@ class TestEnvReport:
         err = capsys.readouterr().err
         assert "Debug:" in err
         assert (
-            "  injection path: {'cursor': 'hook', 'claude': 'proxy', 'codex': 'proxy'}  (pruning.inject_via)"
+            "  injection path: {'cursor': 'hook', 'claude': 'proxy', 'codex': 'proxy'}  (agents.*.tools.inject_via)"
             in err
         )
         assert "anthropic-proxy.log" in err
@@ -574,7 +574,7 @@ class TestEnvReport:
         )
         err = capsys.readouterr().err
         assert (
-            "  injection path: {'cursor': 'hook', 'claude': 'hook', 'codex': 'hook'}  (pruning.inject_via)"
+            "  injection path: {'cursor': 'hook', 'claude': 'hook', 'codex': 'hook'}  (agents.*.tools.inject_via)"
             in err
         )
 
