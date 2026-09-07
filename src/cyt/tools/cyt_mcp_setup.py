@@ -34,7 +34,8 @@ from cyt_client.mcp_entry import (
     normalize_cyt_mcp_transport,
 )
 
-DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
+DEFAULT_MCP_CONFIG_PATH = Path("~/.config/cyt/mcp-config.yaml")
+DEFAULT_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
 DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8765
@@ -133,6 +134,25 @@ def migrate_agent_backends(agent: str) -> Path:
     )
 
 
+def write_mcp_config_yaml(
+    agent: str,
+    *,
+    backends_path: Path | None = None,
+    transport: CytMcpTransport = "stdio",
+    verify_only: bool = False,
+    aggregator_path: Path | None = None,
+    http_port: int | None = None,
+) -> Path:
+    return write_mcp_config_yaml_at(
+        aggregator_path or DEFAULT_MCP_CONFIG_PATH.expanduser(),
+        agent,
+        backends_path=backends_path,
+        transport=transport,
+        verify_only=verify_only,
+        http_port=http_port or DEFAULT_HTTP_PORT,
+    )
+
+
 def write_mcp_aggregator_yaml(
     agent: str,
     *,
@@ -142,13 +162,14 @@ def write_mcp_aggregator_yaml(
     aggregator_path: Path | None = None,
     http_port: int | None = None,
 ) -> Path:
-    return write_mcp_aggregator_yaml_at(
-        aggregator_path or DEFAULT_AGGREGATOR_PATH.expanduser(),
+    """Deprecated alias for :func:`write_mcp_config_yaml`."""
+    return write_mcp_config_yaml(
         agent,
         backends_path=backends_path,
         transport=transport,
         verify_only=verify_only,
-        http_port=http_port or DEFAULT_HTTP_PORT,
+        aggregator_path=aggregator_path,
+        http_port=http_port,
     )
 
 
@@ -162,7 +183,7 @@ def _workspace_agent_mcp_yaml_ref(aggregator_path: Path, backends_path: Path) ->
         return backend_resolved.as_posix()
 
 
-def write_mcp_aggregator_yaml_at(
+def write_mcp_config_yaml_at(
     path: Path,
     agent: str,
     *,
@@ -200,13 +221,52 @@ def write_mcp_aggregator_yaml_at(
             f"  port: {http_port}",
             f"  mcp_path: {DEFAULT_MCP_PATH}",
             f"  catalog_path: {DEFAULT_CATALOG_PATH}",
-            "codex_stubs_include_description: true",
+            "pruning:",
+            "  tools:",
+            "    stub: basic",
+            "    stub_by_agent:",
+            "      codex: codex",
+            "      cursor: basic",
+            "      claude: basic",
+            "    stubs:",
+            "      - name: basic",
+            "        always:",
+            "          tool: [name]",
+            "          required_properties: []",
+            "          optional_properties: []",
+            "      - name: codex",
+            "        always:",
+            "          tool: [name, description]",
+            "          required_properties: []",
+            "          optional_properties: []",
             "",
         ],
     )
     _atomic_write_text(path, "\n".join(lines))
     print(f"\nWrote {path} (agent mapping includes {backends})", file=sys.stderr)
     return path
+
+
+def write_mcp_aggregator_yaml_at(
+    path: Path,
+    agent: str,
+    *,
+    backends_path: Path | None = None,
+    transport: CytMcpTransport = "stdio",
+    verify_only: bool = False,
+    http_port: int = DEFAULT_HTTP_PORT,
+    workspace_scoped: bool = False,
+) -> Path:
+    """Deprecated alias for :func:`write_mcp_config_yaml_at`."""
+    return write_mcp_config_yaml_at(
+        path,
+        agent,
+        backends_path=backends_path,
+        transport=transport,
+        verify_only=verify_only,
+        http_port=http_port,
+        workspace_scoped=workspace_scoped,
+    )
 
 
 def cyt_mcp_hook_settings_overlay(

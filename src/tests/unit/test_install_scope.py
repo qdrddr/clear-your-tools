@@ -39,7 +39,7 @@ def test_cyt_install_scope_workspace_paths(tmp_path: Path) -> None:
     assert scope.workspace_cyt_config_path("cursor") == tmp_path / ".agents/cyt/config/config.yaml"
     assert (
         scope.workspace_aggregator_path("cursor")
-        == tmp_path / ".agents/cyt/config/mcp-aggregator.yaml"
+        == tmp_path / ".agents/cyt/config/mcp-config.yaml"
     )
     assert scope.global_hooks_path("cursor") == Path("~/.cursor/hooks.json").expanduser()
 
@@ -56,16 +56,16 @@ def test_setup_cyt_mcp_global_only_outside_repo(
 
     monkeypatch.setattr(
         cyt_mcp_setup,
-        "DEFAULT_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "DEFAULT_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
     import cyt.hook.install_scope as install_scope
 
     monkeypatch.setattr(
         install_scope,
-        "GLOBAL_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "GLOBAL_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
     monkeypatch.setitem(
@@ -116,16 +116,16 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
 
     monkeypatch.setattr(
         cyt_mcp_setup,
-        "DEFAULT_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "DEFAULT_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
     import cyt.hook.install_scope as install_scope
 
     monkeypatch.setattr(
         install_scope,
-        "GLOBAL_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "GLOBAL_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
     monkeypatch.setitem(
@@ -185,16 +185,16 @@ def test_setup_cyt_mcp_configures_workspace_with_stdio(
 
     monkeypatch.setattr(
         cyt_mcp_setup,
-        "DEFAULT_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "DEFAULT_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
     import cyt.hook.install_scope as install_scope
 
     monkeypatch.setattr(
         install_scope,
-        "GLOBAL_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "GLOBAL_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
     monkeypatch.setitem(
@@ -236,16 +236,16 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
 
     monkeypatch.setattr(
         cyt_mcp_setup,
-        "DEFAULT_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "DEFAULT_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", home / "cyt" / "mcp")
     import cyt.hook.install_scope as install_scope
 
     monkeypatch.setattr(
         install_scope,
-        "GLOBAL_AGGREGATOR_PATH",
-        home / "cyt" / "mcp-aggregator.yaml",
+        "GLOBAL_MCP_CONFIG_PATH",
+        home / "cyt" / "mcp-config.yaml",
     )
     monkeypatch.setattr(install_scope, "GLOBAL_MCP_DIR", home / "cyt" / "mcp")
     monkeypatch.setitem(
@@ -267,13 +267,13 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
         verify_only=True,
     )
 
-    workspace_agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    workspace_agg = tmp_path / ".agents" / "cyt" / "config" / "mcp-config.yaml"
     assert workspace_agg.is_file()
     workspace_text = workspace_agg.read_text(encoding="utf-8")
     assert "verify_only: true" in workspace_text
     assert "catalog_scope: workspace" in workspace_text
     assert "cursor: mcp/cursor.json" in workspace_text
-    global_agg = home / "cyt" / "mcp-aggregator.yaml"
+    global_agg = home / "cyt" / "mcp-config.yaml"
     assert "verify_only: true" in global_agg.read_text(encoding="utf-8")
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})

@@ -10,26 +10,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from cyt_mcp.cli import _run_catalog, _run_search, _run_server
-from cyt_mcp.config import AggregatorConfig, HttpSettings
+from cyt_mcp.config import AggregatorConfig, test_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 
 def _stdio_config() -> AggregatorConfig:
-    return AggregatorConfig(
-        agent="cursor",
-        mcp_servers={},
-        transport="stdio",
-        http=HttpSettings(
-            host="127.0.0.1",
-            port=8765,
-            mcp_path="/mcp",
-            catalog_path="/catalog",
-        ),
-        codex_stubs_include_description=False,
-        verify_only=False,
-        aggregator_path=Path("~/.config/cyt/mcp-aggregator.yaml"),
-        agent_mcp_path=Path("~/.config/cyt/mcp/cursor.json"),
-    )
+    return test_aggregator_config()
 
 
 def test_run_server_stdio_uses_run_async() -> None:

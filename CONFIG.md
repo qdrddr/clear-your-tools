@@ -203,23 +203,69 @@ rest of the config surface.
 <details>
 <summary><strong>Pruning policies</strong></summary>
 
-Two tool categories with different defaults:
+Policy **definitions** live in bundled `defaults.yaml` under the top-level `policies:` list
+(`always_include`, `prune_optional`, `prune_all`, `prune_optional_descriptions`,
+`prune_all_descriptions`). User `config.yaml` keeps **references** by name under
+`pruning.tools.policy` (and optional per-pipeline overrides). Custom policies may be added in
+user config; entries with the same `name` merge over bundled defaults.
+
+Two tool categories with different default references:
 
 | Category         | Default policy   | Examples                  | Typical prefix      |
 | ---------------- | ---------------- | ------------------------- | ------------------- |
 | **System tools** | `prune_optional` | `Read`, `Write`, `Agent`  | (no `mcp__` prefix) |
 | **MCP tools**    | `prune_all`      | Tools from MCP servers    | `mcp__…`            |
 
-Set defaults in `config.yaml`:
+Set references in `config.yaml`:
 
 ```yaml
 pruning:
-  policy:
-    system_tool: prune_optional
-    mcp_tool: prune_all
+  tools:
+    policy:
+      system_tool: prune_optional
+      mcp_tool: prune_all
+    pipelines:
+      bm25:
+        policy:
+          system_tool: prune_optional_descriptions
+          mcp_tool: prune_all_descriptions
 ```
 
 Legacy `defaults.system_tool_policy` / `defaults.mcp_tool_policy` are still supported.
+
+</details>
+
+<details>
+<summary><strong>MCP wire stubs (mcp-config.yaml)</strong></summary>
+
+MCP `tools/list` wire projection is configured in `~/.config/cyt/mcp-config.yaml` (workspace:
+`.agents/cyt/config/mcp-config.yaml`) under `pruning.tools.stubs`. Each stub uses the same retain
+vocabulary as policies (`tool`, `required_properties`, `optional_properties` with `[name]` /
+`[name, description]`).
+
+```yaml
+pruning:
+  tools:
+    stub: basic
+    stub_by_agent:
+      codex: codex
+      cursor: basic
+      claude: basic
+    stubs:
+      - name: basic
+        always:
+          tool: [name]
+          required_properties: []
+          optional_properties: []
+      - name: codex
+        always:
+          tool: [name, description]
+          required_properties: []
+          optional_properties: []
+```
+
+Legacy `mcp-aggregator.yaml` and `codex_stubs_include_description` are migrated automatically on
+load.
 
 </details>
 

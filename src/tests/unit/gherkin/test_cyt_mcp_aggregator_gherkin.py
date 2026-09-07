@@ -15,7 +15,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.catalog_build import build_catalog_from_tools
-from cyt_mcp.config import AggregatorConfig, HttpSettings
+from cyt_mcp.config import AggregatorConfig, test_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.stubs import StubListTransform
 from tests.unit.gherkin.conftest import GherkinContext
@@ -27,21 +27,7 @@ pytestmark = pytest.mark.gherkin
 
 
 def _sample_config(*, mcp_servers: dict[str, Any] | None = None) -> AggregatorConfig:
-    return AggregatorConfig(
-        agent="cursor",
-        mcp_servers=mcp_servers or {},
-        transport="stdio",
-        http=HttpSettings(
-            host="127.0.0.1",
-            port=8765,
-            mcp_path="/mcp",
-            catalog_path="/catalog",
-        ),
-        codex_stubs_include_description=False,
-        verify_only=False,
-        aggregator_path=Path("~/.config/cyt/mcp-aggregator.yaml"),
-        agent_mcp_path=Path("~/.config/cyt/mcp/cursor.json"),
-    )
+    return test_aggregator_config(mcp_servers=mcp_servers or {})
 
 
 @given(parsers.parse("a cached FastMCP tool named {name} with a full schema"))

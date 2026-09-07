@@ -20,10 +20,12 @@ def _permissions_block(raw: object) -> PermissionLists:
 
 
 def _mcp_permissions_from_config(config: dict[str, Any]) -> PermissionLists:
-    mcp = config.get("mcp")
-    if not isinstance(mcp, dict):
-        return PermissionLists()
-    return _permissions_block(mcp.get("permissions"))
+    from cyt.config.sections import global_mcp_permissions_raw
+
+    permissions = global_mcp_permissions_raw(config)
+    if isinstance(permissions, dict):
+        return _permissions_block(permissions)
+    return PermissionLists()
 
 
 def _skills_permissions_from_config(config: dict[str, Any]) -> PermissionLists:
@@ -34,16 +36,12 @@ def _skills_permissions_from_config(config: dict[str, Any]) -> PermissionLists:
 
 
 def _agent_mcp_permissions(config: dict[str, Any], agent: str) -> PermissionLists:
-    agents = config.get("agents")
-    if not isinstance(agents, dict):
-        return PermissionLists()
-    agent_block = agents.get(agent)
-    if not isinstance(agent_block, dict):
-        return PermissionLists()
-    mcp = agent_block.get("mcp")
-    if not isinstance(mcp, dict):
-        return PermissionLists()
-    return _permissions_block(mcp.get("permissions"))
+    from cyt.config.sections import agent_tools_permissions_raw
+
+    permissions = agent_tools_permissions_raw(config, agent)
+    if isinstance(permissions, dict):
+        return _permissions_block(permissions)
+    return PermissionLists()
 
 
 def _agent_skills_permissions(config: dict[str, Any], agent: str) -> PermissionLists:

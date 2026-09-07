@@ -53,13 +53,13 @@ def test_build_dev_workspace_cyt_mcp_entry_uses_workspace_folder() -> None:
         dev_repo_root=repo_root,
         dev_script_rel=script_rel,
         workspace_cwd="${workspaceFolder}",
-        aggregator_config="${workspaceFolder}/.agents/cyt/config/mcp-aggregator.yaml",
+        aggregator_config="${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",
     )
     assert entry["cwd"] == "${workspaceFolder}"
     assert entry["args"][1:3] == ["--directory", "${workspaceFolder}"]
     assert entry["args"][-2:] == [
         "--config",
-        "${workspaceFolder}/.agents/cyt/config/mcp-aggregator.yaml",
+        "${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",
     ]
 
 
@@ -222,7 +222,7 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
 ) -> None:
     source = tmp_path / "mcp.json"
     target_dir = tmp_path / "backends"
-    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path = tmp_path / "mcp-config.yaml"
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     source.write_text(
@@ -256,7 +256,7 @@ def test_setup_cyt_mcp_strips_backends_from_agent_mcp_json(
 def test_write_mcp_aggregator_yaml_workspace_uses_relative_backend_path(
     tmp_path: Path,
 ) -> None:
-    aggregator_path = tmp_path / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    aggregator_path = tmp_path / ".agents" / "cyt" / "config" / "mcp-config.yaml"
     backends_path = tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
     backends_path.parent.mkdir(parents=True, exist_ok=True)
     backends_path.write_text('{"mcpServers": {}}', encoding="utf-8")
@@ -276,7 +276,7 @@ def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_false(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path = tmp_path / "mcp-config.yaml"
     mcp_dir = tmp_path / "mcp"
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)
@@ -292,7 +292,7 @@ def test_write_mcp_aggregator_yaml_writes_explicit_verify_only_true(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    aggregator_path = tmp_path / "mcp-aggregator.yaml"
+    aggregator_path = tmp_path / "mcp-config.yaml"
     mcp_dir = tmp_path / "mcp"
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", mcp_dir)

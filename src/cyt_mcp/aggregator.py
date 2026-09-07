@@ -28,7 +28,7 @@ def build_aggregator(
         server.add_transform(
             StubListTransform(
                 cache,
-                include_description=config.codex_stubs_include_description,
+                retain=config.stub_retain,
                 deny_entries=config.mcp_deny,
             ),
         )

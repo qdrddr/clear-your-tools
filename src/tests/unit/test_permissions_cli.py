@@ -39,7 +39,7 @@ def test_disable_and_enable_mcp_server_writes_overlay(tmp_path: Path) -> None:
         global_config_path=config_path,
     )
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert raw["agents"]["cursor"]["mcp"]["permissions"]["deny"] == ["demo-server"]
+    assert raw["agents"]["cursor"]["tools"]["permissions"]["deny"] == ["demo-server"]
 
     enable_mcp_server(
         "demo-server",
@@ -49,7 +49,7 @@ def test_disable_and_enable_mcp_server_writes_overlay(tmp_path: Path) -> None:
         global_config_path=config_path,
     )
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert raw["agents"]["cursor"]["mcp"]["permissions"]["deny"] == []
+    assert raw["agents"]["cursor"]["tools"]["permissions"]["deny"] == []
 
 
 def test_permissions_export_writes_claude_json(tmp_path: Path) -> None:

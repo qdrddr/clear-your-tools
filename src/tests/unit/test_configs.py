@@ -11,6 +11,13 @@ import pytest
 import cyt.config as configs
 
 
+def _set_all_agents_inject_via(config: dict, mode: str = "hook") -> None:
+    for agent in ("cursor", "claude", "codex"):
+        config.setdefault("agents", {}).setdefault(agent, {}).setdefault("tools", {})[
+            "inject_via"
+        ] = mode
+
+
 @pytest.fixture(autouse=True)
 def _reset_bundled_defaults_cache() -> Iterator[None]:
     configs.clear_bundled_defaults_cache()
@@ -106,7 +113,7 @@ def test_load_config_creates_user_config_when_missing(
     written = configs._load_yaml_dict(user_config)
     ssl = written["network"]["proxy"]["reverse"]["http2"]["ssl"]
     assert ssl["keyfile"] == "~/.config/cyt/crt/key.pem"
-    per_tool = written.get("pruning", {}).get("tools", {}).get("policy", {}).get("per_tool")
+    per_tool = written.get("tools", {}).get("policy", {}).get("per_tool")
     assert per_tool == {}
     from cyt.migrations import current_head
 
@@ -128,7 +135,7 @@ def test_load_config_auto_migrates_legacy_pruning_pipeline(
     configs.load_config()
 
     written = configs._load_yaml_dict(user_config)
-    assert written["pruning"]["tools"]["sequence"] == ["bm25"]
+    assert written["tools"]["sequence"] == ["bm25"]
     assert "pipeline" not in written.get("pruning", {})
     from cyt.migrations import current_head
 
@@ -217,7 +224,7 @@ def test_required_proxy_env_var_names_excludes_upstream_keys(
         },
     ]
     config["network"]["proxy"]["reverse"]["endpoints"] = ["openai"]
-    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
+    config["tools"]["sequence"] = ["bm25", "rerank"]
 
     required = configs.required_proxy_env_var_names(config)
 
@@ -230,7 +237,7 @@ def test_require_proxy_env_not_needed_for_serve_without_pipeline_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25"]
+    config["tools"]["sequence"] = ["bm25"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -242,7 +249,7 @@ def test_missing_proxy_env_var_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
+    config["tools"]["sequence"] = ["bm25", "rerank"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
 
     missing = configs.missing_proxy_env_var_names(config)
@@ -254,7 +261,7 @@ def test_required_proxy_env_var_names_includes_skills_pipeline_keys(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25"]
+    config["tools"]["sequence"] = ["bm25"]
     config["skills"] = {"enabled": True, "pipeline": "rerank"}
 
     required = configs.required_proxy_env_var_names(config)
@@ -266,7 +273,7 @@ def test_required_proxy_env_var_names_skips_skills_bm25(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25"]
+    config["tools"]["sequence"] = ["bm25"]
     config["skills"] = {"enabled": True, "pipeline": "bm25"}
 
     assert configs.required_proxy_env_var_names(config) == []
@@ -286,7 +293,7 @@ def test_required_pruning_env_var_names_llm_pipeline(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["llm"]
+    config["tools"]["sequence"] = ["llm"]
 
     assert configs.required_pruning_env_var_names(config) == ["OPENROUTER_API_KEY"]
 
@@ -295,7 +302,7 @@ def test_required_pruning_env_var_names_bm25_only(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25"]
+    config["tools"]["sequence"] = ["bm25"]
 
     assert configs.required_pruning_env_var_names(config) == []
 
@@ -304,8 +311,8 @@ def test_required_tools_hook_env_var_names_executor_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = "executor"
 
     assert configs.required_tools_hook_env_var_names(config) == ["EXECUTOR_TOKEN"]
 
@@ -314,9 +321,9 @@ def test_required_tools_hook_env_var_names_skipped_when_tools_disabled(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["enabled"] = False
-    config["pruning"]["tools"]["hook"]["tools_from"] = "executor"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["enabled"] = False
+    config["tools"]["hook"]["tools_from"] = "executor"
 
     assert configs.required_tools_hook_env_var_names(config) == []
 
@@ -325,8 +332,8 @@ def test_required_pruning_env_var_names_skipped_when_tools_disabled(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["enabled"] = False
-    config["pruning"]["tools"]["sequence"] = ["llm"]
+    config["tools"]["enabled"] = False
+    config["tools"]["sequence"] = ["llm"]
 
     assert configs.required_pruning_env_var_names(config) == []
 
@@ -335,8 +342,8 @@ def test_required_tools_hook_env_var_names_definitions_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = "definitions"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = "definitions"
 
     assert configs.required_tools_hook_env_var_names(config) == []
 
@@ -345,9 +352,9 @@ def test_required_tools_hook_env_var_names_cloudflare_mode(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
-    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
 
     assert configs.required_tools_hook_env_var_names(config) == [
         "CF_ACCESS_CLIENT_ID",
@@ -359,10 +366,10 @@ def test_required_tools_hook_env_var_names_cloudflare_custom_var_names(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
-    config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "MY_CF_ID"
-    config["pruning"]["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["tools"]["hook"]["cloudflare_access_client_id_var"] = "MY_CF_ID"
+    config["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
         "MY_CF_SECRET"  # pragma: allowlist secret
     )
 
@@ -373,11 +380,11 @@ def test_required_tools_hook_env_var_names_executor_and_cloudflare_dedupes(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["executor", "cloudflare"]
-    config["pruning"]["tools"]["hook"]["executor_token_var"] = "SHARED_TOKEN"
-    config["pruning"]["tools"]["hook"]["cloudflare_access_client_id_var"] = "SHARED_TOKEN"
-    config["pruning"]["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = ["executor", "cloudflare"]
+    config["tools"]["hook"]["executor_token_var"] = "SHARED_TOKEN"
+    config["tools"]["hook"]["cloudflare_access_client_id_var"] = "SHARED_TOKEN"
+    config["tools"]["hook"]["cloudflare_access_client_secret_var"] = (
         "CF_SECRET"  # pragma: allowlist secret
     )
 
@@ -399,9 +406,9 @@ def test_tools_hook_cloudflare_helpers(
     assert configs.tools_hook_cloudflare_configured(config) is False
     assert configs.uses_cloudflare_tool_catalog(config) is False
 
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
-    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com/mcp/"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com/mcp/"
     assert configs.tools_hook_cloudflare_url(config) == "https://mcp.example.com/mcp"
     assert configs.tools_hook_cloudflare_configured(config) is True
     assert configs.uses_cloudflare_tool_catalog(config) is True
@@ -411,13 +418,13 @@ def test_tools_hook_cloudflare_source_usable_without_credentials(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["cloudflare"]
-    config["pruning"]["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["hook"]["tools_from"] = ["cloudflare"]
+    config["tools"]["hook"]["cloudflare_url"] = "https://mcp.example.com"
 
     assert configs.tools_hook_file_missing(config) is False
 
-    config["pruning"]["tools"]["hook"]["cloudflare_url"] = ""
+    config["tools"]["hook"]["cloudflare_url"] = ""
     assert configs.tools_hook_file_missing(config) is True
 
 
@@ -425,7 +432,7 @@ def test_tools_hook_tools_from_accepts_legacy_client_alias(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["hook"]["tools_from"] = "client"
+    config["tools"]["hook"]["tools_from"] = "client"
 
     assert configs.tools_hook_tools_from(config) == "executor"
 
@@ -434,12 +441,12 @@ def test_tools_hook_sources_parses_scalar_and_list(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
-    config["pruning"]["tools"]["enabled"] = True
-    config["pruning"]["tools"]["hook"]["tools_from"] = "mcpc"
+    _set_all_agents_inject_via(config, "hook")
+    config["tools"]["enabled"] = True
+    config["tools"]["hook"]["tools_from"] = "mcpc"
     assert configs.tools_hook_sources(config) == ("mcpc",)
 
-    config["pruning"]["tools"]["hook"]["tools_from"] = ["mcpc", "executor", "mcpc"]
+    config["tools"]["hook"]["tools_from"] = ["mcpc", "executor", "mcpc"]
     assert configs.tools_hook_sources(config) == ("mcpc", "executor")
 
     assert configs.uses_mcpc_tool_catalog(config) is True
@@ -451,7 +458,7 @@ def test_tools_hook_sources_invalid_explicit_value_falls_back_to_executor(
     isolated_config_paths: dict[str, Path],
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["hook"]["tools_from"] = "not-a-source"
+    config["tools"]["hook"]["tools_from"] = "not-a-source"
     assert configs.tools_hook_sources(config) == ("executor",)
 
 
@@ -471,7 +478,7 @@ def test_require_proxy_env_raises_with_help_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = configs.load_config()
-    config["pruning"]["tools"]["sequence"] = ["bm25", "rerank"]
+    config["tools"]["sequence"] = ["bm25", "rerank"]
     monkeypatch.delenv("DEEPINFRA_API_KEY", raising=False)
 
     with pytest.raises(RuntimeError, match="cyt setup"):
@@ -595,18 +602,21 @@ def test_minimum_tools_shared_across_stages() -> None:
 
 def test_selector_soft_budget_reads_config() -> None:
     config = {
-        "pruning": {"tools": {"selector_soft_budget": 3500}},
+        "tools": {"selector_soft_budget": 3500},
         "skills": {"selector_soft_budget": 1800},
     }
     assert configs.tools_selector_soft_budget(config) == 3500
     assert configs.skills_selector_soft_budget(config) == 1800
+
+    legacy = {"pruning": {"tools": {"selector_soft_budget": 4200}}}
+    assert configs.tools_selector_soft_budget(legacy) == 4200
 
 
 def test_selector_soft_budget_defaults() -> None:
     bundled = configs.load_bundled_defaults_yaml()
     assert (
         configs.tools_selector_soft_budget({})
-        == bundled["pruning"]["tools"]["selector_soft_budget"]
+        == bundled["tools"]["selector_soft_budget"]
     )
     assert configs.skills_selector_soft_budget({}) == bundled["skills"]["selector_soft_budget"]
 
@@ -677,7 +687,7 @@ def test_bundled_defaults_is_sole_base(
 ) -> None:
     bundled = isolated_config_paths["root"] / "bundled.yaml"
     bundled.write_text(
-        "pruning:\n  max_batch_workers: 17\n",
+        "tools:\n  max_batch_workers: 17\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -691,8 +701,8 @@ def test_bundled_defaults_is_sole_base(
     loaded = configs.load_config(missing)
     merged = configs._merged_config({})
 
-    assert loaded["pruning"]["max_batch_workers"] == 17
-    assert merged["pruning"]["max_batch_workers"] == 17
+    assert loaded["tools"]["max_batch_workers"] == 17
+    assert merged["tools"]["max_batch_workers"] == 17
     assert configs.max_prune_batch_workers({}) == 17
 
 
@@ -702,8 +712,8 @@ def test_bundled_defaults_cache_invalidation(
 ) -> None:
     bundled_a = isolated_config_paths["root"] / "bundled-a.yaml"
     bundled_b = isolated_config_paths["root"] / "bundled-b.yaml"
-    bundled_a.write_text("pruning:\n  max_batch_workers: 3\n", encoding="utf-8")
-    bundled_b.write_text("pruning:\n  max_batch_workers: 9\n", encoding="utf-8")
+    bundled_a.write_text("tools:\n  max_batch_workers: 3\n", encoding="utf-8")
+    bundled_b.write_text("tools:\n  max_batch_workers: 9\n", encoding="utf-8")
 
     monkeypatch.setattr(
         configs,
@@ -726,15 +736,15 @@ def test_bundled_defaults_cache_invalidation(
     "path",
     [
         ("defaults", "is_persistent"),
-        ("pruning", "inject_via_default"),
-        ("pruning", "max_batch_workers"),
-        ("pruning", "tools", "enabled"),
-        ("pruning", "tools", "sequence"),
-        ("pruning", "tools", "hook", "tools_from"),
+        ("defaults", "inject_via_default"),
+        ("tools", "max_batch_workers"),
+        ("tools", "enabled"),
+        ("tools", "sequence"),
+        ("tools", "hook", "tools_from"),
         ("models", "bm25", "mmap"),
         ("cache", "enabled"),
         ("stats", "rollup_on_query"),
-        ("hallucination_gate", "enabled"),
+        ("defaults", "hallucination_gate", "enabled"),
         ("skills", "enabled"),
         ("network", "proxy", "reverse", "port"),
     ],
@@ -762,11 +772,13 @@ def test_legacy_default_constants_exist_in_bundled_yaml() -> None:
     bundled = configs.load_bundled_defaults_yaml()
     for _name, path in LEGACY_DEFAULT_PATHS.items():
         _yaml_at(bundled, path)
-    inject_via = _yaml_at(bundled, ("pruning", "inject_via"))
-    assert isinstance(inject_via, dict)
+    inject_via = {
+        agent: _yaml_at(bundled, ("agents", agent, "tools", "inject_via"))
+        for agent in INJECT_VIA_AGENTS
+    }
     for agent in INJECT_VIA_AGENTS:
         assert agent in inject_via, (
-            f"missing pruning.inject_via.{agent} (was DEFAULT_INJECT_VIA_BY_AGENT)"
+            f"missing agents.{agent}.tools.inject_via (was DEFAULT_INJECT_VIA_BY_AGENT)"
         )
 
 

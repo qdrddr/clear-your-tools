@@ -1,4 +1,4 @@
-"""Load mcp-aggregator.yaml and per-agent mcpServers JSON."""
+"""Load mcp-config.yaml and per-agent mcpServers JSON."""
 
 from __future__ import annotations
 
@@ -12,11 +12,16 @@ from typing import Any, Literal
 
 import yaml
 
+from cyt.migrations.mcp_config import maybe_migrate_mcp_config_file, resolve_mcp_config_path
+from cyt_mcp.stub_catalog import RetainSpec, resolve_stub_name, resolve_stub_retain
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
+DEFAULT_MCP_CONFIG_PATH = Path("~/.config/cyt/mcp-config.yaml")
+DEFAULT_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
 DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
-GLOBAL_AGGREGATOR_PATH = DEFAULT_AGGREGATOR_PATH
+GLOBAL_MCP_CONFIG_PATH = DEFAULT_MCP_CONFIG_PATH
+GLOBAL_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
 
 CatalogScope = Literal["global", "workspace"]
 
@@ -39,6 +44,8 @@ class AggregatorConfig:
     mcp_servers: dict[str, Any]
     transport: str
     http: HttpSettings
+    stub_name: str
+    stub_retain: RetainSpec
     codex_stubs_include_description: bool
     verify_only: bool
     aggregator_path: Path
@@ -92,12 +99,21 @@ def expand_mcp_spec(
     return spec
 
 
-def load_aggregator_yaml(path: Path | None = None) -> dict[str, Any]:
-    resolved = _expand(path or DEFAULT_AGGREGATOR_PATH)
+def load_mcp_config_yaml(path: Path | None = None) -> dict[str, Any]:
+    resolved = resolve_mcp_config_path(
+        _expand(path or DEFAULT_MCP_CONFIG_PATH),
+        default=_expand(path or DEFAULT_MCP_CONFIG_PATH),
+    )
+    maybe_migrate_mcp_config_file(resolved)
     if not resolved.is_file():
         return {}
     raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
     return raw if isinstance(raw, dict) else {}
+
+
+def load_aggregator_yaml(path: Path | None = None) -> dict[str, Any]:
+    """Load MCP config YAML (``mcp-config.yaml``; legacy ``mcp-aggregator.yaml`` supported)."""
+    return load_mcp_config_yaml(path)
 
 
 def resolve_agent_name(raw: dict[str, Any], explicit: str | None) -> str:
@@ -106,11 +122,11 @@ def resolve_agent_name(raw: dict[str, Any], explicit: str | None) -> str:
     default = raw.get("default_agent")
     if isinstance(default, str) and default.strip():
         return default.strip()
-    raise ValueError("--agent is required when default_agent is not set in mcp-aggregator.yaml")
+    raise ValueError("--agent is required when default_agent is not set in mcp-config.yaml")
 
 
 def _resolve_yaml_path(value: str, *, relative_to: Path | None) -> Path:
-    """Resolve a path from mcp-aggregator.yaml (absolute, ~/, or relative to *relative_to*)."""
+    """Resolve a path from mcp-config.yaml (absolute, ~/, or relative to *relative_to*)."""
     text = value.strip()
     if text.startswith("~"):
         return Path(text).expanduser().resolve()
@@ -293,7 +309,7 @@ def _infer_catalog_scope(
     if isinstance(explicit, str) and explicit.strip().lower() == "global":
         return "global"
     resolved = aggregator_path.resolve()
-    global_path = GLOBAL_AGGREGATOR_PATH.expanduser().resolve()
+    global_path = GLOBAL_MCP_CONFIG_PATH.expanduser().resolve()
     if resolved == global_path:
         return "global"
     if _is_workspace_aggregator_path(resolved):
@@ -406,7 +422,7 @@ def _resolve_workspace_root_for_scope(
                 return resolved
         except OSError:
             pass
-    # Walk up from aggregator: .../.agents/cyt/config/mcp-aggregator.yaml
+    # Walk up from config: .../.agents/cyt/config/mcp-config.yaml
     current = aggregator_path.expanduser().resolve().parent
     for _ in range(6):
         if (current / ".git").exists() or (current / ".cursor").exists():
@@ -428,9 +444,12 @@ def load_aggregator_config(
     aggregator_path: Path | None = None,
     workspace_folder: Path | None = None,
 ) -> AggregatorConfig:
-    raw = load_aggregator_yaml(aggregator_path)
+    raw = load_mcp_config_yaml(aggregator_path)
     resolved_agent = resolve_agent_name(raw, agent)
-    resolved_agg_path = _expand(aggregator_path or DEFAULT_AGGREGATOR_PATH)
+    resolved_agg_path = resolve_mcp_config_path(
+        _expand(aggregator_path or DEFAULT_MCP_CONFIG_PATH),
+        default=_expand(aggregator_path or DEFAULT_MCP_CONFIG_PATH),
+    )
     agent_path = agent_mcp_config_path(
         raw,
         resolved_agent,
@@ -439,8 +458,9 @@ def load_aggregator_config(
     transport = str(raw.get("transport", "stdio")).strip().lower() or "stdio"
     if transport not in {"stdio", "http"}:
         transport = "stdio"
-    codex_flag = bool(raw.get("codex_stubs_include_description", True))
-    include_desc = codex_flag if resolved_agent == "codex" else False
+    stub_name = resolve_stub_name(raw, resolved_agent)
+    stub_retain = resolve_stub_retain(raw, resolved_agent)
+    include_desc = "description" in stub_retain.get("tool", ["name"])
     verify_only = bool(raw.get("verify_only", False))
     catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
     if catalog_scope == "global":
@@ -477,6 +497,8 @@ def load_aggregator_config(
         mcp_servers=loaded_servers,
         transport=transport,
         http=load_http_settings(raw),
+        stub_name=stub_name,
+        stub_retain=stub_retain,
         codex_stubs_include_description=include_desc,
         verify_only=verify_only,
         aggregator_path=resolved_agg_path,
@@ -485,3 +507,42 @@ def load_aggregator_config(
         workspace_root=workspace_root,
         mcp_deny=mcp_deny,
     )
+
+
+_BASIC_STUB_RETAIN: RetainSpec = {
+    "tool": ["name"],
+    "required_properties": [],
+    "optional_properties": [],
+}
+
+
+def test_aggregator_config(
+    *,
+    agent: str = "cursor",
+    stub_name: str = "basic",
+    stub_retain: RetainSpec | None = None,
+    codex_stubs_include_description: bool = False,
+    aggregator_path: Path | None = None,
+    **kwargs: Any,
+) -> AggregatorConfig:
+    """Build a minimal :class:`AggregatorConfig` for unit tests."""
+    retain = stub_retain if stub_retain is not None else _BASIC_STUB_RETAIN
+    defaults: dict[str, Any] = {
+        "agent": agent,
+        "mcp_servers": {},
+        "transport": "stdio",
+        "http": HttpSettings(
+            host="127.0.0.1",
+            port=8765,
+            mcp_path="/mcp",
+            catalog_path="/catalog",
+        ),
+        "stub_name": stub_name,
+        "stub_retain": retain,
+        "codex_stubs_include_description": codex_stubs_include_description,
+        "verify_only": False,
+        "aggregator_path": aggregator_path or DEFAULT_MCP_CONFIG_PATH,
+        "agent_mcp_path": DEFAULT_MCP_DIR / f"{agent}.json",
+    }
+    defaults.update(kwargs)
+    return AggregatorConfig(**defaults)

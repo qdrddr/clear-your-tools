@@ -16,6 +16,32 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import yaml
 from dotenv import load_dotenv
 
+from cyt.config.policy_catalog import (
+    POLICY_CHOICES,
+    VALID_TOOL_POLICIES,
+    PolicyDef,
+    ToolPolicy,
+    apply_policy_catalog_merge,
+    merge_policies_by_name,
+    policy_def_to_enum,
+    resolve_policy,
+    resolve_policy_as_enum,
+    resolved_policies,
+    validate_policy_reference,
+)
+from cyt.config.sections import (
+    cursor_rule_file_enabled_raw,
+    cyt_mcp_agent_from_config,
+    global_mcp_permissions_raw,
+    hallucination_gate_enabled_raw,
+    inject_via_default_mode,
+    inject_via_map_from_config,
+    max_batch_workers_raw,
+    tools_at,
+    tools_value,
+    tools_dict,
+)
+
 if TYPE_CHECKING:
     from cyt_core.types.policies import PolicyContext
 
@@ -102,21 +128,6 @@ load_proxy_env()
 # Path and validation constants (not config defaults — those live in defaults.yaml).
 DEFAULT_USER_CONFIG_PATH: Path = Path("~/.config/cyt/config.yaml")
 CWD_CONFIG_NAME: str = "config.yaml"
-ToolPolicy = Literal[
-    "always_include",
-    "prune_optional",
-    "prune_all",
-    "prune_optional_descriptions",
-    "prune_all_descriptions",
-]
-POLICY_CHOICES: tuple[ToolPolicy, ...] = (
-    "always_include",
-    "prune_optional",
-    "prune_all",
-    "prune_optional_descriptions",
-    "prune_all_descriptions",
-)
-VALID_TOOL_POLICIES: frozenset[str] = frozenset(POLICY_CHOICES)
 VALID_TOOLS_HOOK_SOURCES: frozenset[str] = frozenset(
     {"executor", "definitions", "mcpc", "cloudflare", "cyt_mcp"},
 )
@@ -233,6 +244,39 @@ def _bundled_dict(*keys: str) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _tools_default_at(*keys: str) -> ConfigValue:
+    """Read a required value from bundled ``tools`` (legacy ``pruning.tools`` fallback)."""
+    value = tools_at(_bundled_defaults(), *keys)
+    if value is not None:
+        return value
+    return _tools_default_at(*keys)
+
+
+def _tools_bundled_dict(*keys: str) -> dict[str, Any]:
+    value = _tools_default_at(*keys)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _tools_merged_at(config: dict[str, Any], *keys: str) -> ConfigValue:
+    """Read from merged ``tools`` section (legacy ``pruning.tools`` fallback)."""
+    merged = _merged_config(config)
+    value = tools_at(merged, *keys)
+    if value is not None:
+        return value
+    return _require_nested(merged, "pruning", "tools", *keys)
+
+
+def _tools_require_nested(config: dict[str, Any], *keys: str) -> ConfigValue:
+    merged = _merged_config(config)
+    section = tools_dict(merged)
+    node: ConfigValue = section
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError(f"config missing tools key path: {'.'.join(keys)}")
+        node = node[key]
+    return node
+
+
 def _bundled_list(*keys: str) -> list[Any]:
     value = _bundled_get(*keys)
     if isinstance(value, list):
@@ -244,10 +288,9 @@ def _bundled_list(*keys: str) -> list[Any]:
 
 def inject_via_agents() -> dict[str, str]:
     """Default per-agent inject_via map from bundled defaults."""
-    raw = _default_at("pruning", "inject_via")
-    if not isinstance(raw, dict):
-        return {}
-    return {str(agent): str(mode) for agent, mode in raw.items()}
+    from cyt.config.sections import inject_via_defaults_from_bundled
+
+    return inject_via_defaults_from_bundled(_bundled_defaults())
 
 
 def upstream_url_defaults() -> dict[str, str]:
@@ -284,7 +327,10 @@ def _resolve_config(config: dict[str, Any] | None) -> dict[str, Any]:
 
 def _merged_config(config: dict[str, Any]) -> dict[str, Any]:
     """Layer *config* over bundled defaults for partial config dicts."""
-    return deep_merge(_bundled_defaults(), config)
+    bundled = _bundled_defaults()
+    merged = deep_merge(bundled, config)
+    apply_policy_catalog_merge(merged, bundled=bundled, overlay=config)
+    return merged
 
 
 def resolve_config_path(path: Path | None = None) -> Path:
@@ -304,10 +350,7 @@ def resolve_config_path(path: Path | None = None) -> Path:
 
 
 def _bundled_pruning_per_tool_overlay(bundled: dict[str, Any]) -> dict[str, Any] | None:
-    pruning = bundled.get("pruning")
-    if not isinstance(pruning, dict):
-        return None
-    tools = pruning.get("tools")
+    tools = tools_dict(bundled)
     if isinstance(tools, dict):
         policy = tools.get("policy")
         if isinstance(policy, dict) and "per_tool" in policy:
@@ -353,9 +396,13 @@ def _bundled_agent_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any
         copied = _copy_permissions_block(agent_block, "skills")
         if copied is not None:
             agents_overlay.setdefault(agent_name, {}).update(copied)
-        copied_mcp = _copy_permissions_block(agent_block, "mcp")
-        if copied_mcp is not None:
-            agents_overlay.setdefault(agent_name, {}).update(copied_mcp)
+        copied = _copy_permissions_block(agent_block, "tools")
+        if copied is None:
+            legacy_mcp = _copy_permissions_block(agent_block, "mcp")
+            if legacy_mcp is not None:
+                copied = {"tools": legacy_mcp["mcp"]}
+        if copied is not None:
+            agents_overlay.setdefault(agent_name, {}).update(copied)
     return agents_overlay
 
 
@@ -368,9 +415,9 @@ def _bundled_permissions_overlay(bundled: dict[str, Any]) -> dict[str, Any] | No
     if skills_overlay is not None:
         result.update(skills_overlay)
 
-    mcp_overlay = _copy_permissions_block(bundled, "mcp") if isinstance(bundled, dict) else None
-    if mcp_overlay is not None:
-        result.update(mcp_overlay)
+    mcp_permissions = global_mcp_permissions_raw(bundled)
+    if isinstance(mcp_permissions, dict):
+        result["tools"] = {"permissions": copy.deepcopy(mcp_permissions)}
 
     agents_overlay = _bundled_agent_permissions_overlay(bundled)
     if agents_overlay:
@@ -384,8 +431,8 @@ def bundled_user_config_sections() -> dict[str, Any]:
     bundled = _load_bundled_defaults_yaml()
     result: dict[str, Any] = {}
 
-    if pruning_overlay := _bundled_pruning_per_tool_overlay(bundled):
-        result["pruning"] = pruning_overlay
+    if tools_overlay := _bundled_pruning_per_tool_overlay(bundled):
+        result = deep_merge(result, tools_overlay)
 
     if reverse_overlay := _bundled_network_reverse_overlay(bundled):
         result.setdefault("network", {}).setdefault("proxy", {})["reverse"] = reverse_overlay
@@ -523,7 +570,9 @@ def _config_with_bundled_defaults(user_config: dict[str, Any]) -> dict[str, Any]
     from cyt.migrations.legacy import normalize_legacy_config
 
     normalized = normalize_legacy_config(user_config)
-    merged = deep_merge(_bundled_defaults(), normalized)
+    bundled = _bundled_defaults()
+    merged = deep_merge(bundled, normalized)
+    apply_policy_catalog_merge(merged, bundled=bundled, overlay=normalized)
     return merged
 
 
@@ -630,18 +679,16 @@ def stats_backup_before_rollup(config: dict[str, Any]) -> bool:
 
 def pruning_pipeline_from_config(config: dict[str, Any]) -> list[str]:
     merged = _merged_config(config)
-    sequence = _resolve_user_then_merged(
-        merged,
-        config,
-        keys=("pruning", "tools", "sequence"),
-    )
+    sequence = tools_value(config, "sequence")
+    if sequence is None:
+        sequence = tools_at(merged, "sequence")
     if sequence is not None:
         if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
-            raise ValueError("pruning.tools.sequence must be a list of stage names")
+            raise ValueError("tools.sequence must be a list of stage names")
         return cast(list[str], sequence)
-    sequence = _require_nested(merged, "pruning", "tools", "sequence")
+    sequence = _tools_require_nested(config, "sequence")
     if not isinstance(sequence, list) or not all(isinstance(s, str) for s in sequence):
-        raise ValueError("pruning.tools.sequence must be a list of stage names")
+        raise ValueError("tools.sequence must be a list of stage names")
     return cast(list[str], sequence)
 
 
@@ -742,16 +789,15 @@ def _pruning_section(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tools(config: dict[str, Any]) -> dict[str, Any]:
-    tools = _pruning_section(config).get("tools")
-    return tools if isinstance(tools, dict) else {}
+    return tools_dict(_merged_config(config))
 
 
 def _pipeline_def(config: dict[str, Any], stage: str) -> dict[str, Any]:
-    user_canonical = _nested_dict_value(config, "pruning", "tools", "pipelines", stage)
+    user_canonical = tools_value(config, "pipelines", stage)
     if isinstance(user_canonical, dict):
         return cast(dict[str, Any], user_canonical)
     merged = _merged_config(config)
-    merged_canonical = _nested_dict_value(merged, "pruning", "tools", "pipelines", stage)
+    merged_canonical = tools_at(merged, "pipelines", stage)
     if isinstance(merged_canonical, dict):
         return cast(dict[str, Any], merged_canonical)
     return {}
@@ -782,25 +828,32 @@ def _user_overlay_for_config(
     return config
 
 
+def _resolve_tool_policy_ref(name: str, config: dict[str, Any]) -> ToolPolicy | None:
+    """Resolve a policy name reference against the merged catalog → legacy enum."""
+    text = str(name).strip()
+    if not text:
+        return None
+    merged = _merged_config(config)
+    if not validate_policy_reference(text, merged):
+        return None
+    return resolve_policy_as_enum(text, merged)
+
+
 def pruning_system_tool_policy(
     config: dict[str, Any],
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve system tool policy from ``pruning.tools.policy.system_tool``."""
+    """Resolve system tool policy from ``tools.policy.system_tool``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "policy", "system_tool"),
-    )
+    policy = tools_value(user, "policy", "system_tool")
     if policy is None:
-        return cast(
-            ToolPolicy,
-            _require_nested(merged, "pruning", "tools", "policy", "system_tool"),
-        )
-    return cast(ToolPolicy, policy)
+        policy = tools_at(merged, "policy", "system_tool")
+    if policy is None:
+        return cast(ToolPolicy, _tools_require_nested(config, "policy", "system_tool"))
+    resolved = _resolve_tool_policy_ref(str(policy), merged)
+    return resolved if resolved is not None else cast(ToolPolicy, policy)
 
 
 def pruning_mcp_tool_policy(
@@ -808,17 +861,16 @@ def pruning_mcp_tool_policy(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> ToolPolicy:
-    """Resolve MCP tool policy from ``pruning.tools.policy.mcp_tool``."""
+    """Resolve MCP tool policy from ``tools.policy.mcp_tool``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    policy = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "policy", "mcp_tool"),
-    )
+    policy = tools_value(user, "policy", "mcp_tool")
     if policy is None:
-        return cast(ToolPolicy, _require_nested(merged, "pruning", "tools", "policy", "mcp_tool"))
-    return cast(ToolPolicy, policy)
+        policy = tools_at(merged, "policy", "mcp_tool")
+    if policy is None:
+        return cast(ToolPolicy, _tools_require_nested(config, "policy", "mcp_tool"))
+    resolved = _resolve_tool_policy_ref(str(policy), merged)
+    return resolved if resolved is not None else cast(ToolPolicy, policy)
 
 
 def _pruning_stage_policy_section(
@@ -839,30 +891,54 @@ def _pruning_stage_per_tool(
     if not isinstance(per_tool, dict):
         return {}
     out: dict[str, ToolPolicy] = {}
+    merged = _merged_config(config)
     for tool_id, policy in per_tool.items():
-        if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
-            out[str(tool_id)] = cast(ToolPolicy, policy)
+        if isinstance(policy, str):
+            resolved = _resolve_tool_policy_ref(policy, merged)
+            if resolved is not None:
+                out[str(tool_id)] = resolved
     return out
 
 
-def _per_tool_policy(pruning: dict[str, Any], tool_id: str) -> ToolPolicy | None:
-    tools = pruning.get("tools")
-    if isinstance(tools, dict):
-        policy_section = tools.get("policy")
-        if isinstance(policy_section, dict):
-            per_tool = policy_section.get("per_tool")
-            if isinstance(per_tool, dict) and tool_id in per_tool:
-                policy = per_tool[tool_id]
-                if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
+def _per_tool_policy(
+    config_root: dict[str, Any],
+    tool_id: str,
+    *,
+    config: dict[str, Any] | None = None,
+) -> ToolPolicy | None:
+    tools = tools_dict(config_root)
+    if not isinstance(tools, dict):
+        return None
+    policy_section = tools.get("policy")
+    if isinstance(policy_section, dict):
+        per_tool = policy_section.get("per_tool")
+        if isinstance(per_tool, dict) and tool_id in per_tool:
+            policy = per_tool[tool_id]
+            if isinstance(policy, str):
+                if config is not None:
+                    resolved = _resolve_tool_policy_ref(policy, config)
+                    if resolved is not None:
+                        return resolved
+                if policy in VALID_TOOL_POLICIES:
                     return cast(ToolPolicy, policy)
     return None
 
 
-def _category_policy_from_section(section: dict[str, Any], tool_id: str) -> ToolPolicy | None:
+def _category_policy_from_section(
+    section: dict[str, Any],
+    tool_id: str,
+    *,
+    config: dict[str, Any] | None = None,
+) -> ToolPolicy | None:
     key = "mcp_tool" if is_non_system_tool_id(tool_id) else "system_tool"
     policy = section.get(key)
-    if isinstance(policy, str) and policy in VALID_TOOL_POLICIES:
-        return cast(ToolPolicy, policy)
+    if isinstance(policy, str):
+        if config is not None:
+            resolved = _resolve_tool_policy_ref(policy, config)
+            if resolved is not None:
+                return resolved
+        if policy in VALID_TOOL_POLICIES:
+            return cast(ToolPolicy, policy)
     return None
 
 
@@ -876,21 +952,20 @@ def effective_output_policy(
     """Resolve output policy for a tool (main + per-pipeline overrides)."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    pruning = merged.get("pruning")
-    pruning_dict = pruning if isinstance(pruning, dict) else {}
 
     if terminal_stage:
         if policy := _pruning_stage_per_tool(merged, terminal_stage).get(tool_id):
             return policy
-        if policy := _per_tool_policy(pruning_dict, tool_id):
+        if policy := _per_tool_policy(merged, tool_id, config=merged):
             return policy
         if policy := _category_policy_from_section(
             _pruning_stage_policy_section(merged, terminal_stage),
             tool_id,
+            config=merged,
         ):
             return policy
 
-    if policy := _per_tool_policy(pruning_dict, tool_id):
+    if policy := _per_tool_policy(merged, tool_id, config=merged):
         return policy
 
     if is_non_system_tool_id(tool_id):
@@ -907,13 +982,18 @@ def _apply_stage_policy_to_context(
     config: dict[str, Any],
     terminal_stage: str,
 ) -> None:
-    stage_policy = _pruning_stage_policy_section(config, terminal_stage)
+    merged = _merged_config(config)
+    stage_policy = _pruning_stage_policy_section(merged, terminal_stage)
     if sys := stage_policy.get("system_tool"):
-        if isinstance(sys, str) and sys in VALID_TOOL_POLICIES:
-            ctx.system_policy = cast(ToolPolicy, sys)
+        if isinstance(sys, str):
+            resolved = _resolve_tool_policy_ref(sys, merged)
+            if resolved is not None:
+                ctx.system_policy = resolved
     if mcp_pol := stage_policy.get("mcp_tool"):
-        if isinstance(mcp_pol, str) and mcp_pol in VALID_TOOL_POLICIES:
-            ctx.mcp_policy = cast(ToolPolicy, mcp_pol)
+        if isinstance(mcp_pol, str):
+            resolved = _resolve_tool_policy_ref(mcp_pol, merged)
+            if resolved is not None:
+                ctx.mcp_policy = resolved
     stage_per_tool = _pruning_stage_per_tool(config, terminal_stage)
     if stage_per_tool:
         merged_per_tool = dict(ctx.per_tool)
@@ -939,13 +1019,23 @@ def output_policy_context_for_terminal_stage(
     if terminal_stage:
         _apply_stage_policy_to_context(ctx, config, terminal_stage)
 
+    merged = _merged_config(config)
+    ctx.system_policy = resolve_policy_as_enum(ctx.system_policy, merged)
+    ctx.mcp_policy = resolve_policy_as_enum(ctx.mcp_policy, merged)
+    ctx.per_tool = {
+        tool_id: resolve_policy_as_enum(policy, merged)
+        for tool_id, policy in ctx.per_tool.items()
+    }
+
     if system is not None:
-        ctx.system_policy = system
+        ctx.system_policy = _resolve_tool_policy_ref(system, merged) or system
     if mcp is not None:
-        ctx.mcp_policy = mcp
+        ctx.mcp_policy = _resolve_tool_policy_ref(mcp, merged) or mcp
     if per_tool:
         merged_per_tool = dict(ctx.per_tool)
-        merged_per_tool.update(per_tool)
+        for tool_id, policy in per_tool.items():
+            resolved = _resolve_tool_policy_ref(policy, merged)
+            merged_per_tool[tool_id] = resolved if resolved is not None else policy
         ctx.per_tool = merged_per_tool
     return ctx
 
@@ -963,14 +1053,12 @@ def pruning_stage_model_nick(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> str | None:
-    """Resolve stage model nick from ``pruning.tools.pipelines.<stage>.model_nick``."""
+    """Resolve stage model nick from ``tools.pipelines.<stage>.model_nick``."""
     merged = _merged_config(config)
     user = _user_overlay_for_config(config, user_config=user_config)
-    nick = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "pipelines", stage, "model_nick"),
-    )
+    nick = tools_value(user, "pipelines", stage, "model_nick")
+    if nick is None:
+        nick = tools_at(merged, "pipelines", stage, "model_nick")
     return str(nick) if nick is not None else None
 
 
@@ -978,11 +1066,9 @@ def _bm25_index_dir_resolved(
     merged: dict[str, Any],
     user: dict[str, Any],
 ) -> str:
-    index_dir = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "pipelines", "bm25", "index_dir"),
-    )
+    index_dir = tools_value(user, "pipelines", "bm25", "index_dir")
+    if index_dir is None:
+        index_dir = tools_at(merged, "pipelines", "bm25", "index_dir")
     if index_dir is not None:
         return str(index_dir)
     cache = merged.get("cache")
@@ -990,7 +1076,7 @@ def _bm25_index_dir_resolved(
         bm25_dir = cache.get("bm25_dir")
         if bm25_dir is not None:
             return str(bm25_dir)
-    return str(_default_at("pruning", "tools", "pipelines", "bm25", "index_dir"))
+    return str(_tools_default_at("pipelines", "bm25", "index_dir"))
 
 
 def _bm25_settings(
@@ -1034,24 +1120,24 @@ def _bm25_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def bm25_score_tool(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return _config_float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool"))
+    return _config_float(_tools_merged_at(cfg, "pipelines", "bm25", "score_tool"))
 
 
 def bm25_prune_enums(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "prune_enums"))
+    return _config_bool(_tools_merged_at(cfg, "pipelines", "bm25", "prune_enums"))
 
 
 def bm25_score_tool_enum(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
     return _config_float(
-        _merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_tool_enum"),
+        _tools_merged_at(cfg, "pipelines", "bm25", "score_tool_enum"),
     )
 
 
 def bm25_score_skills(config: dict[str, Any] | None = None) -> float:
     cfg = _resolve_config(config)
-    return _config_float(_merged_at(cfg, "pruning", "tools", "pipelines", "bm25", "score_skills"))
+    return _config_float(_tools_merged_at(cfg, "pipelines", "bm25", "score_skills"))
 
 
 def _rerank_pruning_settings(config: dict[str, Any]) -> dict[str, Any]:
@@ -1120,21 +1206,7 @@ def inject_via_map_for_mode(mode: str) -> dict[str, str]:
 def _inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
     cfg = _resolve_config(config)
     merged = _merged_config(cfg)
-    pruning = merged.get("pruning")
-    if not isinstance(pruning, dict):
-        return dict(inject_via_agents())
-    raw = pruning.get("inject_via")
-    if isinstance(raw, dict):
-        result = dict(inject_via_agents())
-        for agent, value in raw.items():
-            agent_key = str(agent).strip()
-            if agent_key not in inject_via_agents():
-                continue
-            mode = str(value).strip().lower()
-            if mode in {"hook", "proxy"}:
-                result[agent_key] = mode
-        return result
-    return dict(inject_via_agents())
+    return inject_via_map_from_config(merged)
 
 
 def inject_via_map(config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -1154,13 +1226,16 @@ def inject_via_for_agent(config: dict[str, Any] | None, agent: str) -> ToolsInje
         return "hook"
     if mode == "proxy":
         return "proxy"
-    fallback = str(_merged_at(cfg, "pruning", "inject_via_default")).strip().lower()
+    fallback = inject_via_default_mode(_merged_config(cfg))
     return "hook" if fallback == "hook" else "proxy"
 
 
 def hallucination_gate_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_merged_at(cfg, "hallucination_gate", "enabled"))
+    raw = hallucination_gate_enabled_raw(_merged_config(cfg))
+    if raw is None:
+        return False
+    return _config_bool(raw)
 
 
 def verify_only_mode(config: dict[str, Any] | None = None) -> bool:
@@ -1212,7 +1287,7 @@ def skills_inject_via(config: dict[str, Any] | None = None, *, agent: str | None
 
 def tools_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_merged_at(cfg, "pruning", "tools", "enabled"))
+    return _config_bool(_tools_merged_at(cfg, "enabled"))
 
 
 def inject_into_user_message(
@@ -1253,7 +1328,7 @@ def _normalize_tools_hook_source(value: str) -> ToolsHookSource | None:
 def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookSource, ...]:
     """Normalized ``pruning.tools.hook.tools_from`` list (scalar or YAML array)."""
     cfg = _resolve_config(config)
-    value = _merged_at(cfg, "pruning", "tools", "hook", "tools_from")
+    value = _tools_merged_at(cfg, "hook", "tools_from")
     raw_items: list[Any]
     if isinstance(value, str):
         raw_items = [value]
@@ -1273,7 +1348,7 @@ def tools_hook_sources(config: dict[str, Any] | None = None) -> tuple[ToolsHookS
     if not normalized:
         if any(str(item).strip() for item in raw_items):
             return ("executor",)
-        default_sources = _merged_at(cfg, "pruning", "tools", "hook", "tools_from")
+        default_sources = _tools_merged_at(cfg, "hook", "tools_from")
         if isinstance(default_sources, str):
             source_items = [default_sources]
         elif isinstance(default_sources, list):
@@ -1305,37 +1380,37 @@ def uses_definitions_tool_catalog(config: dict[str, Any] | None = None) -> bool:
 
 def tools_hook_executor_url(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    value = _merged_at(cfg, "pruning", "tools", "hook", "executor_url")
+    value = _tools_merged_at(cfg, "hook", "executor_url")
     return str(value).strip().rstrip("/")
 
 
 def tools_hook_executor_token_var(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    text = str(_merged_at(cfg, "pruning", "tools", "hook", "executor_token_var")).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "executor_token_var"))
+    text = str(_tools_merged_at(cfg, "hook", "executor_token_var")).strip()
+    return text or str(_tools_default_at("hook", "executor_token_var"))
 
 
 def tools_hook_cloudflare_url(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    value = _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_url")
+    value = _tools_merged_at(cfg, "hook", "cloudflare_url")
     return str(value).strip().rstrip("/")
 
 
 def tools_hook_cloudflare_access_client_id_var(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
     text = str(
-        _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_id_var"),
+        _tools_merged_at(cfg, "hook", "cloudflare_access_client_id_var"),
     ).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "cloudflare_access_client_id_var"))
+    return text or str(_tools_default_at("hook", "cloudflare_access_client_id_var"))
 
 
 def tools_hook_cloudflare_access_client_secret_var(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
     text = str(
-        _merged_at(cfg, "pruning", "tools", "hook", "cloudflare_access_client_secret_var"),
+        _tools_merged_at(cfg, "hook", "cloudflare_access_client_secret_var"),
     ).strip()
     return text or str(
-        _default_at("pruning", "tools", "hook", "cloudflare_access_client_secret_var"),
+        _tools_default_at("hook", "cloudflare_access_client_secret_var"),
     )
 
 
@@ -1349,7 +1424,7 @@ def tools_hook_cloudflare_cache_settings(config: dict[str, Any] | None = None) -
     cache = hook.get("cloudflare_cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _bundled_dict("pruning", "tools", "hook", "cloudflare_cache")
+    defaults = _tools_bundled_dict( "hook", "cloudflare_cache")
     return deep_merge(defaults, cache)
 
 
@@ -1376,8 +1451,8 @@ def _tools_hook_mcpc_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def tools_hook_mcpc_executable(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    text = str(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "executable")).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "mcpc", "executable"))
+    text = str(_tools_merged_at(cfg, "hook", "mcpc", "executable")).strip()
+    return text or str(_tools_default_at("hook", "mcpc", "executable"))
 
 
 def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1387,32 +1462,32 @@ def tools_hook_mcpc_cache_settings(config: dict[str, Any] | None = None) -> dict
     cache = mcpc.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _bundled_dict("pruning", "tools", "hook", "mcpc", "cache")
+    defaults = _tools_bundled_dict( "hook", "mcpc", "cache")
     return deep_merge(defaults, cache)
 
 
 def mcpc_skills_own_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
     return _config_bool(
-        _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "own", "enabled"),
+        _tools_merged_at(cfg, "hook", "mcpc", "skills", "own", "enabled"),
     )
 
 
 def mcpc_skills_in_session_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
     return bool(
-        _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "skills", "in_session", "enabled"),
+        _tools_merged_at(cfg, "hook", "mcpc", "skills", "in_session", "enabled"),
     )
 
 
 def mcpc_resources_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "enabled"))
+    return _config_bool(_tools_merged_at(cfg, "hook", "mcpc", "resources", "enabled"))
 
 
 def mcpc_resources_mime_types(config: dict[str, Any] | None = None) -> list[str]:
     cfg = _resolve_config(config)
-    mime_types = _merged_at(cfg, "pruning", "tools", "hook", "mcpc", "resources", "mimeType")
+    mime_types = _tools_merged_at(cfg, "hook", "mcpc", "resources", "mimeType")
     if not isinstance(mime_types, list):
         raise ValueError("pruning.tools.hook.mcpc.resources.mimeType must be a list")
     return [str(item).strip() for item in mime_types if str(item).strip()]
@@ -1423,7 +1498,7 @@ def mcpc_skills_refresh_seconds(config: dict[str, Any] | None = None) -> float:
     value = cache.get("skills_refresh_seconds")
     if value is None:
         return _config_float(
-            _default_at("pruning", "tools", "hook", "mcpc", "cache", "skills_refresh_seconds"),
+            _tools_default_at("hook", "mcpc", "cache", "skills_refresh_seconds"),
         )
     return float(value)
 
@@ -1438,14 +1513,17 @@ def _tools_hook_cyt_mcp_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def tools_hook_cyt_mcp_executable(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cyt_mcp", "executable")).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "cyt_mcp", "executable"))
+    text = str(_tools_merged_at(cfg, "hook", "cyt_mcp", "executable")).strip()
+    return text or str(_tools_default_at("hook", "cyt_mcp", "executable"))
 
 
 def tools_hook_cyt_mcp_agent(config: dict[str, Any] | None = None) -> str:
     cfg = _resolve_config(config)
-    text = str(_merged_at(cfg, "pruning", "tools", "hook", "cyt_mcp", "agent")).strip()
-    return text or str(_default_at("pruning", "tools", "hook", "cyt_mcp", "agent"))
+    merged = _merged_config(cfg)
+    agent = cyt_mcp_agent_from_config(merged)
+    if agent:
+        return agent
+    return str(_default_at("defaults", "cyt_mcp_agent"))
 
 
 def mcp_permissions_overlay(
@@ -1492,7 +1570,7 @@ def tools_hook_cyt_mcp_cache_settings(config: dict[str, Any] | None = None) -> d
     cache = cyt_mcp.get("cache")
     if not isinstance(cache, dict):
         cache = {}
-    defaults = _bundled_dict("pruning", "tools", "hook", "cyt_mcp", "cache")
+    defaults = _tools_bundled_dict( "hook", "cyt_mcp", "cache")
     return deep_merge(defaults, cache)
 
 
@@ -1506,7 +1584,7 @@ def connection_health_flapping_settings(config: dict[str, Any] | None = None) ->
     flapping = connection_health.get("flapping")
     if not isinstance(flapping, dict):
         flapping = {}
-    defaults = _bundled_dict("pruning", "tools", "hook", "connection_health", "flapping")
+    defaults = _tools_bundled_dict( "hook", "connection_health", "flapping")
     return deep_merge(defaults, flapping)
 
 
@@ -1517,13 +1595,13 @@ def tools_hook_executor_cache_settings(config: dict[str, Any] | None = None) -> 
     executor_cache = hook.get("executor_cache")
     if not isinstance(executor_cache, dict):
         executor_cache = {}
-    defaults = _bundled_dict("pruning", "tools", "hook", "executor_cache")
+    defaults = _tools_bundled_dict( "hook", "executor_cache")
     return deep_merge(defaults, executor_cache)
 
 
 def tools_hook_mcp_definitions_file(config: dict[str, Any] | None = None) -> Path:
     cfg = _resolve_config(config)
-    path = _merged_at(cfg, "pruning", "tools", "hook", "mcp_definitions_file")
+    path = _tools_merged_at(cfg, "hook", "mcp_definitions_file")
     return Path(str(path)).expanduser()
 
 
@@ -1719,7 +1797,10 @@ def skills_hook_inject_cap_multiplier(config: dict[str, Any] | None = None) -> f
 
 def skills_hook_cursor_rule_file_enabled(config: dict[str, Any] | None = None) -> bool:
     cfg = _resolve_config(config)
-    return _config_bool(_merged_at(cfg, "skills", "hook", "cursor_rule_file", "enabled"))
+    raw = cursor_rule_file_enabled_raw(_merged_config(cfg))
+    if raw is None:
+        return True
+    return _config_bool(raw)
 
 
 def skills_hook_agent_interceptor_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -1872,13 +1953,9 @@ def skills_index_params_fingerprint(config: dict[str, Any] | None = None) -> str
 
 
 def _user_pruning_pipeline(user_config: dict[str, Any]) -> list[str]:
-    pruning = user_config.get("pruning")
-    if isinstance(pruning, dict):
-        tools = pruning.get("tools")
-        if isinstance(tools, dict):
-            sequence = tools.get("sequence")
-            if isinstance(sequence, list):
-                return sequence
+    sequence = tools_value(user_config, "sequence")
+    if isinstance(sequence, list):
+        return sequence
     return []
 
 
@@ -1893,16 +1970,10 @@ def _model_nick_from_stage_cfg(stage_cfg: dict[str, Any]) -> str | None:
 
 
 def _user_stage_model_nick(user_config: dict[str, Any], stage: str) -> str | None:
-    pruning = user_config.get("pruning")
-    if isinstance(pruning, dict):
-        tools = pruning.get("tools")
-        if isinstance(tools, dict):
-            pipelines = tools.get("pipelines")
-            if isinstance(pipelines, dict):
-                stage_cfg = pipelines.get(stage, {})
-                if isinstance(stage_cfg, dict):
-                    if nick := _model_nick_from_stage_cfg(stage_cfg):
-                        return nick
+    stage_cfg = tools_value(user_config, "pipelines", stage)
+    if isinstance(stage_cfg, dict):
+        if nick := _model_nick_from_stage_cfg(stage_cfg):
+            return nick
     return None
 
 
@@ -2122,34 +2193,30 @@ def _stage_minimum_tools(
     *,
     user_config: dict[str, Any] | None = None,
 ) -> int:
-    """Resolve stage threshold from ``pruning.tools.policy.minimum_tools``."""
+    """Resolve stage threshold from ``tools.policy.minimum_tools``."""
     cfg = _resolve_config(config)
     merged = _merged_config(cfg)
     user = _user_overlay_for_config(cfg, user_config=user_config)
 
-    shared = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "policy", "minimum_tools"),
-    )
+    shared = tools_value(user, "policy", "minimum_tools")
+    if shared is None:
+        shared = tools_at(merged, "policy", "minimum_tools")
     if shared is not None:
         return int(cast(int | str, shared))
 
-    stage_specific = _resolve_user_then_merged(
-        merged,
-        user,
-        keys=("pruning", "tools", "pipelines", stage, "minimum_tools"),
-    )
+    stage_specific = tools_value(user, "pipelines", stage, "minimum_tools")
+    if stage_specific is None:
+        stage_specific = tools_at(merged, "pipelines", stage, "minimum_tools")
     if stage_specific is not None:
         return int(cast(int | str, stage_specific))
 
-    return _config_int(_require_nested(merged, "pruning", "tools", "policy", "minimum_tools"))
+    return _config_int(_tools_require_nested(config, "policy", "minimum_tools"))
 
 
 def tools_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
     """Resolve LLM tools selector soft budget from ``pruning.tools.selector_soft_budget``."""
     cfg = _resolve_config(config)
-    return _config_int(_merged_at(cfg, "pruning", "tools", "selector_soft_budget"))
+    return _config_int(_tools_merged_at(cfg, "selector_soft_budget"))
 
 
 def skills_selector_soft_budget(config: dict[str, Any] | None = None) -> int:
@@ -2169,11 +2236,11 @@ def max_prune_batch_workers(config: dict[str, Any] | None = None) -> int:
         except ValueError:
             pass
     cfg = _resolve_config(config)
-    raw = _merged_at(cfg, "pruning", "max_batch_workers")
+    raw = max_batch_workers_raw(_merged_config(cfg))
     try:
         return max(1, _config_int(raw))
     except (TypeError, ValueError):
-        return _config_int(_default_at("pruning", "max_batch_workers"))
+        return _config_int(_tools_default_at("max_batch_workers"))
 
 
 def selector_bulk_max_tokens(
@@ -2186,7 +2253,7 @@ def selector_bulk_max_tokens(
     if selector_kind == "skills":
         value = _merged_at(cfg, "skills", "selector_bulk_max_tokens")
     else:
-        value = _merged_at(cfg, "pruning", "tools", "selector_bulk_max_tokens")
+        value = _tools_merged_at(cfg, "selector_bulk_max_tokens")
     return _config_int(value)
 
 

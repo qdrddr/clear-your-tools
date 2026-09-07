@@ -57,7 +57,7 @@ def test_migrate_agent_backends_syncs_disabled_to_config_yaml(
     assert backend_payload["mcpServers"]["legacy-off"]["enabled"] is False
 
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    assert raw["agents"]["cursor"]["mcp"]["permissions"]["deny"] == ["legacy-off"]
+    assert raw["agents"]["cursor"]["tools"]["permissions"]["deny"] == ["legacy-off"]
 
 
 def test_disable_mcp_server_updates_json_enabled_flag(

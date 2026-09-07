@@ -140,12 +140,15 @@ def main(argv: list[str] | None = None) -> int:
             mcp_servers=config.mcp_servers,
             transport=args.transport,
             http=config.http,
+            stub_name=config.stub_name,
+            stub_retain=config.stub_retain,
             codex_stubs_include_description=config.codex_stubs_include_description,
             verify_only=config.verify_only,
             aggregator_path=config.aggregator_path,
             agent_mcp_path=config.agent_mcp_path,
             catalog_scope=config.catalog_scope,
             workspace_root=config.workspace_root,
+            mcp_deny=config.mcp_deny,
         )
     try:
         return asyncio.run(_run_server(config))

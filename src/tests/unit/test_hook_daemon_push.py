@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cyt_mcp.config import AggregatorConfig, CatalogScope, HttpSettings, load_aggregator_config
+from cyt_mcp.config import AggregatorConfig, CatalogScope, HttpSettings, load_aggregator_config, test_aggregator_config
 from cyt_mcp.hook_daemon_push import (
     _RETRY_DELAYS_SECONDS,
     _instance_key,
@@ -24,22 +24,10 @@ def _config(
     workspace_root: Path | None = None,
     aggregator_path: Path | None = None,
 ) -> AggregatorConfig:
-    return AggregatorConfig(
-        agent="cursor",
-        mcp_servers={},
-        transport="stdio",
-        http=HttpSettings(
-            host="127.0.0.1",
-            port=8765,
-            mcp_path="/mcp",
-            catalog_path="/catalog",
-        ),
-        codex_stubs_include_description=False,
-        verify_only=False,
-        aggregator_path=aggregator_path or Path("~/.config/cyt/mcp-aggregator.yaml"),
-        agent_mcp_path=Path("~/.config/cyt/mcp/cursor.json"),
+    return test_aggregator_config(
         catalog_scope=catalog_scope,
         workspace_root=workspace_root,
+        aggregator_path=aggregator_path,
     )
 
 

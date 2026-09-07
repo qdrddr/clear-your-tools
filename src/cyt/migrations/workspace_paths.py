@@ -1,4 +1,4 @@
-"""Ensure workspace config lives at the canonical .agents/cyt path before migration."""
+"""Ensure workspace MCP config lives at the canonical .agents/cyt path before migration."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from cyt.hook.install_scope import CytInstallScope, HookAgentName
+from cyt.migrations.mcp_config import migrate_mcp_config_file, promote_legacy_mcp_config_path
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +34,31 @@ def ensure_canonical_workspace_config(scope: CytInstallScope) -> Path | None:
     return canonical
 
 
-def ensure_canonical_workspace_aggregator(scope: CytInstallScope) -> Path | None:
-    """Copy or rename legacy mcp-aggregator.yaml to ``.agents/cyt/config/mcp-aggregator.yaml``.
-
-    When the canonical file already exists, legacy paths are left unchanged.
-    """
-    canonical = scope.workspace_all_agents_cyt_aggregator_path()
+def ensure_canonical_workspace_mcp_config(scope: CytInstallScope) -> Path | None:
+    """Promote legacy MCP config files to ``.agents/cyt/config/mcp-config.yaml``."""
+    canonical = scope.workspace_all_agents_cyt_mcp_config_path()
     if canonical is None:
         return None
     if canonical.is_file():
+        migrate_mcp_config_file(canonical, dry_run=False)
         return canonical
 
     for agent in _AGENTS:
-        for legacy in scope._legacy_workspace_aggregator_paths(agent):
+        for legacy in scope._legacy_workspace_mcp_config_paths(agent):
             if legacy.is_file() and legacy.resolve() != canonical.resolve():
                 canonical.parent.mkdir(parents=True, exist_ok=True)
-                legacy.rename(canonical)
-                logger.info("Moved workspace aggregator %s -> %s", legacy, canonical)
+                promoted = promote_legacy_mcp_config_path(legacy)
+                if promoted.resolve() != canonical.resolve():
+                    promoted.rename(canonical)
+                    logger.info("Moved workspace MCP config %s -> %s", promoted, canonical)
+                migrate_mcp_config_file(canonical, dry_run=False)
                 return canonical
     return canonical
+
+
+def ensure_canonical_workspace_aggregator(scope: CytInstallScope) -> Path | None:
+    """Deprecated alias for :func:`ensure_canonical_workspace_mcp_config`."""
+    return ensure_canonical_workspace_mcp_config(scope)
 
 
 def ensure_canonical_workspace_server_defs(

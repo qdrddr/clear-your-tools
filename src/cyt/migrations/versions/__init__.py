@@ -13,6 +13,8 @@ _REVISION_MODULE_NAMES = (
     "003_model_provider_registry",
     "004_permissions_agents_layout",
     "005_skills_agent_directories",
+    "006_policies_stubs_schema",
+    "007_config_layout_restructure",
 )
 
 

@@ -21,6 +21,7 @@ from cyt.migrations.runner import (
 )
 from cyt.migrations.workspace_paths import (
     ensure_canonical_workspace_config,
+    ensure_canonical_workspace_mcp_config,
     resolve_workspace_config_path,
 )
 
@@ -129,6 +130,7 @@ def maybe_migrate_workspace_config(
     if path is None:
         return None
     maybe_migrate_config_file(path, scope="workspace")
+    ensure_canonical_workspace_mcp_config(scope)
     return path
 
 
@@ -195,4 +197,5 @@ def ensure_workspace_config_current(
     if path is None or not path.is_file():
         return path
     ensure_config_file_current(path, scope="workspace")
+    ensure_canonical_workspace_mcp_config(scope)
     return path

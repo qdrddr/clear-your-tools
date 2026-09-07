@@ -129,7 +129,7 @@ def _resolve_workspace_server_defs_path(workspace_root: Path, agent: str) -> Pat
 
 
 def _workspace_aggregator_config_ref(agent: str, workspace_root: Path) -> str:
-    rel = ".agents/cyt/config/mcp-aggregator.yaml"
+    rel = ".agents/cyt/config/mcp-config.yaml"
     if agent == "cursor":
         return f"{CURSOR_WORKSPACE_FOLDER}/{rel}"
     return str(workspace_root / rel)

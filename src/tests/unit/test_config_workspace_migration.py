@@ -42,18 +42,18 @@ def test_ensure_canonical_workspace_config_promotes_legacy_cursor_path(
     assert not legacy.is_file()
 
 
-def test_ensure_canonical_workspace_aggregator_promotes_legacy_cursor_path(
+def test_ensure_canonical_workspace_mcp_config_promotes_legacy_cursor_path(
     workspace: Path,
 ) -> None:
-    from cyt.migrations.workspace_paths import ensure_canonical_workspace_aggregator
+    from cyt.migrations.workspace_paths import ensure_canonical_workspace_mcp_config
 
     legacy = workspace / ".cursor" / "cyt" / "config" / "mcp-aggregator.yaml"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("default_agent: cursor\n", encoding="utf-8")
-    canonical = workspace / ".agents" / "cyt" / "config" / "mcp-aggregator.yaml"
+    canonical = workspace / ".agents" / "cyt" / "config" / "mcp-config.yaml"
 
     scope = CytInstallScope.from_cwd()
-    promoted = ensure_canonical_workspace_aggregator(scope)
+    promoted = ensure_canonical_workspace_mcp_config(scope)
 
     assert promoted == canonical
     assert canonical.is_file()

@@ -44,7 +44,7 @@ def _normalize_agents_permissions(cfg: dict[str, Any]) -> None:
     for agent_block in agents.values():
         if not isinstance(agent_block, dict):
             continue
-        for key in ("skills", "mcp"):
+        for key in ("skills", "tools", "mcp"):
             sub = agent_block.get(key)
             if isinstance(sub, dict):
                 _normalize_permissions_block(sub)

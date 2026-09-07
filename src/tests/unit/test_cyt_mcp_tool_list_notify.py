@@ -10,27 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.server.middleware import MiddlewareContext
 
-from cyt_mcp.config import AggregatorConfig, HttpSettings
+from cyt_mcp.config import AggregatorConfig, test_aggregator_config
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.tool_list_notify import ToolListChangedMiddleware
 
 
 def _test_config() -> AggregatorConfig:
-    return AggregatorConfig(
-        agent="cursor",
-        mcp_servers={},
-        transport="stdio",
-        http=HttpSettings(
-            host="127.0.0.1",
-            port=8765,
-            mcp_path="/mcp",
-            catalog_path="/catalog",
-        ),
-        codex_stubs_include_description=False,
-        verify_only=False,
-        aggregator_path=Path("~/.config/cyt/mcp-aggregator.yaml"),
-        agent_mcp_path=Path("~/.config/cyt/mcp/cursor.json"),
-    )
+    return test_aggregator_config()
 
 
 def _initialize_context(*, session_id: str = "sess-1") -> MiddlewareContext[Any]:

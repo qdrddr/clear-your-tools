@@ -9,7 +9,8 @@ from typing import Literal
 HookAgentName = Literal["claude", "codex", "cursor"]
 
 GLOBAL_CONFIG_PATH = Path("~/.config/cyt/config.yaml")
-GLOBAL_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-aggregator.yaml")
+GLOBAL_MCP_CONFIG_PATH = Path("~/.config/cyt/mcp-config.yaml")
+GLOBAL_AGGREGATOR_PATH = GLOBAL_MCP_CONFIG_PATH  # deprecated alias
 GLOBAL_MCP_DIR = Path("~/.config/cyt/mcp")
 
 GLOBAL_HOOKS_PATHS: dict[HookAgentName, Path] = {
@@ -88,8 +89,11 @@ class CytInstallScope:
     def global_cyt_config_path(self) -> Path:
         return _expand(GLOBAL_CONFIG_PATH)
 
+    def global_mcp_config_path(self) -> Path:
+        return _expand(GLOBAL_MCP_CONFIG_PATH)
+
     def global_aggregator_path(self) -> Path:
-        return _expand(GLOBAL_AGGREGATOR_PATH)
+        return self.global_mcp_config_path()
 
     def workspace_all_agents_cyt_dir(self) -> Path | None:
         if self.workspace_root is None:
@@ -102,11 +106,14 @@ class CytInstallScope:
             return None
         return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "config.yaml"
 
-    def workspace_all_agents_cyt_aggregator_path(self) -> Path | None:
+    def workspace_all_agents_cyt_mcp_config_path(self) -> Path | None:
         cyt_dir = self.workspace_all_agents_cyt_dir()
         if cyt_dir is None:
             return None
-        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml"
+        return cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-config.yaml"
+
+    def workspace_all_agents_cyt_aggregator_path(self) -> Path | None:
+        return self.workspace_all_agents_cyt_mcp_config_path()
 
     def workspace_all_agents_cyt_mcp_defs_path(self, agent: str) -> Path | None:
         cyt_dir = self.workspace_all_agents_cyt_dir()
@@ -130,14 +137,19 @@ class CytInstallScope:
             cyt_dir / "config.yaml",
         )
 
-    def _legacy_workspace_aggregator_paths(self, agent: str) -> tuple[Path, ...]:
+    def _legacy_workspace_mcp_config_paths(self, agent: str) -> tuple[Path, ...]:
         cyt_dir = self._agent_cyt_dir(agent)
         if cyt_dir is None:
             return ()
         return (
+            cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-config.yaml",
             cyt_dir / WORKSPACE_CYT_CONFIG_SUBDIR / "mcp-aggregator.yaml",
+            cyt_dir / "mcp-config.yaml",
             cyt_dir / "mcp-aggregator.yaml",
         )
+
+    def _legacy_workspace_aggregator_paths(self, agent: str) -> tuple[Path, ...]:
+        return self._legacy_workspace_mcp_config_paths(agent)
 
     def _legacy_workspace_server_defs_paths(self, agent: str) -> tuple[Path, ...]:
         cyt_dir = self._agent_cyt_dir(agent)
@@ -193,19 +205,25 @@ class CytInstallScope:
             return shared
         return self.legacy_workspace_cyt_config_path(agent)
 
-    def workspace_aggregator_path(self, agent: str) -> Path | None:
-        """Canonical workspace MCP aggregator path (shared across agents)."""
-        return self.workspace_all_agents_cyt_aggregator_path()
+    def workspace_mcp_config_path(self, agent: str) -> Path | None:
+        """Canonical workspace MCP config path (shared across agents)."""
+        return self.workspace_all_agents_cyt_mcp_config_path()
 
-    def resolve_workspace_aggregator_path(self, agent: str) -> Path | None:
-        """Resolve workspace aggregator, preferring ``.agents/cyt/config/mcp-aggregator.yaml``."""
-        shared = self.workspace_all_agents_cyt_aggregator_path()
+    def workspace_aggregator_path(self, agent: str) -> Path | None:
+        return self.workspace_mcp_config_path(agent)
+
+    def resolve_workspace_mcp_config_path(self, agent: str) -> Path | None:
+        """Resolve workspace MCP config, preferring ``.agents/cyt/config/mcp-config.yaml``."""
+        shared = self.workspace_all_agents_cyt_mcp_config_path()
         if shared is not None and shared.is_file():
             return shared
-        for legacy in self._legacy_workspace_aggregator_paths(agent):
+        for legacy in self._legacy_workspace_mcp_config_paths(agent):
             if legacy.is_file():
                 return legacy
         return None
+
+    def resolve_workspace_aggregator_path(self, agent: str) -> Path | None:
+        return self.resolve_workspace_mcp_config_path(agent)
 
     def workspace_cyt_dir(self, agent: str) -> Path | None:
         return self._agent_cyt_dir(agent)

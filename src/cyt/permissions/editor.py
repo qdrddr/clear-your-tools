@@ -25,9 +25,24 @@ def _overlay_path(
     kind: PermissionKind,
     agent_target: PermissionAgentTarget,
 ) -> tuple[str, ...]:
+    if kind == "mcp":
+        if agent_target == "all":
+            return ("tools", "permissions")
+        return ("agents", agent_target, "tools", "permissions")
     if agent_target == "all":
         return (kind, "permissions")
     return ("agents", agent_target, kind, "permissions")
+
+
+def _legacy_overlay_path(
+    kind: PermissionKind,
+    agent_target: PermissionAgentTarget,
+) -> tuple[str, ...] | None:
+    if kind != "mcp":
+        return None
+    if agent_target == "all":
+        return ("mcp", "permissions")
+    return ("agents", agent_target, "mcp", "permissions")
 
 
 def _get_nested(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -68,7 +83,13 @@ def load_permissions_lists(
     kind: PermissionKind,
     agent_target: PermissionAgentTarget,
 ) -> tuple[list[str], list[str]]:
-    return _permissions_lists(config, _overlay_path(kind, agent_target))
+    deny, allow = _permissions_lists(config, _overlay_path(kind, agent_target))
+    if deny or allow:
+        return deny, allow
+    legacy = _legacy_overlay_path(kind, agent_target)
+    if legacy is not None:
+        return _permissions_lists(config, legacy)
+    return deny, allow
 
 
 def _build_overlay(
