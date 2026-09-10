@@ -156,12 +156,13 @@ def merge_skill_matches(
     t4_direct: list[MatchedSkill],
     *,
     representation_by_skill: dict[str, Tier],
+    apply_representation: bool = True,
 ) -> list[MatchedSkill]:
     by_path: dict[str, MatchedSkill] = {}
     order: list[str] = []
     for match in searched:
         tier = representation_by_skill.get(match.file_path, Tier.HOT)
-        shaped = apply_skill_representation(match, tier)
+        shaped = apply_skill_representation(match, tier) if apply_representation else match
         by_path[match.file_path] = shaped
         order.append(match.file_path)
     for match in t4_direct:

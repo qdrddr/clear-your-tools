@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cyt.config.policy_catalog import ToolPolicyRef
 
 
 class Tier(IntEnum):
@@ -114,7 +117,7 @@ class ToolsTierApplyResult:
     eligible_tools: list[dict[str, Any]]
     t4_direct: list[dict[str, Any]]
     excluded_t0: list[str]
-    policy_overrides: dict[str, str]
+    policy_overrides: dict[str, ToolPolicyRef]
     tier_by_tool: dict[str, Tier]
 
 

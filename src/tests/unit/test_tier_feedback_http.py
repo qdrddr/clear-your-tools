@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +13,7 @@ from cyt.tiers.manager import TierManager, _managers
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()
@@ -44,7 +45,7 @@ async def test_hook_tier_feedback_records_tool_used(project_root: Path, base_con
                 "tool_name": "search",
                 "catalog": "cyt_mcp",
                 "args": {"query": "hello"},
-            }
+            },
         ).encode(),
     )
     request.app = MagicMock()
@@ -83,7 +84,7 @@ async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_co
                 "event": "skill_used",
                 "workspace_root": str(project_root),
                 "entity_id": str(skill_path.resolve()),
-            }
+            },
         ).encode(),
     )
     request.app = MagicMock()
@@ -136,7 +137,7 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
                     "event": "skill_used",
                     "workspace_root": str(project_root),
                     "entity_id": resolved_id,
-                }
+                },
             ).encode(),
         )
         request.app = MagicMock()

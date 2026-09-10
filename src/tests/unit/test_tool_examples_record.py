@@ -97,7 +97,7 @@ def test_record_applies_redaction_patterns(tmp_path: Path) -> None:
         mcp_server="srv",
         tool_name="search",
         input_schema=schema,
-        args={"query": "safe", "api_key": "secret"},
+        args={"query": "safe", "api_key": "secret"},  # pragma: allowlist secret
         config=config,
     )
     assert schema_id is not None

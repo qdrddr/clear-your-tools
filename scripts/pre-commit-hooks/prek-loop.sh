@@ -12,6 +12,14 @@
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g py
 #   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
 #
+# Parallel runs (separate terminals — disjoint or overlapping groups are OK):
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g py
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g uni
+#   ./scripts/pre-commit-hooks/prek-loop.sh -g rust
+# Per-group locks allow concurrent loops; per-hook locks serialize shared hooks
+# (e.g. maturin-develop); git staging is serialized repo-wide.
+# Do not run without -g while group loops are active (full run takes _all lock).
+#
 # If prek-hook-groups.yaml is missing, all hooks run regardless of --group.
 # Examples:
 # Run iteratively, fix all issues, do not omit, comment out or ignore, instead investigate the root cause and fix. Preserve the functionality:
@@ -61,6 +69,7 @@ while (($#)); do
 	-h | --help)
 		echo "Usage: $0 [--short] [--one-run] [--runtime] [--no-git-add] [-g|--group GROUP...]" >&2
 		echo "Groups: py rust go c ts uni runtime (see scripts/pre-commit-hooks/prek-hook-groups.yaml)" >&2
+		echo "Multiple -g instances may run in parallel in separate terminals." >&2
 		exit 0
 		;;
 	-*)
@@ -84,9 +93,89 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/chunk-worktree.sh
 source "${SCRIPT_DIR}/../lib/chunk-worktree.sh"
 
+PREK_LOCK_BASE="${ROOT}/target/.prek-loop.lock.d"
+PREK_HOOK_LOCK_BASE="${ROOT}/target/.prek-hook.lock.d"
+PREK_GIT_STAGE_LOCK_PATH="${ROOT}/target/.prek-git-stage.lock.d"
+# Long wait: a hook may block on another group's cargo test / maturin-develop.
+PREK_HOOK_LOCK_MAX_WAIT=720000
+# Shorter wait: duplicate same group key in another terminal.
+PREK_LOOP_DUP_MAX_WAIT=14400
+
 PREK_LOOP_LOCK_DIR=""
+PREK_LOOP_LOCK_KEY=""
+PREK_HOOK_LOCK_DIR=""
+PREK_GIT_STAGE_LOCK_HELD=""
+
+_cyt_prek_loop_lock_key() {
+	if ((${#SELECTED_GROUPS[@]} == 0)); then
+		printf '%s\n' '_all'
+		return 0
+	fi
+	local -a sorted=()
+	mapfile -t sorted < <(printf '%s\n' "${SELECTED_GROUPS[@]}" | sort -u)
+	local IFS='-'
+	printf '%s\n' "${sorted[*]}"
+}
+
+_cyt_prek_active_loop_lock_names() {
+	local base="$1"
+	local d name
+	[[ -d "${base}" ]] || return 0
+	for d in "${base}"/*; do
+		[[ -d "${d}" ]] || continue
+		if _cyt_lock_dir_is_stale "${d}"; then
+			rm -rf "${d}"
+			continue
+		fi
+		name="$(basename "${d}")"
+		printf '%s\n' "${name}"
+	done
+}
+
+_cyt_prek_echo_err() {
+	if [[ -n ${PREK_LOOP_LOCK_KEY:-} ]]; then
+		echo "[${PREK_LOOP_LOCK_KEY}] $*" >&2
+	else
+		echo "$*" >&2
+	fi
+}
+
+_cyt_prek_echo() {
+	if [[ -n ${PREK_LOOP_LOCK_KEY:-} ]]; then
+		echo "[${PREK_LOOP_LOCK_KEY}] $*"
+	else
+		echo "$*"
+	fi
+}
+
 _cyt_prek_loop_lock() {
-	PREK_LOOP_LOCK_DIR="$(_cyt_acquire_lock_dir "${ROOT}/target/.prek-loop.lock.d" "prek-loop" 14400)" || exit 1
+	local key="$1"
+	local lock_dir="${PREK_LOCK_BASE}/${key}"
+	local -a active=() other=()
+
+	mkdir -p "${PREK_LOCK_BASE}" "${PREK_HOOK_LOCK_BASE}"
+
+	mapfile -t active < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
+
+	if [[ ${key} == "_all" ]]; then
+		if ((${#active[@]})); then
+			_cyt_prek_echo_err "Cannot run all hooks while parallel group loops are active: ${active[*]}"
+			exit 1
+		fi
+	else
+		for other in "${active[@]}"; do
+			if [[ ${other} == "_all" ]]; then
+				_cyt_prek_echo_err "Cannot start group loop while a full prek loop (_all) is running."
+				exit 1
+			fi
+		done
+	fi
+
+	PREK_LOOP_LOCK_DIR="$(_cyt_acquire_lock_dir "${lock_dir}" "prek-loop:${key}" "${PREK_LOOP_DUP_MAX_WAIT}")" || exit 1
+	PREK_LOOP_LOCK_KEY="${key}"
+	export CYT_PREK_LOOP_LOCK_KEY="${key}"
+	echo "${key}" >"${PREK_LOOP_LOCK_DIR}/groups"
+	echo $$ >"${PREK_LOOP_LOCK_DIR}/pid"
 }
 
 _cyt_prek_loop_unlock() {
@@ -94,7 +183,34 @@ _cyt_prek_loop_unlock() {
 	PREK_LOOP_LOCK_DIR=""
 }
 
-_cyt_prek_loop_lock
+_cyt_prek_hook_lock() {
+	local hook="$1"
+	PREK_HOOK_LOCK_DIR="$(_cyt_acquire_lock_dir "${PREK_HOOK_LOCK_BASE}/${hook}" "prek-hook:${hook}" "${PREK_HOOK_LOCK_MAX_WAIT}")" || return 1
+}
+
+_cyt_prek_hook_unlock() {
+	_cyt_release_lock_dir "${PREK_HOOK_LOCK_DIR:-}"
+	PREK_HOOK_LOCK_DIR=""
+}
+
+_cyt_prek_git_stage_lock() {
+	PREK_GIT_STAGE_LOCK_HELD="$(_cyt_acquire_lock_dir "${PREK_GIT_STAGE_LOCK_PATH}" "prek-git-stage" "${PREK_HOOK_LOCK_MAX_WAIT}")" || return 1
+}
+
+_cyt_prek_git_stage_unlock() {
+	_cyt_release_lock_dir "${PREK_GIT_STAGE_LOCK_HELD:-}"
+	PREK_GIT_STAGE_LOCK_HELD=""
+}
+
+_cyt_prek_stage_fixes() {
+	if $NO_GIT_ADD; then
+		return 0
+	fi
+	_cyt_prek_git_stage_lock || return 1
+	rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
+	rtk git add -A >/dev/null 2>&1 || true
+	_cyt_prek_git_stage_unlock
+}
 
 # Integration tests call real external APIs; never run them in automated hook loops.
 unset CYT_RUN_INTEGRATION_TESTS
@@ -115,10 +231,9 @@ fi
 GROUPS_FILE="$SCRIPT_DIR/prek-hook-groups.yaml"
 export SHORTEN_ROOT="$ROOT"
 
-trap '_cyt_prek_loop_unlock' EXIT
-trap '_cyt_prek_loop_unlock; echo; echo "Interrupted."; exit 130' INT TERM
-
-echo "Discovering prek hooks..." >&2
+if ! $SHORT; then
+	echo "Discovering prek hooks..." >&2
+fi
 mapfile -t ALL_HOOKS < <(uv run prek list | sed 's/^\.://' | tr -d '\r' | awk '!seen[$0]++')
 ((${#ALL_HOOKS[@]})) || {
 	echo "No prek hooks found." >&2
@@ -219,6 +334,20 @@ resolve_hooks() {
 
 resolve_hooks
 
+PREK_LOOP_LOCK_KEY="$(_cyt_prek_loop_lock_key)"
+_cyt_prek_loop_lock "${PREK_LOOP_LOCK_KEY}"
+printf '%s\n' "${HOOKS[@]}" >"${PREK_LOOP_LOCK_DIR}/hooks"
+
+trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock' EXIT
+trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock; echo; _cyt_prek_echo "Interrupted."; exit 130' INT TERM
+
+mapfile -t _prek_other_loops < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
+if ((${#_prek_other_loops[@]} > 1)); then
+	_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
+elif ((${#_prek_other_loops[@]} == 1)) && [[ ${_prek_other_loops[0]} != "${PREK_LOOP_LOCK_KEY}" ]]; then
+	_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
+fi
+
 total=${#HOOKS[@]}
 mode="Prek loop"
 $SHORT && mode+=" (short)"
@@ -227,15 +356,17 @@ $RUN_RUNTIME && mode+=" (runtime)"
 if ((${#SELECTED_GROUPS[@]})); then
 	mode+=" [${SELECTED_GROUPS[*]}]"
 fi
-if $ONE_RUN; then
-	echo "$mode: $total hooks, single iteration."
-else
-	echo "$mode: $total hooks until all pass."
+if ! $SHORT; then
+	if $ONE_RUN; then
+		_cyt_prek_echo "$mode: $total hooks, single iteration."
+	else
+		_cyt_prek_echo "$mode: $total hooks until all pass."
+	fi
+	if ((${#SELECTED_GROUPS[@]})) && [[ -f $GROUPS_FILE ]] && ((total > 0)); then
+		_cyt_prek_echo "Hooks: ${HOOKS[*]}"
+	fi
+	_cyt_prek_echo
 fi
-if ((${#SELECTED_GROUPS[@]})) && [[ -f $GROUPS_FILE ]] && ((total > 0)); then
-	echo "Hooks: ${HOOKS[*]}"
-fi
-echo
 
 # prek prints "hook-name.....<status>"; extract <status> from dot-padded lines.
 parse_prek_output() {
@@ -330,6 +461,11 @@ run_hook() {
 	local hook="$1"
 	local output exit_code=0
 
+	if ! _cyt_prek_hook_lock "${hook}"; then
+		_cyt_prek_echo_err "Timed out waiting for hook lock: ${hook}"
+		return 1
+	fi
+
 	if [[ "${hook}" == "export-rust-sbom" ]]; then
 		output=$(_run_hook_capture "export-rust-sbom" rtk bash scripts/deps/export-rust-sbom-precommit.sh) || exit_code=$?
 		LAST_HOOK_RAW_OUTPUT="${output}"
@@ -344,6 +480,7 @@ run_hook() {
 			PREK_STATUSES="Failed"
 		fi
 		PREK_DETAILS="${output}"
+		_cyt_prek_hook_unlock
 		return "${exit_code}"
 	fi
 
@@ -355,6 +492,7 @@ run_hook() {
 		PREK_HOOK_STREAMED=true
 	fi
 	parse_prek_output "$output"
+	_cyt_prek_hook_unlock
 	return "$exit_code"
 }
 
@@ -398,10 +536,7 @@ run_hook_with_retry() {
 	fi
 
 	first_details="${PREK_DETAILS}"
-	if ! $NO_GIT_ADD; then
-		rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
-		rtk git add -A >/dev/null 2>&1 || true
-	fi
+	_cyt_prek_stage_fixes || true
 	if run_hook "$hook"; then
 		return 0
 	fi
@@ -428,13 +563,15 @@ while true; do
 	loop_header_printed=false
 
 	if ! $SHORT; then
-		echo "# LOOP $iteration"
+		_cyt_prek_echo "# LOOP $iteration"
 	fi
 
 	for hook in "${HOOKS[@]}"; do
 		n=$((passed + failed + 1))
 		hook_failed=false
-		echo "Running [$n/$total] $hook ..." >&2
+		if ! $SHORT; then
+			_cyt_prek_echo_err "Running [$n/$total] $hook ..."
+		fi
 		if run_hook_with_retry "$hook"; then
 			passed=$((passed + 1))
 			result="Passed"
@@ -446,42 +583,43 @@ while true; do
 		fi
 
 		if $SHORT && ! $hook_failed; then
-			if ! $NO_GIT_ADD; then
-				rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
-				rtk git add -A >/dev/null 2>&1 || true
-			fi
+			_cyt_prek_stage_fixes || true
 			continue
 		fi
 
 		if $SHORT && ! $loop_header_printed; then
-			echo "# LOOP $iteration"
+			_cyt_prek_echo "# LOOP $iteration"
 			loop_header_printed=true
 		fi
 
 		if [[ -n $PREK_STATUSES ]]; then
-			echo "$PREK_STATUSES [$n/$total] $hook ($passed passed, $failed failed)"
+			_cyt_prek_echo "$PREK_STATUSES [$n/$total] $hook ($passed passed, $failed failed)"
 		else
-			echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
+			_cyt_prek_echo "$result [$n/$total] $hook ($passed passed, $failed failed)"
 		fi
 		if [[ -n $PREK_DETAILS ]] && ! $PREK_HOOK_STREAMED; then
-			printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh"
+			printf '%s\n' "$PREK_DETAILS" | "$SCRIPT_DIR/../lib/shorten-paths.sh" |
+				while IFS= read -r line; do _cyt_prek_echo "${line}"; done
 		fi
-		if ! $NO_GIT_ADD; then
-			rtk bash scripts/local/dev/heal-cargo-lock.sh >/dev/null 2>&1 || true
-			rtk git add -A >/dev/null 2>&1 || true
-		fi
+		_cyt_prek_stage_fixes || true
 	done
 
-	echo
-	echo "Loop $iteration: $passed passed, $failed failed."
 	if ((failed == 0)); then
-		echo "All $total hooks passed."
+		if ! $SHORT; then
+			_cyt_prek_echo
+			_cyt_prek_echo "Loop $iteration: $passed passed, $failed failed."
+			_cyt_prek_echo "All $total hooks passed."
+		fi
 		exit 0
 	fi
-	echo "Failures: ${failed_hooks[*]}"
+	_cyt_prek_echo
+	_cyt_prek_echo "Loop $iteration: $passed passed, $failed failed."
+	_cyt_prek_echo "Failures: ${failed_hooks[*]}"
 	if $ONE_RUN; then
 		exit 1
 	fi
-	echo "Re-running..."
-	echo
+	_cyt_prek_echo "Re-running..."
+	if ! $SHORT; then
+		_cyt_prek_echo
+	fi
 done

@@ -37,7 +37,13 @@ def test_schema_hash_changes_with_schema_structure(tmp_path: Path) -> None:
             "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
         }
         sid_v1 = store.upsert_capture(project_id, "srv", "search", schema_v1, {"query": "x"})
-        sid_v2 = store.upsert_capture(project_id, "srv", "search", schema_v2, {"query": "x", "limit": 5})
+        sid_v2 = store.upsert_capture(
+            project_id,
+            "srv",
+            "search",
+            schema_v2,
+            {"query": "x", "limit": 5},
+        )
         assert sid_v1 != sid_v2
         cap_v1 = store.get_capture(sid_v1)
         cap_v2 = store.get_capture(sid_v2)

@@ -18,7 +18,7 @@ class FlattenedExample:
 _PATH_PREFIX = "inputSchema.properties"
 
 
-def _value_type(value: Any) -> str:
+def _value_type(value: object) -> str:
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -32,7 +32,7 @@ def _value_type(value: Any) -> str:
     return type(value).__name__
 
 
-def _serialize_value(value: Any) -> str | None:
+def _serialize_value(value: object) -> str | None:
     if value is None:
         return "null"
     if isinstance(value, (bool, int, float, str)):
@@ -40,7 +40,7 @@ def _serialize_value(value: Any) -> str | None:
     return None
 
 
-def _should_skip_value(value: Any) -> bool:
+def _should_skip_value(value: object) -> bool:
     if value is None:
         return False
     if isinstance(value, str) and not value.strip():
@@ -82,7 +82,7 @@ def _walk_object(
 
 
 def _walk_value(
-    value: Any,
+    value: object,
     path: str,
     out: list[FlattenedExample],
     redact_patterns: tuple[re.Pattern[str], ...],
@@ -105,7 +105,7 @@ def _walk_value(
     _walk_scalar(value, path, out)
 
 
-def _walk_scalar(value: Any, path: str, out: list[FlattenedExample]) -> None:
+def _walk_scalar(value: object, path: str, out: list[FlattenedExample]) -> None:
     if _should_skip_value(value):
         return
     serialized = _serialize_value(value)

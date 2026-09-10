@@ -45,7 +45,6 @@ def main(argv: list[str] | None = None) -> None:
         from cyt.tiers.cli import main as tiers_main
 
         sys.exit(tiers_main(tiers_argv))
-        return
 
     config_argv = _config_argv(cli_argv)
     if config_argv is not None:

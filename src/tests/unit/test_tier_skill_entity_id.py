@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ from cyt.tiers.manager import TierManager, _managers
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()

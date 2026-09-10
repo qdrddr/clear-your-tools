@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
@@ -57,7 +56,13 @@ def test_example_rows_linked_to_capture(store: ToolExamplesStore, tmp_path: Path
     project_id = store.get_or_create_project(str(root))
     schema = {"type": "object", "properties": {"project": {"type": "string"}}}
     args = {"project": "clear-your-tools"}
-    schema_id = store.upsert_capture(project_id, "codebase-memory-mcp", "search_graph", schema, args)
+    schema_id = store.upsert_capture(
+        project_id,
+        "codebase-memory-mcp",
+        "search_graph",
+        schema,
+        args,
+    )
     rows = store.list_examples_for_path(
         [schema_id],
         "inputSchema.properties.project",
@@ -114,7 +119,10 @@ def test_enforce_capture_retention(store: ToolExamplesStore, tmp_path: Path) -> 
     assert len(captures) == 5
 
 
-def test_prune_stale_examples_respects_min_per_path(store: ToolExamplesStore, tmp_path: Path) -> None:
+def test_prune_stale_examples_respects_min_per_path(
+    store: ToolExamplesStore,
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     project_id = store.get_or_create_project(str(root))
@@ -122,7 +130,7 @@ def test_prune_stale_examples_respects_min_per_path(store: ToolExamplesStore, tm
     schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"query": "old"})
     now_ms = int(time.time() * 1000)
     old_ms = now_ms - 365 * 86400 * 1000
-    with store._lock:  # noqa: SLF001
+    with store._lock:
         store._conn.execute(
             "UPDATE tool_example SET timestamp_ms = ? WHERE schema_id = ?",
             (old_ms, schema_id),
@@ -141,7 +149,7 @@ def test_cleanup_orphan_example_paths(store: ToolExamplesStore, tmp_path: Path) 
     args = {"query": "valid"}
     schema_id = store.upsert_capture(project_id, "srv", "tool", schema, args)
     now_ms = int(time.time() * 1000)
-    with store._lock:  # noqa: SLF001
+    with store._lock:
         store._conn.execute(
             "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -163,7 +171,13 @@ def test_record_examples_upserts_rows(store: ToolExamplesStore, tmp_path: Path) 
     schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"q": "first"})
     store.record_examples(
         schema_id,
-        [FlattenedExample(json_path="inputSchema.properties.q", value='"second"', value_type="string")],
+        [
+            FlattenedExample(
+                json_path="inputSchema.properties.q",
+                value='"second"',
+                value_type="string",
+            ),
+        ],
     )
     rows = store.list_examples_for_path([schema_id], "inputSchema.properties.q", limit=10)
     values = {row.value for row in rows}
@@ -178,7 +192,7 @@ def test_enforce_example_path_limit(store: ToolExamplesStore, tmp_path: Path) ->
     schema = {"type": "object", "properties": {"query": {"type": "string"}}}
     schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"query": "seed"})
     now_ms = int(time.time() * 1000)
-    with store._lock:  # noqa: SLF001
+    with store._lock:
         for idx in range(6):
             store._conn.execute(
                 "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
@@ -197,9 +211,9 @@ def test_cascade_delete_on_capture_removal(store: ToolExamplesStore, tmp_path: P
     project_id = store.get_or_create_project(str(root))
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
     schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"x": "a"})
-    with store._lock:  # noqa: SLF001
+    with store._lock:
         store._conn.execute("DELETE FROM tool_input_schema WHERE schema_id = ?", (schema_id,))
         store._conn.commit()
-    with store._lock:  # noqa: SLF001
+    with store._lock:
         count = store._conn.execute("SELECT COUNT(*) FROM tool_example").fetchone()[0]
     assert int(count) == 0

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
+from urllib.request import Request
 
 import pytest
 
@@ -181,15 +183,18 @@ def test_notify_tool_examples_capture_posts_to_daemon(tmp_path: Path) -> None:
         def __exit__(self, *args: object) -> None:
             return None
 
-    def fake_urlopen(request, timeout=0) -> FakeResponse:  # noqa: ANN001
+    def fake_urlopen(request: Request, timeout: int = 0) -> FakeResponse:
         captured["url"] = request.full_url
-        captured["body"] = json.loads(request.data.decode())
+        captured["body"] = json.loads(cast(bytes, request.data or b"").decode())
         captured["timeout"] = timeout
         return FakeResponse()
 
     with (
         patch("cyt_client.tool_gate.session_log_path", return_value=log_path),
-        patch("cyt_client.tool_examples_capture.resolve_hook_url", return_value="http://127.0.0.1:9999/hook/connect"),
+        patch(
+            "cyt_client.tool_examples_capture.resolve_hook_url",
+            return_value="http://127.0.0.1:9999/hook/connect",
+        ),
         patch("cyt_client.tool_examples_capture.urlopen", side_effect=fake_urlopen),
     ):
         notify_tool_examples_capture(payload)
@@ -208,7 +213,17 @@ def test_notify_tool_examples_capture_skips_when_disabled(
 ) -> None:
     called = {"value": False}
 
-    def fake_urlopen(*args, **kwargs):  # noqa: ANN002, ANN003
+    class FakeResponse:
+        def read(self) -> bytes:
+            return b""
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def fake_urlopen(*args: object, **kwargs: object) -> FakeResponse:
         called["value"] = True
         raise AssertionError("should not call urlopen")
 
@@ -229,7 +244,7 @@ def test_handle_post_tool_capture_invokes_examples_notify(
 
     called = {"examples": False}
 
-    def fake_notify(payload: dict) -> None:  # noqa: ARG001
+    def fake_notify(payload: dict) -> None:
         called["examples"] = True
 
     monkeypatch.setattr(

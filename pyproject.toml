@@ -327,4 +327,7 @@ ignore-words-list = [
     "Bui",
     "te",
     "Provices",
+    # Porter-stem example and inheritance term in cyt-mcp catalog fixtures
+    "cach",
+    "implementors",
 ]

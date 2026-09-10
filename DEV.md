@@ -65,7 +65,8 @@ uv run src/cyt/cli/app.py proxy --port 8834
 uv run src/cyt/cli/app.py config current
 ```
 
-The installed `cyt` console script uses the same router. `cyt-client` and `cyt-mcp` stay separate (`src/cyt_client/cli.py`, `src/cyt_mcp/cli.py`). The legacy shim `src/cyt/proxy/cli.py` still works.
+The installed `cyt` console script uses the same router. `cyt-client` and `cyt-mcp` stay separate
+(`src/cyt_client/cli.py`, `src/cyt_mcp/cli.py`). The legacy shim `src/cyt/proxy/cli.py` still works.
 
 ## Checks
 

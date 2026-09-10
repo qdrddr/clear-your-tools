@@ -40,7 +40,7 @@ def test_flatten_skips_empty_values() -> None:
 def test_flatten_redacts_sensitive_keys() -> None:
     patterns = (re.compile(r"(?i)(password|secret|token|api[_-]?key)"),)
     pairs = flatten_args(
-        {"query": "ok", "api_key": "secret-value", "password": "x"},
+        {"query": "ok", "api_key": "secret-value", "password": "x"},  # pragma: allowlist secret
         redact_key_patterns=patterns,
     )
     paths = {item.json_path for item in pairs}

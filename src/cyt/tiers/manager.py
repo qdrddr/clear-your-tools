@@ -12,7 +12,11 @@ if TYPE_CHECKING:
     from cyt.indexer.policies import PolicyContext
 
 from cyt.hook.workspace_config import hook_workspace_from_config
-from cyt.tiers.adapters.skills import canonical_skill_entity_id, partition_skill_entries, skill_entity_id
+from cyt.tiers.adapters.skills import (
+    canonical_skill_entity_id,
+    partition_skill_entries,
+    skill_entity_id,
+)
 from cyt.tiers.adapters.tools import apply_tool_tiers, merge_tool_policies, tool_entity_id
 from cyt.tiers.config import (
     TierSectionConfig,
@@ -76,7 +80,11 @@ class NoOpTierManager:
             enabled=cfg.enabled,
         )
 
-    def apply_tools(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> ToolsTierApplyResult:
+    def apply_tools(
+        self,
+        tools: list[dict[str, Any]],
+        config: dict[str, Any],
+    ) -> ToolsTierApplyResult:
         return apply_tool_tiers(tools, tier_for_tool={}, apply=False)
 
     def merge_tool_policies_for_config(
@@ -259,7 +267,11 @@ class TierManager:
     ) -> ToolsTierApplyResult:
         snapshot = self.snapshot_tools(config)
         tier_map = self._tier_map(snapshot)
-        return apply_tool_tiers(tools, tier_for_tool=tier_map, apply=tiers_apply(config, kind="tool"))
+        return apply_tool_tiers(
+            tools,
+            tier_for_tool=tier_map,
+            apply=tiers_apply(config, kind="tool"),
+        )
 
     def merge_tool_policies_for_config(
         self,
@@ -307,7 +319,11 @@ class TierManager:
                 transitions=transitions,
             )
             if cfg.shadow:
-                logger.info("tier shadow epoch %s transitions: %d", self._epoch.epoch_id, len(transitions))
+                logger.info(
+                    "tier shadow epoch %s transitions: %d",
+                    self._epoch.epoch_id,
+                    len(transitions),
+                )
         self._epoch.epoch_id += 1
         self._epoch.epoch_start_ms = now_ms
 

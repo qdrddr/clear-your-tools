@@ -403,7 +403,6 @@ def _skill_intercept_session_setup(tmp_path: Path) -> tuple[Path, str, str, Path
     skill_path = skill_dir / "SKILL.md"
     skill_path.write_text("# RTK\nAlways prefix shell commands with rtk.\n", encoding="utf-8")
     skill_key = skill_item_key_for_path(skill_path)
-    content_hash = content_sha256_for_file(skill_path)
     sessions_dir = tmp_path / ".cursor" / "cyt" / "sessions"
     sessions_dir.mkdir(parents=True)
     session_id = "tier-notify-session"
@@ -563,7 +562,10 @@ def test_read_intercept_daemon_skinny_no_client_notify(
         "tool_input": {"path": str(skill_path)},
     }
 
-    stdout = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (200, daemon_response))
+    stdout = handle_read_intercept(
+        payload,
+        post_hook_inject=lambda *_a, **_k: (200, daemon_response),
+    )
     assert stdout is not None
     assert json.loads(stdout)["permission"] == "allow"
     assert notify_calls == []

@@ -8,16 +8,17 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from cyt.config import bm25_score_tool, bm25_score_tool_enum, bm25_prune_enums
+from cyt.config import bm25_prune_enums, bm25_score_tool, bm25_score_tool_enum
 from cyt.indexer.tokens import count_json_tokens
 from cyt.pruners.tools_filter import filter_tools_for_query
-from cyt_core.types.prune import PruneResult
 from cyt.tiers.manager import _managers
+from cyt_core.types.prune import PruneResult
 from tests.support.paths import FIXTURES_DIR
 
 CATALOG_FIXTURE_DIR = FIXTURES_DIR / "cyt_mcp_catalog"
@@ -39,7 +40,7 @@ for _golden_path in GOLDEN_FIXTURES:
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()

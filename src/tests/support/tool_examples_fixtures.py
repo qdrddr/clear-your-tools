@@ -6,8 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
+from cyt.tool_examples.report import QueryScoreReport
 from cyt.tool_examples.store import ToolExamplesStore
 from tests.support.paths import FIXTURES_DIR
 
@@ -90,7 +93,7 @@ def wire_name(server_key: str, bare_tool: str) -> str:
     return f"{server_key}_{bare_tool}"
 
 
-def _set_nested_arg(target: dict[str, Any], segments: list[str], value: Any) -> None:
+def _set_nested_arg(target: dict[str, Any], segments: list[str], value: object) -> None:
     if not segments:
         return
     key = segments[0]
@@ -158,7 +161,11 @@ def seed_captures(
         store.close()
 
 
-def install_staggered_capture_clock(monkeypatch: Any, *, start_ms: int = 1_000_000) -> None:
+def install_staggered_capture_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    start_ms: int = 1_000_000,
+) -> None:
     state = {"ms": start_ms}
 
     def fake_time() -> float:
@@ -174,7 +181,7 @@ def run_query_score_report(
     *,
     workspace: Path,
     db_path: Path,
-) -> Any:
+) -> QueryScoreReport:
     import copy
 
     from cyt.tool_examples.report import build_query_score_report

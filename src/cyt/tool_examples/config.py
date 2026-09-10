@@ -63,17 +63,13 @@ def tool_examples_db_path(cfg: dict[str, Any]) -> str:
 
 def _compile_redact_patterns(raw: object) -> tuple[re.Pattern[str], ...]:
     if not isinstance(raw, list):
-        return (
-            re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization)"),
-        )
+        return (re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization)"),)
     patterns: list[re.Pattern[str]] = []
     for item in raw:
         if isinstance(item, str) and item.strip():
             patterns.append(re.compile(item))
     if not patterns:
-        return (
-            re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization)"),
-        )
+        return (re.compile(r"(?i)(password|secret|token|api[_-]?key|authorization)"),)
     return tuple(patterns)
 
 

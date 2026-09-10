@@ -83,7 +83,10 @@ async def test_hook_tool_examples_record_rejects_non_localhost() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hook_tool_examples_record_validates_payload(project_root: Path, base_config: dict) -> None:
+async def test_hook_tool_examples_record_validates_payload(
+    project_root: Path,
+    base_config: dict,
+) -> None:
     from cyt.hook.http_server import hook_tool_examples_record
 
     db_path = project_root / "tool_examples.db"

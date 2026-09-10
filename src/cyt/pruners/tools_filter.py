@@ -48,7 +48,8 @@ from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
 from cyt.tiers.adapters.tools import merge_t4_tools
 from cyt.tiers.config import tiers_active
-from cyt.tiers.manager import get_tier_manager
+from cyt.tiers.manager import NoOpTierManager, TierManager, get_tier_manager
+from cyt.tiers.models import ToolsTierApplyResult
 from cyt.tiers.shadow import schedule_tool_shadow_evaluation
 from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.policy_context import prepare_hook_tool_pruning
@@ -954,6 +955,122 @@ def _log_tool_token_counts(tokens_in: int, tokens_out: int | None) -> None:
     _log_operator_message(msg)
 
 
+def _pass_through_prune_result(
+    original_tools: list[dict[str, Any]],
+    *,
+    query: str,
+    tools_in: int,
+    catalog_tools_in: int,
+) -> PruneResult:
+    tokens_in = count_json_tokens(original_tools)
+    return PruneResult(
+        tools=original_tools,
+        status="pass_through",
+        query=query or None,
+        tools_in=tools_in,
+        mcp_tools_in=catalog_tools_in,
+        tools_out=tools_in,
+        error=None,
+        tokens_in=tokens_in,
+        tokens_out=tokens_in,
+        tokens_saved=0,
+        tools_accepted=copy.deepcopy(original_tools),
+        tools_final=copy.deepcopy(original_tools),
+    )
+
+
+def _tier_prune_context(
+    original_tools: list[dict[str, Any]],
+    config: dict[str, Any],
+    *,
+    ctx: PolicyContext | None,
+    configured_pipeline: list[str],
+    for_hook: bool,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    PolicyContext,
+    PolicyContext,
+    ToolsTierApplyResult,
+    TierManager | NoOpTierManager,
+]:
+    terminal_stage = configured_pipeline[-1] if configured_pipeline else None
+    tier_manager = get_tier_manager(config)
+    tier_manager.record_tool_candidates(original_tools, config)
+    tier_apply = tier_manager.apply_tools(original_tools, config)
+    tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
+    t4_direct = list(tier_apply.t4_direct)
+    output_policy_ctx = output_policy_context_for_terminal_stage(
+        config,
+        terminal_stage=terminal_stage,
+        per_tool=tier_apply.policy_overrides or None,
+    )
+    policy_ctx = ctx or policy_context_from_config(
+        config,
+        terminal_stage=terminal_stage,
+        per_tool=tier_apply.policy_overrides or None,
+    )
+    if for_hook:
+        prepare_hook_tool_pruning(config, policy_ctx, output_policy_ctx)
+    return tools_for_prune, t4_direct, output_policy_ctx, policy_ctx, tier_apply, tier_manager
+
+
+def _stash_pass_through_tools(
+    tools_for_prune: list[dict[str, Any]],
+    output_policy_ctx: PolicyContext,
+) -> dict[str, dict[str, Any]]:
+    named_tools = [
+        (tool, str(tool.get("name", "")))
+        for tool in tools_for_prune
+        if isinstance(tool, dict) and str(tool.get("name", ""))
+    ]
+    pass_through_flags = batch_tool_pass_through(
+        [name for _, name in named_tools],
+        output_policy_ctx,
+    )
+    return {
+        name: copy.deepcopy(tool)
+        for (tool, name), passes in zip(named_tools, pass_through_flags, strict=True)
+        if passes
+    }
+
+
+def _prune_result_without_catalog_entries(
+    *,
+    original_tools: list[dict[str, Any]],
+    stashed_by_name: dict[str, dict[str, Any]],
+    query: str,
+    tools_in: int,
+    catalog_tools_in: int,
+    tokens_in: int,
+) -> PruneResult:
+    if restored := merge_tools_preserving_order(original_tools, {}, stashed_by_name):
+        tokens_out = count_json_tokens(restored)
+        return PruneResult(
+            tools=restored,
+            status="applied",
+            query=query,
+            tools_in=tools_in,
+            mcp_tools_in=catalog_tools_in,
+            tools_out=len(restored),
+            error=None,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            tokens_saved=tokens_in - tokens_out,
+            tools_accepted=copy.deepcopy(original_tools),
+            tools_final=copy.deepcopy(restored),
+        )
+    return PruneResult(
+        tools=None,
+        status="skipped",
+        query=query,
+        tools_in=tools_in,
+        mcp_tools_in=catalog_tools_in,
+        tools_out=None,
+        error="no tools in request",
+    )
+
+
 def filter_tools_for_query(
     original_tools: list[dict[str, Any]],
     query: str,
@@ -986,58 +1103,36 @@ def filter_tools_for_query(
     else:
         tools_allowed = tools_inject_allowed(config, "proxy", upstream_kind=upstream_kind)
     if not tools_allowed:
-        tokens_in = count_json_tokens(original_tools)
-        return PruneResult(
-            tools=original_tools,
-            status="pass_through",
-            query=query or None,
+        return _pass_through_prune_result(
+            original_tools,
+            query=query,
             tools_in=tools_in,
-            mcp_tools_in=catalog_tools_in,
-            tools_out=tools_in,
-            error=None,
-            tokens_in=tokens_in,
-            tokens_out=tokens_in,
-            tokens_saved=0,
-            tools_accepted=copy.deepcopy(original_tools),
-            tools_final=copy.deepcopy(original_tools),
+            catalog_tools_in=catalog_tools_in,
         )
 
     configured_pipeline = (
         pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
     )
-    terminal_stage = configured_pipeline[-1] if configured_pipeline else None
-    tier_manager = get_tier_manager(config)
-    tier_manager.record_tool_candidates(original_tools, config)
-    tier_apply = tier_manager.apply_tools(original_tools, config)
-    tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
-    t4_direct = list(tier_apply.t4_direct)
-    output_policy_ctx = output_policy_context_for_terminal_stage(
+    (
+        tools_for_prune,
+        t4_direct,
+        output_policy_ctx,
+        policy_ctx,
+        tier_apply,
+        tier_manager,
+    ) = _tier_prune_context(
+        original_tools,
         config,
-        terminal_stage=terminal_stage,
-        per_tool=tier_apply.policy_overrides or None,
+        ctx=ctx,
+        configured_pipeline=configured_pipeline,
+        for_hook=for_hook,
     )
-    policy_ctx = ctx or policy_context_from_config(
-        config,
-        terminal_stage=terminal_stage,
-        per_tool=tier_apply.policy_overrides or None,
-    )
-    if for_hook:
-        prepare_hook_tool_pruning(config, policy_ctx, output_policy_ctx)
     if request_pass_through(tools_for_prune, output_policy_ctx):
-        tokens_in = count_json_tokens(original_tools)
-        return PruneResult(
-            tools=original_tools,
-            status="pass_through",
-            query=query or None,
+        return _pass_through_prune_result(
+            original_tools,
+            query=query,
             tools_in=tools_in,
-            mcp_tools_in=catalog_tools_in,
-            tools_out=tools_in,
-            error=None,
-            tokens_in=tokens_in,
-            tokens_out=tokens_in,
-            tokens_saved=0,
-            tools_accepted=copy.deepcopy(original_tools),
-            tools_final=copy.deepcopy(original_tools),
+            catalog_tools_in=catalog_tools_in,
         )
 
     if not query or not tools_for_prune:
@@ -1053,20 +1148,7 @@ def filter_tools_for_query(
 
     tokens_in = count_json_tokens(original_tools)
 
-    named_tools = [
-        (tool, str(tool.get("name", "")))
-        for tool in tools_for_prune
-        if isinstance(tool, dict) and str(tool.get("name", ""))
-    ]
-    pass_through_flags = batch_tool_pass_through(
-        [name for _, name in named_tools],
-        output_policy_ctx,
-    )
-    stashed_by_name: dict[str, dict[str, Any]] = {
-        name: copy.deepcopy(tool)
-        for (tool, name), passes in zip(named_tools, pass_through_flags, strict=True)
-        if passes
-    }
+    stashed_by_name = _stash_pass_through_tools(tools_for_prune, output_policy_ctx)
 
     catalog_source = tools_for_catalog(tools_for_prune, output_policy_ctx)
     to_catalog = tools_to_catalog_entries or anthropic_tools_to_catalog_entries
@@ -1074,30 +1156,13 @@ def filter_tools_for_query(
     entries, enums = to_catalog(catalog_source)
     entries = entries_for_policy(entries, output_policy_ctx)
     if not entries:
-        if restored := merge_tools_preserving_order(original_tools, {}, stashed_by_name):
-            tokens_out = count_json_tokens(restored)
-            return PruneResult(
-                tools=restored,
-                status="applied",
-                query=query,
-                tools_in=tools_in,
-                mcp_tools_in=catalog_tools_in,
-                tools_out=len(restored),
-                error=None,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                tokens_saved=tokens_in - tokens_out,
-                tools_accepted=copy.deepcopy(original_tools),
-                tools_final=copy.deepcopy(restored),
-            )
-        return PruneResult(
-            tools=None,
-            status="skipped",
+        return _prune_result_without_catalog_entries(
+            original_tools=original_tools,
+            stashed_by_name=stashed_by_name,
             query=query,
             tools_in=tools_in,
-            mcp_tools_in=catalog_tools_in,
-            tools_out=None,
-            error="no tools in request",
+            catalog_tools_in=catalog_tools_in,
+            tokens_in=tokens_in,
         )
     _log_tool_token_counts(tokens_in, None)
 

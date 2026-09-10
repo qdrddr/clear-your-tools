@@ -22,7 +22,10 @@ def record_tools_injected_feedback(
         cfg = config or load_config()
         if not tiers_active(cfg, kind="tool"):
             return
-        get_tier_manager(cfg, workspace=hook_workspace_from_config(cfg)).record_tools_injected(tools, cfg)
+        get_tier_manager(cfg, workspace=hook_workspace_from_config(cfg)).record_tools_injected(
+            tools,
+            cfg,
+        )
     except Exception:
         return
 
@@ -50,11 +53,7 @@ def record_tool_used_feedback(
             resolved_workspace = hook_workspace_from_config(cfg)
         source = str(catalog or "unknown").strip()
         tool = {"name": tool_name, "cyt_catalog_source": source}
-        optional = (
-            optional_used
-            if optional_used is not None
-            else _optional_properties_used(args)
-        )
+        optional = optional_used if optional_used is not None else _optional_properties_used(args)
         get_tier_manager(cfg, workspace=resolved_workspace).record_tool_used(
             tool,
             config=cfg,
@@ -78,7 +77,10 @@ def record_skills_injected_feedback(
 
         if not tiers_active(config, kind="skill"):
             return
-        get_tier_manager(config, workspace=hook_workspace_from_config(config)).record_skills_injected(
+        get_tier_manager(
+            config,
+            workspace=hook_workspace_from_config(config),
+        ).record_skills_injected(
             matches,
             config,
         )

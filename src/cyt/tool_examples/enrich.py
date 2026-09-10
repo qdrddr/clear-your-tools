@@ -8,11 +8,11 @@ from typing import Any
 
 from cyt.hook.workspace_config import hook_workspace_from_config
 from cyt.tiers.config import resolve_project_root_path
-from cyt.tool_examples.config import examples_active, tool_examples_config
+from cyt.tool_examples.config import ToolExamplesConfig, examples_active, tool_examples_config
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 from cyt.tool_examples.query import rank_by_query
-from cyt.tool_examples.store import ToolExamplesStore, ToolExampleRow
+from cyt.tool_examples.store import ToolCapture, ToolExampleRow, ToolExamplesStore
 
 
 def _schema_from_tool(tool: dict[str, Any]) -> dict[str, Any]:
@@ -114,13 +114,70 @@ def enrich_tools_with_examples(
         store.close()
 
 
+def _write_schema_back_to_tool(out: dict[str, Any], schema: dict[str, Any]) -> None:
+    if "input_schema" in out:
+        out["input_schema"] = schema
+    elif "inputSchema" in out:
+        out["inputSchema"] = schema
+    elif "parameters" in out:
+        out["parameters"] = schema
+
+
+def _append_full_call_examples(
+    out: dict[str, Any],
+    *,
+    query: str,
+    captures: list[ToolCapture],
+    cfg: ToolExamplesConfig,
+) -> None:
+    if not cfg.full_call_examples:
+        return
+    call_items = [
+        (
+            capture.input_json,
+            json.dumps(capture.input_json, ensure_ascii=False),
+            capture.last_seen_ms,
+        )
+        for capture in captures
+    ]
+    ranked_calls = rank_by_query(query, call_items)[: cfg.max_full_call_examples]
+    if not ranked_calls:
+        return
+    snippets = []
+    for item in ranked_calls:
+        text = json.dumps(item.item, ensure_ascii=False, separators=(",", ":"))
+        if len(text) > cfg.max_value_chars:
+            text = text[: cfg.max_value_chars - 3] + "..."
+        snippets.append(text)
+    desc = str(out.get("description") or "").rstrip()
+    call_suffix = f" Full-call examples: {'; '.join(snippets)}."
+    out["description"] = f"{desc}{call_suffix}" if desc else call_suffix.lstrip()
+
+
+def _enrich_schema_properties(
+    schema: dict[str, Any],
+    *,
+    query: str,
+    schema_ids: list[int],
+    store: ToolExamplesStore,
+    cfg: ToolExamplesConfig,
+) -> None:
+    for path, spec in _collect_property_nodes(schema):
+        rows = store.list_examples_for_path(schema_ids, path, limit=cfg.max_per_path)
+        values = _rank_example_values(query, rows, max_count=cfg.max_per_property)
+        if not values:
+            continue
+        current = str(spec.get("description") or "")
+        spec["description"] = _append_examples(current, values, max_value_chars=cfg.max_value_chars)
+
+
 def _enrich_single_tool(
     tool: dict[str, Any],
     *,
     query: str,
     project_id: int,
     store: ToolExamplesStore,
-    cfg: Any,
+    cfg: ToolExamplesConfig,
 ) -> dict[str, Any]:
     out = copy.deepcopy(tool)
     schema = _schema_from_tool(out)
@@ -145,37 +202,13 @@ def _enrich_single_tool(
     if not captures:
         return out
     schema_ids = [capture.schema_id for capture in captures]
-    for path, spec in _collect_property_nodes(schema):
-        rows = store.list_examples_for_path(schema_ids, path, limit=cfg.max_per_path)
-        values = _rank_example_values(query, rows, max_count=cfg.max_per_property)
-        if not values:
-            continue
-        current = str(spec.get("description") or "")
-        spec["description"] = _append_examples(current, values, max_value_chars=cfg.max_value_chars)
-    if cfg.full_call_examples:
-        call_items = [
-            (
-                capture.input_json,
-                json.dumps(capture.input_json, ensure_ascii=False),
-                capture.last_seen_ms,
-            )
-            for capture in captures
-        ]
-        ranked_calls = rank_by_query(query, call_items)[: cfg.max_full_call_examples]
-        if ranked_calls:
-            snippets = []
-            for item in ranked_calls:
-                text = json.dumps(item.item, ensure_ascii=False, separators=(",", ":"))
-                if len(text) > cfg.max_value_chars:
-                    text = text[: cfg.max_value_chars - 3] + "..."
-                snippets.append(text)
-            desc = str(out.get("description") or "").rstrip()
-            call_suffix = f" Full-call examples: {'; '.join(snippets)}."
-            out["description"] = f"{desc}{call_suffix}" if desc else call_suffix.lstrip()
-    if "input_schema" in out:
-        out["input_schema"] = schema
-    elif "inputSchema" in out:
-        out["inputSchema"] = schema
-    elif "parameters" in out:
-        out["parameters"] = schema
+    _enrich_schema_properties(
+        schema,
+        query=query,
+        schema_ids=schema_ids,
+        store=store,
+        cfg=cfg,
+    )
+    _append_full_call_examples(out, query=query, captures=captures, cfg=cfg)
+    _write_schema_back_to_tool(out, schema)
     return out

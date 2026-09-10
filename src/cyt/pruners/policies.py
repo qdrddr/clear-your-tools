@@ -10,6 +10,7 @@ from cyt.config import (
     output_policy_context_for_terminal_stage,
     scoring_policy_context,
 )
+from cyt.config.policy_catalog import ToolPolicyRef
 from cyt.indexer.policies import (
     CatalogDict,
     MCPToolPolicy,
@@ -171,7 +172,7 @@ def output_policy_context_from_config(
     terminal_stage: str | None = None,
     system: SystemToolPolicy | None = None,
     mcp: MCPToolPolicy | None = None,
-    per_tool: dict[str, ToolPolicy] | None = None,
+    per_tool: dict[str, ToolPolicyRef] | None = None,
 ) -> PolicyContext:
     """Build output policy context (may include ``*_descriptions`` policies)."""
     if config is None:
@@ -191,7 +192,7 @@ def scoring_policy_context_from_config(
     terminal_stage: str | None = None,
     system: SystemToolPolicy | None = None,
     mcp: MCPToolPolicy | None = None,
-    per_tool: dict[str, ToolPolicy] | None = None,
+    per_tool: dict[str, ToolPolicyRef] | None = None,
 ) -> PolicyContext:
     """Build scoring policy context (description variants mapped to base policies)."""
     return scoring_policy_context(
@@ -211,7 +212,7 @@ def policy_context_from_config(
     terminal_stage: str | None = None,
     system: SystemToolPolicy | None = None,
     mcp: MCPToolPolicy | None = None,
-    per_tool: dict[str, ToolPolicy] | None = None,
+    per_tool: dict[str, ToolPolicyRef] | None = None,
 ) -> PolicyContext:
     """Build scoring policy context for catalog partition and pipeline pruning."""
     return scoring_policy_context_from_config(

@@ -183,10 +183,10 @@ def resolve_skills_for_query(
 
         resolved_entries = eligible_skills_after_gate(query, resolved_entries, config=config)
 
-    from cyt.tiers.adapters.skills import build_t4_skill_match, merge_skill_matches
-    from cyt.tiers.manager import get_tier_manager
-
     from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.tiers.adapters.skills import build_t4_skill_match, merge_skill_matches
+    from cyt.tiers.config import tiers_apply
+    from cyt.tiers.manager import get_tier_manager
 
     # Proxy process writes tier stats directly (daemon routing is a follow-up).
     manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
@@ -206,6 +206,7 @@ def resolve_skills_for_query(
         searched,
         t4_matches,
         representation_by_skill=partition.representation_by_skill,
+        apply_representation=tiers_apply(config, kind="skill"),
     )
     return matches
 

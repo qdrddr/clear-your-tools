@@ -56,7 +56,7 @@ def test_migrate_v1_scope_key_to_project_id(tmp_path: Path) -> None:
             ts_ms INTEGER NOT NULL,
             transitions_json TEXT NOT NULL
         );
-        """
+        """,
     )
     workspace = str(tmp_path / "project")
     Path(workspace).mkdir()

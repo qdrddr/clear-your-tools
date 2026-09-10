@@ -86,7 +86,10 @@ def test_tier_store_roundtrip(project_root: Path, tier_db: str) -> None:
 
 
 def test_record_tool_candidates_increments_stats(manager: TierManager, base_config: dict) -> None:
-    cfg = {**base_config, "tools": {**base_config.get("tools", {}), "tiers": {"enabled": False, "shadow": True}}}
+    cfg = {
+        **base_config,
+        "tools": {**base_config.get("tools", {}), "tiers": {"enabled": False, "shadow": True}},
+    }
     tools = [{"name": "x", "cyt_catalog_source": "cyt_mcp"}]
     manager.record_tool_candidates(tools, cfg)
     state = manager._states[("tool", "cyt_mcp:x")]
@@ -94,7 +97,10 @@ def test_record_tool_candidates_increments_stats(manager: TierManager, base_conf
 
 
 def test_fast_wake_from_dormant(manager: TierManager, base_config: dict) -> None:
-    cfg = tier_section_config({**base_config, "tools": {"tiers": {"enabled": False, "shadow": True}}}, kind="tool")
+    cfg = tier_section_config(
+        {**base_config, "tools": {"tiers": {"enabled": False, "shadow": True}}},
+        kind="tool",
+    )
     state = EntityTierState(
         entity_id="cyt_mcp:x",
         kind="tool",
@@ -108,13 +114,19 @@ def test_fast_wake_from_dormant(manager: TierManager, base_config: dict) -> None
 
 
 def test_epoch_boundary_idle_gap() -> None:
-    cfg = tier_section_config({"tools": {"tiers": {"cache_epoch": {"prompt_cache_ttl_minutes": 5}}}}, kind="tool")
+    cfg = tier_section_config(
+        {"tools": {"tiers": {"cache_epoch": {"prompt_cache_ttl_minutes": 5}}}},
+        kind="tool",
+    )
     epoch = EpochState(epoch_start_ms=0, last_request_ms=0)
     assert epoch_boundary(now_ms=6 * 60 * 1000, epoch=epoch, cfg=cfg)
 
 
 def test_slow_clock_promotion() -> None:
-    cfg = tier_section_config({"tools": {"tiers": {"evaluation": {"min_injections_before_reconsider": 2}}}}, kind="tool")
+    cfg = tier_section_config(
+        {"tools": {"tiers": {"evaluation": {"min_injections_before_reconsider": 2}}}},
+        kind="tool",
+    )
     state = EntityTierState(
         entity_id="tool:a",
         kind="tool",

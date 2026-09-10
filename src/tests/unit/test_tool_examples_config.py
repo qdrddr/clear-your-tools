@@ -95,7 +95,10 @@ def test_examples_active() -> None:
     assert examples_active({}) is False
 
 
-def test_cyt_client_post_tool_capture_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cyt_client_post_tool_capture_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from cyt_client.config import tool_examples_post_tool_capture_enabled
 
     config_path = tmp_path / "config.yaml"

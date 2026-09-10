@@ -11,6 +11,7 @@ from typing import Any
 from cyt.config import load_config, tools_hook_cyt_mcp_cache_settings, uses_cyt_mcp_tool_catalog
 from cyt.cyt_mcp.catalog import (
     _cache_key_for_config,
+    _CytMcpCacheKey,
     _get_state,
     _refresh_from_registry,
     apply_fetched_catalog,
@@ -98,6 +99,39 @@ def schedule_cyt_mcp_catalog_refresh(
     start_cyt_mcp_cache_scheduler(cfg)
 
 
+def _refresh_cyt_mcp_tools(*, config: dict[str, Any], cache_key: _CytMcpCacheKey) -> None:
+    from cyt.hook.catalog_registry import prune_expired_registrations
+
+    prune_expired_registrations()
+    tools = _refresh_from_registry(config, cache_key, blocking=False)
+    if not tools:
+        return
+    apply_fetched_catalog(config, tools)
+    try:
+        from cyt.tool_examples.maintenance import schedule_tool_examples_maintenance
+
+        schedule_tool_examples_maintenance(config)
+    except Exception as maint_exc:
+        logger.warning(
+            "tool examples maintenance after catalog refresh failed: %s",
+            maint_exc,
+        )
+
+
+def _flush_cyt_mcp_disk(*, cache_key: _CytMcpCacheKey) -> None:
+    catalog_state = _get_state(cache_key)
+    if not catalog_state.tools:
+        return
+    from cyt.cyt_mcp.catalog_disk import write_disk_catalog
+
+    write_disk_catalog(
+        cache_key.slug,
+        agent=cache_key.agent,
+        tools=catalog_state.tools,
+        content_hash=raw_catalog_content_hash(catalog_state.tools),
+    )
+
+
 def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
     state = _get_scheduler_state(slug)
     cache_settings = tools_hook_cyt_mcp_cache_settings(config)
@@ -113,23 +147,7 @@ def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
                 state.tools_in_progress = True
                 state.last_tools_refresh_start = now
                 try:
-                    from cyt.hook.catalog_registry import prune_expired_registrations
-
-                    prune_expired_registrations()
-                    tools = _refresh_from_registry(config, cache_key, blocking=False)
-                    if tools:
-                        apply_fetched_catalog(config, tools)
-                        try:
-                            from cyt.tool_examples.maintenance import (
-                                schedule_tool_examples_maintenance,
-                            )
-
-                            schedule_tool_examples_maintenance(config)
-                        except Exception as maint_exc:
-                            logger.warning(
-                                "tool examples maintenance after catalog refresh failed: %s",
-                                maint_exc,
-                            )
+                    _refresh_cyt_mcp_tools(config=config, cache_key=cache_key)
                 except Exception as exc:
                     logger.warning("cyt-mcp scheduler registry refresh failed: %s", exc)
                 finally:
@@ -140,16 +158,7 @@ def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
                 state.disk_in_progress = True
                 state.last_disk_flush_start = now
                 try:
-                    catalog_state = _get_state(cache_key)
-                    if catalog_state.tools:
-                        from cyt.cyt_mcp.catalog_disk import write_disk_catalog
-
-                        write_disk_catalog(
-                            cache_key.slug,
-                            agent=cache_key.agent,
-                            tools=catalog_state.tools,
-                            content_hash=raw_catalog_content_hash(catalog_state.tools),
-                        )
+                    _flush_cyt_mcp_disk(cache_key=cache_key)
                 except Exception as exc:
                     logger.warning("cyt-mcp scheduler disk flush failed: %s", exc)
                 finally:

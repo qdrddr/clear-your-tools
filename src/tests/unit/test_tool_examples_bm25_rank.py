@@ -71,7 +71,11 @@ def _catalog_tools_by_name() -> dict[str, dict[str, Any]]:
     return out
 
 
-def _install_staggered_capture_clock(monkeypatch: pytest.MonkeyPatch, *, start_ms: int = 1_000_000) -> None:
+def _install_staggered_capture_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    start_ms: int = 1_000_000,
+) -> None:
     state = {"ms": start_ms}
 
     def fake_time() -> float:
@@ -124,7 +128,7 @@ def _wire_name(server_key: str, bare_tool: str) -> str:
     return f"{server_key}_{bare_tool}"
 
 
-def _set_nested_arg(target: dict[str, Any], segments: list[str], value: Any) -> None:
+def _set_nested_arg(target: dict[str, Any], segments: list[str], value: object) -> None:
     if not segments:
         return
     key = segments[0]
@@ -166,8 +170,6 @@ def _flattened_examples_from_tools(tools: list[dict[str, Any]]) -> list[dict[str
         if not isinstance(schema, dict):
             continue
         for json_path, spec in _collect_property_nodes(schema):
-            if not isinstance(spec, dict):
-                continue
             values = _extract_example_values(str(spec.get("description") or ""))
             if not values:
                 continue
@@ -175,7 +177,7 @@ def _flattened_examples_from_tools(tools: list[dict[str, Any]]) -> list[dict[str
                 {
                     "path": _flattened_key(server_key, bare_tool, json_path),
                     "values": values,
-                }
+                },
             )
     rows.sort(key=lambda row: str(row["path"]))
     return rows
@@ -329,7 +331,9 @@ def test_tool_examples_bm25_enrich_matches_golden(
     }
     queries = queries_payload.get("queries")
     assert isinstance(queries, list)
-    query_entry = next(item for item in queries if isinstance(item, dict) and str(item["id"]) == query_id)
+    query_entry = next(
+        item for item in queries if isinstance(item, dict) and str(item["id"]) == query_id
+    )
 
     golden_path = _golden_path(query_id)
     assert golden_path.is_file(), f"missing golden fixture: {golden_path}"

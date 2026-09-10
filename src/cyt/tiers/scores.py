@@ -24,7 +24,7 @@ def wilson_lower_bound(successes: float, trials: float, *, z: float = 1.96) -> f
 def decay_factor(*, requests_since: int, half_life: float) -> float:
     if requests_since <= 0 or half_life <= 0:
         return 1.0
-    return 2.0 ** (-requests_since / half_life)
+    return float(2.0 ** (-requests_since / half_life))
 
 
 def demand_score(stats: object) -> float:

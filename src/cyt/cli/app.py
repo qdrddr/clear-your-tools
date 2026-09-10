@@ -15,7 +15,6 @@ from pathlib import Path
 from cyt.cli.bootstrap import bootstrap_script_path
 from cyt.cli.router import main
 
-
 if __name__ == "__main__":
     bootstrap_script_path(Path(__file__))
     main()

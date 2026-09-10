@@ -65,7 +65,7 @@ def test_run_tool_examples_maintenance_prunes_old_examples(tmp_path: Path) -> No
         schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"query": "old"})
         now_ms = int(time.time() * 1000)
         stale_ms = now_ms - 3 * 86400 * 1000
-        with store._lock:  # noqa: SLF001
+        with store._lock:
             for _ in range(4):
                 store._conn.execute(
                     "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
@@ -123,12 +123,18 @@ def test_run_maintenance_enforces_path_limit(tmp_path: Path) -> None:
         import time
 
         now_ms = int(time.time() * 1000)
-        with store._lock:  # noqa: SLF001
+        with store._lock:
             for idx in range(1, 5):
                 store._conn.execute(
                     "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (schema_id, "inputSchema.properties.query", f'"v{idx}"', "string", now_ms + idx),
+                    (
+                        schema_id,
+                        "inputSchema.properties.query",
+                        f'"v{idx}"',
+                        "string",
+                        now_ms + idx,
+                    ),
                 )
             store._conn.commit()
     finally:

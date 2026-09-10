@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from cyt.config.policy_catalog import ToolPolicyRef
 from cyt.indexer.policies import PolicyContext
 from cyt.tiers.models import Tier, ToolsTierApplyResult
 
@@ -24,12 +25,10 @@ def apply_tool_tiers(
     eligible: list[dict[str, Any]] = []
     t4_direct: list[dict[str, Any]] = []
     excluded_t0: list[str] = []
-    policy_overrides: dict[str, str] = {}
+    policy_overrides: dict[str, ToolPolicyRef] = {}
     tier_by_tool: dict[str, Tier] = {}
 
     for tool in tools:
-        if not isinstance(tool, dict):
-            continue
         entity_id = tool_entity_id(tool)
         tool_name = str(tool.get("name") or "")
         if not entity_id:
@@ -67,7 +66,7 @@ def apply_tool_tiers(
 
 def merge_tool_policies(
     output_ctx: PolicyContext,
-    policy_overrides: dict[str, str],
+    policy_overrides: dict[str, ToolPolicyRef],
 ) -> PolicyContext:
     if not policy_overrides:
         return output_ctx

@@ -20,6 +20,7 @@ from cyt.config.policy_catalog import (
     POLICY_CHOICES,
     VALID_TOOL_POLICIES,
     ToolPolicy,
+    ToolPolicyRef,
     apply_policy_catalog_merge,
     resolve_policy_as_enum,
     validate_policy_reference,
@@ -1003,7 +1004,7 @@ def output_policy_context_for_terminal_stage(
     terminal_stage: str | None = None,
     system: ToolPolicy | None = None,
     mcp: ToolPolicy | None = None,
-    per_tool: dict[str, ToolPolicy] | None = None,
+    per_tool: dict[str, ToolPolicyRef] | None = None,
 ) -> PolicyContext:
     """Build output policy context (may include ``*_descriptions`` policies)."""
     from cyt.indexer.policies import policy_context_from_values
@@ -1030,7 +1031,9 @@ def output_policy_context_for_terminal_stage(
         merged_per_tool = dict(ctx.per_tool)
         for tool_id, policy in per_tool.items():
             resolved = _resolve_tool_policy_ref(policy, merged)
-            merged_per_tool[tool_id] = resolved if resolved is not None else policy
+            merged_per_tool[tool_id] = (
+                resolved if resolved is not None else resolve_policy_as_enum(policy, merged)
+            )
         ctx.per_tool = merged_per_tool
     return ctx
 

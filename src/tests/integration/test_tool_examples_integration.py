@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
+from urllib.request import Request
 
 import httpx
 import pytest
@@ -13,10 +15,10 @@ from httpx import ASGITransport
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.proxy.reverse import create_app
+from cyt.tiers.manager import _managers
 from cyt.tool_examples.enrich import enrich_tools_with_examples
 from cyt.tool_examples.record import record_tool_examples_capture
 from cyt.tool_examples.store import ToolExamplesStore
-from cyt.tiers.manager import _managers
 
 
 @pytest.fixture(autouse=True)
@@ -168,9 +170,10 @@ async def test_asgi_record_endpoint_round_trip(project_root: Path, tmp_path: Pat
         )
     assert response.status_code == 204
 
+    resolved_root = str(project_root)
     store = ToolExamplesStore.open(str(db))
     try:
-        project_id = store.get_or_create_project(str(project_root.resolve()))
+        project_id = store.get_or_create_project(resolved_root)
         captures = store.list_captures(project_id, "codebase-memory", "index_repository")
         assert len(captures) == 1
         assert captures[0].input_json == args
@@ -286,9 +289,9 @@ def test_client_notify_record_enrich_pipeline(
         def __exit__(self, *args: object) -> None:
             return None
 
-    def fake_urlopen(request, timeout=0) -> FakeResponse:  # noqa: ANN001
+    def fake_urlopen(request: Request, timeout: int = 0) -> FakeResponse:
         captured_urls.append(request.full_url)
-        body = json.loads(request.data.decode())
+        body = json.loads(cast(bytes, request.data or b"").decode())
         schema_id = record_tool_examples_capture(
             workspace=Path(str(body["workspace_root"])),
             mcp_server=str(body["mcp_server"]),
@@ -309,7 +312,10 @@ def test_client_notify_record_enrich_pipeline(
     }
 
     monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
-    with patch("cyt_client.tool_examples_capture.resolve_hook_url", return_value="http://127.0.0.1/hook/connect"):
+    with patch(
+        "cyt_client.tool_examples_capture.resolve_hook_url",
+        return_value="http://127.0.0.1/hook/connect",
+    ):
         with patch("cyt_client.tool_examples_capture.urlopen", side_effect=fake_urlopen):
             from cyt_client.tool_examples_capture import notify_tool_examples_capture
 

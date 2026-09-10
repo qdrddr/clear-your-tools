@@ -10,3 +10,6 @@ extend-exclude = [
 Bui = "Bui"
 certifi = "certifi"
 Provices = "Provices"
+# Porter-stem example in context-mode_ctx_search MCP tool description (catalog fixtures)
+cach = "cach"
+implementors = "implementors"

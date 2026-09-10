@@ -8,6 +8,8 @@
 #   ./scripts/pre-commit-hooks/prek-loop.sh --group py ts
 #   ./scripts/pre-commit-hooks/prek-loop.sh -g release   # pre-publish simulate-registry only
 #
+# Parallel (separate terminals): -g py, -g rust, -g uni may run simultaneously.
+#
 groups:
   py:
     - add-trailing-comma

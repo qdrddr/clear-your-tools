@@ -633,7 +633,11 @@ def _read_intercept_allow(agent: str) -> str:
 
 def _skill_entity_id_for_read_path(read_path: str) -> str | None:
     skill_file = resolve_skill_path(read_path)
-    if skill_file is None or not skill_file.is_file() or not str(skill_file).lower().endswith(".md"):
+    if (
+        skill_file is None
+        or not skill_file.is_file()
+        or not str(skill_file).lower().endswith(".md")
+    ):
         return None
     return str(skill_file)
 

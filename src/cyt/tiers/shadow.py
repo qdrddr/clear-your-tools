@@ -10,7 +10,7 @@ from typing import Any
 
 from cyt.tiers.adapters.tools import tool_entity_id
 from cyt.tiers.config import TierSectionConfig, tiers_active
-from cyt.tiers.manager import TierManager
+from cyt.tiers.manager import NoOpTierManager, TierManager
 from cyt.tiers.models import EntityTierState, Tier, ToolsTierApplyResult
 from cyt.tiers.wake import evaluate_fast_wake
 
@@ -55,7 +55,7 @@ def schedule_tool_shadow_evaluation(
     query: str,
     original_tools: list[dict[str, Any]],
     tier_apply: ToolsTierApplyResult,
-    manager: TierManager,
+    manager: TierManager | NoOpTierManager,
 ) -> None:
     if not tiers_active(config, kind="tool") or not query.strip():
         return
@@ -123,7 +123,12 @@ def record_shadow_hits(
         key = (kind, entity_id)
         state = states.get(key)
         if state is None:
-            state = EntityTierState(entity_id=entity_id, kind=kind, stable_tier=Tier.DORMANT, effective_tier=Tier.DORMANT)
+            state = EntityTierState(
+                entity_id=entity_id,
+                kind=kind,
+                stable_tier=Tier.DORMANT,
+                effective_tier=Tier.DORMANT,
+            )
             states[key] = state
         state.stats.shadow_evaluations += 1.0
         state.stats.shadow_hits += 1.0
@@ -136,10 +141,10 @@ def record_shadow_hits(
         )
         if wake is not None:
             transitions.append(wake)
-    for entity_id in states:
-        if entity_id[0] != kind:
+    for state_key in states:
+        if state_key[0] != kind:
             continue
-        eid = entity_id[1]
-        if eid not in hit_set and states[entity_id].effective_tier == Tier.DORMANT:
-            states[entity_id].stats.shadow_evaluations += 1.0
+        eid = state_key[1]
+        if eid not in hit_set and states[state_key].effective_tier == Tier.DORMANT:
+            states[state_key].stats.shadow_evaluations += 1.0
     return transitions

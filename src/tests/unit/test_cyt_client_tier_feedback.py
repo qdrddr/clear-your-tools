@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
+from urllib.request import Request
 
 from cyt_client.tier_feedback import notify_tool_used_feedback
 
@@ -24,14 +26,17 @@ def test_notify_tool_used_feedback_posts_to_daemon(tmp_path: Path) -> None:
         def __exit__(self, *args: object) -> None:
             return None
 
-    def fake_urlopen(request, timeout=0) -> FakeResponse:  # noqa: ANN001
+    def fake_urlopen(request: Request, timeout: int = 0) -> FakeResponse:
         captured["url"] = request.full_url
-        captured["body"] = json.loads(request.data.decode())
+        captured["body"] = json.loads(cast(bytes, request.data or b"").decode())
         captured["timeout"] = timeout
         return FakeResponse()
 
     with (
-        patch("cyt_client.tier_feedback.resolve_hook_url", return_value="http://127.0.0.1:9999/hook/connect"),
+        patch(
+            "cyt_client.tier_feedback.resolve_hook_url",
+            return_value="http://127.0.0.1:9999/hook/connect",
+        ),
         patch("cyt_client.tier_feedback.urlopen", side_effect=fake_urlopen),
     ):
         notify_tool_used_feedback(
@@ -66,14 +71,17 @@ def test_notify_skill_used_feedback_posts_to_daemon(tmp_path: Path) -> None:
         def __exit__(self, *args: object) -> None:
             return None
 
-    def fake_urlopen(request, timeout=0) -> FakeResponse:  # noqa: ANN001
+    def fake_urlopen(request: Request, timeout: int = 0) -> FakeResponse:
         captured["url"] = request.full_url
-        captured["body"] = json.loads(request.data.decode())
+        captured["body"] = json.loads(cast(bytes, request.data or b"").decode())
         captured["timeout"] = timeout
         return FakeResponse()
 
     with (
-        patch("cyt_client.tier_feedback.resolve_hook_url", return_value="http://127.0.0.1:9999/hook/connect"),
+        patch(
+            "cyt_client.tier_feedback.resolve_hook_url",
+            return_value="http://127.0.0.1:9999/hook/connect",
+        ),
         patch("cyt_client.tier_feedback.urlopen", side_effect=fake_urlopen),
     ):
         from cyt_client.tier_feedback import notify_skill_used_feedback

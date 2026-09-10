@@ -27,7 +27,10 @@ def test_resolve_git_toplevel_uses_git_root(tmp_path: Path) -> None:
     assert resolved == repo.resolve()
 
 
-def test_resolve_tier_project_none_without_workspace(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_resolve_tier_project_none_without_workspace(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.chdir(tmp_path)
     assert resolve_tier_project() is None
 

@@ -32,7 +32,13 @@ def _min_injections_met(state: EntityTierState, minimum: int) -> bool:
     return state.stats.injected >= minimum
 
 
-def _promote_tier(state: EntityTierState, target: Tier, *, reason: str, temporary: bool) -> TierTransition:
+def _promote_tier(
+    state: EntityTierState,
+    target: Tier,
+    *,
+    reason: str,
+    temporary: bool,
+) -> TierTransition:
     old = state.effective_tier
     if target > state.stable_tier:
         state.overlap_tier = state.stable_tier
@@ -88,9 +94,8 @@ def evaluate_slow_clock(  # noqa: C901
                 and u < cfg.emergency_t4_utility_max
             ):
                 transitions.append(_demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"))
-            elif (
-                _min_injections_met(state, cfg.min_injections_before_reconsider)
-                and (d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility)
+            elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
+                d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility
             ):
                 transitions.append(_demote_tier(state, Tier.HOT, reason="slow_demote_t4_t3"))
             continue
@@ -102,10 +107,16 @@ def evaluate_slow_clock(  # noqa: C901
                 and u >= cfg.thresholds_t34.promote_utility
                 and state.stats.injected >= cfg.min_injections_before_reconsider * 2
             ):
-                transitions.append(_promote_tier(state, Tier.EXTRA_HOT, reason="slow_promote_t3_t4", temporary=False))
-            elif (
-                _min_injections_met(state, cfg.min_injections_before_reconsider)
-                and (d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility)
+                transitions.append(
+                    _promote_tier(
+                        state,
+                        Tier.EXTRA_HOT,
+                        reason="slow_promote_t3_t4",
+                        temporary=False,
+                    ),
+                )
+            elif _min_injections_met(state, cfg.min_injections_before_reconsider) and (
+                d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility
             ):
                 transitions.append(_demote_tier(state, Tier.ACTIVE, reason="slow_demote_t3_t2"))
             continue
@@ -114,9 +125,14 @@ def evaluate_slow_clock(  # noqa: C901
             if (
                 _min_injections_met(state, cfg.min_injections_before_reconsider)
                 and d >= cfg.thresholds_t23.promote_demand
-                and (u >= cfg.thresholds_t23.promote_utility or state.stats.used_without_injection > 0)
+                and (
+                    u >= cfg.thresholds_t23.promote_utility
+                    or state.stats.used_without_injection > 0
+                )
             ):
-                transitions.append(_promote_tier(state, Tier.HOT, reason="slow_promote_t2_t3", temporary=False))
+                transitions.append(
+                    _promote_tier(state, Tier.HOT, reason="slow_promote_t2_t3", temporary=False),
+                )
             elif (
                 _min_injections_met(state, cfg.min_injections_before_reconsider)
                 and d < cfg.thresholds_t12.demote_demand
@@ -129,9 +145,14 @@ def evaluate_slow_clock(  # noqa: C901
             if (
                 _min_injections_met(state, cfg.min_injections_before_reconsider)
                 and d >= cfg.thresholds_t12.promote_demand
-                and (u >= cfg.thresholds_t12.promote_utility or state.stats.used_without_injection > 0)
+                and (
+                    u >= cfg.thresholds_t12.promote_utility
+                    or state.stats.used_without_injection > 0
+                )
             ):
-                transitions.append(_promote_tier(state, Tier.ACTIVE, reason="slow_promote_t1_t2", temporary=False))
+                transitions.append(
+                    _promote_tier(state, Tier.ACTIVE, reason="slow_promote_t1_t2", temporary=False),
+                )
 
     if transitions:
         logger.debug("slow-clock transitions at epoch %s: %d", epoch.epoch_id, len(transitions))

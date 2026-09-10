@@ -20,7 +20,10 @@ def valid_paths_for_capture(schema: dict[str, Any], args: dict[str, Any]) -> set
     return paths
 
 
-def _valid_paths_from_schema(schema: dict[str, Any], prefix: str = "inputSchema.properties") -> set[str]:
+def _valid_paths_from_schema(
+    schema: dict[str, Any],
+    prefix: str = "inputSchema.properties",
+) -> set[str]:
     paths: set[str] = set()
     properties = schema.get("properties")
     if not isinstance(properties, dict):

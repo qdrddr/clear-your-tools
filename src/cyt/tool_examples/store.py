@@ -55,6 +55,13 @@ CREATE INDEX IF NOT EXISTS idx_tool_example_lookup
 """
 
 
+def _require_lastrowid(cur: sqlite3.Cursor) -> int:
+    lastrowid = cur.lastrowid
+    if lastrowid is None:
+        raise RuntimeError("SQLite INSERT did not return lastrowid")
+    return int(lastrowid)
+
+
 @dataclass(frozen=True)
 class ToolCapture:
     schema_id: int
@@ -127,7 +134,7 @@ class ToolExamplesStore:
                 (canonical, now_ms, now_ms),
             )
             self._conn.commit()
-            return int(cur.lastrowid)
+            return _require_lastrowid(cur)
 
     def upsert_capture(
         self,
@@ -175,7 +182,7 @@ class ToolExamplesStore:
                         now_ms,
                     ),
                 )
-                schema_id = int(cur.lastrowid)
+                schema_id = _require_lastrowid(cur)
             pairs = flattened if flattened is not None else flatten_args(args)
             for item in pairs:
                 self._conn.execute(

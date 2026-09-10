@@ -81,6 +81,13 @@ CREATE INDEX IF NOT EXISTS idx_epoch_log_project ON epoch_log(project_id);
 """
 
 
+def _require_lastrowid(cur: sqlite3.Cursor) -> int:
+    lastrowid = cur.lastrowid
+    if lastrowid is None:
+        raise RuntimeError("SQLite INSERT did not return lastrowid")
+    return int(lastrowid)
+
+
 class TierStore:
     def __init__(self, db_path: str) -> None:
         self._db_path = str(Path(db_path).expanduser())
@@ -149,15 +156,15 @@ class TierStore:
                     "INSERT INTO tier_project(root_path, created_ms, last_seen_ms) VALUES (?, ?, ?)",
                     (canonical, now_ms, now_ms),
                 )
-                project_id = int(cur.lastrowid)
+                project_id = _require_lastrowid(cur)
             scope_to_project[scope_key] = project_id
 
         if "epoch_state_v1" in v1_tables:
             for row in self._conn.execute(
                 "SELECT scope_key, epoch_id, epoch_start_ms, last_request_ms, session_id FROM epoch_state_v1",
             ).fetchall():
-                project_id = scope_to_project.get(str(row[0]))
-                if project_id is None:
+                mapped_project_id = scope_to_project.get(str(row[0]))
+                if mapped_project_id is None:
                     continue
                 self._conn.execute(
                     "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, session_id) "
@@ -165,7 +172,7 @@ class TierStore:
                     "ON CONFLICT(project_id) DO UPDATE SET "
                     "epoch_id=excluded.epoch_id, epoch_start_ms=excluded.epoch_start_ms, "
                     "last_request_ms=excluded.last_request_ms, session_id=excluded.session_id",
-                    (project_id, row[1], row[2], row[3], row[4]),
+                    (mapped_project_id, row[1], row[2], row[3], row[4]),
                 )
 
         if "entity_tier_v1" in v1_tables:
@@ -174,15 +181,26 @@ class TierStore:
                 "tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
                 "sleep_cooldown_until_session FROM entity_tier_v1",
             ).fetchall():
-                project_id = scope_to_project.get(str(row[0]))
-                if project_id is None:
+                mapped_project_id = scope_to_project.get(str(row[0]))
+                if mapped_project_id is None:
                     continue
                 self._conn.execute(
                     "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
                     "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
                     "sleep_cooldown_until_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(project_id, kind, entity_id) DO NOTHING",
-                    (project_id, row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]),
+                    (
+                        mapped_project_id,
+                        row[1],
+                        row[2],
+                        row[3],
+                        row[4],
+                        row[5],
+                        row[6],
+                        row[7],
+                        row[8],
+                        row[9],
+                    ),
                 )
 
         if "entity_stats_v1" in v1_tables:
@@ -191,8 +209,8 @@ class TierStore:
                 "used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
                 "last_seen_ms, requests_since_decay FROM entity_stats_v1",
             ).fetchall():
-                project_id = scope_to_project.get(str(row[0]))
-                if project_id is None:
+                mapped_project_id = scope_to_project.get(str(row[0]))
+                if mapped_project_id is None:
                     continue
                 self._conn.execute(
                     "INSERT INTO entity_stats(project_id, kind, entity_id, pipeline, candidates, injected, "
@@ -200,7 +218,7 @@ class TierStore:
                     "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(project_id, kind, entity_id, pipeline) DO NOTHING",
                     (
-                        project_id,
+                        mapped_project_id,
                         row[1],
                         row[2],
                         row[3],
@@ -220,12 +238,12 @@ class TierStore:
             for row in self._conn.execute(
                 "SELECT scope_key, epoch_id, ts_ms, transitions_json FROM epoch_log_v1",
             ).fetchall():
-                project_id = scope_to_project.get(str(row[0]))
-                if project_id is None:
+                mapped_project_id = scope_to_project.get(str(row[0]))
+                if mapped_project_id is None:
                     continue
                 self._conn.execute(
                     "INSERT INTO epoch_log(project_id, epoch_id, ts_ms, transitions_json) VALUES (?, ?, ?, ?)",
-                    (project_id, row[1], row[2], row[3]),
+                    (mapped_project_id, row[1], row[2], row[3]),
                 )
 
         for legacy in v1_tables:
@@ -262,7 +280,7 @@ class TierStore:
                 (canonical, now_ms, now_ms),
             )
             self._conn.commit()
-            return int(cur.lastrowid)
+            return _require_lastrowid(cur)
 
     def load_epoch_state(self, project: TierProject) -> EpochState:
         with self._lock:

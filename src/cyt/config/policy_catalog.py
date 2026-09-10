@@ -13,6 +13,9 @@ ToolPolicy = Literal[
     "prune_all_descriptions",
 ]
 
+# Catalog policy name or legacy ``ToolPolicy`` literal (resolved at apply time).
+ToolPolicyRef = str
+
 POLICY_CHOICES: tuple[ToolPolicy, ...] = (
     "always_include",
     "prune_optional",

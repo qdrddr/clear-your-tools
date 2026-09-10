@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.mcpc_shell import parse_mcpc_shell_command
@@ -1035,7 +1035,8 @@ def _tool_output_from_payload(payload: dict[str, Any]) -> object | None:
     for layer in _payload_layers(payload):
         for key in ("tool_output", "toolOutput", "result", "output"):
             if key in layer:
-                return layer[key]
+                value = layer[key]
+                return cast(object | None, value)
     return None
 
 
@@ -1056,13 +1057,16 @@ def _post_tool_call_succeeded(payload: dict[str, Any]) -> bool:
             return False
         if '"iserror":true' in lowered.replace(" ", ""):
             return False
-        if lowered.startswith("error:") or lowered.startswith("error "):
+        if lowered.startswith(("error:", "error ")):
             return False
         return True
     return False
 
 
-def _resolve_mcp_server_and_tool_name(tool: dict[str, Any], catalog_tool_name: str) -> tuple[str, str]:
+def _resolve_mcp_server_and_tool_name(
+    tool: dict[str, Any],
+    catalog_tool_name: str,
+) -> tuple[str, str]:
     server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
     bare = str(tool.get("tool_name") or "").strip()
     if server and bare:

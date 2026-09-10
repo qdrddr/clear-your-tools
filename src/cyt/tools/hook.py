@@ -503,7 +503,9 @@ def _finish_tools_hook_injection(
             tools_final_md=injected if debug else None,
             config=config,
             prune_status=result.status,
-            pipeline=list(result.pruning_token_usage.keys()) if result.pruning_token_usage else None,
+            pipeline=list(result.pruning_token_usage.keys())
+            if result.pruning_token_usage
+            else None,
         )
         from cyt.tiers.feedback import record_tools_injected_feedback
 

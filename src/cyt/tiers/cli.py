@@ -56,9 +56,10 @@ def run_tiers_status(args: argparse.Namespace) -> int:
         print(f"epoch_id: {payload.get('epoch_id')}")
         print(f"tools.enabled={tool_cfg.enabled} shadow={tool_cfg.shadow}")
         print(f"skills.enabled={skill_cfg.enabled} shadow={skill_cfg.shadow}")
-        histogram = payload.get("histogram") or {}
-        for kind, counts in histogram.items():
-            print(f"{kind}: {counts}")
+        histogram = payload.get("histogram")
+        if isinstance(histogram, dict):
+            for kind, counts in histogram.items():
+                print(f"{kind}: {counts}")
     return 0
 
 

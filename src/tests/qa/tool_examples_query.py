@@ -12,6 +12,7 @@ import argparse
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from cyt.tool_examples.report import format_query_score_report, format_query_score_report_json
 from tests.support.tool_examples_fixtures import query_entry_by_id, run_query_score_report
@@ -25,9 +26,7 @@ def _install_clock() -> None:
         state["ms"] += 1000
         return current_ms / 1000.0
 
-    import cyt.tool_examples.store as store_module
-
-    store_module.time.time = fake_time  # type: ignore[method-assign]
+    patch("cyt.tool_examples.store.time.time", fake_time).start()
 
 
 def main(argv: list[str] | None = None) -> int:

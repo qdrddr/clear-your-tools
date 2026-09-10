@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ def project_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()
@@ -62,7 +63,7 @@ def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, project_root: P
             "description": "demo",
             "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
             "cyt_catalog_source": "definitions",
-        }
+        },
     ]
     with patch("cyt.pruners.tools_filter.get_tier_manager") as get_manager:
         scope = project_root

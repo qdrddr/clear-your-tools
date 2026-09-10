@@ -105,7 +105,10 @@ def test_enrich_noop_when_disabled(tmp_path: Path) -> None:
     config = set_hook_workspace_in_config({"tools": {"examples": {"enabled": False}}}, root)
     tool = {
         "name": "srv_tool",
-        "input_schema": {"type": "object", "properties": {"q": {"type": "string", "description": "Q"}}},
+        "input_schema": {
+            "type": "object",
+            "properties": {"q": {"type": "string", "description": "Q"}},
+        },
     }
     enriched = enrich_tools_with_examples([tool], "hello", config)
     assert enriched[0]["input_schema"]["properties"]["q"]["description"] == "Q"
@@ -218,7 +221,10 @@ def test_enrich_noop_without_git_project(tmp_path: Path) -> None:
     config = _config(db, workspace)
     tool = {
         "name": "srv_tool",
-        "input_schema": {"type": "object", "properties": {"q": {"type": "string", "description": "Q"}}},
+        "input_schema": {
+            "type": "object",
+            "properties": {"q": {"type": "string", "description": "Q"}},
+        },
     }
     enriched = enrich_tools_with_examples([tool], "hello", config)
     assert enriched[0]["input_schema"]["properties"]["q"]["description"] == "Q"
