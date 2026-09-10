@@ -366,6 +366,18 @@ class TierStore:
             )
         return out
 
+    def delete_entity_state(self, project: TierProject, *, kind: str, entity_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM entity_tier WHERE project_id = ? AND kind = ? AND entity_id = ?",
+                (project.project_id, kind, entity_id),
+            )
+            self._conn.execute(
+                "DELETE FROM entity_stats WHERE project_id = ? AND kind = ? AND entity_id = ?",
+                (project.project_id, kind, entity_id),
+            )
+            self._conn.commit()
+
     def upsert_entity_state(self, project: TierProject, state: EntityTierState) -> None:
         with self._lock:
             self._conn.execute(

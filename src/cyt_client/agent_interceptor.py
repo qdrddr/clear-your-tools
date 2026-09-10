@@ -631,7 +631,42 @@ def _read_intercept_allow(agent: str) -> str:
     return format_pre_tool_response(agent=agent, permission="allow")
 
 
-def _skill_entity_id_for_read_path(read_path: str) -> str | None:
+def _original_path_for_skinny_read(read_path: str, index: SessionLogIndex) -> str | None:
+    resolved = resolve_skill_path(read_path)
+    if resolved is None:
+        return None
+    marker = "/.cyt/skinny/"
+    normalized = resolved.as_posix()
+    if marker not in normalized:
+        return None
+    skinny_name = normalized.split(marker, 1)[1].rsplit("/", 1)[-1]
+    hash_prefix = skinny_name.removesuffix(".md")
+    if len(hash_prefix) < 8:
+        return None
+    for entry in reversed(index.entries):
+        if entry.get("kind") != "skill":
+            continue
+        entry_hash = str(entry.get("hash") or "")
+        if not entry_hash.startswith(hash_prefix):
+            continue
+        key = str(entry.get("key") or "")
+        if key.startswith("skill:"):
+            return key.removeprefix("skill:").strip()
+        path = entry.get("path")
+        if isinstance(path, str) and path.strip():
+            return path.strip()
+    return None
+
+
+def _skill_entity_id_for_read_path(
+    read_path: str,
+    payload: dict[str, Any] | None = None,
+) -> str | None:
+    from cyt.tiers.adapters.skills import (
+        is_ephemeral_skill_path,
+        tier_entity_id_for_skill,
+    )
+
     skill_file = resolve_skill_path(read_path)
     if (
         skill_file is None
@@ -639,7 +674,20 @@ def _skill_entity_id_for_read_path(read_path: str) -> str | None:
         or not str(skill_file).lower().endswith(".md")
     ):
         return None
-    return str(skill_file)
+
+    resolved = str(skill_file)
+    if not is_ephemeral_skill_path(resolved):
+        return tier_entity_id_for_skill(resolved)
+
+    if payload is not None:
+        entries = load_session_entries(payload)
+        index = SessionLogIndex.from_entries(entries)
+        original = _original_path_for_skinny_read(read_path, index)
+        if original:
+            entity_id = tier_entity_id_for_skill(original)
+            if entity_id:
+                return entity_id
+    return None
 
 
 def _notify_skill_used_feedback(
@@ -650,7 +698,7 @@ def _notify_skill_used_feedback(
     branch = str((meta or {}).get("branch") or "")
     if branch in {"excluded_system_skill", "not_a_file"}:
         return
-    entity_id = _skill_entity_id_for_read_path(read_path)
+    entity_id = _skill_entity_id_for_read_path(read_path, payload)
     if entity_id is None:
         return
     from cyt_client.tier_feedback import notify_skill_used_feedback

@@ -1986,6 +1986,15 @@ def run_setup(config_path: Path) -> None:
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):
         print(f"\nWrote {config_path}")
+    if skills_overlay.get("enabled") is True:
+        from cyt.hook.install_scope import CytInstallScope
+        from cyt.skills.directories import ensure_workspace_skills_config
+
+        scope = CytInstallScope.from_cwd()
+        if scope.has_workspace and scope.workspace_root is not None:
+            if ensure_workspace_skills_config(scope.workspace_root):
+                ws_config = scope.workspace_all_agents_cyt_config_path()
+                print(f"Updated workspace skills config in {ws_config} (.agents/skills)")
 
     from cyt.launch.secrets import keyring_backend_available
 

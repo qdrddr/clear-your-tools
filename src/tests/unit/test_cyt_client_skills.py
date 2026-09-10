@@ -18,9 +18,11 @@ from cyt_client.agent import (
 )
 from cyt_client.skills import (
     attach_client_skills,
+    attach_skill_directories,
     collect_client_skills,
     infer_launch_agent,
     skill_directories_for_payload,
+    workspace_config_skill_directories,
 )
 from cyt_client.transcript import enrich_hook_payload
 from tests.conftest import isolate_user_home
@@ -195,6 +197,21 @@ def test_collect_client_skills_dedupes_identical_content(
         assert len(skills) == 1
 
 
+def test_attach_skill_directories_reports_absolute_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / "home"
+        project = Path(tmp) / "project"
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
+        monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "cursor")
+        payload = attach_skill_directories({"cwd": str(project)})
+        directories = payload["cyt_skill_directories"]
+        assert isinstance(directories, list)
+        assert directories
+        assert all(Path(path).is_absolute() for path in directories)
+        assert any(".cursor/skills" in path for path in directories)
+
+
 def test_attach_client_skills_sets_payload_field(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"
@@ -208,6 +225,7 @@ def test_attach_client_skills_sets_payload_field(monkeypatch: pytest.MonkeyPatch
         )
         payload = attach_client_skills({"cwd": str(project), "prompt": "hello"})
         assert "cyt_skills" in payload
+        assert "cyt_skill_directories" in payload
         assert len(payload["cyt_skills"]) == 1
 
 
@@ -224,6 +242,58 @@ def test_enrich_hook_payload_always_adds_cyt_skills(monkeypatch: pytest.MonkeyPa
         enriched = json.loads(enrich_hook_payload(json.dumps(payload).encode()))
         assert "cyt_skills" in enriched
         assert isinstance(enriched["cyt_skills"], list)
+
+
+def test_workspace_config_skill_directories_reads_agents_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / "project"
+        config_dir = project / ".agents" / "cyt" / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.yaml").write_text(
+            "skills:\n  directories:\n    - .agents/skills\n",
+            encoding="utf-8",
+        )
+        agents_skills = project / ".agents" / "skills"
+        agents_skills.mkdir(parents=True)
+
+        directories = workspace_config_skill_directories({"cwd": str(project)})
+        assert directories == [agents_skills.resolve()]
+
+
+def test_collect_client_skills_includes_workspace_config_directories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / "home"
+        project = Path(tmp) / "project"
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
+        monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "cursor")
+
+        config_dir = project / ".agents" / "cyt" / "config"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.yaml").write_text(
+            "skills:\n  directories:\n    - .agents/skills\n",
+            encoding="utf-8",
+        )
+        _write_skill(
+            project / ".cursor" / "skills" / "cursor-only.md",
+            "---\nname: cursor-only\ndescription: cursor\n---\n\nCursor body\n",
+        )
+        _write_skill(
+            project / ".agents" / "skills" / "explain-simply" / "SKILL.md",
+            "---\nname: explain-simply\ndescription: shared\n---\n\nShared body\n",
+        )
+
+        payload = attach_client_skills({"cwd": str(project)})
+        skill_paths = {skill["path"] for skill in payload["cyt_skills"]}
+        assert str((project / ".cursor" / "skills" / "cursor-only.md").resolve()) in skill_paths
+        assert any("explain-simply" in path for path in skill_paths)
+        directory_paths = {Path(path).resolve() for path in payload["cyt_skill_directories"]}
+        assert (project / ".agents" / "skills").resolve() in directory_paths
+        assert (project / ".cursor" / "skills").resolve() in directory_paths
 
 
 def test_enrich_hook_payload_adds_transcript_and_skills(monkeypatch: pytest.MonkeyPatch) -> None:

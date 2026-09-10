@@ -41,3 +41,16 @@ def test_resolve_tier_project_from_git_repo(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
     project = resolve_tier_project(workspace=repo)
     assert project == repo.resolve()
+
+
+def test_resolve_tier_project_from_cwd_git_subdir(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    nested = repo / "packages" / "app"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+    assert resolve_tier_project() == repo.resolve()

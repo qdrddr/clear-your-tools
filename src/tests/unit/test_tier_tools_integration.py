@@ -119,6 +119,7 @@ def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, project_r
                 "active query",
                 ["bm25"],
                 config=tier_config,
+                for_hook=True,
             )
             assert prune_mock.called
             sent_tools = prune_mock.call_args[0][0]

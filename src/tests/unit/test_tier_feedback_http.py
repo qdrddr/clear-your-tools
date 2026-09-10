@@ -67,10 +67,12 @@ async def test_hook_tier_feedback_records_tool_used(project_root: Path, base_con
 @pytest.mark.asyncio
 async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_config: dict) -> None:
     from cyt.hook.http_server import hook_tier_feedback
+    from cyt.tiers.adapters.skills import resolve_skill_entity_id
 
     db_path = project_root / "tier_state.db"
     skill_path = project_root / "skill.md"
     skill_path.write_text("# Skill\n", encoding="utf-8")
+    entity_id = resolve_skill_entity_id(str(skill_path.resolve()))
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
     tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
@@ -96,7 +98,7 @@ async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_co
 
     manager = TierManager(project_root, str(db_path))
     try:
-        state = manager._states.get(("skill", str(skill_path.resolve())))
+        state = manager._states.get(("skill", entity_id))
         assert state is not None
         assert state.stats.used >= 1.0
         assert state.stats.used_without_injection >= 1.0
@@ -111,11 +113,13 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
 ) -> None:
     from cyt.common.paths import shorten_home_path
     from cyt.hook.http_server import hook_tier_feedback
+    from cyt.tiers.adapters.skills import resolve_skill_entity_id
 
     db_path = project_root / "tier_state.db"
     skill_path = project_root / "skill.md"
     skill_path.write_text("# Skill\n", encoding="utf-8")
     resolved_id = str(skill_path.resolve())
+    entity_id = resolve_skill_entity_id(resolved_id)
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
     tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
@@ -147,7 +151,7 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
             response = await hook_tier_feedback(request)
         assert response.status_code == 204
 
-        state = manager._states.get(("skill", resolved_id))
+        state = manager._states.get(("skill", entity_id))
         assert state is not None
         assert state.stats.used >= 1.0
         assert state.stats.used_without_injection == 0.0

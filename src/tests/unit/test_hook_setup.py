@@ -702,7 +702,9 @@ def test_merge_hooks_into_file_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_merge_skills_directory_lists_appends_without_duplicates() -> None:
-    merged, changed = hook_setup.merge_skills_directory_lists(
+    from cyt.skills.directories import merge_skills_directory_lists
+
+    merged, changed = merge_skills_directory_lists(
         ["~/.claude/skills"],
         ["~/.claude/skills", "~/.codex/skills"],
     )

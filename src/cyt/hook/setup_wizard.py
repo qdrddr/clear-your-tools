@@ -48,6 +48,7 @@ from cyt.launch.inject_via_prompt import ensure_hook_inject_via
 from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.platform.compat import is_windows
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
+from cyt.skills.directories import merge_skills_directory_lists
 from cyt.tools.hook_setup import prompt_tools_hook_config
 from cyt_client.hook_invocation import (
     CURSOR_POST_TOOL_DEFINITIONS_MATCHER,
@@ -477,27 +478,6 @@ def normalize_cursor_hooks_section(hooks_section: object) -> dict[str, Any]:
     return normalized
 
 
-def merge_skills_directory_lists(
-    existing: list[str],
-    new_dirs: list[str],
-) -> tuple[list[str], bool]:
-    """Append skill directory paths from *new_dirs* when not already present."""
-    merged = [str(path) for path in existing if str(path).strip()]
-    seen = {str(Path(path).expanduser()) for path in merged}
-    changed = False
-    for raw in new_dirs:
-        text = str(raw).strip()
-        if not text:
-            continue
-        expanded = str(Path(text).expanduser())
-        if expanded in seen:
-            continue
-        merged.append(text)
-        seen.add(expanded)
-        changed = True
-    return merged, changed
-
-
 def default_hook_skills_directories(
     skills_cfg: dict[str, Any],
     *,
@@ -764,6 +744,19 @@ def _configure_hook_skills(
         print(f"Updated skills config in {config_path} (enabled, inject_via: hook, directories)")
     else:
         print(f"\nSkills config already set for hook mode in {config_path}")
+    _ensure_workspace_skills_config_for_hook()
+
+
+def _ensure_workspace_skills_config_for_hook() -> None:
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.skills.directories import ensure_workspace_skills_config
+
+    scope = CytInstallScope.from_cwd()
+    if not scope.has_workspace or scope.workspace_root is None:
+        return
+    if ensure_workspace_skills_config(scope.workspace_root):
+        config_path = scope.workspace_all_agents_cyt_config_path()
+        print(f"Updated workspace skills config in {config_path} (.agents/skills)")
 
 
 def cyt_client_entry(

@@ -8,11 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from cyt.config import (
-    skills_directories_for_agent,
-    skills_enabled,
-    skills_hook_agent_interceptor_min_items,
-)
+from cyt.config import skills_enabled, skills_hook_agent_interceptor_min_items
 from cyt.injection.session_log_build import build_skill_log_entry, skill_match_is_content_complete
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.skills.agents import resolve_skills_agent
@@ -24,21 +20,6 @@ from cyt.skills.catalog import (
 from cyt.skills.diagnostics import SearchItemRow
 from cyt.skills.reconstruct import reconstruct_matches_from_items
 from cyt.skills.search import MatchedSkill, search_skills_with_trace
-
-
-def _append_resolved_directory(
-    directories: list[Path],
-    seen: set[Path],
-    candidate: Path,
-) -> None:
-    try:
-        resolved = candidate.expanduser().resolve()
-    except OSError:
-        return
-    if resolved in seen:
-        return
-    seen.add(resolved)
-    directories.append(resolved)
 
 
 def _allow_response(
@@ -54,12 +35,16 @@ def _allow_response(
     return payload
 
 
-def _record_skill_read_feedback(*, file_path: str, config: dict[str, Any]) -> None:
+def _record_skill_read_feedback(*, entry: SkillEntryRef, config: dict[str, Any]) -> None:
     from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.tiers.adapters.skills import skill_entity_id
     from cyt.tiers.feedback import record_skill_used_feedback
 
+    entity_id = skill_entity_id(entry)
+    if not entity_id:
+        return
     record_skill_used_feedback(
-        file_path,
+        entity_id,
         config=config,
         workspace=hook_workspace_from_config(config),
     )
@@ -74,6 +59,9 @@ def _deny_response(*, user_message: str = "Skill read denied by CYT permissions"
 
 
 def _resolve_skill_directories(config: dict[str, Any], payload: dict[str, Any]) -> list[Path]:
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.skills.directories import resolve_skill_directories
+
     cwd_raw = payload.get("cwd")
     workspace_roots = payload.get("workspace_roots")
     cwd = Path(str(cwd_raw)).expanduser() if isinstance(cwd_raw, str) and cwd_raw.strip() else None
@@ -82,24 +70,13 @@ def _resolve_skill_directories(config: dict[str, Any], payload: dict[str, Any]) 
         if isinstance(first, str) and first.strip():
             cwd = Path(first.strip()).expanduser()
 
-    directories: list[Path] = []
-    seen: set[Path] = set()
     agent = resolve_skills_agent(payload=payload)
-
-    agent_pairs = {
-        "cursor": (".cursor/skills", "~/.cursor/skills"),
-        "claude": (".claude/skills", "~/.claude/skills"),
-        "codex": (".codex/skills", "~/.codex/skills"),
-    }
-    pairs = [agent_pairs[agent]] if agent in agent_pairs else list(agent_pairs.values())
-    if cwd is not None:
-        for project_rel, home_rel in pairs:
-            for candidate in (cwd / project_rel, Path(home_rel).expanduser()):
-                _append_resolved_directory(directories, seen, candidate)
-
-    for raw in skills_directories_for_agent(config, agent=agent):
-        _append_resolved_directory(directories, seen, Path(raw).expanduser())
-    return directories
+    workspace_root = hook_workspace_from_config(config) or cwd
+    return resolve_skill_directories(
+        config,
+        agent=agent,
+        workspace_root=workspace_root,
+    )
 
 
 def _path_under_directories(path: Path, directories: list[Path]) -> bool:
@@ -274,7 +251,7 @@ def run_skill_read_intercept(
         match,
         full=skill_match_is_content_complete(match),
     )
-    _record_skill_read_feedback(file_path=entry.source_path, config=config)
+    _record_skill_read_feedback(entry=entry, config=config)
     return _allow_response(
         updated_input={"path": str(skinny_path.resolve())},
         skill_log_entry=skill_log_entry,

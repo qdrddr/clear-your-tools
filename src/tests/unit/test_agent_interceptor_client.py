@@ -470,7 +470,12 @@ def test_read_intercept_full_mode_notifies_once(
     assert stdout is not None
     assert json.loads(stdout)["permission"] == "allow"
     assert len(notify_calls) == 1
-    assert notify_calls[0] == str(skill_path.resolve())
+    from cyt.tiers.adapters.skills import is_ephemeral_skill_path, tier_entity_id_for_skill
+
+    expected = tier_entity_id_for_skill(str(skill_path.resolve()))
+    assert expected is not None
+    assert not is_ephemeral_skill_path(notify_calls[0])
+    assert notify_calls[0] == expected
 
     stdout2 = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (500, b""))
     assert stdout2 is not None
@@ -637,4 +642,9 @@ def test_read_intercept_fallback_notifies(
     assert stdout is not None
     assert json.loads(stdout)["permission"] == "allow"
     assert len(notify_calls) == 1
-    assert notify_calls[0] == str(skill_path.resolve())
+    from cyt.tiers.adapters.skills import is_ephemeral_skill_path, tier_entity_id_for_skill
+
+    expected = tier_entity_id_for_skill(str(skill_path.resolve()))
+    assert expected is not None
+    assert not is_ephemeral_skill_path(notify_calls[0])
+    assert notify_calls[0] == expected

@@ -185,6 +185,39 @@ def resolve_git_toplevel(path: Path) -> Path | None:
     return resolved if resolved.is_dir() else None
 
 
+def _resolve_git_repo_root(path: Path) -> Path | None:
+    """Return git repository root for *path*, or None when not inside a repo."""
+    try:
+        resolved = path.expanduser().resolve()
+    except OSError:
+        return None
+    if not resolved.is_dir():
+        resolved = resolved.parent
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=0.2,
+            check=False,
+        )
+        if result.returncode == 0:
+            top = result.stdout.strip()
+            if top:
+                return Path(top).expanduser().resolve()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    current = resolved
+    for _ in range(64):
+        if (current / ".git").exists():
+            return current.resolve()
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
 def resolve_project_root_path(*, workspace: Path | None = None) -> Path | None:
     """Resolve canonical project root from workspace path or cwd."""
     if workspace is None:
@@ -201,7 +234,9 @@ def resolve_project_root_path(*, workspace: Path | None = None) -> Path | None:
 
 
 def resolve_tier_project(*, workspace: Path | None = None) -> Path | None:
-    """Return canonical project root path for tier scoping, if any."""
+    """Return git repository root for tier scoping, if any."""
+    if workspace is None:
+        return _resolve_git_repo_root(Path.cwd())
     return resolve_project_root_path(workspace=workspace)
 
 
@@ -218,3 +253,47 @@ def tiers_active(cfg: dict[str, Any], *, kind: str) -> bool:
 def tiers_apply(cfg: dict[str, Any], *, kind: str) -> bool:
     section = tier_section_config(cfg, kind=kind)
     return section.enabled and not section.shadow
+
+
+def resolve_tier_status_agent(
+    config: dict[str, Any],
+    *,
+    workspace_root: Path | None,
+    explicit: str | None = None,
+) -> str:
+    """Resolve agent for ``tiers status`` skill scoping (CLI override or mcp-config default)."""
+    if isinstance(explicit, str) and explicit.strip():
+        from cyt.launch.upstream import parse_agent_name
+
+        return parse_agent_name(explicit.strip())
+
+    from cyt_mcp.config import GLOBAL_MCP_CONFIG_PATH, load_mcp_config_yaml
+
+    install = CytInstallScope(workspace_root=workspace_root)
+    candidates: list[Path] = []
+    ws_mcp = install.workspace_all_agents_cyt_mcp_config_path()
+    if ws_mcp is not None:
+        candidates.append(ws_mcp)
+    candidates.append(GLOBAL_MCP_CONFIG_PATH)
+
+    seen: set[str] = set()
+    for path in candidates:
+        resolved = path.expanduser()
+        key = str(resolved)
+        if key in seen or not resolved.is_file():
+            continue
+        seen.add(key)
+        raw = load_mcp_config_yaml(resolved)
+        default = raw.get("default_agent")
+        if isinstance(default, str) and default.strip():
+            from cyt.launch.upstream import parse_agent_name
+
+            return parse_agent_name(default.strip())
+
+    from cyt.skills.agents import resolve_skills_agent
+
+    resolved = resolve_skills_agent()
+    if resolved is not None:
+        return resolved
+
+    return "cursor"

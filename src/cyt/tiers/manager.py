@@ -13,11 +13,19 @@ if TYPE_CHECKING:
 
 from cyt.hook.workspace_config import hook_workspace_from_config
 from cyt.tiers.adapters.skills import (
-    canonical_skill_entity_id,
+    normalize_skill_entity_states,
     partition_skill_entries,
+    resolve_skill_doc_id,
     skill_entity_id,
+    tier_entity_id_for_skill,
 )
-from cyt.tiers.adapters.tools import apply_tool_tiers, merge_tool_policies, tool_entity_id
+from cyt.tiers.adapters.tools import (
+    apply_tool_tiers,
+    canonical_tool_entity_id,
+    merge_tool_policies,
+    normalize_tool_entity_states,
+    tool_entity_id,
+)
 from cyt.tiers.config import (
     TierSectionConfig,
     resolve_tier_project,
@@ -37,6 +45,12 @@ from cyt.tiers.models import (
     TierSnapshot,
     TierTransition,
     ToolsTierApplyResult,
+)
+from cyt.tiers.status_detail import (
+    build_combined_histogram,
+    build_kind_detail,
+    config_summary,
+    effective_tier_for,
 )
 from cyt.tiers.store import TierStore
 from cyt.tiers.wake import fast_promote_on_optional_use
@@ -124,13 +138,22 @@ class NoOpTierManager:
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
         return
 
-    def status(self) -> dict[str, Any]:
+    def status(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        del config
+        empty_kind = {
+            "histogram": {f"T{i}": 0 for i in range(5)},
+            "by_tier": {f"T{i}": [] for i in range(5)},
+        }
         return {
             "project_id": None,
             "root_path": None,
             "histogram": {},
             "epoch_id": 0,
             "session_id": 0,
+            "epoch_start_ms": 0,
+            "last_request_ms": 0,
+            "tools": empty_kind,
+            "skills": empty_kind,
         }
 
 
@@ -145,6 +168,26 @@ class TierManager:
         project_id = self._store.get_or_create_project(str(root_path))
         self.project = TierProject(project_id=project_id, root_path=root_path)
         self._states = self._store.load_entity_states(self.project)
+        removed_skill_ids, updated_skill_states = normalize_skill_entity_states(self._states)
+        if removed_skill_ids or updated_skill_states:
+            for entity_id in removed_skill_ids:
+                self._store.delete_entity_state(
+                    self.project,
+                    kind=EntityKind.SKILL,
+                    entity_id=entity_id,
+                )
+            for state in updated_skill_states:
+                self._store.upsert_entity_state(self.project, state)
+        removed_tool_ids, updated_tool_states = normalize_tool_entity_states(self._states)
+        if removed_tool_ids or updated_tool_states:
+            for entity_id in removed_tool_ids:
+                self._store.delete_entity_state(
+                    self.project,
+                    kind=EntityKind.TOOL,
+                    entity_id=entity_id,
+                )
+            for state in updated_tool_states:
+                self._store.upsert_entity_state(self.project, state)
         self._epoch = self._store.load_epoch_state(self.project)
         self._snapshot_tools: TierSnapshot | None = None
         self._snapshot_skills: TierSnapshot | None = None
@@ -156,7 +199,20 @@ class TierManager:
     def close(self) -> None:
         self._store.close()
 
-    def _ensure_state(self, kind: str, entity_id: str) -> EntityTierState:
+    def _ensure_state(
+        self,
+        kind: str,
+        entity_id: str,
+        *,
+        doc_id: str | None = None,
+    ) -> EntityTierState | None:
+        if kind == EntityKind.SKILL:
+            tier_key = tier_entity_id_for_skill(entity_id, doc_id=doc_id)
+            if tier_key is None:
+                return None
+            entity_id = tier_key
+        elif kind == EntityKind.TOOL:
+            entity_id = canonical_tool_entity_id(entity_id)
         key = (kind, entity_id)
         state = self._states.get(key)
         if state is None:
@@ -391,7 +447,15 @@ class TierManager:
         cfg = tier_section_config(config, kind="skill")
         for entry in entries:
             entity_id = skill_entity_id(entry)
-            state = self._ensure_state(EntityKind.SKILL, entity_id)
+            if not entity_id:
+                continue
+            state = self._ensure_state(
+                EntityKind.SKILL,
+                entity_id,
+                doc_id=getattr(entry, "doc_id", None),
+            )
+            if state is None:
+                continue
             state.stats.candidates += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
         self._touch_request(config)
@@ -408,11 +472,21 @@ class TierManager:
         injected: set[str] = set()
         for match in matches:
             path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
-            entity_id = canonical_skill_entity_id(str(path))
+            doc_id = getattr(match, "doc_id", None)
+            resolved_doc_id = (
+                str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
+            )
+            entity_id = tier_entity_id_for_skill(str(path), doc_id=resolved_doc_id)
             if not entity_id:
                 continue
             injected.add(entity_id)
-            state = self._ensure_state(EntityKind.SKILL, entity_id)
+            state = self._ensure_state(
+                EntityKind.SKILL,
+                entity_id,
+                doc_id=resolved_doc_id,
+            )
+            if state is None:
+                continue
             state.stats.injected += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
         self._last_injected_skills = injected
@@ -423,10 +497,15 @@ class TierManager:
         if not tiers_active(config, kind="skill"):
             return
         cfg = tier_section_config(config, kind="skill")
-        canonical_id = canonical_skill_entity_id(entity_id)
+        canonical_id = tier_entity_id_for_skill(
+            entity_id,
+            doc_id=resolve_skill_doc_id(entity_id),
+        )
         if not canonical_id:
             return
         state = self._ensure_state(EntityKind.SKILL, canonical_id)
+        if state is None:
+            return
         state.stats.used += 1.0
         if canonical_id not in self._last_injected_skills:
             state.stats.used_without_injection += 1.0
@@ -454,10 +533,91 @@ class TierManager:
         if transitions and cfg.shadow:
             logger.debug("tool shadow transitions: %d", len(transitions))
 
-    def status(self) -> dict[str, Any]:
+    def status(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        agent: str | None = None,
+    ) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000)
+
+        def effective_fn(state: EntityTierState) -> Tier:
+            return effective_tier_for(state, now_ms=now_ms)
+
         summary = self._store.status_summary(self.project)
         summary["epoch_id"] = self._epoch.epoch_id
         summary["session_id"] = self._epoch.session_id
+        summary["epoch_start_ms"] = self._epoch.epoch_start_ms
+        summary["last_request_ms"] = self._epoch.last_request_ms
+        summary["histogram"] = build_combined_histogram(
+            self._states,
+            now_ms=now_ms,
+            effective_tier_fn=effective_fn,
+        )
+        if config is not None:
+            tool_cfg = tier_section_config(config, kind="tool")
+            skill_cfg = tier_section_config(config, kind="skill")
+            tool_detail = build_kind_detail(
+                self._states,
+                kind=EntityKind.TOOL,
+                cfg=tool_cfg,
+                session_id=self._epoch.session_id,
+                now_ms=now_ms,
+                effective_tier_fn=effective_fn,
+                config=config,
+                workspace_root=self.project.root_path,
+            )
+            skill_detail = build_kind_detail(
+                self._states,
+                kind=EntityKind.SKILL,
+                cfg=skill_cfg,
+                session_id=self._epoch.session_id,
+                now_ms=now_ms,
+                effective_tier_fn=effective_fn,
+                config=config,
+                workspace_root=self.project.root_path,
+            )
+            from cyt.tiers.config import resolve_tier_status_agent
+            from cyt.tiers.status_detail import (
+                enrich_skill_detail_with_workspace_discoveries,
+                filter_skill_detail_by_agent,
+            )
+
+            resolved_agent = resolve_tier_status_agent(
+                config,
+                workspace_root=self.project.root_path,
+                explicit=agent,
+            )
+            skill_detail = enrich_skill_detail_with_workspace_discoveries(
+                skill_detail,
+                states=self._states,
+                cfg=skill_cfg,
+                config=config,
+                workspace_root=self.project.root_path,
+                agent=resolved_agent,
+                session_id=self._epoch.session_id,
+                now_ms=now_ms,
+                effective_tier_fn=effective_fn,
+            )
+            skill_detail = filter_skill_detail_by_agent(
+                skill_detail,
+                agent=resolved_agent,
+                config=config,
+                workspace_root=self.project.root_path,
+            )
+            summary["agent"] = resolved_agent
+            summary["tools"] = {
+                "enabled": tool_cfg.enabled,
+                "shadow": tool_cfg.shadow,
+                "config": config_summary(tool_cfg),
+                **tool_detail,
+            }
+            summary["skills"] = {
+                "enabled": skill_cfg.enabled,
+                "shadow": skill_cfg.shadow,
+                "config": config_summary(skill_cfg),
+                **skill_detail,
+            }
         return summary
 
 

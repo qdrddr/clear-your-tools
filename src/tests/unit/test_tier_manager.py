@@ -36,6 +36,39 @@ def test_tool_entity_id_uses_catalog_source() -> None:
     assert tool_entity_id(tool) == "cyt_mcp:search"
 
 
+def test_tool_entity_id_infers_mcpc_wire_name() -> None:
+    tool = {
+        "name": "@fff/grep",
+        "tool_name": "grep",
+        "mcpc_session": "@fff",
+    }
+    assert tool_entity_id(tool) == "mcpc:@fff/grep"
+
+
+def test_tool_entity_id_infers_mcpc_from_at_slash_name() -> None:
+    tool = {"name": "@ctx7/resolve-library-id"}
+    assert tool_entity_id(tool) == "mcpc:@ctx7/resolve-library-id"
+
+
+def test_normalize_tool_entity_states_merges_unknown_rows() -> None:
+    from cyt.tiers.adapters.tools import normalize_tool_entity_states
+    from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState
+
+    states: dict[tuple[str, str], EntityTierState] = {
+        (EntityKind.TOOL, "unknown:@fff/grep"): EntityTierState(
+            entity_id="unknown:@fff/grep",
+            kind=EntityKind.TOOL,
+            stats=EffectiveStats(injected=10.0),
+        ),
+    }
+    removed, updated = normalize_tool_entity_states(states)
+    assert removed == ["unknown:@fff/grep"]
+    assert len(updated) == 1
+    assert updated[0].entity_id == "mcpc:@fff/grep"
+    assert states[("tool", "mcpc:@fff/grep")].stats.injected == 10.0
+    assert ("tool", "unknown:@fff/grep") not in states
+
+
 def test_apply_tool_tiers_excludes_t0_when_enabled(config_with_tiers_enabled: dict) -> None:
     tools = [
         {"name": "a", "cyt_catalog_source": "cyt_mcp", "description": "A"},
