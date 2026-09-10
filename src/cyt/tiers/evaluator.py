@@ -1,0 +1,166 @@
+"""Slow-clock epoch evaluator for T1-T4 transitions."""
+
+from __future__ import annotations
+
+import logging
+import time
+
+from cyt.tiers.config import TierSectionConfig
+from cyt.tiers.models import EntityTierState, EpochState, Tier, TierTransition
+from cyt.tiers.scores import demand_score, utility_score
+
+logger = logging.getLogger(__name__)
+
+
+def epoch_boundary(
+    *,
+    now_ms: int,
+    epoch: EpochState,
+    cfg: TierSectionConfig,
+) -> bool:
+    ttl_ms = int(cfg.prompt_cache_ttl_minutes * 60 * 1000 * cfg.ttl_multiplier)
+    if ttl_ms <= 0:
+        ttl_ms = 5 * 60 * 1000
+    if cfg.idle_gap_triggers_epoch:
+        idle_ms = now_ms - epoch.last_request_ms
+        if idle_ms >= int(cfg.prompt_cache_ttl_minutes * 60 * 1000):
+            return True
+    return (now_ms - epoch.epoch_start_ms) >= ttl_ms
+
+
+def _min_injections_met(state: EntityTierState, minimum: int) -> bool:
+    return state.stats.injected >= minimum
+
+
+def _promote_tier(state: EntityTierState, target: Tier, *, reason: str, temporary: bool) -> TierTransition:
+    old = state.effective_tier
+    if target > state.stable_tier:
+        state.overlap_tier = state.stable_tier
+    state.effective_tier = target
+    if not temporary:
+        state.stable_tier = target
+        state.overlap_tier = None
+    if temporary:
+        state.temp_promotion_until_ms = int(time.time() * 1000) + 3 * 60 * 1000
+    return TierTransition(
+        kind=state.kind,
+        entity_id=state.entity_id,
+        from_tier=old,
+        to_tier=target,
+        reason=reason,
+        temporary=temporary,
+    )
+
+
+def _demote_tier(state: EntityTierState, target: Tier, *, reason: str) -> TierTransition:
+    old = state.effective_tier
+    state.effective_tier = target
+    state.stable_tier = target
+    state.overlap_tier = None
+    state.temp_promotion_until_ms = None
+    return TierTransition(
+        kind=state.kind,
+        entity_id=state.entity_id,
+        from_tier=old,
+        to_tier=target,
+        reason=reason,
+        temporary=False,
+    )
+
+
+def evaluate_slow_clock(  # noqa: C901
+    states: dict[tuple[str, str], EntityTierState],
+    *,
+    cfg: TierSectionConfig,
+    epoch: EpochState,
+) -> list[TierTransition]:
+    transitions: list[TierTransition] = []
+    for state in states.values():
+        if state.effective_tier <= Tier.DORMANT:
+            continue
+        d = demand_score(state.stats)
+        u = utility_score(state.stats)
+        tier = state.stable_tier
+
+        if tier == Tier.EXTRA_HOT:
+            if (
+                state.stats.injected >= cfg.emergency_t4_inject_min
+                and u < cfg.emergency_t4_utility_max
+            ):
+                transitions.append(_demote_tier(state, Tier.HOT, reason="emergency_t4_eviction"))
+            elif (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and (d < cfg.thresholds_t34.demote_demand or u < cfg.thresholds_t34.demote_utility)
+            ):
+                transitions.append(_demote_tier(state, Tier.HOT, reason="slow_demote_t4_t3"))
+            continue
+
+        if tier == Tier.HOT:
+            if (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and d >= cfg.thresholds_t34.promote_demand
+                and u >= cfg.thresholds_t34.promote_utility
+                and state.stats.injected >= cfg.min_injections_before_reconsider * 2
+            ):
+                transitions.append(_promote_tier(state, Tier.EXTRA_HOT, reason="slow_promote_t3_t4", temporary=False))
+            elif (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and (d < cfg.thresholds_t23.demote_demand or u < cfg.thresholds_t23.demote_utility)
+            ):
+                transitions.append(_demote_tier(state, Tier.ACTIVE, reason="slow_demote_t3_t2"))
+            continue
+
+        if tier == Tier.ACTIVE:
+            if (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and d >= cfg.thresholds_t23.promote_demand
+                and (u >= cfg.thresholds_t23.promote_utility or state.stats.used_without_injection > 0)
+            ):
+                transitions.append(_promote_tier(state, Tier.HOT, reason="slow_promote_t2_t3", temporary=False))
+            elif (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and d < cfg.thresholds_t12.demote_demand
+                and u < cfg.thresholds_t12.demote_utility
+            ):
+                transitions.append(_demote_tier(state, Tier.COLD, reason="slow_demote_t2_t1"))
+            continue
+
+        if tier == Tier.COLD:
+            if (
+                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                and d >= cfg.thresholds_t12.promote_demand
+                and (u >= cfg.thresholds_t12.promote_utility or state.stats.used_without_injection > 0)
+            ):
+                transitions.append(_promote_tier(state, Tier.ACTIVE, reason="slow_promote_t1_t2", temporary=False))
+
+    if transitions:
+        logger.debug("slow-clock transitions at epoch %s: %d", epoch.epoch_id, len(transitions))
+    return transitions
+
+
+def expire_temporary_promotions(
+    states: dict[tuple[str, str], EntityTierState],
+    *,
+    now_ms: int,
+) -> list[TierTransition]:
+    transitions: list[TierTransition] = []
+    for state in states.values():
+        until = state.temp_promotion_until_ms
+        if until is None or now_ms < until:
+            continue
+        if state.effective_tier != state.stable_tier:
+            old = state.effective_tier
+            state.effective_tier = state.stable_tier
+            state.overlap_tier = None
+            state.temp_promotion_until_ms = None
+            transitions.append(
+                TierTransition(
+                    kind=state.kind,
+                    entity_id=state.entity_id,
+                    from_tier=old,
+                    to_tier=state.stable_tier,
+                    reason="temp_promotion_expired",
+                    temporary=True,
+                ),
+            )
+    return transitions

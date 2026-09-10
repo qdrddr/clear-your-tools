@@ -178,14 +178,33 @@ def resolve_skills_for_query(
     resolved_entries = (
         entries if entries is not None else build_registry(config, upstream_kind=upstream_kind)
     )
-    return search_skills(
+    if not skip_frontmatter_gate and query.strip():
+        from cyt.skills.search import eligible_skills_after_gate
+
+        resolved_entries = eligible_skills_after_gate(query, resolved_entries, config=config)
+
+    from cyt.tiers.adapters.skills import build_t4_skill_match, merge_skill_matches
+    from cyt.tiers.manager import get_tier_manager
+
+    manager = get_tier_manager(config)
+    manager.record_skill_candidates(resolved_entries, config)
+    partition = manager.partition_skills(resolved_entries, config)
+
+    searched = search_skills(
         query,
-        resolved_entries,
+        partition.search_entries,
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,
-        skip_frontmatter_gate=skip_frontmatter_gate,
+        skip_frontmatter_gate=True,
     )
+    t4_matches = [build_t4_skill_match(entry) for entry in partition.t4_direct]
+    matches = merge_skill_matches(
+        searched,
+        t4_matches,
+        representation_by_skill=partition.representation_by_skill,
+    )
+    return matches
 
 
 def inject_skills_for_proxy_request(

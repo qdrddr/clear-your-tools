@@ -7,6 +7,7 @@ from typing import Any
 from cyt.pruners.query import (
     TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION,
     tools_pruning_query,
+    tools_scoring_query,
 )
 
 _HOOK_CONFIG: dict[str, Any] = {
@@ -29,6 +30,11 @@ _DISABLED_TOOLS_HOOK_CONFIG: dict[str, Any] = {
         "tools": {"enabled": False},
     },
 }
+
+
+def test_tools_scoring_query_never_appends_hook_instruction() -> None:
+    query = "find my calendar events"
+    assert tools_scoring_query(query) == query
 
 
 def test_tools_pruning_query_appends_instruction_for_hook() -> None:

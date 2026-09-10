@@ -14,6 +14,7 @@ from cyt.config import (
     effective_pruning_pipeline,
     llm_minimum_tools,
     load_config,
+    output_policy_context_for_terminal_stage,
     pruning_pipeline_from_config,
     pruning_stage_model_nick,
 )
@@ -42,9 +43,13 @@ from cyt.pruners.policies import (
     request_pass_through,
     tools_for_catalog,
 )
-from cyt.pruners.query import tools_pruning_query
+from cyt.pruners.query import tools_pruning_query, tools_scoring_query
 from cyt.pruners.remote import PrunerSettingsCache
 from cyt.pruners.rerank import prune_reranked_catalog, rerank_catalog_dict
+from cyt.tiers.adapters.tools import merge_t4_tools
+from cyt.tiers.config import tiers_active
+from cyt.tiers.manager import get_tier_manager
+from cyt.tiers.shadow import schedule_tool_shadow_evaluation
 from cyt.tools.budget import tools_inject_allowed
 from cyt.tools.policy_context import prepare_hook_tool_pruning
 from cyt_core.types.prune import PruneResult
@@ -144,6 +149,7 @@ def _run_catalog_pruning(
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
     *,
+    llm_query: str | None = None,
     for_hook: bool = False,
     upstream_kind: str | None = None,
     catalog_bulk_id: str | None = None,
@@ -166,6 +172,7 @@ def _run_catalog_pruning(
     tool_properties_count_in = 0
     tool_properties_count_out = 0
     resolved_config = config or load_config()
+    llm_stage_query = llm_query if llm_query is not None else query
     for_proxy = not for_hook
     from cyt.tools.catalog_cache import (
         catalog_snapshot_from_cache,
@@ -288,6 +295,7 @@ def _run_catalog_pruning(
         skill_llm_out=skill_llm_out,
         config=resolved_config,
         pruner_settings=pruner_settings,
+        llm_query=llm_stage_query,
         catalog_bulk_id=catalog_bulk_id,
         phase_timer=phase_timer,
         phase_prefix=phase_prefix,
@@ -833,6 +841,7 @@ def _run_pruning_pipeline(
     skill_llm_out: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
     pruner_settings: PrunerSettingsCache | None = None,
+    llm_query: str | None = None,
     catalog_bulk_id: str | None = None,
     phase_timer: PhaseTimer | None = None,
     phase_prefix: str = "tools",
@@ -878,13 +887,15 @@ def _run_pruning_pipeline(
     if catalog_needs_partition(data, policy_ctx):
         data, pinned = partition_catalog(data, policy_ctx)
 
+    llm_stage_query = llm_query if llm_query is not None else query
     for i, stage in enumerate(pruning_pipeline):
+        stage_query = llm_stage_query if stage == "llm" else query
         data, stage_post_rerank, stage_post_rerank_scored = _run_pipeline_stage(
             stage,
             stage_index=i,
             pruning_pipeline=pruning_pipeline,
             data=data,
-            query=query,
+            query=stage_query,
             capture_catalog=capture_catalog,
             snapshots=snapshots,
             decomposed_breakdown=decomposed_breakdown,
@@ -995,17 +1006,24 @@ def filter_tools_for_query(
         pruning_pipeline if pruning_pipeline is not None else pruning_pipeline_from_config(config)
     )
     terminal_stage = configured_pipeline[-1] if configured_pipeline else None
-    output_policy_ctx = output_policy_context_from_config(
+    tier_manager = get_tier_manager(config)
+    tier_manager.record_tool_candidates(original_tools, config)
+    tier_apply = tier_manager.apply_tools(original_tools, config)
+    tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
+    t4_direct = list(tier_apply.t4_direct)
+    output_policy_ctx = output_policy_context_for_terminal_stage(
         config,
         terminal_stage=terminal_stage,
+        per_tool=tier_apply.policy_overrides or None,
     )
     policy_ctx = ctx or policy_context_from_config(
         config,
         terminal_stage=terminal_stage,
+        per_tool=tier_apply.policy_overrides or None,
     )
     if for_hook:
         prepare_hook_tool_pruning(config, policy_ctx, output_policy_ctx)
-    if request_pass_through(original_tools, output_policy_ctx):
+    if request_pass_through(tools_for_prune, output_policy_ctx):
         tokens_in = count_json_tokens(original_tools)
         return PruneResult(
             tools=original_tools,
@@ -1022,7 +1040,7 @@ def filter_tools_for_query(
             tools_final=copy.deepcopy(original_tools),
         )
 
-    if not query or not original_tools:
+    if not query or not tools_for_prune:
         return PruneResult(
             tools=None,
             status="skipped",
@@ -1037,7 +1055,7 @@ def filter_tools_for_query(
 
     named_tools = [
         (tool, str(tool.get("name", "")))
-        for tool in original_tools
+        for tool in tools_for_prune
         if isinstance(tool, dict) and str(tool.get("name", ""))
     ]
     pass_through_flags = batch_tool_pass_through(
@@ -1050,7 +1068,7 @@ def filter_tools_for_query(
         if passes
     }
 
-    catalog_source = tools_for_catalog(original_tools, output_policy_ctx)
+    catalog_source = tools_for_catalog(tools_for_prune, output_policy_ctx)
     to_catalog = tools_to_catalog_entries or anthropic_tools_to_catalog_entries
     to_api = merged_to_api_tools or _merged_tools_to_anthropic
     entries, enums = to_catalog(catalog_source)
@@ -1090,7 +1108,8 @@ def filter_tools_for_query(
     pruning_model_tokens: dict[str, int] = {}
     tool_properties_count_in = 0
     tool_properties_count_out = 0
-    pruning_query = tools_pruning_query(query, config, for_hook=for_hook)
+    scoring_query = tools_scoring_query(query)
+    llm_query = tools_pruning_query(query, config, for_hook=for_hook)
     try:
         (
             merged,
@@ -1104,7 +1123,7 @@ def filter_tools_for_query(
         ) = _run_catalog_pruning(
             entries,
             enums,
-            pruning_query,
+            scoring_query,
             configured_pipeline,
             capture_decomposed_catalog,
             policy_ctx,
@@ -1113,6 +1132,7 @@ def filter_tools_for_query(
             skill_llm_out=skill_llm_out,
             config=config,
             pruner_settings=pruner_settings,
+            llm_query=llm_query,
             for_hook=for_hook,
             upstream_kind=upstream_kind,
             catalog_bulk_id=catalog_bulk_id,
@@ -1160,8 +1180,17 @@ def filter_tools_for_query(
             decomposed_catalog=decomposed_catalog,
         )
 
-    pruned_by_name = _pruned_tools_by_name(original_tools, merged, to_api)
-    pruned = merge_tools_preserving_order(original_tools, pruned_by_name, stashed_by_name)
+    pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
+    pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
+    pruned = merge_t4_tools(pruned, t4_direct)
+    if tiers_active(config, kind="tool"):
+        schedule_tool_shadow_evaluation(
+            config=config,
+            query=scoring_query,
+            original_tools=original_tools,
+            tier_apply=tier_apply,
+            manager=tier_manager,
+        )
     tokens_out = count_json_tokens(pruned)
     tokens_saved = tokens_in - tokens_out
     _log_tool_token_counts(tokens_in, tokens_out)

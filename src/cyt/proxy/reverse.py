@@ -1226,6 +1226,10 @@ async def _proxy_request(
             store_full_tools=store_full_tools or debug,
         )
         _schedule_stats_record(stats_db, record)
+        if pruning.tools_final:
+            from cyt.tiers.feedback import record_tools_injected_feedback
+
+            record_tools_injected_feedback(pruning.tools_final, config=config or {})
 
     if (
         skills_meta is not None

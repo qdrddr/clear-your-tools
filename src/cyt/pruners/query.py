@@ -10,6 +10,7 @@ from cyt.tools.budget import tools_inject_allowed
 __all__ = [
     "TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION",
     "tools_pruning_query",
+    "tools_scoring_query",
 ]
 
 TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION = (
@@ -18,13 +19,23 @@ TOOLS_HOOK_OPTIONAL_SCOPE_INSTRUCTION = (
 )
 
 
+def tools_scoring_query(query: str) -> str:
+    """Return the user prompt for BM25/rerank scoring.
+
+    Hook optional-scope guidance is for LLM/recompose output shaping only; appending
+    it here would match repo_root/path/cwd chunks across the catalog and keep
+    unrelated tools.
+    """
+    return query
+
+
 def tools_pruning_query(
     query: str,
     config: dict[str, Any] | None,
     *,
     for_hook: bool = False,
 ) -> str:
-    """Return pruning query, appending hook optional-scope guidance when applicable."""
+    """Return LLM-stage pruning query, appending hook optional-scope guidance when applicable."""
     if not query.strip():
         return query
     if not for_hook:

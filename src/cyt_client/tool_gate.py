@@ -787,6 +787,26 @@ def _validate_catalog_tool_pre_tool_call(
     )
 
 
+def _record_tool_use_feedback(
+    *,
+    tool_name: str,
+    catalog: str | None,
+    args: dict[str, Any] | None,
+) -> None:
+    try:
+        from cyt.config import load_config
+        from cyt.tiers.feedback import record_tool_used_feedback
+
+        record_tool_used_feedback(
+            tool_name=tool_name,
+            catalog=catalog,
+            config=load_config(),
+            args=args,
+        )
+    except Exception:
+        return
+
+
 def _validate_unlisted_mcp_tool(
     payload: dict[str, Any],
     tool_name: str,
@@ -854,6 +874,7 @@ def _validate_gated_catalog_tool(
             requested_tool_name=requested_tool_name,
             hallucination_on=hallucination_on,
         )
+    _record_tool_use_feedback(tool_name=tool_name, catalog=catalog, args=raw_args)
     return _allow()
 
 

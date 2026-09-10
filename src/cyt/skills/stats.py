@@ -24,7 +24,7 @@ def record_skills_injection(
     cfg = config or load_config()
     db = StatsDB.open(stats_db_path(cfg))
     try:
-        return db.record_skills_injection(
+        request_id = db.record_skills_injection(
             query=query,
             model_name=model_name,
             skills_in=skills_in,
@@ -33,5 +33,9 @@ def record_skills_injection(
             skills_final_md=skills_final_md,
             config=cfg,
         )
+        from cyt.tiers.feedback import record_skills_injected_feedback_from_md
+
+        record_skills_injected_feedback_from_md(skills_final_md, config=cfg)
+        return request_id
     finally:
         db.close()

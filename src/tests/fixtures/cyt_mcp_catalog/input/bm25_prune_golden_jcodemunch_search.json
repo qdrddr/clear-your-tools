@@ -1,0 +1,922 @@
+{
+  "pruned_tools": [
+    {
+      "name": "code-review-graph_semantic_search_nodes_tool",
+      "description": "Search for code entities by name, keyword, or semantic similarity.\n\nUses vector embeddings for semantic search when available (run embed_graph_tool\nfirst, with a provider of your choice: \"local\" needs sentence-transformers,\n\"openai\" / \"google\" / \"minimax\" need their respective env vars). Falls back\nto FTS5 / keyword matching when no matching embeddings exist for the given\nprovider.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional filter: File, Class, Function, Type, or Test."
+          },
+          "limit": {
+            "default": 20,
+            "description": "Maximum results. Default: 20.",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Embedding model for query vectors. Must match the model used\n   during embed_graph. Falls back to CRG_EMBEDDING_MODEL env var\n   (local) or CRG_OPENAI_MODEL (openai)."
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Embedding provider: \"local\" (default), \"openai\", \"google\",\n      or \"minimax\". Must match the provider used during embed_graph."
+          },
+          "query": {
+            "description": "Search string to match against node names.",
+            "type": "string"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Repository root path. Auto-detected if omitted."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "semantic_search_nodes_tool"
+    },
+    {
+      "name": "codebase-memory_index_repository",
+      "description": "Index a repository into the knowledge graph. Special mode 'cross-repo-intelligence': skip extraction, only match Routes/Channels across projects to create CROSS_HTTP_CALLS/CROSS_ASYNC_CALLS/CROSS_CHANNEL edges. Requires target_projects param. Ensure target projects have fresh indexes first.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "mode": {
+            "default": "full",
+            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects.",
+            "enum": [
+              "full",
+              "moderate",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "Override the derived project name. Non-ASCII bytes are encoded and unsafe path characters are normalized.",
+            "type": "string"
+          },
+          "repo_path": {
+            "description": "Path to the repository",
+            "type": "string"
+          },
+          "target_projects": {
+            "description": "Projects to search for cross-repo links (cross-repo-intelligence mode). Use [\"*\"] for all indexed projects. Run list_projects to see available projects.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "server_key": "codebase-memory",
+      "tool_name": "index_repository"
+    },
+    {
+      "name": "codebase-memory_search_code",
+      "description": "Graph-augmented code search. Finds text patterns via grep, then enriches results with the knowledge graph: deduplicates matches into containing functions, ranks by structural importance (definitions first, popular functions next, tests last). Modes: compact (default, signatures only — token efficient), full (with source), files (just file paths). Use path_filter regex to scope results. TRUNCATION: enriched results are capped at limit (default 10). Response carries 'total_grep_matches' (raw grep hit count) and 'total_results' (deduplicated function count) — compare to limit to detect truncation. There is no offset parameter; to see more, raise limit or narrow the query with file_pattern / path_filter.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "mode": {
+            "default": "compact",
+            "description": "compact: signatures+metadata (default). full: with source. files: just file list.",
+            "enum": [
+              "compact",
+              "full",
+              "files"
+            ],
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "project"
+        ],
+        "type": "object"
+      },
+      "server_key": "codebase-memory",
+      "tool_name": "search_code"
+    },
+    {
+      "name": "codebase-memory_search_graph",
+      "description": "Search the code knowledge graph for functions, classes, routes, and variables. Use INSTEAD OF grep/glob when finding code definitions, implementations, or relationships. Three search modes: (1) query='update settings' for BM25 ranked full-text search with camelCase splitting and structural label boosting — recommended for natural-language discovery; (2) name_pattern='.*regex.*' for exact pattern matching; (3) semantic_query=[...] for vector cosine search that bridges vocabulary (finds 'publish' when you search 'send'). The three modes are independent and can be combined in a single call. PAGINATION: results are capped at limit (default 200) — broader queries are silently truncated. The response always includes 'total' (full match count before limit) and 'has_more' (true when total > offset+returned). Detect truncation with has_more, then page by re-calling with offset=offset+limit until has_more is false. Narrow first via label/file_pattern/min_degree before paginating large result sets.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "semantic_query": {
+            "description": "MUST be an ARRAY of keyword strings (e.g. [\"send\",\"pubsub\",\"publish\"]) — NOT a single string. Each keyword is scored independently via per-keyword min-cosine; results reflect functions that score well on ALL keywords. Requires moderate/full index mode. Results appear in the 'semantic_results' field (separate from 'results').",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "server_key": "codebase-memory",
+      "tool_name": "search_graph"
+    },
+    {
+      "name": "codegraph_codegraph_explore",
+      "description": "PRIMARY TOOL — call FIRST for almost any question OR before an edit: how does X work, architecture, a bug, where/what is X, surveying an area, or the symbols you are about to change. Returns the verbatim source of the relevant symbols grouped by file in ONE capped call (Read-equivalent — treat the shown source as already Read; do NOT re-open those files), plus the call path among them. Query can be a natural-language question OR a bag of symbol/file names. Usually the ONLY call you need — more accurate context, in far fewer tokens and round-trips than a search/Read/Grep loop.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "description": "Symbol names, file names, or short code terms to explore (e.g., \"AuthService loginUser session-manager\", \"GraphTraverser BFS impact traversal.ts\"). For a flow question, name the symbols spanning the flow (e.g. \"mutateElement renderScene\"). A natural-language question works too — no prior codegraph_search needed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "codegraph",
+      "tool_name": "codegraph_explore"
+    },
+    {
+      "name": "context-mode_ctx_search",
+      "description": "Search a unified knowledge base with a multi-strategy ranking pipeline. Two parallel matchers run on every query: a Porter-stemming matcher (\"caching\" finds \"cached\", \"caches\", \"cach\") and a trigram-substring matcher (\"useEff\" finds \"useEffect\"). Their ranked lists are merged via Reciprocal Rank Fusion, so a document that ranks well in both surfaces above one that wins only on a single strategy. Multi-term queries get an additional proximity-rerank pass that boosts passages where the query terms appear close together. Typos are corrected via Levenshtein distance and re-searched. Result snippets are window-extracted around the matched terms, not blindly truncated.\n\nThe knowledge base is unified: queries reach indexed content you stored (ctx_index, ctx_fetch_and_index, ctx_batch_execute output) AND auto-captured session memory written by hooks (decisions, errors, blockers, plans, user prompts, rejected approaches, tool failures, compaction guides — 26 event categories). File-backed sources carry a content hash and auto-flag staleness when the source file changes.\n\nWHEN:\n  - You want to recall something that exists in storage (recently indexed content, prior session events, auto-memory) instead of re-reading raw sources\n  - You have multiple related questions about the same body of knowledge — batch every question into one call (the ranking pipeline runs per-query but the round-trip cost is paid once)\n  - You want to scope the query to one labelled source (pass `source` — partial match is fine)\n  - You want a chronological view across current session + prior sessions + persistent auto-memory (pass `sort: \"timeline\"` — the default `relevance` mode only ranks within the current session)\n  - You want to filter ranked results by content shape (pass `contentType: \"code\"` to surface implementation snippets or `contentType: \"prose\"` to surface explanations)\n\nWHEN NOT:\n  - The data you want to query has never been stored in the knowledge base AND no session memory has accumulated around it — capture first (run a gather-and-index call), then come back here to query\n  - You have one ad-hoc question against data that is not in the knowledge base — answer it inline by running code in the sandbox tool; one round-trip instead of capture-then-query\n\nRETURNS:\n  Per-query ranked sections with window-extracted snippets. Use 2-4 specific technical terms per query. Common session-memory source labels: `decision` (user corrections / preferences), `error` and `error-resolution` (past failures + their fixes), `blocker`, `plan`, `user-prompt`, `rejected-approach`, `compaction` (post-compact session guide). See ctx_stats for live category counts. Each response carries a throttle counter (call #N/M in the rolling time window); results taper toward the soft cap and calls block after the hard cap. Tune via CONTEXT_MODE_SEARCH_WINDOW_MS, CONTEXT_MODE_SEARCH_MAX_RESULTS_AFTER, CONTEXT_MODE_SEARCH_BLOCK_AFTER.\n\nEXAMPLE: ctx_search(queries: [\"root cause\", \"proposed fix\", \"test coverage\"], source: \"issue-#683\")\nEXAMPLE: ctx_search(queries: [\"what did we decide about caching\"], source: \"decision\", sort: \"timeline\")\nEXAMPLE: ctx_search(queries: [\"useEffect cleanup pattern\"], source: \"react-docs\", contentType: \"code\", limit: 5)\nEXAMPLE: ctx_search(queries: [\"last user prompt\", \"active skills\", \"open blockers\"], sort: \"timeline\")",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "sort": {
+            "default": "relevance",
+            "description": "Sort mode. 'relevance' (default): BM25 ranked, current session only. 'timeline': chronological across current session, prior sessions, and auto-memory.",
+            "enum": [
+              "relevance",
+              "timeline"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_search"
+    },
+    {
+      "name": "gitnexus_query",
+      "description": "Query the code knowledge graph for execution flows related to a concept.\nReturns processes (call chains) ranked by relevance, each with its symbols and file locations.\n\nWHEN TO USE: Understanding how code works together. Use this when you need execution flows and relationships, not just file matches. Complements grep/IDE search.\nAFTER THIS: Use context() on a specific symbol for 360-degree view (callers, callees, categorized refs).\n\nReturns results grouped by process (execution flow):\n- processes: ranked execution flows with relevance priority\n- process_symbols: all symbols in those flows with file locations and module (functional area)\n- definitions: standalone types/interfaces not in any process\n\nHybrid ranking: BM25 keyword + semantic vector search, ranked by Reciprocal Rank Fusion.\n\nGROUP MODE: set \"repo\" to \"@<groupName>\" to search all member repos in that group (merged via RRF), or \"@<groupName>/<groupRepoPath>\" to run against a single member (same path keys as in group.yaml). If you use \"@<groupName>\" only, the member repo defaults to the lexicographically first key in group.yaml \"repos\". Prefer resources for contracts/status (see migration from legacy group_* tools).\n\nSERVICE: optional monorepo path prefix (POSIX-style, case-sensitive segments). When \"repo\" starts with \"@\", only processes whose symbols fall under that prefix are included. For a normal indexed repo name (no leading @), this field is currently ignored by the server.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "search_query": {
+            "description": "Natural language or keyword search query.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "search_query"
+        ],
+        "type": "object"
+      },
+      "server_key": "gitnexus",
+      "tool_name": "query"
+    },
+    {
+      "name": "graphify_query_graph",
+      "description": "Search the knowledge graph using BFS or DFS. Returns relevant nodes and edges as text context.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "question": {
+            "description": "Natural language question or keyword search",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "server_key": "graphify",
+      "tool_name": "query_graph"
+    },
+    {
+      "name": "jcodemunch_check_edit_safe",
+      "description": "Composite preflight: can this symbol be edited safely? Where check_delete_safe asks who breaks if it disappears, this asks what your regression risk is if you modify it and what you must preserve. Fuses signature impact (external/cross-repo importers), cyclomatic complexity, test-coverage presence, and runtime traffic into a single verdict + one-line recommended_action. Verdict tiers: safe_to_edit / untested / complexity_risk / signature_impact / runtime_critical. Top-5 blockers ranked by severity. Read-only — never mutates the codebase.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Symbol ID or name to evaluate for edit safety.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "check_edit_safe"
+    },
+    {
+      "name": "jcodemunch_embed_repo",
+      "description": "Precompute and cache symbol embeddings for semantic search. Optional warm-up: search_symbols with semantic=true lazily embeds missing symbols on first use, but embed_repo warms the cache upfront so the first semantic query returns immediately. Requires an embedding provider (JCODEMUNCH_EMBED_MODEL, GOOGLE_API_KEY+GOOGLE_EMBED_MODEL, or OPENAI_API_KEY+OPENAI_EMBED_MODEL).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "embed_repo"
+    },
+    {
+      "name": "jcodemunch_find_similar_symbols",
+      "description": "Find clusters of similar functions/methods/classes — consolidation candidates. Blends three signals: semantic (embedding cosine when embed_repo has run), structural (signature-token Jaccard + size ratio), and behavioral (callee-set Jaccard). Runs union-find clustering, classifies each cluster (near_duplicate / similar_logic / parallel_implementation), picks a canonical symbol per cluster (highest PageRank), and surfaces 'differs_by' breakdowns so an agent can recommend keep-this/replace-those. Pre-filters via BM25 inverted index — sub-N^2 on large repos. Degrades gracefully without embeddings (mode='structural'). Skip tests/dunders/generated files by default.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "semantic_weight": {
+            "default": 0.6,
+            "description": "Embedding weight when embeddings are present (0.0–1.0). Default 0.6.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "find_similar_symbols"
+    },
+    {
+      "name": "jcodemunch_get_blast_radius",
+      "description": "Find all files affected by changing a symbol. Returns confirmed files (import + name match) and potential files (import only, e.g. wildcard). Use before renaming or deleting a symbol. Set cross_repo=true to also find consumers in other indexed repos. Set include_source=true to get source snippets at each reference site (fix-ready context in one call). For automated edit plans, use plan_refactoring instead.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "include_source": {
+            "default": false,
+            "description": "When true, each confirmed file includes source_snippets (lines referencing the symbol) and symbols_in_file (nearby symbol signatures). Use for fix-ready context without extra tool calls. Default false.",
+            "type": "boolean"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Symbol name or ID to analyse (e.g. 'calculateScore' or a full symbol ID)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_blast_radius"
+    },
+    {
+      "name": "jcodemunch_get_changed_symbols",
+      "description": "Map a git diff to affected symbols: given two commits, returns which symbols were added, removed, modified, or renamed. Useful after merging a PR to answer 'what actually changed?' for code review or regression triage. Requires a locally indexed repo (index_folder). Defaults to comparing current HEAD against the SHA stored at index time.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier — must be locally indexed with index_folder",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_changed_symbols"
+    },
+    {
+      "name": "jcodemunch_get_context_bundle",
+      "description": "Get full source + imports for one or more symbols in one call. Multi-symbol bundles deduplicate shared imports. Set token_budget to cap response size; use budget_strategy to control what's kept. Supports fqn (PHP FQN via PSR-4) as alternative to symbol_id.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "budget_strategy": {
+            "default": "most_relevant",
+            "description": "'most_relevant' (default) ranks by file centrality (import in-degree). 'core_first' keeps the primary symbol first, ranks rest by centrality. 'compact' strips source bodies — returns signatures only.",
+            "enum": [
+              "most_relevant",
+              "core_first",
+              "compact"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_context_bundle"
+    },
+    {
+      "name": "jcodemunch_get_file_outline",
+      "description": "Get all symbols (functions, classes, methods) in a file with full signatures (including parameter names) and summaries. Use signatures to review naming at parameter granularity without reading the full file. Pass repo and file_path (e.g. 'src/main.py').",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_file_outline"
+    },
+    {
+      "name": "jcodemunch_get_parity_map",
+      "description": "Map migration/port parity between a SOURCE symbol tree and a TARGET tree (two subpaths of one repo, or two repos). For each source function/method/class it reports: ported (equivalent counterpart exists), ported_diverged (counterpart exists but its signature/body drifted — the failure a name-only check reports as done), unported (no counterpart), orphaned (unported and no migrated caller — a possible intentional drop), or added (target-only surface). Rename-aware: a ported-and-renamed symbol is matched by structural+behavioral similarity, not a false unported+added pair. When include_port_plan is set, the unported symbols are ordered by the source dependency graph (leaves first) with cycles grouped, each carrying unblocked + blocking_deps. Read-only and plan-only: it never edits or ports anything. parity_pct is a labelled estimate.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "divergence": {
+            "default": "signature",
+            "description": "Divergence policy: 'signature' (default), 'signature+body', or 'name_only' (presence only, no divergence check).",
+            "enum": [
+              "signature",
+              "signature+body",
+              "name_only"
+            ],
+            "type": "string"
+          },
+          "source_repo": {
+            "description": "Repo id of the tree being ported FROM.",
+            "type": "string"
+          },
+          "target_repo": {
+            "description": "Repo id of the tree being ported TO (may equal source_repo).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_repo",
+          "target_repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_parity_map"
+    },
+    {
+      "name": "jcodemunch_get_ranked_context",
+      "description": "Assemble the best-fit context for a query within a token budget. Ranks all symbols by relevance (BM25) and/or centrality (PageRank), loads source for the top candidates, and packs greedily until token_budget is exhausted. Use when you want 'the best N tokens of context for this task' without specifying exact symbols.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "description": "Natural language or identifier describing the task (max 500 chars)",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "strategy": {
+            "default": "combined",
+            "description": "'combined' (default) = BM25 + PageRank weighted sum. 'bm25' = pure text relevance. 'centrality' = PageRank only, filtered to query-matching symbols.",
+            "enum": [
+              "combined",
+              "bm25",
+              "centrality"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_ranked_context"
+    },
+    {
+      "name": "jcodemunch_get_repo_map",
+      "description": "Query-less, token-budgeted, signature-level overview of a repository. Groups symbols by file, ranks files by PageRank on the import graph, and greedy-packs signatures (not bodies) under token_budget. Designed for cold-start orientation — 'I just cloned this repo, what matters here?'. Pair with get_tectonic_map (module topology) and get_ranked_context (query-driven) once you know what to ask for.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_repo_map"
+    },
+    {
+      "name": "jcodemunch_get_repo_outline",
+      "description": "Get a high-level overview of an indexed repository: directories, file counts, language breakdown, symbol counts. Lighter than get_file_tree.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_repo_outline"
+    },
+    {
+      "name": "jcodemunch_get_symbol_complexity",
+      "description": "Return cyclomatic complexity, nesting depth, and parameter count for a single symbol. Complexity data is stored at index time (requires jcodemunch-mcp >= 1.16 / INDEX_VERSION 7). assessment field: 'low' (1-4), 'medium' (5-10), 'high' (11+). Re-index the repo if all metrics show 0 (pre-1.16 index).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "symbol_id": {
+            "description": "Full symbol ID as returned by search_symbols or get_file_outline.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol_id"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_symbol_complexity"
+    },
+    {
+      "name": "jcodemunch_get_symbol_importance",
+      "description": "Return the most architecturally important symbols in a repo, ranked by PageRank or in-degree centrality on the import graph. Useful for orientation: surfaces the symbols that most of the codebase depends on. New tool: use after indexing to understand repo architecture at a glance.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_symbol_importance"
+    },
+    {
+      "name": "jcodemunch_get_symbol_provenance",
+      "description": "Trace the complete authorship lineage and evolution narrative of a symbol through git history. Returns every commit that touched the symbol (or its file), classified into semantic categories (creation, bugfix, refactor, feature, perf, rename, revert, etc.) with extracted commit intent. Includes a human-readable narrative summarising who created it, why, how it evolved, and how volatile it is. Use before refactoring unfamiliar code to understand the 'why' behind it. Requires a locally indexed repo (index_folder).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Symbol name or full ID as returned by search_symbols.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_symbol_provenance"
+    },
+    {
+      "name": "jcodemunch_index_file",
+      "description": "Index a single file within an existing index. Surgical update after edits. The file must be under an already-indexed folder's source_root. Can also add new files.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "description": "Absolute path to the file to index.",
+            "type": "string"
+          },
+          "use_ai_summaries": {
+            "default": true,
+            "description": "Generate symbol summaries via AI. When false, falls back to docstrings or signature.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "index_file"
+    },
+    {
+      "name": "jcodemunch_index_folder",
+      "description": "Index a local folder of source code. Response surfaces `discovery_skip_counts` and `no_symbols_files` for diagnosing missing files.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "description": "Path to local folder (absolute or relative; ~ expands).",
+            "type": "string"
+          },
+          "use_ai_summaries": {
+            "default": true,
+            "description": "Generate symbol summaries via AI. When false, falls back to docstrings or signature.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "index_folder"
+    },
+    {
+      "name": "jcodemunch_index_repo",
+      "description": "Index a GitHub repository's source code. Fetches files, parses ASTs, extracts symbols, and saves to local storage. Set JCODEMUNCH_USE_AI_SUMMARIES=false to disable AI summaries globally.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "url": {
+            "description": "GitHub repository URL or owner/repo string",
+            "type": "string"
+          },
+          "use_ai_summaries": {
+            "default": true,
+            "description": "Use AI to generate symbol summaries. Supports Anthropic, Gemini, OpenAI-compatible endpoints, MiniMax, and GLM-5 via env vars. When false, uses docstrings or signature fallback.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "index_repo"
+    },
+    {
+      "name": "jcodemunch_invalidate_cache",
+      "description": "Delete the index and cached files for a repository. Forces a full re-index on next index_repo or index_folder call.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "invalidate_cache"
+    },
+    {
+      "name": "jcodemunch_list_repos",
+      "description": "List all indexed repositories. START HERE before using Grep/Read/search tools — check if the project is already indexed, then use search_symbols / get_symbol_source instead of native file reads. If jcodemunch tools appear as deferred in your tool list, call ToolSearch to load their schemas first.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "list_repos"
+    },
+    {
+      "name": "jcodemunch_plan_refactoring",
+      "description": "Generate edit-ready refactoring instructions for renaming, moving, extracting, or changing the signature of a symbol. Returns {old_text, new_text} blocks for every affected file — directly compatible with Edit tool. Handles import rewrites, collision detection, new file generation, and multi-file coordination. Use BEFORE executing any multi-file refactoring to get a complete edit plan in one call.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "refactor_type": {
+            "description": "Type of refactoring to plan.",
+            "enum": [
+              "signature",
+              "rename",
+              "move"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Symbol name or ID to refactor. For extract, comma-separated list (e.g. 'helper,process_data').",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "symbol",
+          "refactor_type"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "plan_refactoring"
+    },
+    {
+      "name": "jcodemunch_search_columns",
+      "description": "Search column metadata across indexed models. Works with any ecosystem provider that emits column data (dbt, SQLMesh, database catalogs, etc.). Returns model name, file path, column name, and description. Use instead of grep/search_text for column discovery — 77% fewer tokens.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "description": "Search query (matches column names and descriptions)",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "search_columns"
+    },
+    {
+      "name": "jcodemunch_search_symbols",
+      "description": "Search for symbols matching a query across the entire indexed repository. Returns matches with signatures and summaries.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "debug": {
+            "default": false,
+            "description": "When true, each result includes a score_breakdown showing per-field scoring contributions (name_exact, name_contains, name_word_overlap, signature_phrase, signature_word_overlap, summary_phrase, summary_word_overlap, keywords, docstring_word_overlap). Also adds candidates_scored to _meta.",
+            "type": "boolean"
+          },
+          "detail_level": {
+            "default": "standard",
+            "description": "Controls result verbosity. 'compact' returns id/name/kind/file/line only (~15 tokens each, best for broad discovery). 'standard' returns signatures and summaries (default). 'full' inlines source code, docstring, and end_line — equivalent to search + get_symbol in one call.",
+            "enum": [
+              "compact",
+              "standard",
+              "full"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "description": "Optional filter by symbol kind",
+            "enum": [
+              "function",
+              "class",
+              "method"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Search query (matches symbol names, signatures, summaries, docstrings)",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          },
+          "semantic": {
+            "default": false,
+            "description": "Enable semantic (embedding-based) search. Requires an embedding provider: JCODEMUNCH_EMBED_MODEL (sentence-transformers), GOOGLE_API_KEY+GOOGLE_EMBED_MODEL (Gemini), or OPENAI_API_KEY+OPENAI_EMBED_MODEL (OpenAI). When false (default) there is zero performance impact.",
+            "type": "boolean"
+          },
+          "semantic_only": {
+            "default": false,
+            "description": "Skip BM25 entirely and rank solely by embedding cosine similarity. Implies semantic=true.",
+            "type": "boolean"
+          },
+          "semantic_weight": {
+            "default": 0.5,
+            "description": "Weight for semantic score in hybrid BM25+embedding ranking (0.0–1.0). BM25 receives 1-weight. Default 0.5. Set to 0.0 for identical results to pure BM25; set to 1.0 for pure semantic.",
+            "type": "number"
+          },
+          "sort_by": {
+            "default": "relevance",
+            "description": "Ranking strategy. 'relevance' (default) = BM25 text match. 'centrality' = filter by query, rank by PageRank. 'combined' = BM25 + PageRank weighted.",
+            "enum": [
+              "relevance",
+              "centrality",
+              "combined"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "search_symbols"
+    },
+    {
+      "name": "jcodemunch_search_text",
+      "description": "Full-text search across indexed file contents. Useful when symbol search misses (e.g., string literals, comments, config values). Supports regex (is_regex=true) and context lines around matches (context_lines=N, like grep -C).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "description": "Text to search for. Case-insensitive substring by default. Set is_regex=true for full regex (e.g. 'estimateToken|tokenEstimat|\\.length.*0\\.25'). Limits: 500 chars plain, 200 chars when is_regex=true. Split longer alternations into multiple calls.",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "search_text"
+    },
+    {
+      "name": "jcodemunch_summarize_repo",
+      "description": "Re-run AI summarization on all symbols in an existing index. Use this when index_folder completed but AI summaries are missing — e.g., the background summarization thread was interrupted, AI was disabled at index time, or the summarizer provider wasn't configured yet. With force=true (recommended), clears all existing summaries and re-runs the full 3-tier pipeline (docstring → AI → signature fallback).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "force": {
+            "default": false,
+            "description": "If true, clear all existing summaries and re-summarize every symbol. Required when index_folder already applied signature fallbacks. If false, only process symbols with no summary at all.",
+            "type": "boolean"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or local/hash)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "summarize_repo"
+    },
+    {
+      "name": "jcodemunch_tune_weights",
+      "description": "Learn per-repo retrieval weights from the v1.78.0 ranking ledger. Computes confidence correlations for the semantic and identity-match channels and writes overrides to ~/.code-index/tuning.jsonc. search_symbols reads those overrides at query time when the caller doesn't pass an explicit semantic_weight. Learns from a recency window of the ledger (default 90 days) so stale events can't anchor the weights. Safe to re-run; idempotent for stable signal.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "Compute proposed deltas without writing tuning.jsonc.",
+            "type": "boolean"
+          },
+          "explain": {
+            "default": false,
+            "description": "Include per-signal correlations (mean confidence with/without semantic and identity channels) in the response.",
+            "type": "boolean"
+          },
+          "repo": {
+            "description": "Limit tuning to a single repo. Default: every repo present in the ledger.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "tune_weights"
+    }
+  ],
+  "query": "search indexed repository symbols by name signature semantic relevance",
+  "must_include_tools": [
+    "jcodemunch_search_symbols"
+  ],
+  "status": "applied",
+  "tools_in": 189,
+  "tools_out": 33,
+  "score_tool": 0.4,
+  "score_tool_enum": 0.1,
+  "prune_enums": true,
+  "tokens_in": 55361,
+  "tokens_out": 7607,
+  "tokens_saved": 47754,
+  "tokens_in_fixture_file": 73822,
+  "tokenizer": "tiktoken_compact_json",
+  "optional_properties_in": 594,
+  "optional_properties_out": 31,
+  "decomposed": {
+    "bm25": 58,
+    "build_index": 956
+  }
+}

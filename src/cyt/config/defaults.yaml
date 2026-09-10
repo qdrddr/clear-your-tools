@@ -292,6 +292,78 @@ policies:
       required_properties: [name]
       optional_properties: []
 
+  - name: tier_cold
+    description: T1 cold tier — tool name and description only.
+    mode: prune
+    scoring:
+      tool_root: pin
+      optional_properties: when_relevant
+    always:
+      tool: [name, description]
+      required_properties: []
+      optional_properties: []
+    conditional: []
+    when_tool_pruned:
+      tool: []
+      required_properties: []
+      optional_properties: []
+
+  - name: tier_active
+    description: T2 active tier — name, description, and required properties on trigger.
+    mode: prune
+    scoring:
+      tool_root: pin
+      optional_properties: when_relevant
+    always:
+      tool: [name, description]
+      required_properties: []
+      optional_properties: []
+    conditional:
+      - triggers:
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
+        retain:
+          required_properties: [name, description]
+          optional_properties: []
+    when_tool_pruned:
+      tool: []
+      required_properties: []
+      optional_properties: []
+
+  - name: tier_hot
+    description: T3 hot tier — full schema participates in pruning.
+    mode: prune
+    scoring:
+      tool_root: when_relevant
+      optional_properties: when_relevant
+    always:
+      tool: [name, description]
+      required_properties: []
+      optional_properties: []
+    conditional:
+      - triggers:
+          [
+            tool.name,
+            tool.description,
+            required_property.name,
+            required_property.description,
+          ]
+        retain:
+          required_properties: [name, description]
+          optional_properties: []
+      - triggers: [optional_property.name, optional_property.description]
+        retain:
+          required_properties: [name, description]
+          optional_properties: [name, description]
+    when_tool_pruned:
+      tool: []
+      required_properties: []
+      optional_properties: []
+
 tools:
   permissions:
     deny: []
@@ -356,6 +428,47 @@ tools:
     mcp_tool: prune_all
     minimum_tools: 50
     per_tool: {}
+  tiers:
+    enabled: false
+    shadow: true
+    database:
+      path: ~/.config/cyt/tier_state.db
+    statistics:
+      request_half_life: 100
+    cache_epoch:
+      prompt_cache_ttl_minutes: 5
+      ttl_multiplier: 1
+      idle_gap_triggers_epoch: true
+    evaluation:
+      min_injections_before_reconsider: 8
+    emergency_t4_inject_min: 20
+    emergency_t4_utility_max: 0.20
+    temp_promotion_turns: 3
+    wake:
+      threshold: 0.60
+      lease_sessions: 2
+      cooldown_sessions: 2
+      weights:
+        shadow: 0.40
+        direct: 0.30
+        query: 0.20
+        sibling: 0.10
+    thresholds:
+      t12:
+        t12_promote_demand: 0.55
+        t12_promote_utility: 0.35
+        t12_demote_demand: 0.30
+        t12_demote_utility: 0.20
+      t23:
+        t23_promote_demand: 0.70
+        t23_promote_utility: 0.50
+        t23_demote_demand: 0.45
+        t23_demote_utility: 0.30
+      t34:
+        t34_promote_demand: 0.80
+        t34_promote_utility: 0.70
+        t34_demote_demand: 0.60
+        t34_demote_utility: 0.50
   sequence:
     - bm25
     # - rerank
@@ -364,7 +477,7 @@ tools:
     bm25:
       score_skills: 0.5
       index_dir: ~/.config/cyt/bm25
-      score_tool: 0.3
+      score_tool: 0.4
       prune_enums: true
       score_tool_enum: 0.1
       policy:
@@ -435,6 +548,9 @@ stats:
 
 skills:
   enabled: false
+  tiers:
+    enabled: false
+    shadow: true
   selector_soft_budget: 2000
   selector_bulk_max_tokens: 32000
   frontmatter_upper_limit: 0.70

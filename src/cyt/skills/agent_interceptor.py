@@ -54,6 +54,12 @@ def _allow_response(
     return payload
 
 
+def _record_skill_read_feedback(*, file_path: str, config: dict[str, Any]) -> None:
+    from cyt.tiers.feedback import record_skill_used_feedback
+
+    record_skill_used_feedback(file_path, config=config, without_injection=False)
+
+
 def _deny_response(*, user_message: str = "Skill read denied by CYT permissions") -> dict[str, Any]:
     return {
         "agent_interceptor": True,
@@ -263,6 +269,7 @@ def run_skill_read_intercept(
         match,
         full=skill_match_is_content_complete(match),
     )
+    _record_skill_read_feedback(file_path=entry.source_path, config=config)
     return _allow_response(
         updated_input={"path": str(skinny_path.resolve())},
         skill_log_entry=skill_log_entry,

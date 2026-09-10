@@ -1,0 +1,557 @@
+{
+  "pruned_tools": [
+    {
+      "name": "code-review-graph_apply_refactor_tool",
+      "description": "Apply a previously previewed refactoring to source files.\n\nTakes a refactor_id from a prior refactor_tool(mode=\"rename\") call and\napplies the exact string replacements to the target files. Previews\nexpire after 10 minutes.\n\nSecurity: All edit paths are validated to be within the repo root.\nOnly exact string replacements are performed (no regex, no eval).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "If True, return a unified diff of what would change\nwithout touching any files. The refactor_id remains valid so\nthe same preview can be applied in a follow-up call without\ndry_run. Use this for a human-in-the-loop review before\ncommitting changes to disk. See: #176",
+            "type": "boolean"
+          },
+          "refactor_id": {
+            "description": "The refactor ID from refactor_tool's response.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refactor_id"
+        ],
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "apply_refactor_tool"
+    },
+    {
+      "name": "code-review-graph_detect_changes_tool",
+      "description": "Detect changes and produce risk-scored, priority-ordered review guidance.\n\nPrimary tool for code review. Maps git diffs to affected functions,\nflows, communities, and test coverage gaps. Returns risk scores and\nprioritized review items. Replaces get_review_context for change-aware reviews.\n\nOffloaded to a thread via ``asyncio.to_thread`` — runs `git diff`\nsubprocesses and BFS traversals that can take several seconds on\nlarge repos. See: #46, #136.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for\ntoken-efficient summary. Default: standard.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "detect_changes_tool"
+    },
+    {
+      "name": "code-review-graph_get_affected_flows_tool",
+      "description": "Find execution flows affected by changed files.\n\nIdentifies which execution flows pass through nodes in the changed files.\nUseful during code review to understand which user-facing or critical paths\nare impacted by a change. Auto-detects changed files from git if not specified.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "default": "HEAD~1",
+            "description": "Git ref for auto-detecting changes. Default: HEAD~1.",
+            "type": "string"
+          },
+          "changed_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "List of changed file paths (relative to repo root). Auto-detected if omitted."
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Repository root path. Auto-detected if omitted."
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "get_affected_flows_tool"
+    },
+    {
+      "name": "code-review-graph_get_impact_radius_tool",
+      "description": "Analyze the blast radius of changed files in the codebase.\n\nShows which functions, classes, and files are impacted by changes.\nAuto-detects changed files from git if not specified.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "get_impact_radius_tool"
+    },
+    {
+      "name": "code-review-graph_get_review_context_tool",
+      "description": "Generate a focused, token-efficient review context for code changes.\n\nCombines impact analysis with source snippets and review guidance.\nUse this for comprehensive code reviews.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for\ntoken-efficient summary. Default: standard.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "get_review_context_tool"
+    },
+    {
+      "name": "code-review-graph_query_graph_tool",
+      "description": "Run a predefined graph query to explore code relationships.\n\nAvailable patterns:\n- callers_of: Find functions that call the target\n- callees_of: Find functions called by the target\n- imports_of: Find what the target imports\n- importers_of: Find files that import the target\n- children_of: Find nodes contained in a file or class\n- tests_for: Find tests for the target\n- inheritors_of: Find classes inheriting from the target\n- triggers_of: Find methods invoked by a scheduler or other trigger\n- triggered_by: Find schedulers or other triggers that invoke the target\n- publishers_of: Find methods that publish an event\n- listeners_of: Find methods that listen for an event\n- handlers_of: Find methods that handle an endpoint\n- endpoints_for: Find endpoints handled by a method\n- consumers_of: Find classes that consume a Spring configuration property\n- file_summary: Get all nodes in a file",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Query pattern name (see above).",
+            "type": "string"
+          },
+          "target": {
+            "description": "Node name, qualified name, or file path to query.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "target"
+        ],
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "query_graph_tool"
+    },
+    {
+      "name": "code-review-graph_semantic_search_nodes_tool",
+      "description": "Search for code entities by name, keyword, or semantic similarity.\n\nUses vector embeddings for semantic search when available (run embed_graph_tool\nfirst, with a provider of your choice: \"local\" needs sentence-transformers,\n\"openai\" / \"google\" / \"minimax\" need their respective env vars). Falls back\nto FTS5 / keyword matching when no matching embeddings exist for the given\nprovider.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "standard",
+            "description": "\"standard\" for full output, \"minimal\" for compact summary. Default: standard.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Search string to match against node names.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "server_key": "code-review-graph",
+      "tool_name": "semantic_search_nodes_tool"
+    },
+    {
+      "name": "codebase-memory_index_repository",
+      "description": "Index a repository into the knowledge graph. Special mode 'cross-repo-intelligence': skip extraction, only match Routes/Channels across projects to create CROSS_HTTP_CALLS/CROSS_ASYNC_CALLS/CROSS_CHANNEL edges. Requires target_projects param. Ensure target projects have fresh indexes first.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "mode": {
+            "default": "full",
+            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects.",
+            "enum": [
+              "full",
+              "moderate",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "repo_path": {
+            "description": "Path to the repository",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "server_key": "codebase-memory",
+      "tool_name": "index_repository"
+    },
+    {
+      "name": "codebase-memory_search_code",
+      "description": "Graph-augmented code search. Finds text patterns via grep, then enriches results with the knowledge graph: deduplicates matches into containing functions, ranks by structural importance (definitions first, popular functions next, tests last). Modes: compact (default, signatures only — token efficient), full (with source), files (just file paths). Use path_filter regex to scope results. TRUNCATION: enriched results are capped at limit (default 10). Response carries 'total_grep_matches' (raw grep hit count) and 'total_results' (deduplicated function count) — compare to limit to detect truncation. There is no offset parameter; to see more, raise limit or narrow the query with file_pattern / path_filter.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "mode": {
+            "default": "compact",
+            "description": "compact: signatures+metadata (default). full: with source. files: just file list.",
+            "enum": [
+              "full",
+              "files",
+              "compact"
+            ],
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern",
+          "project"
+        ],
+        "type": "object"
+      },
+      "server_key": "codebase-memory",
+      "tool_name": "search_code"
+    },
+    {
+      "name": "context-mode_ctx_batch_execute",
+      "description": "Run multiple commands in ONE call. Every command's output is auto-indexed into the knowledge base; if you also pass `queries`, the matching sections come back in the same round trip so a follow-up search call is not needed.\n\nConcurrency parallelizes the FETCH phase (run-the-commands). The DERIVATION phase — turning raw output into an answer — still belongs in code: add a processing command that consumes the indexed output and prints only the answer, so the raw bytes never enter your conversation (Think-in-Code, same principle as the sandbox tool).\n\nWHEN:\n  - You have 3+ related commands you would otherwise run sequentially (multi-issue lookups, git log + git diff + git blame, multi-file reads, multi-region cloud queries)\n  - You want to gather AND query in one round trip — pass `queries` so the matching sections come back inline\n  - You want to parallelize I/O-bound work — pass `concurrency` 2-8 (network calls, gh CLI, cloud APIs, multi-repo git reads)\n  - The combined output is large enough that piping it through ctx_search later would itself be expensive — let auto-index + inline queries do both in one shot\n\nWHEN NOT:\n  - Single command with no follow-up query — run it in the sandbox tool directly\n  - CPU-bound or stateful commands — keep concurrency at 1 (npm test, build, lint, port-binding servers, lock-file holders, anything that races on the same resource)\n\nRETURNS:\n  Auto-indexed section list per command label, plus top matches per query (when `queries` is passed). Raw output is NOT echoed in full — only the matched windows. Concurrency>1 switches each command to its own per-command timeout (no shared budget); concurrency=1 preserves the legacy shared-budget cascading-skip-on-timeout path. Use 4-8 for I/O-bound batches; keep at 1 for CPU work or shared-state commands; lower the value when target hosts enforce per-IP rate limits.\n\nEXAMPLE: ctx_batch_execute(\n  commands: [\n    {label: \"issue 1\", command: \"gh issue view 1\"},\n    {label: \"issue 2\", command: \"gh issue view 2\"},\n    {label: \"summarize\", command: \"echo done\"}\n  ],\n  queries: [\"root cause\", \"proposed fix\"],\n  concurrency: 2\n)",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "commands": {
+            "description": "Commands to execute as a batch. Output is labeled with the section header. Default order is sequential; pass concurrency>1 to run in parallel (output stays in input order).",
+            "items": {
+              "properties": {
+                "command": {
+                  "description": "Shell command to execute",
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Section header for this command's output (e.g., 'README', 'Package.json', 'Source Tree')",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "label",
+                "command"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "queries": {
+            "description": "Search queries to extract information from indexed output. Use 5-8 comprehensive queries. Each returns top 5 matching sections with full content. This is your ONLY chance — put ALL your questions here. No follow-up calls needed.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "commands",
+          "queries"
+        ],
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_batch_execute"
+    },
+    {
+      "name": "context-mode_ctx_execute",
+      "description": "Run code in a sandboxed subprocess. (Bun detected — JS/TS runs 3-5x faster) Languages: javascript, shell, typescript, python, ruby, go, rust, perl.\n\nThink-in-Code — the core philosophy: the bytes your code processes never enter your conversation memory; only what you console.log() does. Reading a 700 KB log directly means 700 KB of your remaining reasoning capacity gets spent on raw bytes. Running code over that same log in this sandbox and printing a 3 KB summary leaves you with 697 KB of capacity for the actual work.\n\nConcrete shape — analyze 47 source files without reading any of them:\n  ctx_execute(language: \"javascript\", code: `\n    const fs = require('fs');\n    const files = fs.readdirSync('src').filter(f => f.endsWith('.ts'));\n    files.forEach(f => {\n      const lines = fs.readFileSync('src/'+f,'utf8').split('\\\\n').length;\n      console.log(f + ': ' + lines + ' lines');\n    });\n  `)\n  // 47 files analyzed, 15,314 LoC summarized — output ~3.6 KB instead of 47 Read() calls = ~700 KB.\n\nWHEN:\n  - You intend to derive an answer FROM data (filter, count, aggregate, parse, compare, transform) — do the derivation in code and print only the answer\n  - Output shape or size cannot be predicted before execution (recursive finds, repo-wide greps, list endpoints, query results, log scans)\n  - You would otherwise read raw output and then mentally compute — that compute belongs here, in code, where its inputs stay out of your conversation\n  - You need to keep a long-running process alive (dev server, watcher, daemon) — pass `background: true` to detach on timeout instead of killing the process\n  - The output may legitimately be large but you only want recall-by-topic later — pass an `intent` string; outputs over ~5KB are auto-indexed into the knowledge base and only the section titles + previews come back, retrievable via ctx_search\n\nWHEN NOT:\n  - Single observational command whose entire short output you intend to consume verbatim (whoami, pwd, git status on a clean tree) — Bash is simpler\n  - File mutations (Edit/Write) or navigation (cd/ls) — Bash is the right surface\n  - You already know the output is one short fixed line and you want to read it as-is\n\nRETURNS:\n  Only what your code prints. Wrap risky calls in try/catch — uncaught errors go to stderr and may leak more than intended. When `intent` is set and output exceeds the auto-index threshold, the response carries searchable section titles + previews instead of the raw stdout; use ctx_search(queries: [...]) to drill into specific sections.\n\nEXAMPLE: ctx_execute(language: \"javascript\", code: \"const out = require('child_process').execSync('npm test', {encoding:'utf8', stdio:['ignore','pipe','pipe']}); console.log(out.split('\\\\n').filter(l => /(FAIL|✗|×|Error:|Tests +.*(failed|passed))/i.test(l)).slice(0, 60).join('\\\\n'))\")\nEXAMPLE: ctx_execute(language: \"javascript\", code: \"const out = require('child_process').execSync('gh issue list --json number,title --limit 100', {encoding:'utf8'}); const hooks = JSON.parse(out).filter(i => /hook|routing/i.test(i.title)); console.log(`${hooks.length} hook-related issues`)\")",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "background": {
+            "default": false,
+            "description": "Keep process running after timeout (for servers/daemons). Returns partial output without killing the process. IMPORTANT: Do NOT add setTimeout/self-close timers in background scripts — the process must stay alive until the timeout detaches it. For server+fetch patterns, prefer putting both server and fetch in ONE ctx_execute call instead of using background.",
+            "type": "boolean"
+          },
+          "code": {
+            "description": "Source code to execute. Use console.log (JS/TS), print (Python/Ruby/Perl/R), echo (Shell), echo (PHP), fmt.Println (Go), IO.puts (Elixir), or Console.WriteLine (C#) to output a summary to context.",
+            "type": "string"
+          },
+          "cwd": {
+            "description": "Optional working directory for shell commands. Non-shell languages still execute from their sandbox temp directory.",
+            "type": "string"
+          },
+          "intent": {
+            "description": "What you're looking for in the output. When provided and output is large (>5KB), indexes output into knowledge base and returns section titles + previews — not full content. Use ctx_search(queries: [...]) to retrieve specific sections. Example: 'failing tests', 'HTTP 500 errors'.\n\nTIP: Use specific technical terms, not just concepts. Check 'Searchable terms' in the response for available vocabulary.",
+            "type": "string"
+          },
+          "language": {
+            "description": "Runtime language",
+            "enum": [
+              "javascript",
+              "typescript",
+              "python"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "code"
+        ],
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_execute"
+    },
+    {
+      "name": "context-mode_ctx_execute_file",
+      "description": "Read a file into a sandboxed FILE_CONTENT variable and run code over it. Only what you console.log() enters your conversation — the file bytes stay in the sandbox.\n\nThink-in-Code applied to file-level analysis: Reading the whole file means every byte enters your conversation memory and costs reasoning capacity for the rest of the session. Running code over it here lets you keep the raw bytes out and only the derived answer in. Same principle as ctx_execute, scoped to one named file via the FILE_CONTENT variable.\n\nWHEN:\n  - You want to KNOW SOMETHING ABOUT a file (line count, matches of a pattern, parsed structure, statistical aggregate) without needing to SEE all of it\n  - The file is structured (CSV, JSON, log, code) and a code-level derivation is cheaper than reading verbatim\n  - The file is large enough that reading the full content would burn meaningful conversation memory you need for the actual work\n  - The derivation may itself produce a large output you want recall-by-topic on later — pass an `intent` string; outputs over ~5KB are auto-indexed and only matching sections come back, retrievable via ctx_search\n\nWHEN NOT:\n  - You intend to EDIT the file — use Read so the subsequent Edit can match the exact text\n  - You only need one specific line and you know its offset — Read with offset/limit is the simplest path\n  - The file is small AND you will consume all of it for understanding/editing — Read directly\n\nRETURNS:\n  Only what your code prints. The FILE_CONTENT variable holds the raw bytes inside the sandbox; nothing else leaves. When `intent` is set and output exceeds the auto-index threshold, the response carries searchable section titles + previews instead of the raw stdout.\n\nEXAMPLE: ctx_execute_file(path: \"huge.log\", language: \"javascript\", code: \"const errs = FILE_CONTENT.split('\\\\n').filter(l => /ERROR|FATAL/.test(l)); console.log(`${errs.length} error lines`); console.log(errs.slice(-5).join('\\\\n'))\")\nEXAMPLE: ctx_execute_file(path: \"data.csv\", language: \"javascript\", code: \"const rows = FILE_CONTENT.split('\\\\n'); console.log(`rows: ${rows.length - 1}, header: ${rows[0]}`)\")",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "code": {
+            "description": "Code to process FILE_CONTENT (file_content in Elixir). Print summary via console.log/print/echo/IO.puts/Console.WriteLine.",
+            "type": "string"
+          },
+          "intent": {
+            "description": "What you're looking for in the output. When provided and output is large (>5KB), returns only matching sections via BM25 search instead of truncated output.",
+            "type": "string"
+          },
+          "language": {
+            "description": "Runtime language",
+            "enum": [
+              "javascript",
+              "typescript",
+              "python"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute file path or relative to project root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "language",
+          "code"
+        ],
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_execute_file"
+    },
+    {
+      "name": "context-mode_ctx_index",
+      "description": "Store content in a searchable knowledge base (BM25 over FTS5). Splits markdown by headings, keeps code blocks intact, and persists the raw chunks. The full content stays in storage — retrieve any section on-demand via ctx_search; nothing is summarized or truncated.\n\nWHEN:\n  - Documentation from Context7, Skills, or MCP tools (API docs, framework guides, code examples)\n  - API references (endpoint details, parameter specs, response schemas)\n  - MCP tools/list output (exact tool signatures and descriptions)\n  - Skill prompts and instructions that are too large to keep verbatim in conversation\n  - README files, migration guides, changelog entries\n  - Any content with code examples you may need to reference precisely later\n\nWHEN NOT:\n  - Log files, test output, CSV, or build output — use ctx_execute_file, which processes in-sandbox without persisting bytes\n  - Single-use ephemeral content you will not query later — keep it inline if it fits, or ctx_execute_file it\n\nRETURNS:\n  Indexing metadata: chunk counts (total, code-bearing), source label, and the exact ctx_search call shape to query the indexed content. Raw content is NOT echoed back — it lives in storage, retrievable via ctx_search(source: \"<label>\"). When `path` is provided, a content hash is stored so ctx_search results auto-flag staleness on future calls.\n\nEXAMPLE: ctx_index(content: \"# React useEffect\\n\\nThe Effect Hook lets you ...\", source: \"react-useeffect-docs\")\nEXAMPLE: ctx_index(path: \"/path/to/large-spec.md\", source: \"openapi-v2-spec\")",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "extensions": {
+            "description": "Directory-only: allowed file extensions (default: .md .mdx .txt .json .yaml .yml .ts .tsx .js .jsx .py .rs .go .sh).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxFiles": {
+            "description": "Directory-only: hard cap on files indexed (default: 200) — FTS5 blow-up guard.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "File OR directory path to read and index (content never enters context). Provide this OR content. Directory paths trigger a bounded recursive walk (#687).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_index"
+    },
+    {
+      "name": "context-mode_ctx_upgrade",
+      "description": "Upgrade context-mode to the latest version. Returns a shell command to execute. You MUST run the returned command using your shell tool (Bash, shell_execute, run_in_terminal, etc.) and display the output as a checklist. Tell the user to restart their session after upgrade.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {},
+        "type": "object"
+      },
+      "server_key": "context-mode",
+      "tool_name": "ctx_upgrade"
+    },
+    {
+      "name": "gitnexus_rename",
+      "description": "Multi-file coordinated rename using the knowledge graph + text search.\nFinds all references via graph (high confidence) and regex text search (lower confidence). Preview by default.\n\nWHEN TO USE: Renaming a function, class, method, or variable across the codebase. Safer than find-and-replace.\nAFTER THIS: Run detect_changes() to verify no unexpected side effects.\n\nEach edit is tagged with confidence:\n- \"graph\": found via knowledge graph relationships (high confidence, safe to accept)\n- \"text_search\": found via regex text search (lower confidence, review carefully)",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "description": "Preview edits without modifying files (default: true)",
+            "type": "boolean"
+          },
+          "new_name": {
+            "description": "The new name for the symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "server_key": "gitnexus",
+      "tool_name": "rename"
+    },
+    {
+      "name": "jcodemunch_digest",
+      "description": "Agent stand-up briefing for a repo. Returns a tight (~200 token) markdown digest of (a) what changed since the agent's last session (by tracking git HEAD between calls), (b) the current risk surface (top hotspots by complexity × churn), and (c) dead-code candidates. Each item references symbol_ids the agent can immediately query with get_symbol_source / get_call_hierarchy / check_references. Designed for session-start context injection: call once when you open a repo, get oriented to the load-bearing changes without cold exploration.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repo identifier (owner/name, full id, or bare display name).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "digest"
+    },
+    {
+      "name": "jcodemunch_get_file_outline",
+      "description": "Get all symbols (functions, classes, methods) in a file with full signatures (including parameter names) and summaries. Use signatures to review naming at parameter granularity without reading the full file. Pass repo and file_path (e.g. 'src/main.py').",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_file_outline"
+    },
+    {
+      "name": "jcodemunch_get_symbol_source",
+      "description": "Get full source of one symbol (symbol_id → flat object) or many (symbol_ids[] → {symbols, errors}). Supports verify, context_lines, fqn (PHP FQN via PSR-4), and an optional bounded mode that caps returned source for large symbols/batches.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "max_source_bytes": {
+            "description": "Bounded mode: UTF-8-safe per-symbol byte cap on the returned source. Verify still hashes the full body.",
+            "type": "integer"
+          },
+          "repo": {
+            "description": "Repository identifier (owner/repo or just repo name)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "get_symbol_source"
+    },
+    {
+      "name": "jcodemunch_summarize_repo",
+      "description": "Re-run AI summarization on all symbols in an existing index. Use this when index_folder completed but AI summaries are missing — e.g., the background summarization thread was interrupted, AI was disabled at index time, or the summarizer provider wasn't configured yet. With force=true (recommended), clears all existing summaries and re-runs the full 3-tier pipeline (docstring → AI → signature fallback).",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "repo": {
+            "description": "Repository identifier (owner/repo or local/hash)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
+        ],
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "summarize_repo"
+    },
+    {
+      "name": "jcodemunch_test_summarizer",
+      "description": "Verify AI summarizer config and connectivity.",
+      "cyt_catalog_source": "cyt_mcp",
+      "input_schema": {
+        "properties": {
+          "timeout_ms": {
+            "default": 15000,
+            "description": "Slow-response threshold in ms.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "server_key": "jcodemunch",
+      "tool_name": "test_summarizer"
+    }
+  ],
+  "query": "run javascript in sandbox execute code summarize output without loading full file bytes",
+  "must_include_tools": [
+    "context-mode_ctx_execute",
+    "context-mode_ctx_execute_file"
+  ],
+  "status": "applied",
+  "tools_in": 189,
+  "tools_out": 20,
+  "score_tool": 0.4,
+  "score_tool_enum": 0.1,
+  "prune_enums": true,
+  "tokens_in": 55361,
+  "tokens_out": 5970,
+  "tokens_saved": 49391,
+  "tokens_in_fixture_file": 73822,
+  "tokenizer": "tiktoken_compact_json",
+  "optional_properties_in": 594,
+  "optional_properties_out": 21,
+  "decomposed": {
+    "bm25": 30,
+    "build_index": 956
+  }
+}

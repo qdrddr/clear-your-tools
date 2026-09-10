@@ -160,6 +160,7 @@ graphify-out/cache/
 scripts/mcpc/output/
 scripts/legal/output/
 scripts/deps/output/
+src/tests/fixtures/cyt_mcp_catalog/out/
 scripts/mcpc/payloads/
 sample.*
 .cargo-home/
