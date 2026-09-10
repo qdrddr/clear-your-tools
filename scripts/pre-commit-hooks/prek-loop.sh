@@ -341,11 +341,13 @@ printf '%s\n' "${HOOKS[@]}" >"${PREK_LOOP_LOCK_DIR}/hooks"
 trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock' EXIT
 trap '_cyt_prek_hook_unlock; _cyt_prek_git_stage_unlock; _cyt_prek_loop_unlock; echo; _cyt_prek_echo "Interrupted."; exit 130' INT TERM
 
-mapfile -t _prek_other_loops < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
-if ((${#_prek_other_loops[@]} > 1)); then
-	_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
-elif ((${#_prek_other_loops[@]} == 1)) && [[ ${_prek_other_loops[0]} != "${PREK_LOOP_LOCK_KEY}" ]]; then
-	_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
+if ! $SHORT; then
+	mapfile -t _prek_other_loops < <(_cyt_prek_active_loop_lock_names "${PREK_LOCK_BASE}")
+	if ((${#_prek_other_loops[@]} > 1)); then
+		_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
+	elif ((${#_prek_other_loops[@]} == 1)) && [[ ${_prek_other_loops[0]} != "${PREK_LOOP_LOCK_KEY}" ]]; then
+		_cyt_prek_echo_err "Parallel prek loops active: ${_prek_other_loops[*]}"
+	fi
 fi
 
 total=${#HOOKS[@]}
