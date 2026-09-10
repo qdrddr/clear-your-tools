@@ -9,12 +9,21 @@ import pytest
 
 from cyt_client.hook_executable import build_uv_run_dev_command
 from cyt_client.hook_invocation import (
+    CURSOR_POST_TOOL_EXAMPLES_MATCHER,
+    CURSOR_POST_TOOL_MATCHER,
     cursor_pairing_hooks,
     is_cyt_hook_command,
     resolve_pairing_dev_context,
 )
 from cyt_client.mcp_entry import build_cyt_mcp_mcp_server_entry
 from cyt_client.pairing import repair_pairing
+
+
+def test_post_tool_matcher_includes_examples_and_definitions() -> None:
+    assert "get-tool-definitions" in CURSOR_POST_TOOL_MATCHER
+    assert CURSOR_POST_TOOL_EXAMPLES_MATCHER in CURSOR_POST_TOOL_MATCHER
+    assert "MCP:.*" in CURSOR_POST_TOOL_EXAMPLES_MATCHER
+    assert "mcp__.*" in CURSOR_POST_TOOL_EXAMPLES_MATCHER
 
 
 def test_is_cyt_hook_command_detects_prod_and_dev() -> None:

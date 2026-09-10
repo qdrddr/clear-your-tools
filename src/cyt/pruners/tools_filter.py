@@ -1183,6 +1183,12 @@ def filter_tools_for_query(
     pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
     pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
     pruned = merge_t4_tools(pruned, t4_direct)
+    try:
+        from cyt.tool_examples.enrich import enrich_tools_with_examples
+
+        pruned = enrich_tools_with_examples(pruned, query, config)
+    except Exception as exc:
+        logger.warning("tool example enrichment failed: %s", exc)
     if tiers_active(config, kind="tool"):
         schedule_tool_shadow_evaluation(
             config=config,

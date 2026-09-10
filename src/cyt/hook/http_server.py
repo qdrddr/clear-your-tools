@@ -185,6 +185,64 @@ async def hook_catalog_status(request: Request) -> Response:
     return JSONResponse({"registrations": list_catalog_registrations()})
 
 
+async def hook_tool_examples_record(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return JSONResponse({"error": "payload must be a JSON object"}, status_code=400)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    workspace_raw = payload.get("workspace_root")
+    workspace: Path | None = None
+    if isinstance(workspace_raw, str) and workspace_raw.strip():
+        workspace = Path(os.path.expanduser(workspace_raw.strip()))  # noqa: ASYNC240
+
+    config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+
+    if workspace is not None:
+        config = set_hook_workspace_in_config(config, workspace)
+    else:
+        agent = str(payload.get("agent") or "cursor")
+        config, workspace = resolve_hook_request_config(payload, agent, base_config=config)
+        config = set_hook_workspace_in_config(config, workspace)
+
+    from cyt.tiers.config import resolve_tier_project
+    from cyt.tool_examples.config import examples_active
+    from cyt.tool_examples.record import record_tool_examples_capture
+
+    if not examples_active(config) or resolve_tier_project(workspace=workspace) is None:
+        return PlainTextResponse("", status_code=204)
+
+    mcp_server = payload.get("mcp_server")
+    tool_name = payload.get("tool_name")
+    input_schema = payload.get("input_schema")
+    args = payload.get("args")
+    if (
+        not isinstance(mcp_server, str)
+        or not mcp_server.strip()
+        or not isinstance(tool_name, str)
+        or not tool_name.strip()
+        or not isinstance(input_schema, dict)
+        or not isinstance(args, dict)
+    ):
+        return JSONResponse({"error": "mcp_server, tool_name, input_schema, args required"}, status_code=400)
+
+    record_tool_examples_capture(
+        workspace=workspace,
+        mcp_server=mcp_server.strip(),
+        tool_name=tool_name.strip(),
+        input_schema=input_schema,
+        args=args,
+        config=config,
+    )
+    return PlainTextResponse("", status_code=204)
+
+
 async def hook_tier_feedback(request: Request) -> Response:
     if not _is_localhost_request(request):
         return JSONResponse({"error": "forbidden"}, status_code=403)

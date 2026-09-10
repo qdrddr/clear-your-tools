@@ -19,6 +19,7 @@ HEALTH_TTL_SECONDS = 30.0
 HOOK_PORT_PROBE_BATCH_SIZE = 20
 HOOK_CONNECT_PATH = "/hook/connect"
 HOOK_TIER_FEEDBACK_PATH = "/hook/tier/feedback"
+HOOK_TOOL_EXAMPLES_RECORD_PATH = "/hook/tool-examples/record"
 HOOK_INJECT_PATH = HOOK_CONNECT_PATH  # backward-compatible alias
 CYT_HOOK_URL_ENV = "CYT_HOOK_URL"
 HOOK_DAEMON_PIDFILE = Path("~/.config/cyt/pid.json").expanduser()

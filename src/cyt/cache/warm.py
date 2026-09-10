@@ -203,6 +203,12 @@ def warm_caches(config: dict[str, Any] | None = None) -> None:
             logger.warning("skills registry cache warm skipped: %s", exc)
 
     _warm_tools_catalog(cfg)
+    try:
+        from cyt.tool_examples.maintenance import schedule_tool_examples_maintenance
+
+        schedule_tool_examples_maintenance(cfg)
+    except Exception as exc:
+        logger.warning("tool examples maintenance schedule skipped: %s", exc)
 
 
 def schedule_warm_caches(config: dict[str, Any] | None = None) -> None:

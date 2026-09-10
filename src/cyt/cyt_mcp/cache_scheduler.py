@@ -119,6 +119,17 @@ def _scheduler_loop(*, config: dict[str, Any], slug: str) -> None:
                     tools = _refresh_from_registry(config, cache_key, blocking=False)
                     if tools:
                         apply_fetched_catalog(config, tools)
+                        try:
+                            from cyt.tool_examples.maintenance import (
+                                schedule_tool_examples_maintenance,
+                            )
+
+                            schedule_tool_examples_maintenance(config)
+                        except Exception as maint_exc:
+                            logger.warning(
+                                "tool examples maintenance after catalog refresh failed: %s",
+                                maint_exc,
+                            )
                 except Exception as exc:
                     logger.warning("cyt-mcp scheduler registry refresh failed: %s", exc)
                 finally:

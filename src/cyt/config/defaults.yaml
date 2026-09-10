@@ -428,6 +428,28 @@ tools:
     mcp_tool: prune_all
     minimum_tools: 50
     per_tool: {}
+  examples:
+    enabled: true
+    database:
+      path: ~/.config/cyt/tool_examples.db
+    capture:
+      post_tool_use: true
+      post_tool_matcher: "MCP:*|mcp__*"
+      require_success: true
+    inject:
+      max_per_property: 3
+      max_value_chars: 120
+      full_call_examples: true
+      max_full_call_examples: 2
+      cross_schema_fallback: false
+    retention:
+      max_per_path: 20
+      min_per_path: 3
+      max_captures_per_tool: 50
+      min_captures_per_tool: 5
+      max_age_days: 90
+    redact_key_patterns:
+      - "(?i)(password|secret|token|api[_-]?key|authorization)"
   tiers:
     enabled: false
     shadow: true

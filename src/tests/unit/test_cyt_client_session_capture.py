@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +15,8 @@ from cyt_client.session_capture import (
     persist_cyt_mcp_search_result,
     persist_turn_to_session_log,
 )
+from cyt_client.tool_examples_capture import notify_tool_examples_capture
+from cyt_client.tool_gate import extract_post_tool_example_capture
 
 
 def test_is_post_tool_capture_event() -> None:
@@ -73,6 +76,175 @@ def test_persist_search_result_dedupes(tmp_path: Path, monkeypatch: pytest.Monke
     assert persist_cyt_mcp_search_result(payload) is False
     lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 1
+
+
+def _write_cyt_mcp_session(
+    path: Path,
+    tool_name: str,
+    schema: dict,
+    *,
+    inject_enabled: bool = True,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "session_state",
+                "key": "session_state:inject",
+                "tools_inject_enabled": inject_enabled,
+            },
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "test-hash",
+                "tools": [
+                    {
+                        "name": tool_name,
+                        "server_key": "codebase-memory-mcp",
+                        "tool_name": "search_graph",
+                        "input_schema": schema,
+                    },
+                ],
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_extract_post_tool_example_capture_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {
+        "type": "object",
+        "properties": {"project": {"type": "string"}, "query": {"type": "string"}},
+        "required": ["project"],
+    }
+    _write_cyt_mcp_session(log_path, "codebase-memory-mcp_search_graph", schema)
+    monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
+    payload = {
+        "hook_event_name": "postToolUse",
+        "tool_name": "MCP:codebase-memory-mcp_search_graph",
+        "tool_input": {"project": "demo", "query": "bm25"},
+        "tool_output": json.dumps({"results": []}),
+    }
+    capture = extract_post_tool_example_capture(payload)
+    assert capture is not None
+    assert capture["mcp_server"] == "codebase-memory-mcp"
+    assert capture["tool_name"] == "search_graph"
+    assert capture["args"] == {"project": "demo", "query": "bm25"}
+
+
+def test_extract_post_tool_example_capture_skips_failed_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {"type": "object", "properties": {"project": {"type": "string"}}}
+    _write_cyt_mcp_session(log_path, "codebase-memory-mcp_search_graph", schema)
+    monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
+    payload = {
+        "hook_event_name": "postToolUse",
+        "tool_name": "MCP:codebase-memory-mcp_search_graph",
+        "tool_input": {"project": "demo"},
+        "tool_output": json.dumps({"isError": True, "error": "boom"}),
+    }
+    assert extract_post_tool_example_capture(payload) is None
+
+
+def test_notify_tool_examples_capture_posts_to_daemon(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    log_path = tmp_path / "session.jsonl"
+    schema = {"type": "object", "properties": {"project": {"type": "string"}}}
+    _write_cyt_mcp_session(log_path, "codebase-memory-mcp_search_graph", schema)
+    payload = {
+        "hook_event_name": "postToolUse",
+        "workspace_roots": [str(tmp_path)],
+        "tool_name": "MCP:codebase-memory-mcp_search_graph",
+        "tool_input": {"project": "demo"},
+        "tool_output": json.dumps({"ok": True}),
+    }
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def read(self) -> bytes:
+            return b""
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    def fake_urlopen(request, timeout=0) -> FakeResponse:  # noqa: ANN001
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode())
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    with (
+        patch("cyt_client.tool_gate.session_log_path", return_value=log_path),
+        patch("cyt_client.tool_examples_capture.resolve_hook_url", return_value="http://127.0.0.1:9999/hook/connect"),
+        patch("cyt_client.tool_examples_capture.urlopen", side_effect=fake_urlopen),
+    ):
+        notify_tool_examples_capture(payload)
+
+    assert captured["url"] == "http://127.0.0.1:9999/hook/tool-examples/record"
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["mcp_server"] == "codebase-memory-mcp"
+    assert body["tool_name"] == "search_graph"
+    assert body["args"] == {"project": "demo"}
+
+
+def test_notify_tool_examples_capture_skips_when_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"value": False}
+
+    def fake_urlopen(*args, **kwargs):  # noqa: ANN002, ANN003
+        called["value"] = True
+        raise AssertionError("should not call urlopen")
+
+    monkeypatch.setattr(
+        "cyt_client.tool_examples_capture.tool_examples_post_tool_capture_enabled",
+        lambda: False,
+    )
+    with patch("cyt_client.tool_examples_capture.urlopen", side_effect=fake_urlopen):
+        notify_tool_examples_capture({"hook_event_name": "postToolUse"})
+    assert called["value"] is False
+
+
+def test_handle_post_tool_capture_invokes_examples_notify(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.cli import _handle_post_tool_capture
+
+    called = {"examples": False}
+
+    def fake_notify(payload: dict) -> None:  # noqa: ARG001
+        called["examples"] = True
+
+    monkeypatch.setattr(
+        "cyt_client.cli.persist_cyt_mcp_search_result",
+        lambda _payload: False,
+    )
+    monkeypatch.setattr(
+        "cyt_client.tool_examples_capture.notify_tool_examples_capture",
+        fake_notify,
+    )
+    _handle_post_tool_capture(
+        {"hook_event_name": "postToolUse", "tool_name": "demo"},
+        cursor_output=False,
+    )
+    assert called["examples"] is True
 
 
 def test_persist_turn_to_session_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

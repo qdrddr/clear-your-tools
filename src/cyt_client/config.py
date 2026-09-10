@@ -239,3 +239,21 @@ def tools_enabled() -> bool:
 
 def verify_only_mode() -> bool:
     return hallucination_gate_enabled() and not skills_enabled() and not tools_enabled()
+
+
+def tool_examples_post_tool_capture_enabled() -> bool:
+    """Return whether postToolUse example capture is enabled (defaults: true)."""
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return True
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    enabled = _nested_bool_from_yaml(text, ("tools", "examples", "enabled"))
+    if enabled is False:
+        return False
+    post_tool_use = _nested_bool_from_yaml(text, ("tools", "examples", "capture", "post_tool_use"))
+    if post_tool_use is False:
+        return False
+    return True

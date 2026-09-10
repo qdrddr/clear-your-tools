@@ -1011,3 +1011,108 @@ def extract_gated_tool_use_feedback(payload: dict[str, Any]) -> dict[str, Any] |
         "catalog": catalog,
         "args": raw_args,
     }
+
+
+def _parse_json_object(raw: object) -> dict[str, Any] | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if isinstance(raw, list) and raw:
+        first = raw[0]
+        if isinstance(first, dict):
+            text = first.get("text") or first.get("json")
+            if text is not None:
+                return _parse_json_object(text)
+    return None
+
+
+def _tool_output_from_payload(payload: dict[str, Any]) -> object | None:
+    for layer in _payload_layers(payload):
+        for key in ("tool_output", "toolOutput", "result", "output"):
+            if key in layer:
+                return layer[key]
+    return None
+
+
+def _post_tool_call_succeeded(payload: dict[str, Any]) -> bool:
+    raw = _tool_output_from_payload(payload)
+    if raw is None:
+        return False
+    parsed = _parse_json_object(raw)
+    if parsed is not None:
+        if parsed.get("isError") is True:
+            return False
+        if parsed.get("error") not in (None, "", {}, []):
+            return False
+        return True
+    if isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if not lowered:
+            return False
+        if '"iserror":true' in lowered.replace(" ", ""):
+            return False
+        if lowered.startswith("error:") or lowered.startswith("error "):
+            return False
+        return True
+    return False
+
+
+def _resolve_mcp_server_and_tool_name(tool: dict[str, Any], catalog_tool_name: str) -> tuple[str, str]:
+    server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
+    bare = str(tool.get("tool_name") or "").strip()
+    if server and bare:
+        return server, bare
+    name = str(tool.get("name") or catalog_tool_name or "").strip()
+    if server and name:
+        if name.startswith(f"{server}_"):
+            return server, name[len(server) + 1 :]
+        return server, name
+    if name and "_" in name:
+        head, _, tail = name.partition("_")
+        if head and tail:
+            return head, tail
+    return server or "unknown", bare or name or "unknown"
+
+
+def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return capture payload when postToolUse reflects a successful gated MCP tool call."""
+    if not _post_tool_call_succeeded(payload):
+        return None
+    catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
+    if inject_enabled is False and not hallucination_on:
+        return None
+    tool_name, args = _extract_tool_call(payload)
+    if not tool_name or not gate_active:
+        return None
+    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=infer_harness_agent(payload)):
+        return None
+    catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
+    if catalog is None or catalog not in _GATED_CATALOGS:
+        return None
+    catalog_tool_name = (
+        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
+        if catalog == "cyt_mcp"
+        else tool_name
+    )
+    tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
+    if tool is None:
+        return None
+    schema = tool.get("input_schema")
+    if not isinstance(schema, dict):
+        schema = {}
+    raw_args = args if args is not None else {}
+    ok, _reason = validate_json_schema(raw_args, schema)
+    if not ok:
+        return None
+    mcp_server, bare_tool_name = _resolve_mcp_server_and_tool_name(tool, catalog_tool_name)
+    return {
+        "mcp_server": mcp_server,
+        "tool_name": bare_tool_name,
+        "args": raw_args,
+        "input_schema": schema,
+    }

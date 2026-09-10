@@ -1393,6 +1393,7 @@ def create_app(
         hook_catalog_status,
         hook_connect,
         hook_tier_feedback,
+        hook_tool_examples_record,
     )
 
     async def proxy(request: Request) -> Response:
@@ -1419,6 +1420,7 @@ def create_app(
             Route("/hook/catalog/deregister", hook_catalog_deregister, methods=["POST"]),
             Route("/hook/catalog/status", hook_catalog_status, methods=["GET"]),
             Route("/hook/tier/feedback", hook_tier_feedback, methods=["POST"]),
+            Route("/hook/tool-examples/record", hook_tool_examples_record, methods=["POST"]),
             Route("/{path:path}", proxy, methods=METHODS),
         ],
         lifespan=lifespan,

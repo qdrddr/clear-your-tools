@@ -49,7 +49,11 @@ from cyt.mcpc.readiness import report_mcpc_hook_readiness
 from cyt.platform.compat import is_windows
 from cyt.proxy.setup_wizard import _prompt, _prompt_choice, _prompt_yes_no, parse_path_list
 from cyt.tools.hook_setup import prompt_tools_hook_config
-from cyt_client.hook_invocation import CURSOR_POST_TOOL_MATCHER
+from cyt_client.hook_invocation import (
+    CURSOR_POST_TOOL_DEFINITIONS_MATCHER,
+    CURSOR_POST_TOOL_EXAMPLES_MATCHER,
+    CURSOR_POST_TOOL_MATCHER,
+)
 
 __all__ = [
     "sys",
@@ -329,12 +333,25 @@ class CursorHookEntries(TypedDict):
     pre_compact: dict[str, Any]
 
 
+def _cursor_post_tool_matcher(config: dict[str, Any] | None) -> str:
+    if config is None:
+        return CURSOR_POST_TOOL_MATCHER
+    from cyt.tool_examples.config import examples_active, tool_examples_config
+
+    if not examples_active(config):
+        return CURSOR_POST_TOOL_DEFINITIONS_MATCHER
+    cfg = tool_examples_config(config)
+    examples_matcher = cfg.post_tool_matcher.strip() or CURSOR_POST_TOOL_EXAMPLES_MATCHER
+    return f"{CURSOR_POST_TOOL_DEFINITIONS_MATCHER}|{examples_matcher}"
+
+
 def cursor_hook_entries(
     *,
     agent: AgentName = "cursor",
     set_launch_agent: bool = False,
     invocation: HookCliInvocation | None = None,
     include_post_tool_use: bool = True,
+    config: dict[str, Any] | None = None,
 ) -> CursorHookEntries:
     client_entry = cyt_client_entry(
         agent=agent,
@@ -344,7 +361,7 @@ def cursor_hook_entries(
     )
     post_tool: dict[str, Any] = {
         **client_entry,
-        "matcher": CURSOR_POST_TOOL_MATCHER,
+        "matcher": _cursor_post_tool_matcher(config),
     }
     pre_tool_read: dict[str, Any] = {
         **client_entry,
@@ -419,6 +436,7 @@ def cursor_desired_hook_commands(
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
+        config=config,
     )
     session_start_commands = [
         str(entry.get("command")) for entry in entries["session_start"] if isinstance(entry, dict)
@@ -2027,6 +2045,7 @@ def _install_cursor_hooks_for_target(
         set_launch_agent=set_launch_agent,
         invocation=invocation,
         include_post_tool_use=include_post_tool_use,
+        config=config,
     )
     upsert_kwargs = cursor_upsert_hook_kwargs(
         entries,

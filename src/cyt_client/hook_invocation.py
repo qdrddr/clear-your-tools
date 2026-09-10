@@ -27,10 +27,14 @@ CYT_CLI_APP_SCRIPT_REL = "src/cyt/cli/app.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 HOOK_TIMEOUT_SECONDS = 60
-CURSOR_POST_TOOL_MATCHER = (
+CURSOR_POST_TOOL_DEFINITIONS_MATCHER = (
     r"get-tool-definitions|cyt-mcp_get-tool-definitions|"
     r"mcp__cyt-mcp__get-tool-definitions|"
     r"MCP:get-tool-definitions|MCP:cyt-mcp_get-tool-definitions"
+)
+CURSOR_POST_TOOL_EXAMPLES_MATCHER = r"MCP:.*|mcp__.*"
+CURSOR_POST_TOOL_MATCHER = (
+    f"{CURSOR_POST_TOOL_DEFINITIONS_MATCHER}|{CURSOR_POST_TOOL_EXAMPLES_MATCHER}"
 )
 WINDOWS_CLIENT_WRAPPER = "cyt-client.cmd"
 WINDOWS_CLIENT_DEV_WRAPPER = "cyt-client-dev.cmd"

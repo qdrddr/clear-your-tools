@@ -290,6 +290,12 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
         persist_cyt_mcp_search_result(payload)
     except OSError as exc:
         _verbose_log(f"cyt-client: failed to persist search result: {exc}")
+    try:
+        from cyt_client.tool_examples_capture import notify_tool_examples_capture
+
+        notify_tool_examples_capture(payload)
+    except Exception as exc:
+        _verbose_log(f"cyt-client: failed to record tool examples: {exc}")
     if cursor_output:
         print(format_cursor_post_tool_stdout(), flush=True)
 
