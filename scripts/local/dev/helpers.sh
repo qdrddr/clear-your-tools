@@ -910,7 +910,7 @@ PY
 		cyt_verify_app_python
 		cyt_ensure_proxy_api_keys
 		info "proxy"
-		exec uv run src/cyt/proxy/cli.py proxy "$@"
+		exec uv run src/cyt/cli/app.py proxy "$@"
 	}
 
 fi

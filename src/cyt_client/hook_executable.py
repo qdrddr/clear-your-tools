@@ -13,6 +13,7 @@ from pathlib import Path
 from cyt_client.compat import is_windows
 
 CYT_CLIENT_SCRIPT_REL = "src/cyt_client/cli.py"
+CYT_CLI_APP_SCRIPT_REL = "src/cyt/cli/app.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 
 
@@ -118,7 +119,13 @@ def is_uv_run_dev_hook_command(command: str) -> bool:
         return False
     if CYT_CLIENT_SCRIPT_REL in normalized or "cyt_client/cli.py" in normalized:
         return True
-    if (CYT_PROXY_SCRIPT_REL in normalized or "cyt/proxy/cli.py" in normalized) and (
+    cyt_dev_scripts = (
+        CYT_CLI_APP_SCRIPT_REL,
+        CYT_PROXY_SCRIPT_REL,
+        "cyt/cli/app.py",
+        "cyt/proxy/cli.py",
+    )
+    if any(marker in normalized for marker in cyt_dev_scripts) and (
         " hook daemon start" in normalized or " hook daemon restart" in normalized
     ):
         return True

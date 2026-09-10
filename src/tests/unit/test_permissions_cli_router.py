@@ -7,7 +7,13 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
+DEV_CLI_SCRIPTS = (
+    REPO / "src" / "cyt" / "cli" / "app.py",
+    REPO / "src" / "cyt" / "proxy" / "cli.py",
+)
 
 
 def test_proxy_cli_permissions_show_and_skills_list_do_not_fail(tmp_path: Path) -> None:
@@ -26,19 +32,21 @@ def test_proxy_cli_permissions_show_and_skills_list_do_not_fail(tmp_path: Path) 
         encoding="utf-8",
     )
     env = {**dict(__import__("os").environ), "PYTHONPATH": str(REPO / "src")}
-    for subcommand in (
-        ["permissions", "show", "--config", str(config_path)],
-        ["permissions", "skills", "list", "--config", str(config_path)],
-    ):
-        cmd = [sys.executable, str(REPO / "src" / "cyt" / "proxy" / "cli.py"), *subcommand]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
-        assert result.returncode == 0, result.stderr or result.stdout
+    for script in DEV_CLI_SCRIPTS:
+        for subcommand in (
+            ["permissions", "show", "--config", str(config_path)],
+            ["permissions", "skills", "list", "--config", str(config_path)],
+        ):
+            cmd = [sys.executable, str(script), *subcommand]
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
+            assert result.returncode == 0, result.stderr or result.stdout
 
 
-def test_proxy_cli_permissions_shortcut_skips_heavy_cli_impl() -> None:
+@pytest.mark.parametrize("script", DEV_CLI_SCRIPTS)
+def test_proxy_cli_permissions_shortcut_skips_heavy_cli_impl(script: Path) -> None:
     cmd = [
         sys.executable,
-        str(REPO / "src" / "cyt" / "proxy" / "cli.py"),
+        str(script),
         "permissions",
         "mcp",
         "servers",

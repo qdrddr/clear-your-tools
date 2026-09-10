@@ -43,6 +43,7 @@ def test_stop_cli_routing(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_is_cyt_proxy_command_matches_module_and_script_paths() -> None:
     assert cyt_stop.is_cyt_proxy_command("/usr/bin/python -m cyt.proxy.cli proxy --port 8834")
     assert cyt_stop.is_cyt_proxy_command("/usr/bin/python -m cyt.proxy.cli_impl proxy --port 8834")
+    assert cyt_stop.is_cyt_proxy_command("uv run src/cyt/cli/app.py proxy --port 8840")
     assert cyt_stop.is_cyt_proxy_command("uv run src/cyt/proxy/cli.py proxy --port 8840")
     assert not cyt_stop.is_cyt_proxy_command("/usr/bin/python -m cyt.proxy.cli hook cursor")
     assert not cyt_stop.is_cyt_proxy_command("/usr/bin/python -m cyt.proxy.cli stats totals")
@@ -159,11 +160,12 @@ def test_find_cyt_proxy_pids_parses_ps_output(monkeypatch: pytest.MonkeyPatch) -
         "cyt.platform.process.list_process_command_lines",
         return_value=[
             (111, "/usr/bin/python -m cyt.proxy.cli proxy --port 8834"),
-            (112, "uv run src/cyt/proxy/cli.py proxy --port 8840"),
+            (112, "uv run src/cyt/cli/app.py proxy --port 8840"),
+            (113, "uv run src/cyt/proxy/cli.py proxy --port 8841"),
             (222, "/usr/bin/python -m cyt.proxy.cli stats totals"),
             (999, "/usr/bin/python -m cyt.proxy.cli stop"),
         ],
     ):
         pids = cyt_stop._find_cyt_proxy_pids()
 
-    assert pids == [111, 112]
+    assert pids == [111, 112, 113]

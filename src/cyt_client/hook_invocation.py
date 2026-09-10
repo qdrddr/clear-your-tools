@@ -23,6 +23,7 @@ INSTALLED_CYT_CLIENT_COMMAND = "cyt-client"
 INSTALLED_CYT_DAEMON_START_COMMAND = "cyt hook daemon start --unattended"
 INSTALLED_CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
 CYT_CLIENT_SCRIPT_REL = "src/cyt_client/cli.py"
+CYT_CLI_APP_SCRIPT_REL = "src/cyt/cli/app.py"
 CYT_PROXY_SCRIPT_REL = "src/cyt/proxy/cli.py"
 CYT_LAUNCH_AGENT_ENV = "CYT_LAUNCH_AGENT"
 HOOK_TIMEOUT_SECONDS = 60
@@ -112,7 +113,7 @@ def _inline_cyt_daemon_start_command(*, use_dev: bool, dev_repo_root: Path | Non
     if use_dev and dev_repo_root is not None:
         return build_uv_run_dev_command(
             dev_repo_root,
-            CYT_PROXY_SCRIPT_REL,
+            CYT_CLI_APP_SCRIPT_REL,
             "hook",
             "daemon",
             "start",

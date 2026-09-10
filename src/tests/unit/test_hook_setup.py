@@ -277,17 +277,17 @@ def test_detect_hook_cli_invocation_uses_dev_mode_for_proxy_script(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo_root = Path("/tmp/clear-your-tools")
-    script = repo_root / "src/cyt/proxy/cli.py"
+    script = repo_root / "src/cyt/cli/app.py"
     monkeypatch.setattr(
-        "cyt.hook.cli_invocation.proxy_cli_script_path",
+        "cyt.hook.cli_invocation.cyt_cli_script_path",
         lambda: script,
     )
     monkeypatch.setattr(
-        "cyt.hook.cli_invocation.repo_root_from_proxy_cli_script",
+        "cyt.hook.cli_invocation.repo_root_from_cyt_cli_script",
         lambda: repo_root,
     )
     monkeypatch.setattr(
-        "cyt.hook.cli_invocation.invoked_via_proxy_cli_script",
+        "cyt.hook.cli_invocation.invoked_via_cyt_cli_script",
         lambda: True,
     )
 
@@ -301,7 +301,7 @@ def test_detect_hook_cli_invocation_uses_installed_mode_for_cyt_entrypoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "cyt.hook.cli_invocation.invoked_via_proxy_cli_script",
+        "cyt.hook.cli_invocation.invoked_via_cyt_cli_script",
         lambda: False,
     )
 
@@ -364,7 +364,7 @@ def test_build_hook_spawn_command_dev_mode_uses_uv_and_repo_cli() -> None:
 
     assert Path(argv[0]).name.lower().startswith(("uv", "python"))
     assert argv[argv.index("--directory") + 1] == str(repo_root)
-    assert "src/cyt/proxy/cli.py" in argv
+    assert "src/cyt/cli/app.py" in argv
     assert "proxy" in argv
     assert "8834" in argv
 
@@ -431,28 +431,35 @@ def test_is_dev_cyt_hook_command_without_repo_root(monkeypatch: pytest.MonkeyPat
         "uv run --directory /tmp/repo src/cyt_client/cli.py",
     )
     assert is_dev_cyt_hook_command(
+        "uv run --directory /tmp/repo src/cyt/cli/app.py hook daemon start --unattended",
+    )
+    assert is_dev_cyt_hook_command(
         "uv run --directory /tmp/repo src/cyt/proxy/cli.py hook daemon start --unattended",
     )
     assert not is_dev_cyt_hook_command("cyt-client")
 
 
 def test_repo_root_from_proxy_cli_script_resolves_from_package_layout() -> None:
-    script = proxy_cli_script_path()
+    from cyt.hook.cli_invocation import cyt_cli_script_path, cyt_cli_script_relpath
+
+    script = cyt_cli_script_path()
     repo_root = repo_root_from_proxy_cli_script()
 
-    assert script.name == "cli.py"
+    assert script.name == "app.py"
     assert repo_root is not None
     assert (repo_root / "pyproject.toml").is_file()
-    assert script == repo_root / proxy_cli_script_relpath()
+    assert script == repo_root / cyt_cli_script_relpath()
+    assert proxy_cli_script_relpath() == cyt_cli_script_relpath()
 
 
 def test_invoked_via_proxy_cli_script_matches_script_argv0(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    script = proxy_cli_script_path()
-    monkeypatch.setattr(sys, "argv", [str(script), "hook", "cursor"])
+    from cyt.hook.cli_invocation import cyt_cli_script_path
 
-    assert invoked_via_proxy_cli_script() is True
+    for script in (cyt_cli_script_path(), proxy_cli_script_path()):
+        monkeypatch.setattr(sys, "argv", [str(script), "hook", "cursor"])
+        assert invoked_via_proxy_cli_script() is True
 
 
 def test_invoked_via_proxy_cli_script_matches_cli_impl_after_runpy(

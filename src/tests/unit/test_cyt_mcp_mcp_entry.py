@@ -83,6 +83,10 @@ def test_is_cyt_dev_hook_command() -> None:
     )
     assert is_cyt_dev_hook_command(
         "CYT_LAUNCH_AGENT=cursor uv run --directory /tmp/repo "
+        "src/cyt/cli/app.py hook daemon start --unattended",
+    )
+    assert is_cyt_dev_hook_command(
+        "CYT_LAUNCH_AGENT=cursor uv run --directory /tmp/repo "
         "src/cyt/proxy/cli.py hook daemon start --unattended",
     )
     assert not is_cyt_dev_hook_command("cyt-client")

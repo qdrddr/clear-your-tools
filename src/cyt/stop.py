@@ -9,6 +9,7 @@ from typing import Any
 
 _CYT_PROXY_CLI_MARKERS = (
     "cyt.proxy.cli",
+    "cyt/cli/app.py",
     "cyt/proxy/cli.py",
     "cyt/proxy/cli_impl",
 )

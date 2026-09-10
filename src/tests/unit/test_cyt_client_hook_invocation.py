@@ -77,7 +77,7 @@ def test_cursor_pairing_hooks_dev_mode(
         "preCompact",
     }
     daemon_cmd = hooks["sessionStart"][0]["command"]
-    assert "src/cyt/proxy/cli.py" in daemon_cmd
+    assert "src/cyt/cli/app.py" in daemon_cmd
     assert str(repo) in daemon_cmd or "clear-your-tools" in daemon_cmd
 
 

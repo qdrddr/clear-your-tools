@@ -26,7 +26,8 @@ INSTALLED_CYT_DAEMON_START_COMMAND_BASE = "cyt hook daemon start"
 INSTALLED_CYT_DAEMON_RESTART_COMMAND = "cyt hook daemon restart"
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
 CYT_CLIENT_CLI_SCRIPT_REL = "src/cyt_client/cli.py"
-CYT_PROXY_CLI_SCRIPT_REL = "src/cyt/proxy/cli.py"
+CYT_CLI_APP_SCRIPT_REL = "src/cyt/cli/app.py"
+CYT_PROXY_CLI_SCRIPT_REL = "src/cyt/proxy/cli.py"  # backward-compat shim
 CYT_MCP_CLI_SCRIPT_REL = "src/cyt_mcp/cli.py"
 WINDOWS_CLIENT_WRAPPER = "cyt-client.cmd"
 WINDOWS_CLIENT_DEV_WRAPPER = "cyt-client-dev.cmd"
@@ -40,6 +41,7 @@ _WINDOWS_WRAPPER_NAMES = (
 )
 
 __all__ = [
+    "CYT_CLI_APP_SCRIPT_REL",
     "CYT_CLIENT_CLI_SCRIPT_REL",
     "CYT_DAEMON_RESTART_ARGS",
     "CYT_DAEMON_START_ARGS",
@@ -56,6 +58,8 @@ __all__ = [
     "build_installed_cyt_daemon_start_command",
     "build_uv_run_dev_command",
     "cursor_hooks_dir",
+    "cyt_cli_script_path",
+    "cyt_cli_script_relpath",
     "cyt_client_cli_script_relpath",
     "cyt_client_command",
     "cyt_daemon_restart_command",
@@ -63,8 +67,10 @@ __all__ = [
     "cyt_mcp_cli_script_relpath",
     "cyt_mcp_mcp_server_entry",
     "detect_hook_cli_invocation",
+    "invoked_via_cyt_cli_script",
     "is_uv_run_dev_hook_command",
     "proxy_cli_script_path",
+    "repo_root_from_cyt_cli_script",
     "repo_root_from_proxy_cli_script",
     "resolve_hook_executable",
     "use_windows_hook_wrappers",
@@ -91,6 +97,12 @@ def cursor_hooks_dir() -> Path:
     return Path("~/.cursor/hooks").expanduser()
 
 
+def cyt_cli_script_path() -> Path:
+    from cyt.cli import app as app_mod
+
+    return Path(app_mod.__file__).resolve()
+
+
 def proxy_cli_script_path() -> Path:
     from cyt.proxy import cli as cli_mod
 
@@ -109,18 +121,26 @@ def cyt_mcp_cli_script_path() -> Path:
     return Path(cli_mod.__file__).resolve()
 
 
-def repo_root_from_proxy_cli_script() -> Path | None:
-    script = proxy_cli_script_path()
-    candidate = script.parents[3]
-    if (candidate / "pyproject.toml").is_file() and script.is_file():
-        return candidate
+def repo_root_from_cyt_cli_script() -> Path | None:
+    from cyt.cli.bootstrap import repo_root_from_script
+
+    for script in (cyt_cli_script_path(), proxy_cli_script_path()):
+        if not script.is_file():
+            continue
+        repo_root = repo_root_from_script(script)
+        if repo_root is not None:
+            return repo_root
     return None
 
 
+def repo_root_from_proxy_cli_script() -> Path | None:
+    return repo_root_from_cyt_cli_script()
+
+
 def _canonical_repo_root() -> Path:
-    repo_root = repo_root_from_proxy_cli_script()
+    repo_root = repo_root_from_cyt_cli_script()
     if repo_root is None:
-        msg = "Could not resolve CYT repo root from proxy CLI script path"
+        msg = "Could not resolve CYT repo root from dev CLI script path"
         raise RuntimeError(msg)
     return repo_root
 
@@ -133,8 +153,12 @@ def cyt_client_cli_script_relpath() -> str:
     return script_relpath_from_repo(cyt_client_cli_script_path(), _canonical_repo_root())
 
 
+def cyt_cli_script_relpath() -> str:
+    return script_relpath_from_repo(cyt_cli_script_path(), _canonical_repo_root())
+
+
 def proxy_cli_script_relpath() -> str:
-    return script_relpath_from_repo(proxy_cli_script_path(), _canonical_repo_root())
+    return cyt_cli_script_relpath()
 
 
 def cyt_mcp_cli_script_relpath() -> str:
@@ -145,24 +169,28 @@ def proxy_cli_impl_script_path() -> Path:
     return proxy_cli_script_path().with_name("cli_impl.py")
 
 
-def invoked_via_proxy_cli_script() -> bool:
-    """Return True when the process was started via repo ``cli.py`` or ``cli_impl.py``.
-
-    ``cyt.proxy.cli`` delegates to ``cli_impl.py`` with :func:`runpy.run_path`, which
-    rewrites ``sys.argv[0]`` to the impl script path.
-    """
+def invoked_via_cyt_cli_script() -> bool:
+    """Return True when the process was started via a repo dev CLI script."""
     if not sys.argv:
         return False
     try:
         invoked = Path(sys.argv[0]).resolve()
     except (OSError, ValueError):
         return False
-    return invoked in {proxy_cli_script_path(), proxy_cli_impl_script_path()}
+    return invoked in {
+        cyt_cli_script_path(),
+        proxy_cli_script_path(),
+        proxy_cli_impl_script_path(),
+    }
+
+
+def invoked_via_proxy_cli_script() -> bool:
+    return invoked_via_cyt_cli_script()
 
 
 def detect_hook_cli_invocation() -> HookCliInvocation:
-    repo_root = repo_root_from_proxy_cli_script()
-    if repo_root is not None and invoked_via_proxy_cli_script():
+    repo_root = repo_root_from_cyt_cli_script()
+    if repo_root is not None and invoked_via_cyt_cli_script():
         return HookCliInvocation(mode="dev", repo_root=repo_root)
     return HookCliInvocation(mode="installed", repo_root=None)
 
@@ -182,7 +210,7 @@ def _inline_cyt_daemon_start_command(*, invocation: HookCliInvocation | None = N
     if invocation.is_dev and invocation.repo_root is not None:
         return build_uv_run_dev_command(
             invocation.repo_root,
-            proxy_cli_script_relpath(),
+            cyt_cli_script_relpath(),
             *CYT_DAEMON_START_ARGS,
         )
     return build_installed_cyt_daemon_start_command(unattended=True)
@@ -294,7 +322,7 @@ def cyt_daemon_restart_command(*, invocation: HookCliInvocation | None = None) -
     if invocation.is_dev and invocation.repo_root is not None:
         return build_uv_run_dev_command(
             invocation.repo_root,
-            proxy_cli_script_relpath(),
+            cyt_cli_script_relpath(),
             *CYT_DAEMON_RESTART_ARGS,
         )
     return build_installed_cyt_daemon_restart_command()
@@ -319,9 +347,10 @@ def build_hook_spawn_command(
         args_tail.extend(["--config", str(config_path)])
 
     if invocation.is_dev and invocation.repo_root is not None:
-        script = invocation.repo_root / proxy_cli_script_relpath()
+        script_rel = cyt_cli_script_relpath()
+        script = invocation.repo_root / script_rel
         # Parent is already running inside uv's venv — avoid a nested ``uv run`` (~15-20s).
-        if invoked_via_proxy_cli_script():
+        if invoked_via_cyt_cli_script():
             return [sys.executable, str(script), *args_tail]
         uv = resolve_hook_executable("uv")
         if uv == "uv":
@@ -332,7 +361,7 @@ def build_hook_spawn_command(
                 "run",
                 "--directory",
                 str(invocation.repo_root),
-                proxy_cli_script_relpath(),
+                script_rel,
                 *args_tail,
             ]
         return [sys.executable, str(script), *args_tail]

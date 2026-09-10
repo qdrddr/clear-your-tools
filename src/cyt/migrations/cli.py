@@ -97,10 +97,7 @@ def _cmd_migrate(args: argparse.Namespace) -> None:
         print("  (already at target revision)")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CYT config.yaml schema migrations")
-    sub = parser.add_subparsers(dest="command", required=True)
-
+def _config_common_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--config",
@@ -113,11 +110,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use workspace .agents/cyt/config/config.yaml for cwd",
     )
+    return common
 
-    sub.add_parser("current", parents=[common], help="Show schema version and pending migrations")
-    sub.add_parser("history", help="List migration revision chain")
 
-    migrate_parser = sub.add_parser("migrate", parents=[common], help="Run pending migrations")
+def register_config_subcommands(config_sub: argparse._SubParsersAction) -> None:
+    common = _config_common_parser()
+    current_parser = config_sub.add_parser(
+        "current",
+        parents=[common],
+        help="Show schema version and pending migrations",
+    )
+    current_parser.set_defaults(config_handler=_cmd_current)
+
+    history_parser = config_sub.add_parser("history", help="List migration revision chain")
+    history_parser.set_defaults(config_handler=_cmd_history)
+
+    migrate_parser = config_sub.add_parser(
+        "migrate",
+        parents=[common],
+        help="Run pending migrations",
+    )
     migrate_parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -138,20 +150,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --dry-run, print migrated YAML JSON preview",
     )
+    migrate_parser.set_defaults(config_handler=_cmd_migrate)
+
+
+def add_config_parser(subparsers: argparse._SubParsersAction) -> None:
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Inspect and migrate config.yaml schema revisions",
+    )
+    config_sub = config_parser.add_subparsers(dest="config_command", required=True)
+    register_config_subcommands(config_sub)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="CYT config.yaml schema migrations")
+    sub = parser.add_subparsers(dest="command", required=True)
+    register_config_subcommands(sub)
     return parser
+
+
+def run_config(args: argparse.Namespace) -> None:
+    handler = getattr(args, "config_handler", None)
+    if handler is None:
+        raise SystemExit("usage: cyt config {current|history|migrate} ...")
+    handler(args)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "current":
-        _cmd_current(args)
-    elif args.command == "history":
-        _cmd_history(args)
-    elif args.command == "migrate":
-        _cmd_migrate(args)
-    else:
-        parser.error(f"unknown command: {args.command}")
+    run_config(args)
 
 
 if __name__ == "__main__":

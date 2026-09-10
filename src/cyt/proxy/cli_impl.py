@@ -555,9 +555,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add_executor_parser(subparsers)
     add_cloudflare_parser(subparsers)
 
+    from cyt.migrations.cli import add_config_parser
     from cyt.permissions.cli import add_permissions_parser
+    from cyt.tiers.cli import add_tiers_parser
 
     add_permissions_parser(subparsers)
+    add_tiers_parser(subparsers)
+    add_config_parser(subparsers)
 
     parser.add_argument("--port", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
@@ -890,6 +894,14 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
         "permissions_handler",
         "usage: cyt permissions {show|export|mcp|skills} ...",
     ),
+    "tiers": (
+        "tiers_handler",
+        "usage: cyt tiers status [--workspace PATH] [--json]",
+    ),
+    "config": (
+        "config_handler",
+        "usage: cyt config {current|history|migrate} ...",
+    ),
 }
 
 
@@ -932,7 +944,9 @@ def _dispatch_cli_command(args: argparse.Namespace) -> bool:
         handler = getattr(args, handler_attr, None)
         if handler is None:
             raise SystemExit(usage)
-        handler(args)
+        result = handler(args)
+        if args.command == "tiers":
+            raise SystemExit(int(result))
         return True
 
     if _dispatch_launch_command(args):

@@ -37,7 +37,7 @@
 #     app-all              app-setup → app-verify → app-test → app-build
 #
 #   Other:
-#     proxy [args...]      verify + uv run src/cyt/proxy/cli.py proxy ...
+#     proxy [args...]      verify + uv run src/cyt/cli/app.py proxy ...
 #     simulate-registry    isolated venv: install built wheels + cargo/npm dry-run checks
 #     ci                   app-setup → app-verify → ast-grep → import checks → ruff → pytest categories → app-build
 #     all                  core-rust → all SDKs → app-all (full monorepo check)

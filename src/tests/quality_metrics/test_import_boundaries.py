@@ -96,7 +96,7 @@ def test_no_monorepo_sdk_source_coupling() -> None:
     offenders: list[str] = []
     for path in _python_sources_under("src/cyt", "src/cyt_core"):
         rel = _rel(path)
-        if rel == "src/cyt/proxy/cli.py":
+        if rel in {"src/cyt/proxy/cli.py", "src/cyt/cli/app.py", "src/cyt/cli/bootstrap.py"}:
             # Re-exec helper may extend sys.path for repo checkout runs.
             continue
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
