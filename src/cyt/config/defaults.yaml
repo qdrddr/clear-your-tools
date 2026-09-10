@@ -431,6 +431,7 @@ tools:
   tiers:
     enabled: false
     shadow: true
+    # Tier statistics are scoped per git project (toplevel); no global/user bucket.
     database:
       path: ~/.config/cyt/tier_state.db
     statistics:
@@ -551,6 +552,8 @@ skills:
   tiers:
     enabled: false
     shadow: true
+    # Tier statistics are scoped per git project (toplevel); client skill reads
+    # notify the hook daemon; no global/user bucket.
   selector_soft_budget: 2000
   selector_bulk_max_tokens: 32000
   frontmatter_upper_limit: 0.70

@@ -35,6 +35,7 @@ def record_skills_injection(
         )
         from cyt.tiers.feedback import record_skills_injected_feedback_from_md
 
+        # Tier inject feedback runs in the caller process (hook daemon or proxy).
         record_skills_injected_feedback_from_md(skills_final_md, config=cfg)
         return request_id
     finally:

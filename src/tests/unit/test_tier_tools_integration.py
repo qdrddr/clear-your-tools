@@ -8,7 +8,13 @@ from unittest.mock import patch
 import pytest
 
 from cyt.tiers.manager import TierManager, _managers
-from cyt.tiers.models import Tier, TierScope
+from cyt.tiers.models import Tier
+
+
+@pytest.fixture
+def project_root(tmp_path: Path) -> Path:
+    (tmp_path / ".git").mkdir()
+    return tmp_path
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +53,7 @@ def base_config() -> dict:
     return load_config()
 
 
-def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, tmp_path: Path) -> None:
+def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, project_root: Path) -> None:
     from cyt.pruners.tools_filter import filter_tools_for_query
 
     tools = [
@@ -59,8 +65,8 @@ def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, tmp_path: Path)
         }
     ]
     with patch("cyt.pruners.tools_filter.get_tier_manager") as get_manager:
-        scope = TierScope(user_key="u", workspace_key=str(tmp_path))
-        manager = TierManager(scope, str(tmp_path / "tier_state.db"))
+        scope = project_root
+        manager = TierManager(scope, str(project_root / "tier_state.db"))
         get_manager.return_value = manager
         result = filter_tools_for_query(
             tools,
@@ -71,7 +77,7 @@ def test_filter_tools_shadow_mode_unchanged(shadow_config: dict, tmp_path: Path)
     assert result.status in {"applied", "skipped", "failed", "pass_through"}
 
 
-def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, tmp_path: Path) -> None:
+def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, project_root: Path) -> None:
     from cyt.pruners.tools_filter import filter_tools_for_query
 
     dormant_tool = {
@@ -86,8 +92,7 @@ def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, tmp_path:
         "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
         "cyt_catalog_source": "definitions",
     }
-    scope = TierScope(user_key="u", workspace_key=str(tmp_path))
-    manager = TierManager(scope, str(tmp_path / "tier_state.db"))
+    manager = TierManager(project_root, str(project_root / "tier_state.db"))
     manager._states[("tool", "definitions:dormant_tool")] = manager._ensure_state(
         "tool",
         "definitions:dormant_tool",

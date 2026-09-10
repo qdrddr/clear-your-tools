@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 
@@ -14,13 +15,14 @@ def record_tools_injected_feedback(
         return
     try:
         from cyt.config import load_config
+        from cyt.hook.workspace_config import hook_workspace_from_config
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
         cfg = config or load_config()
         if not tiers_active(cfg, kind="tool"):
             return
-        get_tier_manager(cfg).record_tools_injected(tools, cfg)
+        get_tier_manager(cfg, workspace=hook_workspace_from_config(cfg)).record_tools_injected(tools, cfg)
     except Exception:
         return
 
@@ -31,19 +33,33 @@ def record_tool_used_feedback(
     catalog: str | None,
     config: dict[str, Any] | None = None,
     args: dict[str, Any] | None = None,
+    workspace: Path | None = None,
+    optional_used: bool | None = None,
 ) -> None:
     try:
         from cyt.config import load_config
+        from cyt.hook.workspace_config import hook_workspace_from_config
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
         cfg = config or load_config()
         if not tiers_active(cfg, kind="tool"):
             return
+        resolved_workspace = workspace
+        if resolved_workspace is None:
+            resolved_workspace = hook_workspace_from_config(cfg)
         source = str(catalog or "unknown").strip()
         tool = {"name": tool_name, "cyt_catalog_source": source}
-        optional_used = _optional_properties_used(args)
-        get_tier_manager(cfg).record_tool_used(tool, config=cfg, optional_used=optional_used)
+        optional = (
+            optional_used
+            if optional_used is not None
+            else _optional_properties_used(args)
+        )
+        get_tier_manager(cfg, workspace=resolved_workspace).record_tool_used(
+            tool,
+            config=cfg,
+            optional_used=optional,
+        )
     except Exception:
         return
 
@@ -56,12 +72,16 @@ def record_skills_injected_feedback(
     if not matches or config is None:
         return
     try:
+        from cyt.hook.workspace_config import hook_workspace_from_config
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
         if not tiers_active(config, kind="skill"):
             return
-        get_tier_manager(config).record_skills_injected(matches, config)
+        get_tier_manager(config, workspace=hook_workspace_from_config(config)).record_skills_injected(
+            matches,
+            config,
+        )
     except Exception:
         return
 
@@ -84,15 +104,20 @@ def record_skills_injected_feedback_from_md(
     if not paths:
         return
     try:
+        from cyt.hook.workspace_config import hook_workspace_from_config
+        from cyt.tiers.adapters.skills import canonical_skill_entity_id
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
         if not tiers_active(config, kind="skill"):
             return
-        manager = get_tier_manager(config)
+        manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
         for path in paths:
+            entity_id = canonical_skill_entity_id(path)
+            if not entity_id:
+                continue
             manager.record_skills_injected(
-                [type("Match", (), {"file_path": path})()],
+                [type("Match", (), {"file_path": entity_id})()],
                 config,
             )
     except Exception:
@@ -103,20 +128,27 @@ def record_skill_used_feedback(
     entity_id: str,
     *,
     config: dict[str, Any] | None,
-    without_injection: bool = False,
+    workspace: Path | None = None,
 ) -> None:
     if not entity_id or config is None:
         return
     try:
+        from cyt.hook.workspace_config import hook_workspace_from_config
+        from cyt.tiers.adapters.skills import canonical_skill_entity_id
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
         if not tiers_active(config, kind="skill"):
             return
-        get_tier_manager(config).record_skill_used(
-            entity_id,
+        resolved_workspace = workspace
+        if resolved_workspace is None:
+            resolved_workspace = hook_workspace_from_config(config)
+        canonical_id = canonical_skill_entity_id(entity_id)
+        if not canonical_id:
+            return
+        get_tier_manager(config, workspace=resolved_workspace).record_skill_used(
+            canonical_id,
             config=config,
-            without_injection=without_injection,
         )
     except Exception:
         return

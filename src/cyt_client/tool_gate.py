@@ -787,26 +787,6 @@ def _validate_catalog_tool_pre_tool_call(
     )
 
 
-def _record_tool_use_feedback(
-    *,
-    tool_name: str,
-    catalog: str | None,
-    args: dict[str, Any] | None,
-) -> None:
-    try:
-        from cyt.config import load_config
-        from cyt.tiers.feedback import record_tool_used_feedback
-
-        record_tool_used_feedback(
-            tool_name=tool_name,
-            catalog=catalog,
-            config=load_config(),
-            args=args,
-        )
-    except Exception:
-        return
-
-
 def _validate_unlisted_mcp_tool(
     payload: dict[str, Any],
     tool_name: str,
@@ -874,7 +854,6 @@ def _validate_gated_catalog_tool(
             requested_tool_name=requested_tool_name,
             hallucination_on=hallucination_on,
         )
-    _record_tool_use_feedback(tool_name=tool_name, catalog=catalog, args=raw_args)
     return _allow()
 
 
@@ -999,3 +978,36 @@ def format_codex_pre_tool_allow() -> str:
 
 def format_claude_deny(reason: str) -> str:
     return json.dumps({"hookSpecificOutput": {"permissionDecision": "deny", "reason": reason}})
+
+
+def extract_gated_tool_use_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return gated catalog tool fields when preToolUse validation would allow the call."""
+    catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
+    if inject_enabled is False and not hallucination_on:
+        return None
+    tool_name, args = _extract_tool_call(payload)
+    if not tool_name or not gate_active:
+        return None
+    catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
+    if catalog is None or catalog not in _GATED_CATALOGS:
+        return None
+    catalog_tool_name = (
+        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
+        if catalog == "cyt_mcp"
+        else tool_name
+    )
+    tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
+    if tool is None:
+        return None
+    schema = tool.get("input_schema")
+    if not isinstance(schema, dict):
+        schema = {}
+    raw_args = args if args is not None else {}
+    ok, _reason = validate_json_schema(raw_args, schema)
+    if not ok:
+        return None
+    return {
+        "tool_name": catalog_tool_name,
+        "catalog": catalog,
+        "args": raw_args,
+    }

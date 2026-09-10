@@ -395,3 +395,244 @@ def test_read_intercept_does_not_duplicate_skill_log_entry(
 def test_skill_item_key_for_path() -> None:
     key = skill_item_key_for_path("/Users/me/.cursor/skills/x/SKILL.md")
     assert key.startswith("skill:")
+
+
+def _skill_intercept_session_setup(tmp_path: Path) -> tuple[Path, str, str, Path]:
+    skill_dir = tmp_path / ".cursor" / "skills" / "RTK"
+    skill_dir.mkdir(parents=True)
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text("# RTK\nAlways prefix shell commands with rtk.\n", encoding="utf-8")
+    skill_key = skill_item_key_for_path(skill_path)
+    content_hash = content_sha256_for_file(skill_path)
+    sessions_dir = tmp_path / ".cursor" / "cyt" / "sessions"
+    sessions_dir.mkdir(parents=True)
+    session_id = "tier-notify-session"
+    log_path = sessions_dir / f"{session_id}.jsonl"
+    return skill_path, skill_key, session_id, log_path
+
+
+def test_read_intercept_full_mode_notifies_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.agent_interceptor import handle_read_intercept
+
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.skills_hook_agent_interceptor_enabled",
+        lambda: True,
+    )
+    skill_path, _skill_key, session_id, log_path = _skill_intercept_session_setup(tmp_path)
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"type":"meta","agent":"cursor"}',
+                json.dumps(
+                    {
+                        "kind": "skill_directories",
+                        "key": "skill_directories",
+                        "directories": [str(skill_path.parent.parent)],
+                    },
+                ),
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    notify_calls: list[str] = []
+    mode_calls: list[str] = []
+
+    def _capture_notify(_payload: dict[str, Any], *, entity_id: str) -> None:
+        notify_calls.append(entity_id)
+
+    def _modes(*, key: str, current_hash: str, index: SessionLogIndex) -> str:
+        del key, current_hash, index
+        mode_calls.append("call")
+        return "full" if len(mode_calls) == 1 else "deny_full_reread"
+
+    monkeypatch.setattr(
+        "cyt_client.tier_feedback.notify_skill_used_feedback",
+        _capture_notify,
+    )
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.resolve_read_intercept_mode",
+        _modes,
+    )
+    payload = {
+        "hook_event_name": "preToolUse",
+        "conversation_id": session_id,
+        "session_id": session_id,
+        "workspace_roots": [str(tmp_path)],
+        "cwd": str(tmp_path),
+        "tool_name": "Read",
+        "tool_input": {"path": str(skill_path)},
+    }
+
+    stdout = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (500, b""))
+    assert stdout is not None
+    assert json.loads(stdout)["permission"] == "allow"
+    assert len(notify_calls) == 1
+    assert notify_calls[0] == str(skill_path.resolve())
+
+    stdout2 = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (500, b""))
+    assert stdout2 is not None
+    parsed2 = json.loads(stdout2)
+    assert parsed2["permission"] == "deny"
+    assert len(notify_calls) == 1
+
+
+def test_read_intercept_daemon_skinny_no_client_notify(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.agent_interceptor import handle_read_intercept
+
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.skills_hook_agent_interceptor_enabled",
+        lambda: True,
+    )
+    skill_path, skill_key, session_id, log_path = _skill_intercept_session_setup(tmp_path)
+    content_hash = content_sha256_for_file(skill_path)
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"type":"meta","agent":"cursor"}',
+                json.dumps(
+                    {
+                        "kind": "skill_directories",
+                        "key": "skill_directories",
+                        "directories": [str(skill_path.parent.parent)],
+                    },
+                ),
+                json.dumps(
+                    {
+                        "kind": "turn",
+                        "key": "turn:abc",
+                        "prompt": "How do i use rtk?",
+                        "assistant": "",
+                    },
+                ),
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    skinny = tmp_path / ".cyt" / "skinny" / session_id / "abc123.md"
+    skinny.parent.mkdir(parents=True, exist_ok=True)
+    skinny.write_text("# RTK\nskinny", encoding="utf-8")
+    daemon_response = json.dumps(
+        {
+            "agent_interceptor": True,
+            "permission": "allow",
+            "updated_input": {"path": str(skinny)},
+            "skill_log_entry": {
+                "kind": "skill",
+                "key": skill_key,
+                "hash": content_hash,
+                "full": False,
+                "source": "file",
+                "body": "# RTK\nskinny",
+                "name": "RTK",
+                "path": str(skill_path),
+            },
+        },
+    ).encode()
+    notify_calls: list[str] = []
+
+    def _capture_notify(_payload: dict[str, Any], *, entity_id: str) -> None:
+        notify_calls.append(entity_id)
+
+    monkeypatch.setattr(
+        "cyt_client.tier_feedback.notify_skill_used_feedback",
+        _capture_notify,
+    )
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.resolve_hook_url",
+        lambda: "http://127.0.0.1:9999/hook/connect",
+    )
+    monkeypatch.setattr(
+        "cyt_client.transcript.last_user_from_payload",
+        lambda _payload: "<user_query>\nHow do i use rtk?\n</user_query>",
+    )
+    payload = {
+        "hook_event_name": "preToolUse",
+        "conversation_id": session_id,
+        "session_id": session_id,
+        "workspace_roots": [str(tmp_path)],
+        "cwd": str(tmp_path),
+        "tool_name": "Read",
+        "tool_input": {"path": str(skill_path)},
+    }
+
+    stdout = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (200, daemon_response))
+    assert stdout is not None
+    assert json.loads(stdout)["permission"] == "allow"
+    assert notify_calls == []
+
+
+def test_read_intercept_fallback_notifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt_client.agent_interceptor import handle_read_intercept
+
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.skills_hook_agent_interceptor_enabled",
+        lambda: True,
+    )
+    skill_path, _skill_key, session_id, log_path = _skill_intercept_session_setup(tmp_path)
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"type":"meta","agent":"cursor"}',
+                json.dumps(
+                    {
+                        "kind": "skill_directories",
+                        "key": "skill_directories",
+                        "directories": [str(skill_path.parent.parent)],
+                    },
+                ),
+                json.dumps(
+                    {
+                        "kind": "turn",
+                        "key": "turn:abc",
+                        "prompt": "How do i use rtk?",
+                        "assistant": "",
+                    },
+                ),
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    notify_calls: list[str] = []
+
+    def _capture_notify(_payload: dict[str, Any], *, entity_id: str) -> None:
+        notify_calls.append(entity_id)
+
+    monkeypatch.setattr(
+        "cyt_client.tier_feedback.notify_skill_used_feedback",
+        _capture_notify,
+    )
+    monkeypatch.setattr(
+        "cyt_client.agent_interceptor.resolve_hook_url",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "cyt_client.transcript.last_user_from_payload",
+        lambda _payload: "<user_query>\nHow do i use rtk?\n</user_query>",
+    )
+    payload = {
+        "hook_event_name": "preToolUse",
+        "conversation_id": session_id,
+        "session_id": session_id,
+        "workspace_roots": [str(tmp_path)],
+        "cwd": str(tmp_path),
+        "tool_name": "Read",
+        "tool_input": {"path": str(skill_path)},
+    }
+
+    stdout = handle_read_intercept(payload, post_hook_inject=lambda *_a, **_k: (500, b""))
+    assert stdout is not None
+    assert json.loads(stdout)["permission"] == "allow"
+    assert len(notify_calls) == 1
+    assert notify_calls[0] == str(skill_path.resolve())

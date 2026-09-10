@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from cyt.config.sections import tools_at
 from cyt.hook.install_scope import CytInstallScope
-from cyt.tiers.models import TierScope
 
 
 @dataclass(frozen=True)
@@ -153,12 +152,62 @@ def tier_state_db_path(cfg: dict[str, Any]) -> str:
     return str(Path("~/.config/cyt/tier_state.db").expanduser())
 
 
-def resolve_tier_scope(*, workspace: Path | None = None) -> TierScope:
+def resolve_git_toplevel(path: Path) -> Path | None:
+    """Return git repository root for *path*, or *path* when not inside a repo."""
+    try:
+        resolved = path.expanduser().resolve()
+    except OSError:
+        return None
+    if not resolved.is_dir():
+        resolved = resolved.parent
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=0.2,
+            check=False,
+        )
+        if result.returncode == 0:
+            top = result.stdout.strip()
+            if top:
+                return Path(top).expanduser().resolve()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    current = resolved
+    for _ in range(64):
+        if (current / ".git").exists():
+            return current.resolve()
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return resolved if resolved.is_dir() else None
 
-    user_key = os.environ.get("USER") or os.environ.get("USERNAME") or "default"
-    scope = CytInstallScope.from_cwd(cwd=workspace)
-    workspace_key = str(scope.workspace_root) if scope.workspace_root else ""
-    return TierScope(user_key=user_key, workspace_key=workspace_key)
+
+def resolve_project_root_path(*, workspace: Path | None = None) -> Path | None:
+    """Resolve canonical project root from workspace path or cwd."""
+    if workspace is None:
+        workspace = CytInstallScope.from_cwd().workspace_root
+    if workspace is None:
+        return None
+    try:
+        ws = workspace.expanduser().resolve()
+    except OSError:
+        return None
+    if not ws.is_dir():
+        return None
+    return resolve_git_toplevel(ws)
+
+
+def resolve_tier_project(*, workspace: Path | None = None) -> Path | None:
+    """Return canonical project root path for tier scoping, if any."""
+    return resolve_project_root_path(workspace=workspace)
+
+
+def resolve_tier_scope(*, workspace: Path | None = None) -> Path | None:
+    """Deprecated name for project-root resolution."""
+    return resolve_tier_project(workspace=workspace)
 
 
 def tiers_active(cfg: dict[str, Any], *, kind: str) -> bool:

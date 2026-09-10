@@ -631,6 +631,29 @@ def _read_intercept_allow(agent: str) -> str:
     return format_pre_tool_response(agent=agent, permission="allow")
 
 
+def _skill_entity_id_for_read_path(read_path: str) -> str | None:
+    skill_file = resolve_skill_path(read_path)
+    if skill_file is None or not skill_file.is_file() or not str(skill_file).lower().endswith(".md"):
+        return None
+    return str(skill_file)
+
+
+def _notify_skill_used_feedback(
+    payload: dict[str, Any],
+    read_path: str,
+    meta: dict[str, Any] | None = None,
+) -> None:
+    branch = str((meta or {}).get("branch") or "")
+    if branch in {"excluded_system_skill", "not_a_file"}:
+        return
+    entity_id = _skill_entity_id_for_read_path(read_path)
+    if entity_id is None:
+        return
+    from cyt_client.tier_feedback import notify_skill_used_feedback
+
+    notify_skill_used_feedback(payload, entity_id=entity_id)
+
+
 def _read_intercept_outside_skill_dirs(
     payload: dict[str, Any],
     read_path: str,
@@ -728,6 +751,7 @@ def _read_intercept_decision(
             key=key,
             agent=agent,
         )
+        _notify_skill_used_feedback(payload, read_path, meta)
         return _read_intercept_allow(agent), meta
     return None, meta
 
@@ -742,19 +766,23 @@ def _read_intercept_from_daemon(
 ) -> str:
     hook_url = resolve_hook_url()
     if hook_url is None:
+        _notify_skill_used_feedback(payload, read_path)
         return _read_intercept_allow(agent)
 
     request_payload = build_intercept_request_payload(payload, read_path=read_path, query=query)
     try:
         status, body = post_hook_inject(hook_url, json.dumps(request_payload).encode())
     except OSError:
+        _notify_skill_used_feedback(payload, read_path)
         return _read_intercept_allow(agent)
 
     if status >= 400:
+        _notify_skill_used_feedback(payload, read_path)
         return _read_intercept_allow(agent)
 
     parsed = parse_agent_interceptor_response(body)
     if parsed is None:
+        _notify_skill_used_feedback(payload, read_path)
         return _read_intercept_allow(agent)
 
     if parsed.get("permission") == "deny":
@@ -776,6 +804,7 @@ def _read_intercept_from_daemon(
             updated_input={"path": updated_input["path"]},
         )
 
+    _notify_skill_used_feedback(payload, read_path)
     return _read_intercept_allow(agent)
 
 
@@ -816,9 +845,6 @@ def handle_read_intercept(
         return None
 
     agent = effective_intercept_agent(enriched)
-    if has_partial_read_params(tool_input):
-        return _read_intercept_allow(agent)
-
     read_path = read_path_from_tool_input(tool_input)
     if read_path is None:
         return None
@@ -827,6 +853,10 @@ def handle_read_intercept(
     if outside is not None:
         return outside
 
+    if has_partial_read_params(tool_input):
+        _notify_skill_used_feedback(enriched, read_path)
+        return _read_intercept_allow(agent)
+
     local, _meta = _read_intercept_decision(enriched, read_path=read_path, agent=agent)
     if local is not None:
         return local
@@ -834,6 +864,7 @@ def handle_read_intercept(
     entries = load_session_entries(enriched)
     query = intercept_query_for_payload(enriched, entries)
     if not query.strip():
+        _notify_skill_used_feedback(enriched, read_path)
         return _read_intercept_allow(agent)
 
     return _read_intercept_from_daemon(

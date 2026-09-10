@@ -55,9 +55,14 @@ def _allow_response(
 
 
 def _record_skill_read_feedback(*, file_path: str, config: dict[str, Any]) -> None:
+    from cyt.hook.workspace_config import hook_workspace_from_config
     from cyt.tiers.feedback import record_skill_used_feedback
 
-    record_skill_used_feedback(file_path, config=config, without_injection=False)
+    record_skill_used_feedback(
+        file_path,
+        config=config,
+        workspace=hook_workspace_from_config(config),
+    )
 
 
 def _deny_response(*, user_message: str = "Skill read denied by CYT permissions") -> dict[str, Any]:

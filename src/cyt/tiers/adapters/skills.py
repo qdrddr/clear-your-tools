@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+from cyt.common.paths import expand_home_path
 from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.search import MatchedSkill
 from cyt.tiers.models import SkillsTierPartition, Tier
 
 
+def canonical_skill_entity_id(path: str) -> str:
+    """Return a resolved absolute path string for tier entity keys."""
+    text = (path or "").strip()
+    if not text:
+        return text
+    if not _looks_like_filesystem_path(text):
+        return text
+    try:
+        return str(expand_home_path(text).resolve())
+    except OSError:
+        return text
+
+
+def _looks_like_filesystem_path(text: str) -> bool:
+    if text.startswith(("/", "~")):
+        return True
+    if len(text) > 1 and text[1] == ":":
+        return True
+    return text.endswith(".md")
+
+
 def skill_entity_id(entry: SkillEntryRef) -> str:
-    return entry.source_path or entry.doc_id
+    raw = entry.source_path or entry.doc_id
+    if entry.source_path:
+        return canonical_skill_entity_id(entry.source_path)
+    return raw
 
 
 def partition_skill_entries(

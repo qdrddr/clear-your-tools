@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from cyt.config import load_config
-from cyt.tiers.config import resolve_tier_scope, tier_section_config
+from cyt.tiers.config import resolve_tier_project, tier_section_config
 from cyt.tiers.manager import get_tier_manager
 
 
@@ -22,12 +23,21 @@ def add_tiers_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def run_tiers_status(args: argparse.Namespace) -> int:
     config = load_config()
-    manager = get_tier_manager(config, workspace=args.workspace)
+    project_root = resolve_tier_project(workspace=args.workspace)
+    if project_root is None:
+        message = "no project resolved (need a workspace with git root or workspace markers)"
+        if args.json:
+            print(json.dumps({"error": message}, indent=2))
+        else:
+            print(message, file=sys.stderr)
+        return 2
+    manager = get_tier_manager(config, workspace=project_root)
     status = manager.status()
     tool_cfg = tier_section_config(config, kind="tool")
     skill_cfg = tier_section_config(config, kind="skill")
     payload = {
-        "scope": resolve_tier_scope(workspace=args.workspace).scope_key,
+        "project_id": status.get("project_id"),
+        "root_path": status.get("root_path") or str(project_root),
         "tools": {
             "enabled": tool_cfg.enabled,
             "shadow": tool_cfg.shadow,
@@ -41,7 +51,8 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
-        print(f"scope: {payload['scope']}")
+        print(f"project_id: {payload.get('project_id')}")
+        print(f"root_path: {payload.get('root_path')}")
         print(f"epoch_id: {payload.get('epoch_id')}")
         print(f"tools.enabled={tool_cfg.enabled} shadow={tool_cfg.shadow}")
         print(f"skills.enabled={skill_cfg.enabled} shadow={skill_cfg.shadow}")

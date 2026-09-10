@@ -14,13 +14,22 @@ from cyt.tiers.models import (
     EntityTierState,
     EpochState,
     Tier,
-    TierScope,
+    TierProject,
     TierTransition,
 )
 
-_SCHEMA = """
+_SCHEMA_VERSION = 2
+
+_SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS tier_project (
+    project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_path TEXT NOT NULL UNIQUE,
+    created_ms INTEGER NOT NULL,
+    last_seen_ms INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS epoch_state (
-    scope_key TEXT PRIMARY KEY,
+    project_id INTEGER PRIMARY KEY REFERENCES tier_project(project_id),
     epoch_id INTEGER NOT NULL,
     epoch_start_ms INTEGER NOT NULL,
     last_request_ms INTEGER NOT NULL,
@@ -28,7 +37,7 @@ CREATE TABLE IF NOT EXISTS epoch_state (
 );
 
 CREATE TABLE IF NOT EXISTS entity_stats (
-    scope_key TEXT NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES tier_project(project_id),
     kind TEXT NOT NULL,
     entity_id TEXT NOT NULL,
     pipeline TEXT NOT NULL DEFAULT 'default',
@@ -41,11 +50,11 @@ CREATE TABLE IF NOT EXISTS entity_stats (
     shadow_evaluations REAL NOT NULL DEFAULT 0,
     last_seen_ms INTEGER NOT NULL DEFAULT 0,
     requests_since_decay INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (scope_key, kind, entity_id, pipeline)
+    PRIMARY KEY (project_id, kind, entity_id, pipeline)
 );
 
 CREATE TABLE IF NOT EXISTS entity_tier (
-    scope_key TEXT NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES tier_project(project_id),
     kind TEXT NOT NULL,
     entity_id TEXT NOT NULL,
     stable_tier INTEGER NOT NULL,
@@ -55,19 +64,20 @@ CREATE TABLE IF NOT EXISTS entity_tier (
     temp_promotion_until_ms INTEGER,
     wake_lease_until_session INTEGER NOT NULL DEFAULT 0,
     sleep_cooldown_until_session INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (scope_key, kind, entity_id)
+    PRIMARY KEY (project_id, kind, entity_id)
 );
 
 CREATE TABLE IF NOT EXISTS epoch_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope_key TEXT NOT NULL,
+    project_id INTEGER NOT NULL REFERENCES tier_project(project_id),
     epoch_id INTEGER NOT NULL,
     ts_ms INTEGER NOT NULL,
     transitions_json TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_entity_tier_scope ON entity_tier(scope_key);
-CREATE INDEX IF NOT EXISTS idx_entity_stats_scope ON entity_stats(scope_key, kind, entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_tier_project ON entity_tier(project_id);
+CREATE INDEX IF NOT EXISTS idx_entity_stats_project ON entity_stats(project_id, kind, entity_id);
+CREATE INDEX IF NOT EXISTS idx_epoch_log_project ON epoch_log(project_id);
 """
 
 
@@ -78,8 +88,7 @@ class TierStore:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=TRUNCATE")
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        self._ensure_schema()
 
     @classmethod
     def open(cls, db_path: str) -> TierStore:
@@ -89,12 +98,178 @@ class TierStore:
         with self._lock:
             self._conn.close()
 
-    def load_epoch_state(self, scope: TierScope) -> EpochState:
+    def _table_has_column(self, table: str, column: str) -> bool:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(str(row[1]) == column for row in rows)
+
+    def _ensure_schema(self) -> None:
+        with self._lock:
+            version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+            if version >= _SCHEMA_VERSION:
+                self._conn.executescript(_SCHEMA_V2)
+                self._conn.commit()
+                return
+            if self._table_has_column("entity_tier", "scope_key"):
+                self._migrate_v1_to_v2()
+                return
+            self._conn.executescript(_SCHEMA_V2)
+            self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+            self._conn.commit()
+
+    def _migrate_v1_to_v2(self) -> None:  # noqa: C901
+        now_ms = int(time.time() * 1000)
+        v1_tables: list[str] = []
+        for table in ("epoch_state", "entity_stats", "entity_tier", "epoch_log"):
+            if self._table_exists(table) and self._table_has_column(table, "scope_key"):
+                legacy = f"{table}_v1"
+                self._conn.execute(f"ALTER TABLE {table} RENAME TO {legacy}")
+                v1_tables.append(legacy)
+
+        self._conn.executescript(_SCHEMA_V2)
+
+        scope_keys: set[str] = set()
+        for legacy in v1_tables:
+            rows = self._conn.execute(f"SELECT DISTINCT scope_key FROM {legacy}").fetchall()
+            scope_keys.update(str(row[0]) for row in rows if row[0])
+
+        scope_to_project: dict[str, int] = {}
+        for scope_key in scope_keys:
+            root_path = _workspace_from_v1_scope_key(scope_key)
+            if root_path is None:
+                continue
+            canonical = str(Path(root_path).expanduser().resolve())
+            row = self._conn.execute(
+                "SELECT project_id FROM tier_project WHERE root_path = ?",
+                (canonical,),
+            ).fetchone()
+            if row is not None:
+                project_id = int(row[0])
+            else:
+                cur = self._conn.execute(
+                    "INSERT INTO tier_project(root_path, created_ms, last_seen_ms) VALUES (?, ?, ?)",
+                    (canonical, now_ms, now_ms),
+                )
+                project_id = int(cur.lastrowid)
+            scope_to_project[scope_key] = project_id
+
+        if "epoch_state_v1" in v1_tables:
+            for row in self._conn.execute(
+                "SELECT scope_key, epoch_id, epoch_start_ms, last_request_ms, session_id FROM epoch_state_v1",
+            ).fetchall():
+                project_id = scope_to_project.get(str(row[0]))
+                if project_id is None:
+                    continue
+                self._conn.execute(
+                    "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, session_id) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(project_id) DO UPDATE SET "
+                    "epoch_id=excluded.epoch_id, epoch_start_ms=excluded.epoch_start_ms, "
+                    "last_request_ms=excluded.last_request_ms, session_id=excluded.session_id",
+                    (project_id, row[1], row[2], row[3], row[4]),
+                )
+
+        if "entity_tier_v1" in v1_tables:
+            for row in self._conn.execute(
+                "SELECT scope_key, kind, entity_id, stable_tier, effective_tier, overlap_tier, "
+                "tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
+                "sleep_cooldown_until_session FROM entity_tier_v1",
+            ).fetchall():
+                project_id = scope_to_project.get(str(row[0]))
+                if project_id is None:
+                    continue
+                self._conn.execute(
+                    "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
+                    "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
+                    "sleep_cooldown_until_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(project_id, kind, entity_id) DO NOTHING",
+                    (project_id, row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]),
+                )
+
+        if "entity_stats_v1" in v1_tables:
+            for row in self._conn.execute(
+                "SELECT scope_key, kind, entity_id, pipeline, candidates, injected, used, "
+                "used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
+                "last_seen_ms, requests_since_decay FROM entity_stats_v1",
+            ).fetchall():
+                project_id = scope_to_project.get(str(row[0]))
+                if project_id is None:
+                    continue
+                self._conn.execute(
+                    "INSERT INTO entity_stats(project_id, kind, entity_id, pipeline, candidates, injected, "
+                    "used, used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
+                    "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(project_id, kind, entity_id, pipeline) DO NOTHING",
+                    (
+                        project_id,
+                        row[1],
+                        row[2],
+                        row[3],
+                        row[4],
+                        row[5],
+                        row[6],
+                        row[7],
+                        row[8],
+                        row[9],
+                        row[10],
+                        row[11],
+                        row[12],
+                    ),
+                )
+
+        if "epoch_log_v1" in v1_tables:
+            for row in self._conn.execute(
+                "SELECT scope_key, epoch_id, ts_ms, transitions_json FROM epoch_log_v1",
+            ).fetchall():
+                project_id = scope_to_project.get(str(row[0]))
+                if project_id is None:
+                    continue
+                self._conn.execute(
+                    "INSERT INTO epoch_log(project_id, epoch_id, ts_ms, transitions_json) VALUES (?, ?, ?, ?)",
+                    (project_id, row[1], row[2], row[3]),
+                )
+
+        for legacy in v1_tables:
+            self._conn.execute(f"DROP TABLE {legacy}")
+
+        self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+        self._conn.commit()
+
+    def _table_exists(self, table: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+
+    def get_or_create_project(self, root_path: str) -> int:
+        canonical = str(Path(root_path).expanduser().resolve())
+        now_ms = int(time.time() * 1000)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT project_id FROM tier_project WHERE root_path = ?",
+                (canonical,),
+            ).fetchone()
+            if row is not None:
+                project_id = int(row[0])
+                self._conn.execute(
+                    "UPDATE tier_project SET last_seen_ms = ? WHERE project_id = ?",
+                    (now_ms, project_id),
+                )
+                self._conn.commit()
+                return project_id
+            cur = self._conn.execute(
+                "INSERT INTO tier_project(root_path, created_ms, last_seen_ms) VALUES (?, ?, ?)",
+                (canonical, now_ms, now_ms),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def load_epoch_state(self, project: TierProject) -> EpochState:
         with self._lock:
             row = self._conn.execute(
                 "SELECT epoch_id, epoch_start_ms, last_request_ms, session_id "
-                "FROM epoch_state WHERE scope_key = ?",
-                (scope.scope_key,),
+                "FROM epoch_state WHERE project_id = ?",
+                (project.project_id,),
             ).fetchone()
         if row is None:
             now = int(time.time() * 1000)
@@ -106,16 +281,16 @@ class TierStore:
             session_id=int(row[3]),
         )
 
-    def save_epoch_state(self, scope: TierScope, epoch: EpochState) -> None:
+    def save_epoch_state(self, project: TierProject, epoch: EpochState) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO epoch_state(scope_key, epoch_id, epoch_start_ms, last_request_ms, session_id) "
+                "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, session_id) "
                 "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(scope_key) DO UPDATE SET "
+                "ON CONFLICT(project_id) DO UPDATE SET "
                 "epoch_id=excluded.epoch_id, epoch_start_ms=excluded.epoch_start_ms, "
                 "last_request_ms=excluded.last_request_ms, session_id=excluded.session_id",
                 (
-                    scope.scope_key,
+                    project.project_id,
                     epoch.epoch_id,
                     epoch.epoch_start_ms,
                     epoch.last_request_ms,
@@ -124,19 +299,19 @@ class TierStore:
             )
             self._conn.commit()
 
-    def load_entity_states(self, scope: TierScope) -> dict[tuple[str, str], EntityTierState]:
+    def load_entity_states(self, project: TierProject) -> dict[tuple[str, str], EntityTierState]:
         with self._lock:
             tier_rows = self._conn.execute(
                 "SELECT kind, entity_id, stable_tier, effective_tier, overlap_tier, "
                 "tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
-                "sleep_cooldown_until_session FROM entity_tier WHERE scope_key = ?",
-                (scope.scope_key,),
+                "sleep_cooldown_until_session FROM entity_tier WHERE project_id = ?",
+                (project.project_id,),
             ).fetchall()
             stat_rows = self._conn.execute(
                 "SELECT kind, entity_id, pipeline, candidates, injected, used, "
                 "used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
-                "last_seen_ms, requests_since_decay FROM entity_stats WHERE scope_key = ?",
-                (scope.scope_key,),
+                "last_seen_ms, requests_since_decay FROM entity_stats WHERE project_id = ?",
+                (project.project_id,),
             ).fetchall()
         stats_by_entity: dict[tuple[str, str], EffectiveStats] = {}
         pipeline_by_entity: dict[tuple[str, str], str] = {}
@@ -173,20 +348,20 @@ class TierStore:
             )
         return out
 
-    def upsert_entity_state(self, scope: TierScope, state: EntityTierState) -> None:
+    def upsert_entity_state(self, project: TierProject, state: EntityTierState) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO entity_tier(scope_key, kind, entity_id, stable_tier, effective_tier, "
+                "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
                 "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
                 "sleep_cooldown_until_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(scope_key, kind, entity_id) DO UPDATE SET "
+                "ON CONFLICT(project_id, kind, entity_id) DO UPDATE SET "
                 "stable_tier=excluded.stable_tier, effective_tier=excluded.effective_tier, "
                 "overlap_tier=excluded.overlap_tier, tier_since_epoch=excluded.tier_since_epoch, "
                 "temp_promotion_until_ms=excluded.temp_promotion_until_ms, "
                 "wake_lease_until_session=excluded.wake_lease_until_session, "
                 "sleep_cooldown_until_session=excluded.sleep_cooldown_until_session",
                 (
-                    scope.scope_key,
+                    project.project_id,
                     state.kind,
                     state.entity_id,
                     int(state.stable_tier),
@@ -200,17 +375,17 @@ class TierStore:
             )
             stats = state.stats
             self._conn.execute(
-                "INSERT INTO entity_stats(scope_key, kind, entity_id, pipeline, candidates, injected, "
+                "INSERT INTO entity_stats(project_id, kind, entity_id, pipeline, candidates, injected, "
                 "used, used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
                 "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(scope_key, kind, entity_id, pipeline) DO UPDATE SET "
+                "ON CONFLICT(project_id, kind, entity_id, pipeline) DO UPDATE SET "
                 "candidates=excluded.candidates, injected=excluded.injected, used=excluded.used, "
                 "used_without_injection=excluded.used_without_injection, "
                 "optional_used=excluded.optional_used, shadow_hits=excluded.shadow_hits, "
                 "shadow_evaluations=excluded.shadow_evaluations, last_seen_ms=excluded.last_seen_ms, "
                 "requests_since_decay=excluded.requests_since_decay",
                 (
-                    scope.scope_key,
+                    project.project_id,
                     state.kind,
                     state.entity_id,
                     state.pipeline,
@@ -229,7 +404,7 @@ class TierStore:
 
     def append_epoch_log(
         self,
-        scope: TierScope,
+        project: TierProject,
         *,
         epoch_id: int,
         transitions: list[TierTransition],
@@ -247,19 +422,30 @@ class TierStore:
         ]
         with self._lock:
             self._conn.execute(
-                "INSERT INTO epoch_log(scope_key, epoch_id, ts_ms, transitions_json) VALUES (?, ?, ?, ?)",
-                (scope.scope_key, epoch_id, int(time.time() * 1000), json.dumps(payload)),
+                "INSERT INTO epoch_log(project_id, epoch_id, ts_ms, transitions_json) VALUES (?, ?, ?, ?)",
+                (project.project_id, epoch_id, int(time.time() * 1000), json.dumps(payload)),
             )
             self._conn.commit()
 
-    def status_summary(self, scope: TierScope) -> dict[str, Any]:
+    def status_summary(self, project: TierProject) -> dict[str, Any]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT kind, effective_tier, COUNT(*) FROM entity_tier "
-                "WHERE scope_key = ? GROUP BY kind, effective_tier ORDER BY kind, effective_tier",
-                (scope.scope_key,),
+                "WHERE project_id = ? GROUP BY kind, effective_tier ORDER BY kind, effective_tier",
+                (project.project_id,),
             ).fetchall()
         histogram: dict[str, dict[str, int]] = {}
         for kind, tier, count in rows:
             histogram.setdefault(str(kind), {})[f"T{int(tier)}"] = int(count)
-        return {"scope": scope.scope_key, "histogram": histogram}
+        return {
+            "project_id": project.project_id,
+            "root_path": str(project.root_path),
+            "histogram": histogram,
+        }
+
+
+def _workspace_from_v1_scope_key(scope_key: str) -> str | None:
+    if "::" in scope_key:
+        workspace = scope_key.split("::", 1)[1].strip()
+        return workspace or None
+    return None

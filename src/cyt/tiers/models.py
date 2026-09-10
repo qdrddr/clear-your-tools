@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
 
 
@@ -26,16 +27,10 @@ class EntityKind:
     SKILL = "skill"
 
 
-@dataclass
-class TierScope:
-    user_key: str
-    workspace_key: str
-
-    @property
-    def scope_key(self) -> str:
-        if self.workspace_key:
-            return f"{self.user_key}::{self.workspace_key}"
-        return self.user_key
+@dataclass(frozen=True)
+class TierProject:
+    project_id: int
+    root_path: Path
 
 
 @dataclass
@@ -90,7 +85,7 @@ class EntityTierView:
 
 @dataclass
 class TierSnapshot:
-    scope: TierScope
+    project: TierProject | None
     epoch_id: int
     epoch_start_ms: int
     session_id: int

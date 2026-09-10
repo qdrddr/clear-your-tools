@@ -8,9 +8,9 @@ import pytest
 
 from cyt.tiers.adapters.tools import apply_tool_tiers, merge_t4_tools, tool_entity_id
 from cyt.tiers.config import tier_section_config
-from cyt.tiers.evaluator import evaluate_slow_clock, epoch_boundary
+from cyt.tiers.evaluator import epoch_boundary, evaluate_slow_clock
 from cyt.tiers.manager import TierManager
-from cyt.tiers.models import EffectiveStats, EntityTierState, EpochState, Tier, TierScope
+from cyt.tiers.models import EffectiveStats, EntityTierState, EpochState, Tier, TierProject
 from cyt.tiers.store import TierStore
 from cyt.tiers.wake import evaluate_fast_wake
 
@@ -21,13 +21,14 @@ def tier_db(tmp_path: Path) -> str:
 
 
 @pytest.fixture
-def scope() -> TierScope:
-    return TierScope(user_key="test-user", workspace_key=str(Path("/tmp/ws")))
+def project_root(tmp_path: Path) -> Path:
+    (tmp_path / ".git").mkdir()
+    return tmp_path
 
 
 @pytest.fixture
-def manager(scope: TierScope, tier_db: str) -> TierManager:
-    return TierManager(scope, tier_db)
+def manager(project_root: Path, tier_db: str) -> TierManager:
+    return TierManager(project_root, tier_db)
 
 
 def test_tool_entity_id_uses_catalog_source() -> None:
@@ -64,9 +65,11 @@ def test_merge_t4_tools_overrides_pruned() -> None:
     assert merged[0]["input_schema"]["type"] == "object"
 
 
-def test_tier_store_roundtrip(scope: TierScope, tier_db: str) -> None:
+def test_tier_store_roundtrip(project_root: Path, tier_db: str) -> None:
     store = TierStore.open(tier_db)
     try:
+        project_id = store.get_or_create_project(str(project_root))
+        project = TierProject(project_id=project_id, root_path=project_root)
         state = EntityTierState(
             entity_id="cyt_mcp:search",
             kind="tool",
@@ -74,8 +77,8 @@ def test_tier_store_roundtrip(scope: TierScope, tier_db: str) -> None:
             effective_tier=Tier.HOT,
             stats=EffectiveStats(candidates=3, injected=2, used=1),
         )
-        store.upsert_entity_state(scope, state)
-        loaded = store.load_entity_states(scope)
+        store.upsert_entity_state(project, state)
+        loaded = store.load_entity_states(project)
         assert loaded[("tool", "cyt_mcp:search")].stable_tier == Tier.HOT
         assert loaded[("tool", "cyt_mcp:search")].stats.used == 1.0
     finally:

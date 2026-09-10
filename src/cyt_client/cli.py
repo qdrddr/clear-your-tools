@@ -72,6 +72,7 @@ from cyt_client.sessions import (
 )
 from cyt_client.skip import hook_skip_enabled
 from cyt_client.tool_gate import (
+    extract_gated_tool_use_feedback,
     format_claude_deny,
     format_codex_deny,
     format_codex_pre_tool_allow,
@@ -327,6 +328,11 @@ def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
         infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
     )
     if validation.allowed:
+        feedback = extract_gated_tool_use_feedback(payload)
+        if feedback is not None:
+            from cyt_client.tier_feedback import notify_tool_used_feedback
+
+            notify_tool_used_feedback(payload, **feedback)
         if cursor_output or agent == "cursor":
             print(format_pre_tool_allow(), flush=True)
             return

@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from cyt.indexer.policies import PolicyContext
 
-from cyt.tiers.adapters.skills import partition_skill_entries, skill_entity_id
+from cyt.hook.workspace_config import hook_workspace_from_config
+from cyt.tiers.adapters.skills import canonical_skill_entity_id, partition_skill_entries, skill_entity_id
 from cyt.tiers.adapters.tools import apply_tool_tiers, merge_tool_policies, tool_entity_id
 from cyt.tiers.config import (
     TierSectionConfig,
-    resolve_tier_scope,
+    resolve_tier_project,
     tier_section_config,
     tier_state_db_path,
     tiers_active,
@@ -28,7 +29,7 @@ from cyt.tiers.models import (
     EntityTierView,
     SkillsTierPartition,
     Tier,
-    TierScope,
+    TierProject,
     TierSnapshot,
     TierTransition,
     ToolsTierApplyResult,
@@ -42,12 +43,101 @@ _manager_lock = threading.RLock()
 _managers: dict[str, TierManager] = {}
 
 
+class NoOpTierManager:
+    """Tier manager used when no project root is resolved."""
+
+    project: TierProject | None = None
+    is_noop = True
+
+    def close(self) -> None:
+        return
+
+    def snapshot_tools(self, config: dict[str, Any]) -> TierSnapshot:
+        cfg = tier_section_config(config, kind="tool")
+        return TierSnapshot(
+            project=None,
+            epoch_id=0,
+            epoch_start_ms=0,
+            session_id=0,
+            entities={},
+            shadow_mode=cfg.shadow,
+            enabled=cfg.enabled,
+        )
+
+    def snapshot_skills(self, config: dict[str, Any]) -> TierSnapshot:
+        cfg = tier_section_config(config, kind="skill")
+        return TierSnapshot(
+            project=None,
+            epoch_id=0,
+            epoch_start_ms=0,
+            session_id=0,
+            entities={},
+            shadow_mode=cfg.shadow,
+            enabled=cfg.enabled,
+        )
+
+    def apply_tools(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> ToolsTierApplyResult:
+        return apply_tool_tiers(tools, tier_for_tool={}, apply=False)
+
+    def merge_tool_policies_for_config(
+        self,
+        output_ctx: PolicyContext,
+        result: ToolsTierApplyResult,
+    ) -> PolicyContext:
+        return merge_tool_policies(output_ctx, result.policy_overrides)
+
+    def partition_skills(self, entries: list[Any], config: dict[str, Any]) -> SkillsTierPartition:
+        return partition_skill_entries(entries, tier_for_skill={}, apply=False)
+
+    def record_tool_candidates(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> None:
+        return
+
+    def record_tools_injected(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> None:
+        return
+
+    def record_tool_used(
+        self,
+        tool: dict[str, Any],
+        *,
+        config: dict[str, Any],
+        optional_used: bool = False,
+    ) -> None:
+        return
+
+    def record_skill_candidates(self, entries: list[Any], config: dict[str, Any]) -> None:
+        return
+
+    def record_skills_injected(self, matches: list[Any], config: dict[str, Any]) -> None:
+        return
+
+    def record_skill_used(self, entity_id: str, *, config: dict[str, Any]) -> None:
+        return
+
+    def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+        return
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "project_id": None,
+            "root_path": None,
+            "histogram": {},
+            "epoch_id": 0,
+            "session_id": 0,
+        }
+
+
+_NOOP_MANAGER = NoOpTierManager()
+
+
 class TierManager:
-    def __init__(self, scope: TierScope, db_path: str) -> None:
-        self.scope = scope
+    is_noop = False
+
+    def __init__(self, root_path: Path, db_path: str) -> None:
         self._store = TierStore.open(db_path)
-        self._states = self._store.load_entity_states(scope)
-        self._epoch = self._store.load_epoch_state(scope)
+        project_id = self._store.get_or_create_project(str(root_path))
+        self.project = TierProject(project_id=project_id, root_path=root_path)
+        self._states = self._store.load_entity_states(self.project)
+        self._epoch = self._store.load_epoch_state(self.project)
         self._snapshot_tools: TierSnapshot | None = None
         self._snapshot_skills: TierSnapshot | None = None
         self._pending_flush = False
@@ -98,7 +188,7 @@ class TierManager:
                 temporary=temporary,
             )
         return TierSnapshot(
-            scope=self.scope,
+            project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
             session_id=self._epoch.session_id,
@@ -109,7 +199,7 @@ class TierManager:
 
     def _rebuild_snapshots(self, *, enabled: bool, shadow: bool) -> None:
         self._snapshot_tools = TierSnapshot(
-            scope=self.scope,
+            project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
             session_id=self._epoch.session_id,
@@ -128,7 +218,7 @@ class TierManager:
             enabled=enabled,
         )
         self._snapshot_skills = TierSnapshot(
-            scope=self.scope,
+            project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
             session_id=self._epoch.session_id,
@@ -200,7 +290,7 @@ class TierManager:
             self._run_epoch(config)
         else:
             expire_temporary_promotions(self._states, now_ms=now_ms)
-        self._store.save_epoch_state(self.scope, self._epoch)
+        self._store.save_epoch_state(self.project, self._epoch)
 
     def _run_epoch(self, config: dict[str, Any]) -> None:
         cfg = tier_section_config(config, kind="tool")
@@ -209,9 +299,13 @@ class TierManager:
         transitions.extend(expire_temporary_promotions(self._states, now_ms=now_ms))
         transitions.extend(evaluate_slow_clock(self._states, cfg=cfg, epoch=self._epoch))
         for state in self._states.values():
-            self._store.upsert_entity_state(self.scope, state)
+            self._store.upsert_entity_state(self.project, state)
         if transitions:
-            self._store.append_epoch_log(self.scope, epoch_id=self._epoch.epoch_id, transitions=transitions)
+            self._store.append_epoch_log(
+                self.project,
+                epoch_id=self._epoch.epoch_id,
+                transitions=transitions,
+            )
             if cfg.shadow:
                 logger.info("tier shadow epoch %s transitions: %d", self._epoch.epoch_id, len(transitions))
         self._epoch.epoch_id += 1
@@ -298,7 +392,9 @@ class TierManager:
         injected: set[str] = set()
         for match in matches:
             path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
-            entity_id = str(path)
+            entity_id = canonical_skill_entity_id(str(path))
+            if not entity_id:
+                continue
             injected.add(entity_id)
             state = self._ensure_state(EntityKind.SKILL, entity_id)
             state.stats.injected += 1.0
@@ -307,20 +403,24 @@ class TierManager:
         self._touch_request(config)
         self._flush_states(cfg)
 
-    def record_skill_used(self, entity_id: str, *, config: dict[str, Any], without_injection: bool = False) -> None:
+    def record_skill_used(self, entity_id: str, *, config: dict[str, Any]) -> None:
         if not tiers_active(config, kind="skill"):
             return
         cfg = tier_section_config(config, kind="skill")
-        state = self._ensure_state(EntityKind.SKILL, entity_id)
+        canonical_id = canonical_skill_entity_id(entity_id)
+        if not canonical_id:
+            return
+        state = self._ensure_state(EntityKind.SKILL, canonical_id)
         state.stats.used += 1.0
-        if without_injection or entity_id not in self._last_injected_skills:
+        if canonical_id not in self._last_injected_skills:
             state.stats.used_without_injection += 1.0
         self._touch_request(config)
         self._flush_states(cfg)
 
     def _flush_states(self, cfg: TierSectionConfig) -> None:
+        del cfg
         for state in self._states.values():
-            self._store.upsert_entity_state(self.scope, state)
+            self._store.upsert_entity_state(self.project, state)
 
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
         from cyt.tiers.shadow import record_shadow_hits
@@ -334,27 +434,42 @@ class TierManager:
             session_id=self._epoch.session_id,
         )
         for state in self._states.values():
-            self._store.upsert_entity_state(self.scope, state)
+            self._store.upsert_entity_state(self.project, state)
         if transitions and cfg.shadow:
             logger.debug("tool shadow transitions: %d", len(transitions))
 
     def status(self) -> dict[str, Any]:
-        summary = self._store.status_summary(self.scope)
+        summary = self._store.status_summary(self.project)
         summary["epoch_id"] = self._epoch.epoch_id
         summary["session_id"] = self._epoch.session_id
         return summary
+
+
+def _resolve_manager_workspace(
+    config: dict[str, Any],
+    *,
+    workspace: Path | None,
+) -> Path | None:
+    if workspace is not None:
+        return resolve_tier_project(workspace=workspace)
+    hook_workspace = hook_workspace_from_config(config)
+    if hook_workspace is not None:
+        return resolve_tier_project(workspace=hook_workspace)
+    return resolve_tier_project()
 
 
 def get_tier_manager(
     config: dict[str, Any],
     *,
     workspace: Path | None = None,
-) -> TierManager:
-    scope = resolve_tier_scope(workspace=workspace)
-    key = scope.scope_key
+) -> TierManager | NoOpTierManager:
+    root_path = _resolve_manager_workspace(config, workspace=workspace)
+    if root_path is None:
+        return _NOOP_MANAGER
+    key = str(root_path)
     with _manager_lock:
         manager = _managers.get(key)
         if manager is None:
-            manager = TierManager(scope, tier_state_db_path(config))
+            manager = TierManager(root_path, tier_state_db_path(config))
             _managers[key] = manager
         return manager

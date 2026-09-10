@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -182,6 +183,75 @@ async def hook_catalog_status(request: Request) -> Response:
     from cyt.hook.catalog_registry import list_catalog_registrations
 
     return JSONResponse({"registrations": list_catalog_registrations()})
+
+
+async def hook_tier_feedback(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return JSONResponse({"error": "payload must be a JSON object"}, status_code=400)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    event = payload.get("event")
+    if event not in {"tool_used", "skill_used"}:
+        return JSONResponse({"error": "unsupported event"}, status_code=400)
+
+    workspace_raw = payload.get("workspace_root")
+    workspace: Path | None = None
+    if isinstance(workspace_raw, str) and workspace_raw.strip():
+        workspace = Path(os.path.expanduser(workspace_raw.strip()))  # noqa: ASYNC240
+
+    config: dict[str, Any] = getattr(request.app.state, "cyt_config", None) or load_config()
+    from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+
+    if workspace is not None:
+        config = set_hook_workspace_in_config(config, workspace)
+    else:
+        agent = str(payload.get("agent") or "cursor")
+        config, workspace = resolve_hook_request_config(payload, agent, base_config=config)
+        config = set_hook_workspace_in_config(config, workspace)
+
+    from cyt.tiers.config import resolve_tier_project
+
+    if resolve_tier_project(workspace=workspace) is None:
+        return PlainTextResponse("", status_code=204)
+
+    if event == "tool_used":
+        from cyt.tiers.feedback import record_tool_used_feedback
+
+        tool_name = payload.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return JSONResponse({"error": "tool_name required"}, status_code=400)
+        catalog = payload.get("catalog")
+        catalog_str = catalog if isinstance(catalog, str) else None
+        args = payload.get("args")
+        args_dict = args if isinstance(args, dict) else None
+        optional_used = payload.get("optional_used") is True
+        record_tool_used_feedback(
+            tool_name=tool_name.strip(),
+            catalog=catalog_str,
+            config=config,
+            args=args_dict,
+            workspace=workspace,
+            optional_used=optional_used,
+        )
+        return PlainTextResponse("", status_code=204)
+
+    from cyt.tiers.feedback import record_skill_used_feedback
+
+    entity_id = payload.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id.strip():
+        return JSONResponse({"error": "entity_id required"}, status_code=400)
+    record_skill_used_feedback(
+        entity_id.strip(),
+        config=config,
+        workspace=workspace,
+    )
+    return PlainTextResponse("", status_code=204)
 
 
 async def hook_connect(request: Request) -> Response:
