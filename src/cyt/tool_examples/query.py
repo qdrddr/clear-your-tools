@@ -15,6 +15,16 @@ class ScoredItem:
     score: float
 
 
+@dataclass(frozen=True)
+class RankedExample:
+    item: Any
+    text: str
+    bm25_score: float
+    recency_bonus: float
+    total_score: float
+    timestamp_ms: int
+
+
 def _tokenize(text: str) -> list[str]:
     return [token for token in re.findall(r"[A-Za-z0-9_]+", text.lower()) if token]
 
@@ -48,18 +58,53 @@ def rank_by_query(
     recency_weight: float = 0.001,
 ) -> list[ScoredItem]:
     """Rank items with (payload, text_for_bm25, timestamp_ms)."""
+    return [
+        ScoredItem(item=row.item, score=row.total_score)
+        for row in rank_by_query_detailed(query, items, recency_weight=recency_weight)
+    ]
+
+
+def rank_by_query_detailed(
+    query: str,
+    items: Sequence[tuple[Any, str, int]],
+    *,
+    recency_weight: float = 0.001,
+) -> list[RankedExample]:
+    """Rank items with BM25 + recency, exposing each component score."""
     query_tokens = _tokenize(query)
     if not query_tokens:
+        rows = sorted(items, key=lambda row: row[2], reverse=True)
         return [
-            ScoredItem(item=payload, score=float(ts))
-            for payload, _text, ts in sorted(items, key=lambda row: row[2], reverse=True)
+            RankedExample(
+                item=payload,
+                text=text,
+                bm25_score=0.0,
+                recency_bonus=0.0,
+                total_score=float(ts),
+                timestamp_ms=ts,
+            )
+            for payload, text, ts in rows
         ]
     texts = [text for _payload, text, _ts in items]
+    timestamps = [ts for _payload, _text, ts in items]
+    min_ts = min(timestamps)
+    max_ts = max(timestamps)
+    span = max(max_ts - min_ts, 1)
     avg_len = sum(len(_tokenize(text)) for text in texts) / max(len(texts), 1)
-    scored: list[ScoredItem] = []
+    scored: list[RankedExample] = []
     for payload, text, ts in items:
         doc_len = len(_tokenize(text))
         bm25 = _bm25_score(query_tokens, text, avg_len=avg_len, doc_len=doc_len)
-        scored.append(ScoredItem(item=payload, score=bm25 + ts * recency_weight))
-    scored.sort(key=lambda row: row.score, reverse=True)
+        recency_bonus = recency_weight * (ts - min_ts) / span
+        scored.append(
+            RankedExample(
+                item=payload,
+                text=text,
+                bm25_score=bm25,
+                recency_bonus=recency_bonus,
+                total_score=bm25 + recency_bonus,
+                timestamp_ms=ts,
+            ),
+        )
+    scored.sort(key=lambda row: row.total_score, reverse=True)
     return scored

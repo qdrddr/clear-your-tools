@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Five user queries for BM25-ranked tool example injection regression.",
+  "catalog_tools": "../cyt_mcp_catalog/input/tools.json",
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  },
+  "queries": [
+    {
+      "id": "01_bm25_graph_search",
+      "query": "bm25 ranking search graph project settings",
+      "tool_names": [
+        "codebase-memory_search_graph"
+      ]
+    },
+    {
+      "id": "02_index_repository",
+      "query": "index repository cross repo intelligence HTTP routes",
+      "tool_names": [
+        "codebase-memory_index_repository"
+      ]
+    },
+    {
+      "id": "03_kubernetes_symbols",
+      "query": "kubernetes deployment autoscaling pods helm",
+      "tool_names": [
+        "jcodemunch_search_symbols"
+      ]
+    },
+    {
+      "id": "04_oauth_gitnexus",
+      "query": "oauth jwt authentication bearer token validation flow",
+      "tool_names": [
+        "gitnexus_query"
+      ]
+    },
+    {
+      "id": "05_hedl_read_path",
+      "query": "read hedl file directory recursive schema entity",
+      "tool_names": [
+        "hedl_hedl_read"
+      ]
+    }
+  ]
+}

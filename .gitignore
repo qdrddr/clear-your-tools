@@ -161,6 +161,7 @@ scripts/mcpc/output/
 scripts/legal/output/
 scripts/deps/output/
 src/tests/fixtures/cyt_mcp_catalog/out/
+src/tests/fixtures/tool_examples/out/
 scripts/mcpc/payloads/
 sample.*
 .cargo-home/

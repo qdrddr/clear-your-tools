@@ -1,0 +1,103 @@
+{
+  "query_id": "04_oauth_gitnexus",
+  "query": "oauth jwt authentication bearer token validation flow",
+  "tool_names": [
+    "gitnexus_query"
+  ],
+  "tools": [
+    {
+      "name": "gitnexus_query",
+      "description": "Query the code knowledge graph for execution flows related to a concept.\nReturns processes (call chains) ranked by relevance, each with its symbols and file locations.\n\nWHEN TO USE: Understanding how code works together. Use this when you need execution flows and relationships, not just file matches. Complements grep/IDE search.\nAFTER THIS: Use context() on a specific symbol for 360-degree view (callers, callees, categorized refs).\n\nReturns results grouped by process (execution flow):\n- processes: ranked execution flows with relevance priority\n- process_symbols: all symbols in those flows with file locations and module (functional area)\n- definitions: standalone types/interfaces not in any process\n\nHybrid ranking: BM25 keyword + semantic vector search, ranked by Reciprocal Rank Fusion.\n\nGROUP MODE: set \"repo\" to \"@<groupName>\" to search all member repos in that group (merged via RRF), or \"@<groupName>/<groupRepoPath>\" to run against a single member (same path keys as in group.yaml). If you use \"@<groupName>\" only, the member repo defaults to the lexicographically first key in group.yaml \"repos\". Prefer resources for contracts/status (see migration from legacy group_* tools).\n\nSERVICE: optional monorepo path prefix (POSIX-style, case-sensitive segments). When \"repo\" starts with \"@\", only processes whose symbols fall under that prefix are included. For a normal indexed repo name (no leading @), this field is currently ignored by the server.",
+      "server_key": "gitnexus",
+      "tool_name": "query",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "search_query": {
+            "type": "string",
+            "description": "Natural language or keyword search query. Examples: 'oauth jwt bearer token validation', 'cypher match callers validateUser', 'session cookie login redirect'."
+          },
+          "task_context": {
+            "type": "string",
+            "description": "What you are working on (e.g., \"adding OAuth support\"). Helps ranking. Examples: 'debug login flow', 'adding OAuth support'."
+          },
+          "goal": {
+            "type": "string",
+            "description": "What you want to find (e.g., \"existing auth validation logic\"). Helps ranking. Examples: 'find authentication validation logic'."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max processes to return (default: 5)",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 100
+          },
+          "max_symbols": {
+            "type": "number",
+            "description": "Max symbols per process (default: 10)",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 200
+          },
+          "include_content": {
+            "type": "boolean",
+            "description": "Include full symbol source code (default: false)",
+            "default": false
+          },
+          "repo": {
+            "type": "string",
+            "description": "Indexed repository name or path, or group mode \"@<groupName>\" / \"@<groupName>/<memberPath>\" (member path keys from group.yaml). Omit when only one indexed repo exists. Examples: 'clear-your-tools'."
+          },
+          "service": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional monorepo service root (relative path, \"/\" separators). In group mode (@repo), prefix-matches symbol file paths; ignored for a normal repo name. Empty string is rejected server-side."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional: scope to a pinned branch index (multi-branch repos, #2106). Omit for the workspace index, which follows the checked-out working tree. Ignored in group mode."
+          }
+        },
+        "required": [
+          "search_query"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ],
+  "flattened_examples": [
+    {
+      "path": "gitnexus.query.inputSchema.properties.goal",
+      "values": [
+        "find authentication validation logic"
+      ]
+    },
+    {
+      "path": "gitnexus.query.inputSchema.properties.repo",
+      "values": [
+        "clear-your-tools"
+      ]
+    },
+    {
+      "path": "gitnexus.query.inputSchema.properties.search_query",
+      "values": [
+        "oauth jwt bearer token validation",
+        "cypher match callers validateUser",
+        "session cookie login redirect"
+      ]
+    },
+    {
+      "path": "gitnexus.query.inputSchema.properties.task_context",
+      "values": [
+        "debug login flow",
+        "adding OAuth support"
+      ]
+    }
+  ],
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  }
+}

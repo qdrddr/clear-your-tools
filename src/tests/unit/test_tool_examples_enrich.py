@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cyt.hook.workspace_config import set_hook_workspace_in_config
-from cyt.tool_examples.enrich import enrich_tools_with_examples
+from cyt.tool_examples.enrich import _append_examples, enrich_tools_with_examples
 from cyt.tool_examples.store import ToolExamplesStore
 
 
@@ -27,6 +27,22 @@ def _config(db_path: Path, workspace: Path) -> dict:
         },
         workspace,
     )
+
+
+def test_append_examples_preserves_existing_description() -> None:
+    original = (
+        "Natural-language or keyword full-text search using BM25 ranking. "
+        "When provided, name_pattern is ignored."
+    )
+    appended = _append_examples(original, ['"bm25"', '"settings"'], max_value_chars=120)
+    assert appended.startswith(original)
+    assert appended.endswith("Examples: 'bm25', 'settings'.")
+    assert original in appended
+
+
+def test_append_examples_without_existing_description() -> None:
+    appended = _append_examples("", ['"clear-your-tools"'], max_value_chars=120)
+    assert appended == "Examples: 'clear-your-tools'."
 
 
 def test_enrich_appends_property_examples(tmp_path: Path) -> None:
@@ -75,8 +91,10 @@ def test_enrich_appends_property_examples(tmp_path: Path) -> None:
     query_desc = props["query"]["description"]
     assert "Examples:" in project_desc
     assert "clear-your-tools" in project_desc
+    assert query_desc.startswith("Search query")
     assert "Examples:" in query_desc
     assert "bm25" in query_desc.lower() or "ranking" in query_desc.lower()
+    assert project_desc.startswith("Project name")
     assert "Full-call examples:" in enriched[0]["description"]
 
 

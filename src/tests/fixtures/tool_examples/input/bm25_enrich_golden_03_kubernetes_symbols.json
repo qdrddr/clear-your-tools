@@ -1,0 +1,211 @@
+{
+  "query_id": "03_kubernetes_symbols",
+  "query": "kubernetes deployment autoscaling pods helm",
+  "tool_names": [
+    "jcodemunch_search_symbols"
+  ],
+  "tools": [
+    {
+      "name": "jcodemunch_search_symbols",
+      "description": "Search for symbols matching a query across the entire indexed repository. Returns matches with signatures and summaries.",
+      "server_key": "jcodemunch",
+      "tool_name": "search_symbols",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository identifier (owner/repo or just repo name). Examples: 'local/demo', 'local/clear-your-tools'."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query (matches symbol names, signatures, summaries, docstrings). Examples: 'kubernetes deployment autoscaling pods', 'helm chart values replicaCount', 'docker compose build image'."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Optional filter by symbol kind",
+            "enum": [
+              "function",
+              "class",
+              "method",
+              "constant",
+              "type",
+              "template",
+              "import"
+            ]
+          },
+          "file_pattern": {
+            "type": "string",
+            "description": "Optional glob pattern to filter files (e.g., 'src/**/*.py'). Examples: 'charts/**', 'docker/**', 'src/**/*.py'."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional filter by language",
+            "enum": [
+              "python",
+              "javascript",
+              "typescript",
+              "tsx",
+              "go",
+              "rust",
+              "java",
+              "php",
+              "dart",
+              "csharp",
+              "razor",
+              "c",
+              "swift",
+              "cpp",
+              "elixir",
+              "ruby",
+              "perl",
+              "gdscript",
+              "blade",
+              "al",
+              "kotlin",
+              "gleam",
+              "bash",
+              "nix",
+              "vue",
+              "ejs",
+              "verse",
+              "lua",
+              "luau",
+              "erlang",
+              "fortran",
+              "sql",
+              "scala",
+              "haskell",
+              "julia",
+              "r",
+              "css",
+              "toml",
+              "groovy",
+              "objc",
+              "proto",
+              "hcl",
+              "graphql",
+              "autohotkey",
+              "asm",
+              "xml",
+              "openapi"
+            ]
+          },
+          "decorator": {
+            "type": "string",
+            "description": "Optional filter: only return symbols with this decorator (case-insensitive substring match, e.g. 'route', 'property', 'Deprecated')"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of results to return (ignored when token_budget is set)",
+            "default": 10
+          },
+          "token_budget": {
+            "type": "integer",
+            "description": "Token budget cap. When set, results are sorted by score and greedily packed until the budget is exhausted, charging each row's actual payload size (compact rows ~15 tokens, so a budget can admit many rows). Overrides max_results — pass max_results without token_budget when row count matters. Reports token_budget, tokens_used, and tokens_remaining in _meta."
+          },
+          "detail_level": {
+            "type": "string",
+            "description": "Controls result verbosity. 'compact' returns id/name/kind/file/line only (~15 tokens each, best for broad discovery). 'standard' returns signatures and summaries (default). 'full' inlines source code, docstring, and end_line — equivalent to search + get_symbol in one call.",
+            "enum": [
+              "compact",
+              "standard",
+              "full"
+            ],
+            "default": "standard"
+          },
+          "debug": {
+            "type": "boolean",
+            "description": "When true, each result includes a score_breakdown showing per-field scoring contributions (name_exact, name_contains, name_word_overlap, signature_phrase, signature_word_overlap, summary_phrase, summary_word_overlap, keywords, docstring_word_overlap). Also adds candidates_scored to _meta.",
+            "default": false
+          },
+          "fuzzy": {
+            "type": "boolean",
+            "description": "Enable fuzzy matching. When true, uses trigram overlap + Levenshtein distance as fallback when BM25 scores are low. Fuzzy results include match_type, fuzzy_similarity, and edit_distance fields.",
+            "default": false
+          },
+          "fuzzy_threshold": {
+            "type": "number",
+            "description": "Minimum Jaccard trigram similarity (0.0–1.0) for fuzzy candidates. Lower values surface more candidates. Default 0.4.",
+            "default": 0.4
+          },
+          "max_edit_distance": {
+            "type": "integer",
+            "description": "Maximum Levenshtein distance for direct name matching (catches typos). Default 2.",
+            "default": 2
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "centrality",
+              "combined"
+            ],
+            "description": "Ranking strategy. 'relevance' (default) = BM25 text match. 'centrality' = filter by query, rank by PageRank. 'combined' = BM25 + PageRank weighted.",
+            "default": "relevance"
+          },
+          "semantic": {
+            "type": "boolean",
+            "description": "Enable semantic (embedding-based) search. Requires an embedding provider: JCODEMUNCH_EMBED_MODEL (sentence-transformers), GOOGLE_API_KEY+GOOGLE_EMBED_MODEL (Gemini), or OPENAI_API_KEY+OPENAI_EMBED_MODEL (OpenAI). When false (default) there is zero performance impact.",
+            "default": false
+          },
+          "semantic_weight": {
+            "type": "number",
+            "description": "Weight for semantic score in hybrid BM25+embedding ranking (0.0–1.0). BM25 receives 1-weight. Default 0.5. Set to 0.0 for identical results to pure BM25; set to 1.0 for pure semantic.",
+            "default": 0.5
+          },
+          "semantic_only": {
+            "type": "boolean",
+            "description": "Skip BM25 entirely and rank solely by embedding cosine similarity. Implies semantic=true.",
+            "default": false
+          },
+          "fusion": {
+            "type": "boolean",
+            "description": "Enable multi-signal fusion (Weighted Reciprocal Rank) across lexical, structural, similarity, and identity channels. Produces higher-quality ranking than linear score addition. When True, sort_by is ignored.",
+            "default": false
+          },
+          "fqn": {
+            "type": "string",
+            "description": "PHP fully-qualified class name (e.g. 'App\\Models\\User'). Resolves via PSR-4 and uses the class name as query. Alternative to query."
+          }
+        },
+        "required": [
+          "repo",
+          "query"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ],
+  "flattened_examples": [
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.file_pattern",
+      "values": [
+        "charts/**",
+        "docker/**",
+        "src/**/*.py"
+      ]
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.query",
+      "values": [
+        "kubernetes deployment autoscaling pods",
+        "helm chart values replicaCount",
+        "docker compose build image"
+      ]
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.repo",
+      "values": [
+        "local/demo",
+        "local/clear-your-tools"
+      ]
+    }
+  ],
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  }
+}

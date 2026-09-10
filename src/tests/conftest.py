@@ -281,6 +281,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="run tests marked runtime that may spawn cyt hook daemon or launch proxy",
     )
+    parser.addoption(
+        "--tool-examples-query-id",
+        action="store",
+        default=None,
+        help="fixture query id for tool-examples BM25 report (e.g. 04_oauth_gitnexus)",
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

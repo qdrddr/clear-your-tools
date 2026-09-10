@@ -1,0 +1,68 @@
+{
+  "query_id": "05_hedl_read_path",
+  "query": "read hedl file directory recursive schema entity",
+  "tool_names": [
+    "hedl_hedl_read"
+  ],
+  "tools": [
+    {
+      "name": "hedl_hedl_read",
+      "description": "Read and parse HEDL files from a directory. Returns parsed document structure with entities and relationships.",
+      "server_key": "hedl",
+      "tool_name": "hedl_read",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to a HEDL file or directory containing .hedl files. Examples: '/workspace/models/entity.hedl', '/data/schemas/user.hedl', '/tmp/unrelated/config.json'."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "If path is a directory, whether to search recursively. Examples: 'true', 'false'.",
+            "default": true
+          },
+          "include_json": {
+            "type": "boolean",
+            "description": "Include JSON representation of parsed documents. Examples: 'false', 'true'.",
+            "default": false
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ],
+  "flattened_examples": [
+    {
+      "path": "hedl.hedl_read.inputSchema.properties.include_json",
+      "values": [
+        "false",
+        "true"
+      ]
+    },
+    {
+      "path": "hedl.hedl_read.inputSchema.properties.path",
+      "values": [
+        "/workspace/models/entity.hedl",
+        "/data/schemas/user.hedl",
+        "/tmp/unrelated/config.json"
+      ]
+    },
+    {
+      "path": "hedl.hedl_read.inputSchema.properties.recursive",
+      "values": [
+        "true",
+        "false"
+      ]
+    }
+  ],
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  }
+}

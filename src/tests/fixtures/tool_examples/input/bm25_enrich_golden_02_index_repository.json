@@ -1,0 +1,79 @@
+{
+  "query_id": "02_index_repository",
+  "query": "index repository cross repo intelligence HTTP routes",
+  "tool_names": [
+    "codebase-memory_index_repository"
+  ],
+  "tools": [
+    {
+      "name": "codebase-memory_index_repository",
+      "description": "Index a repository into the knowledge graph. Special mode 'cross-repo-intelligence': skip extraction, only match Routes/Channels across projects to create CROSS_HTTP_CALLS/CROSS_ASYNC_CALLS/CROSS_CHANNEL edges. Requires target_projects param. Ensure target projects have fresh indexes first.",
+      "server_key": "codebase-memory",
+      "tool_name": "index_repository",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {
+            "type": "string",
+            "description": "Path to the repository. Examples: '/Volumes/cross-repo-intelligence', '/tmp/unrelated', '/Volumes/projects/clear-your-tools'."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "moderate",
+              "fast",
+              "cross-repo-intelligence"
+            ],
+            "default": "full",
+            "description": "All modes run type-aware LSP call/usage resolution (per-file + cross-file). full: all files + similarity/semantic edges. moderate: filtered files + similarity/semantic. fast: filtered files, no similarity/semantic. cross-repo-intelligence: match Routes/Channels across projects. Examples: 'cross-repo-intelligence', 'fast', 'full'."
+          },
+          "target_projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Projects to search for cross-repo links (cross-repo-intelligence mode). Use [\"*\"] for all indexed projects. Run list_projects to see available projects."
+          },
+          "name": {
+            "type": "string",
+            "description": "Override the derived project name. Non-ASCII bytes are encoded and unsafe path characters are normalized."
+          },
+          "persistence": {
+            "type": "boolean",
+            "default": false,
+            "description": "Write compressed artifact to .codebase-memory/graph.db.zst for team sharing. Teammates can bootstrap from the artifact instead of full re-indexing."
+          }
+        },
+        "required": [
+          "repo_path"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ],
+  "flattened_examples": [
+    {
+      "path": "codebase-memory.index_repository.inputSchema.properties.mode",
+      "values": [
+        "cross-repo-intelligence",
+        "fast",
+        "full"
+      ]
+    },
+    {
+      "path": "codebase-memory.index_repository.inputSchema.properties.repo_path",
+      "values": [
+        "/Volumes/cross-repo-intelligence",
+        "/tmp/unrelated",
+        "/Volumes/projects/clear-your-tools"
+      ]
+    }
+  ],
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  }
+}

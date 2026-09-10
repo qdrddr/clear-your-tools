@@ -1,0 +1,99 @@
+{
+  "query_id": "01_bm25_graph_search",
+  "query": "bm25 ranking search graph project settings",
+  "tool_names": [
+    "codebase-memory_search_graph"
+  ],
+  "tools": [
+    {
+      "name": "codebase-memory_search_graph",
+      "description": "Search the code knowledge graph for functions, classes, routes, and variables. Use INSTEAD OF grep/glob when finding code definitions, implementations, or relationships. Three search modes: (1) query='update settings' for BM25 ranked full-text search with camelCase splitting and structural label boosting — recommended for natural-language discovery; (2) name_pattern='.*regex.*' for exact pattern matching; (3) semantic_query=[...] for vector cosine search that bridges vocabulary (finds 'publish' when you search 'send'). The three modes are independent and can be combined in a single call. PAGINATION: results are capped at limit (default 200) — broader queries are silently truncated. The response always includes 'total' (full match count before limit) and 'has_more' (true when total > offset+returned). Detect truncation with has_more, then page by re-calling with offset=offset+limit until has_more is false. Narrow first via label/file_pattern/min_degree before paginating large result sets.",
+      "server_key": "codebase-memory",
+      "tool_name": "search_graph",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Examples: 'demo', 'other-repo', 'clear-your-tools'."
+          },
+          "query": {
+            "type": "string",
+            "description": "Natural-language or keyword full-text search using BM25 ranking. Tokens are split on whitespace; camelCase identifiers are indexed as individual words (updateCloudClient → update, cloud, client). Results are ranked with structural boosting: Functions/Methods +10, Routes +8, Classes/Interfaces +5. Noise labels (File/Folder/Module/Variable) are filtered out. When provided, name_pattern is ignored. Examples: 'bm25 ranking search graph', 'ranking algorithm bm25 tokens', 'settings configuration yaml'."
+          },
+          "label": {
+            "type": "string"
+          },
+          "name_pattern": {
+            "type": "string"
+          },
+          "qn_pattern": {
+            "type": "string"
+          },
+          "file_pattern": {
+            "type": "string"
+          },
+          "relationship": {
+            "type": "string"
+          },
+          "min_degree": {
+            "type": "integer"
+          },
+          "max_degree": {
+            "type": "integer"
+          },
+          "exclude_entry_points": {
+            "type": "boolean"
+          },
+          "include_connected": {
+            "type": "boolean"
+          },
+          "semantic_query": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "MUST be an ARRAY of keyword strings (e.g. [\"send\",\"pubsub\",\"publish\"]) — NOT a single string. Each keyword is scored independently via per-keyword min-cosine; results reflect functions that score well on ALL keywords. Requires moderate/full index mode. Results appear in the 'semantic_results' field (separate from 'results')."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results per call. Default 200. Response carries 'total' (full match count) and 'has_more' (true if truncated) so callers can detect the limit and paginate."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "description": "Skip the first N matching nodes. Combine with 'limit' to page: increment offset by limit and re-call while has_more is true."
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ],
+  "flattened_examples": [
+    {
+      "path": "codebase-memory.search_graph.inputSchema.properties.project",
+      "values": [
+        "demo",
+        "other-repo",
+        "clear-your-tools"
+      ]
+    },
+    {
+      "path": "codebase-memory.search_graph.inputSchema.properties.query",
+      "values": [
+        "bm25 ranking search graph",
+        "ranking algorithm bm25 tokens",
+        "settings configuration yaml"
+      ]
+    }
+  ],
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false
+  }
+}
