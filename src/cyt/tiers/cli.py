@@ -55,6 +55,14 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             print(message, file=sys.stderr)
         return 2
 
+    from cyt.hook.workspace_config import resolve_hook_request_config
+
+    config, _workspace = resolve_hook_request_config(
+        {"workspace_root": str(project_root)},
+        status_agent,
+        base_config=config,
+    )
+
     filters = StatusFilters.from_args(args)
     if getattr(args, "tier", None) and filters.tier is None:
         message = f"invalid --tier value: {args.tier!r} (expected T0-T4)"

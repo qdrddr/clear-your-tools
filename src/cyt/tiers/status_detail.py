@@ -416,6 +416,8 @@ def build_kind_detail(
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
     config: dict[str, Any] | None = None,
     workspace_root: Path | None = None,
+    tracked_catalog_entity_ids: frozenset[str] | None = None,
+    require_tool_engagement: bool = False,
 ) -> dict[str, Any]:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -426,6 +428,21 @@ def build_kind_detail(
     for key, state in states.items():
         if key[0] != kind:
             continue
+        if kind == EntityKind.TOOL and config is not None:
+            from cyt.tiers.adapters.tools import (
+                tool_entity_has_tier_engagement,
+                tool_entity_tracked_for_config,
+            )
+
+            if not tool_entity_tracked_for_config(state.entity_id, config):
+                continue
+            if (
+                tracked_catalog_entity_ids is not None
+                and state.entity_id not in tracked_catalog_entity_ids
+            ):
+                continue
+            if require_tool_engagement and not tool_entity_has_tier_engagement(state.stats):
+                continue
         if kind == EntityKind.SKILL and is_ephemeral_skill_path(state.entity_id):
             continue
         effective = resolve_effective(state)
@@ -532,6 +549,94 @@ def filter_skill_detail_by_agent(
                 continue
             by_tier[label].append(entity)
             histogram[label] = histogram.get(label, 0) + 1
+
+    for entities in by_tier.values():
+        entities.sort(key=lambda item: str(item.get("entity_id", "")))
+
+    return {
+        "histogram": {label: histogram.get(label, 0) for label in _TIER_LABELS},
+        "by_tier": {label: by_tier.get(label, []) for label in _TIER_LABELS},
+    }
+
+
+def _tracked_tool_entity_ids_in_detail(detail: dict[str, Any]) -> set[str]:
+    tracked: set[str] = set()
+    by_tier = detail.get("by_tier")
+    if not isinstance(by_tier, dict):
+        return tracked
+    for items in by_tier.values():
+        if not isinstance(items, list):
+            continue
+        for entity in items:
+            if isinstance(entity, dict):
+                entity_id = str(entity.get("entity_id") or "").strip()
+                if entity_id:
+                    tracked.add(entity_id)
+    return tracked
+
+
+def enrich_tool_detail_with_catalog_discoveries(
+    detail: dict[str, Any],
+    *,
+    states: dict[tuple[str, str], EntityTierState],
+    cfg: TierSectionConfig,
+    config: dict[str, Any],
+    workspace_root: Path | None,
+    catalog_tools: list[dict[str, Any]] | None,
+    session_id: int,
+    now_ms: int | None = None,
+    effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
+) -> dict[str, Any]:
+    """Add loaded hook-catalog tools that are not yet present in tier DB rows."""
+    if not catalog_tools:
+        return detail
+
+    from cyt.tiers.adapters.tools import tool_entity_id, tool_tracked_for_config
+
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    resolve_effective = effective_tier_fn or (lambda s: effective_tier_for(s, now_ms=now_ms))
+
+    histogram = dict(detail.get("histogram") or {})
+    by_tier = {
+        label: list(items)
+        for label, items in (detail.get("by_tier") or {}).items()
+        if isinstance(items, list)
+    }
+    for label in _TIER_LABELS:
+        histogram.setdefault(label, 0)
+        by_tier.setdefault(label, [])
+
+    tracked = _tracked_tool_entity_ids_in_detail(detail)
+    for tool in catalog_tools:
+        if not isinstance(tool, dict) or not tool_tracked_for_config(tool, config):
+            continue
+        entity_id = tool_entity_id(tool)
+        if not entity_id or entity_id in tracked:
+            continue
+        state = states.get((EntityKind.TOOL, entity_id))
+        if state is None:
+            state = EntityTierState(
+                entity_id=entity_id,
+                kind=EntityKind.TOOL,
+                stable_tier=Tier.ACTIVE,
+                effective_tier=Tier.ACTIVE,
+            )
+        label = tier_label(resolve_effective(state))
+        histogram[label] = histogram.get(label, 0) + 1
+        by_tier.setdefault(label, []).append(
+            entity_status_dict(
+                state,
+                cfg=cfg,
+                session_id=session_id,
+                now_ms=now_ms,
+                effective_tier_fn=resolve_effective,
+                kind=EntityKind.TOOL,
+                config=config,
+                workspace_root=workspace_root,
+            ),
+        )
+        tracked.add(entity_id)
 
     for entities in by_tier.values():
         entities.sort(key=lambda item: str(item.get("entity_id", "")))

@@ -11,6 +11,7 @@ from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
 from cyt.tiers.status_detail import (
     build_kind_detail,
     effective_tier_for,
+    enrich_tool_detail_with_catalog_discoveries,
     enrich_skill_detail_with_workspace_discoveries,
     entity_status_dict,
     filter_skill_detail_by_agent,
@@ -117,6 +118,88 @@ def test_skill_status_fields_include_frontmatter_name(tmp_path: Path) -> None:
     )
     assert detail["name"] == "create-hook"
     assert detail["source_path"] == str(skill_path.resolve())
+
+
+def test_enrich_tool_detail_adds_loaded_catalog_tools() -> None:
+    cfg = _cfg()
+    catalog = [
+        {"name": "alpha_tool", "cyt_catalog_source": "cyt_mcp"},
+        {"name": "beta_tool", "cyt_catalog_source": "cyt_mcp"},
+    ]
+    states = {
+        ("tool", "cyt_mcp:alpha_tool"): EntityTierState(
+            entity_id="cyt_mcp:alpha_tool",
+            kind="tool",
+            stable_tier=Tier.HOT,
+            effective_tier=Tier.HOT,
+            stats=EffectiveStats(injected=1),
+        ),
+    }
+    detail = build_kind_detail(
+        states,
+        kind="tool",
+        cfg=cfg,
+        session_id=1,
+        config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
+        tracked_catalog_entity_ids=frozenset(
+            {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"},
+        ),
+    )
+    enriched = enrich_tool_detail_with_catalog_discoveries(
+        detail,
+        states=states,
+        cfg=cfg,
+        config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
+        workspace_root=None,
+        catalog_tools=catalog,
+        session_id=1,
+    )
+    entity_ids = {
+        row["entity_id"]
+        for items in enriched["by_tier"].values()
+        for row in items
+    }
+    assert entity_ids == {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"}
+    assert enriched["histogram"]["T3"] == 1
+    assert enriched["histogram"]["T2"] == 1
+
+
+def test_build_kind_detail_hides_catalog_orphans_and_candidate_only_tools() -> None:
+    cfg = _cfg()
+    states = {
+        ("tool", "cyt_mcp:live_tool"): EntityTierState(
+            entity_id="cyt_mcp:live_tool",
+            kind="tool",
+            stable_tier=Tier.ACTIVE,
+            effective_tier=Tier.ACTIVE,
+            stats=EffectiveStats(injected=2, used=1),
+        ),
+        ("tool", "cyt_mcp:mcp__x__tool"): EntityTierState(
+            entity_id="cyt_mcp:mcp__x__tool",
+            kind="tool",
+            stable_tier=Tier.ACTIVE,
+            effective_tier=Tier.ACTIVE,
+            stats=EffectiveStats(injected=5, used=2),
+        ),
+        ("tool", "cyt_mcp:candidate_only"): EntityTierState(
+            entity_id="cyt_mcp:candidate_only",
+            kind="tool",
+            stable_tier=Tier.ACTIVE,
+            effective_tier=Tier.ACTIVE,
+            stats=EffectiveStats(candidates=3),
+        ),
+    }
+    detail = build_kind_detail(
+        states,
+        kind="tool",
+        cfg=cfg,
+        session_id=1,
+        config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
+        tracked_catalog_entity_ids=frozenset({"cyt_mcp:live_tool", "cyt_mcp:candidate_only"}),
+        require_tool_engagement=True,
+    )
+    entity_ids = {row["entity_id"] for row in detail["by_tier"]["T2"]}
+    assert entity_ids == {"cyt_mcp:live_tool"}
 
 
 def test_build_kind_detail_groups_and_histogram_match() -> None:

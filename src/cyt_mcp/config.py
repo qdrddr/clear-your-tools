@@ -444,6 +444,37 @@ def _resolve_mcp_deny(
         return ()
 
 
+def _effective_workspace_folder(workspace_folder: Path | None) -> Path:
+    if workspace_folder is not None:
+        try:
+            resolved = workspace_folder.expanduser().resolve()
+            if resolved.is_dir():
+                return resolved
+        except OSError:
+            pass
+    try:
+        return Path.cwd().resolve()
+    except OSError:
+        return Path.cwd()
+
+
+def _resolve_aggregator_cli_path(
+    aggregator_path: Path | None,
+    *,
+    workspace_folder: Path | None,
+) -> Path:
+    """Resolve CLI ``--config`` path, expanding Cursor-style ``${workspaceFolder}`` tokens."""
+    folder = _effective_workspace_folder(workspace_folder)
+    default = DEFAULT_MCP_CONFIG_PATH.expanduser()
+    if aggregator_path is None:
+        return default
+    text = str(aggregator_path).strip()
+    if not text:
+        return default
+    expanded = expand_mcp_value(text, workspace_folder=folder)
+    return Path(expanded)
+
+
 def _resolve_workspace_root_for_scope(
     scope: CatalogScope,
     *,
@@ -481,12 +512,17 @@ def load_aggregator_config(
     aggregator_path: Path | None = None,
     workspace_folder: Path | None = None,
 ) -> AggregatorConfig:
-    raw = load_mcp_config_yaml(aggregator_path)
-    resolved_agent = resolve_agent_name(raw, agent)
-    resolved_agg_path = resolve_mcp_config_path(
-        _expand(aggregator_path or DEFAULT_MCP_CONFIG_PATH),
-        default=_expand(aggregator_path or DEFAULT_MCP_CONFIG_PATH),
+    effective_workspace = _effective_workspace_folder(workspace_folder)
+    resolved_agg_input = _resolve_aggregator_cli_path(
+        aggregator_path,
+        workspace_folder=effective_workspace,
     )
+    resolved_agg_path = resolve_mcp_config_path(
+        resolved_agg_input,
+        default=DEFAULT_MCP_CONFIG_PATH.expanduser(),
+    )
+    raw = load_mcp_config_yaml(resolved_agg_path)
+    resolved_agent = resolve_agent_name(raw, agent)
     agent_path = agent_mcp_config_path(
         raw,
         resolved_agent,
@@ -504,7 +540,7 @@ def load_aggregator_config(
         agent_path = _resolve_user_agent_mcp_path(agent_path, resolved_agent)
     workspace_root = _resolve_workspace_root_for_scope(
         catalog_scope,
-        workspace_folder=workspace_folder,
+        workspace_folder=effective_workspace,
         aggregator_path=resolved_agg_path,
     )
     if catalog_scope == "workspace":
@@ -521,7 +557,7 @@ def load_aggregator_config(
     loaded_servers, server_origins = _load_unified_mcp_servers(
         agent=resolved_agent,
         workspace_root=workspace_root,
-        workspace_folder=workspace_folder,
+        workspace_folder=effective_workspace,
     )
     return AggregatorConfig(
         agent=resolved_agent,

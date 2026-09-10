@@ -23,11 +23,16 @@ def record_tools_injected_feedback(
         cfg = config or load_config()
         if not tiers_active(cfg, kind="tool"):
             return
-        stamped_tools = [
-            stamp_tool_catalog_source(tool) for tool in tools if isinstance(tool, dict)
-        ]
+        from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
+
+        tracked_tools = filter_tools_for_tier_tracking(
+            [tool for tool in tools if isinstance(tool, dict)],
+            cfg,
+        )
+        if not tracked_tools:
+            return
         get_tier_manager(cfg, workspace=hook_workspace_from_config(cfg)).record_tools_injected(
-            stamped_tools,
+            tracked_tools,
             cfg,
         )
     except Exception:
@@ -55,7 +60,7 @@ def record_tool_used_feedback(
         resolved_workspace = workspace
         if resolved_workspace is None:
             resolved_workspace = hook_workspace_from_config(cfg)
-        from cyt.tiers.adapters.tools import stamp_tool_catalog_source
+        from cyt.tiers.adapters.tools import stamp_tool_catalog_source, tool_tracked_for_config
 
         tool = stamp_tool_catalog_source(
             {
@@ -63,6 +68,8 @@ def record_tool_used_feedback(
                 **({"cyt_catalog_source": catalog} if catalog else {}),
             },
         )
+        if not tool_tracked_for_config(tool, cfg):
+            return
         optional = optional_used if optional_used is not None else _optional_properties_used(args)
         get_tier_manager(cfg, workspace=resolved_workspace).record_tool_used(
             tool,

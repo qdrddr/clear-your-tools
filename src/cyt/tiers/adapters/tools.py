@@ -10,6 +10,123 @@ from cyt.indexer.policies import PolicyContext
 from cyt.tiers.models import Tier, ToolsTierApplyResult
 
 
+def entity_id_catalog_source(entity_id: str) -> str:
+    text = str(entity_id or "").strip()
+    if ":" in text:
+        source, _name = text.split(":", 1)
+        return source.strip() or "unknown"
+    return "unknown"
+
+
+def configured_tool_catalog_sources(config: dict[str, Any]) -> frozenset[str]:
+    from cyt.config import tools_hook_sources
+
+    return frozenset(tools_hook_sources(config))
+
+
+def tool_tracked_for_config(tool: dict[str, Any], config: dict[str, Any]) -> bool:
+    stamped = stamp_tool_catalog_source(tool)
+    source = resolve_tool_catalog_source(stamped)
+    return source in configured_tool_catalog_sources(config)
+
+
+def tool_entity_tracked_for_config(entity_id: str, config: dict[str, Any] | None) -> bool:
+    if config is None:
+        return True
+    source = entity_id_catalog_source(entity_id)
+    return source in configured_tool_catalog_sources(config)
+
+
+def filter_tools_for_tier_tracking(
+    tools: list[dict[str, Any]],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    allowed = configured_tool_catalog_sources(config)
+    if not allowed:
+        return []
+    catalog_entity_ids = resolve_tracked_catalog_entity_ids(config)
+    tracked: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        stamped = stamp_tool_catalog_source(tool)
+        if resolve_tool_catalog_source(stamped) not in allowed:
+            continue
+        entity_id = tool_entity_id(stamped)
+        if catalog_entity_ids is not None and entity_id not in catalog_entity_ids:
+            continue
+        tracked.append(stamped)
+    return tracked
+
+
+def resolve_tracked_catalog_entity_ids(
+    config: dict[str, Any],
+    *,
+    blocking: bool = False,
+) -> frozenset[str] | None:
+    """Entity ids for tools in the workspace-scoped master hook catalog."""
+    from cyt.tools.master_catalog import get_master_tool_catalog
+
+    catalog = get_master_tool_catalog(config, blocking=blocking)
+    if catalog is None:
+        return None
+    ids = {
+        entity_id
+        for tool in catalog
+        if isinstance(tool, dict) and (entity_id := tool_entity_id(tool))
+    }
+    return frozenset(ids)
+
+
+def tool_entity_has_tier_engagement(stats: Any) -> bool:
+    """True when tier statistics show the tool was injected, used, or shadow-scored."""
+    return (
+        float(getattr(stats, "injected", 0) or 0) > 0
+        or float(getattr(stats, "used", 0) or 0) > 0
+        or float(getattr(stats, "used_without_injection", 0) or 0) > 0
+        or float(getattr(stats, "optional_used", 0) or 0) > 0
+        or float(getattr(stats, "shadow_hits", 0) or 0) > 0
+        or float(getattr(stats, "shadow_evaluations", 0) or 0) > 0
+    )
+
+
+def purge_stale_tool_entity_states(
+    states: dict[tuple[str, str], Any],
+    *,
+    allowed_sources: frozenset[str],
+    catalog_entity_ids: frozenset[str] | None = None,
+) -> list[str]:
+    """Remove tool rows outside configured sources or the loaded hook catalog."""
+    from cyt.tiers.models import EntityKind, EntityTierState
+
+    removed: list[str] = []
+    for key, state in list(states.items()):
+        if key[0] != EntityKind.TOOL or not isinstance(state, EntityTierState):
+            continue
+        source = entity_id_catalog_source(state.entity_id)
+        if source not in allowed_sources:
+            removed.append(state.entity_id)
+            del states[key]
+            continue
+        if catalog_entity_ids is not None and state.entity_id not in catalog_entity_ids:
+            removed.append(state.entity_id)
+            del states[key]
+    return removed
+
+
+def purge_inactive_tool_entity_states(
+    states: dict[tuple[str, str], Any],
+    *,
+    allowed_sources: frozenset[str],
+) -> list[str]:
+    """Remove tool rows whose catalog source is not in *allowed_sources*."""
+    return purge_stale_tool_entity_states(
+        states,
+        allowed_sources=allowed_sources,
+        catalog_entity_ids=None,
+    )
+
+
 def resolve_tool_catalog_source(tool: dict[str, Any]) -> str:
     """Infer catalog source when ``cyt_catalog_source`` was not stamped on the tool dict."""
     explicit = str(tool.get("cyt_catalog_source") or "").strip()

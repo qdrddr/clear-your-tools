@@ -31,6 +31,14 @@ def manager(project_root: Path, tier_db: str) -> TierManager:
     return TierManager(project_root, tier_db)
 
 
+@pytest.fixture(autouse=True)
+def _tier_manager_isolated_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: None,
+    )
+
+
 def test_tool_entity_id_uses_catalog_source() -> None:
     tool = {"name": "search", "cyt_catalog_source": "cyt_mcp"}
     assert tool_entity_id(tool) == "cyt_mcp:search"
@@ -127,6 +135,75 @@ def test_record_tool_candidates_increments_stats(manager: TierManager, base_conf
     manager.record_tool_candidates(tools, cfg)
     state = manager._states[("tool", "cyt_mcp:x")]
     assert state.stats.candidates >= 1.0
+
+
+def _cyt_mcp_only_config(base_config: dict) -> dict:
+    tools = dict(base_config.get("tools") or {})
+    hook = dict(tools.get("hook") or {})
+    hook["tools_from"] = ["cyt_mcp"]
+    tools["hook"] = hook
+    tools["tiers"] = {"enabled": False, "shadow": True}
+    return {**base_config, "tools": tools}
+
+
+def test_record_tool_candidates_skips_non_configured_catalog_source(
+    manager: TierManager,
+    base_config: dict,
+) -> None:
+    cfg = _cyt_mcp_only_config(base_config)
+    manager.record_tool_candidates(
+        [
+            {"name": "search", "cyt_catalog_source": "cyt_mcp"},
+            {"name": "@fff/grep", "mcpc_session": "@fff"},
+            {"name": "tools.demo.tool", "cyt_catalog_source": "definitions"},
+        ],
+        cfg,
+    )
+    assert ("tool", "cyt_mcp:search") in manager._states
+    assert ("tool", "mcpc:@fff/grep") not in manager._states
+    assert ("tool", "definitions:tools.demo.tool") not in manager._states
+
+
+def test_purge_inactive_tool_sources_removes_stale_mcpc_rows(
+    manager: TierManager,
+    base_config: dict,
+) -> None:
+    cfg = _cyt_mcp_only_config(base_config)
+    manager._states[("tool", "mcpc:@fff/grep")] = manager._ensure_state(
+        "tool",
+        "mcpc:@fff/grep",
+    )
+    manager._states[("tool", "cyt_mcp:search")] = manager._ensure_state(
+        "tool",
+        "cyt_mcp:search",
+    )
+    manager.purge_inactive_tool_sources(cfg)
+    assert ("tool", "mcpc:@fff/grep") not in manager._states
+    assert ("tool", "cyt_mcp:search") in manager._states
+
+
+def test_purge_removes_test_fixture_tools_not_in_loaded_catalog(
+    manager: TierManager,
+    base_config: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _cyt_mcp_only_config(base_config)
+    catalog = [{"name": "codebase-memory_search_graph", "cyt_catalog_source": "cyt_mcp"}]
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda _config, blocking=False: catalog,
+    )
+    manager._states[("tool", "cyt_mcp:mcp__x__tool")] = manager._ensure_state(
+        "tool",
+        "cyt_mcp:mcp__x__tool",
+    )
+    manager._states[("tool", "cyt_mcp:codebase-memory_search_graph")] = manager._ensure_state(
+        "tool",
+        "cyt_mcp:codebase-memory_search_graph",
+    )
+    manager.purge_inactive_tool_sources(cfg)
+    assert ("tool", "cyt_mcp:mcp__x__tool") not in manager._states
+    assert ("tool", "cyt_mcp:codebase-memory_search_graph") in manager._states
 
 
 def test_fast_wake_from_dormant(manager: TierManager, base_config: dict) -> None:

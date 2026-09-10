@@ -188,6 +188,7 @@ class TierManager:
                 )
             for state in updated_tool_states:
                 self._store.upsert_entity_state(self.project, state)
+        self._purged_tool_scope: tuple[frozenset[str], frozenset[str] | None] | None = None
         self._epoch = self._store.load_epoch_state(self.project)
         self._snapshot_tools: TierSnapshot | None = None
         self._snapshot_skills: TierSnapshot | None = None
@@ -198,6 +199,38 @@ class TierManager:
 
     def close(self) -> None:
         self._store.close()
+
+    def _workspace_scoped_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        from cyt.hook.workspace_config import set_hook_workspace_in_config
+
+        return set_hook_workspace_in_config(config, self.project.root_path)
+
+    def purge_inactive_tool_sources(self, config: dict[str, Any]) -> None:
+        from cyt.tiers.adapters.tools import (
+            configured_tool_catalog_sources,
+            purge_stale_tool_entity_states,
+            resolve_tracked_catalog_entity_ids,
+        )
+
+        scoped = self._workspace_scoped_config(config)
+        allowed = configured_tool_catalog_sources(scoped)
+        catalog_entity_ids = resolve_tracked_catalog_entity_ids(scoped)
+        scope_key = (allowed, catalog_entity_ids)
+        if self._purged_tool_scope == scope_key:
+            return
+        removed = purge_stale_tool_entity_states(
+            self._states,
+            allowed_sources=allowed,
+            catalog_entity_ids=catalog_entity_ids,
+        )
+        if removed:
+            for entity_id in removed:
+                self._store.delete_entity_state(
+                    self.project,
+                    kind=EntityKind.TOOL,
+                    entity_id=entity_id,
+                )
+        self._purged_tool_scope = scope_key
 
     def _ensure_state(
         self,
@@ -386,8 +419,12 @@ class TierManager:
     def record_tool_candidates(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> None:
         if not tiers_active(config, kind="tool"):
             return
+        scoped = self._workspace_scoped_config(config)
+        self.purge_inactive_tool_sources(config)
+        from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
+
         cfg = tier_section_config(config, kind="tool")
-        for tool in tools:
+        for tool in filter_tools_for_tier_tracking(tools, scoped):
             entity_id = tool_entity_id(tool)
             if not entity_id:
                 continue
@@ -404,9 +441,13 @@ class TierManager:
     ) -> None:
         if not tiers_active(config, kind="tool"):
             return
+        scoped = self._workspace_scoped_config(config)
+        self.purge_inactive_tool_sources(config)
+        from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
+
         cfg = tier_section_config(config, kind="tool")
         injected_ids: set[str] = set()
-        for tool in tools:
+        for tool in filter_tools_for_tier_tracking(tools, scoped):
             entity_id = tool_entity_id(tool)
             if not entity_id:
                 continue
@@ -427,7 +468,13 @@ class TierManager:
     ) -> None:
         if not tiers_active(config, kind="tool"):
             return
+        scoped = self._workspace_scoped_config(config)
+        self.purge_inactive_tool_sources(config)
+        from cyt.tiers.adapters.tools import tool_tracked_for_config
+
         cfg = tier_section_config(config, kind="tool")
+        if not tool_tracked_for_config(tool, scoped):
+            return
         entity_id = tool_entity_id(tool)
         if not entity_id:
             return
@@ -518,13 +565,22 @@ class TierManager:
             self._store.upsert_entity_state(self.project, state)
 
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
+        from cyt.tiers.adapters.tools import tool_entity_tracked_for_config
         from cyt.tiers.shadow import record_shadow_hits
 
+        self.purge_inactive_tool_sources(config)
         cfg = tier_section_config(config, kind="tool")
+        tracked_hits = [
+            (entity_id, score)
+            for entity_id, score in hits
+            if tool_entity_tracked_for_config(entity_id, config)
+        ]
+        if not tracked_hits:
+            return
         transitions = record_shadow_hits(
             self._states,
             kind=EntityKind.TOOL,
-            hits=hits,
+            hits=tracked_hits,
             cfg=cfg,
             session_id=self._epoch.session_id,
         )
@@ -555,6 +611,16 @@ class TierManager:
             effective_tier_fn=effective_fn,
         )
         if config is not None:
+            scoped_config = self._workspace_scoped_config(config)
+            from cyt.tools.master_catalog import get_master_tool_catalog
+            from cyt.tiers.adapters.tools import resolve_tracked_catalog_entity_ids
+            from cyt.tiers.status_detail import enrich_tool_detail_with_catalog_discoveries
+
+            catalog_tools = get_master_tool_catalog(scoped_config, blocking=True) or []
+            tracked_catalog_ids = resolve_tracked_catalog_entity_ids(
+                scoped_config,
+                blocking=True,
+            )
             tool_cfg = tier_section_config(config, kind="tool")
             skill_cfg = tier_section_config(config, kind="skill")
             tool_detail = build_kind_detail(
@@ -564,8 +630,20 @@ class TierManager:
                 session_id=self._epoch.session_id,
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
-                config=config,
+                config=scoped_config,
                 workspace_root=self.project.root_path,
+                tracked_catalog_entity_ids=tracked_catalog_ids,
+            )
+            tool_detail = enrich_tool_detail_with_catalog_discoveries(
+                tool_detail,
+                states=self._states,
+                cfg=tool_cfg,
+                config=scoped_config,
+                workspace_root=self.project.root_path,
+                catalog_tools=catalog_tools,
+                session_id=self._epoch.session_id,
+                now_ms=now_ms,
+                effective_tier_fn=effective_fn,
             )
             skill_detail = build_kind_detail(
                 self._states,
@@ -610,6 +688,7 @@ class TierManager:
                 "enabled": tool_cfg.enabled,
                 "shadow": tool_cfg.shadow,
                 "config": config_summary(tool_cfg),
+                "tracked_catalog_tool_count": len(tracked_catalog_ids or ()),
                 **tool_detail,
             }
             summary["skills"] = {

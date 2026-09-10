@@ -14,6 +14,17 @@ from cyt.tiers.models import EffectiveStats, EntityTierState, Tier, TierProject
 from cyt.tiers.store import TierStore
 
 
+def _mock_tracked_catalog(monkeypatch: MonkeyPatch, *tool_names: str) -> None:
+    catalog = [
+        {"name": name, "cyt_catalog_source": "cyt_mcp"}
+        for name in tool_names
+    ]
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: catalog,
+    )
+
+
 def test_tiers_status_json(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     (tmp_path / ".git").mkdir()
     db_path = tmp_path / "tier_state.db"
@@ -90,6 +101,7 @@ skills:
     finally:
         store.close()
 
+    _mock_tracked_catalog(monkeypatch, "search")
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["status", "--workspace", str(tmp_path), "--json"])
@@ -160,6 +172,7 @@ skills:
                 kind="tool",
                 stable_tier=Tier.ACTIVE,
                 effective_tier=Tier.HOT,
+                stats=EffectiveStats(injected=1),
             ),
         )
         store.upsert_entity_state(
@@ -174,6 +187,7 @@ skills:
     finally:
         store.close()
 
+    _mock_tracked_catalog(monkeypatch, "search")
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(
@@ -221,6 +235,7 @@ skills:
                 kind="tool",
                 stable_tier=Tier.ACTIVE,
                 effective_tier=Tier.HOT,
+                stats=EffectiveStats(injected=1, used=1),
             ),
         )
         store.upsert_entity_state(
@@ -235,6 +250,7 @@ skills:
     finally:
         store.close()
 
+    _mock_tracked_catalog(monkeypatch, "search")
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["status", "--workspace", str(tmp_path)])
@@ -287,11 +303,13 @@ skills:
                 kind="tool",
                 stable_tier=Tier.ACTIVE,
                 effective_tier=Tier.HOT,
+                stats=EffectiveStats(injected=2, used=1),
             ),
         )
     finally:
         store.close()
 
+    _mock_tracked_catalog(monkeypatch, "search")
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["status", "--workspace", str(tmp_path), "--name", "search"])
