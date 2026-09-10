@@ -283,25 +283,12 @@ def format_entity_summary(
     return line
 
 
-def _display_entity_id(entity: dict[str, Any]) -> str:
-    from cyt.tiers.adapters.tools import tool_entity_id
-
-    entity_id = str(entity.get("entity_id") or "")
-    if not entity_id or not entity_id.startswith("unknown:"):
-        return entity_id
-    if str(entity.get("kind") or "") != "tool":
-        return entity_id
-    resolved = tool_entity_id({"name": entity_display_label(entity)})
-    return resolved if resolved and not resolved.startswith("unknown:") else entity_id
-
-
 def format_entity_detail(entity: dict[str, Any]) -> str:
     kind = str(entity.get("kind") or "?")
     label = entity_display_label(entity)
     lines = [format_entity_basic_line(entity)]
-    stored_id = entity.get("entity_id")
-    entity_id = _display_entity_id(entity) if isinstance(stored_id, str) else ""
-    if entity_id and entity_id != label:
+    entity_id = entity.get("entity_id")
+    if isinstance(entity_id, str) and entity_id and entity_id != label:
         lines.append(f"  entity_id: {entity_id}")
     scope = entity.get("scope")
     if isinstance(scope, str) and scope:

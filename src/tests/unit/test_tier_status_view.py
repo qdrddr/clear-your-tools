@@ -177,7 +177,7 @@ def test_format_entity_detail() -> None:
     assert "high_demand" in text
 
 
-def test_format_entity_detail_resolves_unknown_mcpc_entity_id() -> None:
+def test_format_entity_detail_shows_tool_entity_id() -> None:
     entity = {
         "kind": "tool",
         "entity_id": "mcpc:@fff/grep",
@@ -191,7 +191,6 @@ def test_format_entity_detail_resolves_unknown_mcpc_entity_id() -> None:
     }
     text = format_entity_detail(entity)
     assert "entity_id: mcpc:@fff/grep" in text
-    assert "stored_entity_id" not in text
     assert "unknown:" not in text
     assert "scope: workspace" in text
     assert "source_path: /tmp/mcp-config.yaml:L25" in text
