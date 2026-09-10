@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,7 +23,8 @@ DEFAULT_MCP_DIR = Path("~/.config/cyt/mcp")
 GLOBAL_MCP_CONFIG_PATH = DEFAULT_MCP_CONFIG_PATH
 GLOBAL_AGGREGATOR_PATH = DEFAULT_MCP_CONFIG_PATH  # deprecated alias
 
-CatalogScope = Literal["global", "workspace"]
+CatalogScope = Literal["user", "workspace"]
+ServerOrigin = Literal["user", "workspace"]
 
 _MCP_VAR_PATTERN = re.compile(r"\$\{(userHome|workspaceFolder|env:([^}]+))\}")
 
@@ -50,9 +51,10 @@ class AggregatorConfig:
     verify_only: bool
     aggregator_path: Path
     agent_mcp_path: Path
-    catalog_scope: CatalogScope = "global"
+    catalog_scope: CatalogScope = "user"
     workspace_root: Path | None = None
     mcp_deny: tuple[str, ...] = ()
+    server_origins: dict[str, ServerOrigin] = field(default_factory=dict)
 
 
 def _expand(path: str | Path) -> Path:
@@ -188,7 +190,7 @@ def listed_mcp_server_names(path: Path) -> frozenset[str]:
     return frozenset(str(name).strip() for name in servers if str(name).strip())
 
 
-def _detect_workspace_for_global_exclusion(
+def _detect_workspace_for_load(
     workspace_folder: Path | None,
 ) -> Path | None:
     if workspace_folder is not None:
@@ -203,39 +205,56 @@ def _detect_workspace_for_global_exclusion(
     return detect_workspace_root()
 
 
-def _workspace_claimed_server_names(
+def _resolve_workspace_server_defs_path(
     agent: str,
     workspace_root: Path | None,
-) -> frozenset[str]:
+) -> Path | None:
     if workspace_root is None:
-        return frozenset()
+        return None
     from cyt.hook.install_scope import CytInstallScope
 
     scope = CytInstallScope(workspace_root=workspace_root)
-    defs_path = scope.resolve_workspace_server_defs_path(agent)
-    if defs_path is None:
-        return frozenset()
-    return listed_mcp_server_names(defs_path)
+    return scope.resolve_workspace_server_defs_path(agent)
 
 
-def _exclude_workspace_claimed_servers(
-    servers: dict[str, Any],
+def _load_unified_mcp_servers(
     *,
     agent: str,
+    workspace_root: Path | None,
     workspace_folder: Path | None,
-) -> dict[str, Any]:
-    """Drop global servers that appear in workspace MCP defs so workspace owns them."""
-    workspace_root = _detect_workspace_for_global_exclusion(workspace_folder)
-    claimed = _workspace_claimed_server_names(agent, workspace_root)
-    if not claimed:
-        return servers
-    excluded = sorted(name for name in servers if name in claimed)
-    if excluded:
-        logger.info(
-            "cyt-mcp global: excluding MCP servers claimed by workspace defs: %s",
-            ", ".join(excluded),
-        )
-    return {name: spec for name, spec in servers.items() if name not in claimed}
+) -> tuple[dict[str, Any], dict[str, ServerOrigin]]:
+    """Load user + workspace backend defs separately, merge at runtime (workspace wins)."""
+    from cyt.permissions.merge import (
+        effective_mcp_permissions_global_only,
+        effective_permissions,
+    )
+
+    ws_folder = workspace_root or workspace_folder
+    user_path = _global_default_agent_mcp_path(agent)
+    user_deny = effective_mcp_permissions_global_only(agent=agent).deny
+    user_servers = load_mcp_servers(
+        user_path,
+        workspace_folder=ws_folder,
+        deny_entries=user_deny,
+    )
+    origins: dict[str, ServerOrigin] = dict.fromkeys(user_servers, "user")
+
+    if workspace_root is None:
+        return user_servers, origins
+
+    ws_defs = _resolve_workspace_server_defs_path(agent, workspace_root)
+    ws_path = ws_defs if ws_defs is not None else Path()
+    effective_deny = effective_permissions(agent=agent, workspace_root=workspace_root).mcp.deny
+    workspace_servers = load_mcp_servers(
+        ws_path,
+        workspace_folder=workspace_root,
+        deny_entries=effective_deny,
+    )
+    merged = dict(user_servers)
+    merged.update(workspace_servers)
+    for name in workspace_servers:
+        origins[name] = "workspace"
+    return merged, origins
 
 
 def load_mcp_servers(
@@ -304,31 +323,50 @@ def _infer_catalog_scope(
     aggregator_path: Path,
 ) -> CatalogScope:
     explicit = raw.get("catalog_scope")
-    if isinstance(explicit, str) and explicit.strip().lower() == "workspace":
-        return "workspace"
-    if isinstance(explicit, str) and explicit.strip().lower() == "global":
-        return "global"
+    if isinstance(explicit, str):
+        lowered = explicit.strip().lower()
+        if lowered == "workspace":
+            return "workspace"
+        if lowered in {"user", "global"}:
+            return "user"
     resolved = aggregator_path.resolve()
-    global_path = GLOBAL_MCP_CONFIG_PATH.expanduser().resolve()
-    if resolved == global_path:
-        return "global"
+    user_path = GLOBAL_MCP_CONFIG_PATH.expanduser().resolve()
+    if resolved == user_path:
+        return "user"
     if _is_workspace_aggregator_path(resolved):
         return "workspace"
-    return "global"
+    return "user"
 
 
-def _resolve_global_agent_mcp_path(configured: Path, agent: str) -> Path:
-    """Ensure global cyt-mcp loads user-scoped backend defs, not cwd-relative workspace paths."""
-    canonical = DEFAULT_MCP_DIR.expanduser() / f"{agent.strip() or 'cursor'}.json"
-    if configured.is_absolute():
-        return configured
-    logger.warning(
-        "Global aggregator agents.%s uses relative path %s; using %s",
-        agent,
-        configured,
-        canonical,
-    )
-    return canonical
+def _resolve_user_agent_mcp_path(configured: Path, agent: str) -> Path:
+    """Ensure user cyt-mcp metadata points at user-scoped backend defs."""
+    canonical = _global_default_agent_mcp_path(agent)
+    if not configured.is_absolute():
+        logger.warning(
+            "User aggregator agents.%s uses relative path %s; using %s",
+            agent,
+            configured,
+            canonical,
+        )
+        return canonical
+    try:
+        configured_resolved = configured.expanduser().resolve()
+    except OSError:
+        return canonical
+    user_dir = DEFAULT_MCP_DIR.expanduser().resolve()
+    if configured_resolved == canonical:
+        return configured_resolved
+    try:
+        configured_resolved.relative_to(user_dir)
+        return configured_resolved
+    except ValueError:
+        logger.warning(
+            "User aggregator agents.%s points outside user MCP defs (%s); using %s",
+            agent,
+            configured,
+            canonical,
+        )
+        return canonical
 
 
 def _global_default_agent_mcp_path(agent: str) -> Path:
@@ -395,14 +433,13 @@ def _resolve_mcp_deny(
     workspace_root: Path | None,
 ) -> tuple[str, ...]:
     try:
-        if catalog_scope == "global":
-            from cyt.permissions.merge import effective_mcp_permissions_global_only
+        if workspace_root is not None:
+            from cyt.permissions.merge import effective_permissions
 
-            return effective_mcp_permissions_global_only(agent=agent).deny
-        from cyt.permissions.merge import effective_permissions
+            return effective_permissions(agent=agent, workspace_root=workspace_root).mcp.deny
+        from cyt.permissions.merge import effective_mcp_permissions_global_only
 
-        effective = effective_permissions(agent=agent, workspace_root=workspace_root)
-        return effective.mcp.deny
+        return effective_mcp_permissions_global_only(agent=agent).deny
     except Exception:
         return ()
 
@@ -463,8 +500,8 @@ def load_aggregator_config(
     include_desc = "description" in stub_retain.get("tool", ["name"])
     verify_only = bool(raw.get("verify_only", False))
     catalog_scope = _infer_catalog_scope(raw, resolved_agg_path)
-    if catalog_scope == "global":
-        agent_path = _resolve_global_agent_mcp_path(agent_path, resolved_agent)
+    if catalog_scope == "user":
+        agent_path = _resolve_user_agent_mcp_path(agent_path, resolved_agent)
     workspace_root = _resolve_workspace_root_for_scope(
         catalog_scope,
         workspace_folder=workspace_folder,
@@ -481,17 +518,11 @@ def load_aggregator_config(
         catalog_scope=catalog_scope,
         workspace_root=workspace_root,
     )
-    loaded_servers = load_mcp_servers(
-        agent_path,
-        workspace_folder=workspace_root or workspace_folder,
-        deny_entries=mcp_deny,
+    loaded_servers, server_origins = _load_unified_mcp_servers(
+        agent=resolved_agent,
+        workspace_root=workspace_root,
+        workspace_folder=workspace_folder,
     )
-    if catalog_scope == "global":
-        loaded_servers = _exclude_workspace_claimed_servers(
-            loaded_servers,
-            agent=resolved_agent,
-            workspace_folder=workspace_folder,
-        )
     return AggregatorConfig(
         agent=resolved_agent,
         mcp_servers=loaded_servers,
@@ -503,9 +534,10 @@ def load_aggregator_config(
         verify_only=verify_only,
         aggregator_path=resolved_agg_path,
         agent_mcp_path=agent_path,
-        catalog_scope=catalog_scope,
+        catalog_scope="workspace" if workspace_root is not None else catalog_scope,
         workspace_root=workspace_root,
         mcp_deny=mcp_deny,
+        server_origins=server_origins,
     )
 
 
@@ -524,14 +556,17 @@ def sample_aggregator_config(
     codex_stubs_include_description: bool = False,
     aggregator_path: Path | None = None,
     mcp_servers: dict[str, Any] | None = None,
-    catalog_scope: CatalogScope = "global",
+    catalog_scope: CatalogScope = "user",
     workspace_root: Path | None = None,
     verify_only: bool = False,
     transport: str = "stdio",
     mcp_deny: tuple[str, ...] = (),
+    server_origins: dict[str, ServerOrigin] | None = None,
 ) -> AggregatorConfig:
     """Build a minimal :class:`AggregatorConfig` for unit tests."""
     retain = stub_retain if stub_retain is not None else _BASIC_STUB_RETAIN
+    origins = server_origins if server_origins is not None else {}
+    effective_scope: CatalogScope = "workspace" if workspace_root is not None else catalog_scope
     return AggregatorConfig(
         agent=agent,
         mcp_servers={} if mcp_servers is None else mcp_servers,
@@ -548,7 +583,8 @@ def sample_aggregator_config(
         verify_only=verify_only,
         aggregator_path=aggregator_path or DEFAULT_MCP_CONFIG_PATH,
         agent_mcp_path=DEFAULT_MCP_DIR / f"{agent}.json",
-        catalog_scope=catalog_scope,
+        catalog_scope=effective_scope,
         workspace_root=workspace_root,
         mcp_deny=mcp_deny,
+        server_origins=origins,
     )

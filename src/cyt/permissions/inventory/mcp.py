@@ -43,7 +43,7 @@ class McpToolInventoryItem:
 
 def _inventory_layers(scope: InventoryScope) -> tuple[PermissionScope, ...]:
     if scope == "effective":
-        return ("global", "workspace")
+        return ("user", "workspace")
     return (scope,)
 
 
@@ -84,7 +84,7 @@ def load_mcp_server_sources(
             scope=layer,
             workspace_root=workspace_root,
         )
-        source: McpServerSource = "user" if layer == "global" else "workspace"
+        source: McpServerSource = "user" if layer == "user" else "workspace"
         for name in _read_mcp_server_names_from_path(path):
             if source == "workspace" or name not in sources:
                 sources[name] = source

@@ -56,7 +56,7 @@ def test_build_dev_workspace_cyt_mcp_entry_uses_workspace_folder() -> None:
         aggregator_config="${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",
     )
     assert entry["cwd"] == "${workspaceFolder}"
-    assert entry["args"][1:3] == ["--directory", "${workspaceFolder}"]
+    assert entry["args"][1:3] == ["--directory", str(repo_root)]
     assert entry["args"][-2:] == [
         "--config",
         "${workspaceFolder}/.agents/cyt/config/mcp-config.yaml",

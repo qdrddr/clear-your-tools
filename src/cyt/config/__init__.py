@@ -591,7 +591,7 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     config_path = resolve_config_path(path)
     user_config: dict[str, Any] = {}
     if config_path.exists():
-        maybe_migrate_config_file(config_path, scope="global")
+        maybe_migrate_config_file(config_path, scope="user")
         user_config = _load_yaml_dict(config_path)
     elif path is None and config_path == DEFAULT_USER_CONFIG_PATH.expanduser():
         _write_default_user_config(config_path)

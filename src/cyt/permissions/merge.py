@@ -89,7 +89,7 @@ def _load_global_config_for_permissions(
     if not config_path.is_file():
         load_config(config_path)
     elif config_path.is_file():
-        maybe_migrate_config_file(config_path, scope="global")
+        maybe_migrate_config_file(config_path, scope="user")
     return _load_yaml_dict(config_path)
 
 

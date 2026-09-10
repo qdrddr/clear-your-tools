@@ -31,7 +31,13 @@ def catalog_tools_content_hash(tools: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def catalog_payload(cache: RuntimeToolCache, *, agent: str) -> dict[str, Any]:
+def catalog_payload(
+    cache: RuntimeToolCache,
+    *,
+    agent: str,
+    server_origins: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    origins = server_origins or {}
     tools = cache.snapshot()
     normalized: list[dict[str, Any]] = []
     for tool in tools:
@@ -54,6 +60,9 @@ def catalog_payload(cache: RuntimeToolCache, *, agent: str) -> dict[str, Any]:
         if server_key and tool_name:
             entry["server_key"] = server_key
             entry["tool_name"] = tool_name
+            origin = origins.get(server_key)
+            if origin in {"user", "workspace"}:
+                entry["cyt_catalog_scope"] = origin
         normalized.append(entry)
     return {
         "agent": agent,
@@ -97,5 +106,14 @@ def merge_catalog_payloads(
     }
 
 
-def catalog_json(cache: RuntimeToolCache, *, agent: str) -> str:
-    return json.dumps(catalog_payload(cache, agent=agent), ensure_ascii=False, indent=2)
+def catalog_json(
+    cache: RuntimeToolCache,
+    *,
+    agent: str,
+    server_origins: dict[str, str] | None = None,
+) -> str:
+    return json.dumps(
+        catalog_payload(cache, agent=agent, server_origins=server_origins),
+        ensure_ascii=False,
+        indent=2,
+    )

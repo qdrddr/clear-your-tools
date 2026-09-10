@@ -322,11 +322,11 @@ def _fetch_catalog_from_registry(
     *,
     allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    from cyt.hook.catalog_registry import merge_catalog_for_hook
+    from cyt.hook.catalog_registry import catalog_for_hook
 
     agent = tools_hook_cyt_mcp_agent(config)
     workspace = hook_workspace_from_config(config)
-    tools = merge_catalog_for_hook(agent, workspace, allow_stale=allow_stale)
+    tools = catalog_for_hook(agent, workspace, allow_stale=allow_stale)
     return _normalize_tools_list(tools)
 
 

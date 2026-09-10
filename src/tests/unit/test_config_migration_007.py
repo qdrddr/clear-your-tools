@@ -11,7 +11,7 @@ def _upgrade_007(cfg: dict[str, Any]) -> dict[str, Any]:
     module = next(
         m for m in load_revision_modules() if m.revision == "007_config_layout_restructure"
     )
-    return module.upgrade(cfg, scope="global")
+    return module.upgrade(cfg, scope="user")
 
 
 def test_upgrade_moves_tools_and_agent_inject_via() -> None:

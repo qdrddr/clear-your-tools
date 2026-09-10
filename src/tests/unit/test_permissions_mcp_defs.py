@@ -79,7 +79,7 @@ def test_disable_mcp_server_updates_json_enabled_flag(
 
     disable_mcp_server(
         "demo",
-        scope="global",
+        scope="user",
         agent_target="cursor",
         agent="cursor",
         global_config_path=config_path,
@@ -100,6 +100,6 @@ def test_set_mcp_server_enabled_flag(tmp_path: Path, monkeypatch: pytest.MonkeyP
         lambda **kwargs: defs_path,
     )
 
-    assert set_mcp_server_enabled_flag("demo", False, agent="cursor", scope="global") is True
+    assert set_mcp_server_enabled_flag("demo", False, agent="cursor", scope="user") is True
     payload = json.loads(defs_path.read_text(encoding="utf-8"))
     assert payload["mcpServers"]["demo"]["enabled"] is False

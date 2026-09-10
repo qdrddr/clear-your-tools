@@ -10,7 +10,7 @@ from cyt.migrations.versions import load_revision_modules
 
 def _upgrade_003(cfg: dict[str, Any]) -> dict[str, Any]:
     module = next(m for m in load_revision_modules() if m.revision == "003_model_provider_registry")
-    return module.upgrade(cfg, scope="global")
+    return module.upgrade(cfg, scope="user")
 
 
 def test_extracts_inline_provider_fields_to_registry() -> None:

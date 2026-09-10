@@ -43,11 +43,11 @@ def test_load_mcp_server_names_merges_global_and_workspace(tmp_path: Path) -> No
     with patch(
         "cyt.permissions.inventory.mcp.mcp_server_defs_path",
         side_effect=lambda *, agent, scope, workspace_root=None: {
-            ("cursor", "global"): global_path,
+            ("cursor", "user"): global_path,
             ("cursor", "workspace"): workspace_path,
         }[(agent, scope)],
     ):
-        assert load_mcp_server_names(agent="cursor", scope="global") == ["global-only"]
+        assert load_mcp_server_names(agent="cursor", scope="user") == ["global-only"]
         assert load_mcp_server_names(agent="cursor", scope="workspace") == ["workspace-only"]
         assert load_mcp_server_names(agent="cursor", scope="effective") == [
             "global-only",
@@ -72,7 +72,7 @@ def test_load_mcp_server_sources_tracks_config_layer(tmp_path: Path) -> None:
     with patch(
         "cyt.permissions.inventory.mcp.mcp_server_defs_path",
         side_effect=lambda *, agent, scope, workspace_root=None: {
-            ("cursor", "global"): global_path,
+            ("cursor", "user"): global_path,
             ("cursor", "workspace"): workspace_path,
         }[(agent, scope)],
     ):

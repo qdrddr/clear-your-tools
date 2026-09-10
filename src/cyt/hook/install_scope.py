@@ -77,12 +77,21 @@ class CytInstallScope:
         return self.workspace_root is not None
 
     def global_hooks_path(self, agent: HookAgentName) -> Path:
+        return self.user_hooks_path(agent)
+
+    def user_hooks_path(self, agent: HookAgentName) -> Path:
         return _expand(GLOBAL_HOOKS_PATHS[agent])
 
     def global_agent_mcp_path(self, agent: str) -> Path:
+        return self.user_agent_mcp_path(agent)
+
+    def user_agent_mcp_path(self, agent: str) -> Path:
         return _expand(GLOBAL_AGENT_MCP_PATHS.get(agent, GLOBAL_AGENT_MCP_PATHS["cursor"]))
 
     def global_server_defs_path(self, agent: str) -> Path:
+        return self.user_server_defs_path(agent)
+
+    def user_server_defs_path(self, agent: str) -> Path:
         name = agent.strip() or "cursor"
         return _expand(GLOBAL_MCP_DIR / f"{name}.json")
 

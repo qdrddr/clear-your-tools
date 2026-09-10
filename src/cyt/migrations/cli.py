@@ -28,7 +28,7 @@ def _resolve_scope_path(
             )
         return path, "workspace"
     path = resolve_setup_config_path(config_path or DEFAULT_USER_CONFIG_PATH)
-    return path, "global"
+    return path, "user"
 
 
 def _cmd_current(args: argparse.Namespace) -> None:

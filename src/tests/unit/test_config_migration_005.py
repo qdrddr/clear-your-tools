@@ -12,7 +12,7 @@ def _upgrade_005(cfg: dict[str, Any]) -> dict[str, Any]:
     module = next(
         m for m in load_revision_modules() if m.revision == "005_skills_agent_directories"
     )
-    return module.upgrade(cfg, scope="global")
+    return module.upgrade(cfg, scope="user")
 
 
 def test_moves_agent_directories_out_of_global_skills() -> None:

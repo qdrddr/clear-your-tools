@@ -137,7 +137,6 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
         "from_cwd",
         classmethod(lambda cls, *, cwd=None: CytInstallScope(workspace_root=tmp_path.resolve())),
     )
-    monkeypatch.setattr(cyt_mcp_setup, "_prompt_yes_no", lambda *a, **k: True)
 
     cyt_mcp_setup.setup_cyt_mcp_for_agent(
         "cursor",
@@ -161,8 +160,7 @@ def test_setup_cyt_mcp_writes_global_and_workspace_layers(
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_SERVER_KEY in user_mcp["mcpServers"]
     assert "url" in user_mcp["mcpServers"][CYT_MCP_SERVER_KEY]
-    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data["mcpServers"]
-    assert "url" in project_mcp_data["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]
+    assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 
 def test_setup_cyt_mcp_configures_workspace_with_stdio(
@@ -216,7 +214,7 @@ def test_setup_cyt_mcp_configures_workspace_with_stdio(
 
     assert (tmp_path / ".agents" / "cyt" / "config" / "mcp" / "cursor.json").is_file()
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
+    assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 
 def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
@@ -273,7 +271,7 @@ def test_setup_cyt_mcp_verify_only_writes_workspace_layer_with_stdio(
     global_agg = home / "cyt" / "mcp-config.yaml"
     assert "verify_only: true" in global_agg.read_text(encoding="utf-8")
     project_mcp_data = json.loads(project_mcp.read_text(encoding="utf-8"))
-    assert CYT_MCP_WORKSPACE_SERVER_KEY in project_mcp_data.get("mcpServers", {})
+    assert CYT_MCP_SERVER_KEY not in project_mcp_data.get("mcpServers", {})
 
 
 def test_remove_workspace_cyt_mcp_for_agent(tmp_path: Path) -> None:

@@ -10,12 +10,12 @@ import pytest
 
 from cyt_mcp.config import (
     AggregatorConfig,
-    CatalogScope,
     load_aggregator_config,
     sample_aggregator_config,
 )
 from cyt_mcp.hook_daemon_push import (
     _RETRY_DELAYS_SECONDS,
+    _can_push_to_registry,
     _instance_key,
     _push_once,
     schedule_catalog_push,
@@ -25,28 +25,32 @@ from cyt_mcp.runtime_cache import RuntimeToolCache
 
 def _config(
     *,
-    catalog_scope: CatalogScope = "global",
     workspace_root: Path | None = None,
     aggregator_path: Path | None = None,
 ) -> AggregatorConfig:
     return sample_aggregator_config(
-        catalog_scope=catalog_scope,
+        catalog_scope="workspace" if workspace_root is not None else "user",
         workspace_root=workspace_root,
         aggregator_path=aggregator_path,
     )
 
 
-def test_instance_key_includes_scope_and_workspace(tmp_path: Path) -> None:
-    global_config = _config()
-    ws_config = _config(catalog_scope="workspace", workspace_root=tmp_path)
-    assert _instance_key(global_config) == "cursor:global:"
+def test_instance_key_requires_workspace_path(tmp_path: Path) -> None:
+    user_config = _config()
+    ws_config = _config(workspace_root=tmp_path)
+    assert _instance_key(user_config) == "cursor:workspace:"
     assert _instance_key(ws_config) == f"cursor:workspace:{tmp_path}"
 
 
-def test_push_once_sends_full_then_hash_only() -> None:
+def test_can_push_to_registry_requires_workspace_root(tmp_path: Path) -> None:
+    assert _can_push_to_registry(_config()) is False
+    assert _can_push_to_registry(_config(workspace_root=tmp_path)) is True
+
+
+def test_push_once_sends_full_then_hash_only(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "tool_a", "inputSchema": {"type": "object"}}])
-    config = _config()
+    config = _config(workspace_root=tmp_path)
     calls: list[dict[str, object]] = []
 
     def fake_post(_url: str, payload: dict[str, object]) -> int:
@@ -65,19 +69,32 @@ def test_push_once_sends_full_then_hash_only() -> None:
         assert _push_once(config, cache) is True
         assert _push_once(config, cache) is True
 
+    assert calls[0]["scope"] == "workspace"
+    assert calls[0]["workspace_root"] == str(tmp_path)
     assert "tools" in calls[0]
     assert "tools" not in calls[1]
 
 
-def test_push_once_hash_only_404_triggers_full_resend() -> None:
+def test_push_once_skipped_without_workspace_root() -> None:
+    cache = RuntimeToolCache()
+    cache.replace([{"name": "tool_a", "inputSchema": {"type": "object"}}])
+    config = _config()
+
+    with patch("cyt_mcp.hook_daemon_push._post_json") as fake_post:
+        assert _push_once(config, cache) is False
+        fake_post.assert_not_called()
+
+
+def test_push_once_hash_only_404_triggers_full_resend(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "tool_b", "inputSchema": {"type": "object"}}])
-    config = _config()
+    config = _config(workspace_root=tmp_path)
     calls: list[dict[str, object]] = []
 
     from cyt_mcp.catalog import catalog_tools_content_hash
 
     content_hash = catalog_tools_content_hash(cache.snapshot())
+    instance_key = f"cursor:workspace:{tmp_path}"
 
     def fake_post(_url: str, payload: dict[str, object]) -> int:
         calls.append(payload)
@@ -93,7 +110,7 @@ def test_push_once_hash_only_404_triggers_full_resend() -> None:
         patch("cyt_mcp.hook_daemon_push._post_json", side_effect=fake_post),
         patch.dict(
             "cyt_mcp.hook_daemon_push._last_success_hash",
-            {"cursor:global:": content_hash},
+            {instance_key: content_hash},
             clear=False,
         ),
     ):
@@ -104,10 +121,10 @@ def test_push_once_hash_only_404_triggers_full_resend() -> None:
     assert "tools" in calls[1]
 
 
-def test_push_sync_with_retry_uses_backoff_delays() -> None:
+def test_push_sync_with_retry_uses_backoff_delays(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "tool_c", "inputSchema": {"type": "object"}}])
-    config = _config()
+    config = _config(workspace_root=tmp_path)
     attempts = {"count": 0}
     sleeps: list[float] = []
 
@@ -128,10 +145,10 @@ def test_push_sync_with_retry_uses_backoff_delays() -> None:
 
 
 @pytest.mark.asyncio
-async def test_schedule_catalog_push_is_non_blocking() -> None:
+async def test_schedule_catalog_push_is_non_blocking(tmp_path: Path) -> None:
     cache = RuntimeToolCache()
     cache.replace([{"name": "tool_d", "inputSchema": {"type": "object"}}])
-    config = _config()
+    config = _config(workspace_root=tmp_path)
     started = asyncio.Event()
 
     async def fake_retry_loop(_config: AggregatorConfig, _cache: RuntimeToolCache) -> None:

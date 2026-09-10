@@ -14,11 +14,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from cyt.cyt_mcp.catalog_disk import raw_catalog_content_hash
-from cyt_mcp.catalog import merge_catalog_payloads
 
 logger = logging.getLogger(__name__)
 
-CatalogScope = Literal["global", "workspace"]
+CatalogScope = Literal["workspace"]
 
 REGISTRY_TTL_SECONDS = 10.0
 REGISTRY_SNAPSHOT_DIR = Path("~/.config/cyt/cache/catalog-registry").expanduser()
@@ -62,15 +61,15 @@ def _normalize_agent(raw: object) -> str:
 
 def _normalize_scope(raw: object) -> CatalogScope | None:
     text = str(raw or "").strip().lower()
-    if text == "global":
-        return "global"
+    if text in {"global", "user"}:
+        return None
     if text == "workspace":
         return "workspace"
     return None
 
 
 def normalize_registry_workspace_path(raw: object) -> str | None:
-    """Return normalized absolute workspace path, or None for global scope."""
+    """Return normalized absolute workspace path."""
     if raw is None:
         return None
     text = str(raw).strip()
@@ -89,11 +88,10 @@ def normalize_registry_workspace_path(raw: object) -> str | None:
 
 def _registry_key(
     agent: str,
-    scope: CatalogScope,
     workspace_root: str | None,
 ) -> tuple[str, str, str]:
-    ws = "" if scope == "global" else (workspace_root or "")
-    return (agent, scope, ws)
+    ws = workspace_root or ""
+    return (agent, "workspace", ws)
 
 
 def _normalize_tools(raw: object) -> list[dict[str, Any]]:
@@ -125,9 +123,8 @@ def _entry_from_dict(raw: dict[str, Any]) -> _CatalogRegistration | None:
     scope = _normalize_scope(raw.get("scope"))
     if scope is None:
         return None
-    ws_raw = raw.get("workspace_root")
-    workspace = normalize_registry_workspace_path(ws_raw) if scope == "workspace" else None
-    if scope == "workspace" and workspace is None:
+    workspace = normalize_registry_workspace_path(raw.get("workspace_root"))
+    if workspace is None:
         return None
     tools = _normalize_tools(raw.get("tools"))
     content_hash = str(raw.get("content_hash") or "")
@@ -136,7 +133,7 @@ def _entry_from_dict(raw: dict[str, Any]) -> _CatalogRegistration | None:
     return _CatalogRegistration(
         agent=agent,
         scope=scope,
-        workspace_root="" if scope == "global" else str(workspace),
+        workspace_root=str(workspace),
         tools=tools,
         content_hash=content_hash,
         instance_id=str(raw.get("instance_id") or ""),
@@ -161,7 +158,7 @@ def _get_entry(key: tuple[str, str, str]) -> _CatalogRegistration | None:
 
 
 def _upsert_entry(entry: _CatalogRegistration) -> None:
-    key = _registry_key(entry.agent, entry.scope, entry.workspace_root or None)
+    key = _registry_key(entry.agent, entry.workspace_root or None)
     with _registry_lock:
         _registrations[key] = entry
     _schedule_snapshot_write()
@@ -235,7 +232,7 @@ def load_catalog_registry_from_disk(*, mark_stale: bool = True) -> int:
         if mark_stale:
             entry.stale = True
         entry.last_seen_at = now
-        key = _registry_key(entry.agent, entry.scope, entry.workspace_root or None)
+        key = _registry_key(entry.agent, entry.workspace_root or None)
         with _registry_lock:
             _registrations[key] = entry
         loaded += 1
@@ -310,8 +307,8 @@ def _register_full_tools(
     now = time.monotonic()
     entry = _CatalogRegistration(
         agent=agent,
-        scope=scope,
-        workspace_root="" if scope == "global" else str(workspace_root),
+        scope="workspace",
+        workspace_root=str(workspace_root),
         tools=tools,
         content_hash=content_hash,
         instance_id=instance_id,
@@ -327,22 +324,25 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
     agent = _normalize_agent(payload.get("agent"))
     scope = _normalize_scope(payload.get("scope"))
     if scope is None:
+        legacy = str(payload.get("scope") or "").strip().lower()
+        if legacy in {"global", "user"}:
+            return RegisterResult(
+                RegisterStatus.INVALID,
+                400,
+                "user/global scope registrations are no longer supported; push workspace scope with workspace_root",
+            )
         return RegisterResult(RegisterStatus.INVALID, 400, "invalid scope")
 
-    workspace_root: str | None
-    if scope == "global":
-        workspace_root = None
-    else:
-        workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
-        if workspace_root is None:
-            return RegisterResult(RegisterStatus.INVALID, 400, "invalid workspace_root")
+    workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
+    if workspace_root is None:
+        return RegisterResult(RegisterStatus.INVALID, 400, "invalid workspace_root")
 
     content_hash = str(payload.get("content_hash") or "").strip()
     instance_id = str(payload.get("instance_id") or "").strip()
     if not content_hash:
         return RegisterResult(RegisterStatus.INVALID, 400, "content_hash required")
 
-    key = _registry_key(agent, scope, workspace_root)
+    key = _registry_key(agent, workspace_root)
     tools_raw = payload.get("tools")
     has_tools = isinstance(tools_raw, list) and len(tools_raw) > 0
 
@@ -360,7 +360,7 @@ def register_catalog(payload: dict[str, Any]) -> RegisterResult:
     return _register_full_tools(
         existing,
         agent=agent,
-        scope=scope,
+        scope="workspace",
         workspace_root=workspace_root,
         tools=tools,
         content_hash=content_hash,
@@ -373,14 +373,11 @@ def deregister_catalog(payload: dict[str, Any]) -> bool:
     scope = _normalize_scope(payload.get("scope"))
     if scope is None:
         return False
-    if scope == "global":
-        workspace_root = None
-    else:
-        workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
-        if workspace_root is None:
-            return False
+    workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
+    if workspace_root is None:
+        return False
     instance_id = str(payload.get("instance_id") or "").strip() or None
-    key = _registry_key(agent, scope, workspace_root)
+    key = _registry_key(agent, workspace_root)
     return _remove_entry(key, instance_id=instance_id)
 
 
@@ -403,18 +400,24 @@ def _entry_tools(
     return []
 
 
-def _stamp_catalog_scope(
-    tools: list[dict[str, Any]],
-    scope: CatalogScope,
+def catalog_for_hook(
+    agent: str,
+    workspace_root: str | Path | None,
+    *,
+    allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    """Stamp ``cyt_catalog_scope`` on tools (registry ``global`` → canonical ``user``)."""
-    cyt_scope = "workspace" if scope == "workspace" else "user"
-    stamped: list[dict[str, Any]] = []
-    for tool in tools:
-        item = copy.deepcopy(tool)
-        item["cyt_catalog_scope"] = cyt_scope
-        stamped.append(item)
-    return stamped
+    """Return workspace-keyed cyt-mcp catalog for hook injection."""
+    normalized_agent = _normalize_agent(agent)
+    ws_path = (
+        normalize_registry_workspace_path(str(workspace_root))
+        if workspace_root is not None
+        else None
+    )
+    if not ws_path:
+        return []
+    ws_key = _registry_key(normalized_agent, ws_path)
+    ws_entry = _get_entry(ws_key)
+    return _entry_tools(ws_entry, allow_stale=allow_stale)
 
 
 def merge_catalog_for_hook(
@@ -423,43 +426,8 @@ def merge_catalog_for_hook(
     *,
     allow_stale: bool = True,
 ) -> list[dict[str, Any]]:
-    """Merge user-scoped + workspace cyt-mcp registrations for hook injection."""
-    normalized_agent = _normalize_agent(agent)
-    global_key = _registry_key(normalized_agent, "global", None)
-    global_entry = _get_entry(global_key)
-    global_tools = _stamp_catalog_scope(
-        _entry_tools(global_entry, allow_stale=allow_stale),
-        "global",
-    )
-
-    ws_path: str | None = None
-    if workspace_root is not None:
-        ws_path = normalize_registry_workspace_path(str(workspace_root))
-
-    workspace_tools: list[dict[str, Any]] = []
-    if ws_path:
-        ws_key = _registry_key(normalized_agent, "workspace", ws_path)
-        ws_entry = _get_entry(ws_key)
-        workspace_tools = _stamp_catalog_scope(
-            _entry_tools(ws_entry, allow_stale=allow_stale),
-            "workspace",
-        )
-
-    if not global_tools and not workspace_tools:
-        return []
-
-    if not workspace_tools:
-        return global_tools
-
-    if not global_tools:
-        return workspace_tools
-
-    merged = merge_catalog_payloads(
-        {"agent": normalized_agent, "tools": global_tools},
-        {"agent": normalized_agent, "tools": workspace_tools},
-    )
-    tools = merged.get("tools")
-    return copy.deepcopy(tools) if isinstance(tools, list) else []
+    """Backward-compatible alias for :func:`catalog_for_hook`."""
+    return catalog_for_hook(agent, workspace_root, allow_stale=allow_stale)
 
 
 def prune_expired_registrations() -> int:

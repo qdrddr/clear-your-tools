@@ -33,7 +33,7 @@ def test_disable_and_enable_mcp_server_writes_overlay(tmp_path: Path) -> None:
 
     disable_mcp_server(
         "demo-server",
-        scope="global",
+        scope="user",
         agent_target="cursor",
         agent="cursor",
         global_config_path=config_path,
@@ -43,7 +43,7 @@ def test_disable_and_enable_mcp_server_writes_overlay(tmp_path: Path) -> None:
 
     enable_mcp_server(
         "demo-server",
-        scope="global",
+        scope="user",
         agent_target="cursor",
         agent="cursor",
         global_config_path=config_path,

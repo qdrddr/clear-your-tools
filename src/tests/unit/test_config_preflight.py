@@ -42,7 +42,7 @@ def test_ensure_config_file_current_migrates_legacy_and_prints(
         encoding="utf-8",
     )
 
-    result = ensure_config_file_current(user_config_path, scope="global")
+    result = ensure_config_file_current(user_config_path, scope="user")
 
     assert result is not None
     assert result.changed is True
@@ -60,10 +60,10 @@ def test_ensure_config_file_current_at_head_is_silent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("CYT_SKIP_CONFIG_MIGRATE", raising=False)
-    cfg = upgrade_config_dict({}, scope="global").cfg
+    cfg = upgrade_config_dict({}, scope="user").cfg
     user_config_path.write_text(yaml.dump(cfg, default_flow_style=False), encoding="utf-8")
 
-    result = ensure_config_file_current(user_config_path, scope="global")
+    result = ensure_config_file_current(user_config_path, scope="user")
 
     assert result is not None
     assert result.changed is False
@@ -81,7 +81,7 @@ def test_ensure_config_file_current_skip_env_warns_without_migrating(
         encoding="utf-8",
     )
 
-    result = ensure_config_file_current(user_config_path, scope="global")
+    result = ensure_config_file_current(user_config_path, scope="user")
 
     assert result is None
     written = _load_yaml_dict(user_config_path)
@@ -97,7 +97,7 @@ def test_ensure_config_file_current_missing_file_is_silent(
 ) -> None:
     missing = tmp_path / "missing.yaml"
 
-    result = ensure_config_file_current(missing, scope="global")
+    result = ensure_config_file_current(missing, scope="user")
 
     assert result is None
     assert capsys.readouterr().err == ""

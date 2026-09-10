@@ -11,7 +11,7 @@ from cyt.migrations.versions import load_revision_modules
 
 def _upgrade_006(cfg: dict[str, Any]) -> dict[str, Any]:
     module = next(m for m in load_revision_modules() if m.revision == "006_policies_stubs_schema")
-    return module.upgrade(cfg, scope="global")
+    return module.upgrade(cfg, scope="user")
 
 
 def test_stamps_schema_version() -> None:

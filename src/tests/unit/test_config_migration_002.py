@@ -11,7 +11,7 @@ from cyt.migrations.versions import load_revision_modules
 
 def _upgrade_002(cfg: dict[str, Any]) -> dict[str, Any]:
     module = next(m for m in load_revision_modules() if m.revision == "002_pruning_tools_namespace")
-    return module.upgrade(cfg, scope="global")
+    return module.upgrade(cfg, scope="user")
 
 
 def test_moves_pipeline_to_tools_sequence() -> None:

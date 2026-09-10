@@ -13,10 +13,23 @@ from cyt_client.hook_executable import (
 )
 
 INSTALLED_CYT_MCP_COMMAND = "cyt-mcp"
-CYT_MCP_SERVER_KEY = "cyt-mcp-usr"
-LEGACY_CYT_MCP_SERVER_KEY = "cyt-mcp"
+CYT_MCP_SERVER_KEY = "cyt-mcp"
+LEGACY_CYT_MCP_USER_SERVER_KEY = "cyt-mcp-usr"
+LEGACY_CYT_MCP_SERVER_KEY = "cyt-mcp-usr"
 CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-ws"
 LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY = "cyt-mcp-workspace"
+CYT_MCP_FRONTEND_SERVER_KEYS = frozenset(
+    {
+        CYT_MCP_SERVER_KEY,
+        LEGACY_CYT_MCP_USER_SERVER_KEY,
+        LEGACY_CYT_MCP_SERVER_KEY,
+        CYT_MCP_WORKSPACE_SERVER_KEY,
+        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+        "cyt_mcp",
+    },
+)
+WORKSPACE_CONFIG_REL = ".agents/cyt/config/mcp-config.yaml"
+CURSOR_WORKSPACE_FOLDER = "${workspaceFolder}"
 CYT_MCP_SCRIPT_REL = "src/cyt_mcp/cli.py"
 DEFAULT_AGGREGATOR_PATH = Path("~/.config/cyt/mcp-config.yaml")
 CytMcpTransport = Literal["stdio", "http"]
@@ -43,13 +56,7 @@ def cyt_mcp_http_mcp_url(
 
 def is_cyt_mcp_frontend_server(name: str, spec: object) -> bool:
     """Return True when an agent MCP server entry is the cyt-mcp frontend (not a backend)."""
-    if str(name).strip() in {
-        CYT_MCP_SERVER_KEY,
-        LEGACY_CYT_MCP_SERVER_KEY,
-        CYT_MCP_WORKSPACE_SERVER_KEY,
-        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
-        "cyt_mcp",
-    }:
+    if str(name).strip() in CYT_MCP_FRONTEND_SERVER_KEYS:
         return True
     if not isinstance(spec, dict):
         return False
@@ -163,14 +170,13 @@ def build_cyt_mcp_mcp_server_entry(
     if transport == "http":
         return {"url": cyt_mcp_http_mcp_url(host=http_host, port=http_port, mcp_path=http_mcp_path)}
     if dev_repo_root is not None and dev_script_rel:
-        directory = workspace_cwd if workspace_cwd else str(dev_repo_root)
         entry: dict[str, Any] = {
             "command": "uv",
             "args": _append_config_arg(
                 [
                     "run",
                     "--directory",
-                    directory,
+                    str(dev_repo_root),
                     dev_script_rel,
                     "--agent",
                     agent_name,
@@ -178,11 +184,13 @@ def build_cyt_mcp_mcp_server_entry(
                 aggregator_config,
             ),
         }
-    else:
-        entry = {
-            "command": INSTALLED_CYT_MCP_COMMAND,
-            "args": _append_config_arg(["--agent", agent_name], aggregator_config),
-        }
+        if workspace_cwd:
+            entry["cwd"] = workspace_cwd
+        return entry
+    entry = {
+        "command": INSTALLED_CYT_MCP_COMMAND,
+        "args": _append_config_arg(["--agent", agent_name], aggregator_config),
+    }
     if workspace_cwd:
         entry["cwd"] = workspace_cwd
     return entry
@@ -285,8 +293,23 @@ def dev_invocation_from_hooks_file(hooks_path: Path) -> tuple[Path, str] | None:
     return None
 
 
+def workspace_aggregator_config_ref(agent: str, workspace_root: Path | None = None) -> str:
+    """Return --config path for user-level cyt-mcp bound to a workspace."""
+    if agent == "cursor":
+        return f"{CURSOR_WORKSPACE_FOLDER}/{WORKSPACE_CONFIG_REL}"
+    if workspace_root is not None:
+        return str(workspace_root / WORKSPACE_CONFIG_REL)
+    return WORKSPACE_CONFIG_REL
+
+
 def _cyt_mcp_spec_from_servers(servers: dict[str, Any]) -> dict[str, Any] | None:
-    for key in (CYT_MCP_SERVER_KEY, LEGACY_CYT_MCP_SERVER_KEY):
+    for key in (
+        CYT_MCP_SERVER_KEY,
+        LEGACY_CYT_MCP_USER_SERVER_KEY,
+        LEGACY_CYT_MCP_SERVER_KEY,
+        CYT_MCP_WORKSPACE_SERVER_KEY,
+        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+    ):
         candidate = servers.get(key)
         if isinstance(candidate, dict):
             return cast(dict[str, Any], candidate)

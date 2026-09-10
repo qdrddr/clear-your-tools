@@ -38,7 +38,7 @@ def normalize_legacy_config(cfg: dict[str, Any]) -> dict[str, Any]:
     )
     if upgrade_002 is None:
         return cfg
-    normalized = upgrade_002(copy.deepcopy(cfg), scope="global")
+    normalized = upgrade_002(copy.deepcopy(cfg), scope="user")
     # Do not stamp schema_version on read — disk file stays unmigrated until runner runs.
     cyt = normalized.get("cyt")
     if isinstance(cyt, dict):

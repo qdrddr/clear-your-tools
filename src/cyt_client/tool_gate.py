@@ -24,7 +24,7 @@ _PRE_TOOL_EVENTS = frozenset({"preToolUse", "PreToolUse"})
 _BEFORE_READ_FILE_EVENTS = frozenset({"beforeReadFile", "BeforeReadFile"})
 _CYT_MCP_GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 _CYT_MCP_SERVER_NAMES = frozenset(
-    {"cyt-mcp-usr", "cyt-mcp", "cyt-mcp-ws", "cyt-mcp-workspace", "cyt_mcp"},
+    {"cyt-mcp", "cyt-mcp-usr", "cyt-mcp-ws", "cyt-mcp-workspace", "cyt_mcp"},
 )
 _SHELL_TOOL_NAMES = frozenset({"Shell", "shell", "Bash", "bash"})
 

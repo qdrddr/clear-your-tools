@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -22,6 +23,13 @@ def _clear_registry() -> Iterator[None]:
 
 
 @pytest.fixture
+def ws_root(tmp_path: Path) -> Path:
+    root = tmp_path / "project"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
 async def catalog_client() -> AsyncIterator[httpx.AsyncClient]:
     app = create_app(routes={}, config={"skills": {"enabled": False}})
     transport = ASGITransport(app=app)
@@ -30,7 +38,31 @@ async def catalog_client() -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.mark.asyncio
-async def test_hook_catalog_register_full_push(catalog_client: httpx.AsyncClient) -> None:
+async def test_hook_catalog_register_full_push(
+    catalog_client: httpx.AsyncClient,
+    ws_root: Path,
+) -> None:
+    tools = [{"name": "alpha", "input_schema": {"type": "object"}}]
+    content_hash = raw_catalog_content_hash(tools)
+    response = await catalog_client.post(
+        "/hook/catalog/register",
+        json={
+            "agent": "cursor",
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
+            "instance_id": "pid:1",
+            "content_hash": content_hash,
+            "tools": tools,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"status": "stored"}
+
+
+@pytest.mark.asyncio
+async def test_hook_catalog_register_rejects_legacy_global_scope(
+    catalog_client: httpx.AsyncClient,
+) -> None:
     tools = [{"name": "alpha", "input_schema": {"type": "object"}}]
     content_hash = raw_catalog_content_hash(tools)
     response = await catalog_client.post(
@@ -44,19 +76,21 @@ async def test_hook_catalog_register_full_push(catalog_client: httpx.AsyncClient
             "tools": tools,
         },
     )
-    assert response.status_code == 200
-    assert response.json() == {"status": "stored"}
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_hook_catalog_register_hash_only_204(catalog_client: httpx.AsyncClient) -> None:
+async def test_hook_catalog_register_hash_only_204(
+    catalog_client: httpx.AsyncClient,
+    ws_root: Path,
+) -> None:
     tools = [{"name": "alpha", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)
     register_catalog(
         {
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:1",
             "content_hash": content_hash,
             "tools": tools,
@@ -66,8 +100,8 @@ async def test_hook_catalog_register_hash_only_204(catalog_client: httpx.AsyncCl
         "/hook/catalog/register",
         json={
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:1",
             "content_hash": content_hash,
         },
@@ -79,13 +113,14 @@ async def test_hook_catalog_register_hash_only_204(catalog_client: httpx.AsyncCl
 @pytest.mark.asyncio
 async def test_hook_catalog_register_hash_only_404_then_full(
     catalog_client: httpx.AsyncClient,
+    ws_root: Path,
 ) -> None:
     missing = await catalog_client.post(
         "/hook/catalog/register",
         json={
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:1",
             "content_hash": "unknown-hash",
         },
@@ -98,8 +133,8 @@ async def test_hook_catalog_register_hash_only_404_then_full(
         "/hook/catalog/register",
         json={
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:1",
             "content_hash": content_hash,
             "tools": tools,
@@ -109,15 +144,18 @@ async def test_hook_catalog_register_hash_only_404_then_full(
 
 
 @pytest.mark.asyncio
-async def test_hook_catalog_deregister(catalog_client: httpx.AsyncClient) -> None:
+async def test_hook_catalog_deregister(
+    catalog_client: httpx.AsyncClient,
+    ws_root: Path,
+) -> None:
     tools = [{"name": "alpha", "input_schema": {}}]
     content_hash = raw_catalog_content_hash(tools)
     await catalog_client.post(
         "/hook/catalog/register",
         json={
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:99",
             "content_hash": content_hash,
             "tools": tools,
@@ -127,8 +165,8 @@ async def test_hook_catalog_deregister(catalog_client: httpx.AsyncClient) -> Non
         "/hook/catalog/deregister",
         json={
             "agent": "cursor",
-            "scope": "global",
-            "workspace_root": None,
+            "scope": "workspace",
+            "workspace_root": str(ws_root),
             "instance_id": "pid:99",
         },
     )
@@ -150,7 +188,7 @@ async def test_hook_catalog_register_rejects_non_localhost(
     )
     response = await catalog_client.post(
         "/hook/catalog/register",
-        content=json.dumps({"agent": "cursor", "scope": "global", "content_hash": "x"}),
+        content=json.dumps({"agent": "cursor", "scope": "workspace", "content_hash": "x"}),
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 403

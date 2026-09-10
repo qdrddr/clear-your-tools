@@ -1880,7 +1880,7 @@ def run_setup(config_path: Path) -> None:
     config_path = config_path.expanduser()
     from cyt.migrations.migrate import ensure_config_file_current
 
-    ensure_config_file_current(config_path, scope="global")
+    ensure_config_file_current(config_path, scope="user")
     existing = load_user_config_overlay(config_path)
     print(f"CYT proxy setup → {config_path}\n")
 

@@ -88,7 +88,7 @@ def test_fixture_legacy_pruning_migrates_to_head() -> None:
         / "legacy_pruning.yaml"
     )
     raw = yaml.safe_load(fixture.read_text(encoding="utf-8"))
-    result = upgrade_config_dict(raw, scope="global")
+    result = upgrade_config_dict(raw, scope="user")
     assert result.cfg["tools"]["sequence"] == ["bm25", "rerank"]
     assert result.cfg["tools"]["pipelines"]["llm"]["model_nick"] == "mercury-2"
     assert read_schema_version(result.cfg) == current_head()

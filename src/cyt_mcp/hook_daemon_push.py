@@ -17,7 +17,7 @@ from cyt_mcp.runtime_cache import RuntimeToolCache
 
 logger = logging.getLogger(__name__)
 
-CatalogScope = Literal["global", "workspace"]
+CatalogScope = Literal["workspace"]
 
 LOCAL_HOST = "127.0.0.1"
 DEFAULT_HOOK_PORT = 8834
@@ -40,9 +40,19 @@ _instance_id = f"pid:{os.getpid()}"
 
 
 def _instance_key(config: AggregatorConfig) -> str:
-    scope = config.catalog_scope
     ws = str(config.workspace_root or "")
-    return f"{config.agent}:{scope}:{ws}"
+    return f"{config.agent}:workspace:{ws}"
+
+
+def _can_push_to_registry(config: AggregatorConfig) -> bool:
+    if config.workspace_root is None:
+        logger.debug("cyt-mcp catalog push skipped: workspace_root not resolved")
+        return False
+    try:
+        resolved = config.workspace_root.expanduser().resolve()
+    except OSError:
+        return False
+    return resolved.is_dir()
 
 
 def _read_hook_daemon_entries() -> list[dict[str, Any]]:
@@ -127,7 +137,11 @@ def _build_register_payload(
     *,
     include_tools: bool,
 ) -> dict[str, Any]:
-    payload_data = catalog_payload(cache, agent=config.agent)
+    payload_data = catalog_payload(
+        cache,
+        agent=config.agent,
+        server_origins=dict(config.server_origins),
+    )
     tools = payload_data.get("tools")
     if not isinstance(tools, list):
         tools = []
@@ -136,7 +150,7 @@ def _build_register_payload(
     content_hash = catalog_tools_content_hash(tools)
     body: dict[str, Any] = {
         "agent": config.agent,
-        "scope": config.catalog_scope,
+        "scope": "workspace",
         "workspace_root": str(config.workspace_root) if config.workspace_root is not None else None,
         "instance_id": _instance_id,
         "content_hash": content_hash,
@@ -165,14 +179,52 @@ def _post_json(url: str, payload: dict[str, Any]) -> int:
         return 0
 
 
+def _push_hash_only(
+    url: str,
+    config: AggregatorConfig,
+    cache: RuntimeToolCache,
+) -> int | None:
+    """Post hash-only payload; return HTTP status, or None when a full resend is needed."""
+    body = _build_register_payload(config, cache, include_tools=False)
+    status = _post_json(url, body)
+    if status == 404:
+        return None
+    return status
+
+
+def _push_full(
+    url: str,
+    config: AggregatorConfig,
+    cache: RuntimeToolCache,
+    *,
+    key: str,
+) -> bool:
+    body = _build_register_payload(config, cache, include_tools=True)
+    status = _post_json(url, body)
+    if status not in {200, 204}:
+        return False
+    from cyt_mcp.catalog import catalog_tools_content_hash
+
+    tools = body.get("tools")
+    if isinstance(tools, list):
+        _last_success_hash[key] = catalog_tools_content_hash(tools)
+    return True
+
+
 def _push_once(config: AggregatorConfig, cache: RuntimeToolCache) -> bool:
+    if not _can_push_to_registry(config):
+        return False
     url = resolve_hook_register_url()
     if not url:
         return False
 
     key = _instance_key(config)
     last_hash = _last_success_hash.get(key)
-    payload_data = catalog_payload(cache, agent=config.agent)
+    payload_data = catalog_payload(
+        cache,
+        agent=config.agent,
+        server_origins=dict(config.server_origins),
+    )
     tools = payload_data.get("tools")
     if not isinstance(tools, list):
         tools = []
@@ -180,28 +232,19 @@ def _push_once(config: AggregatorConfig, cache: RuntimeToolCache) -> bool:
 
     content_hash = catalog_tools_content_hash(tools)
 
-    include_tools = last_hash != content_hash
-    if not include_tools and last_hash == content_hash:
-        body = _build_register_payload(config, cache, include_tools=False)
-        status = _post_json(url, body)
+    if last_hash == content_hash:
+        status = _push_hash_only(url, config, cache)
         if status == 204:
             return True
-        if status == 404:
-            include_tools = True
-        elif status == 200:
+        if status == 200:
             return True
-        elif status == 0:
+        if status == 0:
             return False
-
-    if include_tools or not last_hash:
-        body = _build_register_payload(config, cache, include_tools=True)
-        status = _post_json(url, body)
-        if status in {200, 204}:
-            _last_success_hash[key] = content_hash
-            return True
+        if status is None:
+            return _push_full(url, config, cache, key=key)
         return False
 
-    return False
+    return _push_full(url, config, cache, key=key)
 
 
 async def _retry_push_loop(config: AggregatorConfig, cache: RuntimeToolCache) -> None:
@@ -223,6 +266,8 @@ async def _retry_push_loop(config: AggregatorConfig, cache: RuntimeToolCache) ->
 
 def schedule_catalog_push(cache: RuntimeToolCache, config: AggregatorConfig) -> None:
     """Fire-and-forget background push to hook daemon registry."""
+    if not _can_push_to_registry(config):
+        return
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -273,7 +318,7 @@ def deregister_catalog_push(config: AggregatorConfig) -> None:
     deregister_url = url.replace(REGISTER_PATH, DEREGISTER_PATH)
     body = {
         "agent": config.agent,
-        "scope": config.catalog_scope,
+        "scope": "workspace",
         "workspace_root": str(config.workspace_root) if config.workspace_root is not None else None,
         "instance_id": _instance_id,
     }

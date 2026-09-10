@@ -15,16 +15,17 @@ from cyt.hook.cli_invocation import (
 )
 from cyt.hook.install_scope import (
     GLOBAL_AGENT_MCP_PATHS,
-    WORKSPACE_ALL_AGENTS_CYT_DIR,
-    WORKSPACE_CYT_CONFIG_SUBDIR,
     CytInstallScope,
 )
 from cyt.permissions.paths import PermissionScope
-from cyt.proxy.setup_wizard import _prompt, _prompt_yes_no
+from cyt.proxy.setup_wizard import _prompt
 from cyt_client.mcp_entry import (
+    CURSOR_WORKSPACE_FOLDER,
+    CYT_MCP_FRONTEND_SERVER_KEYS,
     CYT_MCP_SERVER_KEY,
     CYT_MCP_WORKSPACE_SERVER_KEY,
     LEGACY_CYT_MCP_SERVER_KEY,
+    LEGACY_CYT_MCP_USER_SERVER_KEY,
     LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
     CytMcpTransport,
     backend_mcp_servers,
@@ -32,6 +33,7 @@ from cyt_client.mcp_entry import (
     codex_cyt_mcp_toml_block,
     load_aggregator_transport_settings,
     normalize_cyt_mcp_transport,
+    workspace_aggregator_config_ref,
 )
 
 DEFAULT_MCP_CONFIG_PATH = Path("~/.config/cyt/mcp-config.yaml")
@@ -45,7 +47,21 @@ DEFAULT_CATALOG_PATH = "/catalog"
 
 _AGENT_SOURCE_PATHS: dict[str, Path] = GLOBAL_AGENT_MCP_PATHS
 
-CURSOR_WORKSPACE_FOLDER = "${workspaceFolder}"
+
+def _cyt_mcp_workspace_cwd(agent: str) -> str | None:
+    if agent == "cursor":
+        return CURSOR_WORKSPACE_FOLDER
+    return None
+
+
+def _remove_cyt_mcp_frontend_keys(servers: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    removed = [key for key in servers if key in CYT_MCP_FRONTEND_SERVER_KEYS]
+    if not removed:
+        return servers, []
+    cleaned = {
+        key: spec for key, spec in servers.items() if key not in CYT_MCP_FRONTEND_SERVER_KEYS
+    }
+    return cleaned, removed
 
 
 def prompt_cyt_mcp_transport(*, default: CytMcpTransport = "stdio") -> CytMcpTransport:
@@ -87,7 +103,7 @@ def migrate_agent_backends_from(
     target_path: Path,
     *,
     agent: str = "cursor",
-    permission_scope: PermissionScope = "global",
+    permission_scope: PermissionScope = "user",
     workspace_root: Path | None = None,
 ) -> Path:
     """Copy backend MCP servers from *source_path* into *target_path*."""
@@ -107,7 +123,7 @@ def migrate_agent_backends_from(
     if disabled:
         config_path = import_disabled_servers_to_deny(
             disabled,
-            scope="workspace" if permission_scope == "workspace" else "global",
+            scope="workspace" if permission_scope == "workspace" else "user",
             agent=agent,
             workspace_root=workspace_root,
         )
@@ -130,7 +146,7 @@ def migrate_agent_backends(agent: str) -> Path:
         source_path,
         target,
         agent=agent,
-        permission_scope="global",
+        permission_scope="user",
     )
 
 
@@ -379,10 +395,14 @@ def _write_json_cyt_mcp_entry(
         if not isinstance(existing, dict):
             existing = {}
         servers = dict(existing)
-        if server_key == CYT_MCP_WORKSPACE_SERVER_KEY:
-            servers.pop(LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY, None)
         if server_key == CYT_MCP_SERVER_KEY:
-            servers.pop(LEGACY_CYT_MCP_SERVER_KEY, None)
+            for legacy_key in (
+                LEGACY_CYT_MCP_USER_SERVER_KEY,
+                LEGACY_CYT_MCP_SERVER_KEY,
+                CYT_MCP_WORKSPACE_SERVER_KEY,
+                LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
+            ):
+                servers.pop(legacy_key, None)
         servers[server_key] = entry
     raw["mcpServers"] = servers
     _atomic_write_text(path, json.dumps(raw, indent=2) + "\n")
@@ -434,6 +454,7 @@ def write_agent_cyt_mcp_entry(
     invocation: HookCliInvocation | None = None,
     transport: CytMcpTransport = "stdio",
     frontend_only: bool = False,
+    workspace_root: Path | None = None,
 ) -> None:
     scope = CytInstallScope.from_cwd()
     write_agent_cyt_mcp_entry_at(
@@ -442,18 +463,14 @@ def write_agent_cyt_mcp_entry(
         invocation=invocation,
         transport=transport,
         server_key=CYT_MCP_SERVER_KEY,
-        aggregator_config=scope.global_aggregator_path(),
+        aggregator_config=workspace_aggregator_config_ref(agent, workspace_root),
+        workspace_cwd=_cyt_mcp_workspace_cwd(agent),
         frontend_only=frontend_only,
     )
 
 
 def _workspace_aggregator_config_path(scope: CytInstallScope, agent: str) -> str:
-    agg = scope.workspace_aggregator_path(agent)
-    assert agg is not None
-    rel = f"{WORKSPACE_ALL_AGENTS_CYT_DIR}/{WORKSPACE_CYT_CONFIG_SUBDIR}/mcp-aggregator.yaml"
-    if agent == "cursor":
-        return f"{CURSOR_WORKSPACE_FOLDER}/{rel}"
-    return str(agg)
+    return workspace_aggregator_config_ref(agent, scope.workspace_root)
 
 
 def _ensure_shared_workspace_config(
@@ -499,7 +516,6 @@ def setup_cyt_mcp_workspace_for_agent(
     if not scope.has_workspace:
         return
     agent = agent.strip() or "cursor"
-    resolved = invocation or detect_hook_cli_invocation()
 
     cyt_dir = scope.workspace_cyt_dir(agent)
     mcp_path = scope.workspace_agent_mcp_path(agent)
@@ -553,17 +569,32 @@ def setup_cyt_mcp_workspace_for_agent(
             workspace_scoped=True,
         )
 
-    aggregator_arg = _workspace_aggregator_config_path(scope, agent)
-    write_agent_cyt_mcp_entry_at(
-        mcp_path,
-        agent,
-        invocation=resolved,
-        transport=transport,
-        server_key=CYT_MCP_WORKSPACE_SERVER_KEY,
-        aggregator_config=aggregator_arg,
-        workspace_cwd=CURSOR_WORKSPACE_FOLDER if agent == "cursor" else None,
-        frontend_only=migrate_backends,
-    )
+    remove_project_cyt_mcp_for_agent(agent, scope)
+
+
+def remove_project_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
+    """Remove cyt-mcp frontend entries from project agent MCP config."""
+    if not scope.has_workspace:
+        return False
+    mcp_path = scope.workspace_agent_mcp_path(agent)
+    if mcp_path is None or not mcp_path.is_file():
+        return False
+    try:
+        raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    servers = raw.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    cleaned, removed = _remove_cyt_mcp_frontend_keys(dict(servers))
+    if not removed:
+        return False
+    raw["mcpServers"] = cleaned
+    _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
+    print(f"Removed {', '.join(removed)} from {mcp_path}", file=sys.stderr)
+    return True
 
 
 def setup_cyt_mcp_for_agent(
@@ -594,19 +625,13 @@ def setup_cyt_mcp_for_agent(
         invocation=resolved,
         transport=transport,
         frontend_only=migrate_backends,
+        workspace_root=install_scope.workspace_root,
     )
 
     if not install_scope.has_workspace:
         return
 
-    if configure_workspace is None:
-        if sys.stdin.isatty():
-            configure_workspace = _prompt_yes_no(
-                "\nConfigure workspace-scoped cyt-mcp for this project?",
-                default_yes=True,
-            )
-        else:
-            configure_workspace = False
+    configure_workspace = configure_workspace if configure_workspace is not None else True
 
     if configure_workspace:
         setup_cyt_mcp_workspace_for_agent(
@@ -620,40 +645,10 @@ def setup_cyt_mcp_for_agent(
 
 
 def remove_workspace_cyt_mcp_for_agent(agent: str, scope: CytInstallScope) -> bool:
-    """Remove workspace cyt-mcp artifacts; return True when anything changed."""
+    """Remove workspace cyt-mcp backend artifacts; return True when anything changed."""
     if not scope.has_workspace:
         return False
-    changed = False
-    agent = agent.strip() or "cursor"
-
-    mcp_path = scope.workspace_agent_mcp_path(agent)
-    if mcp_path is not None and mcp_path.is_file():
-        try:
-            raw = json.loads(mcp_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raw = {}
-        if isinstance(raw, dict):
-            servers = raw.get("mcpServers")
-            if isinstance(servers, dict):
-                servers = dict(servers)
-                removed_keys = [
-                    key
-                    for key in (
-                        CYT_MCP_WORKSPACE_SERVER_KEY,
-                        LEGACY_CYT_MCP_WORKSPACE_SERVER_KEY,
-                    )
-                    if key in servers
-                ]
-                if removed_keys:
-                    for key in removed_keys:
-                        del servers[key]
-                    raw["mcpServers"] = servers
-                    _atomic_write_text(mcp_path, json.dumps(raw, indent=2) + "\n")
-                    changed = True
-                    print(
-                        f"Removed {', '.join(removed_keys)} from {mcp_path}",
-                        file=sys.stderr,
-                    )
+    changed = remove_project_cyt_mcp_for_agent(agent, scope)
 
     defs_path = scope.workspace_all_agents_cyt_mcp_defs_path(agent)
     if defs_path is not None and defs_path.is_file():

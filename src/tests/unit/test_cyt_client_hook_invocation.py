@@ -199,9 +199,11 @@ def test_pairing_repairs_workspace_mcp_entry(
     global_payload = json.loads(global_mcp.read_text(encoding="utf-8"))
     workspace_payload = json.loads(workspace_mcp.read_text(encoding="utf-8"))
     assert CYT_MCP_SERVER_KEY in global_payload["mcpServers"]
-    assert CYT_MCP_WORKSPACE_SERVER_KEY in workspace_payload["mcpServers"]
-    ws_entry = workspace_payload["mcpServers"][CYT_MCP_WORKSPACE_SERVER_KEY]
-    assert "--config" in ws_entry.get("args", [])
+    user_entry = global_payload["mcpServers"][CYT_MCP_SERVER_KEY]
+    assert "--config" in user_entry.get("args", [])
+    assert CYT_MCP_WORKSPACE_SERVER_KEY not in workspace_payload.get("mcpServers", {})
+    shared_agg = repo_root / ".agents" / "cyt" / "config" / "mcp-config.yaml"
+    assert shared_agg.is_file()
 
 
 def test_resolve_pairing_dev_context_from_mcp_file(tmp_path: Path) -> None:

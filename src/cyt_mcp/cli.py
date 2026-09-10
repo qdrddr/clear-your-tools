@@ -149,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             catalog_scope=config.catalog_scope,
             workspace_root=config.workspace_root,
             mcp_deny=config.mcp_deny,
+            server_origins=config.server_origins,
         )
     try:
         return asyncio.run(_run_server(config))

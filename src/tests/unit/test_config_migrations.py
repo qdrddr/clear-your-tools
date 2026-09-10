@@ -22,21 +22,21 @@ def test_revision_chain_is_linear_and_reaches_head() -> None:
 
 
 def test_upgrade_baseline_to_head() -> None:
-    result = upgrade_config_dict({}, scope="global")
+    result = upgrade_config_dict({}, scope="user")
     assert result.changed is True
     assert result.to_revision == current_head()
     assert read_schema_version(result.cfg) == current_head()
 
 
 def test_upgrade_is_idempotent_at_head() -> None:
-    first = upgrade_config_dict({}, scope="global")
-    second = upgrade_config_dict(first.cfg, scope="global")
+    first = upgrade_config_dict({}, scope="user")
+    second = upgrade_config_dict(first.cfg, scope="user")
     assert second.changed is False
     assert second.steps == ()
 
 
 def test_pending_revisions_from_baseline() -> None:
-    pending = pending_revisions({}, scope="global")
+    pending = pending_revisions({}, scope="user")
     assert pending
     assert pending[-1] == current_head()
 
@@ -52,7 +52,7 @@ def test_migrate_legacy_pruning_pipeline(tmp_path: Path) -> None:
             },
         },
     )
-    result = migrate_config_file(path, scope="global", backup=False)
+    result = migrate_config_file(path, scope="user", backup=False)
     assert result is not None
     assert result.changed is True
     assert result.cfg["tools"]["sequence"] == ["bm25", "rerank"]
@@ -64,7 +64,7 @@ def test_migrate_legacy_pruning_pipeline(tmp_path: Path) -> None:
 def test_migrate_writes_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "config.yaml"
     write_config_dict(path, {"defaults": {"is_persistent": True}})
-    migrate_config_file(path, scope="global", backup=True)
+    migrate_config_file(path, scope="user", backup=True)
     backups = list(tmp_path.glob("config.yaml.bak.*"))
     assert backups
 
@@ -73,7 +73,7 @@ def test_migrate_config_file_dry_run_does_not_write(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     write_config_dict(path, {"pruning": {"pipeline": ["bm25"]}})
     original = path.read_text(encoding="utf-8")
-    migrate_config_file(path, scope="global", dry_run=True)
+    migrate_config_file(path, scope="user", dry_run=True)
     assert path.read_text(encoding="utf-8") == original
 
 

@@ -8,8 +8,8 @@ from typing import Literal, cast
 from cyt.config import resolve_setup_config_path
 from cyt.hook.install_scope import CytInstallScope
 
-PermissionScope = Literal["global", "workspace"]
-InventoryScope = Literal["global", "workspace", "effective"]
+PermissionScope = Literal["user", "workspace"]
+InventoryScope = Literal["user", "workspace", "effective"]
 PermissionAgentTarget = Literal["cursor", "claude", "codex", "all"]
 CliInventoryScope = Literal["user", "workspace", "effective"]
 CliPermissionScope = Literal["user", "workspace"]
@@ -38,26 +38,22 @@ def normalize_agent(agent: str | None) -> str:
 
 
 def normalize_cli_permission_scope(scope: str) -> PermissionScope:
-    """Map CLI ``user`` scope to the internal ``global`` config layer."""
+    """Normalize CLI permission scope names."""
     text = (scope or "user").strip().lower() or "user"
     if text == "effective":
         raise ValueError("--scope 'effective' is read-only; use user or workspace for writes")
-    if text == "user":
-        return "global"
-    if text == "global":
-        return "global"
+    if text in {"user", "global"}:
+        return "user"
     if text == "workspace":
         return "workspace"
     raise ValueError(f"Unknown scope {scope!r}; expected user or workspace")
 
 
 def normalize_cli_inventory_scope(scope: str) -> InventoryScope:
-    """Map CLI ``user`` scope to the internal ``global`` inventory layer."""
+    """Normalize CLI inventory scope names."""
     text = (scope or "effective").strip().lower() or "effective"
-    if text == "user":
-        return "global"
-    if text == "global":
-        return "global"
+    if text in {"user", "global"}:
+        return "user"
     if text == "workspace":
         return "workspace"
     if text == "effective":
@@ -67,7 +63,7 @@ def normalize_cli_inventory_scope(scope: str) -> InventoryScope:
 
 def inventory_scope_label(scope: InventoryScope) -> str:
     """Human-facing inventory scope name for CLI output."""
-    return "user" if scope == "global" else scope
+    return scope
 
 
 def normalize_agent_target(agent: str | None) -> PermissionAgentTarget:
@@ -85,7 +81,7 @@ def permissions_config_path(
     global_config_path: Path | None = None,
     workspace_root: Path | None = None,
 ) -> Path:
-    if scope == "global":
+    if scope == "user":
         return resolve_setup_config_path(global_config_path)
     install = CytInstallScope(
         workspace_root=workspace_root or CytInstallScope.from_cwd().workspace_root,

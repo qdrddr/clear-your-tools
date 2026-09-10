@@ -782,7 +782,7 @@ def _run_hook_daemon_command(args: argparse.Namespace) -> None:
     if daemon_cmd in {"start", "restart"}:
         ensure_config_file_current(
             resolve_config_path(config_path),
-            scope="global",
+            scope="user",
         )
     if daemon_cmd == "start":
         daemon_start(

@@ -2450,7 +2450,7 @@ def run_hook_setup(
         ensure_workspace_config_current,
     )
 
-    ensure_config_file_current(resolved_config_path, scope="global")
+    ensure_config_file_current(resolved_config_path, scope="user")
     if CytInstallScope.from_cwd().has_workspace:
         ensure_workspace_config_current()
     config = _load_hook_setup_config(

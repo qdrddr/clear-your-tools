@@ -6,8 +6,8 @@ import copy
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
 
-ConfigScope = Literal["global", "workspace"]
-AppliesTo = Literal["global", "workspace", "both"]
+ConfigScope = Literal["user", "workspace"]
+AppliesTo = Literal["user", "workspace", "both"]
 
 
 class ConfigMigrationFn(Protocol):
@@ -111,6 +111,16 @@ def set_schema_stamp(cfg: dict[str, Any], revision: str) -> None:
     cyt[MIGRATED_AT_KEY] = (
         datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     )
+
+
+def normalize_config_scope(scope: str) -> ConfigScope:
+    """Normalize config migration scope; ``global`` is a legacy alias for ``user``."""
+    text = (scope or "user").strip().lower() or "user"
+    if text in {"user", "global"}:
+        return "user"
+    if text == "workspace":
+        return "workspace"
+    raise ValueError(f"Unknown config scope {scope!r}; expected user or workspace")
 
 
 def applies_to_scope(applies_to: AppliesTo, scope: ConfigScope) -> bool:
