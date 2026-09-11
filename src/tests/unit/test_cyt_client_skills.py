@@ -296,6 +296,47 @@ def test_collect_client_skills_includes_workspace_config_directories(
         assert (project / ".cursor" / "skills").resolve() in directory_paths
 
 
+def test_collect_client_skills_includes_user_global_and_workspace_config_directories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / "home"
+        project = Path(tmp) / "project"
+        _clear_harness_env(monkeypatch)
+        isolate_user_home(monkeypatch, home)
+        monkeypatch.setenv(CYT_LAUNCH_AGENT_ENV, "cursor")
+
+        user_config_dir = home / ".config" / "cyt"
+        user_config_dir.mkdir(parents=True)
+        global_skills = home / "global-skills"
+        global_skills.mkdir(parents=True)
+        (user_config_dir / "config.yaml").write_text(
+            "skills:\n  directories:\n    - ~/global-skills\n",
+            encoding="utf-8",
+        )
+        _write_skill(
+            global_skills / "global-only.md",
+            "---\nname: global-only\ndescription: global\n---\n\nGlobal body\n",
+        )
+
+        ws_config_dir = project / ".agents" / "cyt" / "config"
+        ws_config_dir.mkdir(parents=True)
+        (ws_config_dir / "config.yaml").write_text(
+            "skills:\n  directories:\n    - .agents/skills\n",
+            encoding="utf-8",
+        )
+        _write_skill(
+            project / ".agents" / "skills" / "workspace-only" / "SKILL.md",
+            "---\nname: workspace-only\ndescription: workspace\n---\n\nWorkspace body\n",
+        )
+
+        monkeypatch.chdir(project)
+        payload = attach_client_skills({"cwd": str(project), "workspace_roots": [str(project)]})
+        skill_paths = {skill["path"] for skill in payload["cyt_skills"]}
+        assert str((global_skills / "global-only.md").resolve()) in skill_paths
+        assert any("workspace-only" in path for path in skill_paths)
+
+
 def test_enrich_hook_payload_adds_transcript_and_skills(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "home"

@@ -93,9 +93,22 @@ def _registry_cache_key(
     )
     catalog_root = str(_registry_catalog_root(cfg))
     from cyt.hook.workspace_config import hook_workspace_from_config
-    from cyt.skills.directories import resolve_skill_directories
 
     workspace = hook_workspace_from_config(cfg)
+    if client_skills is not None:
+        workspace_key = str(workspace) if workspace is not None else None
+        return (
+            catalog_root,
+            skills_pipeline(cfg),
+            skills_index_params_fingerprint(cfg),
+            filter_agent,
+            workspace_key,
+            "client",
+            _client_skills_cache_fingerprint(client_skills),
+        )
+
+    from cyt.skills.directories import resolve_skill_directories
+
     resolved_dirs = resolve_skill_directories(cfg, agent=_scan_agent, workspace_root=workspace)
     expanded_dirs = [str(path) for path in resolved_dirs]
     sources: list[tuple[str, int, int]] = []
@@ -103,16 +116,6 @@ def _registry_cache_key(
         stat = source_path.stat()
         sources.append((str(source_path.resolve()), stat.st_mtime_ns, stat.st_size))
     config_fingerprint = tuple(sorted(sources))
-    if client_skills is not None:
-        return (
-            catalog_root,
-            skills_pipeline(cfg),
-            skills_index_params_fingerprint(cfg),
-            filter_agent,
-            "client+config",
-            _client_skills_cache_fingerprint(client_skills),
-            config_fingerprint,
-        )
     return (
         catalog_root,
         skills_pipeline(cfg),
@@ -845,13 +848,7 @@ def _build_registry_uncached(
             agent=agent,
             upstream_kind=upstream_kind,
         )
-        config_entries = _build_registry_from_config_dirs(
-            cfg,
-            agent=agent,
-            upstream_kind=upstream_kind,
-        )
-        merged = _merge_skill_entries_prefer_primary(client_entries, config_entries)
-        return _apply_skill_registry_filters(cfg, merged, filter_agent=filter_agent)
+        return _apply_skill_registry_filters(cfg, client_entries, filter_agent=filter_agent)
 
     config_entries = _build_registry_from_config_dirs(
         cfg,

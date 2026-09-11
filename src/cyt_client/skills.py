@@ -170,6 +170,25 @@ def _fallback_skill_directories(data: dict[str, Any]) -> list[Path]:
     return _merge_skill_directory_paths(directories, workspace_config_skill_directories(data))
 
 
+def _user_global_skill_directories(data: dict[str, Any]) -> list[Path]:
+    """Skill roots from user/global config before workspace overlay replaces list fields."""
+    try:
+        cyt_config = importlib.import_module("cyt.config")
+        skill_directories_mod = importlib.import_module("cyt.skills.directories")
+
+        load_config = cyt_config.load_config
+        resolve_skill_directories = skill_directories_mod.resolve_skill_directories
+        agent = infer_launch_agent(data) or "cursor"
+        return resolve_skill_directories(
+            load_config(),
+            agent=agent,
+            workspace_root=None,
+            include_platform_defaults=False,
+        )
+    except ImportError:
+        return []
+
+
 def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:
     """Agent/client skill roots plus workspace ``config.yaml`` ``skills.directories``."""
     cwd = _payload_cwd(data)
@@ -190,7 +209,8 @@ def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:
         )
     except ImportError:
         return _fallback_skill_directories(data)
-    return _merge_skill_directory_paths(client_dirs, overlay_dirs)
+    merged = _merge_skill_directory_paths(client_dirs, overlay_dirs)
+    return _merge_skill_directory_paths(merged, _user_global_skill_directories(data))
 
 
 def collect_client_skills(data: dict[str, Any]) -> list[dict[str, str]]:
