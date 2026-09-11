@@ -80,6 +80,65 @@ def test_entity_status_dict_temporary_tier_when_effective_above_base() -> None:
     assert "temp_promotion_active" in detail["hints"]
 
 
+def test_entity_status_dict_attaches_skill_token_count(tmp_path: Path) -> None:
+    from cyt.tiers.skill_token_materialization import clear_carried_token_memo
+
+    clear_carried_token_memo()
+    skill_file = tmp_path / ".cursor" / "skills" / "demo-skill" / "SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("---\nname: demo\n---\nbody text here\n", encoding="utf-8")
+    state = EntityTierState(
+        entity_id=str(skill_file),
+        kind="skill",
+        stable_tier=Tier.COLD,
+        effective_tier=Tier.COLD,
+    )
+    detail = entity_status_dict(
+        state,
+        cfg=tier_section_config({"skills": {"tiers": {}}}, kind="skill"),
+        session_id=1,
+        kind=EntityKind.SKILL,
+        config={"skills": {"tiers": {}}},
+        workspace_root=tmp_path,
+    )
+    assert detail.get("source_path") == str(skill_file)
+    assert isinstance(detail.get("token_count"), int)
+    assert detail["token_count"] > 0
+
+
+def test_entity_status_dict_attaches_tool_token_count() -> None:
+    from cyt.tiers.tool_token_materialization import clear_carried_token_memo
+
+    clear_carried_token_memo()
+    catalog = [
+        {
+            "name": "search",
+            "cyt_catalog_source": "cyt_mcp",
+            "description": "Search tool",
+            "token_count": 512,
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    ]
+    state = EntityTierState(
+        entity_id="cyt_mcp:search",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.ACTIVE,
+    )
+    detail = entity_status_dict(
+        state,
+        cfg=_cfg(),
+        session_id=1,
+        kind=EntityKind.TOOL,
+        catalog_tools=catalog,
+    )
+    assert detail.get("token_count") == 512
+
+
 def test_entity_status_dict_no_temporary_tier_when_stable() -> None:
     state = EntityTierState(
         entity_id="cyt_mcp:read",

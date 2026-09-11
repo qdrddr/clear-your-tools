@@ -1,4 +1,4 @@
-"""Infrastructure overview payload and text formatting for ``tiers status``."""
+"""Infrastructure overview payload and text formatting for ``tiers stats``."""
 
 from __future__ import annotations
 
@@ -236,6 +236,10 @@ def build_status_overview(
     db_tool_count = sum(int(v) for v in tool_histogram_values if isinstance(v, int))
     db_skill_count = sum(int(v) for v in skill_histogram_values if isinstance(v, int))
 
+    from cyt.tiers.status_statistics import build_tier_statistics
+
+    tier_statistics = build_tier_statistics(status, catalog_tools=catalog_tools)
+
     return {
         "epoch": {
             "epoch_id": status.get("epoch_id"),
@@ -253,6 +257,7 @@ def build_status_overview(
                 "shadow": skills_block.get("shadow"),
             },
         },
+        "tier_statistics": tier_statistics,
         "mcp_servers": _list_mcp_servers(
             catalog_tools,
             agent=agent,
@@ -405,7 +410,8 @@ def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any])
         lines.append(f"sources: {', '.join(str(item) for item in sources)}")
 
 
-def format_overview_text(payload: dict[str, Any]) -> str:
+def format_overview_text(payload: dict[str, Any], *, verbose: bool = False) -> str:
+    from cyt.tiers.status_statistics import append_tier_statistics_tables
     from cyt.tiers.status_view import format_project_header
 
     lines = format_project_header(payload).splitlines()
@@ -415,19 +421,22 @@ def format_overview_text(payload: dict[str, Any]) -> str:
 
     _append_overview_epoch(lines, overview)
     _append_overview_tiers(lines, overview)
-    _append_overview_mcp_servers(lines, overview)
-    _append_overview_scoped_path_table(
-        lines,
-        title="=== mcp config files ===",
-        rows=overview.get("mcp_config_files"),
-        count_key="server_count",
-    )
-    _append_overview_scoped_path_table(
-        lines,
-        title="=== skill directories ===",
-        rows=overview.get("skill_directories"),
-        count_key="skill_count",
-    )
-    _append_overview_troubleshooting(lines, overview)
+    append_tier_statistics_tables(lines, overview, format_table_row=_format_table_row)
+
+    if verbose:
+        _append_overview_mcp_servers(lines, overview)
+        _append_overview_scoped_path_table(
+            lines,
+            title="=== mcp config files ===",
+            rows=overview.get("mcp_config_files"),
+            count_key="server_count",
+        )
+        _append_overview_scoped_path_table(
+            lines,
+            title="=== skill directories ===",
+            rows=overview.get("skill_directories"),
+            count_key="skill_count",
+        )
+        _append_overview_troubleshooting(lines, overview)
 
     return "\n".join(lines).rstrip() + "\n"

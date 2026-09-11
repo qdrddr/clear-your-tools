@@ -1,4 +1,4 @@
-"""Tests for tiers status overview mode and --path filtering."""
+"""Tests for tiers stats overview mode and --path filtering."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def test_format_overview_text_total_before_path(tmp_path: Path, monkeypatch: Mon
             agent="cursor",
         ),
     }
-    text = format_overview_text(payload)
+    text = format_overview_text(payload, verbose=True)
     for line in text.splitlines():
         if line.startswith("Scope") and "Path" in line:
             assert line.index("Total") < line.index("Path")
@@ -198,15 +198,52 @@ def test_format_overview_text_omits_individual_tools(
             agent="cursor",
         ),
     }
-    text = format_overview_text(payload)
-    assert "=== mcp servers ===" in text
-    assert "=== skill directories ===" in text
-    assert "=== troubleshooting ===" in text
-    assert "ctx_execute" not in text
-    assert "context-mode" in text
+    text_default = format_overview_text(payload)
+    assert "=== tools ===" in text_default
+    assert "=== skills ===" in text_default
+    assert "Count  Temp  Tokens" in text_default
+    assert "Effective" in text_default
+    assert "=== mcp servers ===" not in text_default
+
+    text_verbose = format_overview_text(payload, verbose=True)
+    assert "=== mcp servers ===" in text_verbose
+    assert "=== skill directories ===" in text_verbose
+    assert "=== troubleshooting ===" in text_verbose
+    assert "ctx_execute" not in text_verbose
+    assert "context-mode" in text_verbose
 
 
-def test_tiers_status_default_shows_overview_not_tools(
+def test_build_status_overview_includes_tier_statistics(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    _mock_catalog(monkeypatch, [])
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.master_catalog_health_snapshot",
+        lambda config: {"configured_sources": [], "catalog_tool_count": 0},
+    )
+    overview = build_status_overview(
+        {
+            "tools": {
+                "enabled": False,
+                "shadow": True,
+                "histogram": {"T0": 0, "T1": 1, "T2": 0, "T3": 0, "T4": 0},
+                "by_tier": {"T0": [], "T1": [], "T2": [], "T3": [], "T4": []},
+            },
+            "skills": {"enabled": False, "shadow": True},
+        },
+        config={},
+        workspace_root=tmp_path,
+        agent="cursor",
+    )
+    tier_statistics = overview.get("tier_statistics")
+    assert isinstance(tier_statistics, dict)
+    tools_stats = tier_statistics.get("tools")
+    assert isinstance(tools_stats, dict)
+    assert tools_stats["rows"][1]["count"] == 1
+
+
+def test_tiers_status_default_shows_tier_tables_not_infrastructure(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -251,16 +288,24 @@ skills:
     )
     monkeypatch.chdir(tmp_path)
     _managers.clear()
-    code = tiers_main(["status", "--workspace", str(tmp_path)])
+    code = tiers_main(["stats", "--workspace", str(tmp_path)])
     assert code == 0
     out = capsys.readouterr().out
     assert f"project_id: {project_id}" in out
-    assert "=== mcp servers ===" in out
-    assert "=== mcp config files ===" in out
-    assert "=== skill directories ===" in out
-    assert "=== troubleshooting ===" in out
-    assert "=== tools ===" not in out
+    assert "=== tools ===" in out
+    assert "=== skills ===" in out
+    assert "Count  Temp  Tokens" in out
+    assert "Total" in out
+    assert "=== mcp servers ===" not in out
+    assert "=== skill directories ===" not in out
+    assert "=== troubleshooting ===" not in out
     assert "ctx_execute" not in out
+
+    verbose_code = tiers_main(["stats", "--workspace", str(tmp_path), "--verbose"])
+    verbose_out = capsys.readouterr().out
+    assert verbose_code == 0
+    assert "=== mcp servers ===" in verbose_out
+    assert "=== troubleshooting ===" in verbose_out
 
 
 def test_tiers_status_path_lists_skills_under_directory(
@@ -306,7 +351,7 @@ skills:
     _managers.clear()
 
     code = tiers_main(
-        ["status", "--workspace", str(tmp_path), "--path", str(fake_home / ".cursor" / "skills")],
+        ["stats", "--workspace", str(tmp_path), "--path", str(fake_home / ".cursor" / "skills")],
     )
     assert code == 0
     out = capsys.readouterr().out
@@ -343,7 +388,7 @@ skills:
     monkeypatch.chdir(tmp_path)
     _managers.clear()
 
-    code = tiers_main(["status", "--workspace", str(tmp_path), "--path", str(outside)])
+    code = tiers_main(["stats", "--workspace", str(tmp_path), "--path", str(outside)])
     assert code == 2
     err = capsys.readouterr().err
     assert "outside configured skill discovery" in err

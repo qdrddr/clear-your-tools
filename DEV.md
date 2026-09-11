@@ -59,7 +59,7 @@ cp .env.example .env
 From a source checkout, run all core `cyt` commands through the unified dev entry point:
 
 ```bash
-uv run src/cyt/cli/app.py tiers status
+uv run src/cyt/cli/app.py tiers stats
 uv run src/cyt/cli/app.py hook daemon restart
 uv run src/cyt/cli/app.py proxy --port 8834
 uv run src/cyt/cli/app.py config current

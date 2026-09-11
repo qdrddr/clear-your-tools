@@ -1,4 +1,4 @@
-"""Integration tests for workspace skill discovery in ``cyt tiers status``."""
+"""Integration tests for workspace skill discovery in ``cyt tiers stats``."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def test_tiers_status_lists_workspace_agents_skill_without_prior_tracking(
     _write_tier_config(tmp_path, db_path)
     monkeypatch.chdir(tmp_path)
 
-    code = tiers_main(["status", "--workspace", str(tmp_path), "--kind", "skills"])
+    code = tiers_main(["stats", "--workspace", str(tmp_path), "--kind", "skills"])
     assert code == 0
     out = capsys.readouterr().out
     assert "explain-simply" in out
@@ -81,7 +81,7 @@ def test_tiers_status_json_includes_discovered_workspace_skill(
     monkeypatch.chdir(tmp_path)
 
     code = tiers_main(
-        ["status", "--workspace", str(tmp_path), "--json", "--kind", "skills", "--name", "explain"],
+        ["stats", "--workspace", str(tmp_path), "--json", "--kind", "skills", "--name", "explain"],
     )
     assert code == 0
     payload = json.loads(capsys.readouterr().out)

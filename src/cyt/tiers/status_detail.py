@@ -347,6 +347,7 @@ def entity_status_dict(
     kind: str | None = None,
     config: dict[str, Any] | None = None,
     workspace_root: Path | None = None,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -398,10 +399,17 @@ def entity_status_dict(
         record.update(
             _skill_status_fields(state, config=config, workspace_root=workspace_root),
         )
+        from cyt.tiers.skill_token_materialization import attach_skill_token_count
+
+        attach_skill_token_count(record)
     elif kind == EntityKind.TOOL:
         record.update(
             _tool_status_fields(state, config=config, workspace_root=workspace_root),
         )
+        if catalog_tools is not None:
+            from cyt.tiers.tool_token_materialization import attach_tool_token_count
+
+            attach_tool_token_count(record, catalog_tools=catalog_tools)
     return record
 
 
@@ -417,6 +425,7 @@ def build_kind_detail(
     workspace_root: Path | None = None,
     tracked_catalog_entity_ids: frozenset[str] | None = None,
     require_tool_engagement: bool = False,
+    catalog_tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if now_ms is None:
         now_ms = int(time.time() * 1000)
@@ -457,6 +466,7 @@ def build_kind_detail(
                 kind=kind,
                 config=config,
                 workspace_root=workspace_root,
+                catalog_tools=catalog_tools if kind == EntityKind.TOOL else None,
             ),
         )
 
@@ -798,6 +808,7 @@ def enrich_tool_detail_with_catalog_discoveries(
                 kind=EntityKind.TOOL,
                 config=config,
                 workspace_root=workspace_root,
+                catalog_tools=catalog_tools,
             ),
         )
         tracked.add(entity_id)

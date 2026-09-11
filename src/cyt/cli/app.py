@@ -2,7 +2,7 @@
 
 Examples::
 
-    uv run src/cyt/cli/app.py tiers status
+    uv run src/cyt/cli/app.py tiers stats
     uv run src/cyt/cli/app.py hook daemon restart
     uv run src/cyt/cli/app.py proxy --port 8834
     uv run src/cyt/cli/app.py config current

@@ -79,7 +79,7 @@ def test_tiers_status_defaults_to_mcp_config_agent_and_filters_claude_skills(
     _write_status_config(tmp_path, db_path)
     monkeypatch.chdir(tmp_path)
 
-    code = tiers_main(["status", "--workspace", str(tmp_path), "--kind", "skills"])
+    code = tiers_main(["stats", "--workspace", str(tmp_path), "--kind", "skills"])
     assert code == 0
     out = capsys.readouterr().out
     assert "agent: cursor" in out
@@ -108,7 +108,7 @@ def test_tiers_status_agent_flag_selects_claude_skills(
 
     code = tiers_main(
         [
-            "status",
+            "stats",
             "--workspace",
             str(tmp_path),
             "--kind",
@@ -134,7 +134,7 @@ def test_tiers_status_json_includes_agent(
     _write_status_config(tmp_path, db_path)
     monkeypatch.chdir(tmp_path)
 
-    code = tiers_main(["status", "--workspace", str(tmp_path), "--json"])
+    code = tiers_main(["stats", "--workspace", str(tmp_path), "--json"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["agent"] == "cursor"

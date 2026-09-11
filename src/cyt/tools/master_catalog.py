@@ -60,11 +60,14 @@ def clear_master_catalog_cache() -> None:
 def build_master_tools(
     ordered_parts: list[tuple[str, list[dict[str, Any]]]],
 ) -> list[dict[str, Any]]:
+    from cyt.tiers.tool_token_materialization import carried_tool_token_count
+
     merged: list[dict[str, Any]] = []
     for source, tools in ordered_parts:
         for tool in tools:
             stamped = copy.deepcopy(tool)
             stamped["cyt_catalog_source"] = source
+            stamped["token_count"] = carried_tool_token_count(stamped)
             merged.append(stamped)
     return merged
 

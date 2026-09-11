@@ -577,7 +577,7 @@ def format_status_text(
     if filters.overview_mode:
         from cyt.tiers.status_overview import format_overview_text
 
-        return format_overview_text(payload)
+        return format_overview_text(payload, verbose=verbose)
 
     lines: list[str] = format_project_header(payload).splitlines()
     entities = _sort_status_entities(_entities_from_payload(payload))

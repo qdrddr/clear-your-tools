@@ -897,7 +897,7 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
     "tiers": (
         "tiers_handler",
         (
-            "usage: cyt tiers status [--workspace PATH] [--json] [--verbose] "
+            "usage: cyt tiers {stats|list} [--workspace PATH] [--json] [--verbose] "
             "[--kind {all,tools,skills}] [--tier T0-T4] [--name TEXT] [--server NAME]"
         ),
     ),

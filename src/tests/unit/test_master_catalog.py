@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from cyt.config import load_config
+from cyt.tiers.tool_token_materialization import clear_carried_token_memo
 from cyt.tools.master_catalog import (
     _cache_key_for_config,
     _get_state,
@@ -27,6 +28,7 @@ def _reset_master_cache() -> Iterator[None]:
 
 
 def test_build_master_tools_stamps_cyt_catalog_source() -> None:
+    clear_carried_token_memo()
     merged = build_master_tools(
         [
             ("mcpc", [{"name": "a/one"}]),
@@ -36,6 +38,31 @@ def test_build_master_tools_stamps_cyt_catalog_source() -> None:
     assert len(merged) == 2
     assert merged[0]["cyt_catalog_source"] == "mcpc"
     assert merged[1]["cyt_catalog_source"] == "executor"
+
+
+def test_build_master_tools_stamps_token_count() -> None:
+    clear_carried_token_memo()
+    merged = build_master_tools(
+        [
+            (
+                "cyt_mcp",
+                [
+                    {
+                        "name": "search",
+                        "description": "Search the codebase.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                            "required": ["query"],
+                        },
+                    },
+                ],
+            ),
+        ],
+    )
+    assert len(merged) == 1
+    assert isinstance(merged[0].get("token_count"), int)
+    assert merged[0]["token_count"] > 0
 
 
 def test_get_master_tool_catalog_concatenates_configured_sources() -> None:
@@ -57,6 +84,7 @@ def test_get_master_tool_catalog_concatenates_configured_sources() -> None:
     assert len(catalog) == 2
     sources = {tool["cyt_catalog_source"] for tool in catalog}
     assert sources == {"mcpc", "executor"}
+    assert all(isinstance(tool.get("token_count"), int) for tool in catalog)
 
 
 def test_get_master_tool_catalog_returns_empty_list_not_none_on_cold_start() -> None:

@@ -19,17 +19,32 @@ from cyt.tiers.status_view import (
 )
 
 
+def _add_tiers_status_like_parser(
+    tiers_sub: argparse._SubParsersAction,
+    name: str,
+    *,
+    help_text: str,
+) -> None:
+    parser = tiers_sub.add_parser(name, help=help_text)
+    parser.add_argument("--workspace", type=Path, default=None)
+    parser.add_argument("--json", action="store_true")
+    add_status_filter_arguments(parser)
+    parser.set_defaults(tiers_handler=run_tiers_status)
+
+
 def add_tiers_parser(subparsers: argparse._SubParsersAction) -> None:
     tiers_parser = subparsers.add_parser("tiers", help="Tier manager status and configuration")
     tiers_sub = tiers_parser.add_subparsers(dest="tiers_command", required=True)
-    status_parser = tiers_sub.add_parser(
-        "status",
-        help="Show tier histogram, epoch state, and per-entity details",
+    _add_tiers_status_like_parser(
+        tiers_sub,
+        "stats",
+        help_text="Show tier statistics, epoch state, and per-entity details",
     )
-    status_parser.add_argument("--workspace", type=Path, default=None)
-    status_parser.add_argument("--json", action="store_true")
-    add_status_filter_arguments(status_parser)
-    status_parser.set_defaults(tiers_handler=run_tiers_status)
+    _add_tiers_status_like_parser(
+        tiers_sub,
+        "list",
+        help_text="Alias for stats (same output and filters)",
+    )
 
 
 def _status_error(message: str, *, json_output: bool) -> int:
@@ -172,11 +187,8 @@ def run_tiers_status(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cyt tiers")
     sub = parser.add_subparsers(dest="tiers_command", required=True)
-    status_parser = sub.add_parser("status")
-    status_parser.add_argument("--workspace", type=Path, default=None)
-    status_parser.add_argument("--json", action="store_true")
-    add_status_filter_arguments(status_parser)
-    status_parser.set_defaults(tiers_handler=run_tiers_status)
+    _add_tiers_status_like_parser(sub, "stats", help_text=argparse.SUPPRESS)
+    _add_tiers_status_like_parser(sub, "list", help_text=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     handler = getattr(args, "tiers_handler", None)
     if handler is None:

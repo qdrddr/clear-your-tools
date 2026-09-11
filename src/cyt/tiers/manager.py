@@ -642,6 +642,7 @@ class TierManager:
                 config=scoped_config,
                 workspace_root=self.project.root_path,
                 tracked_catalog_entity_ids=tracked_catalog_ids,
+                catalog_tools=catalog_tools,
             )
             tool_detail = enrich_tool_detail_with_catalog_discoveries(
                 tool_detail,

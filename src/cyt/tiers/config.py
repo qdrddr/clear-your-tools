@@ -261,7 +261,7 @@ def resolve_tier_status_agent(
     workspace_root: Path | None,
     explicit: str | None = None,
 ) -> str:
-    """Resolve agent for ``tiers status`` skill scoping (CLI override or mcp-config default)."""
+    """Resolve agent for ``tiers stats`` skill scoping (CLI override or mcp-config default)."""
     if isinstance(explicit, str) and explicit.strip():
         from cyt.launch.upstream import parse_agent_name
 
