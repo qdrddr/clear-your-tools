@@ -444,6 +444,15 @@ def _resolve_mcp_deny(
         return ()
 
 
+def reload_mcp_deny(config: AggregatorConfig) -> tuple[str, ...]:
+    """Re-read merged MCP deny list from on-disk permission overlays."""
+    return _resolve_mcp_deny(
+        config.agent,
+        catalog_scope=config.catalog_scope,
+        workspace_root=config.workspace_root,
+    )
+
+
 def _effective_workspace_folder(workspace_folder: Path | None) -> Path:
     if workspace_folder is not None:
         try:

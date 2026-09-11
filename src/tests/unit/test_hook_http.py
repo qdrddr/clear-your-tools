@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -204,3 +205,21 @@ def test_run_hook_payload_disables_transcript_file_read_by_default() -> None:
         dispatch.return_value = ("skipped_inject_via_proxy", {}, "")
         run_hook_payload(payload, config)
         assert dispatch.call_args.kwargs["allow_transcript_file_read"] is False
+
+
+@pytest.mark.asyncio
+async def test_hook_permissions_changed_endpoint(hook_client: httpx.AsyncClient) -> None:
+    from cyt.hook.permissions_revision import clear_permissions_revisions, get_permissions_revision
+
+    clear_permissions_revisions()
+    ws = Path("/tmp/cyt-perm-test-ws")
+    ws.mkdir(exist_ok=True)
+    response = await hook_client.post(
+        "/hook/permissions/changed",
+        json={"workspace_root": str(ws.resolve()), "agent": "cursor"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["permissions_revision"] == 1
+    assert get_permissions_revision("cursor", ws.resolve()) == 1

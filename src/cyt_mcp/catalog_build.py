@@ -77,6 +77,8 @@ async def refresh_catalog_cache(
     server: FastMCP,
     cache: RuntimeToolCache,
     config: AggregatorConfig | None = None,
+    *,
+    skip_push: bool = False,
 ) -> None:
     """Populate hook-daemon catalog + search index from raw backend tools."""
     backend_server = cast(Any, server)
@@ -91,4 +93,4 @@ async def refresh_catalog_cache(
     if config is not None:
         from cyt_mcp.hook_daemon_push import schedule_catalog_push
 
-        schedule_catalog_push(cache, config)
+        schedule_catalog_push(cache, config, skip_push=skip_push)

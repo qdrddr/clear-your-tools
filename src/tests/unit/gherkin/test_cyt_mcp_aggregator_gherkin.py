@@ -16,6 +16,7 @@ from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.catalog_build import build_catalog_from_tools
 from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.stubs import StubListTransform
 from tests.unit.gherkin.conftest import GherkinContext
@@ -125,7 +126,8 @@ def when_mount_backends(gherkin_context: GherkinContext) -> None:
         return degraded
 
     with patch("cyt_mcp.aggregator.mount_backend_servers", side_effect=_fail_broken):
-        gherkin_context.payload["server"] = build_aggregator(config, cache)
+        server, _middleware = build_aggregator(ConfigHolder(config), cache)
+        gherkin_context.payload["server"] = server
         gherkin_context.payload["degraded"] = _fail_broken(
             gherkin_context.payload["server"],
             gherkin_context.payload["mcp_servers"],

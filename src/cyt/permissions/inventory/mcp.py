@@ -166,6 +166,7 @@ async def _fetch_catalog_tools(
 
     from cyt_mcp.aggregator import build_aggregator
     from cyt_mcp.config import load_aggregator_config, load_mcp_servers
+    from cyt_mcp.config_holder import ConfigHolder
     from cyt_mcp.runtime_cache import RuntimeToolCache
     from cyt_mcp.transport import refresh_runtime_cache
 
@@ -193,7 +194,8 @@ async def _fetch_catalog_tools(
         )
 
     cache = RuntimeToolCache()
-    server = build_aggregator(config, cache)
+    config_holder = ConfigHolder(config)
+    server, _middleware = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
     return cache.snapshot()
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -14,12 +14,16 @@ from cyt_mcp.config import (
     sample_aggregator_config,
 )
 from cyt_mcp.hook_daemon_push import (
+    PushContext,
     _RETRY_DELAYS_SECONDS,
     _can_push_to_registry,
     _instance_key,
+    _last_permissions_revision,
+    _maybe_reload_permissions,
     _push_once,
     schedule_catalog_push,
 )
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 
@@ -53,11 +57,11 @@ def test_push_once_sends_full_then_hash_only(tmp_path: Path) -> None:
     config = _config(workspace_root=tmp_path)
     calls: list[dict[str, object]] = []
 
-    def fake_post(_url: str, payload: dict[str, object]) -> int:
+    def fake_post(_url: str, payload: dict[str, object]) -> tuple[int, dict[str, object] | None]:
         calls.append(payload)
         if "tools" in payload:
-            return 200
-        return 204
+            return 200, {"status": "stored", "permissions_revision": 0}
+        return 204, {"status": "unchanged", "permissions_revision": 0}
 
     with (
         patch(
@@ -66,8 +70,10 @@ def test_push_once_sends_full_then_hash_only(tmp_path: Path) -> None:
         ),
         patch("cyt_mcp.hook_daemon_push._post_json", side_effect=fake_post),
     ):
-        assert _push_once(config, cache) is True
-        assert _push_once(config, cache) is True
+        ok1, _rev1 = _push_once(config, cache)
+        ok2, _rev2 = _push_once(config, cache)
+        assert ok1 is True
+        assert ok2 is True
 
     assert calls[0]["scope"] == "workspace"
     assert calls[0]["workspace_root"] == str(tmp_path)
@@ -81,7 +87,8 @@ def test_push_once_skipped_without_workspace_root() -> None:
     config = _config()
 
     with patch("cyt_mcp.hook_daemon_push._post_json") as fake_post:
-        assert _push_once(config, cache) is False
+        ok, _rev = _push_once(config, cache)
+        assert ok is False
         fake_post.assert_not_called()
 
 
@@ -96,11 +103,11 @@ def test_push_once_hash_only_404_triggers_full_resend(tmp_path: Path) -> None:
     content_hash = catalog_tools_content_hash(cache.snapshot())
     instance_key = f"cursor:workspace:{tmp_path}"
 
-    def fake_post(_url: str, payload: dict[str, object]) -> int:
+    def fake_post(_url: str, payload: dict[str, object]) -> tuple[int, dict[str, object] | None]:
         calls.append(payload)
         if "tools" in payload:
-            return 200
-        return 404
+            return 200, {"status": "stored", "permissions_revision": 0}
+        return 404, {"error": "unknown hash"}
 
     with (
         patch(
@@ -114,7 +121,8 @@ def test_push_once_hash_only_404_triggers_full_resend(tmp_path: Path) -> None:
             clear=False,
         ),
     ):
-        assert _push_once(config, cache) is True
+        ok, _rev = _push_once(config, cache)
+        assert ok is True
 
     assert len(calls) == 2
     assert "tools" not in calls[0]
@@ -128,9 +136,9 @@ def test_push_sync_with_retry_uses_backoff_delays(tmp_path: Path) -> None:
     attempts = {"count": 0}
     sleeps: list[float] = []
 
-    def fake_push_once(_config: AggregatorConfig, _cache: RuntimeToolCache) -> bool:
+    def fake_push_once(_config: AggregatorConfig, _cache: RuntimeToolCache) -> tuple[bool, int]:
         attempts["count"] += 1
-        return attempts["count"] >= 3
+        return (attempts["count"] >= 3, 0)
 
     with (
         patch("cyt_mcp.hook_daemon_push._push_once", side_effect=fake_push_once),
@@ -154,7 +162,7 @@ async def test_schedule_catalog_push_is_non_blocking(tmp_path: Path) -> None:
     async def fake_retry_loop(_config: AggregatorConfig, _cache: RuntimeToolCache) -> None:
         started.set()
 
-    with patch("cyt_mcp.hook_daemon_push._retry_push_loop", side_effect=fake_retry_loop):
+    with patch("cyt_mcp.hook_daemon_push._retry_push_loop_legacy", side_effect=fake_retry_loop):
         schedule_catalog_push(cache, config)
         await asyncio.wait_for(started.wait(), timeout=1.0)
 
@@ -187,3 +195,42 @@ def test_load_aggregator_config_infers_workspace_scope(tmp_path: Path) -> None:
     )
     assert config.catalog_scope == "workspace"
     assert config.workspace_root == repo.resolve()
+
+
+@pytest.mark.asyncio
+async def test_maybe_reload_permissions_on_revision_bump(tmp_path: Path) -> None:
+    config = _config(workspace_root=tmp_path)
+    key = _instance_key(config)
+    _last_permissions_revision.clear()
+
+    cache = RuntimeToolCache()
+    cache.replace([{"name": "tool_a", "inputSchema": {"type": "object"}}])
+
+    config_holder = MagicMock(spec=ConfigHolder)
+    config_holder.config = config
+    config_holder.reload_mcp_deny = MagicMock()
+
+    middleware = MagicMock()
+    middleware.notify_all_sessions = AsyncMock()
+
+    context = PushContext(
+        config_holder=config_holder,
+        cache=cache,
+        server=MagicMock(),
+        list_changed_middleware=middleware,
+    )
+
+    async def fake_refresh(_server, runtime_cache, _config, *, skip_push=False) -> None:
+        runtime_cache.replace([{"name": "tool_b", "inputSchema": {"type": "object"}}])
+
+    with patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=fake_refresh):
+        await _maybe_reload_permissions(key=key, revision=0, context=context)
+        config_holder.reload_mcp_deny.assert_not_called()
+        middleware.notify_all_sessions.assert_not_awaited()
+
+        await _maybe_reload_permissions(key=key, revision=1, context=context)
+        config_holder.reload_mcp_deny.assert_called_once()
+        middleware.notify_all_sessions.assert_awaited_once()
+
+        await _maybe_reload_permissions(key=key, revision=1, context=context)
+        assert config_holder.reload_mcp_deny.call_count == 1

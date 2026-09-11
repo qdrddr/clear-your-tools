@@ -156,8 +156,14 @@ async def hook_catalog_register(request: Request) -> Response:
     if result.status == RegisterStatus.UNKNOWN_HASH:
         return JSONResponse({"error": result.message or "unknown hash"}, status_code=404)
     if result.status == RegisterStatus.UNCHANGED:
-        return PlainTextResponse("", status_code=204)
-    return JSONResponse({"status": "stored"}, status_code=200)
+        return JSONResponse(
+            {"status": "unchanged", "permissions_revision": result.permissions_revision},
+            status_code=204,
+        )
+    return JSONResponse(
+        {"status": "stored", "permissions_revision": result.permissions_revision},
+        status_code=200,
+    )
 
 
 async def hook_catalog_deregister(request: Request) -> Response:
@@ -339,6 +345,28 @@ async def hook_tier_feedback(request: Request) -> Response:
     if event == "tool_used":
         return _tier_feedback_tool_used(payload, config=config, workspace=workspace)
     return _tier_feedback_skill_used(payload, config=config, workspace=workspace)
+
+
+async def hook_permissions_changed(request: Request) -> Response:
+    if not _is_localhost_request(request):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.body()
+        payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return JSONResponse({"error": "payload must be a JSON object"}, status_code=400)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    from cyt.hook.catalog_registry import normalize_registry_workspace_path
+    from cyt.hook.permissions_revision import bump_permissions_revision
+
+    workspace_root = normalize_registry_workspace_path(payload.get("workspace_root"))
+    if workspace_root is None:
+        return JSONResponse({"error": "invalid workspace_root"}, status_code=400)
+    agent = str(payload.get("agent") or "cursor").strip().lower() or "cursor"
+    revision = bump_permissions_revision(agent, workspace_root)
+    return JSONResponse({"status": "ok", "permissions_revision": revision}, status_code=200)
 
 
 async def hook_connect(request: Request) -> Response:

@@ -117,3 +117,36 @@ def test_resolve_skill_scope_workspace_vs_user(tmp_path: Path) -> None:
 
     assert resolve_skill_scope(str(ws_skill.resolve()), workspace_root=repo) == "workspace"
     assert resolve_skill_scope(str(user_skill.resolve()), workspace_root=repo) == "user"
+
+
+def test_resolve_skill_directory_origin_finds_config_entry(tmp_path: Path) -> None:
+    from cyt.tiers.entity_origin import resolve_skill_directory_origin
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    skill_root = repo / ".agents" / "skills"
+    skill_path = skill_root / "demo" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("---\nname: demo\n---\n", encoding="utf-8")
+
+    ws_config = repo / ".agents" / "cyt" / "config" / "config.yaml"
+    ws_config.parent.mkdir(parents=True)
+    ws_config.write_text(
+        "\n".join(
+            [
+                "skills:",
+                "  directories:",
+                "    - .agents/skills",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    config_path, directory = resolve_skill_directory_origin(
+        skill_path,
+        agent="cursor",
+        workspace_root=repo,
+    )
+    assert config_path == str(ws_config.resolve())
+    assert directory == ".agents/skills"

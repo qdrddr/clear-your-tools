@@ -8,6 +8,7 @@ from typing import Any
 from fastmcp.server.transforms import Transform
 from fastmcp.tools.base import Tool
 
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME
 from cyt_mcp.stub_catalog import (
@@ -86,6 +87,7 @@ class StubListTransform(Transform):
         retain: RetainSpec | None = None,
         include_description: bool | None = None,
         deny_entries: tuple[str, ...] | list[str] | None = None,
+        config_holder: ConfigHolder | None = None,
     ) -> None:
         self._cache = cache
         if retain is None:
@@ -96,16 +98,23 @@ class StubListTransform(Transform):
             }
         self._retain = retain
         self._deny_entries = deny_entries or ()
+        self._config_holder = config_holder
+
+    def _current_deny_entries(self) -> tuple[str, ...] | list[str]:
+        if self._config_holder is not None:
+            return self._config_holder.mcp_deny
+        return self._deny_entries
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         stubs: list[Tool] = []
+        deny_entries = self._current_deny_entries()
         for tool in tools:
             mcp_tool = tool.to_mcp_tool()
             name = str(mcp_tool.name)
-            if self._deny_entries and name != MCP_WIRE_SEARCH_TOOL_NAME:
+            if deny_entries and name != MCP_WIRE_SEARCH_TOOL_NAME:
                 from cyt.permissions.match import is_catalog_tool_denied
 
-                if is_catalog_tool_denied(name, self._deny_entries):
+                if is_catalog_tool_denied(name, deny_entries):
                     continue
             if name == MCP_WIRE_SEARCH_TOOL_NAME:
                 refreshed = self._cache.search_tool()

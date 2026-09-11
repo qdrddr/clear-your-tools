@@ -30,12 +30,16 @@ _WRITE_SCOPES: tuple[str, ...] = ("user", "workspace")
 _LIST_SCOPES: tuple[str, ...] = ("user", "workspace", "effective")
 
 
-def _add_shared_flags(parser: argparse.ArgumentParser) -> None:
+def _add_shared_flags(parser: argparse.ArgumentParser, *, write: bool = False) -> None:
+    default_scope = "workspace" if write else "effective"
     parser.add_argument(
         "--scope",
         choices=_LIST_SCOPES,
-        default="effective",
-        help="Config layer to read or write (default: effective for list/show)",
+        default=default_scope,
+        help=(
+            "Config layer to read or write "
+            f"(default: {default_scope}{' for writes' if write else ' for list/show'})"
+        ),
     )
     parser.add_argument(
         "--agent",
@@ -63,8 +67,29 @@ def add_permissions_parser(subparsers: argparse._SubParsersAction) -> None:
         "permissions",
         help="Manage MCP and skills allow/deny policy",
     )
-    permissions_sub = permissions_parser.add_subparsers(dest="permissions_command", required=True)
+    _configure_permissions_parser(permissions_parser)
+
+
+def _configure_permissions_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Accept all T0 wizard defaults non-interactively (skip T1)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show wizard decisions without writing config",
+    )
+    parser.add_argument(
+        "--no-wizard",
+        action="store_true",
+        help="Skip tier wizard; use subcommands like show/mcp/skills instead",
+    )
+    _add_shared_flags(parser, write=True)
+    permissions_sub = parser.add_subparsers(dest="permissions_command")
     register_permissions_subcommands(permissions_sub)
+    parser.set_defaults(permissions_handler=run_permissions_wizard)
 
 
 def register_permissions_subcommands(permissions_sub: argparse._SubParsersAction) -> None:
@@ -96,7 +121,7 @@ def register_permissions_subcommands(permissions_sub: argparse._SubParsersAction
     )
     for action in ("list", "enable", "disable"):
         p = servers_sub.add_parser(action, help=f"{action} MCP servers")
-        _add_shared_flags(p)
+        _add_shared_flags(p, write=action != "list")
         if action != "list":
             p.add_argument("server", help="Backend MCP server name")
         p.set_defaults(permissions_handler=_mcp_servers_handler(action))
@@ -105,7 +130,7 @@ def register_permissions_subcommands(permissions_sub: argparse._SubParsersAction
     tools_sub = tools_parser.add_subparsers(dest="permissions_mcp_tools_command", required=True)
     for action in ("list", "enable", "disable"):
         p = tools_sub.add_parser(action, help=f"{action} MCP tools")
-        _add_shared_flags(p)
+        _add_shared_flags(p, write=action != "list")
         p.add_argument("--server", help="Filter tools to one server (list only)")
         if action == "list":
             p.set_defaults(permissions_handler=run_permissions_mcp_tools_list)
@@ -117,7 +142,7 @@ def register_permissions_subcommands(permissions_sub: argparse._SubParsersAction
     skills_sub = skills_parser.add_subparsers(dest="permissions_skills_command", required=True)
     for action in ("list", "enable", "disable"):
         p = skills_sub.add_parser(action, help=f"{action} skills")
-        _add_shared_flags(p)
+        _add_shared_flags(p, write=action != "list")
         if action != "list":
             p.add_argument(
                 "skill_name",
@@ -146,7 +171,9 @@ def _agent_target(args: argparse.Namespace) -> PermissionAgentTarget:
 
 
 def _write_scope(args: argparse.Namespace) -> PermissionScope:
-    scope = str(getattr(args, "scope", "user") or "user")
+    scope = str(getattr(args, "scope", "workspace") or "workspace")
+    if scope == "effective":
+        scope = "workspace"
     try:
         return normalize_cli_permission_scope(scope)
     except ValueError as exc:
@@ -166,6 +193,38 @@ def _workspace_root(args: argparse.Namespace) -> Path | None:
     if ws is not None:
         return Path(ws).expanduser()
     return None
+
+
+def _resolved_notify_workspace(args: argparse.Namespace) -> Path | None:
+    ws = _workspace_root(args)
+    if ws is not None:
+        try:
+            resolved = ws.expanduser().resolve()
+        except OSError:
+            return None
+        return resolved if resolved.is_dir() else None
+    from cyt.hook.install_scope import CytInstallScope
+
+    scope = CytInstallScope.from_cwd()
+    if scope.workspace_root is None:
+        return None
+    try:
+        resolved = scope.workspace_root.resolve()
+    except OSError:
+        return None
+    return resolved if resolved.is_dir() else None
+
+
+def _notify_after_permissions_write(args: argparse.Namespace) -> None:
+    from cyt.permissions.notify import notify_permissions_changed, print_permissions_reload_notice
+
+    workspace = _resolved_notify_workspace(args)
+    if workspace is None:
+        print_permissions_reload_notice(notified=False)
+        return
+    agent = _resolved_agent(args)
+    notified = notify_permissions_changed(workspace_root=workspace, agent=agent)
+    print_permissions_reload_notice(notified=notified)
 
 
 def _print_json(payload: object) -> None:
@@ -408,7 +467,7 @@ def _mcp_servers_handler(action: str) -> Callable[[argparse.Namespace], None]:
         print(f"Updated {path}")
         if action == "enable":
             _print_enable_mcp_server_notice(args, args.server)
-        print("Restart the agent or refresh cyt-mcp for MCP catalog changes to apply.")
+        _notify_after_permissions_write(args)
 
     return _run
 
@@ -482,7 +541,7 @@ def _mcp_tools_handler(action: str) -> Callable[[argparse.Namespace], None]:
         print(f"Updated {path}")
         if action == "enable":
             _print_enable_mcp_tool_notice(args, server, tool)
-        print("Restart the agent or refresh cyt-mcp for MCP catalog changes to apply.")
+        _notify_after_permissions_write(args)
 
     return _run
 
@@ -551,21 +610,27 @@ def _skills_handler(action: str) -> Callable[[argparse.Namespace], None]:
             )
         )
         print(f"Updated {path}")
+        _notify_after_permissions_write(args)
 
     return _run
+
+
+def run_permissions_wizard(args: argparse.Namespace) -> None:
+    from cyt.permissions.wizard import run_permissions_wizard as run_wizard
+
+    raise SystemExit(run_wizard(args))
 
 
 def run_permissions(args: argparse.Namespace) -> None:
     handler = getattr(args, "permissions_handler", None)
     if handler is None:
-        raise SystemExit("usage: cyt permissions {show|export|mcp|skills} ...")
+        handler = run_permissions_wizard
     handler(args)
 
 
 def build_permissions_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cyt permissions")
-    permissions_sub = parser.add_subparsers(dest="permissions_command", required=True)
-    register_permissions_subcommands(permissions_sub)
+    _configure_permissions_parser(parser)
     return parser
 
 

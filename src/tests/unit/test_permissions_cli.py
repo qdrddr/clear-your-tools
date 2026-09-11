@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -203,3 +204,28 @@ def test_mcp_servers_list_shows_source_prefixes(
     assert "inventory=effective" in captured.out
     assert "W  code-review-graph" in captured.out
     assert "U  codebase-memory" in captured.out
+
+
+def test_disable_mcp_server_notifies_hook_after_write(tmp_path: Path) -> None:
+    notified: list[tuple[Path, str]] = []
+
+    def fake_notify(*, workspace_root: Path, agent: str) -> bool:
+        notified.append((workspace_root, agent))
+        return True
+
+    handler = _mcp_servers_handler("disable")
+    with patch("cyt.permissions.notify.notify_permissions_changed", side_effect=fake_notify):
+        handler(
+            argparse.Namespace(
+                server="demo-server",
+                scope="workspace",
+                agent="cursor",
+                json=False,
+                config=None,
+                workspace=tmp_path,
+            ),
+        )
+
+    assert len(notified) == 1
+    assert notified[0][0] == tmp_path.resolve()
+    assert notified[0][1] == "cursor"

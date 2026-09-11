@@ -9,14 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.server.middleware import MiddlewareContext
 
-from cyt_mcp.config import AggregatorConfig, sample_aggregator_config
+from cyt_mcp.config import sample_aggregator_config
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
-from cyt_mcp.tool_list_notify import ToolListChangedMiddleware
+from cyt_mcp.tool_list_notify import ToolListChangedMiddleware, notify_all_sessions_list_changed
 
 
-def _test_config() -> AggregatorConfig:
-    return sample_aggregator_config()
-
+def _test_config_holder() -> ConfigHolder:
+    return ConfigHolder(sample_aggregator_config())
 
 def _initialize_context(*, session_id: str = "sess-1") -> MiddlewareContext[Any]:
     session = MagicMock()
@@ -40,7 +40,7 @@ async def test_notify_after_initialize_waits_for_stable_catalog() -> None:
     middleware = ToolListChangedMiddleware(
         server,
         cache,
-        _test_config(),
+        _test_config_holder(),
         notify_attempts=4,
         notify_delay_s=0,
     )
@@ -81,7 +81,7 @@ async def test_notify_dedupes_per_session() -> None:
     middleware = ToolListChangedMiddleware(
         server,
         cache,
-        _test_config(),
+        _test_config_holder(),
         notify_attempts=1,
         notify_delay_s=0,
     )
@@ -99,3 +99,24 @@ async def test_notify_dedupes_per_session() -> None:
     assert fastmcp_ctx is not None
     assert isinstance(fastmcp_ctx.session.send_tool_list_changed, AsyncMock)
     fastmcp_ctx.session.send_tool_list_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_all_sessions_sends_list_changed() -> None:
+    server = MagicMock()
+    cache = RuntimeToolCache()
+    middleware = ToolListChangedMiddleware(server, cache, _test_config_holder())
+    session = MagicMock()
+    session.send_tool_list_changed = AsyncMock()
+    middleware._sessions["sess"] = session
+    await middleware.notify_all_sessions()
+    session.send_tool_list_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_all_sessions_list_changed_delegates() -> None:
+    middleware = MagicMock()
+    middleware.notify_all_sessions = AsyncMock()
+    await notify_all_sessions_list_changed(middleware)
+    middleware.notify_all_sessions.assert_awaited_once()
+

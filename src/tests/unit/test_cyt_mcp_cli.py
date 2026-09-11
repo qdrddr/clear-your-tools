@@ -25,7 +25,8 @@ def test_run_server_stdio_uses_run_async() -> None:
         patch("cyt_mcp.cli.build_aggregator") as build,
         patch("cyt_mcp.cli.refresh_runtime_cache", new_callable=AsyncMock) as refresh,
     ):
-        server = build.return_value
+        server = AsyncMock()
+        build.return_value = (server, None)
         server.run_async = AsyncMock()
         result = asyncio.run(_run_server(config))
     assert result == 0
@@ -111,7 +112,8 @@ def test_run_server_skips_pairing_when_skip_txt_present(
         patch("cyt_mcp.cli.refresh_runtime_cache", new_callable=AsyncMock),
         patch("cyt_client.pairing.repair_pairing_from_mcp_runtime") as repair,
     ):
-        server = build.return_value
+        server = AsyncMock()
+        build.return_value = (server, None)
         server.run_async = AsyncMock()
         result = asyncio.run(_run_server(config))
 

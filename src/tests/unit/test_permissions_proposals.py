@@ -1,0 +1,130 @@
+"""Tests for tier-based permissions proposals."""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from cyt.permissions.proposals import (
+    TierProposalBundle,
+    ToolProposal,
+    WizardConfig,
+    _entity_eligible,
+    wizard_config_from_dict,
+)
+
+
+def test_entity_eligible_requires_usage_and_idle_stats() -> None:
+    wizard_cfg = WizardConfig(min_candidates=5, idle_ms=60_000)
+    now_ms = int(time.time() * 1000)
+    entity = {
+        "base_tier": "T0",
+        "hints": [],
+        "stats": {
+            "used": 0,
+            "candidates": 10,
+            "injected": 0,
+            "last_seen_ms": now_ms - 120_000,
+        },
+    }
+    assert _entity_eligible(
+        entity,
+        target_tier="T0",
+        wizard_cfg=wizard_cfg,
+        min_injections=8,
+        now_ms=now_ms,
+    )
+
+    entity_recent = {
+        **entity,
+        "stats": {**entity["stats"], "last_seen_ms": now_ms - 1_000},
+    }
+    assert not _entity_eligible(
+        entity_recent,
+        target_tier="T0",
+        wizard_cfg=wizard_cfg,
+        min_injections=8,
+        now_ms=now_ms,
+    )
+
+
+def test_entity_eligible_excludes_wake_candidate() -> None:
+    wizard_cfg = WizardConfig(min_candidates=1, idle_ms=0)
+    now_ms = int(time.time() * 1000)
+    entity = {
+        "base_tier": "T0",
+        "hints": ["wake_candidate"],
+        "stats": {"used": 0, "candidates": 10, "injected": 0, "last_seen_ms": 0},
+    }
+    assert not _entity_eligible(
+        entity,
+        target_tier="T0",
+        wizard_cfg=wizard_cfg,
+        min_injections=1,
+        now_ms=now_ms,
+    )
+
+
+def test_wizard_config_from_dict_uses_defaults() -> None:
+    cfg = wizard_config_from_dict({})
+    assert cfg.min_candidates >= 8
+    assert cfg.idle_ms >= 0
+
+
+def test_bundle_summary_counts() -> None:
+    bundle = TierProposalBundle(
+        tier="T0",
+        tools=[object()],  # type: ignore[list-item]
+        skills=[object(), object()],  # type: ignore[list-item]
+    )
+    from cyt.permissions.proposals import bundle_summary
+
+    summary = bundle_summary(bundle)
+    assert summary["tools"] == 1
+    assert summary["skills"] == 2
+
+
+def test_format_tool_proposal_display_includes_server_config_line() -> None:
+    from cyt.permissions.proposals import format_tool_proposal_display
+
+    home = Path.home()
+    proposal = ToolProposal(
+        server="demo",
+        tool="search",
+        entity_id="x",
+        tier="T0",
+        server_config_path=str(home / ".config" / "cyt" / "mcp" / "cursor.json"),
+        server_config_line=7,
+    )
+    assert (
+        format_tool_proposal_display(proposal)
+        == "tool demo/search  (~/.config/cyt/mcp/cursor.json:L7)"
+    )
+
+
+def test_format_skill_proposal_display_includes_config_directory(tmp_path: Path) -> None:
+    from cyt.permissions.proposals import SkillProposal, format_skill_proposal_display
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config_path = repo / ".agents" / "cyt" / "config" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    proposal = SkillProposal(
+        name="demo",
+        path=repo / "demo" / "SKILL.md",
+        entity_id="x",
+        tier="T1",
+        discovery_config_path=str(config_path),
+        discovery_directory=".agents/skills",
+    )
+    assert (
+        format_skill_proposal_display(proposal, workspace_root=repo)
+        == "skill demo  (.agents/cyt/config/config.yaml: .agents/skills)"
+    )
+
+
+def test_format_wizard_path_shortens_home_and_workspace() -> None:
+    from cyt.permissions.proposals import _format_wizard_path
+
+    home = Path.home()
+    assert _format_wizard_path(home / ".cursor" / "skills-cursor") == "~/.cursor/skills-cursor"

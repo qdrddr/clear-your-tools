@@ -1366,6 +1366,9 @@ def create_app(
             app.state.cyt_config = config
             _configure_proxy_startup(config, debug=debug)
         load_catalog_registry_from_disk(mark_stale=True)
+        from cyt.hook.permissions_revision import load_permissions_revisions_from_disk
+
+        load_permissions_revisions_from_disk()
         try:
             yield
         finally:
@@ -1392,6 +1395,7 @@ def create_app(
         hook_catalog_register,
         hook_catalog_status,
         hook_connect,
+        hook_permissions_changed,
         hook_tier_feedback,
         hook_tool_examples_record,
     )
@@ -1420,6 +1424,7 @@ def create_app(
             Route("/hook/catalog/deregister", hook_catalog_deregister, methods=["POST"]),
             Route("/hook/catalog/status", hook_catalog_status, methods=["GET"]),
             Route("/hook/tier/feedback", hook_tier_feedback, methods=["POST"]),
+            Route("/hook/permissions/changed", hook_permissions_changed, methods=["POST"]),
             Route("/hook/tool-examples/record", hook_tool_examples_record, methods=["POST"]),
             Route("/{path:path}", proxy, methods=METHODS),
         ],

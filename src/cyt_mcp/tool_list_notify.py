@@ -18,7 +18,7 @@ from mcp.server.session import ServerSession
 from mcp.types import InitializeRequest, InitializeResult
 
 from cyt_mcp.catalog_build import refresh_catalog_cache
-from cyt_mcp.config import AggregatorConfig
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 logger = logging.getLogger(__name__)
@@ -34,18 +34,19 @@ class ToolListChangedMiddleware(Middleware):
         self,
         server: FastMCP,
         cache: RuntimeToolCache,
-        config: AggregatorConfig,
+        config_holder: ConfigHolder,
         *,
         notify_attempts: int = DEFAULT_NOTIFY_ATTEMPTS,
         notify_delay_s: float = DEFAULT_NOTIFY_DELAY_S,
     ) -> None:
         self._server = server
         self._cache = cache
-        self._config = config
+        self._config_holder = config_holder
         self._notify_attempts = max(1, notify_attempts)
         self._notify_delay_s = max(0.0, notify_delay_s)
         self._pending: set[str] = set()
         self._notify_tasks: set[asyncio.Task[None]] = set()
+        self._sessions: dict[str, ServerSession] = {}
 
     async def on_initialize(
         self,
@@ -73,10 +74,15 @@ class ToolListChangedMiddleware(Middleware):
 
     async def _notify_when_ready(self, session: ServerSession, *, session_key: str) -> None:
         try:
+            self._sessions[session_key] = session
             previous_count = -1
             for attempt in range(self._notify_attempts):
                 try:
-                    await refresh_catalog_cache(self._server, self._cache, self._config)
+                    await refresh_catalog_cache(
+                        self._server,
+                        self._cache,
+                        self._config_holder.config,
+                    )
                 except Exception as exc:
                     logger.debug(
                         "cyt-mcp: catalog refresh before list_changed failed: %s",
@@ -100,10 +106,27 @@ class ToolListChangedMiddleware(Middleware):
         finally:
             self._pending.discard(session_key)
 
+    async def notify_all_sessions(self) -> None:
+        """Notify every live MCP session that the tool list changed."""
+        sessions = list(self._sessions.values())
+        for session in sessions:
+            try:
+                await session.send_tool_list_changed()
+                logger.info("cyt-mcp: sent notifications/tools/list_changed (permissions reload)")
+            except Exception as exc:
+                logger.warning("cyt-mcp: failed to send tools/list_changed: %s", exc)
+
+
+async def notify_all_sessions_list_changed(middleware: ToolListChangedMiddleware) -> None:
+    """Notify every live MCP session that the tool list changed."""
+    await middleware.notify_all_sessions()
+
 
 def register_tool_list_changed_middleware(
     server: FastMCP,
     cache: RuntimeToolCache,
-    config: AggregatorConfig,
-) -> None:
-    server.add_middleware(ToolListChangedMiddleware(server, cache, config))
+    config_holder: ConfigHolder,
+) -> ToolListChangedMiddleware:
+    middleware = ToolListChangedMiddleware(server, cache, config_holder)
+    server.add_middleware(middleware)
+    return middleware

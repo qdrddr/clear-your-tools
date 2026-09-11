@@ -39,6 +39,7 @@ class RegisterResult:
     status: RegisterStatus
     http_status: int
     message: str = ""
+    permissions_revision: int = 0
 
 
 @dataclass
@@ -264,6 +265,14 @@ def touch_heartbeat(
     return register_catalog(payload)
 
 
+def _permissions_revision_for(agent: str, workspace_root: str | None) -> int:
+    if not workspace_root:
+        return 0
+    from cyt.hook.permissions_revision import get_permissions_revision
+
+    return get_permissions_revision(agent, workspace_root)
+
+
 def _register_hash_only(
     existing: _CatalogRegistration | None,
     *,
@@ -279,7 +288,8 @@ def _register_hash_only(
     if instance_id:
         existing.instance_id = instance_id
     _upsert_entry(existing)
-    return RegisterResult(RegisterStatus.UNCHANGED, 204)
+    revision = _permissions_revision_for(existing.agent, existing.workspace_root)
+    return RegisterResult(RegisterStatus.UNCHANGED, 204, permissions_revision=revision)
 
 
 def _register_full_tools(
@@ -302,7 +312,8 @@ def _register_full_tools(
         if instance_id:
             existing.instance_id = instance_id
         _upsert_entry(existing)
-        return RegisterResult(RegisterStatus.UNCHANGED, 204)
+        revision = _permissions_revision_for(agent, workspace_root)
+        return RegisterResult(RegisterStatus.UNCHANGED, 204, permissions_revision=revision)
 
     now = time.monotonic()
     entry = _CatalogRegistration(
@@ -317,7 +328,8 @@ def _register_full_tools(
         stale=False,
     )
     _upsert_entry(entry)
-    return RegisterResult(RegisterStatus.STORED, 200)
+    revision = _permissions_revision_for(agent, workspace_root)
+    return RegisterResult(RegisterStatus.STORED, 200, permissions_revision=revision)
 
 
 def register_catalog(payload: dict[str, Any]) -> RegisterResult:

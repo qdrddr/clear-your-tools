@@ -56,7 +56,9 @@ async def test_hook_catalog_register_full_push(
         },
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "stored"}
+    payload = response.json()
+    assert payload["status"] == "stored"
+    assert "permissions_revision" in payload
 
 
 @pytest.mark.asyncio
@@ -107,7 +109,9 @@ async def test_hook_catalog_register_hash_only_204(
         },
     )
     assert response.status_code == 204
-    assert response.text == ""
+    payload = response.json()
+    assert payload["status"] == "unchanged"
+    assert "permissions_revision" in payload
 
 
 @pytest.mark.asyncio

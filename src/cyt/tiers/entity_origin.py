@@ -360,3 +360,157 @@ def resolve_skill_origin_fields(
     if scope:
         fields["scope"] = scope
     return fields
+
+
+def _load_yaml_dict(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    import yaml
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return raw if isinstance(raw, dict) else {}
+
+
+def _append_skill_directory_entries_from_config(
+    candidates: list[tuple[str, str]],
+    *,
+    config_path: Path,
+    config: dict[str, Any],
+    agent: str,
+) -> None:
+    skills = config.get("skills")
+    if isinstance(skills, dict):
+        directories = skills.get("directories")
+        if isinstance(directories, list):
+            key = str(_resolve_path(config_path))
+            for raw in directories:
+                text = str(raw).strip()
+                if text:
+                    candidates.append((key, text))
+
+    agents = config.get("agents")
+    if not isinstance(agents, dict):
+        return
+    agent_block = agents.get(agent)
+    if not isinstance(agent_block, dict):
+        return
+    agent_skills = agent_block.get("skills")
+    if not isinstance(agent_skills, dict):
+        return
+    agent_directories = agent_skills.get("directories")
+    if not isinstance(agent_directories, list):
+        return
+    key = str(_resolve_path(config_path))
+    for raw in agent_directories:
+        text = str(raw).strip()
+        if text:
+            candidates.append((key, text))
+
+
+def _skill_directory_config_candidates(
+    *,
+    agent: str,
+    workspace_root: Path | None,
+) -> list[tuple[str, str]]:
+    """Return ``(config_yaml_path, configured_directory_value)`` pairs."""
+    from cyt.config import resolve_config_path
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.permissions.paths import resolve_inventory_agent
+    from cyt.skills.directories import (
+        _AGENT_SKILL_PAIRS,
+        _GLOBAL_SKILL_PAIRS,
+        resolve_skill_directory_path,
+    )
+
+    resolved_agent = resolve_inventory_agent(agent)
+    candidates: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_candidate(config_path: str, raw_directory: str) -> None:
+        key = (config_path, raw_directory)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(key)
+
+    user_path = resolve_config_path()
+    _append_skill_directory_entries_from_config(
+        candidates,
+        config_path=user_path,
+        config=_load_yaml_dict(user_path),
+        agent=resolved_agent,
+    )
+
+    install = CytInstallScope(workspace_root=workspace_root)
+    workspace_config_path = install.resolve_workspace_cyt_config_path(resolved_agent)
+    if workspace_config_path is not None and workspace_config_path.is_file():
+        _append_skill_directory_entries_from_config(
+            candidates,
+            config_path=workspace_config_path,
+            config=_load_yaml_dict(workspace_config_path),
+            agent=resolved_agent,
+        )
+
+    for project_rel, home_rel in _GLOBAL_SKILL_PAIRS:
+        if workspace_root is not None:
+            add_candidate("", project_rel)
+        add_candidate("", home_rel)
+
+    pair = _AGENT_SKILL_PAIRS.get(resolved_agent)
+    if pair is not None:
+        project_rel, home_rel = pair
+        if workspace_root is not None:
+            add_candidate("", project_rel)
+        add_candidate("", home_rel)
+        if resolved_agent == "cursor":
+            add_candidate("", str(Path.home() / ".cursor" / "skills-cursor"))
+
+    # Drop entries that do not resolve to an existing directory root.
+    resolved_candidates: list[tuple[str, str]] = []
+    for config_path, raw_directory in candidates:
+        root = resolve_skill_directory_path(raw_directory, workspace_root)
+        if root is not None:
+            resolved_candidates.append((config_path, raw_directory))
+    return resolved_candidates
+
+
+def resolve_skill_directory_origin(
+    skill_path: str | Path,
+    *,
+    agent: str = "cursor",
+    workspace_root: Path | None = None,
+) -> tuple[str | None, str | None]:
+    """Return the config file and directory entry that discovered *skill_path*."""
+    from cyt.skills.directories import resolve_skill_directory_path
+
+    path = Path(skill_path).expanduser()
+    try:
+        resolved_skill = path.resolve()
+    except OSError:
+        resolved_skill = path
+    if resolved_skill.is_file() and resolved_skill.name.lower() == "skill.md":
+        resolved_skill = resolved_skill.parent
+
+    best_config_path: str | None = None
+    best_directory: str | None = None
+    best_len = -1
+
+    for config_path, raw_directory in _skill_directory_config_candidates(
+        agent=agent,
+        workspace_root=workspace_root,
+    ):
+        root = resolve_skill_directory_path(raw_directory, workspace_root)
+        if root is None:
+            continue
+        try:
+            resolved_skill.relative_to(root)
+        except ValueError:
+            continue
+        root_len = len(root.parts)
+        if root_len <= best_len:
+            continue
+        best_len = root_len
+        best_directory = raw_directory
+        best_config_path = config_path or None
+
+    return best_config_path, best_directory

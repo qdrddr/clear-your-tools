@@ -13,6 +13,7 @@ from typing import Any, cast
 from cyt_mcp.aggregator import build_aggregator
 from cyt_mcp.catalog import catalog_json
 from cyt_mcp.config import AggregatorConfig, load_aggregator_config
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import lookup_tool_definition
 from cyt_mcp.transport import refresh_runtime_cache
@@ -40,10 +41,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "permissions",
         help="Manage MCP permissions (alias for cyt permissions)",
     )
-    permissions_sub = permissions.add_subparsers(dest="permissions_command", required=True)
-    from cyt.permissions.cli import register_permissions_subcommands
+    permissions_sub = permissions.add_subparsers(dest="permissions_command")
+    from cyt.permissions.cli import _configure_permissions_parser
 
-    register_permissions_subcommands(permissions_sub)
+    _configure_permissions_parser(permissions)
 
     catalog = sub.add_parser("catalog", help="Export full tool catalog JSON")
     catalog.add_argument("--agent", help="Agent harness")
@@ -60,7 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 async def _run_search(config: AggregatorConfig, tool_name: str) -> int:
     cache = RuntimeToolCache()
-    server = build_aggregator(config, cache)
+    config_holder = ConfigHolder(config)
+    server, _middleware = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
     try:
         definition = lookup_tool_definition(cache, tool_name)
@@ -73,7 +75,8 @@ async def _run_search(config: AggregatorConfig, tool_name: str) -> int:
 
 async def _run_catalog(config: AggregatorConfig) -> int:
     cache = RuntimeToolCache()
-    server = build_aggregator(config, cache)
+    config_holder = ConfigHolder(config)
+    server, _middleware = build_aggregator(config_holder, cache)
     await refresh_runtime_cache(server, cache, config)
     print(catalog_json(cache, agent=config.agent))
     return 0
@@ -82,7 +85,7 @@ async def _run_catalog(config: AggregatorConfig) -> int:
 async def _run_server(config: AggregatorConfig) -> int:
     from cyt_client.pairing import repair_pairing_from_mcp_runtime
     from cyt_client.skip import hook_skip_enabled
-    from cyt_mcp.hook_daemon_push import deregister_catalog_push
+    from cyt_mcp.hook_daemon_push import PushContext, deregister_catalog_push, register_push_context
 
     startup_payload = {
         "hook_event_name": "sessionStart",
@@ -93,7 +96,16 @@ async def _run_server(config: AggregatorConfig) -> int:
     if not hook_skip_enabled(startup_payload):
         repair_pairing_from_mcp_runtime(agent=config.agent, verbose=False)
     cache = RuntimeToolCache()
-    server = build_aggregator(config, cache)
+    config_holder = ConfigHolder(config)
+    server, list_changed_middleware = build_aggregator(config_holder, cache)
+    register_push_context(
+        PushContext(
+            config_holder=config_holder,
+            cache=cache,
+            server=server,
+            list_changed_middleware=list_changed_middleware,
+        ),
+    )
     await refresh_runtime_cache(server, cache, config)
     try:
         if config.transport == "http":

@@ -640,6 +640,11 @@ launch:
     endpoint: null
     env_key: CODEX_OPENAI_API_KEY
 
+permissions_cli:
+  wizard:
+    min_candidates: 10
+    idle_minutes: 30
+
 agents:
   cursor:
     tools:
