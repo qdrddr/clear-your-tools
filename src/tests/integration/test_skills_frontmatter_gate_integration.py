@@ -58,7 +58,9 @@ def test_hook_coordinated_prune_skips_gate_blocked_skills(fixture_pack) -> None:
         received_entry_ids.append(_doc_ids(entries or []))
         return []
 
-    with patch("cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search):
+    with patch(
+        "cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search
+    ):
         coordinated = coordinate_skills_tools_prune(
             query,
             config,
@@ -99,7 +101,9 @@ def test_run_hook_coordinated_prune_applies_gate_before_search(fixture_pack) -> 
         searched_doc_ids.append(_doc_ids(entries or []))
         return []
 
-    with patch("cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search):
+    with patch(
+        "cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search
+    ):
         _prune_result, skill_matches, _catalog, _by_source, _timing = run_hook_coordinated_prune(
             query,
             config,

@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 LEGACY_MCP_CONFIG_NAME = "mcp-aggregator.yaml"
 MCP_CONFIG_NAME = "mcp-config.yaml"
+DEFAULT_MCP_AGENT_CONFIG_REFS: dict[str, str] = {
+    "cursor": "~/.config/cyt/mcp/cursor.json",
+    "claude": "~/.config/cyt/mcp/claude.json",
+    "codex": "~/.config/cyt/mcp/codex.json",
+}
 
 
 def _load_yaml_dict(path: Path) -> dict[str, Any]:
@@ -74,6 +79,91 @@ def upgrade_mcp_config_dict(cfg: dict[str, Any]) -> dict[str, Any]:
     tools["stub_by_agent"] = merged_by_agent
 
     return result
+
+
+def _is_ephemeral_path(path: Path) -> bool:
+    text = str(path).replace("\\", "/")
+    markers = (
+        "/pytest-of-",
+        "/T/pytest-",
+        "/var/folders/",
+        "/private/var/folders/",
+        "/tmp/pytest-",
+        "/Temp/pytest-",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _canonical_user_agent_mcp_ref(agent: str) -> str:
+    return DEFAULT_MCP_AGENT_CONFIG_REFS.get(
+        agent.strip() or "cursor", f"~/.config/cyt/mcp/{agent}.json"
+    )
+
+
+def repair_stale_mcp_config_agent_paths(cfg: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Replace ephemeral or out-of-tree user agent paths with portable ~/.config refs."""
+    scope = cfg.get("catalog_scope")
+    if isinstance(scope, str) and scope.strip().lower() == "workspace":
+        return cfg, False
+
+    agents = cfg.get("agents")
+    if not isinstance(agents, dict):
+        return cfg, False
+
+    user_mcp_dir = Path("~/.config/cyt/mcp").expanduser()
+    try:
+        user_mcp_resolved = user_mcp_dir.resolve()
+    except OSError:
+        user_mcp_resolved = user_mcp_dir
+
+    result = copy.deepcopy(cfg)
+    agents_block = result["agents"]
+    changed = False
+
+    for agent in ("cursor", "claude", "codex"):
+        value = agents_block.get(agent)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        text = value.strip()
+        if not Path(text).is_absolute() and not text.startswith("~"):
+            continue
+
+        try:
+            resolved = Path(text).expanduser().resolve()
+        except OSError:
+            resolved = Path(text).expanduser()
+
+        stale = _is_ephemeral_path(resolved)
+        if not stale:
+            try:
+                resolved.relative_to(user_mcp_resolved)
+            except ValueError:
+                stale = True
+
+        if stale:
+            canonical = _canonical_user_agent_mcp_ref(agent)
+            if agents_block.get(agent) != canonical:
+                agents_block[agent] = canonical
+                changed = True
+
+    return result, changed
+
+
+def maybe_repair_stale_mcp_config_file(path: Path) -> dict[str, Any] | None:
+    """Rewrite user agent paths that point at pytest/tmp dirs or outside ~/.config/cyt/mcp."""
+    resolved = resolve_mcp_config_path(path, default=path)
+    if not resolved.is_file():
+        return None
+    raw = _load_yaml_dict(resolved)
+    repaired, changed = repair_stale_mcp_config_agent_paths(raw)
+    if not changed:
+        return None
+    _write_yaml_dict(resolved, repaired)
+    logger.warning(
+        "Repaired stale MCP agent paths in %s (pytest/tmp paths are not valid for production use)",
+        resolved,
+    )
+    return repaired
 
 
 def promote_legacy_mcp_config_path(path: Path) -> Path:

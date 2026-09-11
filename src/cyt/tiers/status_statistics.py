@@ -198,7 +198,11 @@ def build_kind_tier_statistics(
     if isinstance(by_tier_raw, dict):
         for label in _TIER_LABELS:
             items = by_tier_raw.get(label)
-            by_tier[label] = [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+            by_tier[label] = (
+                [item for item in items if isinstance(item, dict)]
+                if isinstance(items, list)
+                else []
+            )
 
     from cyt.tiers.tool_token_materialization import catalog_tools_by_entity_id
 
@@ -331,7 +335,9 @@ def append_kind_tier_statistics_table(
     if show_effective and total_count > 0:
         total_effective_known = int(totals.get("effective_tokens_known", 0))
         if total_effective_known < total_count:
-            lines.append(f"effective: {total_effective_known}/{total_count} {entity_label} computed")
+            lines.append(
+                f"effective: {total_effective_known}/{total_count} {entity_label} computed"
+            )
 
 
 def append_tier_statistics_tables(

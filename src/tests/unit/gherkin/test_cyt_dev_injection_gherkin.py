@@ -227,6 +227,7 @@ def when_setup_migrates_backends(
         gherkin_context.payload["source_mcp_path"],
     )
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_DIR", target_dir)
+    monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_MCP_CONFIG_PATH", aggregator_path)
     monkeypatch.setattr(cyt_mcp_setup, "DEFAULT_AGGREGATOR_PATH", aggregator_path)
     invocation = gherkin_context.payload["invocation"]
     cyt_mcp_setup.setup_cyt_mcp_for_agent("cursor", invocation=invocation, transport="stdio")

@@ -151,6 +151,16 @@ def parse_skill_permission_entry(entry: str) -> ParsedSkillPermissionRule | None
     return ParsedSkillPermissionRule(raw=text, kind="name", value=text)
 
 
+def _skill_permission_dir(path: str | Path) -> Path:
+    """Normalize a skill path rule to the skill directory (never SKILL.md)."""
+    candidate = Path(path).expanduser()
+    if candidate.name.lower() in {"skill.md", "skills.md"}:
+        return candidate.parent
+    if candidate.exists() and candidate.is_file():
+        return candidate.parent
+    return candidate
+
+
 def format_skill_path_permission_entry(
     path: str | Path,
     *,
@@ -159,7 +169,7 @@ def format_skill_path_permission_entry(
     text = str(path or "").strip()
     if not text:
         raise ValueError("Skill path must not be empty")
-    candidate = Path(text).expanduser()
+    candidate = _skill_permission_dir(Path(text))
     if workspace_root is not None:
         base = workspace_root.expanduser().resolve()
         try:
@@ -174,7 +184,12 @@ def format_skill_path_permission_entry(
         except ValueError:
             text = resolved.as_posix()
     else:
-        text = candidate.as_posix()
+        try:
+            text = candidate.resolve().as_posix()
+        except OSError:
+            text = candidate.as_posix()
+    if not text.endswith("/"):
+        text = f"{text}/"
     return f"{SKILL_PATH_PREFIX}{text}"
 
 
@@ -240,12 +255,8 @@ def skill_path_matches_rule(
     *,
     base: Path | None = None,
 ) -> bool:
-    skill = _resolve_permission_path(skill_path, base=base)
-    rule = _resolve_permission_path(rule_path, base=base)
-    if _skill_path_rule_kind(rule) == "file":
-        if skill == rule:
-            return True
-        return _skill_path_matches_rule_segments(skill, rule_path)
+    skill = _skill_permission_dir(_resolve_permission_path(skill_path, base=base))
+    rule = _skill_permission_dir(_resolve_permission_path(rule_path, base=base))
     if skill == rule:
         return True
     if skill.parent == rule:
@@ -254,7 +265,7 @@ def skill_path_matches_rule(
         skill.relative_to(rule)
         return True
     except ValueError:
-        return _skill_path_matches_rule_segments(skill, rule_path)
+        return _skill_path_matches_rule_segments(skill, rule)
 
 
 def _paths_equivalent_for_permission(

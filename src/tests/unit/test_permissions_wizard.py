@@ -48,7 +48,9 @@ def test_apply_changes_writes_workspace_overlay(tmp_path: Path) -> None:
         tools=[],
         skill_dirs=[],
         skill_files=[
-            SkillProposal(name="demo", path=tmp_path / "skill" / "SKILL.md", entity_id="", tier="T0"),
+            SkillProposal(
+                name="demo", path=tmp_path / "skill" / "SKILL.md", entity_id="", tier="T0"
+            ),
         ],
     )
     apply_changes(changes, workspace_root=tmp_path, agent_target="all")

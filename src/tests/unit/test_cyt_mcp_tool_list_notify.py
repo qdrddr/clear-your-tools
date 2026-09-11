@@ -18,6 +18,7 @@ from cyt_mcp.tool_list_notify import ToolListChangedMiddleware, notify_all_sessi
 def _test_config_holder() -> ConfigHolder:
     return ConfigHolder(sample_aggregator_config())
 
+
 def _initialize_context(*, session_id: str = "sess-1") -> MiddlewareContext[Any]:
     session = MagicMock()
     session.send_tool_list_changed = AsyncMock()
@@ -119,4 +120,3 @@ async def test_notify_all_sessions_list_changed_delegates() -> None:
     middleware.notify_all_sessions = AsyncMock()
     await notify_all_sessions_list_changed(middleware)
     middleware.notify_all_sessions.assert_awaited_once()
-

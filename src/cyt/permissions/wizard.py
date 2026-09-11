@@ -43,7 +43,9 @@ def _prompt_yes_no(text: str, *, default: bool) -> bool:
         raise WizardInterrupted from None
 
 
-def _print_bundle_proposals(bundle: TierProposalBundle, *, workspace_root: Path | None = None) -> None:
+def _print_bundle_proposals(
+    bundle: TierProposalBundle, *, workspace_root: Path | None = None
+) -> None:
     if not bundle.tools and not bundle.skills:
         return
     print(f"\nProposed {bundle.tier} disables:")
@@ -88,7 +90,9 @@ def _collect_bundle_decisions(
             if proposal.server not in rollup_servers:
                 changes.tools.append((proposal.server, proposal.tool))
         for proposal in bundle.skills:
-            skill_dir = proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+            skill_dir = (
+                proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+            )
             if skill_dir not in rollup_dirs:
                 changes.skill_files.append(proposal)
         return changes
@@ -139,7 +143,9 @@ def _collect_bundle_decisions(
             changes.tools.append((proposal.server, proposal.tool))
 
     for proposal in bundle.leftover_skills:
-        skill_dir = proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        skill_dir = (
+            proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        )
         if skill_dir in accepted_dirs:
             continue
         if auto_yes:
@@ -202,7 +208,9 @@ def apply_changes(
         )
 
     for proposal in changes.skill_files:
-        skill_dir = proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        skill_dir = (
+            proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        )
         if skill_dir in accepted_dirs:
             continue
         disable_skill(
@@ -211,7 +219,7 @@ def apply_changes(
             agent_target=target,
             agent=agent_target,
             workspace_root=workspace_root,
-            skill_path=proposal.path,
+            skill_path=skill_dir,
         )
 
 
@@ -226,8 +234,7 @@ def run_permissions_wizard(args: Any) -> int:
 
     if getattr(args, "no_wizard", False):
         print(
-            "Tier wizard skipped (--no-wizard). "
-            "Use subcommands: show, export, mcp, skills.",
+            "Tier wizard skipped (--no-wizard). Use subcommands: show, export, mcp, skills.",
             file=sys.stderr,
         )
         return 2

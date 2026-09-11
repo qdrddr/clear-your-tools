@@ -204,6 +204,16 @@ def test_filter_skill_entries_honors_path_rules(tmp_path: Path) -> None:
     assert filtered == []
 
 
+def test_format_skill_path_permission_entry_uses_skill_directory(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "skills" / "create-hook"
+    skill_dir.mkdir(parents=True)
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text("---\nname: create-hook\n---\n", encoding="utf-8")
+
+    entry = format_skill_path_permission_entry(skill_md, workspace_root=tmp_path)
+    assert entry == "path:skills/create-hook/"
+
+
 def test_disable_and_enable_skill_by_path(tmp_path: Path) -> None:
     skill_dir = tmp_path / "skills" / "upgrade-guide"
     skill_dir.mkdir(parents=True)
@@ -218,7 +228,7 @@ def test_disable_and_enable_skill_by_path(tmp_path: Path) -> None:
     )
     config_path = tmp_path / ".agents" / "cyt" / "config" / "config.yaml"
     raw = config_path.read_text(encoding="utf-8")
-    assert "path:skills/upgrade-guide" in raw
+    assert "path:skills/upgrade-guide/" in raw
 
     enable_skill(
         "",

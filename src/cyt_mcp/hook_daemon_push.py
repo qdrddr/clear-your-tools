@@ -9,10 +9,10 @@ import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Literal
-
-from fastmcp import FastMCP
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from fastmcp import FastMCP
 
 from cyt_mcp.catalog import catalog_payload
 from cyt_mcp.config import AggregatorConfig

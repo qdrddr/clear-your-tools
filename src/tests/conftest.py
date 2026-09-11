@@ -155,6 +155,26 @@ def _deterministic_indexer_cache(tmp_path_factory: pytest.TempPathFactory) -> It
 
 
 @pytest.fixture(autouse=True)
+def _isolate_cyt_mcp_user_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cyt-mcp setup/tests from writing to the developer's real ~/.config/cyt."""
+    import cyt.hook.install_scope as install_scope
+    import cyt.tools.cyt_mcp_setup as cyt_mcp_setup
+    import cyt_mcp.config as cyt_mcp_config
+
+    isolated = tmp_path / "cyt-user-config"
+    mcp_dir = isolated / "mcp"
+    mcp_config = isolated / "mcp-config.yaml"
+    mcp_dir.mkdir(parents=True, exist_ok=True)
+
+    for module in (cyt_mcp_config, cyt_mcp_setup, install_scope):
+        monkeypatch.setattr(module, "DEFAULT_MCP_CONFIG_PATH", mcp_config, raising=False)
+        monkeypatch.setattr(module, "DEFAULT_AGGREGATOR_PATH", mcp_config, raising=False)
+        monkeypatch.setattr(module, "DEFAULT_MCP_DIR", mcp_dir, raising=False)
+        monkeypatch.setattr(module, "GLOBAL_MCP_CONFIG_PATH", mcp_config, raising=False)
+        monkeypatch.setattr(module, "GLOBAL_MCP_DIR", mcp_dir, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_hook_catalog_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Stop background catalog schedulers and clear in-memory hook caches."""
     from cyt.cloudflare.catalog import clear_cloudflare_catalog_cache

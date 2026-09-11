@@ -12,7 +12,11 @@ from typing import Any, Literal
 
 import yaml
 
-from cyt.migrations.mcp_config import maybe_migrate_mcp_config_file, resolve_mcp_config_path
+from cyt.migrations.mcp_config import (
+    maybe_migrate_mcp_config_file,
+    maybe_repair_stale_mcp_config_file,
+    resolve_mcp_config_path,
+)
 from cyt_mcp.stub_catalog import RetainSpec, resolve_stub_name, resolve_stub_retain
 
 logger = logging.getLogger(__name__)
@@ -107,6 +111,7 @@ def load_mcp_config_yaml(path: Path | None = None) -> dict[str, Any]:
         default=_expand(path or DEFAULT_MCP_CONFIG_PATH),
     )
     maybe_migrate_mcp_config_file(resolved)
+    maybe_repair_stale_mcp_config_file(resolved)
     if not resolved.is_file():
         return {}
     raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
@@ -340,6 +345,8 @@ def _infer_catalog_scope(
 
 def _resolve_user_agent_mcp_path(configured: Path, agent: str) -> Path:
     """Ensure user cyt-mcp metadata points at user-scoped backend defs."""
+    from cyt.migrations.mcp_config import _is_ephemeral_path
+
     canonical = _global_default_agent_mcp_path(agent)
     if not configured.is_absolute():
         logger.warning(
@@ -356,6 +363,14 @@ def _resolve_user_agent_mcp_path(configured: Path, agent: str) -> Path:
     user_dir = DEFAULT_MCP_DIR.expanduser().resolve()
     if configured_resolved == canonical:
         return configured_resolved
+    if _is_ephemeral_path(configured_resolved):
+        logger.warning(
+            "User aggregator agents.%s uses ephemeral path %s; using %s",
+            agent,
+            configured,
+            canonical,
+        )
+        return canonical
     try:
         configured_resolved.relative_to(user_dir)
         return configured_resolved

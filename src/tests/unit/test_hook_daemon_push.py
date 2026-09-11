@@ -13,9 +13,10 @@ from cyt_mcp.config import (
     load_aggregator_config,
     sample_aggregator_config,
 )
+from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.hook_daemon_push import (
-    PushContext,
     _RETRY_DELAYS_SECONDS,
+    PushContext,
     _can_push_to_registry,
     _instance_key,
     _last_permissions_revision,
@@ -23,7 +24,6 @@ from cyt_mcp.hook_daemon_push import (
     _push_once,
     schedule_catalog_push,
 )
-from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 
 

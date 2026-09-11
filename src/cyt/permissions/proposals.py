@@ -180,11 +180,15 @@ def build_tier_proposals(
 ) -> TierProposalBundle:
     from cyt.config import load_config
     from cyt.hook.workspace_config import resolve_hook_request_config
-    from cyt.permissions.inventory.mcp import fetch_catalog_tools_sync, list_mcp_tools_for_server
+    from cyt.permissions.inventory.mcp import fetch_catalog_tools_sync
     from cyt.permissions.inventory.skills import list_skills
     from cyt.permissions.merge import effective_permissions
     from cyt.skills.directories import resolve_skill_directories
-    from cyt.tiers.config import resolve_tier_project, resolve_tier_status_agent, tier_section_config
+    from cyt.tiers.config import (
+        resolve_tier_project,
+        resolve_tier_status_agent,
+        tier_section_config,
+    )
     from cyt.tiers.entity_origin import resolve_tool_origin_fields
     from cyt.tiers.manager import get_tier_manager
     from cyt.tiers.status_overview import build_status_overview
@@ -438,7 +442,9 @@ def build_tier_proposals(
             leftover_skills.extend(proposals)
 
     for proposal in skill_proposals:
-        skill_path = proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        skill_path = (
+            proposal.path.parent if proposal.path.name.lower() == "skill.md" else proposal.path
+        )
         root = _resolve_skill_root(skill_path, skill_roots)
         if root not in rollup_dirs and proposal not in leftover_skills:
             leftover_skills.append(proposal)

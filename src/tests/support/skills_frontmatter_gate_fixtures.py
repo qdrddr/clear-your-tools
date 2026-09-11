@@ -32,7 +32,9 @@ class FrontmatterGateFixturePack:
     workspace: Path
 
 
-def load_scenarios(path: Path = SCENARIOS_PATH) -> tuple[float, tuple[FrontmatterGateScenario, ...]]:
+def load_scenarios(
+    path: Path = SCENARIOS_PATH,
+) -> tuple[float, tuple[FrontmatterGateScenario, ...]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     upper = float(payload["frontmatter_upper_limit"])
     scenarios: list[FrontmatterGateScenario] = []

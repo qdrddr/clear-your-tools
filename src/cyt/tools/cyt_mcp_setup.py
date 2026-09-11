@@ -220,13 +220,11 @@ def write_mcp_config_yaml_at(
         lines.append(f"  {agent}: {backends_ref}")
         lines.append("catalog_scope: workspace")
     else:
-        mcp_dir = DEFAULT_MCP_DIR.expanduser()
+        from cyt.migrations.mcp_config import DEFAULT_MCP_AGENT_CONFIG_REFS
+
         lines.extend(
-            [
-                f"  cursor: {mcp_dir / 'cursor.json'}",
-                f"  claude: {mcp_dir / 'claude.json'}",
-                f"  codex: {mcp_dir / 'codex.json'}",
-            ],
+            f"  {agent_name}: {DEFAULT_MCP_AGENT_CONFIG_REFS[agent_name]}"
+            for agent_name in ("cursor", "claude", "codex")
         )
     lines.extend(
         [

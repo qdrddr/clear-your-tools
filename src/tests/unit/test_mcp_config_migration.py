@@ -7,7 +7,12 @@ from pathlib import Path
 
 import yaml
 
-from cyt.migrations.mcp_config import migrate_mcp_config_file, upgrade_mcp_config_dict
+from cyt.migrations.mcp_config import (
+    maybe_repair_stale_mcp_config_file,
+    migrate_mcp_config_file,
+    repair_stale_mcp_config_agent_paths,
+    upgrade_mcp_config_dict,
+)
 from cyt_mcp.stub_catalog import resolve_stub_name, resolve_stub_retain
 
 
@@ -45,3 +50,41 @@ def test_resolve_stub_for_codex_agent() -> None:
     assert resolve_stub_name(raw, "codex") == "codex"
     retain = resolve_stub_retain(raw, "codex")
     assert "description" in retain.get("tool", [])
+
+
+def test_repair_stale_mcp_config_agent_paths_replaces_pytest_tmp(tmp_path: Path) -> None:
+    stale = tmp_path / "backends" / "cursor.json"
+    stale.parent.mkdir(parents=True)
+    raw = {
+        "agents": {
+            "cursor": str(stale),
+            "claude": str(stale.parent / "claude.json"),
+            "codex": str(stale.parent / "codex.json"),
+        },
+    }
+    repaired, changed = repair_stale_mcp_config_agent_paths(raw)
+    assert changed is True
+    assert repaired["agents"]["cursor"] == "~/.config/cyt/mcp/cursor.json"
+    assert repaired["agents"]["claude"] == "~/.config/cyt/mcp/claude.json"
+
+
+def test_maybe_repair_stale_mcp_config_file_writes_canonical_paths(tmp_path: Path) -> None:
+    config_path = tmp_path / "mcp-config.yaml"
+    stale = tmp_path / "pytest-of-user" / "pytest-1" / "backends" / "cursor.json"
+    stale.parent.mkdir(parents=True)
+    config_path.write_text(
+        "\n".join(
+            [
+                "default_agent: cursor",
+                "agents:",
+                f"  cursor: {stale}",
+                f"  claude: {stale.parent / 'claude.json'}",
+                f"  codex: {stale.parent / 'codex.json'}",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    maybe_repair_stale_mcp_config_file(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    assert "~/.config/cyt/mcp/cursor.json" in text
+    assert "pytest-of-user" not in text
