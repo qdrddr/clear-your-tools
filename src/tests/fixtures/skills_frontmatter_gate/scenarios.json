@@ -1,0 +1,29 @@
+{
+  "frontmatter_upper_limit": 0.4,
+  "scenarios": [
+    {
+      "id": "blocks_when_prompt_mirrors_description",
+      "query": "create-hook agent hooks for claude code",
+      "blocked_doc_ids": ["create-hook"],
+      "eligible_doc_ids": ["database-shards", "context7"]
+    },
+    {
+      "id": "blocks_context7_when_prompt_mirrors_description",
+      "query": "use context7 specific library documentation",
+      "blocked_doc_ids": ["context7"],
+      "eligible_doc_ids": ["create-hook", "database-shards"]
+    },
+    {
+      "id": "blocks_description_but_allows_body_match_after_gate",
+      "query": "database shard rebalancing zebra migration",
+      "blocked_doc_ids": ["database-shards"],
+      "eligible_doc_ids": ["create-hook", "context7"]
+    },
+    {
+      "id": "allows_when_query_is_unrelated_to_descriptions",
+      "query": "quantum entanglement lattice gauge theory",
+      "blocked_doc_ids": [],
+      "eligible_doc_ids": ["create-hook", "database-shards", "context7"]
+    }
+  ]
+}
