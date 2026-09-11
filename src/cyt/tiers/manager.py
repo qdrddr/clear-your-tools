@@ -138,8 +138,13 @@ class NoOpTierManager:
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
         return
 
-    def status(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        del config
+    def status(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        agent: str | None = None,
+    ) -> dict[str, Any]:
+        del config, agent
         empty_kind = {
             "histogram": {f"T{i}": 0 for i in range(5)},
             "by_tier": {f"T{i}": [] for i in range(5)},
@@ -429,6 +434,8 @@ class TierManager:
             if not entity_id:
                 continue
             state = self._ensure_state(EntityKind.TOOL, entity_id)
+            if state is None:
+                continue
             state.stats.candidates += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
         self._touch_request(config)
@@ -453,6 +460,8 @@ class TierManager:
                 continue
             injected_ids.add(entity_id)
             state = self._ensure_state(EntityKind.TOOL, entity_id)
+            if state is None:
+                continue
             state.stats.injected += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
         self._last_injected_tools = injected_ids
@@ -479,6 +488,8 @@ class TierManager:
         if not entity_id:
             return
         state = self._ensure_state(EntityKind.TOOL, entity_id)
+        if state is None:
+            return
         state.stats.used += 1.0
         if entity_id not in self._last_injected_tools:
             state.stats.used_without_injection += 1.0
@@ -520,9 +531,7 @@ class TierManager:
         for match in matches:
             path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
             doc_id = getattr(match, "doc_id", None)
-            resolved_doc_id = (
-                str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
-            )
+            resolved_doc_id = str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
             entity_id = tier_entity_id_for_skill(str(path), doc_id=resolved_doc_id)
             if not entity_id:
                 continue
@@ -612,9 +621,9 @@ class TierManager:
         )
         if config is not None:
             scoped_config = self._workspace_scoped_config(config)
-            from cyt.tools.master_catalog import get_master_tool_catalog
             from cyt.tiers.adapters.tools import resolve_tracked_catalog_entity_ids
             from cyt.tiers.status_detail import enrich_tool_detail_with_catalog_discoveries
+            from cyt.tools.master_catalog import get_master_tool_catalog
 
             catalog_tools = get_master_tool_catalog(scoped_config, blocking=True) or []
             tracked_catalog_ids = resolve_tracked_catalog_entity_ids(

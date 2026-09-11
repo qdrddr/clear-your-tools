@@ -20,7 +20,6 @@ from cyt.config import (
     cache_skills_dir,
     load_config,
     skills_catalog_dir,
-    skills_directories_for_agent,
     skills_index_params_fingerprint,
     skills_pageindex_config,
     skills_pipeline,

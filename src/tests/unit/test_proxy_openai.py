@@ -569,9 +569,9 @@ def test_transform_openai_request_proxy_injects_developer_message(tmp_path: Path
 
 
 def test_transform_openai_request_inject_into_user_message(tmp_path: Path) -> None:
-    skills_dir = tmp_path / "skills"
+    skills_dir = tmp_path / ".agents" / "skills"
     catalog_dir = tmp_path / "catalog"
-    skills_dir.mkdir()
+    skills_dir.mkdir(parents=True)
     (skills_dir / "create-hook.md").write_text(
         "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
         "# Create Hook\n\nAgent hooks for sessions.\n",

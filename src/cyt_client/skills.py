@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -32,17 +33,27 @@ def infer_launch_agent(data: dict[str, Any]) -> str | None:
 
 def _load_merged_config_for_payload(data: dict[str, Any]) -> dict[str, Any]:
     try:
-        from cyt.config import load_config
-        from cyt.hook.workspace_config import resolve_hook_request_config, set_hook_workspace_in_config
+        cyt_config = importlib.import_module("cyt.config")
+        hook_workspace_config = importlib.import_module("cyt.hook.workspace_config")
         from cyt_client.rules_file import workspace_root_from_payload
 
+        load_config = cyt_config.load_config
+        resolve_hook_request_config = hook_workspace_config.resolve_hook_request_config
+        set_hook_workspace_in_config = hook_workspace_config.set_hook_workspace_in_config
+
         agent = infer_launch_agent(data) or "cursor"
-        config, workspace = resolve_hook_request_config(data, agent, base_config=load_config())
+        merged_config, workspace = resolve_hook_request_config(
+            data,
+            agent,
+            base_config=load_config(),
+        )
         if workspace is None:
             workspace = workspace_root_from_payload(data)
         if workspace is not None:
-            config = set_hook_workspace_in_config(config, workspace)
-        return config
+            merged_config = set_hook_workspace_in_config(merged_config, workspace)
+        if not isinstance(merged_config, dict):
+            return {}
+        return merged_config
     except ImportError:
         return {}
 
@@ -67,40 +78,29 @@ def _merge_skill_directory_paths(existing: list[Path], extra: list[Path]) -> lis
     return merged
 
 
-def workspace_config_skill_directories(data: dict[str, Any]) -> list[Path]:
-    """Skill roots declared in workspace ``.agents/cyt/config/config.yaml``."""
-    from cyt_client.rules_file import is_valid_workspace_root, workspace_root_from_payload
-
-    workspace = workspace_root_from_payload(data)
-    if workspace is None:
-        workspace = _payload_cwd(data)
-    if not is_valid_workspace_root(workspace):
-        return []
-
+def _load_workspace_skills_directories(workspace: Path) -> list[str] | None:
     config_path = workspace / ".agents" / "cyt" / "config" / "config.yaml"
     if not config_path.is_file():
-        return []
-
+        return None
     try:
         import yaml
     except ImportError:
-        return []
-
+        return None
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        return []
+        return None
     skills = raw.get("skills")
     if not isinstance(skills, dict):
-        return []
+        return None
     directories = skills.get("directories")
     if not isinstance(directories, list):
-        return []
+        return None
+    return [str(item).strip() for item in directories if str(item).strip()]
 
+
+def _resolve_skill_directory_paths(directories: list[str], workspace: Path) -> list[Path]:
     resolved: list[Path] = []
-    for item in directories:
-        text = str(item).strip()
-        if not text:
-            continue
+    for text in directories:
         path = Path(text).expanduser()
         if not path.is_absolute():
             path = workspace / path
@@ -111,16 +111,36 @@ def workspace_config_skill_directories(data: dict[str, Any]) -> list[Path]:
     return resolved
 
 
+def workspace_config_skill_directories(data: dict[str, Any]) -> list[Path]:
+    """Skill roots declared in workspace ``.agents/cyt/config/config.yaml``."""
+    from cyt_client.rules_file import is_valid_workspace_root, workspace_root_from_payload
+
+    workspace = workspace_root_from_payload(data)
+    if workspace is None:
+        workspace = _payload_cwd(data)
+    if not is_valid_workspace_root(workspace):
+        return []
+
+    directories = _load_workspace_skills_directories(workspace)
+    if not directories:
+        return []
+    return _resolve_skill_directory_paths(directories, workspace)
+
+
 def _fallback_skill_directories(data: dict[str, Any]) -> list[Path]:
     """Legacy fallback when cyt is unavailable in the client process."""
-    _AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
+    _agent_skill_dirs: dict[str, tuple[str, str]] = {
         "claude": (".claude/skills", "~/.claude/skills"),
         "codex": (".codex/skills", "~/.codex/skills"),
         "cursor": (".cursor/skills", "~/.cursor/skills"),
     }
     cwd = _payload_cwd(data)
     agent = infer_launch_agent(data)
-    pairs = [_AGENT_SKILL_DIRS[agent]] if agent in _AGENT_SKILL_DIRS else list(_AGENT_SKILL_DIRS.values())
+    pairs = (
+        [_agent_skill_dirs[agent]]
+        if agent in _agent_skill_dirs
+        else list(_agent_skill_dirs.values())
+    )
 
     directories: list[Path] = []
     seen: set[Path] = set()
@@ -135,7 +155,10 @@ def _fallback_skill_directories(data: dict[str, Any]) -> list[Path]:
             seen.add(resolved)
             directories.append(resolved)
     if agent == "cursor":
-        for candidate in (cwd / ".cursor" / "skills-cursor", expand_home_path("~/.cursor/skills-cursor")):
+        for candidate in (
+            cwd / ".cursor" / "skills-cursor",
+            expand_home_path("~/.cursor/skills-cursor"),
+        ):
             try:
                 resolved = candidate.resolve()
             except OSError:
@@ -153,15 +176,17 @@ def skill_directories_for_payload(data: dict[str, Any]) -> list[Path]:
     agent = infer_launch_agent(data)
     overlay_dirs = workspace_config_skill_directories(data)
     try:
-        from cyt.skills.directories import resolve_skill_directories
+        skill_directories = importlib.import_module("cyt.skills.directories")
         from cyt_client.rules_file import workspace_root_from_payload
 
+        resolve_skill_directories = skill_directories.resolve_skill_directories
         config = _load_merged_config_for_payload(data)
         workspace = workspace_root_from_payload(data) or cwd
         client_dirs = resolve_skill_directories(
             config,
             agent=agent,
             workspace_root=workspace,
+            include_platform_defaults=True,
         )
     except ImportError:
         return _fallback_skill_directories(data)

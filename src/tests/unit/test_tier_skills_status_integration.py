@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from cyt.tiers.manager import TierManager, _managers
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()
@@ -59,7 +60,7 @@ def test_tiers_status_lists_workspace_agents_skill_without_prior_tracking(
     assert code == 0
     out = capsys.readouterr().out
     assert "explain-simply" in out
-    assert "effective=T0" in out
+    assert "-- Effective T0 --" in out
 
 
 def test_tiers_status_json_includes_discovered_workspace_skill(

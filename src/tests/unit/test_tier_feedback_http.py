@@ -70,7 +70,9 @@ async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_co
     from cyt.tiers.adapters.skills import resolve_skill_entity_id
 
     db_path = project_root / "tier_state.db"
-    skill_path = project_root / "skill.md"
+    skill_dir = project_root / ".agents" / "skills"
+    skill_dir.mkdir(parents=True)
+    skill_path = skill_dir / "SKILL.md"
     skill_path.write_text("# Skill\n", encoding="utf-8")
     entity_id = resolve_skill_entity_id(str(skill_path.resolve()))
     config = dict(base_config)
@@ -116,7 +118,9 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
     from cyt.tiers.adapters.skills import resolve_skill_entity_id
 
     db_path = project_root / "tier_state.db"
-    skill_path = project_root / "skill.md"
+    skill_dir = project_root / ".agents" / "skills"
+    skill_dir.mkdir(parents=True)
+    skill_path = skill_dir / "SKILL.md"
     skill_path.write_text("# Skill\n", encoding="utf-8")
     resolved_id = str(skill_path.resolve())
     entity_id = resolve_skill_entity_id(resolved_id)

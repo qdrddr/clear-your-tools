@@ -227,7 +227,7 @@ def tool_server_key(tool: dict[str, Any]) -> str:
     return _tool_server_key(tool)
 
 
-def group_tools_by_mcp_server(tools: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def group_tools_by_mcp_server(tools: Sequence[Any]) -> dict[str, list[dict[str, Any]]]:
     """Group normalized catalog tools by MCP server key."""
     grouped: dict[str, list[dict[str, Any]]] = {}
     for tool in tools:

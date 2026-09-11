@@ -15,10 +15,10 @@ from cyt.tiers.adapters.skills import (
     normalize_skill_entity_states,
     resolve_skill_doc_id,
     resolve_skill_entity_id,
-    tier_entity_id_for_skill,
     resolve_skill_frontmatter_name,
     skill_display_name,
     stable_skill_doc_entity_id,
+    tier_entity_id_for_skill,
 )
 from cyt.tiers.manager import TierManager, _managers
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState
@@ -144,7 +144,10 @@ def test_tier_entity_id_for_skill_maps_ephemeral_to_doc_id_with_entry_doc_id() -
     )
 
 
-def test_record_skill_candidates_skips_ephemeral_source(project_root: Path, base_config: dict) -> None:
+def test_record_skill_candidates_skips_ephemeral_source(
+    project_root: Path,
+    base_config: dict,
+) -> None:
     db_path = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})

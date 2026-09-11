@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 from cyt.common.agents import AgentName
-from cyt.common.paths import shorten_home_path
 from cyt.config import skills_index_params_fingerprint
 from cyt.skills.catalog import (
     SkillEntryRef,
@@ -83,12 +82,10 @@ def test_build_registry_complete_and_dedup() -> None:
         assert "content_sha256" not in doc
         assert "built_at" not in doc
         assert "pipeline" not in doc
-        skill_path = skills_dir / "create-hook.md"
-        assert doc["path"] == shorten_home_path(str(skill_path))
-        assert doc["path"].endswith("create-hook.md")
+        assert Path(doc["path"]).resolve() == (skills_dir / "create-hook.md").resolve()
         metadata = json.loads((Path(entry.entry_dir) / "metadata.json").read_text())
         assert metadata["pipeline"] == "bm25"
-        assert metadata["source_path"] == shorten_home_path(str(skill_path))
+        assert Path(metadata["source_path"]).resolve().as_posix().endswith("skills/create-hook.md")
         chunk_index = json.loads((Path(entry.bm25_chunk_dir) / "chunk_index.json").read_text())
         assert chunk_index["pipeline"] == "bm25"
         assert "index_params" in chunk_index

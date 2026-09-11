@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
@@ -32,7 +32,7 @@ from cyt.tiers.store import TierStore
 
 def _mock_catalog(
     monkeypatch: MonkeyPatch,
-    tools: list[dict[str, object]],
+    tools: list[dict[str, Any]],
 ) -> None:
     monkeypatch.setattr(
         "cyt.tools.master_catalog.get_master_tool_catalog",
@@ -55,7 +55,10 @@ def test_status_filters_overview_mode() -> None:
 def test_short_path_substitutes_home_prefix() -> None:
     home = Path.home()
     absolute = home / ".config" / "cyt" / "mcp" / "cursor.json"
-    assert _path_display(absolute, scope="user", workspace_root=None) == "~/.config/cyt/mcp/cursor.json"
+    assert (
+        _path_display(absolute, scope="user", workspace_root=None)
+        == "~/.config/cyt/mcp/cursor.json"
+    )
     assert _short_path(str(absolute)) == "~/.config/cyt/mcp/cursor.json"
 
 
@@ -83,7 +86,10 @@ def test_format_overview_text_total_before_path(tmp_path: Path, monkeypatch: Mon
         "root_path": str(tmp_path),
         "agent": "cursor",
         "overview": build_status_overview(
-            {"tools": {"enabled": False, "shadow": True}, "skills": {"enabled": False, "shadow": True}},
+            {
+                "tools": {"enabled": False, "shadow": True},
+                "skills": {"enabled": False, "shadow": True},
+            },
             config={},
             workspace_root=tmp_path,
             agent="cursor",
@@ -183,7 +189,10 @@ def test_format_overview_text_omits_individual_tools(
         "root_path": str(tmp_path),
         "agent": "cursor",
         "overview": build_status_overview(
-            {"tools": {"enabled": False, "shadow": True}, "skills": {"enabled": False, "shadow": True}},
+            {
+                "tools": {"enabled": False, "shadow": True},
+                "skills": {"enabled": False, "shadow": True},
+            },
             config={},
             workspace_root=tmp_path,
             agent="cursor",
@@ -265,7 +274,10 @@ def test_tiers_status_path_lists_skills_under_directory(
 
     workspace_skills = tmp_path / ".agents" / "skills" / "workspace-skill"
     workspace_skills.mkdir(parents=True)
-    (workspace_skills / "SKILL.md").write_text("---\nname: workspace-skill\n---\n", encoding="utf-8")
+    (workspace_skills / "SKILL.md").write_text(
+        "---\nname: workspace-skill\n---\n",
+        encoding="utf-8",
+    )
 
     user_skills = fake_home / ".cursor" / "skills" / "user-skill"
     user_skills.mkdir(parents=True)

@@ -32,16 +32,54 @@ def add_tiers_parser(subparsers: argparse._SubParsersAction) -> None:
     status_parser.set_defaults(tiers_handler=run_tiers_status)
 
 
+def _status_error(message: str, *, json_output: bool) -> int:
+    if json_output:
+        print(json.dumps({"error": message}, indent=2))
+    else:
+        print(message, file=sys.stderr)
+    return 2
+
+
+def _apply_skill_path_filter_to_status(
+    status_payload: dict,
+    *,
+    path_root: Path,
+    config: dict,
+    project_root: Path,
+    status_agent: str,
+    manager: object,
+    session_id: int,
+) -> None:
+    from cyt.tiers.config import tier_section_config
+    from cyt.tiers.status_detail import filter_skill_detail_by_path
+
+    skill_cfg = tier_section_config(config, kind="skill")
+    now_ms = int(time.time() * 1000)
+    states = getattr(manager, "_states", {})
+    skills_detail = status_payload.get("skills")
+    if not isinstance(skills_detail, dict):
+        return
+    status_payload["skills"] = filter_skill_detail_by_path(
+        skills_detail,
+        path_root=path_root,
+        config=config,
+        workspace_root=project_root,
+        agent=status_agent,
+        states=states,
+        cfg=skill_cfg,
+        session_id=session_id,
+        now_ms=now_ms,
+    )
+
+
 def run_tiers_status(args: argparse.Namespace) -> int:
     config = load_config()
     project_root = resolve_tier_project(workspace=args.workspace)
     if project_root is None:
-        message = "no project resolved (need a workspace with git root or workspace markers)"
-        if args.json:
-            print(json.dumps({"error": message}, indent=2))
-        else:
-            print(message, file=sys.stderr)
-        return 2
+        return _status_error(
+            "no project resolved (need a workspace with git root or workspace markers)",
+            json_output=bool(args.json),
+        )
     try:
         status_agent = resolve_tier_status_agent(
             config,
@@ -49,12 +87,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             explicit=getattr(args, "agent", None),
         )
     except ValueError as exc:
-        message = str(exc)
-        if args.json:
-            print(json.dumps({"error": message}, indent=2))
-        else:
-            print(message, file=sys.stderr)
-        return 2
+        return _status_error(str(exc), json_output=bool(args.json))
 
     from cyt.hook.workspace_config import resolve_hook_request_config
 
@@ -64,10 +97,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
         base_config=config,
     )
 
-    from cyt.tiers.status_detail import (
-        filter_skill_detail_by_path,
-        validate_status_path_filter,
-    )
+    from cyt.tiers.status_detail import validate_status_path_filter
     from cyt.tiers.status_overview import build_status_overview
     from cyt.tiers.status_view import resolve_status_path_filter
 
@@ -76,11 +106,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
         project_root,
     )
     if path_error:
-        if args.json:
-            print(json.dumps({"error": path_error}, indent=2))
-        else:
-            print(path_error, file=sys.stderr)
-        return 2
+        return _status_error(path_error, json_output=bool(args.json))
 
     filters = StatusFilters.from_args(
         args,
@@ -95,19 +121,13 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             agent=status_agent,
         )
         if path_scope_error:
-            if args.json:
-                print(json.dumps({"error": path_scope_error}, indent=2))
-            else:
-                print(path_scope_error, file=sys.stderr)
-            return 2
+            return _status_error(path_scope_error, json_output=bool(args.json))
 
     if getattr(args, "tier", None) and filters.tier is None:
-        message = f"invalid --tier value: {args.tier!r} (expected T0-T4)"
-        if args.json:
-            print(json.dumps({"error": message}, indent=2))
-        else:
-            print(message, file=sys.stderr)
-        return 2
+        return _status_error(
+            f"invalid --tier value: {args.tier!r} (expected T0-T4)",
+            json_output=bool(args.json),
+        )
 
     manager = get_tier_manager(config, workspace=project_root)
     status = manager.status(config, agent=status_agent)
@@ -124,21 +144,14 @@ def run_tiers_status(args: argparse.Namespace) -> int:
     )
 
     if path_root is not None and isinstance(status_payload.get("skills"), dict):
-        from cyt.tiers.config import tier_section_config
-
-        skill_cfg = tier_section_config(config, kind="skill")
-        now_ms = int(time.time() * 1000)
-        states = getattr(manager, "_states", {})
-        status_payload["skills"] = filter_skill_detail_by_path(
-            status_payload["skills"],
+        _apply_skill_path_filter_to_status(
+            status_payload,
             path_root=path_root,
             config=config,
-            workspace_root=project_root,
-            agent=status_agent,
-            states=states,
-            cfg=skill_cfg,
+            project_root=project_root,
+            status_agent=status_agent,
+            manager=manager,
             session_id=int(status.get("session_id") or 0),
-            now_ms=now_ms,
         )
 
     payload = apply_status_view(status_payload, filters)

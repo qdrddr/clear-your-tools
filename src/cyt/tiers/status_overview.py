@@ -181,7 +181,12 @@ def _list_skill_directories(
 
     directories: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for directory in resolve_skill_directories(config, agent=agent, workspace_root=workspace_root):
+    for directory in resolve_skill_directories(
+        config,
+        agent=agent,
+        workspace_root=workspace_root,
+        include_platform_defaults=True,
+    ):
         key = str(directory)
         if key in seen:
             continue
@@ -218,19 +223,18 @@ def build_status_overview(
     catalog_tools = get_master_tool_catalog(scoped, blocking=True) or []
     catalog_health = master_catalog_health_snapshot(scoped)
 
-    tools_block = status.get("tools") if isinstance(status.get("tools"), dict) else {}
-    skills_block = status.get("skills") if isinstance(status.get("skills"), dict) else {}
+    tools_raw = status.get("tools")
+    skills_raw = status.get("skills")
+    tools_block: dict[str, Any] = tools_raw if isinstance(tools_raw, dict) else {}
+    skills_block: dict[str, Any] = skills_raw if isinstance(skills_raw, dict) else {}
 
-    db_tool_count = sum(
-        int(v)
-        for v in (tools_block.get("histogram") or {}).values()
-        if isinstance(v, int)
-    )
-    db_skill_count = sum(
-        int(v)
-        for v in (skills_block.get("histogram") or {}).values()
-        if isinstance(v, int)
-    )
+    tool_histogram = tools_block.get("histogram")
+    skill_histogram = skills_block.get("histogram")
+    tool_histogram_values = tool_histogram.values() if isinstance(tool_histogram, dict) else ()
+    skill_histogram_values = skill_histogram.values() if isinstance(skill_histogram, dict) else ()
+
+    db_tool_count = sum(int(v) for v in tool_histogram_values if isinstance(v, int))
+    db_skill_count = sum(int(v) for v in skill_histogram_values if isinstance(v, int))
 
     return {
         "epoch": {
@@ -269,7 +273,11 @@ def build_status_overview(
             "db_skill_entities": db_skill_count,
             **{
                 key: catalog_health[key]
-                for key in ("catalog_age_seconds", "composite_fingerprint_prefix", "source_fingerprints")
+                for key in (
+                    "catalog_age_seconds",
+                    "composite_fingerprint_prefix",
+                    "source_fingerprints",
+                )
                 if key in catalog_health
             },
         },
@@ -284,6 +292,119 @@ def _format_table_row(columns: list[str], widths: list[int]) -> str:
     return "  ".join(parts)
 
 
+def _append_overview_epoch(lines: list[str], overview: dict[str, Any]) -> None:
+    epoch = overview.get("epoch")
+    if not isinstance(epoch, dict):
+        return
+    lines.append(
+        f"epoch_id: {epoch.get('epoch_id')}  session_id: {epoch.get('session_id')}",
+    )
+    if epoch.get("last_request_ms"):
+        lines.append(
+            f"epoch_start_ms: {epoch.get('epoch_start_ms')}  "
+            f"last_request_ms: {epoch.get('last_request_ms')}",
+        )
+
+
+def _append_overview_tiers(lines: list[str], overview: dict[str, Any]) -> None:
+    tiers = overview.get("tiers")
+    if not isinstance(tiers, dict):
+        return
+    tools_tiers = tiers.get("tools")
+    skills_tiers = tiers.get("skills")
+    if isinstance(tools_tiers, dict):
+        lines.append(
+            f"tools: enabled={tools_tiers.get('enabled')} shadow={tools_tiers.get('shadow')}",
+        )
+    if isinstance(skills_tiers, dict):
+        lines.append(
+            f"skills: enabled={skills_tiers.get('enabled')} shadow={skills_tiers.get('shadow')}",
+        )
+
+
+def _scope_label(row: dict[str, Any]) -> str:
+    scope = str(row.get("scope") or "")
+    return f"[{scope}]" if scope else ""
+
+
+def _append_overview_mcp_servers(lines: list[str], overview: dict[str, Any]) -> None:
+    lines.append("")
+    lines.append("=== mcp servers ===")
+    servers = overview.get("mcp_servers")
+    if not isinstance(servers, list) or not servers:
+        lines.append("  (none)")
+        return
+    widths = [11, 22, 7, 44]
+    lines.append(_format_table_row(["Scope", "Server", "Total", "Path"], widths))
+    for row in servers:
+        if not isinstance(row, dict):
+            continue
+        path_display = str(row.get("source_path_display") or row.get("source_path") or "")
+        lines.append(
+            _format_table_row(
+                [
+                    _scope_label(row),
+                    str(row.get("name") or ""),
+                    str(row.get("tool_count") or 0),
+                    path_display,
+                ],
+                widths,
+            ),
+        )
+
+
+def _append_overview_scoped_path_table(
+    lines: list[str],
+    *,
+    title: str,
+    rows: list[dict[str, Any]] | None,
+    count_key: str,
+) -> None:
+    lines.append("")
+    lines.append(title)
+    if not isinstance(rows, list) or not rows:
+        lines.append("  (none)")
+        return
+    widths = [11, 7, 48]
+    lines.append(_format_table_row(["Scope", "Total", "Path"], widths))
+    for row in rows:
+        path_display = str(row.get("path_display") or row.get("path") or "")
+        if not row.get("exists"):
+            path_display = f"{path_display} (missing)"
+        lines.append(
+            _format_table_row(
+                [
+                    _scope_label(row),
+                    str(row.get(count_key) or 0),
+                    path_display,
+                ],
+                widths,
+            ),
+        )
+
+
+def _append_overview_troubleshooting(lines: list[str], overview: dict[str, Any]) -> None:
+    lines.append("")
+    lines.append("=== troubleshooting ===")
+    troubleshooting = overview.get("troubleshooting")
+    if not isinstance(troubleshooting, dict):
+        return
+    lines.append(
+        "catalog: "
+        f"count={troubleshooting.get('catalog_tool_count')}  "
+        f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
+    )
+    lines.append(f"tier_db: {troubleshooting.get('tier_state_db')}")
+    lines.append(
+        "db_entities: "
+        f"tools={troubleshooting.get('db_tool_entities')}  "
+        f"skills={troubleshooting.get('db_skill_entities')}",
+    )
+    sources = troubleshooting.get("configured_sources")
+    if isinstance(sources, list) and sources:
+        lines.append(f"sources: {', '.join(str(item) for item in sources)}")
+
+
 def format_overview_text(payload: dict[str, Any]) -> str:
     from cyt.tiers.status_view import format_project_header
 
@@ -292,131 +413,21 @@ def format_overview_text(payload: dict[str, Any]) -> str:
     if not isinstance(overview, dict):
         return "\n".join(lines).rstrip() + "\n"
 
-    epoch = overview.get("epoch")
-    if isinstance(epoch, dict):
-        lines.append(
-            f"epoch_id: {epoch.get('epoch_id')}  session_id: {epoch.get('session_id')}",
-        )
-        if epoch.get("last_request_ms"):
-            lines.append(
-                f"epoch_start_ms: {epoch.get('epoch_start_ms')}  "
-                f"last_request_ms: {epoch.get('last_request_ms')}",
-            )
-
-    tiers = overview.get("tiers")
-    if isinstance(tiers, dict):
-        tools_tiers = tiers.get("tools")
-        skills_tiers = tiers.get("skills")
-        if isinstance(tools_tiers, dict):
-            lines.append(
-                "tools: "
-                f"enabled={tools_tiers.get('enabled')} "
-                f"shadow={tools_tiers.get('shadow')}",
-            )
-        if isinstance(skills_tiers, dict):
-            lines.append(
-                "skills: "
-                f"enabled={skills_tiers.get('enabled')} "
-                f"shadow={skills_tiers.get('shadow')}",
-            )
-
-    lines.append("")
-    lines.append("=== mcp servers ===")
-    servers = overview.get("mcp_servers")
-    if isinstance(servers, list) and servers:
-        widths = [11, 22, 7, 44]
-        lines.append(_format_table_row(["Scope", "Server", "Total", "Path"], widths))
-        for row in servers:
-            if not isinstance(row, dict):
-                continue
-            scope = str(row.get("scope") or "")
-            scope_label = f"[{scope}]" if scope else ""
-            path_display = str(row.get("source_path_display") or row.get("source_path") or "")
-            lines.append(
-                _format_table_row(
-                    [
-                        scope_label,
-                        str(row.get("name") or ""),
-                        str(row.get("tool_count") or 0),
-                        path_display,
-                    ],
-                    widths,
-                ),
-            )
-    else:
-        lines.append("  (none)")
-
-    lines.append("")
-    lines.append("=== mcp config files ===")
-    config_files = overview.get("mcp_config_files")
-    if isinstance(config_files, list) and config_files:
-        widths = [11, 7, 48]
-        lines.append(_format_table_row(["Scope", "Total", "Path"], widths))
-        for row in config_files:
-            if not isinstance(row, dict):
-                continue
-            scope = str(row.get("scope") or "")
-            scope_label = f"[{scope}]" if scope else ""
-            path_display = str(row.get("path_display") or row.get("path") or "")
-            if not row.get("exists"):
-                path_display = f"{path_display} (missing)"
-            lines.append(
-                _format_table_row(
-                    [
-                        scope_label,
-                        str(row.get("server_count") or 0),
-                        path_display,
-                    ],
-                    widths,
-                ),
-            )
-    else:
-        lines.append("  (none)")
-
-    lines.append("")
-    lines.append("=== skill directories ===")
-    skill_dirs = overview.get("skill_directories")
-    if isinstance(skill_dirs, list) and skill_dirs:
-        widths = [11, 7, 48]
-        lines.append(_format_table_row(["Scope", "Total", "Path"], widths))
-        for row in skill_dirs:
-            if not isinstance(row, dict):
-                continue
-            scope = str(row.get("scope") or "")
-            scope_label = f"[{scope}]" if scope else ""
-            path_display = str(row.get("path_display") or row.get("path") or "")
-            if not row.get("exists"):
-                path_display = f"{path_display} (missing)"
-            lines.append(
-                _format_table_row(
-                    [
-                        scope_label,
-                        str(row.get("skill_count") or 0),
-                        path_display,
-                    ],
-                    widths,
-                ),
-            )
-    else:
-        lines.append("  (none)")
-
-    lines.append("")
-    lines.append("=== troubleshooting ===")
-    troubleshooting = overview.get("troubleshooting")
-    if isinstance(troubleshooting, dict):
-        lines.append(
-            "catalog: "
-            f"count={troubleshooting.get('catalog_tool_count')}  "
-            f"tracked={troubleshooting.get('tracked_catalog_tool_count')}",
-        )
-        lines.append(f"tier_db: {troubleshooting.get('tier_state_db')}")
-        lines.append(
-            "db_entities: "
-            f"tools={troubleshooting.get('db_tool_entities')}  "
-            f"skills={troubleshooting.get('db_skill_entities')}",
-        )
-        sources = troubleshooting.get("configured_sources")
-        if isinstance(sources, list) and sources:
-            lines.append(f"sources: {', '.join(str(item) for item in sources)}")
+    _append_overview_epoch(lines, overview)
+    _append_overview_tiers(lines, overview)
+    _append_overview_mcp_servers(lines, overview)
+    _append_overview_scoped_path_table(
+        lines,
+        title="=== mcp config files ===",
+        rows=overview.get("mcp_config_files"),
+        count_key="server_count",
+    )
+    _append_overview_scoped_path_table(
+        lines,
+        title="=== skill directories ===",
+        rows=overview.get("skill_directories"),
+        count_key="skill_count",
+    )
+    _append_overview_troubleshooting(lines, overview)
 
     return "\n".join(lines).rstrip() + "\n"

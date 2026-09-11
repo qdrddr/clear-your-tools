@@ -280,9 +280,9 @@ def test_transform_anthropic_request_passthrough_when_no_prune() -> None:
 
 
 def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> None:
-    skills_dir = tmp_path / "skills"
+    skills_dir = tmp_path / ".agents" / "skills"
     catalog_dir = tmp_path / "catalog"
-    skills_dir.mkdir()
+    skills_dir.mkdir(parents=True)
     (skills_dir / "create-hook.md").write_text(
         "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
         "# Create Hook\n\nAgent hooks for sessions.\n",
@@ -329,9 +329,9 @@ def test_transform_anthropic_request_proxy_appends_to_system(tmp_path: Path) -> 
 def test_transform_anthropic_request_inject_into_user_message(
     tmp_path: Path,
 ) -> None:
-    skills_dir = tmp_path / "skills"
+    skills_dir = tmp_path / ".agents" / "skills"
     catalog_dir = tmp_path / "catalog"
-    skills_dir.mkdir()
+    skills_dir.mkdir(parents=True)
     (skills_dir / "create-hook.md").write_text(
         "---\nname: create-hook\ndescription: Agent hooks for sessions.\n---\n"
         "# Create Hook\n\nAgent hooks for sessions.\n",

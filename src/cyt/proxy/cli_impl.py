@@ -896,7 +896,10 @@ _HANDLER_COMMANDS: dict[str, tuple[str, str]] = {
     ),
     "tiers": (
         "tiers_handler",
-        "usage: cyt tiers status [--workspace PATH] [--json] [--verbose] [--kind {all,tools,skills}] [--tier T0-T4] [--name TEXT] [--server NAME]",
+        (
+            "usage: cyt tiers status [--workspace PATH] [--json] [--verbose] "
+            "[--kind {all,tools,skills}] [--tier T0-T4] [--name TEXT] [--server NAME]"
+        ),
     ),
     "config": (
         "config_handler",

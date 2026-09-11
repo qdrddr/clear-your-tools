@@ -9,7 +9,7 @@ from cyt.common.paths import expand_home_path
 from cyt.skills.catalog import SkillEntryRef, doc_id_from_path
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill
-from cyt.tiers.models import SkillsTierPartition, Tier
+from cyt.tiers.models import EntityTierState, SkillsTierPartition, Tier
 
 _SKILL_DOC_ENTITY_PREFIX = "skill:doc:"
 
@@ -27,6 +27,7 @@ _SKILL_LOCATION_MARKERS = (
     "/.agents/skills/",
     "/skills-cursor/",
     "/.claude/skills/",
+    "/.codex/skills/",
 )
 
 
@@ -242,6 +243,7 @@ def skill_path_visible_for_agent(
         config,
         agent=resolved_agent,
         workspace_root=workspace_root,
+        include_platform_defaults=True,
     ):
         try:
             root_resolved = root.resolve()
@@ -321,7 +323,12 @@ def skill_lookup_directories(
     dirs: list[str] = []
     seen: set[str] = set()
     for agent in inject_via_agents():
-        for path in resolve_skill_directories(config, agent=agent, workspace_root=root):
+        for path in resolve_skill_directories(
+            config,
+            agent=agent,
+            workspace_root=root,
+            include_platform_defaults=True,
+        ):
             text = str(path)
             if text in seen:
                 continue
@@ -370,25 +377,15 @@ def resolve_skill_source_path(
     return _find_skill_path_by_doc_id(doc_id, config, workspace_root=workspace_root)
 
 
-def skill_display_name(
-    entity_id: str,
-    *,
-    config: dict[str, Any] | None = None,
-    doc_id: str | None = None,
-    source_path: str | None = None,
-    frontmatter_name: str | None = None,
-) -> str:
-    if frontmatter_name and frontmatter_name.strip():
-        return frontmatter_name.strip()
-    if doc_id and doc_id.strip():
-        return doc_id.strip()
-    if source_path:
-        path = Path(source_path)
-        if path.name.lower() in {"skill.md", "skills.md"} and path.parent.name:
-            return path.parent.name
-        stem = path.stem
-        if stem:
-            return stem
+def _skill_display_from_source_path(source_path: str) -> str | None:
+    path = Path(source_path)
+    if path.name.lower() in {"skill.md", "skills.md"} and path.parent.name:
+        return path.parent.name
+    stem = path.stem
+    return stem if stem else None
+
+
+def _skill_display_from_entity_id(entity_id: str) -> str:
     canonical_doc = skill_doc_id_from_entity_id(entity_id)
     if canonical_doc:
         return canonical_doc
@@ -403,75 +400,101 @@ def skill_display_name(
     return entity_id
 
 
-def normalize_skill_entity_states(
+def skill_display_name(
+    entity_id: str,
+    *,
+    config: dict[str, Any] | None = None,
+    doc_id: str | None = None,
+    source_path: str | None = None,
+    frontmatter_name: str | None = None,
+) -> str:
+    if frontmatter_name and frontmatter_name.strip():
+        return frontmatter_name.strip()
+    if doc_id and doc_id.strip():
+        return doc_id.strip()
+    if source_path:
+        from_path = _skill_display_from_source_path(source_path)
+        if from_path:
+            return from_path
+    return _skill_display_from_entity_id(entity_id)
+
+
+def _clone_skill_entity_state(canonical: str, state: EntityTierState) -> EntityTierState:
+    from cyt.tiers.models import EffectiveStats, EntityKind
+
+    return EntityTierState(
+        entity_id=canonical,
+        kind=EntityKind.SKILL,
+        stable_tier=state.stable_tier,
+        effective_tier=state.effective_tier,
+        overlap_tier=state.overlap_tier,
+        tier_since_epoch=state.tier_since_epoch,
+        temp_promotion_until_ms=state.temp_promotion_until_ms,
+        wake_lease_until_session=state.wake_lease_until_session,
+        sleep_cooldown_until_session=state.sleep_cooldown_until_session,
+        pipeline=state.pipeline,
+        stats=EffectiveStats(
+            candidates=state.stats.candidates,
+            injected=state.stats.injected,
+            used=state.stats.used,
+            used_without_injection=state.stats.used_without_injection,
+            optional_used=state.stats.optional_used,
+            shadow_hits=state.stats.shadow_hits,
+            shadow_evaluations=state.stats.shadow_evaluations,
+            last_seen_ms=state.stats.last_seen_ms,
+            requests_since_decay=state.stats.requests_since_decay,
+        ),
+    )
+
+
+def _merge_skill_entity_stats(target: EntityTierState, state: EntityTierState) -> None:
+    target.stats.candidates += state.stats.candidates
+    target.stats.injected += state.stats.injected
+    target.stats.used += state.stats.used
+    target.stats.used_without_injection += state.stats.used_without_injection
+    target.stats.optional_used += state.stats.optional_used
+    target.stats.shadow_hits += state.stats.shadow_hits
+    target.stats.shadow_evaluations += state.stats.shadow_evaluations
+    target.stats.last_seen_ms = max(
+        target.stats.last_seen_ms,
+        state.stats.last_seen_ms,
+    )
+
+
+def _reconcile_ephemeral_skill_state(
     states: dict[tuple[str, str], Any],
-) -> tuple[list[str], list[Any]]:
-    """Merge legacy ephemeral skill rows onto canonical entity ids."""
-    from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState
+    key: tuple[str, str],
+    state: EntityTierState,
+) -> tuple[list[str], set[str]]:
+    from cyt.tiers.models import EntityKind
 
     removed: list[str] = []
-    updated: list[EntityTierState] = []
     touched: set[str] = set()
+    if key[0] != EntityKind.SKILL or not isinstance(state, EntityTierState):
+        return removed, touched
+    if not is_ephemeral_skill_path(state.entity_id):
+        return removed, touched
 
-    for key, state in list(states.items()):
-        if key[0] != EntityKind.SKILL or not isinstance(state, EntityTierState):
-            continue
-        if not is_ephemeral_skill_path(state.entity_id):
-            continue
-        doc_id = resolve_skill_doc_id(state.entity_id)
-        canonical = resolve_skill_entity_id(state.entity_id, doc_id=doc_id)
-        if not canonical or canonical == state.entity_id:
-            removed.append(state.entity_id)
-            del states[key]
-            continue
-        canonical_key = (EntityKind.SKILL, canonical)
-        target = states.get(canonical_key)
-        if target is None:
-            target = EntityTierState(
-                entity_id=canonical,
-                kind=EntityKind.SKILL,
-                stable_tier=state.stable_tier,
-                effective_tier=state.effective_tier,
-                overlap_tier=state.overlap_tier,
-                tier_since_epoch=state.tier_since_epoch,
-                temp_promotion_until_ms=state.temp_promotion_until_ms,
-                wake_lease_until_session=state.wake_lease_until_session,
-                sleep_cooldown_until_session=state.sleep_cooldown_until_session,
-                pipeline=state.pipeline,
-                stats=EffectiveStats(
-                    candidates=state.stats.candidates,
-                    injected=state.stats.injected,
-                    used=state.stats.used,
-                    used_without_injection=state.stats.used_without_injection,
-                    optional_used=state.stats.optional_used,
-                    shadow_hits=state.stats.shadow_hits,
-                    shadow_evaluations=state.stats.shadow_evaluations,
-                    last_seen_ms=state.stats.last_seen_ms,
-                    requests_since_decay=state.stats.requests_since_decay,
-                ),
-            )
-            states[canonical_key] = target
-        else:
-            target.stats.candidates += state.stats.candidates
-            target.stats.injected += state.stats.injected
-            target.stats.used += state.stats.used
-            target.stats.used_without_injection += state.stats.used_without_injection
-            target.stats.optional_used += state.stats.optional_used
-            target.stats.shadow_hits += state.stats.shadow_hits
-            target.stats.shadow_evaluations += state.stats.shadow_evaluations
-            target.stats.last_seen_ms = max(
-                target.stats.last_seen_ms,
-                state.stats.last_seen_ms,
-            )
-        touched.add(canonical)
+    doc_id = resolve_skill_doc_id(state.entity_id)
+    canonical = resolve_skill_entity_id(state.entity_id, doc_id=doc_id)
+    if not canonical or canonical == state.entity_id:
         removed.append(state.entity_id)
         del states[key]
+        return removed, touched
 
-    for key, state in states.items():
-        if key[0] != EntityKind.SKILL or not isinstance(state, EntityTierState):
-            continue
-        if state.entity_id in touched:
-            updated.append(state)
+    canonical_key = (EntityKind.SKILL, canonical)
+    target = states.get(canonical_key)
+    if target is None:
+        states[canonical_key] = _clone_skill_entity_state(canonical, state)
+    else:
+        _merge_skill_entity_stats(target, state)
+    touched.add(canonical)
+    removed.append(state.entity_id)
+    del states[key]
+    return removed, touched
+
+
+def _dedupe_skill_entity_states(updated: list[EntityTierState]) -> list[EntityTierState]:
     deduped: list[EntityTierState] = []
     seen: set[str] = set()
     for state in updated:
@@ -479,7 +502,30 @@ def normalize_skill_entity_states(
             continue
         seen.add(state.entity_id)
         deduped.append(state)
-    return removed, deduped
+    return deduped
+
+
+def normalize_skill_entity_states(
+    states: dict[tuple[str, str], Any],
+) -> tuple[list[str], list[Any]]:
+    """Merge legacy ephemeral skill rows onto canonical entity ids."""
+    from cyt.tiers.models import EntityKind, EntityTierState
+
+    removed: list[str] = []
+    updated: list[EntityTierState] = []
+    touched: set[str] = set()
+
+    for key, state in list(states.items()):
+        batch_removed, batch_touched = _reconcile_ephemeral_skill_state(states, key, state)
+        removed.extend(batch_removed)
+        touched.update(batch_touched)
+
+    for key, state in states.items():
+        if key[0] != EntityKind.SKILL or not isinstance(state, EntityTierState):
+            continue
+        if state.entity_id in touched:
+            updated.append(state)
+    return removed, _dedupe_skill_entity_states(updated)
 
 
 def partition_skill_entries(

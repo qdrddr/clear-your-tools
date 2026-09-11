@@ -169,14 +169,12 @@ def test_purge_inactive_tool_sources_removes_stale_mcpc_rows(
     base_config: dict,
 ) -> None:
     cfg = _cyt_mcp_only_config(base_config)
-    manager._states[("tool", "mcpc:@fff/grep")] = manager._ensure_state(
-        "tool",
-        "mcpc:@fff/grep",
-    )
-    manager._states[("tool", "cyt_mcp:search")] = manager._ensure_state(
-        "tool",
-        "cyt_mcp:search",
-    )
+    grep_state = manager._ensure_state("tool", "mcpc:@fff/grep")
+    search_state = manager._ensure_state("tool", "cyt_mcp:search")
+    assert grep_state is not None
+    assert search_state is not None
+    manager._states[("tool", "mcpc:@fff/grep")] = grep_state
+    manager._states[("tool", "cyt_mcp:search")] = search_state
     manager.purge_inactive_tool_sources(cfg)
     assert ("tool", "mcpc:@fff/grep") not in manager._states
     assert ("tool", "cyt_mcp:search") in manager._states
@@ -193,14 +191,12 @@ def test_purge_removes_test_fixture_tools_not_in_loaded_catalog(
         "cyt.tools.master_catalog.get_master_tool_catalog",
         lambda _config, blocking=False: catalog,
     )
-    manager._states[("tool", "cyt_mcp:mcp__x__tool")] = manager._ensure_state(
-        "tool",
-        "cyt_mcp:mcp__x__tool",
-    )
-    manager._states[("tool", "cyt_mcp:codebase-memory_search_graph")] = manager._ensure_state(
-        "tool",
-        "cyt_mcp:codebase-memory_search_graph",
-    )
+    stale_state = manager._ensure_state("tool", "cyt_mcp:mcp__x__tool")
+    active_state = manager._ensure_state("tool", "cyt_mcp:codebase-memory_search_graph")
+    assert stale_state is not None
+    assert active_state is not None
+    manager._states[("tool", "cyt_mcp:mcp__x__tool")] = stale_state
+    manager._states[("tool", "cyt_mcp:codebase-memory_search_graph")] = active_state
     manager.purge_inactive_tool_sources(cfg)
     assert ("tool", "cyt_mcp:mcp__x__tool") not in manager._states
     assert ("tool", "cyt_mcp:codebase-memory_search_graph") in manager._states

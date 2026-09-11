@@ -192,6 +192,10 @@ def _load_source_tools(
 
         return get_definitions_catalog(config, blocking=blocking) or []
     if source == "executor":
+        from cyt.config import uses_executor_tool_catalog
+
+        if not uses_executor_tool_catalog(config):
+            return []
         from cyt.executor.http import get_executor_catalog
 
         return get_executor_catalog(config, allow_prompt=False, blocking=blocking) or []

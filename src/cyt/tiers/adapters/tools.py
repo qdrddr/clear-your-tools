@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from typing import Any
 
 from cyt.config.policy_catalog import ToolPolicyRef
 from cyt.indexer.policies import PolicyContext
-from cyt.tiers.models import Tier, ToolsTierApplyResult
+from cyt.tiers.models import EffectiveStats, Tier, ToolsTierApplyResult
 
 
 def entity_id_catalog_source(entity_id: str) -> str:
@@ -38,7 +39,7 @@ def tool_entity_tracked_for_config(entity_id: str, config: dict[str, Any] | None
 
 
 def filter_tools_for_tier_tracking(
-    tools: list[dict[str, Any]],
+    tools: Sequence[object],
     config: dict[str, Any],
 ) -> list[dict[str, Any]]:
     allowed = configured_tool_catalog_sources(config)
@@ -78,7 +79,7 @@ def resolve_tracked_catalog_entity_ids(
     return frozenset(ids)
 
 
-def tool_entity_has_tier_engagement(stats: Any) -> bool:
+def tool_entity_has_tier_engagement(stats: EffectiveStats) -> bool:
     """True when tier statistics show the tool was injected, used, or shadow-scored."""
     return (
         float(getattr(stats, "injected", 0) or 0) > 0
@@ -163,7 +164,7 @@ def canonical_tool_entity_id(entity_id: str) -> str:
     return resolved if resolved and not resolved.startswith("unknown:") else text
 
 
-def _merge_tool_stats(target: Any, source: Any) -> None:
+def _merge_tool_stats(target: EffectiveStats, source: EffectiveStats) -> None:
     target.candidates += source.candidates
     target.injected += source.injected
     target.used += source.used

@@ -158,12 +158,7 @@ def _mcpc_session_from_tool_name(tool_name: str) -> str | None:
     return session.strip() or None
 
 
-def _mcpc_server_name(tool_name: str, config: dict[str, Any] | None) -> str | None:
-    session = _mcpc_session_from_tool_name(tool_name)
-    if session is None:
-        return None
-    if config is None:
-        return _normalize_server_name(session)
+def _read_mcpc_catalog_payload(config: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from cyt.mcpc.catalog_disk import normalize_mcpc_executable_slug, read_disk_catalog
         from cyt.mcpc.runtime import tools_hook_mcpc_executable
@@ -171,25 +166,47 @@ def _mcpc_server_name(tool_name: str, config: dict[str, Any] | None) -> str | No
         slug = normalize_mcpc_executable_slug(tools_hook_mcpc_executable(config))
         payload = read_disk_catalog(slug)
     except Exception:
-        payload = None
-    if isinstance(payload, dict):
-        sessions = payload.get("sessions")
-        if isinstance(sessions, dict):
-            meta = sessions.get(session)
-            if isinstance(meta, dict):
-                server_name = str(meta.get("server_name") or "").strip()
-                if server_name:
-                    return server_name
-        tools = payload.get("tools")
-        if isinstance(tools, list):
-            for tool in tools:
-                if not isinstance(tool, dict):
-                    continue
-                if str(tool.get("name") or "").strip() != tool_name:
-                    continue
-                server_name = str(tool.get("server_name") or "").strip()
-                if server_name:
-                    return server_name
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _server_name_from_mcpc_catalog(
+    payload: dict[str, Any],
+    session: str,
+    tool_name: str,
+) -> str | None:
+    sessions = payload.get("sessions")
+    if isinstance(sessions, dict):
+        meta = sessions.get(session)
+        if isinstance(meta, dict):
+            server_name = str(meta.get("server_name") or "").strip()
+            if server_name:
+                return server_name
+    tools = payload.get("tools")
+    if not isinstance(tools, list):
+        return None
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        if str(tool.get("name") or "").strip() != tool_name:
+            continue
+        server_name = str(tool.get("server_name") or "").strip()
+        if server_name:
+            return server_name
+    return None
+
+
+def _mcpc_server_name(tool_name: str, config: dict[str, Any] | None) -> str | None:
+    session = _mcpc_session_from_tool_name(tool_name)
+    if session is None:
+        return None
+    if config is None:
+        return _normalize_server_name(session)
+    payload = _read_mcpc_catalog_payload(config)
+    if payload is not None:
+        server_name = _server_name_from_mcpc_catalog(payload, session, tool_name)
+        if server_name:
+            return server_name
     return _normalize_server_name(session)
 
 
@@ -223,6 +240,62 @@ def resolve_tool_catalog_source_name(entity_id: str, tool_name: str) -> str:
     return resolve_tool_catalog_source({"name": tool_name or _name})
 
 
+def _resolve_tool_mcp_server(
+    catalog_source: str,
+    tool_name: str,
+    config: dict[str, Any] | None,
+) -> str | None:
+    from cyt.permissions.match import split_catalog_tool_name
+    from cyt.tool_examples.identity import resolve_mcp_server_and_tool
+
+    if catalog_source == "mcpc":
+        return _mcpc_server_name(tool_name, config)
+    if catalog_source != "cyt_mcp":
+        return None
+    parts = split_catalog_tool_name(tool_name)
+    if parts is not None:
+        return parts[0]
+    server, _bare = resolve_mcp_server_and_tool({"name": tool_name})
+    return None if server == "unknown" else server
+
+
+def _attach_mcp_server_origin_fields(
+    fields: dict[str, Any],
+    server: str,
+    *,
+    resolved_agent: str,
+    workspace_root: Path | None,
+) -> None:
+    fields["mcp_server"] = server
+    scope, path, line = resolve_mcp_server_origin(
+        server,
+        agent=resolved_agent,
+        workspace_root=workspace_root,
+    )
+    if scope:
+        fields["scope"] = scope
+    if path:
+        fields["source_path"] = path
+    if line:
+        fields["source_line"] = line
+
+
+def _attach_aggregator_origin_fields(
+    fields: dict[str, Any],
+    *,
+    resolved_agent: str,
+    workspace_root: Path | None,
+) -> None:
+    scope, path = resolve_aggregator_config_origin(
+        workspace_root=workspace_root,
+        agent=resolved_agent,
+    )
+    if scope and "scope" not in fields:
+        fields["scope"] = scope
+    if path:
+        fields["source_path"] = path
+
+
 def resolve_tool_origin_fields(
     entity_id: str,
     *,
@@ -230,50 +303,28 @@ def resolve_tool_origin_fields(
     workspace_root: Path | None = None,
     agent: str | None = None,
 ) -> dict[str, Any]:
-    from cyt.permissions.match import split_catalog_tool_name
     from cyt.permissions.paths import resolve_inventory_agent
-    from cyt.tool_examples.identity import resolve_mcp_server_and_tool
 
     _source, tool_name = parse_tool_entity_id(entity_id)
     catalog_source = resolve_tool_catalog_source_name(entity_id, tool_name)
     fields: dict[str, Any] = {"catalog_source": catalog_source}
 
     resolved_agent = resolve_inventory_agent(agent)
-    server: str | None = None
-    if catalog_source == "mcpc":
-        server = _mcpc_server_name(tool_name, config)
-    elif catalog_source == "cyt_mcp":
-        parts = split_catalog_tool_name(tool_name)
-        if parts is not None:
-            server = parts[0]
-        else:
-            server, _bare = resolve_mcp_server_and_tool({"name": tool_name})
-            if server == "unknown":
-                server = None
-
+    server = _resolve_tool_mcp_server(catalog_source, tool_name, config)
     if server:
-        fields["mcp_server"] = server
-        scope, path, line = resolve_mcp_server_origin(
+        _attach_mcp_server_origin_fields(
+            fields,
             server,
-            agent=resolved_agent,
+            resolved_agent=resolved_agent,
             workspace_root=workspace_root,
         )
-        if scope:
-            fields["scope"] = scope
-        if path:
-            fields["source_path"] = path
-        if line:
-            fields["source_line"] = line
 
     if "source_path" not in fields:
-        scope, path = resolve_aggregator_config_origin(
+        _attach_aggregator_origin_fields(
+            fields,
+            resolved_agent=resolved_agent,
             workspace_root=workspace_root,
-            agent=resolved_agent,
         )
-        if scope and "scope" not in fields:
-            fields["scope"] = scope
-        if path:
-            fields["source_path"] = path
 
     return fields
 

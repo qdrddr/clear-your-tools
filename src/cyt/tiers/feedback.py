@@ -16,7 +16,6 @@ def record_tools_injected_feedback(
     try:
         from cyt.config import load_config
         from cyt.hook.workspace_config import hook_workspace_from_config
-        from cyt.tiers.adapters.tools import stamp_tool_catalog_source
         from cyt.tiers.config import tiers_active
         from cyt.tiers.manager import get_tier_manager
 
@@ -105,6 +104,40 @@ def record_skills_injected_feedback(
         return
 
 
+def _skill_paths_from_skills_md(skills_final_md: str) -> list[str]:
+    paths: list[str] = []
+    for line in skills_final_md.splitlines():
+        stripped = line.strip()
+        if 'path="' not in stripped:
+            continue
+        start = stripped.find('path="') + len('path="')
+        end = stripped.find('"', start)
+        if end > start:
+            paths.append(stripped[start:end])
+    return paths
+
+
+def _record_skill_injection_paths(paths: list[str], config: dict[str, Any]) -> None:
+    from cyt.hook.workspace_config import hook_workspace_from_config
+    from cyt.tiers.adapters.skills import is_ephemeral_skill_path, tier_entity_id_for_skill
+    from cyt.tiers.config import tiers_active
+    from cyt.tiers.manager import get_tier_manager
+
+    if not tiers_active(config, kind="skill"):
+        return
+    manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
+    for path in paths:
+        if is_ephemeral_skill_path(path):
+            continue
+        entity_id = tier_entity_id_for_skill(path)
+        if not entity_id:
+            continue
+        manager.record_skills_injected(
+            [type("Match", (), {"file_path": entity_id, "doc_id": None})()],
+            config,
+        )
+
+
 def record_skills_injected_feedback_from_md(
     skills_final_md: str | None,
     *,
@@ -112,35 +145,11 @@ def record_skills_injected_feedback_from_md(
 ) -> None:
     if not skills_final_md or config is None:
         return
-    paths: list[str] = []
-    for line in skills_final_md.splitlines():
-        stripped = line.strip()
-        if 'path="' in stripped:
-            start = stripped.find('path="') + len('path="')
-            end = stripped.find('"', start)
-            if end > start:
-                paths.append(stripped[start:end])
+    paths = _skill_paths_from_skills_md(skills_final_md)
     if not paths:
         return
     try:
-        from cyt.hook.workspace_config import hook_workspace_from_config
-        from cyt.tiers.adapters.skills import is_ephemeral_skill_path, tier_entity_id_for_skill
-        from cyt.tiers.config import tiers_active
-        from cyt.tiers.manager import get_tier_manager
-
-        if not tiers_active(config, kind="skill"):
-            return
-        manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
-        for path in paths:
-            if is_ephemeral_skill_path(path):
-                continue
-            entity_id = tier_entity_id_for_skill(path)
-            if not entity_id:
-                continue
-            manager.record_skills_injected(
-                [type("Match", (), {"file_path": entity_id, "doc_id": None})()],
-                config,
-            )
+        _record_skill_injection_paths(paths, config)
     except Exception:
         return
 

@@ -11,8 +11,8 @@ from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
 from cyt.tiers.status_detail import (
     build_kind_detail,
     effective_tier_for,
-    enrich_tool_detail_with_catalog_discoveries,
     enrich_skill_detail_with_workspace_discoveries,
+    enrich_tool_detail_with_catalog_discoveries,
     entity_status_dict,
     filter_skill_detail_by_agent,
 )
@@ -154,11 +154,7 @@ def test_enrich_tool_detail_adds_loaded_catalog_tools() -> None:
         catalog_tools=catalog,
         session_id=1,
     )
-    entity_ids = {
-        row["entity_id"]
-        for items in enriched["by_tier"].values()
-        for row in items
-    }
+    entity_ids = {row["entity_id"] for items in enriched["by_tier"].values() for row in items}
     assert entity_ids == {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"}
     assert enriched["histogram"]["T3"] == 1
     assert enriched["histogram"]["T2"] == 1
@@ -245,7 +241,10 @@ def test_enrich_skill_detail_adds_workspace_discovered_skill(tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    config = {"skills": {"directories": [".agents/skills"]}, "agents": isolated_skills_agents_block()}
+    config = {
+        "skills": {"directories": [".agents/skills"]},
+        "agents": isolated_skills_agents_block(),
+    }
     detail = build_kind_detail({}, kind=EntityKind.SKILL, cfg=_cfg(), session_id=1)
     enriched = enrich_skill_detail_with_workspace_discoveries(
         detail,
@@ -308,7 +307,9 @@ def test_enrich_skill_detail_skips_tracked_and_outside_workspace(tmp_path: Path)
 
     assert enriched["histogram"]["T2"] == 1
     assert enriched["histogram"]["T0"] == 0
-    labels = {item.get("name") for tier_items in enriched["by_tier"].values() for item in tier_items}
+    labels = {
+        item.get("name") for tier_items in enriched["by_tier"].values() for item in tier_items
+    }
     assert "tracked-skill" in labels
     assert "outside-skill" not in labels
 
@@ -333,7 +334,10 @@ def test_filter_skill_detail_by_agent_excludes_other_agent_workspace_skills(
         encoding="utf-8",
     )
 
-    config = {"skills": {"directories": [".agents/skills"]}, "agents": isolated_skills_agents_block()}
+    config = {
+        "skills": {"directories": [".agents/skills"]},
+        "agents": isolated_skills_agents_block(),
+    }
     detail = {
         "histogram": {"T0": 2, "T1": 0, "T2": 0, "T3": 0, "T4": 0},
         "by_tier": {

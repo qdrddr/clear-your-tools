@@ -94,10 +94,9 @@ def test_filter_tools_excludes_dormant_when_enabled(tier_config: dict, project_r
         "cyt_catalog_source": "definitions",
     }
     manager = TierManager(project_root, str(project_root / "tier_state.db"))
-    manager._states[("tool", "definitions:dormant_tool")] = manager._ensure_state(
-        "tool",
-        "definitions:dormant_tool",
-    )
+    dormant_state = manager._ensure_state("tool", "definitions:dormant_tool")
+    assert dormant_state is not None
+    manager._states[("tool", "definitions:dormant_tool")] = dormant_state
     dormant = manager._states[("tool", "definitions:dormant_tool")]
     dormant.stable_tier = Tier.DORMANT
     dormant.effective_tier = Tier.DORMANT

@@ -65,7 +65,8 @@ class StatusFilters:
         scope_raw = getattr(args, "scope", None)
         scope = (
             str(scope_raw).strip().lower()
-            if isinstance(scope_raw, str) and str(scope_raw).strip().lower() in {"user", "workspace"}
+            if isinstance(scope_raw, str)
+            and str(scope_raw).strip().lower() in {"user", "workspace"}
             else None
         )
         path_value = str(path_root) if path_root is not None else None
@@ -280,6 +281,37 @@ def filter_status_entities(
     return out
 
 
+_FILTERED_JSON_HEADER_KEYS = (
+    "project_id",
+    "root_path",
+    "agent",
+    "epoch_id",
+    "session_id",
+    "epoch_start_ms",
+    "last_request_ms",
+)
+
+
+def _entity_for_filtered_json(entity: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in entity.items() if key != "tier_bucket"}
+
+
+def _filtered_status_view(
+    payload: dict[str, Any],
+    *,
+    filtered: list[dict[str, Any]],
+    entity_total: int,
+    filters: StatusFilters,
+) -> dict[str, Any]:
+    view = {key: payload[key] for key in _FILTERED_JSON_HEADER_KEYS if key in payload}
+    view["mode"] = "filtered"
+    view["filters"] = filters.as_dict()
+    view["entity_total"] = entity_total
+    view["entity_count"] = len(filtered)
+    view["entities"] = [_entity_for_filtered_json(entity) for entity in filtered]
+    return view
+
+
 def apply_status_view(payload: dict[str, Any], filters: StatusFilters) -> dict[str, Any]:
     if filters.overview_mode:
         view = dict(payload)
@@ -287,12 +319,17 @@ def apply_status_view(payload: dict[str, Any], filters: StatusFilters) -> dict[s
         return view
     entities = flatten_status_entities(payload)
     filtered = filter_status_entities(entities, filters)
+    if filters.active:
+        return _filtered_status_view(
+            payload,
+            filtered=filtered,
+            entity_total=len(entities),
+            filters=filters,
+        )
     view = dict(payload)
     view["entities"] = filtered
     view["entity_total"] = len(entities)
     view["entity_count"] = len(filtered)
-    if filters.active:
-        view["filters"] = filters.as_dict()
     return view
 
 
@@ -447,7 +484,9 @@ def _show_entity_detail(
         return True
     if filters.name is not None:
         return True
-    return filters.active and entity_count == 1
+    if filters.path is not None and entity_count == 1:
+        return True
+    return False
 
 
 def _append_grouped_entity_summaries(
@@ -563,13 +602,12 @@ def format_status_text(
                 lines.append(f"=== {kind}s ===")
             lines.append(format_entity_detail(entity))
             lines.append("")
-    elif filters.server is not None or filters.path is not None:
-        include_source_path = filters.path is not None and not detail
+    elif filters.path is not None:
         _append_compact_entity_summaries(
             lines,
             entities,
-            include_source_path=include_source_path,
-            omit_kind_prefix=filters.path is not None,
+            include_source_path=not detail,
+            omit_kind_prefix=True,
         )
     else:
         _append_grouped_entity_summaries(lines, entities)

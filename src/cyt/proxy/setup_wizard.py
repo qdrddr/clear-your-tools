@@ -1875,6 +1875,69 @@ def _prompt_env_secrets(
         print("No new keys written.")
 
 
+def _prompt_pipeline_pruner_models(
+    pipeline: list[str],
+    existing: dict[str, Any],
+    max_pruner_input_cost: float | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    reranker_model: dict[str, Any] | None = None
+    llm_pruner_model: dict[str, Any] | None = None
+    if "rerank" in pipeline:
+        print("\n--- Reranker model ---")
+        reranker_model = _select_model_from_catalog(
+            "rerankers",
+            label="reranker model",
+            prompt_key_var=True,
+            max_input_cost_per_token=max_pruner_input_cost,
+            prompt_custom_base_url=True,
+            config=existing,
+        )
+    if "llm" in pipeline:
+        print("\n--- LLM pruner model ---")
+        llm_pruner_model = _select_model_from_catalog(
+            "llm",
+            label="LLM pruner model",
+            prompt_key_var=True,
+            max_input_cost_per_token=max_pruner_input_cost,
+            prompt_custom_base_url=True,
+            config=existing,
+        )
+    return reranker_model, llm_pruner_model
+
+
+def _maybe_update_workspace_skills_config(skills_overlay: dict[str, Any]) -> None:
+    if skills_overlay.get("enabled") is not True:
+        return
+    from cyt.hook.install_scope import CytInstallScope
+    from cyt.skills.directories import ensure_workspace_skills_config
+
+    scope = CytInstallScope.from_cwd()
+    if not scope.has_workspace or scope.workspace_root is None:
+        return
+    if ensure_workspace_skills_config(scope.workspace_root):
+        ws_config = scope.workspace_all_agents_cyt_config_path()
+        print(f"Updated workspace skills config in {ws_config} (.agents/skills)")
+
+
+def _finalize_setup_env(merged: dict[str, Any], config_path: Path) -> None:
+    from cyt.launch.secrets import keyring_backend_available
+
+    if keyring_backend_available():
+        print(
+            "\nOS keyring is available; skipping .env file setup. "
+            "Keys are resolved from the keyring at runtime.",
+        )
+        return
+    if _prompt_yes_no("\nCreate a .env file for API keys?", default_yes=True):
+        env_path = _prompt("Path for .env file", str(USER_ENV_PATH))
+        _prompt_env_secrets(merged.get("models", {}), Path(env_path), config=merged)
+        return
+    print(
+        "Skipping .env. Export keys in your shell instead; "
+        "the proxy loads ./.env then ~/.config/cyt/.env at runtime.",
+    )
+
+
 def run_setup(config_path: Path) -> None:
     """Run the interactive setup wizard and write config (and optional .env)."""
     config_path = config_path.expanduser()
@@ -1914,29 +1977,11 @@ def run_setup(config_path: Path) -> None:
             f"(max {max_usd} / 1M input tokens).",
         )
 
-    reranker_model: dict[str, Any] | None = None
-    llm_pruner_model: dict[str, Any] | None = None
-
-    if "rerank" in pipeline:
-        print("\n--- Reranker model ---")
-        reranker_model = _select_model_from_catalog(
-            "rerankers",
-            label="reranker model",
-            prompt_key_var=True,
-            max_input_cost_per_token=max_pruner_input_cost,
-            prompt_custom_base_url=True,
-            config=existing,
-        )
-    if "llm" in pipeline:
-        print("\n--- LLM pruner model ---")
-        llm_pruner_model = _select_model_from_catalog(
-            "llm",
-            label="LLM pruner model",
-            prompt_key_var=True,
-            max_input_cost_per_token=max_pruner_input_cost,
-            prompt_custom_base_url=True,
-            config=existing,
-        )
+    reranker_model, llm_pruner_model = _prompt_pipeline_pruner_models(
+        pipeline,
+        existing,
+        max_pruner_input_cost,
+    )
 
     print("\n--- Tool policies ---")
     system_policy = _prompt_policy(
@@ -1986,31 +2031,8 @@ def run_setup(config_path: Path) -> None:
     merged = merge_setup_overlay(existing, overlay)
     if save_user_config(config_path, merged, apply_bundled_sections=True):
         print(f"\nWrote {config_path}")
-    if skills_overlay.get("enabled") is True:
-        from cyt.hook.install_scope import CytInstallScope
-        from cyt.skills.directories import ensure_workspace_skills_config
-
-        scope = CytInstallScope.from_cwd()
-        if scope.has_workspace and scope.workspace_root is not None:
-            if ensure_workspace_skills_config(scope.workspace_root):
-                ws_config = scope.workspace_all_agents_cyt_config_path()
-                print(f"Updated workspace skills config in {ws_config} (.agents/skills)")
-
-    from cyt.launch.secrets import keyring_backend_available
-
-    if keyring_backend_available():
-        print(
-            "\nOS keyring is available; skipping .env file setup. "
-            "Keys are resolved from the keyring at runtime.",
-        )
-    elif _prompt_yes_no("\nCreate a .env file for API keys?", default_yes=True):
-        env_path = _prompt("Path for .env file", str(USER_ENV_PATH))
-        _prompt_env_secrets(merged.get("models", {}), Path(env_path), config=merged)
-    else:
-        print(
-            "Skipping .env. Export keys in your shell instead; "
-            "the proxy loads ./.env then ~/.config/cyt/.env at runtime.",
-        )
+    _maybe_update_workspace_skills_config(skills_overlay)
+    _finalize_setup_env(merged, config_path)
 
     print("\nProxy endpoint(s):")
     print_proxy_urls(reverse_port, endpoints)

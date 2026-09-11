@@ -292,8 +292,8 @@ def resolve_tier_status_agent(
 
     from cyt.skills.agents import resolve_skills_agent
 
-    resolved = resolve_skills_agent()
-    if resolved is not None:
-        return resolved
+    skills_agent = resolve_skills_agent()
+    if skills_agent is not None:
+        return skills_agent
 
     return "cursor"

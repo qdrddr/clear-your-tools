@@ -15,10 +15,7 @@ from cyt.tiers.store import TierStore
 
 
 def _mock_tracked_catalog(monkeypatch: MonkeyPatch, *tool_names: str) -> None:
-    catalog = [
-        {"name": name, "cyt_catalog_source": "cyt_mcp"}
-        for name in tool_names
-    ]
+    catalog = [{"name": name, "cyt_catalog_source": "cyt_mcp"} for name in tool_names]
     monkeypatch.setattr(
         "cyt.tools.master_catalog.get_master_tool_catalog",
         lambda config, blocking=False: catalog,
@@ -199,6 +196,12 @@ skills:
     assert payload["entity_total"] == 2
     assert payload["filters"] == {"kind": "tools", "tier": "T3"}
     assert payload["entities"][0]["entity_id"] == "cyt_mcp:search"
+    assert payload["mode"] == "filtered"
+    assert "overview" not in payload
+    assert "skills" not in payload
+    assert "tools" not in payload
+    assert "histogram" not in payload
+    assert len(payload["entities"]) == 1
 
 
 def test_tiers_status_default_human_shows_overview(

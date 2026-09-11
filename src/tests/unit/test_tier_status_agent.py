@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from cyt.tiers.manager import _managers
 
 
 @pytest.fixture(autouse=True)
-def clear_tier_managers() -> None:
+def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
     yield
     _managers.clear()
@@ -50,9 +51,7 @@ def _write_workspace_mcp_config(tmp_path: Path, *, default_agent: str = "cursor"
 def test_resolve_tier_status_agent_uses_workspace_mcp_config_default(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     _write_workspace_mcp_config(tmp_path, default_agent="cursor")
-    assert (
-        resolve_tier_status_agent({}, workspace_root=tmp_path, explicit=None) == "cursor"
-    )
+    assert resolve_tier_status_agent({}, workspace_root=tmp_path, explicit=None) == "cursor"
 
 
 def test_tiers_status_defaults_to_mcp_config_agent_and_filters_claude_skills(

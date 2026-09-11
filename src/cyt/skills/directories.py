@@ -13,9 +13,7 @@ _AGENT_SKILL_PAIRS: dict[str, tuple[str, str]] = {
     "codex": (".codex/skills", "~/.codex/skills"),
 }
 
-_GLOBAL_SKILL_PAIRS: tuple[tuple[str, str], ...] = (
-    (WORKSPACE_SKILLS_DIR, "~/.agents/skills"),
-)
+_GLOBAL_SKILL_PAIRS: tuple[tuple[str, str], ...] = ((WORKSPACE_SKILLS_DIR, "~/.agents/skills"),)
 
 
 def merge_skills_directory_lists(
@@ -70,6 +68,7 @@ def resolve_skill_directories(
     *,
     agent: str | None,
     workspace_root: Path | None,
+    include_platform_defaults: bool = False,
 ) -> list[Path]:
     """Return deduped absolute skill roots for *agent* and *workspace_root*."""
     from cyt.config import inject_via_agents, skills_directories_for_agent
@@ -83,14 +82,15 @@ def resolve_skill_directories(
         for raw in skills_directories_for_agent(config, agent=resolved_agent):
             _append_directory(directories, seen, raw, workspace_root)
 
+    if not include_platform_defaults:
+        return directories
+
     for project_rel, home_rel in _GLOBAL_SKILL_PAIRS:
         if workspace_root is not None:
             _append_directory(directories, seen, project_rel, workspace_root)
         _append_directory(directories, seen, home_rel, workspace_root)
 
     for resolved_agent in agents:
-        if resolved_agent is None:
-            continue
         pair = _AGENT_SKILL_PAIRS.get(resolved_agent)
         if pair is None:
             continue

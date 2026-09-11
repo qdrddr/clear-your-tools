@@ -45,13 +45,7 @@ def test_resolve_mcp_server_origin_prefers_workspace(tmp_path: Path) -> None:
 def test_mcp_server_line_in_config_finds_key_line(tmp_path: Path) -> None:
     config_path = tmp_path / "cursor.json"
     config_path.write_text(
-        "{\n"
-        '  "mcpServers": {\n'
-        '    "demo-server": {\n'
-        '      "command": "echo"\n'
-        "    }\n"
-        "  }\n"
-        "}\n",
+        '{\n  "mcpServers": {\n    "demo-server": {\n      "command": "echo"\n    }\n  }\n}\n',
         encoding="utf-8",
     )
     assert _mcp_server_line_in_config(config_path, "demo-server") == 3
@@ -64,13 +58,7 @@ def test_resolve_tool_origin_fields_includes_server_line(tmp_path: Path) -> None
     mcp_defs = repo / ".agents" / "cyt" / "config" / "mcp" / "cursor.json"
     mcp_defs.parent.mkdir(parents=True)
     mcp_defs.write_text(
-        "{\n"
-        '  "mcpServers": {\n'
-        '    "codebase-memory": {\n'
-        '      "command": "echo"\n'
-        "    }\n"
-        "  }\n"
-        "}\n",
+        '{\n  "mcpServers": {\n    "codebase-memory": {\n      "command": "echo"\n    }\n  }\n}\n',
         encoding="utf-8",
     )
 
@@ -87,7 +75,10 @@ def test_resolve_tool_origin_fields_includes_server_line(tmp_path: Path) -> None
 def test_resolve_tool_origin_fields_for_mcpc_tool(tmp_path: Path) -> None:
     ws_config = tmp_path / ".agents" / "cyt" / "config" / "mcp-config.yaml"
     ws_config.parent.mkdir(parents=True)
-    ws_config.write_text("catalog_scope: workspace\nagents:\n  cursor: mcp/cursor.json\n", encoding="utf-8")
+    ws_config.write_text(
+        "catalog_scope: workspace\nagents:\n  cursor: mcp/cursor.json\n",
+        encoding="utf-8",
+    )
 
     from cyt.hook.install_scope import CytInstallScope
 
