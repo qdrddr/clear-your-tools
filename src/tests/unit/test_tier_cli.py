@@ -133,9 +133,9 @@ skills:
     by_tier_total = sum(len(items) for items in tools["by_tier"].values())
     assert hist_total == by_tier_total
 
-    assert payload["entity_total"] == 2
-    assert payload["entity_count"] == 2
-    assert len(payload["entities"]) == 2
+    assert payload["mode"] == "overview"
+    assert isinstance(payload.get("overview"), dict)
+    assert "mcp_servers" in payload["overview"]
 
 
 def test_tiers_status_json_filters_by_kind_and_name(
@@ -201,7 +201,7 @@ skills:
     assert payload["entities"][0]["entity_id"] == "cyt_mcp:search"
 
 
-def test_tiers_status_default_human_shows_grouped_summaries(
+def test_tiers_status_default_human_shows_overview(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -258,15 +258,12 @@ skills:
     out = capsys.readouterr().out
     assert f"project_id: {project_id}" in out
     assert f"root_path: {tmp_path}" in out
-    assert "=== tools ===" in out
-    assert "=== skills ===" in out
-    assert "-- Effective T1 --" in out
-    assert "-- Effective T3 --" in out
-    assert "  -- Base T1 --" in out
-    assert "  -- Base T2 --" in out
-    assert "    explore" in out
-    assert "    search" in out
-    assert "stats:" not in out
+    assert "=== mcp servers ===" in out
+    assert "=== skill directories ===" in out
+    assert "=== troubleshooting ===" in out
+    assert "=== tools ===" not in out
+    assert "search" not in out
+    assert "explore" not in out
 
 
 def test_tiers_status_human_lists_entities(

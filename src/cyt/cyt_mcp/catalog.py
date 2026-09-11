@@ -222,6 +222,22 @@ def _tool_server_key(tool: dict[str, Any]) -> str:
     return ""
 
 
+def tool_server_key(tool: dict[str, Any]) -> str:
+    """Public alias for catalog tool server grouping."""
+    return _tool_server_key(tool)
+
+
+def group_tools_by_mcp_server(tools: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Group normalized catalog tools by MCP server key."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        key = _tool_server_key(tool) or "(unknown)"
+        grouped.setdefault(key, []).append(tool)
+    return grouped
+
+
 def _disk_catalog_tools(cache_key: _CytMcpCacheKey) -> list[dict[str, Any]]:
     envelope = read_disk_catalog(cache_key.slug)
     if envelope is None:

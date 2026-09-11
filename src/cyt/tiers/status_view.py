@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
@@ -18,9 +19,18 @@ class StatusFilters:
     name: str | None = None
     server: str | None = None
     agent: str | None = None
+    path: str | None = None
+    path_display: str | None = None
+    scope: str | None = None
 
     @classmethod
-    def from_args(cls, args: object) -> StatusFilters:
+    def from_args(
+        cls,
+        args: object,
+        *,
+        path_root: Path | None = None,
+        path_display: str | None = None,
+    ) -> StatusFilters:
         kind = str(getattr(args, "kind", "all") or "all").lower()
         if kind not in {"all", "tools", "skill", "skills", "tool"}:
             kind = "all"
@@ -44,22 +54,46 @@ class StatusFilters:
         )
         if server is not None and kind == "all":
             kind = "tools"
+        if path_root is not None and kind == "all":
+            kind = "skills"
         agent_raw = getattr(args, "agent", None)
         agent = (
             str(agent_raw).strip().lower()
             if isinstance(agent_raw, str) and agent_raw.strip()
             else None
         )
-        return cls(kind=kind, tier=tier, name=name, server=server, agent=agent)
+        scope_raw = getattr(args, "scope", None)
+        scope = (
+            str(scope_raw).strip().lower()
+            if isinstance(scope_raw, str) and str(scope_raw).strip().lower() in {"user", "workspace"}
+            else None
+        )
+        path_value = str(path_root) if path_root is not None else None
+        return cls(
+            kind=kind,
+            tier=tier,
+            name=name,
+            server=server,
+            agent=agent,
+            path=path_value,
+            path_display=path_display,
+            scope=scope,
+        )
+
+    @property
+    def overview_mode(self) -> bool:
+        return (
+            self.kind == "all"
+            and self.tier is None
+            and self.name is None
+            and self.server is None
+            and self.path is None
+            and self.scope is None
+        )
 
     @property
     def active(self) -> bool:
-        return (
-            self.kind != "all"
-            or self.tier is not None
-            or self.name is not None
-            or self.server is not None
-        )
+        return not self.overview_mode
 
     def as_dict(self) -> dict[str, str]:
         out: dict[str, str] = {}
@@ -73,6 +107,12 @@ class StatusFilters:
             out["server"] = self.server
         if self.agent is not None:
             out["agent"] = self.agent
+        if self.path_display is not None:
+            out["path"] = self.path_display
+        elif self.path is not None:
+            out["path"] = self.path
+        if self.scope is not None:
+            out["scope"] = self.scope
         return out
 
 
@@ -80,6 +120,37 @@ def _normalize_server_filter(value: str) -> str:
     from cyt.tiers.entity_origin import _normalize_server_name
 
     return _normalize_server_name(value.strip().lower())
+
+
+def resolve_status_path_filter(
+    raw: str | None,
+    workspace_root: Path | None,
+) -> tuple[Path | None, str | None, str | None]:
+    """Resolve ``--path`` to an absolute directory.
+
+    Returns ``(resolved_path, display_path, error_message)``.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None, None, None
+    display = raw.strip()
+    from cyt.skills.directories import resolve_skill_directory_path
+
+    resolved = resolve_skill_directory_path(display, workspace_root)
+    if resolved is None:
+        return None, display, f"invalid --path value: {display!r}"
+    return resolved, display, None
+
+
+def skill_matches_path_filter(source_path: str | None, filter_root: Path) -> bool:
+    if not isinstance(source_path, str) or not source_path.strip():
+        return False
+    try:
+        resolved = Path(source_path).expanduser().resolve()
+        root = filter_root.expanduser().resolve()
+        resolved.relative_to(root)
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def normalize_tier_filter(value: str) -> str | None:
@@ -160,6 +231,13 @@ def entity_matches_server(entity: dict[str, Any], needle: str) -> bool:
     return _normalize_server_name(server.lower()) == needle
 
 
+def entity_matches_scope(entity: dict[str, Any], scope: str) -> bool:
+    value = entity.get("scope")
+    if not isinstance(value, str) or not value.strip():
+        return False
+    return value.strip().lower() == scope.strip().lower()
+
+
 def entity_matches_name(entity: dict[str, Any], needle: str) -> bool:
     haystacks: list[str] = []
     entity_id = str(entity.get("entity_id") or "")
@@ -190,11 +268,23 @@ def filter_status_entities(
             continue
         if filters.server is not None and not entity_matches_server(entity, filters.server):
             continue
+        if filters.scope is not None and not entity_matches_scope(entity, filters.scope):
+            continue
+        if filters.path is not None and kind == "skill":
+            if not skill_matches_path_filter(
+                entity.get("source_path") if isinstance(entity.get("source_path"), str) else None,
+                Path(filters.path),
+            ):
+                continue
         out.append(entity)
     return out
 
 
 def apply_status_view(payload: dict[str, Any], filters: StatusFilters) -> dict[str, Any]:
+    if filters.overview_mode:
+        view = dict(payload)
+        view["mode"] = "overview"
+        return view
     entities = flatten_status_entities(payload)
     filtered = filter_status_entities(entities, filters)
     view = dict(payload)
@@ -257,13 +347,25 @@ def _format_entity_source_path(entity: dict[str, Any]) -> str | None:
     )
 
 
-def format_entity_basic_line(entity: dict[str, Any]) -> str:
+def format_entity_basic_line(
+    entity: dict[str, Any],
+    *,
+    include_source_path: bool = False,
+    omit_kind_prefix: bool = False,
+) -> str:
     """One-line tool/skill summary for server and other list filters."""
     kind = str(entity.get("kind") or "?")
     label = entity_display_label(entity)
-    line = f"[{kind}] {label}  effective={entity.get('effective_tier')} base={entity.get('base_tier')}"
+    if omit_kind_prefix:
+        line = f"  {label}  effective={entity.get('effective_tier')} base={entity.get('base_tier')}"
+    else:
+        line = f"[{kind}] {label}  effective={entity.get('effective_tier')} base={entity.get('base_tier')}"
     if entity.get("temporary_tier"):
         line += f" temporary={entity.get('temporary_tier')}"
+    if include_source_path:
+        source_path = _format_entity_source_path(entity) or entity.get("source_path")
+        if isinstance(source_path, str) and source_path.strip():
+            line += f"  {source_path.strip()}"
     return line
 
 
@@ -380,6 +482,9 @@ def _append_grouped_entity_summaries(
 def _append_compact_entity_summaries(
     lines: list[str],
     entities: list[dict[str, Any]],
+    *,
+    include_source_path: bool = False,
+    omit_kind_prefix: bool = False,
 ) -> None:
     current_kind: str | None = None
     for entity in entities:
@@ -388,7 +493,13 @@ def _append_compact_entity_summaries(
             current_kind = kind
             lines.append("")
             lines.append(f"=== {kind}s ===")
-        lines.append(format_entity_basic_line(entity))
+        lines.append(
+            format_entity_basic_line(
+                entity,
+                include_source_path=include_source_path,
+                omit_kind_prefix=omit_kind_prefix,
+            ),
+        )
 
 
 def _append_verbose_status_header(lines: list[str], payload: dict[str, Any]) -> None:
@@ -424,6 +535,11 @@ def format_status_text(
     filters: StatusFilters,
     verbose: bool = False,
 ) -> str:
+    if filters.overview_mode:
+        from cyt.tiers.status_overview import format_overview_text
+
+        return format_overview_text(payload)
+
     lines: list[str] = format_project_header(payload).splitlines()
     entities = _sort_status_entities(_entities_from_payload(payload))
     shown = int(payload.get("entity_count", len(entities)))
@@ -447,8 +563,14 @@ def format_status_text(
                 lines.append(f"=== {kind}s ===")
             lines.append(format_entity_detail(entity))
             lines.append("")
-    elif filters.server is not None:
-        _append_compact_entity_summaries(lines, entities)
+    elif filters.server is not None or filters.path is not None:
+        include_source_path = filters.path is not None and not detail
+        _append_compact_entity_summaries(
+            lines,
+            entities,
+            include_source_path=include_source_path,
+            omit_kind_prefix=filters.path is not None,
+        )
     else:
         _append_grouped_entity_summaries(lines, entities)
 
@@ -487,4 +609,14 @@ def add_status_filter_arguments(parser: argparse.ArgumentParser) -> None:
         "--agent",
         choices=("cursor", "claude", "codex"),
         help="Limit skills to an agent's directories (default: mcp-config default_agent)",
+    )
+    parser.add_argument(
+        "--path",
+        metavar="DIR",
+        help="List skills discovered under DIR (must be a configured skill root or subdirectory)",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=("user", "workspace"),
+        help="Limit entities to user (global) or workspace scope",
     )
