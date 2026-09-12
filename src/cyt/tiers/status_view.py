@@ -251,6 +251,17 @@ def entity_matches_name(entity: dict[str, Any], needle: str) -> bool:
     return any(needle in text.lower() for text in haystacks if text)
 
 
+def _scope_entities_by_kind(
+    entities: list[dict[str, Any]],
+    kind: str,
+) -> list[dict[str, Any]]:
+    if kind == "tools":
+        return [entity for entity in entities if str(entity.get("kind") or "") == "tool"]
+    if kind == "skills":
+        return [entity for entity in entities if str(entity.get("kind") or "") == "skill"]
+    return entities
+
+
 def filter_status_entities(
     entities: list[dict[str, Any]],
     filters: StatusFilters,
@@ -318,17 +329,18 @@ def apply_status_view(payload: dict[str, Any], filters: StatusFilters) -> dict[s
         view["mode"] = "overview"
         return view
     entities = flatten_status_entities(payload)
-    filtered = filter_status_entities(entities, filters)
+    scoped = _scope_entities_by_kind(entities, filters.kind)
+    filtered = filter_status_entities(scoped, filters)
     if filters.active:
         return _filtered_status_view(
             payload,
             filtered=filtered,
-            entity_total=len(entities),
+            entity_total=len(scoped),
             filters=filters,
         )
     view = dict(payload)
     view["entities"] = filtered
-    view["entity_total"] = len(entities)
+    view["entity_total"] = len(scoped)
     view["entity_count"] = len(filtered)
     return view
 

@@ -219,7 +219,8 @@ def test_enrich_tool_detail_adds_loaded_catalog_tools() -> None:
     entity_ids = {row["entity_id"] for items in enriched["by_tier"].values() for row in items}
     assert entity_ids == {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"}
     assert enriched["histogram"]["T3"] == 1
-    assert enriched["histogram"]["T2"] == 1
+    assert enriched["histogram"]["T0"] == 1
+    assert enriched["by_tier"]["T0"][0]["entity_id"] == "cyt_mcp:beta_tool"
 
 
 def test_build_kind_detail_hides_catalog_orphans_and_candidate_only_tools() -> None:

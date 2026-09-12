@@ -1,0 +1,44 @@
+{
+  "tools": [
+    {
+      "name": "context-mode_ctx_execute",
+      "description": "Run code in a sandboxed subprocess.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "language": {"type": "string"},
+          "code": {"type": "string"}
+        },
+        "required": ["language", "code"]
+      },
+      "server_key": "context-mode",
+      "cyt_catalog_source": "cyt_mcp"
+    },
+    {
+      "name": "context-mode_ctx_search",
+      "description": "Search the unified knowledge base.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "queries": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["queries"]
+      },
+      "server_key": "context-mode",
+      "cyt_catalog_source": "cyt_mcp"
+    },
+    {
+      "name": "gitnexus_query",
+      "description": "Query the code knowledge graph for execution flows.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "search_query": {"type": "string"}
+        },
+        "required": ["search_query"]
+      },
+      "server_key": "gitnexus",
+      "cyt_catalog_source": "cyt_mcp"
+    }
+  ]
+}

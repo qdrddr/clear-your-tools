@@ -46,15 +46,43 @@ class _MasterCatalogState:
 _catalog_lock = threading.Lock()
 _catalog_states: dict[_MasterCacheKey, _MasterCatalogState] = {}
 _rebuild_in_progress: set[_MasterCacheKey] = set()
+_rebuild_waiters: dict[_MasterCacheKey, threading.Event] = {}
+BLOCKING_REBUILD_WAIT_SECONDS = 30.0
 
 
 def clear_master_catalog_cache() -> None:
     with _catalog_lock:
         _catalog_states.clear()
         _rebuild_in_progress.clear()
+        for event in _rebuild_waiters.values():
+            event.set()
+        _rebuild_waiters.clear()
     from cyt.tools.master_cache_scheduler import clear_master_cache_schedulers
 
     clear_master_cache_schedulers()
+
+
+def _finish_rebuild(cache_key: _MasterCacheKey) -> None:
+    with _catalog_lock:
+        _rebuild_in_progress.discard(cache_key)
+        waiter = _rebuild_waiters.pop(cache_key, None)
+    if waiter is not None:
+        waiter.set()
+
+
+def _wait_for_in_progress_rebuild(
+    cache_key: _MasterCacheKey,
+    *,
+    timeout: float = BLOCKING_REBUILD_WAIT_SECONDS,
+) -> None:
+    with _catalog_lock:
+        if cache_key not in _rebuild_in_progress:
+            return
+        waiter = _rebuild_waiters.get(cache_key)
+        if waiter is None:
+            waiter = threading.Event()
+            _rebuild_waiters[cache_key] = waiter
+    waiter.wait(timeout=timeout)
 
 
 def build_master_tools(
@@ -250,8 +278,15 @@ def rebuild_master_catalog(config: dict[str, Any] | None = None, *, blocking: bo
     cache_key = _cache_key_for_config(cfg)
     with _catalog_lock:
         if cache_key in _rebuild_in_progress:
-            return
-        _rebuild_in_progress.add(cache_key)
+            if not blocking:
+                return
+            waiter = _rebuild_waiters.get(cache_key)
+        else:
+            _rebuild_in_progress.add(cache_key)
+            waiter = None
+    if waiter is not None:
+        _wait_for_in_progress_rebuild(cache_key)
+        return
 
     try:
         state = _get_state(cache_key)
@@ -280,8 +315,7 @@ def rebuild_master_catalog(config: dict[str, Any] | None = None, *, blocking: bo
 
             schedule_decomposed_catalog_refresh_for_sources(cfg, tools_hook_sources(cfg))
     finally:
-        with _catalog_lock:
-            _rebuild_in_progress.discard(cache_key)
+        _finish_rebuild(cache_key)
 
 
 def get_master_tool_catalog(
@@ -310,6 +344,12 @@ def get_master_tool_catalog(
     if blocking and not snapshot:
         rebuild_master_catalog(cfg, blocking=True)
         snapshot = _snapshot_master_tools(state)
+        if not snapshot:
+            with _catalog_lock:
+                in_progress = cache_key in _rebuild_in_progress
+            if in_progress:
+                _wait_for_in_progress_rebuild(cache_key)
+                snapshot = _snapshot_master_tools(state)
 
     return snapshot
 

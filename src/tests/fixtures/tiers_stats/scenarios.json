@@ -1,0 +1,26 @@
+{
+  "skill_fixture_names": ["create-hook.md", "context7.md"],
+  "tier_states": {
+    "tools": {
+      "cyt_mcp:gitnexus_query": {
+        "stable_tier": "HOT",
+        "effective_tier": "HOT",
+        "stats": {"injected": 4, "used": 2}
+      }
+    },
+    "skills": {}
+  },
+  "expected": {
+    "tools_total": 3,
+    "tools_by_tier": {"T0": 2, "T1": 0, "T2": 0, "T3": 1, "T4": 0},
+    "skills_min_total": 2,
+    "skill_names": ["create-hook", "context7"],
+    "discovered_tool_names": [
+      "context-mode_ctx_execute",
+      "context-mode_ctx_search",
+      "gitnexus_query"
+    ],
+    "hot_tool_entity_id": "cyt_mcp:gitnexus_query",
+    "mcp_server_names": ["context-mode", "gitnexus"]
+  }
+}

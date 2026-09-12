@@ -163,6 +163,15 @@ def test_format_status_text_server_filter_shows_grouped_summaries() -> None:
     assert "stats:" not in text
 
 
+def test_scope_entities_by_kind() -> None:
+    from cyt.tiers.status_view import _scope_entities_by_kind
+
+    entities = flatten_status_entities(_sample_payload())
+    assert len(_scope_entities_by_kind(entities, "tools")) == 1
+    assert len(_scope_entities_by_kind(entities, "skills")) == 1
+    assert len(_scope_entities_by_kind(entities, "all")) == 2
+
+
 def test_apply_status_view_adds_entities_and_filters() -> None:
     overview = apply_status_view(_sample_payload(), StatusFilters())
     assert overview["mode"] == "overview"
@@ -170,7 +179,7 @@ def test_apply_status_view_adds_entities_and_filters() -> None:
 
     payload = apply_status_view(_sample_payload(), StatusFilters(kind="skills"))
     assert payload["mode"] == "filtered"
-    assert payload["entity_total"] == 2
+    assert payload["entity_total"] == 1
     assert payload["entity_count"] == 1
     assert payload["filters"] == {"kind": "skills"}
     assert "overview" not in payload
@@ -182,7 +191,7 @@ def test_apply_status_view_adds_entities_and_filters() -> None:
 
     filtered = apply_status_view(_sample_payload(), StatusFilters(kind="skills", name="explore"))
     assert filtered["entity_count"] == 1
-    assert filtered["entity_total"] == 2
+    assert filtered["entity_total"] == 1
     assert filtered["filters"] == {"kind": "skills", "name": "explore"}
 
 

@@ -852,8 +852,8 @@ def enrich_tool_detail_with_catalog_discoveries(
             state = EntityTierState(
                 entity_id=entity_id,
                 kind=EntityKind.TOOL,
-                stable_tier=Tier.ACTIVE,
-                effective_tier=Tier.ACTIVE,
+                stable_tier=Tier.DORMANT,
+                effective_tier=Tier.DORMANT,
             )
         label = tier_label(resolve_effective(state))
         histogram[label] = histogram.get(label, 0) + 1

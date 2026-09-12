@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Iterator
 from unittest.mock import patch
 
@@ -195,3 +197,27 @@ def test_rebuild_master_catalog_clears_stale_tools_when_all_sources_genuinely_em
 
     state = _get_state(_cache_key_for_config(config))
     assert _snapshot_master_tools(state) == []
+
+
+def test_blocking_get_master_waits_for_in_progress_rebuild() -> None:
+    config = load_config()
+    config["pruning"]["inject_via"] = {"cursor": "hook", "claude": "hook", "codex": "hook"}
+    config["tools"]["enabled"] = True
+    config["tools"]["hook"]["tools_from"] = ["mcpc"]
+
+    def background_rebuild() -> None:
+        with patch(
+            "cyt.tools.master_catalog._load_source_tools",
+            side_effect=lambda *_a, **_k: (time.sleep(0.1) or [{"name": "mcpc-tool"}]),
+        ), patch("cyt.tools.catalog_cache.schedule_decomposed_catalog_refresh_for_sources"):
+            rebuild_master_catalog(config, blocking=True)
+
+    thread = threading.Thread(target=background_rebuild)
+    thread.start()
+    time.sleep(0.01)
+    catalog = get_master_tool_catalog(config, blocking=True)
+    thread.join(timeout=2.0)
+
+    assert catalog is not None
+    assert len(catalog) == 1
+    assert catalog[0]["name"] == "mcpc-tool"

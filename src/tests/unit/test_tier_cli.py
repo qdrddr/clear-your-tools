@@ -193,7 +193,7 @@ skills:
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["entity_count"] == 1
-    assert payload["entity_total"] == 2
+    assert payload["entity_total"] == 1
     assert payload["filters"] == {"kind": "tools", "tier": "T3"}
     assert payload["entities"][0]["entity_id"] == "cyt_mcp:search"
     assert payload["mode"] == "filtered"
@@ -202,6 +202,69 @@ skills:
     assert "tools" not in payload
     assert "histogram" not in payload
     assert len(payload["entities"]) == 1
+
+
+def test_tiers_status_json_filters_tools_by_t0_case_insensitive(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / ".git").mkdir()
+    db_path = tmp_path / "tier_state.db"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""
+tools:
+  tiers:
+    enabled: false
+    shadow: true
+    database:
+      path: {db_path}
+skills:
+  tiers:
+    enabled: false
+    shadow: true
+""",
+        encoding="utf-8",
+    )
+    store = TierStore.open(str(db_path))
+    try:
+        project_id = store.get_or_create_project(str(tmp_path))
+        project = TierProject(project_id=project_id, root_path=tmp_path)
+        store.upsert_entity_state(
+            project,
+            EntityTierState(
+                entity_id="cyt_mcp:active_tool",
+                kind="tool",
+                stable_tier=Tier.ACTIVE,
+                effective_tier=Tier.ACTIVE,
+            ),
+        )
+    finally:
+        store.close()
+
+    _mock_tracked_catalog(monkeypatch, "dormant_tool", "active_tool")
+    monkeypatch.chdir(tmp_path)
+    _managers.clear()
+    code = tiers_main(
+        [
+            "stats",
+            "--workspace",
+            str(tmp_path),
+            "--json",
+            "--kind",
+            "tools",
+            "--tier",
+            "t0",
+        ],
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["filters"] == {"kind": "tools", "tier": "T0"}
+    assert payload["entity_total"] == 2
+    assert payload["entity_count"] == 1
+    assert payload["entities"][0]["entity_id"] == "cyt_mcp:dormant_tool"
+    assert payload["entities"][0]["effective_tier"] == "T0"
 
 
 def test_tiers_list_matches_stats_without_filters(
