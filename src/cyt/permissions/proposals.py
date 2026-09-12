@@ -555,7 +555,7 @@ def _tool_enabled(server: str, tool: str, deny_entries: tuple[str, ...]) -> bool
     return not is_mcp_tool_denied(server, tool, deny_entries)
 
 
-def _wizard_tier_skip_notes(
+def _wizard_skill_tier_skip_notes(
     tier_items: list[Any],
     *,
     target_tier: ProposalTier,
@@ -598,6 +598,44 @@ def _wizard_tier_skip_notes(
     return skipped_denied, skipped_recent
 
 
+def _wizard_tool_tier_skip_notes(
+    tier_items: list[Any],
+    *,
+    target_tier: ProposalTier,
+    wizard_cfg: WizardConfig,
+    min_injections: int,
+    now_ms: int,
+    effective_deny: tuple[str, ...],
+) -> tuple[list[str], list[str]]:
+    from cyt.tiers.entity_origin import parse_tool_entity_id
+    from cyt.tiers.status_detail import _is_tool_entity_denied
+
+    skipped_denied: list[str] = []
+    skipped_recent: list[str] = []
+    for entity in tier_items:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = str(entity.get("entity_id") or "").strip()
+        _source, bare_name = parse_tool_entity_id(entity_id)
+        label = str(entity.get("display_name") or entity.get("name") or bare_name or "?")
+        if _is_tool_entity_denied(entity, effective_deny):
+            skipped_denied.append(label)
+            continue
+        if not _entity_eligible(
+            entity,
+            target_tier=target_tier,
+            wizard_cfg=wizard_cfg,
+            min_injections=min_injections,
+            now_ms=now_ms,
+        ):
+            stats_raw = entity.get("stats")
+            stats = stats_raw if isinstance(stats_raw, dict) else {}
+            last_seen = int(stats.get("last_seen_ms") or 0)
+            if last_seen > 0 and now_ms - last_seen < wizard_cfg.idle_ms:
+                skipped_recent.append(label)
+    return skipped_denied, skipped_recent
+
+
 def build_wizard_tier_notes(
     *,
     config: dict[str, Any],
@@ -637,7 +675,11 @@ def build_wizard_tier_notes(
     effective = effective_permissions(agent="all", workspace_root=project_root)
 
     manager = get_tier_manager(scoped_config, workspace=project_root)
-    status = manager.status(scoped_config, agent=status_agent)
+    status = manager.status(
+        scoped_config,
+        agent=status_agent,
+        filter_by_permissions=False,
+    )
     notes: dict[ProposalTier, str] = {}
 
     for target_tier in ("T0", "T1"):
@@ -663,7 +705,7 @@ def build_wizard_tier_notes(
             )
             continue
 
-        skipped_denied, skipped_recent = _wizard_tier_skip_notes(
+        skill_skipped_denied, skill_skipped_recent = _wizard_skill_tier_skip_notes(
             tier_items if isinstance(tier_items, list) else [],
             target_tier=target_tier,
             wizard_cfg=wizard_cfg,
@@ -672,6 +714,16 @@ def build_wizard_tier_notes(
             effective_deny=effective.skills.deny,
             project_root=project_root,
         )
+        tool_skipped_denied, tool_skipped_recent = _wizard_tool_tier_skip_notes(
+            tool_items if isinstance(tool_items, list) else [],
+            target_tier=target_tier,
+            wizard_cfg=wizard_cfg,
+            min_injections=tool_cfg.min_injections_before_reconsider,
+            now_ms=now_ms,
+            effective_deny=effective.mcp.deny,
+        )
+        skipped_denied = [*tool_skipped_denied, *skill_skipped_denied]
+        skipped_recent = [*tool_skipped_recent, *skill_skipped_recent]
         if skipped_denied:
             parts.append(f"already denied: {', '.join(skipped_denied)}")
         if skipped_recent:

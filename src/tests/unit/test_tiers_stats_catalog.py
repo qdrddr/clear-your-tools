@@ -80,9 +80,7 @@ def test_enrich_tool_detail_discovers_untracked_catalog_tools(
 
     expected = load_scenario().expected
     assert enriched["histogram"] == expected["tools_by_tier"]
-    entity_ids = {
-        row["entity_id"] for items in enriched["by_tier"].values() for row in items
-    }
+    entity_ids = {row["entity_id"] for items in enriched["by_tier"].values() for row in items}
     assert entity_ids == set(tracked_ids)
 
 
@@ -119,7 +117,9 @@ def test_build_tier_statistics_counts_tool_tokens(
     tools_stats = stats["tools"]
     assert tools_stats["totals"]["count"] == load_scenario().expected["tools_total"]
     assert tools_stats["totals"]["tokens_known"] == load_scenario().expected["tools_total"]
-    assert tools_stats["totals"]["effective_tokens_known"] == load_scenario().expected["tools_total"]
+    assert (
+        tools_stats["totals"]["effective_tokens_known"] == load_scenario().expected["tools_total"]
+    )
 
 
 def test_tier_manager_status_merges_catalog_tools_and_workspace_skills(
@@ -148,9 +148,7 @@ def test_tier_manager_status_merges_catalog_tools_and_workspace_skills(
     assert len(hot) == 1
     assert hot[0]["entity_id"] == expected["hot_tool_entity_id"]
 
-    dormant_names = {
-        row.get("entity_id", "").rsplit(":", 1)[-1] for row in tools["by_tier"]["T0"]
-    }
+    dormant_names = {row.get("entity_id", "").rsplit(":", 1)[-1] for row in tools["by_tier"]["T0"]}
     assert dormant_names == {"context-mode_ctx_execute", "context-mode_ctx_search"}
 
     skills = status["skills"]

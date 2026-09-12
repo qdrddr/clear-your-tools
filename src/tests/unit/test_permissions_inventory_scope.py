@@ -14,6 +14,7 @@ from cyt.permissions.inventory.mcp import (
 from cyt.permissions.inventory.skills import (
     directory_belongs_to_agent,
     enumerate_skill_names,
+    list_skills,
 )
 from cyt.permissions.match import explicit_denied_servers
 from cyt.permissions.schema import EffectivePermissions, McpPermissions
@@ -169,3 +170,59 @@ def test_enumerate_skill_names_scopes_to_agent(tmp_path: Path) -> None:
     codex_names = [name for name, _, _ in enumerate_skill_names(config, agent="codex")]
     assert cursor_names == ["cursor-skill"]
     assert codex_names == ["codex-skill"]
+
+
+def test_list_skills_effective_merges_user_and_workspace(tmp_path: Path) -> None:
+    from cyt.permissions.inventory.skills import _merge_skill_inventory_rows
+
+    user_path = tmp_path / "user-skill" / "SKILL.md"
+    workspace_path = tmp_path / "workspace-skill" / "SKILL.md"
+    user_path.parent.mkdir(parents=True)
+    workspace_path.parent.mkdir(parents=True)
+    user_path.write_text("---\nname: user-skill\n---\n", encoding="utf-8")
+    workspace_path.write_text("---\nname: workspace-skill\n---\n", encoding="utf-8")
+
+    with patch(
+        "cyt.permissions.inventory.skills._enumerate_skill_rows_for_layer",
+        side_effect=[
+            [("user-skill", user_path, True, "user")],
+            [("workspace-skill", workspace_path, True, "workspace")],
+        ],
+    ):
+        rows = _merge_skill_inventory_rows(
+            agent="cursor",
+            scope="effective",
+            workspace_root=tmp_path,
+            global_config={},
+        )
+
+    assert [(name, source) for name, _path, _fm, source in rows] == [
+        ("user-skill", "user"),
+        ("workspace-skill", "workspace"),
+    ]
+
+    with (
+        patch(
+            "cyt.permissions.inventory.skills._merge_skill_inventory_rows",
+            return_value=[
+                ("user-skill", user_path, True, "user"),
+                ("workspace-skill", workspace_path, True, "workspace"),
+            ],
+        ),
+        patch(
+            "cyt.permissions.inventory.skills.effective_permissions",
+            return_value=EffectivePermissions(),
+        ),
+    ):
+        enabled, disabled = list_skills(
+            agent="cursor",
+            scope="effective",
+            workspace_root=tmp_path,
+        )
+
+    assert {item.name for item in enabled} == {"user-skill", "workspace-skill"}
+    assert {item.name: item.source for item in enabled} == {
+        "user-skill": "user",
+        "workspace-skill": "workspace",
+    }
+    assert disabled == []

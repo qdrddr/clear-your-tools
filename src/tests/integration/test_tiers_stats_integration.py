@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
 
+from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tiers.cli import main as tiers_main
 from cyt.tiers.manager import _managers
-from cyt.cyt_mcp.catalog import clear_cyt_mcp_catalog_cache
 from cyt.tools.master_catalog import (
     clear_master_catalog_cache,
     get_master_tool_catalog,

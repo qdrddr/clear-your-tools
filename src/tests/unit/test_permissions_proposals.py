@@ -178,3 +178,34 @@ def test_format_wizard_path_shortens_home_and_workspace() -> None:
 
     home = Path.home()
     assert _format_wizard_path(home / ".cursor" / "skills-cursor") == "~/.cursor/skills-cursor"
+
+
+def test_wizard_tool_tier_skip_notes_reports_denied_tools() -> None:
+    from cyt.permissions.proposals import WizardConfig, _wizard_tool_tier_skip_notes
+
+    wizard_cfg = WizardConfig(min_candidates=10, idle_ms=60_000)
+    now_ms = int(time.time() * 1000)
+    tool_items = [
+        {
+            "entity_id": "cyt_mcp:jcodemunch_search_symbols",
+            "name": "jcodemunch_search_symbols",
+            "base_tier": "T0",
+            "stats": {"used": 0, "candidates": 0, "injected": 0, "last_seen_ms": 0},
+        },
+        {
+            "entity_id": "cyt_mcp:context-mode_ctx_search",
+            "name": "context-mode_ctx_search",
+            "base_tier": "T0",
+            "stats": {"used": 0, "candidates": 0, "injected": 0, "last_seen_ms": 0},
+        },
+    ]
+    skipped_denied, skipped_recent = _wizard_tool_tier_skip_notes(
+        tool_items,
+        target_tier="T0",
+        wizard_cfg=wizard_cfg,
+        min_injections=8,
+        now_ms=now_ms,
+        effective_deny=("jcodemunch/search_symbols",),
+    )
+    assert skipped_denied == ["jcodemunch_search_symbols"]
+    assert skipped_recent == []

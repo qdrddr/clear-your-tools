@@ -144,3 +144,56 @@ def test_build_registry_process_cache_reuses_entries(monkeypatch: pytest.MonkeyP
         assert first[0].doc_id == second[0].doc_id
         assert calls == [1]
         clear_registry_cache()
+
+
+def test_build_registry_reflects_permission_change_without_cache_clear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skills_dir = root / "skills"
+        catalog_dir = root / "catalog"
+        skill_path = skills_dir / "demo-skill" / "SKILL.md"
+        skill_path.parent.mkdir(parents=True)
+        skill_path.write_text("---\nname: demo-skill\n---\nbody\n", encoding="utf-8")
+        config = {
+            "skills": {
+                "enabled": True,
+                "pipeline": "bm25",
+                "catalog_dir": str(catalog_dir),
+                "directories": [str(skills_dir)],
+                "pageindex": {"enable_bm25_chunking": True},
+            },
+            "agents": {
+                "cursor": {"skills": {"directories": []}},
+                "claude": {"skills": {"directories": []}},
+                "codex": {"skills": {"directories": []}},
+            },
+        }
+        clear_registry_cache()
+
+        from cyt.permissions.schema import EffectivePermissions, SkillsPermissions
+
+        deny_state: dict[str, tuple[str, ...]] = {"deny": ()}
+
+        def fake_effective(**kwargs: object) -> EffectivePermissions:
+            return EffectivePermissions(
+                skills=SkillsPermissions(deny=deny_state["deny"]),
+            )
+
+        monkeypatch.setattr(
+            "cyt.permissions.runtime.effective_permissions",
+            fake_effective,
+        )
+        monkeypatch.setattr(
+            "cyt.permissions.merge.effective_permissions",
+            fake_effective,
+        )
+
+        enabled = build_registry(config)
+        assert len(enabled) == 1
+
+        deny_state["deny"] = ("demo-skill",)
+        filtered = build_registry(config)
+        assert filtered == []
+        clear_registry_cache()

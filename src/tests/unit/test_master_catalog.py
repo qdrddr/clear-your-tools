@@ -205,11 +205,18 @@ def test_blocking_get_master_waits_for_in_progress_rebuild() -> None:
     config["tools"]["enabled"] = True
     config["tools"]["hook"]["tools_from"] = ["mcpc"]
 
+    def _slow_load_source_tools(*_args: object, **_kwargs: object) -> list[dict[str, str]]:
+        time.sleep(0.1)
+        return [{"name": "mcpc-tool"}]
+
     def background_rebuild() -> None:
-        with patch(
-            "cyt.tools.master_catalog._load_source_tools",
-            side_effect=lambda *_a, **_k: (time.sleep(0.1) or [{"name": "mcpc-tool"}]),
-        ), patch("cyt.tools.catalog_cache.schedule_decomposed_catalog_refresh_for_sources"):
+        with (
+            patch(
+                "cyt.tools.master_catalog._load_source_tools",
+                side_effect=_slow_load_source_tools,
+            ),
+            patch("cyt.tools.catalog_cache.schedule_decomposed_catalog_refresh_for_sources"),
+        ):
             rebuild_master_catalog(config, blocking=True)
 
     thread = threading.Thread(target=background_rebuild)

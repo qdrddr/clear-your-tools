@@ -143,8 +143,9 @@ class NoOpTierManager:
         config: dict[str, Any] | None = None,
         *,
         agent: str | None = None,
+        filter_by_permissions: bool = True,
     ) -> dict[str, Any]:
-        del config, agent
+        del config, agent, filter_by_permissions
         empty_kind = {
             "histogram": {f"T{i}": 0 for i in range(5)},
             "by_tier": {f"T{i}": [] for i in range(5)},
@@ -603,6 +604,7 @@ class TierManager:
         config: dict[str, Any] | None = None,
         *,
         agent: str | None = None,
+        filter_by_permissions: bool = True,
     ) -> dict[str, Any]:
         now_ms = int(time.time() * 1000)
 
@@ -622,7 +624,14 @@ class TierManager:
         if config is not None:
             scoped_config = self._workspace_scoped_config(config)
             from cyt.tiers.adapters.tools import resolve_tracked_catalog_entity_ids
-            from cyt.tiers.status_detail import enrich_tool_detail_with_catalog_discoveries
+            from cyt.tiers.config import resolve_tier_status_agent
+            from cyt.tiers.status_detail import (
+                enrich_skill_detail_with_workspace_discoveries,
+                enrich_tool_detail_with_catalog_discoveries,
+                filter_skill_detail_by_agent,
+                filter_skill_detail_by_permissions,
+                filter_tool_detail_by_permissions,
+            )
             from cyt.tools.master_catalog import get_master_tool_catalog
 
             catalog_tools = get_master_tool_catalog(scoped_config, blocking=True) or []
@@ -655,6 +664,17 @@ class TierManager:
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
             )
+            resolved_agent = resolve_tier_status_agent(
+                config,
+                workspace_root=self.project.root_path,
+                explicit=agent,
+            )
+            if filter_by_permissions:
+                tool_detail = filter_tool_detail_by_permissions(
+                    tool_detail,
+                    agent=resolved_agent,
+                    workspace_root=self.project.root_path,
+                )
             skill_detail = build_kind_detail(
                 self._states,
                 kind=EntityKind.SKILL,
@@ -664,18 +684,6 @@ class TierManager:
                 effective_tier_fn=effective_fn,
                 config=config,
                 workspace_root=self.project.root_path,
-            )
-            from cyt.tiers.config import resolve_tier_status_agent
-            from cyt.tiers.status_detail import (
-                enrich_skill_detail_with_workspace_discoveries,
-                filter_skill_detail_by_agent,
-                filter_skill_detail_by_permissions,
-            )
-
-            resolved_agent = resolve_tier_status_agent(
-                config,
-                workspace_root=self.project.root_path,
-                explicit=agent,
             )
             skill_detail = enrich_skill_detail_with_workspace_discoveries(
                 skill_detail,
@@ -694,11 +702,12 @@ class TierManager:
                 config=config,
                 workspace_root=self.project.root_path,
             )
-            skill_detail = filter_skill_detail_by_permissions(
-                skill_detail,
-                agent=resolved_agent,
-                workspace_root=self.project.root_path,
-            )
+            if filter_by_permissions:
+                skill_detail = filter_skill_detail_by_permissions(
+                    skill_detail,
+                    agent=resolved_agent,
+                    workspace_root=self.project.root_path,
+                )
             summary["agent"] = resolved_agent
             summary["tools"] = {
                 "enabled": tool_cfg.enabled,

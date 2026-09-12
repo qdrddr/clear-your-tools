@@ -569,6 +569,82 @@ def filter_skill_detail_by_agent(
     }
 
 
+def _is_tool_entity_denied(
+    entity: dict[str, Any],
+    deny_entries: tuple[str, ...],
+) -> bool:
+    from cyt.permissions.match import (
+        is_catalog_tool_denied,
+        is_mcp_tool_denied,
+        split_catalog_tool_name,
+    )
+    from cyt.tiers.entity_origin import infer_entity_mcp_server, parse_tool_entity_id
+
+    entity_id = str(entity.get("entity_id") or "").strip()
+    _source, bare_name = parse_tool_entity_id(entity_id)
+    display = str(entity.get("display_name") or entity.get("name") or bare_name).strip()
+    for candidate in (display, bare_name):
+        if candidate and is_catalog_tool_denied(candidate, deny_entries):
+            return True
+    server_raw = entity.get("mcp_server")
+    server_name: str | None
+    if isinstance(server_raw, str) and server_raw.strip():
+        server_name = server_raw.strip()
+    else:
+        server_name = infer_entity_mcp_server(entity)
+    if not server_name or not bare_name:
+        return False
+    parts = split_catalog_tool_name(bare_name)
+    if parts is not None:
+        return is_mcp_tool_denied(parts[0], parts[1], deny_entries)
+    return is_mcp_tool_denied(server_name, bare_name, deny_entries)
+
+
+def filter_tool_detail_by_permissions(
+    detail: dict[str, Any],
+    *,
+    agent: str,
+    workspace_root: Path | None,
+) -> dict[str, Any]:
+    """Drop permission-denied tools and rebuild histogram counts."""
+    from cyt.permissions.merge import effective_permissions
+
+    effective = effective_permissions(
+        agent=agent,
+        workspace_root=workspace_root,
+    )
+    deny_entries = effective.mcp.deny
+
+    histogram: dict[str, int] = dict.fromkeys(_TIER_LABELS, 0)
+    by_tier: dict[str, list[dict[str, Any]]] = {label: [] for label in _TIER_LABELS}
+    raw_by_tier = detail.get("by_tier")
+    if not isinstance(raw_by_tier, dict):
+        return {
+            "histogram": histogram,
+            "by_tier": by_tier,
+        }
+
+    for label in _TIER_LABELS:
+        items = raw_by_tier.get(label)
+        if not isinstance(items, list):
+            continue
+        for entity in items:
+            if not isinstance(entity, dict):
+                continue
+            if _is_tool_entity_denied(entity, deny_entries):
+                continue
+            by_tier[label].append(entity)
+            histogram[label] = histogram.get(label, 0) + 1
+
+    for entities in by_tier.values():
+        entities.sort(key=lambda item: str(item.get("entity_id", "")))
+
+    return {
+        "histogram": {label: histogram.get(label, 0) for label in _TIER_LABELS},
+        "by_tier": {label: by_tier.get(label, []) for label in _TIER_LABELS},
+    }
+
+
 def filter_skill_detail_by_permissions(
     detail: dict[str, Any],
     *,

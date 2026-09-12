@@ -261,6 +261,45 @@ def _format_mcp_server_line(item: McpServerInventoryItem) -> str:
     return f"{prefix}  {item.name}"
 
 
+def _format_skill_line(item: SkillInventoryItem) -> str:
+    prefix = {"user": "U", "workspace": "W"}.get(item.source or "", "-")
+    return f"{prefix}  {item.name} ({item.path})"
+
+
+def _format_skill_inventory(
+    enabled: Sequence[SkillInventoryItem],
+    disabled: Sequence[SkillInventoryItem],
+    *,
+    json_mode: bool,
+) -> None:
+    if json_mode:
+        _print_json(
+            {
+                "enabled": [
+                    {"name": item.name, "path": item.path, "source": item.source}
+                    for item in enabled
+                ],
+                "disabled": [
+                    {"name": item.name, "path": item.path, "source": item.source}
+                    for item in disabled
+                ],
+            },
+        )
+        return
+    print("Enabled:")
+    if enabled:
+        for item in enabled:
+            print(f"  {_format_skill_line(item)}")
+    else:
+        print("  (none)")
+    print("Disabled:")
+    if disabled:
+        for item in disabled:
+            print(f"  {_format_skill_line(item)}")
+    else:
+        print("  (none)")
+
+
 def _format_mcp_server_inventory(
     enabled: Sequence[McpServerInventoryItem],
     disabled: Sequence[McpServerInventoryItem],
@@ -556,25 +595,29 @@ def _skills_handler(action: str) -> Callable[[argparse.Namespace], None]:
             global_cfg = None
             if getattr(args, "config", None) is not None:
                 global_cfg = _load_yaml_dict(Path(args.config).expanduser())
+            inv_scope = _inventory_scope(args)
             enabled, disabled = list_skills(
                 agent=policy_agent,
+                scope=inv_scope,
                 workspace_root=ws,
                 global_config=global_cfg,
             )
             if args.json:
                 _print_json(
                     {
-                        "enabled": [{"name": i.name, "path": i.path} for i in enabled],
-                        "disabled": [{"name": i.name, "path": i.path} for i in disabled],
+                        "enabled": [
+                            {"name": i.name, "path": i.path, "source": i.source} for i in enabled
+                        ],
+                        "disabled": [
+                            {"name": i.name, "path": i.path, "source": i.source} for i in disabled
+                        ],
                     },
                 )
                 return
-            _print_sections(
-                f"Skills (agent={policy_agent})",
-                [f"{item.name} ({item.path})" for item in enabled],
-                [f"{item.name} ({item.path})" for item in disabled],
-                json_mode=False,
+            print(
+                f"Skills (agent={policy_agent}, inventory={inventory_scope_label(inv_scope)})",
             )
+            _format_skill_inventory(enabled, disabled, json_mode=False)
             _print_skill_name_warnings(enabled, disabled)
             return
         scope = _write_scope(args)

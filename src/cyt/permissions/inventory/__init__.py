@@ -11,6 +11,7 @@ from cyt.permissions.inventory.mcp import (
 )
 from cyt.permissions.inventory.skills import (
     SkillInventoryItem,
+    SkillSource,
     enumerate_skill_names,
     list_skills,
     skill_policy_name_from_path,
@@ -21,6 +22,7 @@ __all__ = [
     "McpServerSource",
     "McpToolInventoryItem",
     "SkillInventoryItem",
+    "SkillSource",
     "enumerate_skill_names",
     "list_mcp_servers",
     "list_mcp_tools_for_server",

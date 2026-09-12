@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from cyt.cyt_mcp.catalog import apply_fetched_catalog
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tiers.models import EffectiveStats, EntityTierState, Tier, TierProject
@@ -107,8 +109,6 @@ def seed_tier_db(pack: TiersStatsFixturePack) -> int:
         project = TierProject(project_id=project_id, root_path=pack.workspace)
         for kind_key, states in pack.scenario.tier_states.items():
             kind = "tool" if kind_key == "tools" else "skill"
-            if not isinstance(states, dict):
-                continue
             for entity_id, row in states.items():
                 if not isinstance(row, dict):
                     continue
@@ -239,7 +239,10 @@ skills:
     return pack
 
 
-def patch_cyt_mcp_paths(monkeypatch: Any, pack: TiersStatsFixturePack) -> None:
+def patch_cyt_mcp_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    pack: TiersStatsFixturePack,
+) -> None:
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",
         lambda: pack.catalog_cache_dir,
@@ -248,4 +251,3 @@ def patch_cyt_mcp_paths(monkeypatch: Any, pack: TiersStatsFixturePack) -> None:
         "cyt.cyt_mcp.catalog._global_scope_paths",
         lambda agent: (pack.global_mcp_agg, pack.global_mcp_defs),
     )
-

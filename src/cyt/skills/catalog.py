@@ -606,18 +606,20 @@ def build_registry(
         upstream_kind=upstream_kind,
         client_skills=client_skills,
     )
-    cached = _REGISTRY_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    entries = _build_registry_uncached(
-        cfg,
+    _, filter_agent = _registry_scan_and_filter_agents(
         agent=agent,
         upstream_kind=upstream_kind,
-        client_skills=client_skills,
     )
-    _REGISTRY_CACHE[cache_key] = entries
-    return entries
+    cached = _REGISTRY_CACHE.get(cache_key)
+    if cached is None:
+        cached = _build_registry_uncached(
+            cfg,
+            agent=agent,
+            upstream_kind=upstream_kind,
+            client_skills=client_skills,
+        )
+        _REGISTRY_CACHE[cache_key] = cached
+    return _apply_skill_registry_filters(cfg, cached, filter_agent=filter_agent)
 
 
 def _build_registry_from_inline_sources(
@@ -836,23 +838,17 @@ def _build_registry_uncached(
     upstream_kind: str | None = None,
     client_skills: list[dict[str, str]] | None = None,
 ) -> list[SkillEntryRef]:
-    """Build skills registry without the process-level cache."""
-    _, filter_agent = _registry_scan_and_filter_agents(
-        agent=agent,
-        upstream_kind=upstream_kind,
-    )
+    """Build skills registry without the process-level cache or permission filters."""
     if client_skills is not None:
-        client_entries = _build_registry_from_client_skills(
+        return _build_registry_from_client_skills(
             cfg,
             client_skills,
             agent=agent,
             upstream_kind=upstream_kind,
         )
-        return _apply_skill_registry_filters(cfg, client_entries, filter_agent=filter_agent)
 
-    config_entries = _build_registry_from_config_dirs(
+    return _build_registry_from_config_dirs(
         cfg,
         agent=agent,
         upstream_kind=upstream_kind,
     )
-    return _apply_skill_registry_filters(cfg, config_entries, filter_agent=filter_agent)

@@ -18,6 +18,7 @@ from cyt.tiers.status_detail import (
     entity_status_dict,
     filter_skill_detail_by_agent,
     filter_skill_detail_by_permissions,
+    filter_tool_detail_by_permissions,
 )
 from tests.support.skills_helpers import isolated_skills_agents_block
 
@@ -506,3 +507,58 @@ def test_filter_skill_detail_by_permissions_excludes_denied_skills(
     assert names == {"explain-simply"}
     assert filtered["histogram"]["T0"] == 1
     assert filtered["histogram"]["T1"] == 0
+
+
+def test_filter_tool_detail_by_permissions_excludes_denied_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detail = {
+        "histogram": {"T0": 1, "T1": 1, "T2": 0, "T3": 0, "T4": 0},
+        "by_tier": {
+            "T0": [
+                {
+                    "entity_id": "cyt_mcp:jcodemunch_search_symbols",
+                    "name": "jcodemunch_search_symbols",
+                },
+            ],
+            "T1": [
+                {
+                    "entity_id": "cyt_mcp:context-mode_ctx_search",
+                    "name": "context-mode_ctx_search",
+                },
+            ],
+            "T2": [],
+            "T3": [],
+            "T4": [],
+        },
+    }
+
+    from cyt.permissions.schema import EffectivePermissions, McpPermissions
+
+    def fake_effective(
+        *,
+        agent: str,
+        workspace_root: Path | None = None,
+        **kwargs: object,
+    ) -> EffectivePermissions:
+        return EffectivePermissions(
+            mcp=McpPermissions(
+                deny=("jcodemunch/search_symbols",),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "cyt.permissions.merge.effective_permissions",
+        fake_effective,
+    )
+
+    filtered = filter_tool_detail_by_permissions(
+        detail,
+        agent="cursor",
+        workspace_root=tmp_path,
+    )
+    names = {item.get("name") for tier_items in filtered["by_tier"].values() for item in tier_items}
+    assert names == {"context-mode_ctx_search"}
+    assert filtered["histogram"]["T0"] == 0
+    assert filtered["histogram"]["T1"] == 1

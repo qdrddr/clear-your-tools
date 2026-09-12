@@ -225,3 +225,26 @@ async def test_hook_permissions_changed_endpoint(
     assert payload["status"] == "ok"
     assert payload["permissions_revision"] == 1
     assert get_permissions_revision("cursor", tmp_path) == 1
+
+
+@pytest.mark.asyncio
+async def test_hook_permissions_changed_clears_skills_registry_cache(
+    hook_client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cyt.skills import catalog as catalog_mod
+
+    cleared: list[str] = []
+
+    def _record_clear() -> None:
+        cleared.append("yes")
+        catalog_mod._REGISTRY_CACHE.clear()
+
+    monkeypatch.setattr(catalog_mod, "clear_registry_cache", _record_clear)
+    response = await hook_client.post(
+        "/hook/permissions/changed",
+        json={"workspace_root": str(tmp_path), "agent": "cursor"},
+    )
+    assert response.status_code == 200
+    assert cleared == ["yes"]
