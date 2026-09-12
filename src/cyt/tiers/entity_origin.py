@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -371,6 +372,19 @@ def _load_yaml_dict(path: Path) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _append_skill_directories_from_block(
+    candidates: list[tuple[str, str]],
+    *,
+    config_path: Path,
+    directories: list[object],
+) -> None:
+    key = str(_resolve_path(config_path))
+    for raw in directories:
+        text = str(raw).strip()
+        if text:
+            candidates.append((key, text))
+
+
 def _append_skill_directory_entries_from_config(
     candidates: list[tuple[str, str]],
     *,
@@ -382,11 +396,11 @@ def _append_skill_directory_entries_from_config(
     if isinstance(skills, dict):
         directories = skills.get("directories")
         if isinstance(directories, list):
-            key = str(_resolve_path(config_path))
-            for raw in directories:
-                text = str(raw).strip()
-                if text:
-                    candidates.append((key, text))
+            _append_skill_directories_from_block(
+                candidates,
+                config_path=config_path,
+                directories=directories,
+            )
 
     agents = config.get("agents")
     if not isinstance(agents, dict):
@@ -400,11 +414,36 @@ def _append_skill_directory_entries_from_config(
     agent_directories = agent_skills.get("directories")
     if not isinstance(agent_directories, list):
         return
-    key = str(_resolve_path(config_path))
-    for raw in agent_directories:
-        text = str(raw).strip()
-        if text:
-            candidates.append((key, text))
+    _append_skill_directories_from_block(
+        candidates,
+        config_path=config_path,
+        directories=agent_directories,
+    )
+
+
+def _append_default_skill_directory_candidates(
+    candidates: list[tuple[str, str]],
+    *,
+    agent: str,
+    workspace_root: Path | None,
+    add_candidate: Callable[[str, str], None],
+) -> None:
+    from cyt.skills.directories import _AGENT_SKILL_PAIRS, _GLOBAL_SKILL_PAIRS
+
+    for project_rel, home_rel in _GLOBAL_SKILL_PAIRS:
+        if workspace_root is not None:
+            add_candidate("", project_rel)
+        add_candidate("", home_rel)
+
+    pair = _AGENT_SKILL_PAIRS.get(agent)
+    if pair is None:
+        return
+    project_rel, home_rel = pair
+    if workspace_root is not None:
+        add_candidate("", project_rel)
+    add_candidate("", home_rel)
+    if agent == "cursor":
+        add_candidate("", str(Path.home() / ".cursor" / "skills-cursor"))
 
 
 def _skill_directory_config_candidates(
@@ -416,11 +455,7 @@ def _skill_directory_config_candidates(
     from cyt.config import resolve_config_path
     from cyt.hook.install_scope import CytInstallScope
     from cyt.permissions.paths import resolve_inventory_agent
-    from cyt.skills.directories import (
-        _AGENT_SKILL_PAIRS,
-        _GLOBAL_SKILL_PAIRS,
-        resolve_skill_directory_path,
-    )
+    from cyt.skills.directories import resolve_skill_directory_path
 
     resolved_agent = resolve_inventory_agent(agent)
     candidates: list[tuple[str, str]] = []
@@ -451,19 +486,12 @@ def _skill_directory_config_candidates(
             agent=resolved_agent,
         )
 
-    for project_rel, home_rel in _GLOBAL_SKILL_PAIRS:
-        if workspace_root is not None:
-            add_candidate("", project_rel)
-        add_candidate("", home_rel)
-
-    pair = _AGENT_SKILL_PAIRS.get(resolved_agent)
-    if pair is not None:
-        project_rel, home_rel = pair
-        if workspace_root is not None:
-            add_candidate("", project_rel)
-        add_candidate("", home_rel)
-        if resolved_agent == "cursor":
-            add_candidate("", str(Path.home() / ".cursor" / "skills-cursor"))
+    _append_default_skill_directory_candidates(
+        candidates,
+        agent=resolved_agent,
+        workspace_root=workspace_root,
+        add_candidate=add_candidate,
+    )
 
     # Drop entries that do not resolve to an existing directory root.
     resolved_candidates: list[tuple[str, str]] = []

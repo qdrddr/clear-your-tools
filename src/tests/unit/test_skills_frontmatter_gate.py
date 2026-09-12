@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
 from cyt.skills.bm25 import excluded_by_frontmatter_gate, frontmatter_gate_trace
-from cyt.skills.catalog import clear_registry_cache
+from cyt.skills.catalog import SkillEntryRef, clear_registry_cache
 from cyt.skills.client_skills import build_registry_for_hook_payload
 from cyt.skills.search import eligible_skills_after_gate, search_skills
 from tests.support.skills_frontmatter_gate_fixtures import (
     FIXTURES_ROOT,
+    FrontmatterGateFixturePack,
     FrontmatterGateScenario,
     build_registry_from_fixture_pack,
     client_payload_for_fixture_pack,
@@ -22,11 +24,11 @@ from tests.support.skills_frontmatter_gate_fixtures import (
 
 
 @pytest.fixture
-def fixture_pack(tmp_path: Path):
+def fixture_pack(tmp_path: Path) -> FrontmatterGateFixturePack:
     return materialize_fixture_pack(tmp_path)
 
 
-def _doc_ids(entries: list[object]) -> set[str]:
+def _doc_ids(entries: Sequence[SkillEntryRef]) -> set[str]:
     return {entry.doc_id for entry in entries}
 
 
@@ -43,7 +45,7 @@ def test_fixture_files_exist() -> None:
     ids=[scenario.id for scenario in load_scenarios()[1]],
 )
 def test_eligible_skills_after_gate_matches_fixture_scenarios(
-    fixture_pack,
+    fixture_pack: FrontmatterGateFixturePack,
     scenario_id: str,
 ) -> None:
     _, scenarios = load_scenarios()
@@ -70,7 +72,7 @@ def test_eligible_skills_after_gate_matches_fixture_scenarios(
     ids=[scenario.id for scenario in load_scenarios()[1]],
 )
 def test_frontmatter_gate_trace_marks_blocked_scores(
-    fixture_pack,
+    fixture_pack: FrontmatterGateFixturePack,
     scenario_id: str,
 ) -> None:
     _, scenarios = load_scenarios()
@@ -98,7 +100,9 @@ def test_frontmatter_gate_trace_marks_blocked_scores(
             assert row.score < upper
 
 
-def test_excluded_by_frontmatter_gate_returns_entry_keys(fixture_pack) -> None:
+def test_excluded_by_frontmatter_gate_returns_entry_keys(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     scenario = FrontmatterGateScenario(
         id="manual",
         query="create-hook agent hooks for claude code",
@@ -118,7 +122,9 @@ def test_excluded_by_frontmatter_gate_returns_entry_keys(fixture_pack) -> None:
     assert (blocked_entry.entry_dir, blocked_entry.doc_id) in excluded
 
 
-def test_search_skills_finds_body_match_after_description_gate_blocks(fixture_pack) -> None:
+def test_search_skills_finds_body_match_after_description_gate_blocks(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     config = skills_gate_config(
         workspace=fixture_pack.workspace,
         catalog_dir=fixture_pack.catalog_dir,
@@ -139,7 +145,9 @@ def test_search_skills_finds_body_match_after_description_gate_blocks(fixture_pa
     assert create_hook.score > 0.0
 
 
-def test_search_skills_never_returns_gate_blocked_skill(fixture_pack) -> None:
+def test_search_skills_never_returns_gate_blocked_skill(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     config = skills_gate_config(
         workspace=fixture_pack.workspace,
         catalog_dir=fixture_pack.catalog_dir,
@@ -155,7 +163,7 @@ def test_search_skills_never_returns_gate_blocked_skill(fixture_pack) -> None:
 
 
 def test_client_skills_hook_payload_respects_frontmatter_gate(
-    fixture_pack,
+    fixture_pack: FrontmatterGateFixturePack,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from tests.conftest import isolate_user_home

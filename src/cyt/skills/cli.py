@@ -463,15 +463,20 @@ def _search_skills_for_user_prompt(
     stderr_guard = contextlib.nullcontext() if plain_output or io_guarded else hook_quiet_stderr()
     with stdout_guard, stderr_guard:
         from cyt.pruning.hook_bridge import _append_mcpc_skill_resource_entries
+        from cyt.skills.agents import resolve_skills_agent
 
-        entries = append_executor_skill_entries(
-            build_registry_for_hook_payload(
+        agent = resolve_skills_agent()
+        if payload is None or "cyt_skills" not in payload:
+            from cyt.skills.catalog import build_registry
+
+            entries = build_registry(config, agent=agent)
+        else:
+            entries = build_registry_for_hook_payload(
                 config,
                 payload,
-                agent=resolve_skills_agent(),
-            ),
-            config,
-        )
+                agent=agent,
+            )
+        entries = append_executor_skill_entries(entries, config)
         entries = _append_mcpc_skill_resource_entries(entries, config)
         if plain_output:
             matches, search_trace = search_skills_with_trace(

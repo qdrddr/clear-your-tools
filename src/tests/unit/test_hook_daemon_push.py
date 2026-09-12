@@ -220,7 +220,14 @@ async def test_maybe_reload_permissions_on_revision_bump(tmp_path: Path) -> None
         list_changed_middleware=middleware,
     )
 
-    async def fake_refresh(_server, runtime_cache, _config, *, skip_push=False) -> None:
+    async def fake_refresh(
+        _server: object,
+        runtime_cache: RuntimeToolCache,
+        _config: object,
+        *,
+        skip_push: bool = False,
+    ) -> None:
+        del skip_push
         runtime_cache.replace([{"name": "tool_b", "inputSchema": {"type": "object"}}])
 
     with patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=fake_refresh):

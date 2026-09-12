@@ -6,12 +6,57 @@ import time
 from pathlib import Path
 
 from cyt.permissions.proposals import (
+    SkillProposal,
     TierProposalBundle,
     ToolProposal,
     WizardConfig,
     _entity_eligible,
     wizard_config_from_dict,
 )
+
+
+def test_entity_eligible_t0_accepts_zero_injection_stats() -> None:
+    wizard_cfg = WizardConfig(min_candidates=10, idle_ms=60_000)
+    now_ms = int(time.time() * 1000)
+    entity = {
+        "base_tier": "T0",
+        "hints": [],
+        "stats": {
+            "used": 0,
+            "candidates": 0,
+            "injected": 0,
+            "last_seen_ms": 0,
+        },
+    }
+    assert _entity_eligible(
+        entity,
+        target_tier="T0",
+        wizard_cfg=wizard_cfg,
+        min_injections=8,
+        now_ms=now_ms,
+    )
+
+
+def test_entity_eligible_t1_still_requires_injection_stats() -> None:
+    wizard_cfg = WizardConfig(min_candidates=10, idle_ms=60_000)
+    now_ms = int(time.time() * 1000)
+    entity = {
+        "base_tier": "T1",
+        "hints": [],
+        "stats": {
+            "used": 0,
+            "candidates": 0,
+            "injected": 0,
+            "last_seen_ms": 0,
+        },
+    }
+    assert not _entity_eligible(
+        entity,
+        target_tier="T1",
+        wizard_cfg=wizard_cfg,
+        min_injections=8,
+        now_ms=now_ms,
+    )
 
 
 def test_entity_eligible_requires_usage_and_idle_stats() -> None:
@@ -35,9 +80,11 @@ def test_entity_eligible_requires_usage_and_idle_stats() -> None:
         now_ms=now_ms,
     )
 
+    entity_stats = entity.get("stats")
+    stats_dict = entity_stats if isinstance(entity_stats, dict) else {}
     entity_recent = {
         **entity,
-        "stats": {**entity["stats"], "last_seen_ms": now_ms - 1_000},
+        "stats": {**stats_dict, "last_seen_ms": now_ms - 1_000},
     }
     assert not _entity_eligible(
         entity_recent,
@@ -74,8 +121,11 @@ def test_wizard_config_from_dict_uses_defaults() -> None:
 def test_bundle_summary_counts() -> None:
     bundle = TierProposalBundle(
         tier="T0",
-        tools=[object()],  # type: ignore[list-item]
-        skills=[object(), object()],  # type: ignore[list-item]
+        tools=[ToolProposal(server="srv", tool="alpha", entity_id="x", tier="T0")],
+        skills=[
+            SkillProposal(name="a", path=Path("a/SKILL.md"), entity_id="y", tier="T0"),
+            SkillProposal(name="b", path=Path("b/SKILL.md"), entity_id="z", tier="T0"),
+        ],
     )
     from cyt.permissions.proposals import bundle_summary
 

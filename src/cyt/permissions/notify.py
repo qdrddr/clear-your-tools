@@ -66,16 +66,19 @@ def _is_hook_server(health: dict[str, Any] | None) -> bool:
     )
 
 
-def resolve_permissions_changed_url() -> str | None:
+def _permissions_changed_url_from_env() -> str | None:
     env_url = os.environ.get(CYT_HOOK_URL_ENV, "").strip()
-    if env_url:
-        base = env_url.rstrip("/")
-        if base.endswith(("/hook/connect", "/hook/inject")):
-            base = base.rsplit("/", 2)[0]
-        elif base.endswith("/hook/catalog/register"):
-            base = base[: -len("/hook/catalog/register")]
-        return f"{base}{PERMISSIONS_CHANGED_PATH}"
+    if not env_url:
+        return None
+    base = env_url.rstrip("/")
+    if base.endswith(("/hook/connect", "/hook/inject")):
+        base = base.rsplit("/", 2)[0]
+    elif base.endswith("/hook/catalog/register"):
+        base = base[: -len("/hook/catalog/register")]
+    return f"{base}{PERMISSIONS_CHANGED_PATH}"
 
+
+def _permissions_changed_url_from_hook_daemon() -> str | None:
     entries = _read_hook_daemon_entries()
     ports: list[int] = []
     for entry in entries:
@@ -95,6 +98,13 @@ def resolve_permissions_changed_url() -> str | None:
         if _is_hook_server(_fetch_cyt_health(port)):
             return f"http://{LOCAL_HOST}:{port}{PERMISSIONS_CHANGED_PATH}"
     return None
+
+
+def resolve_permissions_changed_url() -> str | None:
+    env_url = _permissions_changed_url_from_env()
+    if env_url is not None:
+        return env_url
+    return _permissions_changed_url_from_hook_daemon()
 
 
 def notify_permissions_changed(

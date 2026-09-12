@@ -11,7 +11,10 @@ from cyt_mcp.config_holder import ConfigHolder
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import register_search_tool
 from cyt_mcp.stubs import StubListTransform
-from cyt_mcp.tool_list_notify import register_tool_list_changed_middleware
+from cyt_mcp.tool_list_notify import (
+    ToolListChangedMiddleware,
+    register_tool_list_changed_middleware,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,7 @@ logger = logging.getLogger(__name__)
 def build_aggregator(
     config_holder: ConfigHolder,
     cache: RuntimeToolCache,
-) -> tuple[FastMCP, object]:
+) -> tuple[FastMCP, ToolListChangedMiddleware | None]:
     config = config_holder.config
     server = FastMCP("cyt-mcp")
     degraded = mount_backend_servers(server, config.mcp_servers)

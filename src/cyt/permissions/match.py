@@ -197,6 +197,8 @@ def _resolve_permission_path(path: str | Path, *, base: Path | None = None) -> P
     candidate = Path(path).expanduser()
     if not candidate.is_absolute() and base is not None:
         candidate = base / candidate
+    if not candidate.is_absolute():
+        return candidate
     try:
         return candidate.resolve()
     except OSError:
@@ -265,7 +267,7 @@ def skill_path_matches_rule(
         skill.relative_to(rule)
         return True
     except ValueError:
-        return _skill_path_matches_rule_segments(skill, rule)
+        return _skill_path_matches_rule_segments(skill, rule_path)
 
 
 def _paths_equivalent_for_permission(

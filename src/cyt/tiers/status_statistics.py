@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
+
+TableRowFormatter = Callable[[list[str], list[int]], str]
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
 
@@ -14,11 +17,11 @@ def format_compact_tokens(tokens: int) -> str:
     if tokens < 1_000_000:
         thousands = tokens / 1000.0
         if tokens >= 10000 and abs(thousands - round(thousands)) < 0.05:
-            return f"{int(round(thousands))}k"
+            return f"{round(thousands):.0f}k"
         return f"{thousands:.1f}k"
     millions = tokens / 1_000_000.0
     if abs(millions - round(millions)) < 0.05:
-        return f"{int(round(millions))}M"
+        return f"{round(millions):.0f}M"
     return f"{millions:.1f}M"
 
 
@@ -263,7 +266,7 @@ def append_kind_tier_statistics_table(
     stats: dict[str, Any],
     *,
     title: str,
-    format_table_row: Any,
+    format_table_row: TableRowFormatter,
     show_effective: bool = False,
     entity_label: str = "entities",
 ) -> None:
@@ -336,15 +339,51 @@ def append_kind_tier_statistics_table(
         total_effective_known = int(totals.get("effective_tokens_known", 0))
         if total_effective_known < total_count:
             lines.append(
-                f"effective: {total_effective_known}/{total_count} {entity_label} computed"
+                f"effective: {total_effective_known}/{total_count} {entity_label} computed",
             )
+
+
+def _format_injected_activity_value(value: object) -> object:
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def _append_injected_activity_line(
+    lines: list[str],
+    *,
+    tools_stats: dict[str, Any] | None,
+    skills_stats: dict[str, Any] | None,
+) -> None:
+    tools_injected = None
+    skills_injected = None
+    if isinstance(tools_stats, dict):
+        activity = tools_stats.get("activity")
+        if isinstance(activity, dict) and "injected" in activity:
+            tools_injected = activity.get("injected")
+    if isinstance(skills_stats, dict):
+        activity = skills_stats.get("activity")
+        if isinstance(activity, dict) and "injected" in activity:
+            skills_injected = activity.get("injected")
+
+    if tools_injected is None and skills_injected is None:
+        return
+
+    parts: list[str] = []
+    if tools_injected is not None:
+        parts.append(f"tools={_format_injected_activity_value(tools_injected)}")
+    if skills_injected is not None:
+        parts.append(f"skills={_format_injected_activity_value(skills_injected)}")
+    if parts:
+        lines.append("")
+        lines.append(f"injected: {'  '.join(parts)}")
 
 
 def append_tier_statistics_tables(
     lines: list[str],
     overview: dict[str, Any],
     *,
-    format_table_row: Any,
+    format_table_row: TableRowFormatter,
 ) -> None:
     tier_statistics = overview.get("tier_statistics")
     if not isinstance(tier_statistics, dict):
@@ -372,29 +411,8 @@ def append_tier_statistics_tables(
             entity_label="skills",
         )
 
-    tools_injected = None
-    skills_injected = None
-    if isinstance(tools_stats, dict):
-        activity = tools_stats.get("activity")
-        if isinstance(activity, dict) and "injected" in activity:
-            tools_injected = activity.get("injected")
-    if isinstance(skills_stats, dict):
-        activity = skills_stats.get("activity")
-        if isinstance(activity, dict) and "injected" in activity:
-            skills_injected = activity.get("injected")
-
-    if tools_injected is not None or skills_injected is not None:
-        parts: list[str] = []
-        if tools_injected is not None:
-            injected_value = tools_injected
-            if isinstance(injected_value, float) and injected_value.is_integer():
-                injected_value = int(injected_value)
-            parts.append(f"tools={injected_value}")
-        if skills_injected is not None:
-            injected_value = skills_injected
-            if isinstance(injected_value, float) and injected_value.is_integer():
-                injected_value = int(injected_value)
-            parts.append(f"skills={injected_value}")
-        if parts:
-            lines.append("")
-            lines.append(f"injected: {'  '.join(parts)}")
+    _append_injected_activity_line(
+        lines,
+        tools_stats=tools_stats if isinstance(tools_stats, dict) else None,
+        skills_stats=skills_stats if isinstance(skills_stats, dict) else None,
+    )

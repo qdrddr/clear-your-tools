@@ -208,18 +208,20 @@ def test_run_hook_payload_disables_transcript_file_read_by_default() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hook_permissions_changed_endpoint(hook_client: httpx.AsyncClient) -> None:
+async def test_hook_permissions_changed_endpoint(
+    hook_client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
     from cyt.hook.permissions_revision import clear_permissions_revisions, get_permissions_revision
 
     clear_permissions_revisions()
-    ws = Path("/tmp/cyt-perm-test-ws")
-    ws.mkdir(exist_ok=True)
+    workspace_root = str(tmp_path)
     response = await hook_client.post(
         "/hook/permissions/changed",
-        json={"workspace_root": str(ws.resolve()), "agent": "cursor"},
+        json={"workspace_root": workspace_root, "agent": "cursor"},
     )
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["permissions_revision"] == 1
-    assert get_permissions_revision("cursor", ws.resolve()) == 1
+    assert get_permissions_revision("cursor", tmp_path) == 1

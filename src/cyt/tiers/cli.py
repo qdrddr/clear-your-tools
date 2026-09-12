@@ -66,7 +66,10 @@ def _apply_skill_path_filter_to_status(
     session_id: int,
 ) -> None:
     from cyt.tiers.config import tier_section_config
-    from cyt.tiers.status_detail import filter_skill_detail_by_path
+    from cyt.tiers.status_detail import (
+        filter_skill_detail_by_path,
+        filter_skill_detail_by_permissions,
+    )
 
     skill_cfg = tier_section_config(config, kind="skill")
     now_ms = int(time.time() * 1000)
@@ -84,6 +87,11 @@ def _apply_skill_path_filter_to_status(
         cfg=skill_cfg,
         session_id=session_id,
         now_ms=now_ms,
+    )
+    status_payload["skills"] = filter_skill_detail_by_permissions(
+        status_payload["skills"],
+        agent=status_agent,
+        workspace_root=project_root,
     )
 
 

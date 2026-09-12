@@ -669,6 +669,7 @@ class TierManager:
             from cyt.tiers.status_detail import (
                 enrich_skill_detail_with_workspace_discoveries,
                 filter_skill_detail_by_agent,
+                filter_skill_detail_by_permissions,
             )
 
             resolved_agent = resolve_tier_status_agent(
@@ -691,6 +692,11 @@ class TierManager:
                 skill_detail,
                 agent=resolved_agent,
                 config=config,
+                workspace_root=self.project.root_path,
+            )
+            skill_detail = filter_skill_detail_by_permissions(
+                skill_detail,
+                agent=resolved_agent,
                 workspace_root=self.project.root_path,
             )
             summary["agent"] = resolved_agent

@@ -215,14 +215,14 @@ def _post_json(url: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any] |
             return status, parsed if isinstance(parsed, dict) else None
     except HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace").strip()
-        parsed: dict[str, Any] | None = None
+        error_body: dict[str, Any] | None = None
         if body_text:
             try:
                 raw = json.loads(body_text)
-                parsed = raw if isinstance(raw, dict) else None
+                error_body = raw if isinstance(raw, dict) else None
             except json.JSONDecodeError:
-                parsed = None
-        return int(exc.code), parsed
+                error_body = None
+        return int(exc.code), error_body
     except (URLError, TimeoutError, OSError, ValueError) as exc:
         logger.debug("cyt-mcp catalog push failed: %s", exc)
         return 0, None
@@ -232,6 +232,8 @@ def _permissions_revision_from_response(response: dict[str, Any] | None) -> int:
     if response is None:
         return 0
     raw = response.get("permissions_revision")
+    if raw is None:
+        return 0
     try:
         return max(0, int(raw))
     except (TypeError, ValueError):

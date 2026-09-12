@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -10,9 +11,11 @@ import pytest
 
 from cyt.pruning.coordinator import coordinate_skills_tools_prune
 from cyt.pruning.hook_bridge import run_hook_coordinated_prune
+from cyt.skills.catalog import SkillEntryRef
 from cyt.skills.proxy_inject import prepare_deferred_skills_context, resolve_skills_for_query
 from cyt.skills.search import eligible_skills_after_gate
 from tests.support.skills_frontmatter_gate_fixtures import (
+    FrontmatterGateFixturePack,
     build_registry_from_fixture_pack,
     client_payload_for_fixture_pack,
     load_scenarios,
@@ -21,16 +24,18 @@ from tests.support.skills_frontmatter_gate_fixtures import (
 )
 
 
-def _doc_ids(entries: list[Any]) -> set[str]:
+def _doc_ids(entries: Sequence[SkillEntryRef]) -> set[str]:
     return {entry.doc_id for entry in entries}
 
 
 @pytest.fixture
-def fixture_pack(tmp_path: Path):
+def fixture_pack(tmp_path: Path) -> FrontmatterGateFixturePack:
     return materialize_fixture_pack(tmp_path)
 
 
-def test_hook_coordinated_prune_skips_gate_blocked_skills(fixture_pack) -> None:
+def test_hook_coordinated_prune_skips_gate_blocked_skills(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     config = skills_gate_config(
         workspace=fixture_pack.workspace,
         catalog_dir=fixture_pack.catalog_dir,
@@ -59,7 +64,8 @@ def test_hook_coordinated_prune_skips_gate_blocked_skills(fixture_pack) -> None:
         return []
 
     with patch(
-        "cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search
+        "cyt.skills.proxy_inject.resolve_skills_for_query",
+        side_effect=capture_skills_search,
     ):
         coordinated = coordinate_skills_tools_prune(
             query,
@@ -75,7 +81,9 @@ def test_hook_coordinated_prune_skips_gate_blocked_skills(fixture_pack) -> None:
     assert coordinated.skill_matches == []
 
 
-def test_run_hook_coordinated_prune_applies_gate_before_search(fixture_pack) -> None:
+def test_run_hook_coordinated_prune_applies_gate_before_search(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     config = skills_gate_config(
         workspace=fixture_pack.workspace,
         catalog_dir=fixture_pack.catalog_dir,
@@ -102,7 +110,8 @@ def test_run_hook_coordinated_prune_applies_gate_before_search(fixture_pack) -> 
         return []
 
     with patch(
-        "cyt.skills.proxy_inject.resolve_skills_for_query", side_effect=capture_skills_search
+        "cyt.skills.proxy_inject.resolve_skills_for_query",
+        side_effect=capture_skills_search,
     ):
         _prune_result, skill_matches, _catalog, _by_source, _timing = run_hook_coordinated_prune(
             query,
@@ -122,7 +131,7 @@ def test_run_hook_coordinated_prune_applies_gate_before_search(fixture_pack) -> 
     ids=[scenario.id for scenario in load_scenarios()[1]],
 )
 def test_proxy_deferred_context_only_includes_gate_eligible_skills(
-    fixture_pack,
+    fixture_pack: FrontmatterGateFixturePack,
     scenario_id: str,
 ) -> None:
     _, scenarios = load_scenarios()
@@ -148,7 +157,9 @@ def test_proxy_deferred_context_only_includes_gate_eligible_skills(
     assert _doc_ids(deferred.skill_entries) == scenario.eligible_doc_ids
 
 
-def test_resolve_skills_for_query_does_not_prune_gate_blocked_entries(fixture_pack) -> None:
+def test_resolve_skills_for_query_does_not_prune_gate_blocked_entries(
+    fixture_pack: FrontmatterGateFixturePack,
+) -> None:
     config = skills_gate_config(
         workspace=fixture_pack.workspace,
         catalog_dir=fixture_pack.catalog_dir,

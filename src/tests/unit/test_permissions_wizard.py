@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cyt.permissions.proposals import SkillProposal, TierProposalBundle, ToolProposal
 from cyt.permissions.wizard import (
     AppliedChanges,
-    WizardInterrupted,
+    WizardInterruptedError,
     _collect_bundle_decisions,
     _print_bundle_proposals,
     apply_changes,
@@ -49,7 +51,10 @@ def test_apply_changes_writes_workspace_overlay(tmp_path: Path) -> None:
         skill_dirs=[],
         skill_files=[
             SkillProposal(
-                name="demo", path=tmp_path / "skill" / "SKILL.md", entity_id="", tier="T0"
+                name="demo",
+                path=tmp_path / "skill" / "SKILL.md",
+                entity_id="",
+                tier="T0",
             ),
         ],
     )
@@ -77,7 +82,9 @@ def test_run_permissions_wizard_no_wizard_flag_exits(tmp_path: Path) -> None:
     assert run_permissions_wizard(args) == 2
 
 
-def test_print_bundle_proposals_lists_tools_and_skills(capsys) -> None:
+def test_print_bundle_proposals_lists_tools_and_skills(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     bundle = TierProposalBundle(
         tier="T1",
         tools=[
@@ -108,7 +115,9 @@ def test_print_bundle_proposals_lists_tools_and_skills(capsys) -> None:
     assert "skill explain-simply  (config.yaml: .agents/skills)" in captured.out
 
 
-def test_collect_bundle_decisions_interrupt_exits_cleanly(monkeypatch) -> None:
+def test_collect_bundle_decisions_interrupt_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     bundle = TierProposalBundle(
         tier="T1",
         skills=[
@@ -116,7 +125,7 @@ def test_collect_bundle_decisions_interrupt_exits_cleanly(monkeypatch) -> None:
         ],
     )
 
-    def raise_interrupt(*args, **kwargs):
+    def raise_interrupt(*_args: object, **_kwargs: object) -> bool:
         raise KeyboardInterrupt
 
     monkeypatch.setattr("cyt.proxy.setup_wizard._prompt_yes_no", raise_interrupt)
@@ -127,18 +136,25 @@ def test_collect_bundle_decisions_interrupt_exits_cleanly(monkeypatch) -> None:
             auto_yes=False,
             interactive=True,
         )
-        raise AssertionError("expected WizardInterrupted")
-    except WizardInterrupted:
+        raise AssertionError("expected WizardInterruptedError")
+    except WizardInterruptedError:
         pass
 
 
-def test_run_permissions_wizard_interrupt_returns_130(monkeypatch, tmp_path: Path) -> None:
+def test_run_permissions_wizard_interrupt_returns_130(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     import argparse
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr(
+        "cyt.permissions.wizard.build_wizard_tier_notes",
+        lambda **kwargs: {},
+    )
+    monkeypatch.setattr(
         "cyt.permissions.wizard._collect_bundle_decisions",
-        lambda *args, **kwargs: (_ for _ in ()).throw(WizardInterrupted()),
+        lambda *args, **kwargs: (_ for _ in ()).throw(WizardInterruptedError()),
     )
     monkeypatch.setattr(
         "cyt.permissions.wizard.build_all_proposals",

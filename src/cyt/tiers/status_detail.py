@@ -569,6 +569,65 @@ def filter_skill_detail_by_agent(
     }
 
 
+def filter_skill_detail_by_permissions(
+    detail: dict[str, Any],
+    *,
+    agent: str,
+    workspace_root: Path | None,
+) -> dict[str, Any]:
+    """Drop permission-denied skills and rebuild histogram counts."""
+    from cyt.permissions.match import is_skill_permission_denied
+    from cyt.permissions.merge import effective_permissions
+
+    effective = effective_permissions(
+        agent=agent,
+        workspace_root=workspace_root,
+    )
+    deny_entries = effective.skills.deny
+
+    histogram: dict[str, int] = dict.fromkeys(_TIER_LABELS, 0)
+    by_tier: dict[str, list[dict[str, Any]]] = {label: [] for label in _TIER_LABELS}
+    raw_by_tier = detail.get("by_tier")
+    if not isinstance(raw_by_tier, dict):
+        return {
+            "histogram": histogram,
+            "by_tier": by_tier,
+        }
+
+    for label in _TIER_LABELS:
+        items = raw_by_tier.get(label)
+        if not isinstance(items, list):
+            continue
+        for entity in items:
+            if not isinstance(entity, dict):
+                continue
+            name = str(entity.get("display_name") or entity.get("name") or "").strip()
+            source_path = entity.get("source_path") or entity.get("entity_id")
+            path: Path | None = None
+            if source_path:
+                try:
+                    path = Path(str(source_path)).expanduser()
+                except OSError:
+                    path = Path(str(source_path))
+            if is_skill_permission_denied(
+                skill_name=name,
+                skill_path=path,
+                deny_entries=deny_entries,
+                base=workspace_root,
+            ):
+                continue
+            by_tier[label].append(entity)
+            histogram[label] = histogram.get(label, 0) + 1
+
+    for entities in by_tier.values():
+        entities.sort(key=lambda item: str(item.get("entity_id", "")))
+
+    return {
+        "histogram": {label: histogram.get(label, 0) for label in _TIER_LABELS},
+        "by_tier": {label: by_tier.get(label, []) for label in _TIER_LABELS},
+    }
+
+
 def validate_status_path_filter(
     path_root: Path,
     *,

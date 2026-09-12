@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from cyt.permissions.notify import notify_permissions_changed, resolve_permissions_changed_url
 
 
@@ -41,7 +43,7 @@ def test_notify_permissions_changed_posts_to_hook(tmp_path: Path) -> None:
     assert urlopen.called
 
 
-def test_resolve_permissions_changed_url_from_env(monkeypatch) -> None:
+def test_resolve_permissions_changed_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "CYT_HOOK_URL",
         "http://127.0.0.1:8834/hook/connect",

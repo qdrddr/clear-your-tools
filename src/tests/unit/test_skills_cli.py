@@ -65,6 +65,7 @@ def _skills_config(root: Path, skills_dir: Path, catalog_dir: Path) -> dict:
             "directories": [str(skills_dir)],
             "max_tokens_per_request": 4000,
             "pageindex": {"enable_bm25_chunking": True},
+            "frontmatter_upper_limit": 1.0,
             "hook": {
                 "request_budget_fraction": 50.0,
                 "inject_cap_multiplier_of_request_tokens": 5.0,
@@ -327,7 +328,7 @@ def test_cli_prompt_prints_injection_text(monkeypatch: pytest.MonkeyPatch) -> No
         monkeypatch.chdir(root)
 
         config = _skills_config(root, skills_dir, catalog_dir)
-        config["skills"]["frontmatter_upper_limit"] = 0.99
+        config["skills"]["frontmatter_upper_limit"] = 1.0
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -357,7 +358,7 @@ def test_cli_prompt_reports_configured_and_executed_pipeline(
 
         config = _skills_config(root, skills_dir, catalog_dir)
         config["skills"]["pipeline"] = "rerank"
-        config["skills"]["frontmatter_upper_limit"] = 0.99
+        config["skills"]["frontmatter_upper_limit"] = 1.0
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -387,7 +388,7 @@ def test_cli_prompt_reports_frontmatter_and_chunk_scores(
         monkeypatch.chdir(root)
 
         config = _skills_config(root, skills_dir, catalog_dir)
-        config["skills"]["frontmatter_upper_limit"] = 0.99
+        config["skills"]["frontmatter_upper_limit"] = 1.0
         with patch("cyt.skills.cli.load_config", return_value=config):
             skills_cli.run(prompt="use context7 library docs")
 
@@ -575,7 +576,7 @@ def test_cli_prompt_runs_when_skills_disabled_in_config(
                 "catalog_dir": str(catalog_dir),
                 "directories": [str(skills_dir)],
                 "max_tokens_per_request": 4000,
-                "frontmatter_upper_limit": 0.99,
+                "frontmatter_upper_limit": 1.0,
                 "pageindex": {"enable_bm25_chunking": True},
                 "hook": {
                     "request_budget_fraction": 50.0,

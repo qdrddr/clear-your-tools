@@ -96,8 +96,19 @@ def _is_ephemeral_path(path: Path) -> bool:
 
 def _canonical_user_agent_mcp_ref(agent: str) -> str:
     return DEFAULT_MCP_AGENT_CONFIG_REFS.get(
-        agent.strip() or "cursor", f"~/.config/cyt/mcp/{agent}.json"
+        agent.strip() or "cursor",
+        f"~/.config/cyt/mcp/{agent}.json",
     )
+
+
+def _agent_mcp_path_is_stale(resolved: Path, user_mcp_resolved: Path) -> bool:
+    if _is_ephemeral_path(resolved):
+        return True
+    try:
+        resolved.relative_to(user_mcp_resolved)
+    except ValueError:
+        return True
+    return False
 
 
 def repair_stale_mcp_config_agent_paths(cfg: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -133,14 +144,7 @@ def repair_stale_mcp_config_agent_paths(cfg: dict[str, Any]) -> tuple[dict[str, 
         except OSError:
             resolved = Path(text).expanduser()
 
-        stale = _is_ephemeral_path(resolved)
-        if not stale:
-            try:
-                resolved.relative_to(user_mcp_resolved)
-            except ValueError:
-                stale = True
-
-        if stale:
+        if _agent_mcp_path_is_stale(resolved, user_mcp_resolved):
             canonical = _canonical_user_agent_mcp_ref(agent)
             if agents_block.get(agent) != canonical:
                 agents_block[agent] = canonical

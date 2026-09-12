@@ -76,7 +76,12 @@ def test_build_kind_tier_statistics_tool_tokens_from_catalog() -> None:
             "T0": [],
             "T1": [],
             "T2": [
-                {"entity_id": "cyt_mcp:search", "temporary": False, "stats": {}, "token_count": 999}
+                {
+                    "entity_id": "cyt_mcp:search",
+                    "temporary": False,
+                    "stats": {},
+                    "token_count": 999,
+                },
             ],
             "T3": [],
             "T4": [],

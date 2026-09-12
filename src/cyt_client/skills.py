@@ -179,12 +179,13 @@ def _user_global_skill_directories(data: dict[str, Any]) -> list[Path]:
         load_config = cyt_config.load_config
         resolve_skill_directories = skill_directories_mod.resolve_skill_directories
         agent = infer_launch_agent(data) or "cursor"
-        return resolve_skill_directories(
+        directories = resolve_skill_directories(
             load_config(),
             agent=agent,
             workspace_root=None,
             include_platform_defaults=False,
         )
+        return list(directories)
     except ImportError:
         return []
 

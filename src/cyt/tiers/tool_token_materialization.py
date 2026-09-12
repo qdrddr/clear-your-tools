@@ -128,8 +128,6 @@ def catalog_tools_by_entity_id(
     if not catalog_tools:
         return out
     for tool in catalog_tools:
-        if not isinstance(tool, dict):
-            continue
         entity_id = tool_entity_id(tool)
         if entity_id:
             out[entity_id] = tool

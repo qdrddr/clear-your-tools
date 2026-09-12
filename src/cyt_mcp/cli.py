@@ -41,7 +41,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "permissions",
         help="Manage MCP permissions (alias for cyt permissions)",
     )
-    permissions_sub = permissions.add_subparsers(dest="permissions_command")
     from cyt.permissions.cli import _configure_permissions_parser
 
     _configure_permissions_parser(permissions)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from cyt.tiers.adapters.skills import stable_skill_doc_entity_id
 from cyt.tiers.config import TierSectionConfig, tier_section_config
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
@@ -15,6 +17,7 @@ from cyt.tiers.status_detail import (
     enrich_tool_detail_with_catalog_discoveries,
     entity_status_dict,
     filter_skill_detail_by_agent,
+    filter_skill_detail_by_permissions,
 )
 from tests.support.skills_helpers import isolated_skills_agents_block
 
@@ -428,3 +431,77 @@ def test_filter_skill_detail_by_agent_excludes_other_agent_workspace_skills(
     names = {item.get("name") for tier_items in filtered["by_tier"].values() for item in tier_items}
     assert names == {"explain-simply"}
     assert filtered["histogram"]["T0"] == 1
+
+
+def test_filter_skill_detail_by_permissions_excludes_denied_skills(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    allowed_dir = workspace / ".agents" / "skills" / "explain-simply"
+    allowed_dir.mkdir(parents=True)
+    allowed_skill = allowed_dir / "SKILL.md"
+    allowed_skill.write_text(
+        "---\nname: explain-simply\ndescription: allowed\n---\n",
+        encoding="utf-8",
+    )
+    denied_dir = workspace / ".agents" / "skills" / "create-hook"
+    denied_dir.mkdir(parents=True)
+    denied_skill = denied_dir / "SKILL.md"
+    denied_skill.write_text(
+        "---\nname: create-hook\ndescription: denied\n---\n",
+        encoding="utf-8",
+    )
+
+    detail = {
+        "histogram": {"T0": 1, "T1": 1, "T2": 0, "T3": 0, "T4": 0},
+        "by_tier": {
+            "T0": [
+                {
+                    "entity_id": str(allowed_skill.resolve()),
+                    "name": "explain-simply",
+                    "source_path": str(allowed_skill.resolve()),
+                },
+            ],
+            "T1": [
+                {
+                    "entity_id": str(denied_skill.resolve()),
+                    "name": "create-hook",
+                    "source_path": str(denied_skill.resolve()),
+                },
+            ],
+            "T2": [],
+            "T3": [],
+            "T4": [],
+        },
+    }
+
+    from cyt.permissions.schema import EffectivePermissions, SkillsPermissions
+
+    def fake_effective(
+        *,
+        agent: str,
+        workspace_root: Path | None = None,
+        **kwargs: object,
+    ) -> EffectivePermissions:
+        return EffectivePermissions(
+            skills=SkillsPermissions(
+                deny=(f"path:{denied_dir}/",),
+            ),
+        )
+
+    monkeypatch.setattr(
+        "cyt.permissions.merge.effective_permissions",
+        fake_effective,
+    )
+
+    filtered = filter_skill_detail_by_permissions(
+        detail,
+        agent="cursor",
+        workspace_root=workspace,
+    )
+    names = {item.get("name") for tier_items in filtered["by_tier"].values() for item in tier_items}
+    assert names == {"explain-simply"}
+    assert filtered["histogram"]["T0"] == 1
+    assert filtered["histogram"]["T1"] == 0
