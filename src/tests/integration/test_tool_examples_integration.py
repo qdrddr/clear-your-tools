@@ -42,8 +42,7 @@ def _examples_config(db_path: Path, workspace: Path) -> dict:
             "tools": {
                 "enabled": True,
                 "tiers": {
-                    "enabled": False,
-                    "shadow": True,
+                    "mode": "shadow",
                     "database": {"path": str(workspace / "tier_state.db")},
                 },
                 "sequence": ["bm25"],

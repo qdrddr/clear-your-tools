@@ -27,6 +27,7 @@ from cyt.tiers.adapters.tools import (
     tool_entity_id,
 )
 from cyt.tiers.config import (
+    TierMode,
     TierSectionConfig,
     resolve_tier_project,
     tier_section_config,
@@ -78,8 +79,7 @@ class NoOpTierManager:
             epoch_start_ms=0,
             session_id=0,
             entities={},
-            shadow_mode=cfg.shadow,
-            enabled=cfg.enabled,
+            mode=cfg.mode,
         )
 
     def snapshot_skills(self, config: dict[str, Any]) -> TierSnapshot:
@@ -90,8 +90,7 @@ class NoOpTierManager:
             epoch_start_ms=0,
             session_id=0,
             entities={},
-            shadow_mode=cfg.shadow,
-            enabled=cfg.enabled,
+            mode=cfg.mode,
         )
 
     def apply_tools(
@@ -201,7 +200,7 @@ class TierManager:
         self._pending_flush = False
         self._last_injected_tools: set[str] = set()
         self._last_injected_skills: set[str] = set()
-        self._rebuild_snapshots(enabled=False, shadow=True)
+        self._rebuild_snapshots(mode=TierMode.SHADOW)
 
     def close(self) -> None:
         self._store.close()
@@ -296,11 +295,10 @@ class TierManager:
             epoch_start_ms=self._epoch.epoch_start_ms,
             session_id=self._epoch.session_id,
             entities=entities,
-            shadow_mode=cfg.shadow,
-            enabled=cfg.enabled,
+            mode=cfg.mode,
         )
 
-    def _rebuild_snapshots(self, *, enabled: bool, shadow: bool) -> None:
+    def _rebuild_snapshots(self, *, mode: TierMode) -> None:
         self._snapshot_tools = TierSnapshot(
             project=self.project,
             epoch_id=self._epoch.epoch_id,
@@ -317,8 +315,7 @@ class TierManager:
                 for key, state in self._states.items()
                 if key[0] == EntityKind.TOOL
             },
-            shadow_mode=shadow,
-            enabled=enabled,
+            mode=mode,
         )
         self._snapshot_skills = TierSnapshot(
             project=self.project,
@@ -336,19 +333,18 @@ class TierManager:
                 for key, state in self._states.items()
                 if key[0] == EntityKind.SKILL
             },
-            shadow_mode=shadow,
-            enabled=enabled,
+            mode=mode,
         )
 
     def snapshot_tools(self, config: dict[str, Any]) -> TierSnapshot:
         cfg = tier_section_config(config, kind="tool")
-        self._rebuild_snapshots(enabled=cfg.enabled, shadow=cfg.shadow)
+        self._rebuild_snapshots(mode=cfg.mode)
         assert self._snapshot_tools is not None
         return self._snapshot_tools
 
     def snapshot_skills(self, config: dict[str, Any]) -> TierSnapshot:
         cfg = tier_section_config(config, kind="skill")
-        self._rebuild_snapshots(enabled=cfg.enabled, shadow=cfg.shadow)
+        self._rebuild_snapshots(mode=cfg.mode)
         assert self._snapshot_skills is not None
         return self._snapshot_skills
 
@@ -413,7 +409,7 @@ class TierManager:
                 epoch_id=self._epoch.epoch_id,
                 transitions=transitions,
             )
-            if cfg.shadow:
+            if cfg.mode == TierMode.SHADOW:
                 logger.info(
                     "tier shadow epoch %s transitions: %d",
                     self._epoch.epoch_id,
@@ -596,7 +592,7 @@ class TierManager:
         )
         for state in self._states.values():
             self._store.upsert_entity_state(self.project, state)
-        if transitions and cfg.shadow:
+        if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("tool shadow transitions: %d", len(transitions))
 
     def status(
@@ -710,15 +706,13 @@ class TierManager:
                 )
             summary["agent"] = resolved_agent
             summary["tools"] = {
-                "enabled": tool_cfg.enabled,
-                "shadow": tool_cfg.shadow,
+                "mode": tool_cfg.mode.value,
                 "config": config_summary(tool_cfg),
                 "tracked_catalog_tool_count": len(tracked_catalog_ids or ()),
                 **tool_detail,
             }
             summary["skills"] = {
-                "enabled": skill_cfg.enabled,
-                "shadow": skill_cfg.shadow,
+                "mode": skill_cfg.mode.value,
                 "config": config_summary(skill_cfg),
                 **skill_detail,
             }

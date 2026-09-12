@@ -87,8 +87,8 @@ def test_format_overview_text_total_before_path(tmp_path: Path, monkeypatch: Mon
         "agent": "cursor",
         "overview": build_status_overview(
             {
-                "tools": {"enabled": False, "shadow": True},
-                "skills": {"enabled": False, "shadow": True},
+                "tools": {"mode": "shadow"},
+                "skills": {"mode": "shadow"},
             },
             config={},
             workspace_root=tmp_path,
@@ -143,14 +143,12 @@ def test_build_status_overview_groups_servers(
 
     status = {
         "tools": {
-            "enabled": False,
-            "shadow": True,
+            "mode": "shadow",
             "tracked_catalog_tool_count": 3,
             "histogram": {"T0": 0, "T1": 0, "T2": 3, "T3": 0, "T4": 0},
         },
         "skills": {
-            "enabled": False,
-            "shadow": True,
+            "mode": "shadow",
             "histogram": {"T0": 0, "T1": 0, "T2": 0, "T3": 0, "T4": 0},
         },
         "epoch_id": 1,
@@ -190,8 +188,8 @@ def test_format_overview_text_omits_individual_tools(
         "agent": "cursor",
         "overview": build_status_overview(
             {
-                "tools": {"enabled": False, "shadow": True},
-                "skills": {"enabled": False, "shadow": True},
+                "tools": {"mode": "shadow"},
+                "skills": {"mode": "shadow"},
             },
             config={},
             workspace_root=tmp_path,
@@ -225,12 +223,11 @@ def test_build_status_overview_includes_tier_statistics(
     overview = build_status_overview(
         {
             "tools": {
-                "enabled": False,
-                "shadow": True,
+                "mode": "shadow",
                 "histogram": {"T0": 0, "T1": 1, "T2": 0, "T3": 0, "T4": 0},
                 "by_tier": {"T0": [], "T1": [], "T2": [], "T3": [], "T4": []},
             },
-            "skills": {"enabled": False, "shadow": True},
+            "skills": {"mode": "shadow"},
         },
         config={},
         workspace_root=tmp_path,
@@ -255,14 +252,12 @@ def test_tiers_status_default_shows_tier_tables_not_infrastructure(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -335,14 +330,12 @@ def test_tiers_status_path_lists_skills_under_directory(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -373,14 +366,12 @@ def test_tiers_status_path_rejects_outside_discovery_roots(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )

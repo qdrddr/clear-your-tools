@@ -151,7 +151,7 @@ def test_record_skill_candidates_skips_ephemeral_source(
     db_path = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
     config["tools"] = tools
     temp_path = "/var/folders/xx/T/pytest-of-user/test0/skills/create-hook.md"
     entry = type(
@@ -181,7 +181,7 @@ def test_record_skill_used_respects_last_injected(project_root: Path, base_confi
 
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
     config["tools"] = tools
 
     manager = TierManager(project_root, str(db_path))

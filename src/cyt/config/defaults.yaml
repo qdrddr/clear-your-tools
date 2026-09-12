@@ -451,8 +451,7 @@ tools:
     redact_key_patterns:
       - "(?i)(password|secret|token|api[_-]?key|authorization)"
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     # Tier statistics are scoped per git project (toplevel); no global/user bucket.
     database:
       path: ~/.config/cyt/tier_state.db
@@ -572,8 +571,7 @@ stats:
 skills:
   enabled: false
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     # Tier statistics are scoped per git project (toplevel); client skill reads
     # notify the hook daemon; no global/user bucket.
   selector_soft_budget: 2000

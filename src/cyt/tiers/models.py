@@ -7,6 +7,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cyt.tiers.config import TierMode
+
 if TYPE_CHECKING:
     from cyt.config.policy_catalog import ToolPolicyRef
 
@@ -93,8 +95,7 @@ class TierSnapshot:
     epoch_start_ms: int
     session_id: int
     entities: dict[tuple[str, str], EntityTierView] = field(default_factory=dict)
-    shadow_mode: bool = True
-    enabled: bool = False
+    mode: TierMode = TierMode.SHADOW
 
     def effective_tier(self, kind: str, entity_id: str) -> Tier:
         view = self.entities.get((kind, entity_id))

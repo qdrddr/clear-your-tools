@@ -573,11 +573,10 @@ def _append_verbose_status_header(lines: list[str], payload: dict[str, Any]) -> 
         block = payload.get(kind)
         if not isinstance(block, dict):
             continue
-        enabled = block.get("enabled")
-        shadow = block.get("shadow")
+        mode = block.get("mode")
         hist = block.get("histogram")
         hist_text = _format_histogram(hist) if isinstance(hist, dict) else ""
-        lines.append(f"{kind}: enabled={enabled} shadow={shadow} ({hist_text})")
+        lines.append(f"{kind}: mode={mode} ({hist_text})")
 
 
 def format_status_text(

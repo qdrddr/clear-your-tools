@@ -19,8 +19,7 @@ def test_format_compact_tokens() -> None:
 
 def test_build_kind_tier_statistics_histogram_and_temp() -> None:
     kind_block = {
-        "enabled": False,
-        "shadow": True,
+        "mode": "shadow",
         "histogram": {"T0": 1, "T1": 0, "T2": 2, "T3": 1, "T4": 0},
         "by_tier": {
             "T0": [{"entity_id": "cyt_mcp:cold", "temporary": False, "stats": {}}],

@@ -24,7 +24,7 @@ def _run_cli(script: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def test_app_cli_tiers_stats_requires_project(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("tools:\n  tiers:\n    enabled: false\n", encoding="utf-8")
+    config_path.write_text("tools:\n  tiers:\n    mode: off\n", encoding="utf-8")
     env = {**ENV, "CYT_CONFIG": str(config_path)}
     result = subprocess.run(
         [sys.executable, str(APP), "tiers", "stats"],

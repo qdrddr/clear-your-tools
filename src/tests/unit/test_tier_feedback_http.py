@@ -32,7 +32,7 @@ async def test_hook_tier_feedback_records_tool_used(project_root: Path, base_con
     db_path = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
     config["tools"] = tools
 
     request = MagicMock()
@@ -77,7 +77,7 @@ async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_co
     entity_id = resolve_skill_entity_id(str(skill_path.resolve()))
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
     config["tools"] = tools
 
     request = MagicMock()
@@ -126,7 +126,7 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
     entity_id = resolve_skill_entity_id(resolved_id)
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True, "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
     config["tools"] = tools
 
     manager = TierManager(project_root, str(db_path))

@@ -145,15 +145,13 @@ def tier_stats_config(pack: TiersStatsFixturePack) -> dict[str, Any]:
             },
             "tools": {
                 "tiers": {
-                    "enabled": False,
-                    "shadow": True,
+                    "mode": "shadow",
                     "database": {"path": str(pack.db_path)},
                 },
             },
             "skills": {
                 "tiers": {
-                    "enabled": False,
-                    "shadow": True,
+                    "mode": "shadow",
                 },
                 "directories": [str(pack.workspace / ".agents" / "skills")],
             },
@@ -205,14 +203,12 @@ def materialize_fixture_pack(tmp_path: Path) -> TiersStatsFixturePack:
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )

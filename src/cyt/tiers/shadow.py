@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from cyt.tiers.adapters.tools import tool_entity_id
-from cyt.tiers.config import TierSectionConfig, tiers_active
+from cyt.tiers.config import TierMode, TierSectionConfig, tiers_active
 from cyt.tiers.manager import NoOpTierManager, TierManager
 from cyt.tiers.models import EntityTierState, Tier, ToolsTierApplyResult
 from cyt.tiers.wake import evaluate_fast_wake
@@ -71,7 +71,7 @@ def schedule_tool_shadow_evaluation(
             section = tier_section_config(config, kind="tool")
             hits = _lexical_shadow_hits(query, dormant_ids, tools_by_id)
             manager.apply_shadow_tool_hits(hits, config)
-            if section.shadow and hits:
+            if section.mode == TierMode.SHADOW and hits:
                 logger.debug("tool shadow hits: %d dormant tools", len(hits))
         except Exception:
             logger.exception("tool shadow evaluation failed")

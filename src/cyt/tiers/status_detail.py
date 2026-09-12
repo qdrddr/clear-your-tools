@@ -65,6 +65,7 @@ def _thresholds_dict(thresholds: TierThresholds) -> dict[str, float]:
 
 def config_summary(cfg: TierSectionConfig) -> dict[str, Any]:
     return {
+        "mode": cfg.mode.value,
         "request_half_life": cfg.request_half_life,
         "prompt_cache_ttl_minutes": cfg.prompt_cache_ttl_minutes,
         "ttl_multiplier": cfg.ttl_multiplier,

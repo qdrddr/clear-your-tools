@@ -4,11 +4,28 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from cyt.config.sections import tools_at
 from cyt.hook.install_scope import CytInstallScope
+
+
+class TierMode(StrEnum):
+    """Tier operating mode: off (disabled), shadow (observe only), live (apply filtering)."""
+
+    OFF = "off"
+    SHADOW = "shadow"
+    LIVE = "live"
+
+    @property
+    def is_active(self) -> bool:
+        return self != TierMode.OFF
+
+    @property
+    def applies(self) -> bool:
+        return self == TierMode.LIVE
 
 
 @dataclass(frozen=True)
@@ -21,8 +38,7 @@ class TierThresholds:
 
 @dataclass(frozen=True)
 class TierSectionConfig:
-    enabled: bool
-    shadow: bool
+    mode: TierMode
     request_half_life: float
     prompt_cache_ttl_minutes: float
     ttl_multiplier: float
@@ -58,6 +74,24 @@ def _bool(value: object, default: bool) -> bool:
     if isinstance(value, bool):
         return value
     return default
+
+
+def _parse_tier_mode(value: str) -> TierMode | None:
+    normalized = value.strip().lower()
+    try:
+        return TierMode(normalized)
+    except ValueError:
+        return None
+
+
+def _resolve_tier_mode(*sources: dict[str, Any]) -> TierMode:
+    for source in sources:
+        raw_mode = source.get("mode")
+        if isinstance(raw_mode, str):
+            parsed = _parse_tier_mode(raw_mode)
+            if parsed is not None:
+                return parsed
+    return TierMode.SHADOW
 
 
 def _threshold_pair(section: dict[str, Any], prefix: str) -> TierThresholds:
@@ -111,11 +145,9 @@ def tier_section_config(cfg: dict[str, Any], *, kind: str) -> TierSectionConfig:
     wake_weights = wake_dict.get("weights")
     weights = wake_weights if isinstance(wake_weights, dict) else {}
     kind_block = _tiers_block(cfg, kind=kind)
-    enabled = _bool(kind_block.get("enabled"), _bool(block.get("enabled"), False))
-    shadow = _bool(kind_block.get("shadow"), _bool(block.get("shadow"), True))
+    mode = _resolve_tier_mode(kind_block, block)
     return TierSectionConfig(
-        enabled=enabled,
-        shadow=shadow,
+        mode=mode,
         request_half_life=_float(stats_dict.get("request_half_life"), 100.0),
         prompt_cache_ttl_minutes=_float(epoch_dict.get("prompt_cache_ttl_minutes"), 5.0),
         ttl_multiplier=_float(epoch_dict.get("ttl_multiplier"), 1.0),
@@ -247,12 +279,12 @@ def resolve_tier_scope(*, workspace: Path | None = None) -> Path | None:
 
 def tiers_active(cfg: dict[str, Any], *, kind: str) -> bool:
     section = tier_section_config(cfg, kind=kind)
-    return section.enabled or section.shadow
+    return section.mode.is_active
 
 
 def tiers_apply(cfg: dict[str, Any], *, kind: str) -> bool:
     section = tier_section_config(cfg, kind=kind)
-    return section.enabled and not section.shadow
+    return section.mode.applies
 
 
 def resolve_tier_status_agent(

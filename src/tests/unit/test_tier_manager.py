@@ -129,7 +129,7 @@ def test_tier_store_roundtrip(project_root: Path, tier_db: str) -> None:
 def test_record_tool_candidates_increments_stats(manager: TierManager, base_config: dict) -> None:
     cfg = {
         **base_config,
-        "tools": {**base_config.get("tools", {}), "tiers": {"enabled": False, "shadow": True}},
+        "tools": {**base_config.get("tools", {}), "tiers": {"mode": "shadow"}},
     }
     tools = [{"name": "x", "cyt_catalog_source": "cyt_mcp"}]
     manager.record_tool_candidates(tools, cfg)
@@ -142,7 +142,7 @@ def _cyt_mcp_only_config(base_config: dict) -> dict:
     hook = dict(tools.get("hook") or {})
     hook["tools_from"] = ["cyt_mcp"]
     tools["hook"] = hook
-    tools["tiers"] = {"enabled": False, "shadow": True}
+    tools["tiers"] = {"mode": "shadow"}
     return {**base_config, "tools": tools}
 
 
@@ -204,7 +204,7 @@ def test_purge_removes_test_fixture_tools_not_in_loaded_catalog(
 
 def test_fast_wake_from_dormant(manager: TierManager, base_config: dict) -> None:
     cfg = tier_section_config(
-        {**base_config, "tools": {"tiers": {"enabled": False, "shadow": True}}},
+        {**base_config, "tools": {"tiers": {"mode": "shadow"}}},
         kind="tool",
     )
     state = EntityTierState(
@@ -255,12 +255,12 @@ def base_config() -> dict:
 @pytest.fixture
 def config_with_tiers_enabled(base_config: dict) -> dict:
     tools = dict(base_config.get("tools") or {})
-    tools["tiers"] = {"enabled": True, "shadow": False}
+    tools["tiers"] = {"mode": "live"}
     return {**base_config, "tools": tools}
 
 
 @pytest.fixture
 def config_with_tiers_shadow(base_config: dict) -> dict:
     tools = dict(base_config.get("tools") or {})
-    tools["tiers"] = {"enabled": False, "shadow": True}
+    tools["tiers"] = {"mode": "shadow"}
     return {**base_config, "tools": tools}

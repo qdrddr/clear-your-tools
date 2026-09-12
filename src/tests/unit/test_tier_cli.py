@@ -30,14 +30,12 @@ def test_tiers_status_json(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -59,14 +57,12 @@ def test_tiers_status_json_includes_entity_details(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -107,8 +103,7 @@ skills:
     payload = json.loads(captured.out)
 
     tools = payload["tools"]
-    assert tools["enabled"] is False
-    assert tools["shadow"] is True
+    assert tools["mode"] == "shadow"
     assert "config" in tools
     assert tools["histogram"]["T3"] == 1
 
@@ -147,14 +142,12 @@ def test_tiers_status_json_filters_by_kind_and_name(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -216,14 +209,12 @@ def test_tiers_status_json_filters_tools_by_t0_case_insensitive(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -279,14 +270,12 @@ def test_tiers_list_matches_stats_without_filters(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -316,14 +305,12 @@ def test_tiers_status_default_human_shows_overview(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -383,14 +370,12 @@ def test_tiers_status_human_lists_entities(
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -430,7 +415,7 @@ def test_tiers_status_invalid_tier(
 ) -> None:
     (tmp_path / ".git").mkdir()
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("tools:\n  tiers:\n    enabled: false\n", encoding="utf-8")
+    config_path.write_text("tools:\n  tiers:\n    mode: off\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     _managers.clear()
     code = tiers_main(["stats", "--workspace", str(tmp_path), "--tier", "bad"])
@@ -441,7 +426,7 @@ def test_tiers_status_invalid_tier(
 def test_tiers_status_requires_project(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("tools:\n  tiers:\n    enabled: false\n", encoding="utf-8")
+    config_path.write_text("tools:\n  tiers:\n    mode: off\n", encoding="utf-8")
     monkeypatch.setenv("CYT_CONFIG", str(config_path))
     code = tiers_main(["stats"])
     assert code == 2

@@ -29,8 +29,7 @@ def clear_tier_managers() -> Iterator[None]:
 def tier_config(base_config: dict, tmp_path: Path) -> dict:
     tools = dict(base_config.get("tools") or {})
     tools["tiers"] = {
-        "enabled": True,
-        "shadow": False,
+        "mode": "live",
         "database": {"path": str(tmp_path / "tier_state.db")},
     }
     return {**base_config, "tools": tools}
@@ -40,8 +39,7 @@ def tier_config(base_config: dict, tmp_path: Path) -> dict:
 def shadow_config(base_config: dict, tmp_path: Path) -> dict:
     tools = dict(base_config.get("tools") or {})
     tools["tiers"] = {
-        "enabled": False,
-        "shadow": True,
+        "mode": "shadow",
         "database": {"path": str(tmp_path / "tier_shadow.db")},
     }
     return {**base_config, "tools": tools}

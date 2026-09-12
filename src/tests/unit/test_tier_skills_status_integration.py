@@ -26,14 +26,12 @@ def _write_tier_config(tmp_path: Path, db_path: Path) -> None:
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )
@@ -109,8 +107,7 @@ def test_tier_manager_status_merges_workspace_skills(
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
     tools["tiers"] = {
-        "enabled": False,
-        "shadow": True,
+        "mode": "shadow",
         "database": {"path": str(tmp_path / "tier_state.db")},
     }
     config["tools"] = tools

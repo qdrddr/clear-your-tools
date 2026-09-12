@@ -249,12 +249,10 @@ def build_status_overview(
         },
         "tiers": {
             "tools": {
-                "enabled": tools_block.get("enabled"),
-                "shadow": tools_block.get("shadow"),
+                "mode": tools_block.get("mode"),
             },
             "skills": {
-                "enabled": skills_block.get("enabled"),
-                "shadow": skills_block.get("shadow"),
+                "mode": skills_block.get("mode"),
             },
         },
         "tier_statistics": tier_statistics,
@@ -318,13 +316,9 @@ def _append_overview_tiers(lines: list[str], overview: dict[str, Any]) -> None:
     tools_tiers = tiers.get("tools")
     skills_tiers = tiers.get("skills")
     if isinstance(tools_tiers, dict):
-        lines.append(
-            f"tools: enabled={tools_tiers.get('enabled')} shadow={tools_tiers.get('shadow')}",
-        )
+        lines.append(f"tools: mode={tools_tiers.get('mode')}")
     if isinstance(skills_tiers, dict):
-        lines.append(
-            f"skills: enabled={skills_tiers.get('enabled')} shadow={skills_tiers.get('shadow')}",
-        )
+        lines.append(f"skills: mode={skills_tiers.get('mode')}")
 
 
 def _scope_label(row: dict[str, Any]) -> str:

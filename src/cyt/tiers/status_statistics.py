@@ -227,8 +227,7 @@ def build_kind_tier_statistics(
     totals = _sum_rows(rows, kind=kind)
     activity = _aggregate_activity(by_tier)
     return {
-        "enabled": kind_block.get("enabled"),
-        "shadow": kind_block.get("shadow"),
+        "mode": kind_block.get("mode"),
         "rows": rows,
         "totals": totals,
         "activity": {

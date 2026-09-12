@@ -26,14 +26,12 @@ def _write_status_config(tmp_path: Path, db_path: Path) -> None:
         f"""
 tools:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
     database:
       path: {db_path}
 skills:
   tiers:
-    enabled: false
-    shadow: true
+    mode: shadow
 """,
         encoding="utf-8",
     )

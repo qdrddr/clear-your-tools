@@ -123,8 +123,7 @@ def _bm25_config(tmp_path: Path, golden: dict[str, Any]) -> dict[str, Any]:
         "tools": {
             "enabled": True,
             "tiers": {
-                "enabled": False,
-                "shadow": True,
+                "mode": "shadow",
                 "database": {"path": str(tmp_path / "tier_state.db")},
             },
             "sequence": ["bm25"],
