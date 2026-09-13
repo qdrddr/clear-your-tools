@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "hedl_batch",
+      "description": "HEDL batch tool (single-underscore catalog name; backend tool is batch)",
+      "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "hedl_hedl_read",
+      "description": "HEDL read tool (standard server_tool catalog name)",
+      "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "hedl_hedl_write",
+      "description": "HEDL write tool (control; stays enabled in alias scenarios)",
+      "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "context-mode_ctx_search",
+      "description": "Unrelated control tool from another server",
+      "inputSchema": {"type": "object", "properties": {}}
+    }
+  ]
+}

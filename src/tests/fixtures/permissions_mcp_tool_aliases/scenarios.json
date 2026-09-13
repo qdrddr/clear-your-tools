@@ -1,0 +1,152 @@
+{
+  "skill_fixture_names": [],
+  "catalog_tool_names": [
+    "hedl_batch",
+    "hedl_hedl_read",
+    "hedl_hedl_write",
+    "context-mode_ctx_search"
+  ],
+  "scenarios": [
+    {
+      "id": "workspace_disable_hedl_batch_via_slash_agent_alias",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl/hedl_batch"}
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_hedl_batch_via_catalog_name",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl_batch"}
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_hedl_batch_via_agent_visible_name",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl_hedl_batch"}
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_hedl_batch_via_mcp_wire_name",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {
+          "action": "disable",
+          "scope": "workspace",
+          "kind": "mcp_tool",
+          "target": "mcp__hedl__hedl_batch"
+        }
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_hedl_batch_via_backend_path",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl/batch"}
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_then_enable_hedl_batch_via_agent_visible",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl_hedl_batch"},
+        {"action": "enable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl_hedl_batch"}
+      ],
+      "expected": {
+        "enabled_tools": [
+          "hedl_batch",
+          "hedl_hedl_read",
+          "hedl_hedl_write",
+          "context-mode_ctx_search"
+        ],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "workspace", "kind": "mcp"}
+    },
+    {
+      "id": "workspace_disable_agent_alias_enable_backend_path",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl/hedl_batch"},
+        {"action": "enable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl/batch"}
+      ],
+      "expected": {
+        "enabled_tools": [
+          "hedl_batch",
+          "hedl_hedl_read",
+          "hedl_hedl_write",
+          "context-mode_ctx_search"
+        ],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "workspace", "kind": "mcp"}
+    },
+    {
+      "id": "preseed_backend_deny_blocks_catalog_batch",
+      "agent": "cursor",
+      "agent_target": "all",
+      "preseed_deny": [
+        {"scope": "workspace", "kind": "mcp", "deny": ["hedl/batch"]}
+      ],
+      "steps": [],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "preseed_agent_alias_deny_blocks_catalog_batch",
+      "agent": "cursor",
+      "agent_target": "all",
+      "preseed_deny": [
+        {"scope": "workspace", "kind": "mcp", "deny": ["hedl/hedl_batch"]}
+      ],
+      "steps": [],
+      "expected": {
+        "enabled_tools": ["hedl_hedl_read", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_batch"]
+      }
+    },
+    {
+      "id": "workspace_disable_hedl_read_via_agent_visible_name",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "hedl_hedl_read"}
+      ],
+      "expected": {
+        "enabled_tools": ["hedl_batch", "hedl_hedl_write", "context-mode_ctx_search"],
+        "disabled_tools": ["hedl_hedl_read"]
+      }
+    }
+  ]
+}

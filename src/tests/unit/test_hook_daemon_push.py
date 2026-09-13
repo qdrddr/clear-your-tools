@@ -241,3 +241,57 @@ async def test_maybe_reload_permissions_on_revision_bump(tmp_path: Path) -> None
 
         await _maybe_reload_permissions(key=key, revision=1, context=context)
         assert config_holder.reload_mcp_deny.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_maybe_reload_permissions_notifies_when_deny_changes_without_hash_change(
+    tmp_path: Path,
+) -> None:
+    config = _config(workspace_root=tmp_path)
+    key = _instance_key(config)
+    _last_permissions_revision.clear()
+
+    cache = RuntimeToolCache()
+    cache.replace([{"name": "hedl_batch", "inputSchema": {"type": "object"}}])
+
+    class _FakeConfigHolder:
+        def __init__(self) -> None:
+            self.config = config
+            self._deny: tuple[str, ...] = ()
+            self.reload_calls = 0
+
+        @property
+        def mcp_deny(self) -> tuple[str, ...]:
+            return self._deny
+
+        def reload_mcp_deny(self) -> tuple[str, ...]:
+            self.reload_calls += 1
+            self._deny = ("hedl/hedl_batch",)
+            return self._deny
+
+    config_holder = _FakeConfigHolder()
+
+    middleware = MagicMock()
+    middleware.notify_all_sessions = AsyncMock()
+
+    context = PushContext(
+        config_holder=config_holder,
+        cache=cache,
+        server=MagicMock(),
+        list_changed_middleware=middleware,
+    )
+
+    async def noop_refresh(
+        _server: object,
+        runtime_cache: RuntimeToolCache,
+        _config: object,
+        *,
+        skip_push: bool = False,
+    ) -> None:
+        del _server, runtime_cache, _config, skip_push
+
+    with patch("cyt_mcp.catalog_build.refresh_catalog_cache", side_effect=noop_refresh):
+        await _maybe_reload_permissions(key=key, revision=1, context=context)
+
+    assert config_holder.reload_calls == 1
+    middleware.notify_all_sessions.assert_awaited_once()
