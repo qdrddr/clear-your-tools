@@ -1,0 +1,33 @@
+{
+  "filesystem_read_file": {
+    "catalog": "cyt_mcp",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string"}
+      },
+      "required": ["path"]
+    }
+  },
+  "demo_mcpc_run": {
+    "catalog": "mcpc",
+    "mcpc_session": "@agent-session",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string"}
+      },
+      "required": ["query"]
+    }
+  },
+  "demo_definitions_lookup": {
+    "catalog": "definitions",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "symbol": {"type": "string"}
+      },
+      "required": ["symbol"]
+    }
+  }
+}

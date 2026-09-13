@@ -1,0 +1,64 @@
+[
+  {
+    "kind": "session_state",
+    "key": "session_state:inject",
+    "tools_inject_enabled": true
+  },
+  {
+    "kind": "tool_catalog",
+    "key": "tool_catalog:cyt_mcp",
+    "catalog": "cyt_mcp",
+    "hash": "hash-filesystem-read-file-pre",
+    "tools": [
+      {
+        "name": "filesystem_read_file",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"}
+          },
+          "required": ["path"]
+        }
+      }
+    ]
+  },
+  {
+    "kind": "tool",
+    "key": "tool:cyt_mcp:filesystem_read_file",
+    "hash": "7ca77e33a1f65090ea153a44ad3564f4b1fc5dd0b6eb8a8379d612006c066a3b",
+    "full": true,
+    "catalog": "cyt_mcp",
+    "name": "filesystem_read_file",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string"}
+      },
+      "required": ["path"]
+    },
+    "source": "cyt-client_pre-tool-deny"
+  },
+  {
+    "kind": "compaction",
+    "key": "compaction",
+    "payload": {"trigger": "manual"}
+  },
+  {
+    "kind": "tool_catalog",
+    "key": "tool_catalog:cyt_mcp",
+    "catalog": "cyt_mcp",
+    "hash": "hash-filesystem-read-file-post",
+    "tools": [
+      {
+        "name": "filesystem_read_file",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"}
+          },
+          "required": ["path"]
+        }
+      }
+    ]
+  }
+]

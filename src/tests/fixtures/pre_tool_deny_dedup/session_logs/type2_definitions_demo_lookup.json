@@ -1,0 +1,25 @@
+[
+  {
+    "kind": "session_state",
+    "key": "session_state:inject",
+    "tools_inject_enabled": true
+  },
+  {
+    "kind": "tool_catalog",
+    "key": "tool_catalog:definitions",
+    "catalog": "definitions",
+    "hash": "hash-definitions-demo-lookup",
+    "tools": [
+      {
+        "name": "demo_definitions_lookup",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "symbol": {"type": "string"}
+          },
+          "required": ["symbol"]
+        }
+      }
+    ]
+  }
+]

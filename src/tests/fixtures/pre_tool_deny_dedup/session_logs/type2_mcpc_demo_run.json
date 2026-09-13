@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "session_state",
+    "key": "session_state:inject",
+    "tools_inject_enabled": true
+  },
+  {
+    "kind": "tool_catalog",
+    "key": "tool_catalog:mcpc",
+    "catalog": "mcpc",
+    "hash": "hash-mcpc-demo-run",
+    "tools": [
+      {
+        "name": "demo_mcpc_run",
+        "mcpc_session": "@agent-session",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"}
+          },
+          "required": ["query"]
+        }
+      }
+    ]
+  }
+]

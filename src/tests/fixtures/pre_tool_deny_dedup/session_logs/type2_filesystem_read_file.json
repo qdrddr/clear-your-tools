@@ -1,0 +1,25 @@
+[
+  {
+    "kind": "session_state",
+    "key": "session_state:inject",
+    "tools_inject_enabled": true
+  },
+  {
+    "kind": "tool_catalog",
+    "key": "tool_catalog:cyt_mcp",
+    "catalog": "cyt_mcp",
+    "hash": "hash-filesystem-read-file",
+    "tools": [
+      {
+        "name": "filesystem_read_file",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"}
+          },
+          "required": ["path"]
+        }
+      }
+    ]
+  }
+]
