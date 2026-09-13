@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp.tools.base import Tool
 
+from cyt.permissions.editor import parse_server_tool_arg
 from cyt.permissions.match import (
     is_catalog_tool_denied,
     is_mcp_server_denied,
@@ -34,6 +35,26 @@ def test_filter_mcp_servers_and_catalog_tools() -> None:
     ]
     filtered_tools = filter_catalog_tool_dicts(tools, ("blocked",))
     assert [tool["name"] for tool in filtered_tools] == ["allowed_tool"]
+
+
+def test_hedl_batch_deny_aliases() -> None:
+    deny = ("hedl/hedl_batch",)
+    assert is_mcp_tool_denied("hedl", "batch", deny)
+    assert is_catalog_tool_denied("hedl_batch", deny)
+    assert is_catalog_tool_denied("hedl_hedl_batch", deny)
+    assert parse_server_tool_arg("hedl/hedl_batch") == ("hedl", "hedl_batch")
+    assert parse_server_tool_arg("hedl_batch") == ("hedl", "batch")
+    assert parse_server_tool_arg("hedl/batch") == ("hedl", "batch")
+    assert parse_server_tool_arg("hedl_hedl_batch") == ("hedl", "hedl_batch")
+    assert parse_server_tool_arg("mcp__hedl__hedl_batch") == ("hedl", "hedl_batch")
+    assert parse_server_tool_arg("hedl/hedl_read") == ("hedl", "hedl_read")
+
+
+def test_hedl_read_deny_keeps_long_tool_name() -> None:
+    deny = ("hedl/hedl_read",)
+    assert is_mcp_tool_denied("hedl", "hedl_read", deny)
+    assert is_catalog_tool_denied("hedl_hedl_read", deny)
+    assert parse_server_tool_arg("hedl/hedl_read") == ("hedl", "hedl_read")
 
 
 def test_build_catalog_from_tools_respects_deny_entries() -> None:

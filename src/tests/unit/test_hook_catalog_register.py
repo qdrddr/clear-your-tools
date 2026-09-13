@@ -82,7 +82,7 @@ async def test_hook_catalog_register_rejects_legacy_global_scope(
 
 
 @pytest.mark.asyncio
-async def test_hook_catalog_register_hash_only_204(
+async def test_hook_catalog_register_hash_only_unchanged(
     catalog_client: httpx.AsyncClient,
     ws_root: Path,
 ) -> None:
@@ -108,7 +108,7 @@ async def test_hook_catalog_register_hash_only_204(
             "content_hash": content_hash,
         },
     )
-    assert response.status_code == 204
+    assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "unchanged"
     assert "permissions_revision" in payload

@@ -77,7 +77,31 @@ def test_normalize_tool_entity_states_merges_unknown_rows() -> None:
     assert ("tool", "unknown:@fff/grep") not in states
 
 
-def test_apply_tool_tiers_excludes_t0_when_enabled(config_with_tiers_enabled: dict) -> None:
+def test_prepare_tool_for_tier_pipeline_strips_schema_by_tier() -> None:
+    from cyt.tiers.adapters.tools import prepare_tool_for_tier_pipeline
+    from cyt.tiers.models import Tier
+
+    tool = {
+        "name": "demo",
+        "description": "Demo tool",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "required_arg": {"type": "string"},
+                "optional_arg": {"type": "string"},
+            },
+            "required": ["required_arg"],
+        },
+    }
+    t1 = prepare_tool_for_tier_pipeline(tool, Tier.COLD)
+    assert t1.get("input_schema") == {}
+    t2 = prepare_tool_for_tier_pipeline(tool, Tier.ACTIVE)
+    assert list(t2["input_schema"]["properties"].keys()) == ["required_arg"]
+    t3 = prepare_tool_for_tier_pipeline(tool, Tier.HOT)
+    assert set(t3["input_schema"]["properties"].keys()) == {"required_arg", "optional_arg"}
+
+
+def test_apply_tool_tiers_excludes_dormant_from_bm25_pool(config_with_tiers_enabled: dict) -> None:
     tools = [
         {"name": "a", "cyt_catalog_source": "cyt_mcp", "description": "A"},
         {"name": "b", "cyt_catalog_source": "cyt_mcp", "description": "B"},
@@ -87,9 +111,10 @@ def test_apply_tool_tiers_excludes_t0_when_enabled(config_with_tiers_enabled: di
         tool_entity_id(tools[1]): Tier.ACTIVE,
     }
     result = apply_tool_tiers(tools, tier_for_tool=tier_map, apply=True)
-    assert len(result.eligible_tools) == 1
-    assert result.eligible_tools[0]["name"] == "b"
+    assert {tool["name"] for tool in result.eligible_tools} == {"b"}
     assert tool_entity_id(tools[0]) in result.excluded_t0
+    assert "a" not in result.policy_overrides
+    assert result.policy_overrides["b"] == "tier_active"
 
 
 def test_apply_tool_tiers_shadow_does_not_filter(config_with_tiers_shadow: dict) -> None:
@@ -243,6 +268,24 @@ def test_slow_clock_promotion() -> None:
     transitions = evaluate_slow_clock({("tool", "tool:a"): state}, cfg=cfg, epoch=EpochState())
     assert transitions
     assert state.stable_tier == Tier.ACTIVE
+
+
+def test_slow_clock_demotes_t2_without_injection_when_exposure_high() -> None:
+    cfg = tier_section_config(
+        {"tools": {"tiers": {"evaluation": {"min_injections_before_reconsider": 8}}}},
+        kind="tool",
+    )
+    state = EntityTierState(
+        entity_id="tool:unused",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.ACTIVE,
+        stats=EffectiveStats(candidates=20, injected=0, used=0),
+    )
+    transitions = evaluate_slow_clock({("tool", "tool:unused"): state}, cfg=cfg, epoch=EpochState())
+    assert transitions
+    assert any(t.reason == "slow_demote_t2_t1" for t in transitions)
+    assert state.stable_tier == Tier.COLD
 
 
 @pytest.fixture

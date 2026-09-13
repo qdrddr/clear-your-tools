@@ -135,7 +135,8 @@ def notify_permissions_changed(
     try:
         with urlopen(request, timeout=NOTIFY_TIMEOUT_SECONDS) as response:
             code = response.getcode()
-            return isinstance(code, int) and 200 <= code < 300
+            ok = isinstance(code, int) and 200 <= code < 300
+            return ok
     except (HTTPError, URLError, OSError, TimeoutError):
         return False
 

@@ -528,6 +528,37 @@ def normalize_skill_entity_states(
     return removed, _dedupe_skill_entity_states(updated)
 
 
+def prepare_skill_entry_for_tier_search(entry: SkillEntryRef, tier: Tier) -> SkillEntryRef:
+    """Trim skill source before BM25/node search: T1 description, T2 headers-only body."""
+    from dataclasses import replace
+
+    if tier in {Tier.DORMANT, Tier.EXTRA_HOT, Tier.HOT}:
+        return entry
+    markdown = str(entry.document.get("markdown") or entry.document.get("content") or "")
+    if tier == Tier.COLD:
+        trimmed = skill_description_only_markdown(entry)
+    elif tier == Tier.ACTIVE:
+        trimmed = _headers_only_markdown(markdown, min_headers=6)
+    else:
+        return entry
+    document = dict(entry.document)
+    document["markdown"] = trimmed
+    document["content"] = trimmed
+    return replace(entry, document=document)
+
+
+def prepare_skill_entries_for_tier_search(
+    entries: list[SkillEntryRef],
+    tier_by_skill: dict[str, Tier],
+) -> list[SkillEntryRef]:
+    prepared: list[SkillEntryRef] = []
+    for entry in entries:
+        entity_id = skill_entity_id(entry)
+        tier = tier_by_skill.get(entity_id, Tier.ACTIVE) if entity_id else Tier.ACTIVE
+        prepared.append(prepare_skill_entry_for_tier_search(entry, tier))
+    return prepared
+
+
 def partition_skill_entries(
     entries: list[SkillEntryRef],
     *,

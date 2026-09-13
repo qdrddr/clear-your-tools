@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from cyt.tiers.config import TierSectionConfig
 from cyt.tiers.models import EntityTierState, Tier, TierTransition
 from cyt.tiers.scores import shadow_score
 
 logger = logging.getLogger(__name__)
+
+
+def temp_promotion_until_ms(cfg: TierSectionConfig, *, now_ms: int | None = None) -> int:
+    """Wall-clock expiry for fast T→HOT promotions (turns × prompt-cache TTL)."""
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    turns = max(int(cfg.temp_promotion_turns), 1)
+    minutes = cfg.prompt_cache_ttl_minutes * cfg.ttl_multiplier * turns
+    return now_ms + int(max(minutes, 1.0) * 60 * 1000)
 
 
 def wake_pressure(
@@ -101,23 +111,53 @@ def evaluate_fast_sleep(
     )
 
 
-def fast_promote_on_optional_use(state: EntityTierState) -> TierTransition | None:
-    """Tools-only fast signal when optional properties were used."""
+def fast_promote_on_tool_use(
+    state: EntityTierState,
+    *,
+    cfg: TierSectionConfig | None = None,
+) -> TierTransition | None:
+    """Tools-only fast signal when the agent invoked the tool (any args)."""
     if state.kind != "tool":
         return None
     tier = state.effective_tier
+    now_ms = int(time.time() * 1000)
     if tier >= Tier.HOT:
+        if cfg is not None:
+            state.temp_promotion_until_ms = temp_promotion_until_ms(cfg, now_ms=now_ms)
         return None
     target = Tier.HOT if tier >= Tier.ACTIVE else Tier.ACTIVE
     old = state.effective_tier
     state.effective_tier = target
     if tier >= Tier.COLD:
         state.overlap_tier = state.stable_tier
+    if cfg is not None:
+        state.temp_promotion_until_ms = temp_promotion_until_ms(cfg, now_ms=now_ms)
+    else:
+        state.temp_promotion_until_ms = now_ms + 3 * 60 * 1000
     return TierTransition(
         kind=state.kind,
         entity_id=state.entity_id,
         from_tier=old,
         to_tier=target,
-        reason="optional_property_used",
+        reason="tool_used",
         temporary=True,
     )
+
+
+def fast_promote_on_optional_use(
+    state: EntityTierState,
+    *,
+    cfg: TierSectionConfig | None = None,
+) -> TierTransition | None:
+    """Tools-only fast signal when optional properties were used."""
+    transition = fast_promote_on_tool_use(state, cfg=cfg)
+    if transition is not None:
+        transition = TierTransition(
+            kind=transition.kind,
+            entity_id=transition.entity_id,
+            from_tier=transition.from_tier,
+            to_tier=transition.to_tier,
+            reason="optional_property_used",
+            temporary=True,
+        )
+    return transition

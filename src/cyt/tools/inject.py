@@ -88,6 +88,13 @@ def _tool_open_tag(name: str, description: str) -> str:
     return f"<tool {' '.join(attrs)}>"
 
 
+def _tool_input_schema(tool: dict[str, Any]) -> dict[str, Any]:
+    schema = tool.get("input_schema")
+    if schema is None:
+        schema = tool.get("parameters")
+    return dict(schema) if isinstance(schema, dict) else {}
+
+
 def format_tool_item(
     tool: dict[str, Any],
     *,
@@ -100,17 +107,12 @@ def format_tool_item(
     description = ""
     if include_tool_description:
         description = str(tool.get("description", "") or "").strip()
-    schema = tool.get("input_schema")
-    if schema is None:
-        schema = tool.get("parameters", {})
-    body = {"input_schema": schema or {}}
-    return "\n".join(
-        [
-            _tool_open_tag(name, description),
-            minimize_json_single_quotes(body),
-            "</tool>",
-        ],
-    )
+    schema = _tool_input_schema(tool)
+    lines = [_tool_open_tag(name, description)]
+    if schema:
+        lines.append(minimize_json_single_quotes({"input_schema": schema}))
+    lines.append("</tool>")
+    return "\n".join(lines)
 
 
 def format_agent_tools(

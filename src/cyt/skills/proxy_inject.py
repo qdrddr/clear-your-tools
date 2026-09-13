@@ -190,12 +190,19 @@ def resolve_skills_for_query(
 
     # Proxy process writes tier stats directly (daemon routing is a follow-up).
     manager = get_tier_manager(config, workspace=hook_workspace_from_config(config))
-    manager.record_skill_candidates(resolved_entries, config)
     partition = manager.partition_skills(resolved_entries, config)
+    # Candidacy exposure: tier-eligible search pool, not the full registry.
+    manager.record_skill_candidates(partition.search_entries, config)
 
+    from cyt.tiers.adapters.skills import prepare_skill_entries_for_tier_search
+
+    search_pool = prepare_skill_entries_for_tier_search(
+        partition.search_entries,
+        partition.tier_by_skill,
+    )
     searched = search_skills(
         query,
-        partition.search_entries,
+        search_pool,
         config=config,
         max_tokens=max_tokens,
         pruner_settings=pruner_settings,

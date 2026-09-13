@@ -293,10 +293,12 @@ policies:
       optional_properties: []
 
   - name: tier_cold
-    description: T1 cold tier — tool name and description only.
+    description: >
+      T1 cold — feeds pruning with name+description only (no input_schema). BM25
+      decides inclusion; never pin. Optional MCP server description applies at wake.
     mode: prune
     scoring:
-      tool_root: pin
+      tool_root: when_relevant
       optional_properties: when_relevant
     always:
       tool: [name, description]
@@ -309,10 +311,12 @@ policies:
       optional_properties: []
 
   - name: tier_active
-    description: T2 active tier — name, description, and required properties on trigger.
+    description: >
+      T2 active — feeds pruning with description + required schema properties only;
+      optional properties are stripped before BM25. Inclusion is never forced.
     mode: prune
     scoring:
-      tool_root: pin
+      tool_root: when_relevant
       optional_properties: when_relevant
     always:
       tool: [name, description]
@@ -335,8 +339,11 @@ policies:
       optional_properties: []
 
   - name: tier_hot
-    description: T3 hot tier — full schema participates in pruning.
+    description: >
+      T3 hot — full schema feeds pruning; BM25 may drop tool or optionals; surviving
+      optionals reinstate the tool with required properties. Never forced.
     mode: prune
+    reinstate_scored_away_optionals: true
     scoring:
       tool_root: when_relevant
       optional_properties: when_relevant
@@ -460,7 +467,7 @@ tools:
     cache_epoch:
       prompt_cache_ttl_minutes: 5
       ttl_multiplier: 1
-      idle_gap_triggers_epoch: true
+      idle_gap_triggers_epoch: false
     evaluation:
       min_injections_before_reconsider: 8
     emergency_t4_inject_min: 20

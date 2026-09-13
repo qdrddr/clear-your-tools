@@ -254,7 +254,9 @@ async def _maybe_reload_permissions(
         return
 
     old_hash = _catalog_hash(context.cache)
+    deny_before = tuple(context.config_holder.mcp_deny)
     context.config_holder.reload_mcp_deny()
+    deny_after = tuple(context.config_holder.mcp_deny)
     from cyt_mcp.catalog_build import refresh_catalog_cache
 
     await refresh_catalog_cache(
@@ -265,7 +267,8 @@ async def _maybe_reload_permissions(
     )
     new_hash = _catalog_hash(context.cache)
     _last_success_hash.pop(key, None)
-    if context.list_changed_middleware is not None and new_hash != old_hash:
+    deny_changed = deny_before != deny_after
+    if context.list_changed_middleware is not None and (new_hash != old_hash or deny_changed):
         await notify_all_sessions_list_changed(context.list_changed_middleware)
 
 

@@ -32,12 +32,18 @@ def _min_injections_met(state: EntityTierState, minimum: int) -> bool:
     return state.stats.injected >= minimum
 
 
+def _min_exposure_met(state: EntityTierState, minimum: int) -> bool:
+    """Enough BM25-eligible exposures to reconsider demotion without any injection."""
+    return state.stats.candidates >= minimum
+
+
 def _promote_tier(
     state: EntityTierState,
     target: Tier,
     *,
     reason: str,
     temporary: bool,
+    cfg: TierSectionConfig | None = None,
 ) -> TierTransition:
     old = state.effective_tier
     if target > state.stable_tier:
@@ -47,7 +53,13 @@ def _promote_tier(
         state.stable_tier = target
         state.overlap_tier = None
     if temporary:
-        state.temp_promotion_until_ms = int(time.time() * 1000) + 3 * 60 * 1000
+        from cyt.tiers.wake import temp_promotion_until_ms
+
+        now_ms = int(time.time() * 1000)
+        if cfg is not None:
+            state.temp_promotion_until_ms = temp_promotion_until_ms(cfg, now_ms=now_ms)
+        else:
+            state.temp_promotion_until_ms = now_ms + 3 * 60 * 1000
     return TierTransition(
         kind=state.kind,
         entity_id=state.entity_id,
@@ -134,7 +146,7 @@ def evaluate_slow_clock(  # noqa: C901
                     _promote_tier(state, Tier.HOT, reason="slow_promote_t2_t3", temporary=False),
                 )
             elif (
-                _min_injections_met(state, cfg.min_injections_before_reconsider)
+                _min_exposure_met(state, cfg.min_injections_before_reconsider)
                 and d < cfg.thresholds_t12.demote_demand
                 and u < cfg.thresholds_t12.demote_utility
             ):

@@ -154,6 +154,48 @@ def tool_entity_id(tool: dict[str, Any]) -> str:
     return f"{source}:{name}" if name else ""
 
 
+def resolve_canonical_tool_name_for_tiers(
+    tool_name: str,
+    *,
+    config: dict[str, Any],
+    catalog: str | None = None,
+) -> str:
+    """Map pruned/bare MCP tool names onto master-catalog wire names for tier stats."""
+    name = str(tool_name or "").strip()
+    if not name or (catalog is not None and catalog != "cyt_mcp"):
+        return name
+    from cyt.tools.master_catalog import get_master_tool_catalog
+
+    master = get_master_tool_catalog(config, blocking=False) or []
+    if not master:
+        return name
+
+    master_by_name: dict[str, dict[str, Any]] = {}
+    for tool in master:
+        if not isinstance(tool, dict):
+            continue
+        wire = str(tool.get("name") or "").strip()
+        if wire:
+            master_by_name[wire] = tool
+    if name in master_by_name:
+        return name
+
+    bare_matches = [
+        str(tool.get("name") or "").strip()
+        for tool in master
+        if isinstance(tool, dict) and str(tool.get("tool_name") or "").strip() == name
+    ]
+    bare_matches = [match for match in bare_matches if match]
+    if len(bare_matches) == 1:
+        return bare_matches[0]
+
+    suffix_matches = [wire for wire in master_by_name if wire.endswith(f"_{name}")]
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
+
+    return name
+
+
 def canonical_tool_entity_id(entity_id: str) -> str:
     """Map legacy ``unknown:<name>`` rows onto inferred ``<source>:<name>`` ids."""
     text = (entity_id or "").strip()
@@ -237,6 +279,36 @@ def normalize_tool_entity_states(
         seen.add(state.entity_id)
         deduped.append(state)
     return removed, deduped
+
+
+def _tier_label_for_pipeline(tier: Tier) -> str:
+    return {
+        Tier.COLD: "T1",
+        Tier.ACTIVE: "T2",
+        Tier.HOT: "T3",
+        Tier.EXTRA_HOT: "T4",
+    }.get(tier, "T2")
+
+
+def prepare_tool_for_tier_pipeline(tool: dict[str, Any], tier: Tier) -> dict[str, Any]:
+    """Shape tool payload entering BM25: T1 description-only, T2 required props, T3 full schema."""
+    from cyt.tiers.tool_token_materialization import _tool_for_tier
+
+    if tier in {Tier.DORMANT, Tier.EXTRA_HOT}:
+        return copy.deepcopy(tool)
+    return _tool_for_tier(tool, _tier_label_for_pipeline(tier))
+
+
+def prepare_tools_for_tier_pipeline(
+    tools: list[dict[str, Any]],
+    tier_by_tool: dict[str, Tier],
+) -> list[dict[str, Any]]:
+    prepared: list[dict[str, Any]] = []
+    for tool in tools:
+        entity_id = tool_entity_id(tool)
+        tier = tier_by_tool.get(entity_id, Tier.ACTIVE) if entity_id else Tier.ACTIVE
+        prepared.append(prepare_tool_for_tier_pipeline(tool, tier))
+    return prepared
 
 
 def apply_tool_tiers(

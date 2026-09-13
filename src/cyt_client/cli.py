@@ -296,6 +296,15 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
         notify_tool_examples_capture(payload)
     except Exception as exc:
         _verbose_log(f"cyt-client: failed to record tool examples: {exc}")
+    try:
+        from cyt_client.tool_gate import extract_post_tool_tier_feedback
+        from cyt_client.tier_feedback import notify_tool_used_feedback
+
+        tier_feedback = extract_post_tool_tier_feedback(payload)
+        if tier_feedback is not None:
+            notify_tool_used_feedback(payload, **tier_feedback)
+    except Exception as exc:
+        _verbose_log(f"cyt-client: failed to record post-tool tier feedback: {exc}")
     if cursor_output:
         print(format_cursor_post_tool_stdout(), flush=True)
 

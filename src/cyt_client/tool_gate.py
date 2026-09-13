@@ -130,6 +130,9 @@ def normalize_mcp_tool_name(raw_name: str, *, agent: str | None) -> str:
     name = str(raw_name or "").strip()
     if not name:
         return ""
+    for prefix in ("user-cyt-mcp-", "user_cyt_mcp_"):
+        if name.startswith(prefix):
+            return name[len(prefix) :]
     if name.upper().startswith("MCP:"):
         name = name[4:].strip()
     if name.startswith("mcp__"):
@@ -182,6 +185,30 @@ def _extract_shell_command(payload: dict[str, Any]) -> str | None:
     return _first_str(payload, "command", "cmd")
 
 
+def _extract_dynamic_mcp_tool_call(
+    tool_name: str | None,
+    args: dict[str, Any] | None,
+    *,
+    agent: str | None,
+) -> tuple[str | None, dict[str, Any] | None]:
+    if not tool_name or not isinstance(args, dict):
+        return None, None
+    lowered = tool_name.strip().lower().replace("-", "")
+    if lowered not in {"calldynamictool", "mcpcalldynamictool"}:
+        return None, None
+    namespace = str(args.get("namespace") or "").strip().lower()
+    inner_name = args.get("toolName") or args.get("tool_name")
+    if namespace not in {"user-cyt-mcp", "cyt-mcp", "user_cyt_mcp"}:
+        return None, None
+    if not isinstance(inner_name, str) or not inner_name.strip():
+        return None, None
+    inner_args = args.get("arguments") or args.get("args")
+    normalized = normalize_mcp_tool_name(inner_name.strip(), agent=agent)
+    if not normalized:
+        return None, None
+    return normalized, inner_args if isinstance(inner_args, dict) else args
+
+
 def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
     agent = infer_harness_agent(payload)
     tool_name = _first_str(payload, "tool_name", "toolName", "tool", "name")
@@ -193,8 +220,12 @@ def _extract_tool_call(payload: dict[str, Any]) -> tuple[str | None, dict[str, A
                 tool_name = nested_name
     if tool_name is None:
         return None, None
+    args = _extract_tool_args(payload)
+    dynamic = _extract_dynamic_mcp_tool_call(tool_name, args, agent=agent)
+    if dynamic[0] is not None:
+        return dynamic
     normalized = normalize_mcp_tool_name(tool_name, agent=agent)
-    return normalized or None, _extract_tool_args(payload)
+    return normalized or None, args
 
 
 def is_cyt_mcp_get_tool_definitions_tool(tool_name: str, *, agent: str | None = None) -> bool:
@@ -1007,7 +1038,7 @@ def extract_gated_tool_use_feedback(payload: dict[str, Any]) -> dict[str, Any] |
     if not ok:
         return None
     return {
-        "tool_name": catalog_tool_name,
+        "tool_name": tool_name,
         "catalog": catalog,
         "args": raw_args,
     }
@@ -1081,6 +1112,35 @@ def _resolve_mcp_server_and_tool_name(
         if head and tail:
             return head, tail
     return server or "unknown", bare or name or "unknown"
+
+
+def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return tier feedback when postToolUse reflects a successful gated MCP tool call."""
+    if not _post_tool_call_succeeded(payload):
+        return None
+    catalogs, inject_enabled, gate_active, hallucination_on = _load_gate_context(payload)
+    if inject_enabled is False and not hallucination_on:
+        return None
+    tool_name, args = _extract_tool_call(payload)
+    if not tool_name or not gate_active:
+        return None
+    if is_cyt_mcp_get_tool_definitions_tool(tool_name, agent=infer_harness_agent(payload)):
+        return None
+    catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
+    if catalog is None or catalog not in _GATED_CATALOGS:
+        return None
+    catalog_tool_name = (
+        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
+        if catalog == "cyt_mcp"
+        else tool_name
+    )
+    if _find_tool_in_catalog(catalogs, catalog, catalog_tool_name) is None:
+        return None
+    return {
+        "tool_name": tool_name,
+        "catalog": catalog,
+        "args": args if isinstance(args, dict) else {},
+    }
 
 
 def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any] | None:

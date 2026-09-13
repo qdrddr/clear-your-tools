@@ -996,9 +996,73 @@ def _tier_prune_context(
 ]:
     terminal_stage = configured_pipeline[-1] if configured_pipeline else None
     tier_manager = get_tier_manager(config)
-    tier_manager.record_tool_candidates(original_tools, config)
     tier_apply = tier_manager.apply_tools(original_tools, config)
     tools_for_prune = tier_apply.eligible_tools if tier_apply.eligible_tools else original_tools
+    from cyt.tiers.adapters.tools import prepare_tools_for_tier_pipeline
+
+    tools_for_prune = prepare_tools_for_tier_pipeline(
+        tools_for_prune,
+        tier_apply.tier_by_tool,
+    )
+    # #region agent log
+    try:
+        import json
+        import time
+        from pathlib import Path
+
+        from cyt.tiers.models import Tier
+
+        _t1_no_schema = _t2_req_only = _t3_full = 0
+        for _tool in tools_for_prune:
+            _eid = str(_tool.get("name") or "")
+            _tier = tier_apply.tier_by_tool.get(
+                f"cyt_mcp:{_eid}"
+            ) or tier_apply.tier_by_tool.get(_eid)
+            _schema = _tool.get("input_schema") or _tool.get("inputSchema") or {}
+            _props = (
+                list((_schema.get("properties") or {}).keys())
+                if isinstance(_schema, dict)
+                else []
+            )
+            if _tier == Tier.COLD:
+                _t1_no_schema += 1 if not _props else 0
+            elif _tier == Tier.ACTIVE:
+                _t2_req_only += 1
+            elif _tier == Tier.HOT:
+                _t3_full += 1
+        _policy_counts: dict[str, int] = {}
+        for _pol in (tier_apply.policy_overrides or {}).values():
+            _policy_counts[str(_pol)] = _policy_counts.get(str(_pol), 0) + 1
+        _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
+        _log_path.parent.mkdir(parents=True, exist_ok=True)
+        with _log_path.open("a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "ae2010",
+                        "runId": "post-fix",
+                        "hypothesisId": "B",
+                        "location": "pruners/tools_filter.py:_tier_prune_context",
+                        "message": "tier pipeline source shaping",
+                        "data": {
+                            "eligible_count": len(tools_for_prune),
+                            "t4_direct_count": len(tier_apply.t4_direct),
+                            "excluded_t0_count": len(tier_apply.excluded_t0),
+                            "t1_no_schema_tools": _t1_no_schema,
+                            "t2_required_only_tools": _t2_req_only,
+                            "t3_full_schema_tools": _t3_full,
+                            "policy_counts": _policy_counts,
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    },
+                )
+                + "\n",
+            )
+    except Exception:
+        pass
+    # #endregion
+    # Candidacy exposure: count tools entering BM25 (tier-eligible pool), not the full catalog.
+    tier_manager.record_tool_candidates(tools_for_prune, config)
     t4_direct = list(tier_apply.t4_direct)
     output_policy_ctx = output_policy_context_for_terminal_stage(
         config,
@@ -1248,6 +1312,51 @@ def filter_tools_for_query(
     pruned_by_name = _pruned_tools_by_name(tools_for_prune, merged, to_api)
     pruned = merge_tools_preserving_order(tools_for_prune, pruned_by_name, stashed_by_name)
     pruned = merge_t4_tools(pruned, t4_direct)
+    # #region agent log
+    try:
+        import json
+        import time
+        from pathlib import Path
+
+        _tier_counts: dict[str, int] = {}
+        for _entity_id, _tier in (tier_apply.tier_by_tool or {}).items():
+            _tier_counts[f"T{int(_tier)}"] = _tier_counts.get(f"T{int(_tier)}", 0) + 1
+        _cold_pinned = sum(
+            1
+            for _name, _pol in (tier_apply.policy_overrides or {}).items()
+            if _pol in {"prune_optional", "prune_optional_descriptions"}
+        )
+        _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
+        _log_path.parent.mkdir(parents=True, exist_ok=True)
+        with _log_path.open("a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "ae2010",
+                        "runId": "post-fix",
+                        "hypothesisId": "A",
+                        "location": "pruners/tools_filter.py:filter_tools_for_query",
+                        "message": "hook tool prune summary",
+                        "data": {
+                            "query_len": len(query or ""),
+                            "tools_in": tools_in,
+                            "eligible_after_tiers": len(tools_for_prune),
+                            "tools_out": len(pruned),
+                            "tier_counts": _tier_counts,
+                            "cold_pinned_policy_count": _cold_pinned,
+                            "excluded_t0": len(tier_apply.excluded_t0),
+                            "tokens_in": tokens_in,
+                            "tokens_out": count_json_tokens(pruned),
+                            "decomposed": decomposed,
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    },
+                )
+                + "\n",
+            )
+    except Exception:
+        pass
+    # #endregion
     try:
         from cyt.tool_examples.enrich import enrich_tools_with_examples
 

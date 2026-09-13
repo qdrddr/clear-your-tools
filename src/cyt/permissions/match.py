@@ -65,6 +65,70 @@ def is_mcp_server_denied(server: str, deny_entries: tuple[str, ...] | list[str])
     return False
 
 
+def normalize_permission_tool_input(value: str, *, agent: str = "cursor") -> str:
+    """Normalize agent-visible MCP tool ids for permissions CLI matching."""
+    text = str(value or "").strip()
+    if not text:
+        return text
+    if (
+        text.startswith("mcp__")
+        or text.upper().startswith("MCP:")
+        or text.startswith("user-cyt-mcp-")
+        or text.startswith("user_cyt_mcp_")
+    ):
+        from cyt_client.tool_gate import normalize_mcp_tool_name
+
+        normalized = normalize_mcp_tool_name(text, agent=agent)
+        if normalized:
+            return normalized
+    return text
+
+
+def equivalent_mcp_tool_deny_entries(server: str, tool: str) -> frozenset[str]:
+    """Return ``server/tool`` deny keys that refer to the same catalog tool."""
+    server_name = str(server or "").strip()
+    tool_name = str(tool or "").strip()
+    if not server_name or not tool_name:
+        return frozenset()
+    entries = {f"{server_name}/{tool_name}"}
+    catalog_name = f"{server_name}_{tool_name}"
+    if split_catalog_tool_name(catalog_name) == (server_name, tool_name):
+        # Single-underscore catalog names (e.g. hedl_batch) are also reachable as
+        # hedl/hedl_batch because sibling tools use hedl/hedl_read style paths.
+        if catalog_name.count("_") == 1:
+            entries.add(f"{server_name}/{catalog_name}")
+    # Reverse alias: agent-visible hedl/hedl_batch for catalog hedl_batch (hedl/batch).
+    prefix = f"{server_name}_"
+    if tool_name.startswith(prefix):
+        bare = tool_name[len(prefix) :]
+        short_catalog = f"{server_name}_{bare}"
+        if (
+            bare
+            and short_catalog.count("_") == 1
+            and split_catalog_tool_name(short_catalog) == (server_name, bare)
+            and bare != tool_name
+        ):
+            entries.add(f"{server_name}/{bare}")
+            entries.add(f"{server_name}/{tool_name}")
+    return frozenset(entries)
+
+
+def _mcp_tool_deny_rule_matches(
+    server_name: str,
+    tool_name: str,
+    rule_tool: str,
+) -> bool:
+    rule = str(rule_tool or "").strip()
+    if not rule:
+        return False
+    if rule == tool_name:
+        return True
+    catalog_name = f"{server_name}_{tool_name}"
+    if rule == catalog_name and split_catalog_tool_name(catalog_name) == (server_name, tool_name):
+        return True
+    return rule in equivalent_mcp_tool_deny_entries(server_name, tool_name)
+
+
 def is_mcp_tool_denied(
     server: str,
     tool: str,
@@ -77,8 +141,13 @@ def is_mcp_tool_denied(
     if is_mcp_server_denied(server_name, deny_entries):
         return True
     for rule in parse_mcp_deny_rules(deny_entries):
-        if rule.kind == "tool" and rule.server == server_name and rule.tool == tool_name:
-            return True
+        if rule.kind == "tool" and rule.server == server_name:
+            if rule.tool is not None and _mcp_tool_deny_rule_matches(
+                server_name,
+                tool_name,
+                rule.tool,
+            ):
+                return True
     return False
 
 
@@ -128,11 +197,24 @@ def split_catalog_tool_name(catalog_name: str) -> tuple[str, str] | None:
 
 
 def is_catalog_tool_denied(catalog_name: str, deny_entries: tuple[str, ...] | list[str]) -> bool:
-    parts = split_catalog_tool_name(catalog_name)
+    name = str(catalog_name or "").strip()
+    if not name:
+        return False
+    parts = split_catalog_tool_name(name)
     if parts is None:
         return False
     server, tool = parts
-    return is_mcp_tool_denied(server, tool, deny_entries)
+    if is_mcp_tool_denied(server, tool, deny_entries):
+        return True
+    # Single-underscore catalog names (hedl_batch) are also exposed as hedl_hedl_batch.
+    if name.count("_") == 1:
+        agent_visible = f"{server}_{name}"
+        agent_parts = split_catalog_tool_name(agent_visible)
+        if agent_parts is not None:
+            agent_server, agent_tool = agent_parts
+            if is_mcp_tool_denied(agent_server, agent_tool, deny_entries):
+                return True
+    return False
 
 
 def normalize_skill_name(name: str) -> str:

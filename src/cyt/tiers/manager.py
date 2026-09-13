@@ -54,7 +54,7 @@ from cyt.tiers.status_detail import (
     effective_tier_for,
 )
 from cyt.tiers.store import TierStore
-from cyt.tiers.wake import fast_promote_on_optional_use
+from cyt.tiers.wake import fast_promote_on_optional_use, fast_promote_on_tool_use
 
 logger = logging.getLogger(__name__)
 
@@ -419,6 +419,7 @@ class TierManager:
         self._epoch.epoch_start_ms = now_ms
 
     def record_tool_candidates(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> None:
+        """Record BM25-eligible exposure (tier pool entering prune), not full catalog."""
         if not tiers_active(config, kind="tool"):
             return
         scoped = self._workspace_scoped_config(config)
@@ -426,7 +427,8 @@ class TierManager:
         from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
 
         cfg = tier_section_config(config, kind="tool")
-        for tool in filter_tools_for_tier_tracking(tools, scoped):
+        tracked = filter_tools_for_tier_tracking(tools, scoped)
+        for tool in tracked:
             entity_id = tool_entity_id(tool)
             if not entity_id:
                 continue
@@ -435,6 +437,32 @@ class TierManager:
                 continue
             state.stats.candidates += 1.0
             state.stats.last_seen_ms = int(time.time() * 1000)
+        # #region agent log
+        if tracked:
+            try:
+                import json
+                from pathlib import Path
+
+                _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
+                _log_path.parent.mkdir(parents=True, exist_ok=True)
+                with _log_path.open("a", encoding="utf-8") as _f:
+                    _f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "ae2010",
+                                "runId": "candidacy-fix",
+                                "hypothesisId": "E",
+                                "location": "tiers/manager.py:record_tool_candidates",
+                                "message": "BM25 pool exposure recorded",
+                                "data": {"pool_size": len(tracked)},
+                                "timestamp": int(time.time() * 1000),
+                            },
+                        )
+                        + "\n",
+                    )
+            except OSError:
+                pass
+        # #endregion
         self._touch_request(config)
         self._flush_states(cfg)
 
@@ -443,6 +471,7 @@ class TierManager:
         tools: list[dict[str, Any]],
         config: dict[str, Any],
     ) -> None:
+        """Record tools that survived pruning and were injected into agent context."""
         if not tiers_active(config, kind="tool"):
             return
         scoped = self._workspace_scoped_config(config)
@@ -492,11 +521,44 @@ class TierManager:
             state.stats.used_without_injection += 1.0
         if optional_used:
             state.stats.optional_used += 1.0
-            fast_promote_on_optional_use(state)
+            promotion = fast_promote_on_optional_use(state, cfg=cfg)
+        else:
+            promotion = fast_promote_on_tool_use(state, cfg=cfg)
+        # #region agent log
+        if promotion is not None:
+            import json
+            import time
+            from pathlib import Path
+
+            _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-ae2010.log"
+            _log_path.parent.mkdir(parents=True, exist_ok=True)
+            with _log_path.open("a", encoding="utf-8") as _f:
+                _f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "ae2010",
+                            "runId": "post-fix",
+                            "hypothesisId": "C",
+                            "location": "tiers/manager.py:record_tool_used",
+                            "message": "fast tool-use tier promotion",
+                            "data": {
+                                "entity_id": entity_id,
+                                "from_tier": int(promotion.from_tier),
+                                "to_tier": int(promotion.to_tier),
+                                "reason": promotion.reason,
+                                "optional_used": optional_used,
+                            },
+                            "timestamp": int(time.time() * 1000),
+                        },
+                    )
+                    + "\n",
+                )
+        # #endregion
         self._touch_request(config)
         self._flush_states(cfg)
 
     def record_skill_candidates(self, entries: list[Any], config: dict[str, Any]) -> None:
+        """Record tier-eligible skills entering BM25 search, not the full registry."""
         if not tiers_active(config, kind="skill"):
             return
         cfg = tier_section_config(config, kind="skill")
@@ -521,6 +583,7 @@ class TierManager:
         matches: list[Any],
         config: dict[str, Any],
     ) -> None:
+        """Record skills that survived pruning and were injected into agent context."""
         if not tiers_active(config, kind="skill"):
             return
         cfg = tier_section_config(config, kind="skill")

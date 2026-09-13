@@ -156,9 +156,12 @@ async def hook_catalog_register(request: Request) -> Response:
     if result.status == RegisterStatus.UNKNOWN_HASH:
         return JSONResponse({"error": result.message or "unknown hash"}, status_code=404)
     if result.status == RegisterStatus.UNCHANGED:
+        # Use 200 so uvicorn delivers the JSON body. HTTP 204 No Content drops the
+        # payload on the wire; cyt-mcp hash-only heartbeats then miss
+        # permissions_revision and never reload MCP deny overlays.
         return JSONResponse(
             {"status": "unchanged", "permissions_revision": result.permissions_revision},
-            status_code=204,
+            status_code=200,
         )
     return JSONResponse(
         {"status": "stored", "permissions_revision": result.permissions_revision},

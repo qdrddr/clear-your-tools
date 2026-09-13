@@ -285,7 +285,10 @@
         "context7": "DORMANT",
         "database-shards": "HOT"
       },
-      "expected_eligible_tool_names": ["context-mode_ctx_search"],
+      "expected_eligible_tool_names": [
+        "context-mode_ctx_execute",
+        "context-mode_ctx_search"
+      ],
       "expected_excluded_entity_ids": ["cyt_mcp:context-mode_ctx_execute"],
       "expected_search_doc_ids": ["database-shards"],
       "expected_t4_doc_ids": ["create-hook"]

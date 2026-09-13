@@ -28,6 +28,7 @@ def decay_factor(*, requests_since: int, half_life: float) -> float:
 
 
 def demand_score(stats: object) -> float:
+    """Injection rate among BM25-eligible exposures (injected / candidates)."""
     from cyt.tiers.models import EffectiveStats
 
     if not isinstance(stats, EffectiveStats):
@@ -36,6 +37,7 @@ def demand_score(stats: object) -> float:
 
 
 def utility_score(stats: object) -> float:
+    """Use rate among injected candidacies (used / injected)."""
     from cyt.tiers.models import EffectiveStats
 
     if not isinstance(stats, EffectiveStats):

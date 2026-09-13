@@ -8,9 +8,11 @@ from typing import Any, Literal
 from cyt.config import save_user_config
 from cyt.permissions.match import (
     format_skill_path_permission_entry,
+    normalize_permission_tool_input,
     parse_mcp_deny_entry,
     parse_skill_permission_entry,
     skill_path_matches_rule,
+    split_catalog_tool_name,
 )
 from cyt.permissions.paths import (
     PermissionAgentTarget,
@@ -165,8 +167,10 @@ def _remove_server_deny_entries(deny: list[str], server: str) -> list[str]:
 
 
 def _remove_tool_deny_entry(deny: list[str], server: str, tool: str) -> list[str]:
-    target = f"{server.strip()}/{tool.strip()}"
-    return [entry for entry in deny if entry.strip() != target]
+    from cyt.permissions.match import equivalent_mcp_tool_deny_entries
+
+    targets = equivalent_mcp_tool_deny_entries(server, tool)
+    return [entry for entry in deny if entry.strip() not in targets]
 
 
 def disable_mcp_server(
@@ -418,13 +422,19 @@ def enable_skill(
     )
 
 
-def parse_server_tool_arg(value: str) -> tuple[str, str]:
-    text = str(value or "").strip()
-    if "/" not in text:
-        raise ValueError(f"Expected SERVER/TOOL, got {value!r}")
-    server, tool = text.split("/", 1)
-    server = server.strip()
-    tool = tool.strip()
-    if not server or not tool:
-        raise ValueError(f"Expected SERVER/TOOL, got {value!r}")
-    return server, tool
+def parse_server_tool_arg(value: str, *, agent: str = "cursor") -> tuple[str, str]:
+    text = normalize_permission_tool_input(value, agent=agent)
+    if "/" in text:
+        server, tool = text.split("/", 1)
+        server = server.strip()
+        tool = tool.strip()
+        if not server or not tool:
+            raise ValueError(f"Expected SERVER/TOOL, got {value!r}")
+        return server, tool
+    parts = split_catalog_tool_name(text)
+    if parts is not None:
+        return parts
+    raise ValueError(
+        f"Expected SERVER/TOOL or catalog tool name (e.g. hedl/batch, hedl_batch, "
+        f"hedl_hedl_batch, mcp__hedl__hedl_batch), got {value!r}"
+    )

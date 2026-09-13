@@ -135,7 +135,13 @@ def register_permissions_subcommands(permissions_sub: argparse._SubParsersAction
         if action == "list":
             p.set_defaults(permissions_handler=run_permissions_mcp_tools_list)
         else:
-            p.add_argument("server_tool", help="SERVER/TOOL")
+            p.add_argument(
+                "server_tool",
+                help=(
+                    "SERVER/TOOL or agent-visible tool name "
+                    "(e.g. hedl/batch, hedl_batch, hedl_hedl_batch, mcp__hedl__hedl_batch)"
+                ),
+            )
             p.set_defaults(permissions_handler=_mcp_tools_handler(action))
 
     skills_parser = permissions_sub.add_parser("skills", help="Skills permissions")
@@ -555,7 +561,10 @@ def _mcp_tools_handler(action: str) -> Callable[[argparse.Namespace], None]:
             parse_server_tool_arg,
         )
 
-        server, tool = parse_server_tool_arg(args.server_tool)
+        try:
+            server, tool = parse_server_tool_arg(args.server_tool)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         path = (
             enable_mcp_tool(
                 server,

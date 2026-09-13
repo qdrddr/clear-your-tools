@@ -68,3 +68,30 @@ def test_format_tool_item_uses_agent_visible_executor_name() -> None:
     }
     item = format_tool_item(tool)
     assert "<tool name='semble_mcp.org.default.search' description='Search the codebase'>" in item
+
+
+def test_format_tool_item_omits_empty_input_schema() -> None:
+    tool = {
+        "name": "code-review-graph_build_or_update_graph_tool",
+        "description": "Build or update the graph.",
+        "input_schema": {},
+    }
+    item = format_tool_item(tool)
+    assert "input_schema" not in item
+    assert item.endswith("</tool>")
+    assert "\n{'input_schema':{}}\n" not in item
+
+
+def test_format_tool_item_includes_non_empty_input_schema() -> None:
+    tool = {
+        "name": "demo",
+        "description": "Demo",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    item = format_tool_item(tool)
+    assert "'input_schema':" in item
+    assert "'query'" in item
