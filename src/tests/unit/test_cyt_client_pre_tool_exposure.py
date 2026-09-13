@@ -12,10 +12,19 @@ from cyt_client.session_pre_tool_exposure import (
     build_get_tool_definitions_type1_entry,
     build_type1_tool_entry_from_catalog_record,
 )
-from cyt_client.sessions import read_session_log_file
+from cyt_client.sessions import entries_after_latest_compaction, read_session_log_file
 from cyt_client.tool_gate import validate_pre_tool_call
 
 _GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
+
+
+def _patch_session_log(monkeypatch: pytest.MonkeyPatch, log_path: Path | None) -> None:
+    def _resolver(_payload: dict) -> Path | None:
+        return log_path
+
+    monkeypatch.setattr("cyt_client.tool_gate.session_log_path", _resolver)
+    monkeypatch.setattr("cyt_client.sessions.session_log_path", _resolver)
+    monkeypatch.setattr("cyt_client.session_pre_tool_exposure.session_log_path", _resolver)
 
 
 def _write_type2_session(
@@ -68,14 +77,7 @@ def test_schema_mismatch_persists_full_type1_tool_entry(
         "required": ["path"],
     }
     _write_type2_session(log_path, "filesystem_read_file", schema)
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
-    monkeypatch.setattr(
-        "cyt_client.session_pre_tool_exposure.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
 
     payload = {
         "hook_event_name": "preToolUse",
@@ -114,14 +116,7 @@ def test_unknown_tool_persists_get_tool_definitions_entry(
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
-    monkeypatch.setattr(
-        "cyt_client.session_pre_tool_exposure.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
 
     payload = {
         "hook_event_name": "preToolUse",
@@ -150,14 +145,7 @@ def test_repeated_deny_does_not_duplicate_type1_entry(
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
-    monkeypatch.setattr(
-        "cyt_client.session_pre_tool_exposure.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
 
     payload = {
         "hook_event_name": "preToolUse",
@@ -183,10 +171,7 @@ def test_validate_returns_exposure_for_schema_mismatch(
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -211,10 +196,7 @@ def test_validate_returns_exposure_for_unknown_cyt_mcp_tool(
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -289,14 +271,7 @@ def test_schema_mismatch_persists_full_type1_from_type2_catalog_with_prefixed_na
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
-    monkeypatch.setattr(
-        "cyt_client.session_pre_tool_exposure.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
 
     payload = {
         "hook_event_name": "preToolUse",
@@ -367,3 +342,121 @@ def test_deny_type1_hash_skips_hook_reinjection() -> None:
         formatted_full=format_tool_fragment(master_tool, catalog="cyt_mcp", full=True),
     )
     assert mode == "skip"
+
+
+def test_schema_deny_omits_definition_when_pre_exposed_via_type1_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+    _write_type2_session(log_path, "filesystem_read_file", schema)
+    deny_entry = build_type1_tool_entry_from_catalog_record(
+        {"name": "filesystem_read_file", "input_schema": schema},
+        catalog="cyt_mcp",
+        full=True,
+    )
+    log_path.write_text(
+        log_path.read_text(encoding="utf-8") + json.dumps(deny_entry) + "\n",
+        encoding="utf-8",
+    )
+    _patch_session_log(monkeypatch, log_path)
+    validation = validate_pre_tool_call(
+        {
+            "hook_event_name": "preToolUse",
+            "session_id": "session",
+            "tool_name": "filesystem_read_file",
+            "tool_input": {"bogus": "x"},
+        },
+    )
+    assert validation.allowed is False
+    assert "invalid cyt-mcp tool arguments" in validation.reason
+    assert "Correct tool definition:" not in validation.reason
+
+
+def test_schema_deny_includes_definition_after_compaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+    _write_type2_session(log_path, "filesystem_read_file", schema)
+    deny_entry = build_type1_tool_entry_from_catalog_record(
+        {"name": "filesystem_read_file", "input_schema": schema},
+        catalog="cyt_mcp",
+        full=True,
+    )
+    post_compaction_catalog = {
+        "kind": "tool_catalog",
+        "key": "tool_catalog:cyt_mcp",
+        "catalog": "cyt_mcp",
+        "hash": "post-compaction-hash",
+        "tools": [{"name": "filesystem_read_file", "input_schema": schema}],
+    }
+    log_path.write_text(
+        log_path.read_text(encoding="utf-8")
+        + json.dumps(deny_entry)
+        + "\n"
+        + json.dumps({"kind": "compaction", "key": "compaction", "payload": {}})
+        + "\n"
+        + json.dumps(post_compaction_catalog)
+        + "\n",
+        encoding="utf-8",
+    )
+    _patch_session_log(monkeypatch, log_path)
+    payload = {
+        "hook_event_name": "preToolUse",
+        "session_id": "session",
+        "tool_name": "filesystem_read_file",
+        "tool_input": {"bogus": "x"},
+    }
+    validation = validate_pre_tool_call(payload)
+    assert validation.allowed is False
+    assert "Correct tool definition:" in validation.reason
+
+    with pytest.raises(SystemExit):
+        _handle_pre_tool(payload, cursor_output=False)
+
+    _agent, entries = read_session_log_file(log_path)
+    post_compaction = entries_after_latest_compaction(entries)
+    post_compaction_deny_tools = [
+        entry
+        for entry in post_compaction
+        if entry.get("kind") == "tool"
+        and entry.get("source") == "cyt-client_pre-tool-deny"
+        and entry.get("name") == "filesystem_read_file"
+    ]
+    assert len(post_compaction_deny_tools) == 1
+
+
+def test_repeated_schema_deny_reason_omits_definition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+    _write_type2_session(log_path, "filesystem_read_file", schema)
+    _patch_session_log(monkeypatch, log_path)
+    payload = {
+        "hook_event_name": "preToolUse",
+        "session_id": "session",
+        "tool_name": "filesystem_read_file",
+        "tool_input": {"bogus": "x"},
+    }
+    with pytest.raises(SystemExit):
+        _handle_pre_tool(payload, cursor_output=False)
+    second = validate_pre_tool_call(payload)
+    assert second.allowed is False
+    assert "Correct tool definition:" not in second.reason

@@ -16,6 +16,15 @@ from cyt_client.tool_gate import (
 _GET_TOOL_DEFINITIONS_TOOL = "cyt-mcp_get-tool-definitions"
 
 
+def _patch_session_log(monkeypatch: pytest.MonkeyPatch, log_path: Path | None) -> None:
+    def _resolver(_payload: dict) -> Path | None:
+        return log_path
+
+    monkeypatch.setattr("cyt_client.tool_gate.session_log_path", _resolver)
+    monkeypatch.setattr("cyt_client.sessions.session_log_path", _resolver)
+    monkeypatch.setattr("cyt_client.session_pre_tool_exposure.session_log_path", _resolver)
+
+
 def _write_type2_session(
     path: Path,
     tool_name: str,
@@ -88,10 +97,7 @@ def test_validate_denies_unknown_tool(tmp_path: Path, monkeypatch: pytest.Monkey
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -113,10 +119,7 @@ def test_validate_denies_unknown_tool_lists_available_and_get_tool_definitions_p
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -132,6 +135,39 @@ def test_validate_denies_unknown_tool_lists_available_and_get_tool_definitions_p
     assert "Correct tool definition:" not in validation.reason
 
 
+def test_repeated_schema_deny_omits_definition_in_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "session.jsonl"
+    schema = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+    _write_type2_session(log_path, "filesystem_read_file", schema)
+    _patch_session_log(monkeypatch, log_path)
+    payload = {
+        "hook_event_name": "preToolUse",
+        "session_id": "session",
+        "tool_name": "filesystem_read_file",
+        "tool_input": {"bogus": "x"},
+    }
+    first = validate_pre_tool_call(payload)
+    assert first.allowed is False
+    assert "Correct tool definition:" in first.reason
+
+    from cyt_client.cli import _handle_pre_tool
+
+    with pytest.raises(SystemExit):
+        _handle_pre_tool(payload, cursor_output=False)
+
+    second = validate_pre_tool_call(payload)
+    assert second.allowed is False
+    assert "invalid cyt-mcp tool arguments" in second.reason
+    assert "Correct tool definition:" not in second.reason
+
+
 def test_validate_denies_bad_property_includes_minimized_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -142,10 +178,7 @@ def test_validate_denies_bad_property_includes_minimized_schema(
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -165,10 +198,7 @@ def test_validate_denies_bad_property_includes_minimized_schema(
 def test_validate_allows_get_tool_definitions_without_session_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -195,10 +225,7 @@ def test_validate_allows_get_tool_definitions_resolved_backend_tool(
             "required": ["project"],
         },
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -225,10 +252,7 @@ def test_is_cyt_mcp_get_tool_definitions_tool_normalizes_cursor_wire_name() -> N
 def test_validate_denies_get_tool_definitions_without_tool_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -243,10 +267,7 @@ def test_validate_denies_get_tool_definitions_without_tool_name(
 def test_validate_denies_get_tool_definitions_with_empty_tool_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -262,10 +283,7 @@ def test_validate_denies_get_tool_definitions_with_empty_tool_name(
 def test_non_cyt_mcp_tool_allowed_without_session_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -281,10 +299,7 @@ def test_non_cyt_mcp_tool_allowed_without_session_log(
 def test_cyt_mcp_backend_denied_without_session_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -300,10 +315,7 @@ def test_cyt_mcp_backend_denied_without_session_log(
 def test_get_tool_definitions_allowed_without_session_log(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: None,
-    )
+    _patch_session_log(monkeypatch, None)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -332,10 +344,7 @@ def test_cyt_mcp_backend_allowed_empty_session_with_inject_flag_only(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -365,10 +374,7 @@ def test_cyt_mcp_backend_denied_turn_only_session(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -402,10 +408,7 @@ def test_validate_resolves_prefixed_tool_name_to_catalog(
             },
         ],
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -438,10 +441,7 @@ def test_validate_denies_search_code_query_alias_without_coalescing(
             },
         ],
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -478,10 +478,7 @@ def test_validate_denies_search_without_repo(
             },
         ],
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -519,10 +516,7 @@ def test_validate_denies_search_without_repo_windows_path(
             },
         ],
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",
@@ -554,10 +548,7 @@ def test_validate_denies_grep_path_with_fixup_hint(
             },
         ],
     )
-    monkeypatch.setattr(
-        "cyt_client.tool_gate.session_log_path",
-        lambda _payload: log_path,
-    )
+    _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
         {
             "hook_event_name": "preToolUse",

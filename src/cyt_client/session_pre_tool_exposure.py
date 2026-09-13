@@ -1,16 +1,28 @@
-"""Persist Type-1 tool entries after PreToolUse deny (stdlib only)."""
+"""Persist Type-1 tool entries after PreToolUse deny."""
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from cyt.injection.pre_exposure_context import PreExposureContext
+from cyt.injection.session_log import resolve_injection_mode
+from cyt.injection.session_log_build import (
+    CatalogKind,
+    format_tool_fragment,
+    tool_content_hash,
+    tool_item_key,
+    tool_item_legacy_keys,
+)
 
 from cyt_client.agent import infer_harness_agent
 from cyt_client.catalog_hash import catalog_tool_record_content_hash
 from cyt_client.sessions import (
     append_session_log,
+    entries_after_latest_compaction,
     read_latest_tool_catalogs,
     read_session_log_file,
     session_log_path,
@@ -233,8 +245,114 @@ def build_get_tool_definitions_type1_entry(
     )
 
 
+def _deny_definition_record(
+    tool_record: dict[str, Any],
+    *,
+    catalog: str,
+    mcpc_session: str | None = None,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "name": tool_record.get("name"),
+        "input_schema": tool_record.get("input_schema") or {},
+    }
+    description = tool_record.get("description")
+    if description is not None and str(description).strip():
+        record["description"] = str(description).strip()
+    if catalog == "mcpc":
+        session = mcpc_session or tool_record.get("mcpc_session")
+        if session:
+            record["mcpc_session"] = session
+    return record
+
+
+def _minimized_json(value: object) -> str:
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def _master_tool_for_pre_exposure(
+    tool_record: dict[str, Any],
+    *,
+    catalog: str,
+    mcpc_session: str | None = None,
+) -> dict[str, Any]:
+    name = str(tool_record.get("name") or "").strip()
+    master: dict[str, Any] = {
+        "name": name,
+        "tool_name": name,
+        "input_schema": tool_record.get("input_schema") or {},
+        "cyt_catalog_source": catalog,
+    }
+    description = tool_record.get("description")
+    if description is not None and str(description).strip():
+        master["description"] = str(description).strip()
+    if catalog == "mcpc":
+        session = str(mcpc_session or tool_record.get("mcpc_session") or "").strip()
+        if session:
+            master["mcpc_session"] = session
+    return master
+
+
+def is_tool_definition_pre_exposed_for_deny(
+    payload: dict[str, Any],
+    *,
+    catalog: str,
+    tool_record: dict[str, Any],
+    mcpc_session: str | None = None,
+) -> bool:
+    """Return True when the inline deny definition should be omitted for this context window."""
+    ctx = PreExposureContext.for_hook_payload(payload)
+    catalog_kind = cast(CatalogKind, catalog)
+    master = _master_tool_for_pre_exposure(
+        tool_record,
+        catalog=catalog,
+        mcpc_session=mcpc_session,
+    )
+    key = tool_item_key(master, catalog=catalog_kind)
+    key_aliases = tool_item_legacy_keys(master, catalog=catalog_kind)
+    current_hash = tool_content_hash(master, catalog=catalog_kind)
+    skinny_fragment = format_tool_fragment(
+        master,
+        catalog=catalog_kind,
+        full=False,
+        include_tool_description=True,
+    )
+    full_fragment = format_tool_fragment(
+        master,
+        catalog=catalog_kind,
+        full=True,
+        include_tool_description=True,
+    )
+    mode = resolve_injection_mode(
+        key=key,
+        current_hash=current_hash,
+        index=ctx.index,
+        session_text=ctx.payload_text,
+        formatted_skinny=skinny_fragment,
+        formatted_full=full_fragment,
+        key_aliases=key_aliases,
+    )
+    if mode == "skip":
+        return True
+
+    definition = _deny_definition_record(
+        tool_record,
+        catalog=catalog,
+        mcpc_session=mcpc_session,
+    )
+    name = str(tool_record.get("name") or "").strip()
+    if not definition.get("name"):
+        definition["name"] = name
+    json_def = _minimized_json(definition)
+    deny_line = f"Correct tool definition: {json_def}"
+    for text in (ctx.payload_text, ctx.combined_text):
+        if json_def in text or deny_line in text:
+            return True
+    return False
+
+
 def _session_has_full_tool(path: Path, key: str, content_hash: str) -> bool:
     _agent, entries = read_session_log_file(path)
+    entries = entries_after_latest_compaction(entries)
     for entry in reversed(entries):
         if str(entry.get("kind") or "") != "tool":
             continue
@@ -262,6 +380,13 @@ def persist_pre_tool_deny_exposure(
     else:
         tool_record = _tool_record_from_session_catalog(exposure, catalogs)
         if tool_record is None:
+            return False
+        if is_tool_definition_pre_exposed_for_deny(
+            payload,
+            catalog=exposure.catalog,
+            tool_record=tool_record,
+            mcpc_session=exposure.mcpc_session,
+        ):
             return False
         entry = build_type1_tool_entry_from_catalog_record(
             tool_record,

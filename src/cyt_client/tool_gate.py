@@ -11,7 +11,10 @@ from typing import Any, cast
 from cyt_client.agent import infer_harness_agent
 from cyt_client.mcpc_shell import parse_mcpc_shell_command
 from cyt_client.schema_validate import validate_json_schema
-from cyt_client.session_pre_tool_exposure import PreToolDenyExposure
+from cyt_client.session_pre_tool_exposure import (
+    PreToolDenyExposure,
+    is_tool_definition_pre_exposed_for_deny,
+)
 from cyt_client.sessions import (
     read_hallucination_gate_enabled,
     read_latest_tool_catalogs,
@@ -397,21 +400,39 @@ def _tool_deny_header(
     return f"Tool {tool_name!r}"
 
 
+def _omit_deny_tool_definition(
+    payload: dict[str, Any] | None,
+    *,
+    catalog: str,
+    tool: dict[str, Any],
+    mcpc_session: str | None = None,
+) -> bool:
+    if payload is None:
+        return False
+    return is_tool_definition_pre_exposed_for_deny(
+        payload,
+        catalog=catalog,
+        tool_record=tool,
+        mcpc_session=mcpc_session,
+    )
+
+
 def _deny_schema_cyt_mcp(
     tool_name: str,
     tool: dict[str, Any],
     reason: str,
     *,
     requested_tool_name: str | None = None,
+    omit_definition: bool = False,
 ) -> str:
+    header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
+    base = f"{header}: invalid cyt-mcp tool arguments: {reason}"
+    if omit_definition:
+        return base
     definition = _tool_definition_record(tool, catalog="cyt_mcp")
     if not definition.get("name"):
         definition["name"] = tool_name
-    header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
-    return (
-        f"{header}: invalid cyt-mcp tool arguments: {reason}\n\n"
-        f"Correct tool definition: {_minimized_json(definition)}"
-    )
+    return f"{base}\n\nCorrect tool definition: {_minimized_json(definition)}"
 
 
 def _deny_message_cyt_mcp(
@@ -422,6 +443,7 @@ def _deny_message_cyt_mcp(
     catalogs: dict[str, dict[str, Any]] | None = None,
     requested_tool_name: str | None = None,
     omit_get_tool_definitions_hint: bool = False,
+    omit_definition: bool = False,
 ) -> str:
     if _is_unknown_tool_reason(schema_error):
         header = _tool_deny_header(tool_name, requested_tool_name=requested_tool_name)
@@ -447,6 +469,7 @@ def _deny_message_cyt_mcp(
         tool,
         schema_error,
         requested_tool_name=requested_tool_name,
+        omit_definition=omit_definition,
     )
 
 
@@ -470,14 +493,16 @@ def _deny_schema_mcpc(
     tool_name: str,
     tool: dict[str, Any],
     reason: str,
+    *,
+    omit_definition: bool = False,
 ) -> str:
+    base = f"Invalid mcpc Shell arguments for {session} tools-call {tool_name!r}: {reason}"
+    if omit_definition:
+        return base
     definition = _tool_definition_record(tool, catalog="mcpc", mcpc_session=session)
     if not definition.get("name"):
         definition["name"] = tool_name
-    return (
-        f"Invalid mcpc Shell arguments for {session} tools-call {tool_name!r}: {reason}\n\n"
-        f"Correct tool definition: {_minimized_json(definition)}"
-    )
+    return f"{base}\n\nCorrect tool definition: {_minimized_json(definition)}"
 
 
 def _deny_message_mcpc(
@@ -487,6 +512,7 @@ def _deny_message_mcpc(
     schema_error: str,
     *,
     catalogs: dict[str, dict[str, Any]] | None = None,
+    omit_definition: bool = False,
 ) -> str:
     if _is_unknown_tool_reason(schema_error):
         return _deny_unknown_mcpc(
@@ -495,7 +521,13 @@ def _deny_message_mcpc(
             schema_error,
             catalogs=catalogs or {},
         )
-    return _deny_schema_mcpc(session, tool_name, tool, schema_error)
+    return _deny_schema_mcpc(
+        session,
+        tool_name,
+        tool,
+        schema_error,
+        omit_definition=omit_definition,
+    )
 
 
 def _deny_unknown_definitions(
@@ -512,14 +544,20 @@ def _deny_unknown_definitions(
     )
 
 
-def _deny_schema_definitions(tool_name: str, tool: dict[str, Any], reason: str) -> str:
+def _deny_schema_definitions(
+    tool_name: str,
+    tool: dict[str, Any],
+    reason: str,
+    *,
+    omit_definition: bool = False,
+) -> str:
+    base = f"Invalid definitions tool arguments for {tool_name!r}: {reason}"
+    if omit_definition:
+        return base
     definition = _tool_definition_record(tool, catalog="definitions")
     if not definition.get("name"):
         definition["name"] = tool_name
-    return (
-        f"Invalid definitions tool arguments for {tool_name!r}: {reason}\n\n"
-        f"Correct tool definition: {_minimized_json(definition)}"
-    )
+    return f"{base}\n\nCorrect tool definition: {_minimized_json(definition)}"
 
 
 def _deny_message_definitions(
@@ -528,6 +566,7 @@ def _deny_message_definitions(
     schema_error: str,
     *,
     catalogs: dict[str, dict[str, Any]] | None = None,
+    omit_definition: bool = False,
 ) -> str:
     if _is_unknown_tool_reason(schema_error):
         return _deny_unknown_definitions(
@@ -535,7 +574,12 @@ def _deny_message_definitions(
             schema_error,
             catalogs=catalogs or {},
         )
-    return _deny_schema_definitions(tool_name, tool, schema_error)
+    return _deny_schema_definitions(
+        tool_name,
+        tool,
+        schema_error,
+        omit_definition=omit_definition,
+    )
 
 
 def _workspace_roots_from_payload(payload: dict[str, Any]) -> list[str]:
@@ -760,12 +804,19 @@ def _validate_mcpc_shell_pre_tool_call(
         schema = {}
     ok, reason = validate_json_schema(mcpc_call.args, schema)
     if not ok:
+        omit_definition = _omit_deny_tool_definition(
+            payload,
+            catalog="mcpc",
+            tool=tool,
+            mcpc_session=mcpc_call.session,
+        )
         return _deny(
             _deny_message_mcpc(
                 mcpc_call.session,
                 mcpc_call.tool_name,
                 tool,
                 reason,
+                omit_definition=omit_definition,
             ),
             exposure=_schema_mismatch_exposure(
                 "mcpc",
@@ -877,13 +928,19 @@ def _validate_gated_catalog_tool(
         fixup = _schema_fixup_hint(raw_args, schema, payload)
         if fixup:
             reason = f"{reason}\n\n{fixup}"
+        mcpc_session = None
+        if catalog == "mcpc":
+            session = str(tool.get("mcpc_session") or "").strip()
+            mcpc_session = session or None
         return _deny_catalog_schema_mismatch(
             catalog,
             tool_name,
             tool,
             reason,
+            payload=payload,
             requested_tool_name=requested_tool_name,
             hallucination_on=hallucination_on,
+            mcpc_session=mcpc_session,
         )
     return _allow()
 
@@ -924,10 +981,23 @@ def _deny_catalog_schema_mismatch(
     tool: dict[str, Any],
     reason: str,
     *,
+    payload: dict[str, Any] | None = None,
     requested_tool_name: str | None = None,
     hallucination_on: bool = False,
+    mcpc_session: str | None = None,
 ) -> PreToolValidation:
-    exposure = _schema_mismatch_exposure(catalog, tool_name, tool)
+    exposure = _schema_mismatch_exposure(
+        catalog,
+        tool_name,
+        tool,
+        mcpc_session=mcpc_session,
+    )
+    omit_definition = _omit_deny_tool_definition(
+        payload,
+        catalog=catalog,
+        tool=tool,
+        mcpc_session=mcpc_session,
+    )
     if catalog == "cyt_mcp":
         return _deny(
             _deny_message_cyt_mcp(
@@ -936,12 +1006,30 @@ def _deny_catalog_schema_mismatch(
                 reason,
                 requested_tool_name=requested_tool_name,
                 omit_get_tool_definitions_hint=hallucination_on,
+                omit_definition=omit_definition,
             ),
             exposure=exposure,
         )
     if catalog == "definitions":
         return _deny(
-            _deny_message_definitions(tool_name, tool, reason),
+            _deny_message_definitions(
+                tool_name,
+                tool,
+                reason,
+                omit_definition=omit_definition,
+            ),
+            exposure=exposure,
+        )
+    if catalog == "mcpc":
+        session = str(mcpc_session or tool.get("mcpc_session") or "").strip()
+        return _deny(
+            _deny_message_mcpc(
+                session,
+                tool_name,
+                tool,
+                reason,
+                omit_definition=omit_definition,
+            ),
             exposure=exposure,
         )
     return _deny(reason, exposure=exposure)
