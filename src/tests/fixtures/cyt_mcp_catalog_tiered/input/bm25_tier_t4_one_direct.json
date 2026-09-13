@@ -1,0 +1,9 @@
+{
+  "scenario_id": "t4_one_direct",
+  "base_golden": "bm25_prune_golden_gitnexus_impact.json",
+  "tool_tiers": {
+    "cyt_mcp:context-mode_ctx_search": "EXTRA_HOT"
+  },
+  "must_exclude_tools": [],
+  "must_include_tools": ["context-mode_ctx_search"]
+}

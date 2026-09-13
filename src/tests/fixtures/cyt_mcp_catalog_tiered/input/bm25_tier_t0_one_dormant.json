@@ -1,0 +1,9 @@
+{
+  "scenario_id": "t0_one_dormant",
+  "base_golden": "bm25_prune_golden_gitnexus_impact.json",
+  "tool_tiers": {
+    "cyt_mcp:gitnexus_impact": "DORMANT"
+  },
+  "must_exclude_tools": ["gitnexus_impact"],
+  "must_include_tools": []
+}

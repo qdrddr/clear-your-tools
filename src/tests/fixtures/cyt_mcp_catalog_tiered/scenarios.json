@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "id": "t0_one_dormant",
+      "base_golden": "bm25_prune_golden_gitnexus_impact.json",
+      "tool_tiers": {
+        "cyt_mcp:gitnexus_impact": "DORMANT"
+      },
+      "must_exclude_tools": ["gitnexus_impact"],
+      "must_include_tools": []
+    },
+    {
+      "id": "t4_one_direct",
+      "base_golden": "bm25_prune_golden_gitnexus_impact.json",
+      "tool_tiers": {
+        "cyt_mcp:context-mode_ctx_search": "EXTRA_HOT"
+      },
+      "must_exclude_tools": [],
+      "must_include_tools": ["context-mode_ctx_search"]
+    },
+    {
+      "id": "mixed_active_hot",
+      "base_golden": "bm25_prune_golden_context_mode_sandbox.json",
+      "tool_tiers": {
+        "cyt_mcp:context-mode_ctx_execute": "HOT",
+        "cyt_mcp:hedl_hedl_validate": "DORMANT",
+        "cyt_mcp:gitnexus_query": "ACTIVE"
+      },
+      "must_exclude_tools": ["hedl_hedl_validate"],
+      "must_include_tools": ["context-mode_ctx_execute"]
+    }
+  ]
+}

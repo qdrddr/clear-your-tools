@@ -6,7 +6,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 
@@ -235,9 +235,20 @@ skills:
     return pack
 
 
+class _CytMcpPathPack(Protocol):
+    @property
+    def catalog_cache_dir(self) -> Path: ...
+
+    @property
+    def global_mcp_agg(self) -> Path: ...
+
+    @property
+    def global_mcp_defs(self) -> Path: ...
+
+
 def patch_cyt_mcp_paths(
     monkeypatch: pytest.MonkeyPatch,
-    pack: TiersStatsFixturePack,
+    pack: _CytMcpPathPack,
 ) -> None:
     monkeypatch.setattr(
         "cyt.cyt_mcp.catalog_disk.cyt_mcp_catalog_cache_dir",

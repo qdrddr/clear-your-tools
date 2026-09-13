@@ -1,0 +1,288 @@
+{
+  "skill_fixture_names": ["create-hook.md", "context7.md", "database-shards.md"],
+  "scenarios": [
+    {
+      "id": "user_disable_skill_create_hook",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "skill", "target": "create-hook"}
+      ],
+      "expected": {
+        "enabled_skills": ["context7", "database-shards"],
+        "disabled_skills": ["create-hook"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "user_disable_skill_context7",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "skill", "target": "context7"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "database-shards"],
+        "disabled_skills": ["context7"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "user_disable_skill_database_shards",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "skill", "target": "database-shards"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7"],
+        "disabled_skills": ["database-shards"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "workspace_disable_skill_create_hook",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "skill", "target": "create-hook"}
+      ],
+      "expected": {
+        "enabled_skills": ["context7", "database-shards"],
+        "disabled_skills": ["create-hook"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "workspace_disable_skill_context7",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "skill", "target": "context7"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "database-shards"],
+        "disabled_skills": ["context7"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "workspace_disable_skill_database_shards",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "skill", "target": "database-shards"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7"],
+        "disabled_skills": ["database-shards"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "workspace_disable_skill_database_shards_by_path",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {
+          "action": "disable",
+          "scope": "workspace",
+          "kind": "skill",
+          "target": "database-shards",
+          "match": "path"
+        }
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7"],
+        "disabled_skills": ["database-shards"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "user_disable_mcp_server_gitnexus",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "mcp_server", "target": "gitnexus"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search"],
+        "disabled_tools": ["gitnexus_query"]
+      }
+    },
+    {
+      "id": "workspace_disable_mcp_server_context_mode",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_server", "target": "context-mode"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["gitnexus_query"],
+        "disabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search"]
+      }
+    },
+    {
+      "id": "user_disable_mcp_tool_gitnexus_query",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "mcp_tool", "target": "gitnexus/query"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search"],
+        "disabled_tools": ["gitnexus_query"]
+      }
+    },
+    {
+      "id": "workspace_disable_mcp_tool_ctx_execute",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "context-mode/ctx_execute"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": ["context-mode_ctx_execute"]
+      }
+    },
+    {
+      "id": "workspace_disable_mcp_tool_ctx_search",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "context-mode/ctx_search"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "gitnexus_query"],
+        "disabled_tools": ["context-mode_ctx_search"]
+      }
+    },
+    {
+      "id": "user_disable_then_enable_skill_create_hook",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "skill", "target": "create-hook"},
+        {"action": "enable", "scope": "user", "kind": "skill", "target": "create-hook"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "user", "kind": "skills"}
+    },
+    {
+      "id": "workspace_disable_then_enable_skill_context7",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "skill", "target": "context7"},
+        {"action": "enable", "scope": "workspace", "kind": "skill", "target": "context7"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "workspace", "kind": "skills"}
+    },
+    {
+      "id": "user_disable_then_enable_mcp_tool_gitnexus_query",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "mcp_tool", "target": "gitnexus/query"},
+        {"action": "enable", "scope": "user", "kind": "mcp_tool", "target": "gitnexus/query"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "user", "kind": "mcp"}
+    },
+    {
+      "id": "workspace_disable_then_enable_mcp_server_context_mode",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "workspace", "kind": "mcp_server", "target": "context-mode"},
+        {"action": "enable", "scope": "workspace", "kind": "mcp_server", "target": "context-mode"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      },
+      "assert_scope_deny_empty": {"scope": "workspace", "kind": "mcp"}
+    },
+    {
+      "id": "mixed_user_create_hook_workspace_context7",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "skill", "target": "create-hook"},
+        {"action": "disable", "scope": "workspace", "kind": "skill", "target": "context7"}
+      ],
+      "expected": {
+        "enabled_skills": ["database-shards"],
+        "disabled_skills": ["create-hook", "context7"],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search", "gitnexus_query"],
+        "disabled_tools": []
+      }
+    },
+    {
+      "id": "mixed_user_gitnexus_workspace_enable_still_disabled",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "mcp_server", "target": "gitnexus"},
+        {"action": "enable", "scope": "workspace", "kind": "mcp_server", "target": "gitnexus"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute", "context-mode_ctx_search"],
+        "disabled_tools": ["gitnexus_query"]
+      }
+    },
+    {
+      "id": "mixed_user_gitnexus_server_workspace_ctx_search_tool",
+      "agent": "cursor",
+      "agent_target": "all",
+      "steps": [
+        {"action": "disable", "scope": "user", "kind": "mcp_server", "target": "gitnexus"},
+        {"action": "disable", "scope": "workspace", "kind": "mcp_tool", "target": "context-mode/ctx_search"}
+      ],
+      "expected": {
+        "enabled_skills": ["create-hook", "context7", "database-shards"],
+        "disabled_skills": [],
+        "enabled_tools": ["context-mode_ctx_execute"],
+        "disabled_tools": ["context-mode_ctx_search", "gitnexus_query"]
+      }
+    }
+  ]
+}

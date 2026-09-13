@@ -1,0 +1,294 @@
+{
+  "tools": [
+    {
+      "entity_id": "cyt_mcp:context-mode_ctx_execute",
+      "name": "context-mode_ctx_execute",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "excluded": true,
+          "in_eligible": false,
+          "in_t4_direct": false,
+          "policy": null,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_cold",
+          "schema_property_keys": []
+        },
+        {
+          "tier": "ACTIVE",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_active",
+          "schema_required_only": ["language", "code"]
+        },
+        {
+          "tier": "HOT",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_hot",
+          "schema_property_keys": ["language", "code"]
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "excluded": false,
+          "in_eligible": false,
+          "in_t4_direct": true,
+          "policy": "always_include"
+        }
+      ]
+    },
+    {
+      "entity_id": "cyt_mcp:context-mode_ctx_search",
+      "name": "context-mode_ctx_search",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "excluded": true,
+          "in_eligible": false,
+          "in_t4_direct": false,
+          "policy": null,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_cold",
+          "schema_property_keys": []
+        },
+        {
+          "tier": "ACTIVE",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_active",
+          "schema_required_only": ["queries"]
+        },
+        {
+          "tier": "HOT",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_hot",
+          "schema_property_keys": ["queries"]
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "excluded": false,
+          "in_eligible": false,
+          "in_t4_direct": true,
+          "policy": "always_include"
+        }
+      ]
+    },
+    {
+      "entity_id": "cyt_mcp:gitnexus_query",
+      "name": "gitnexus_query",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "excluded": true,
+          "in_eligible": false,
+          "in_t4_direct": false,
+          "policy": null,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_cold",
+          "schema_property_keys": []
+        },
+        {
+          "tier": "ACTIVE",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_active",
+          "schema_required_only": ["search_query"]
+        },
+        {
+          "tier": "HOT",
+          "excluded": false,
+          "in_eligible": true,
+          "in_t4_direct": false,
+          "policy": "tier_hot",
+          "schema_property_keys": ["search_query"]
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "excluded": false,
+          "in_eligible": false,
+          "in_t4_direct": true,
+          "policy": "always_include"
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "doc_id": "create-hook",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "in_search_pool": false,
+          "in_t4_direct": false,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["description:"],
+          "markdown_excludes": ["## Usage", "Submit prompts"]
+        },
+        {
+          "tier": "ACTIVE",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["# Zebra Migration"],
+          "markdown_excludes": ["Submit prompts"]
+        },
+        {
+          "tier": "HOT",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "representation": "unchanged"
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "in_search_pool": false,
+          "in_t4_direct": true,
+          "markdown_includes": ["## Usage", "Submit prompts"]
+        }
+      ]
+    },
+    {
+      "doc_id": "context7",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "in_search_pool": false,
+          "in_t4_direct": false,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["description:"],
+          "markdown_excludes": ["## Workflow", "Resolve a library"]
+        },
+        {
+          "tier": "ACTIVE",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["# Context7"],
+          "markdown_excludes": ["Resolve a library"]
+        },
+        {
+          "tier": "HOT",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "representation": "unchanged"
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "in_search_pool": false,
+          "in_t4_direct": true,
+          "markdown_includes": ["## Workflow", "Resolve a library"]
+        }
+      ]
+    },
+    {
+      "doc_id": "database-shards",
+      "tier_expectations": [
+        {
+          "tier": "DORMANT",
+          "in_search_pool": false,
+          "in_t4_direct": false,
+          "effective_tokens": 0
+        },
+        {
+          "tier": "COLD",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["description:"],
+          "markdown_excludes": ["## Steps", "Drain a shard"]
+        },
+        {
+          "tier": "ACTIVE",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "markdown_includes": ["# Zebra Migration"],
+          "markdown_excludes": ["Drain a shard"]
+        },
+        {
+          "tier": "HOT",
+          "in_search_pool": true,
+          "in_t4_direct": false,
+          "representation": "unchanged"
+        },
+        {
+          "tier": "EXTRA_HOT",
+          "in_search_pool": false,
+          "in_t4_direct": true,
+          "markdown_includes": ["## Steps", "Drain a shard"]
+        }
+      ]
+    }
+  ],
+  "integration": [
+    {
+      "id": "live_tools_one_hot_one_dormant",
+      "query": "run sandbox code context-mode execute",
+      "tool_tiers": {
+        "cyt_mcp:context-mode_ctx_execute": "HOT",
+        "cyt_mcp:gitnexus_query": "DORMANT"
+      },
+      "expected_eligible_tool_names": [
+        "context-mode_ctx_execute",
+        "context-mode_ctx_search"
+      ],
+      "expected_excluded_entity_ids": ["cyt_mcp:gitnexus_query"]
+    },
+    {
+      "id": "live_skills_t4_direct_bypasses_search",
+      "query": "quantum entanglement lattice gauge theory",
+      "skill_tiers": {
+        "create-hook": "EXTRA_HOT",
+        "context7": "DORMANT"
+      },
+      "expected_search_doc_ids": ["database-shards"],
+      "expected_t4_doc_ids": ["create-hook"]
+    },
+    {
+      "id": "live_tools_and_skills_combined",
+      "query": "quantum entanglement gitnexus query graph",
+      "tool_tiers": {
+        "cyt_mcp:gitnexus_query": "EXTRA_HOT",
+        "cyt_mcp:context-mode_ctx_execute": "DORMANT"
+      },
+      "skill_tiers": {
+        "create-hook": "EXTRA_HOT",
+        "context7": "DORMANT",
+        "database-shards": "HOT"
+      },
+      "expected_eligible_tool_names": ["context-mode_ctx_search"],
+      "expected_excluded_entity_ids": ["cyt_mcp:context-mode_ctx_execute"],
+      "expected_search_doc_ids": ["database-shards"],
+      "expected_t4_doc_ids": ["create-hook"]
+    }
+  ]
+}

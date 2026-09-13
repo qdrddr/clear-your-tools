@@ -1,0 +1,11 @@
+{
+  "scenario_id": "mixed_active_hot",
+  "base_golden": "bm25_prune_golden_context_mode_sandbox.json",
+  "tool_tiers": {
+    "cyt_mcp:context-mode_ctx_execute": "HOT",
+    "cyt_mcp:hedl_hedl_validate": "DORMANT",
+    "cyt_mcp:gitnexus_query": "ACTIVE"
+  },
+  "must_exclude_tools": ["hedl_hedl_validate"],
+  "must_include_tools": ["context-mode_ctx_execute"]
+}
