@@ -1,0 +1,88 @@
+{
+  "tools": [
+    {
+      "name": "graphify_query_graph",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {"type": "string"},
+          "depth": {"type": "integer"},
+          "token_budget": {"type": "integer"}
+        },
+        "required": ["question"]
+      },
+      "description": "Search the knowledge graph using BFS or DFS"
+    },
+    {
+      "name": "codebase-memory-mcp_search_graph",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string"},
+          "query": {"type": "string"}
+        },
+        "required": ["project"]
+      },
+      "description": "Search the code knowledge graph"
+    },
+    {
+      "name": "codebase-memory_query_graph",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string"},
+          "query": {"type": "string"},
+          "max_rows": {"type": "integer"}
+        },
+        "required": ["project", "query"]
+      },
+      "description": "Execute a Cypher query against the knowledge graph"
+    },
+    {
+      "name": "codebase-memory_search_code",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pattern": {"type": "string"},
+          "project": {"type": "string"}
+        },
+        "required": ["pattern", "project"]
+      },
+      "description": "Search indexed source code"
+    },
+    {
+      "name": "semble_search",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "repo": {"type": "string"}
+        },
+        "required": ["query", "repo"]
+      },
+      "description": "Semantic code search"
+    },
+    {
+      "name": "fff_grep",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      },
+      "description": "Search file contents"
+    },
+    {
+      "name": "filesystem_read_file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"}
+        },
+        "required": ["path"]
+      },
+      "description": "Read a file from disk"
+    }
+  ]
+}

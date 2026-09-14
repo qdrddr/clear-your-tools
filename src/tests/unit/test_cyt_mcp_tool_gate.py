@@ -31,7 +31,16 @@ def _write_type2_session(
     schema: dict,
     *,
     inject_enabled: bool = True,
+    server_key: str | None = None,
+    backend_tool_name: str | None = None,
 ) -> None:
+    tool_record: dict = {
+        "name": tool_name,
+        "input_schema": schema,
+    }
+    if server_key and backend_tool_name:
+        tool_record["server_key"] = server_key
+        tool_record["tool_name"] = backend_tool_name
     path.write_text(
         json.dumps(
             {
@@ -47,12 +56,7 @@ def _write_type2_session(
                 "key": "tool_catalog:cyt_mcp",
                 "catalog": "cyt_mcp",
                 "hash": "test-hash",
-                "tools": [
-                    {
-                        "name": tool_name,
-                        "input_schema": schema,
-                    },
-                ],
+                "tools": [tool_record],
             },
         )
         + "\n",
@@ -96,6 +100,8 @@ def test_validate_denies_unknown_tool(tmp_path: Path, monkeypatch: pytest.Monkey
         log_path,
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
+        server_key="filesystem",
+        backend_tool_name="read_file",
     )
     _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
@@ -118,6 +124,8 @@ def test_validate_denies_unknown_tool_lists_available_and_get_tool_definitions_p
         log_path,
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
+        server_key="filesystem",
+        backend_tool_name="read_file",
     )
     _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
@@ -387,7 +395,7 @@ def test_cyt_mcp_backend_denied_turn_only_session(
     assert validation.reason == ""
 
 
-def test_validate_resolves_prefixed_tool_name_to_catalog(
+def test_validate_accepts_wire_name_catalog_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -396,7 +404,9 @@ def test_validate_resolves_prefixed_tool_name_to_catalog(
         log_path,
         [
             {
-                "name": "search_code",
+                "name": "codebase-memory_search_code",
+                "tool_name": "search_code",
+                "server_key": "codebase-memory",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -429,7 +439,9 @@ def test_validate_denies_search_code_query_alias_without_coalescing(
         log_path,
         [
             {
-                "name": "search_code",
+                "name": "codebase-memory_search_code",
+                "tool_name": "search_code",
+                "server_key": "codebase-memory",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -453,7 +465,7 @@ def test_validate_denies_search_code_query_alias_without_coalescing(
     )
     assert validation.allowed is False
     assert "unknown property 'query'" in validation.reason
-    assert "catalog name 'search_code'" in validation.reason
+    assert "Tool 'codebase-memory_search_code'" in validation.reason
     assert "Missing required: project='clear-your-tools'" in validation.reason
 
 
@@ -466,7 +478,9 @@ def test_validate_denies_search_without_repo(
         log_path,
         [
             {
-                "name": "search",
+                "name": "semble_search",
+                "tool_name": "search",
+                "server_key": "semble",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -504,7 +518,9 @@ def test_validate_denies_search_without_repo_windows_path(
         log_path,
         [
             {
-                "name": "search",
+                "name": "semble_search",
+                "tool_name": "search",
+                "server_key": "semble",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -539,7 +555,9 @@ def test_validate_denies_grep_path_with_fixup_hint(
         log_path,
         [
             {
-                "name": "grep",
+                "name": "fff_grep",
+                "tool_name": "grep",
+                "server_key": "fff",
                 "input_schema": {
                     "type": "object",
                     "properties": {"query": {"type": "string"}},

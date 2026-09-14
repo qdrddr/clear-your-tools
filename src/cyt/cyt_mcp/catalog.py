@@ -212,11 +212,6 @@ def _normalize_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
         normalized["server_key"] = server_key.strip()
     if isinstance(tool_name, str) and tool_name.strip():
         normalized["tool_name"] = tool_name.strip()
-    elif "_" in name:
-        prefix, _, suffix = name.partition("_")
-        if prefix and suffix:
-            normalized["server_key"] = prefix
-            normalized["tool_name"] = suffix
     return normalized
 
 
@@ -252,10 +247,6 @@ def _tool_server_key(tool: dict[str, Any]) -> str:
     server_key = tool.get("server_key")
     if isinstance(server_key, str) and server_key.strip():
         return server_key.strip()
-    name = str(tool.get("name") or "")
-    prefix, _, suffix = name.partition("_")
-    if prefix and suffix:
-        return prefix
     return ""
 
 

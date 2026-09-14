@@ -1,0 +1,48 @@
+{
+  "description": "Legacy broken Type-2 catalog that stored bare backend tool names. Must NOT satisfy wire-name gate lookups.",
+  "tools": [
+    {
+      "name": "query_graph",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {"type": "string"},
+          "query": {"type": "string"}
+        },
+        "required": ["project", "query"]
+      }
+    },
+    {
+      "name": "search_code",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pattern": {"type": "string"},
+          "project": {"type": "string"}
+        },
+        "required": ["pattern", "project"]
+      }
+    },
+    {
+      "name": "search",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "repo": {"type": "string"}
+        },
+        "required": ["query", "repo"]
+      }
+    },
+    {
+      "name": "grep",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"}
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}

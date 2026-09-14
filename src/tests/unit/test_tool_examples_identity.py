@@ -17,21 +17,17 @@ def test_resolve_from_server_key_and_tool_name() -> None:
     assert resolve_mcp_server_and_tool(tool) == ("codebase-memory-mcp", "search_graph")
 
 
-def test_resolve_from_prefixed_name() -> None:
+def test_resolve_without_explicit_fields_returns_unknown() -> None:
     tool = {"name": "jcodemunch_search_symbols"}
-    assert resolve_mcp_server_and_tool(tool) == ("jcodemunch", "search_symbols")
+    assert resolve_mcp_server_and_tool(tool) == ("unknown", "jcodemunch_search_symbols")
 
 
-def test_resolve_from_wire_name() -> None:
-    assert resolve_mcp_server_and_tool_from_wire_name("demo_search") == ("demo", "search")
+def test_resolve_from_wire_name_requires_catalog_mapping() -> None:
+    assert resolve_mcp_server_and_tool_from_wire_name("demo_search") == (
+        "unknown",
+        "demo_search",
+    )
 
 
 def test_resolve_empty_wire_name() -> None:
     assert resolve_mcp_server_and_tool_from_wire_name("") == ("unknown", "unknown")
-
-
-def test_resolve_hyphenated_server_wire_name() -> None:
-    assert resolve_mcp_server_and_tool_from_wire_name("codebase-memory_search_graph") == (
-        "codebase-memory",
-        "search_graph",
-    )

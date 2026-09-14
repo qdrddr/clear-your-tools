@@ -470,10 +470,15 @@ def _tool_record_core_for_catalog_bundle(
     }
     if catalog == "cyt_mcp":
         server_key = str(tool.get("server_key") or "").strip()
-        if server_key:
-            record["server_key"] = server_key
         bare = str(tool.get("tool_name") or "").strip()
-        if bare and bare != name:
+        if not server_key or not bare:
+            msg = (
+                f"cyt_mcp Type-2 catalog tool {name!r} missing explicit "
+                "server_key/tool_name mapping"
+            )
+            raise ValueError(msg)
+        record["server_key"] = server_key
+        if bare != name:
             record["tool_name"] = bare
     description = tool.get("description")
     if description is not None and str(description).strip():

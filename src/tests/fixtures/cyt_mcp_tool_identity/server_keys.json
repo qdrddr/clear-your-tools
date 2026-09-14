@@ -1,0 +1,10 @@
+{
+  "server_keys": [
+    "codebase-memory-mcp",
+    "codebase-memory",
+    "graphify",
+    "semble",
+    "fff",
+    "filesystem"
+  ]
+}

@@ -8,6 +8,7 @@ from typing import Any
 
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, SEARCH_TOOL_NAME
+from cyt_mcp.tool_identity import enrich_tool_identity
 
 
 def _canonical_tool_entry(tool: dict[str, Any]) -> dict[str, Any]:
@@ -36,8 +37,10 @@ def catalog_payload(
     *,
     agent: str,
     server_origins: dict[str, str] | None = None,
+    server_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     origins = server_origins or {}
+    known_server_keys = list(server_keys or origins.keys())
     tools = cache.snapshot()
     normalized: list[dict[str, Any]] = []
     for tool in tools:
@@ -56,10 +59,13 @@ def catalog_payload(
         }
         if tool.get("description") is not None:
             entry["description"] = str(tool["description"])
-        server_key, _, tool_name = name.partition("_")
-        if server_key and tool_name:
-            entry["server_key"] = server_key
-            entry["tool_name"] = tool_name
+        if tool.get("server_key") is not None:
+            entry["server_key"] = str(tool["server_key"])
+        if tool.get("tool_name") is not None:
+            entry["tool_name"] = str(tool["tool_name"])
+        entry = enrich_tool_identity(entry, known_server_keys)
+        server_key = str(entry.get("server_key") or "").strip()
+        if server_key:
             origin = origins.get(server_key)
             if origin in {"user", "workspace"}:
                 entry["cyt_catalog_scope"] = origin

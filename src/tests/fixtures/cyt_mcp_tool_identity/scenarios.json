@@ -1,0 +1,201 @@
+{
+  "scenarios": [
+    {
+      "id": "graphify_query_graph_valid_question",
+      "issue": "graphify_query_graph and codebase-memory_query_graph share bare tool_name query_graph",
+      "catalog": "wire",
+      "tool_name": "graphify_query_graph",
+      "tool_input": {
+        "question": "BM25 scoring catalog functions score_items"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "graphify_query_graph_rejects_cypher_args",
+      "issue": "Must not validate graphify wire name against codebase-memory Cypher schema",
+      "catalog": "wire",
+      "tool_name": "graphify_query_graph",
+      "tool_input": {
+        "project": "clear-your-tools",
+        "query": "MATCH (n) RETURN n"
+      },
+      "expected": {
+        "allowed": false,
+        "reason_contains": ["unknown property 'project'"]
+      }
+    },
+    {
+      "id": "codebase_memory_query_graph_valid_cypher",
+      "issue": "codebase-memory wire name must use Cypher schema",
+      "catalog": "wire",
+      "tool_name": "codebase-memory_query_graph",
+      "tool_input": {
+        "project": "clear-your-tools",
+        "query": "MATCH (f:Function) WHERE f.name CONTAINS 'bm25' RETURN f LIMIT 5"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "codebase_memory_query_graph_rejects_question",
+      "issue": "Must not validate codebase-memory wire name against graphify question schema",
+      "catalog": "wire",
+      "tool_name": "codebase-memory_query_graph",
+      "tool_input": {
+        "question": "BM25 scoring"
+      },
+      "expected": {
+        "allowed": false,
+        "reason_contains": ["unknown property 'question'", "Missing required: project"]
+      }
+    },
+    {
+      "id": "graphify_wire_name_not_validated_against_bare_query_graph",
+      "issue": "Suffix stripping caused graphify_query_graph to validate against bare query_graph Cypher schema",
+      "catalog": "bare_regression",
+      "tool_name": "graphify_query_graph",
+      "tool_input": {
+        "question": "BM25 scoring"
+      },
+      "expected": {
+        "allowed": true,
+        "reason_must_not_contain": [
+          "Missing required: project",
+          "catalog name 'query_graph'",
+          "unknown property 'question'"
+        ]
+      }
+    },
+    {
+      "id": "search_code_wire_name_not_validated_against_bare_search_code",
+      "issue": "codebase-memory_search_code must not suffix-match bare search_code catalog entry",
+      "catalog": "bare_regression",
+      "tool_name": "codebase-memory_search_code",
+      "tool_input": {
+        "pattern": "bm25",
+        "project": "clear-your-tools"
+      },
+      "expected": {
+        "allowed": true,
+        "reason_must_not_contain": [
+          "catalog name 'search_code'",
+          "unknown property 'pattern'"
+        ]
+      }
+    },
+    {
+      "id": "semble_search_wire_name_not_validated_against_bare_search",
+      "issue": "semble_search must not suffix-match bare search catalog entry",
+      "catalog": "bare_regression",
+      "tool_name": "semble_search",
+      "tool_input": {
+        "query": "BM25 ranking",
+        "repo": "/tmp/clear-your-tools"
+      },
+      "expected": {
+        "allowed": true,
+        "reason_must_not_contain": [
+          "catalog name 'search'",
+          "Missing required: repo"
+        ]
+      }
+    },
+    {
+      "id": "fff_grep_wire_name_not_validated_against_bare_grep",
+      "issue": "fff_grep must not suffix-match bare grep catalog entry",
+      "catalog": "bare_regression",
+      "tool_name": "fff_grep",
+      "tool_input": {
+        "query": "bm25"
+      },
+      "expected": {
+        "allowed": true,
+        "reason_must_not_contain": [
+          "catalog name 'grep'",
+          "Use query (not path)"
+        ]
+      }
+    },
+    {
+      "id": "codebase_memory_search_code_valid",
+      "catalog": "wire",
+      "tool_name": "codebase-memory_search_code",
+      "tool_input": {
+        "pattern": "bm25",
+        "project": "clear-your-tools"
+      },
+      "expected": {
+        "allowed": true
+      }
+    },
+    {
+      "id": "codebase_memory_search_code_rejects_query_alias",
+      "issue": "Schema must not coalesce query into pattern/project",
+      "catalog": "wire",
+      "tool_name": "codebase-memory_search_code",
+      "tool_input": {
+        "query": "bm25",
+        "limit": 10
+      },
+      "expected": {
+        "allowed": false,
+        "reason_contains": ["unknown property 'query'", "Missing required: project"]
+      }
+    },
+    {
+      "id": "filesystem_write_file_unknown_same_server",
+      "catalog": "wire_subset",
+      "catalog_tools": ["filesystem_read_file"],
+      "tool_name": "filesystem_write_file",
+      "tool_input": {
+        "path": "/tmp/x"
+      },
+      "expected": {
+        "allowed": false,
+        "reason_contains": ["not in cyt_mcp"]
+      }
+    }
+  ],
+  "enrichment_expectations": [
+    {
+      "wire_name": "graphify_query_graph",
+      "server_key": "graphify",
+      "tool_name": "query_graph"
+    },
+    {
+      "wire_name": "codebase-memory_query_graph",
+      "server_key": "codebase-memory",
+      "tool_name": "query_graph"
+    },
+    {
+      "wire_name": "codebase-memory-mcp_search_graph",
+      "server_key": "codebase-memory-mcp",
+      "tool_name": "search_graph"
+    }
+  ],
+  "session_log_requirements": [
+    {
+      "tool": {
+        "name": "graphify_query_graph",
+        "tool_name": "query_graph",
+        "server_key": "graphify",
+        "input_schema": {"type": "object", "properties": {"question": {"type": "string"}}}
+      },
+      "expected_record_name": "graphify_query_graph"
+    }
+  ],
+  "session_log_rejections": [
+    {
+      "id": "missing_server_key",
+      "tool": {
+        "name": "graphify_query_graph",
+        "tool_name": "query_graph",
+        "input_schema": {"type": "object"}
+      },
+      "error_contains": "missing explicit server_key/tool_name mapping"
+    }
+  ]
+}

@@ -34,13 +34,17 @@ def _write_type2_session(
     *,
     inject_enabled: bool = True,
     extra_tools: list[dict] | None = None,
+    server_key: str | None = None,
+    backend_tool_name: str | None = None,
 ) -> None:
-    tools = [
-        {
-            "name": tool_name,
-            "input_schema": schema,
-        },
-    ]
+    tool_record: dict = {
+        "name": tool_name,
+        "input_schema": schema,
+    }
+    if server_key and backend_tool_name:
+        tool_record["server_key"] = server_key
+        tool_record["tool_name"] = backend_tool_name
+    tools = [tool_record]
     if extra_tools:
         tools.extend(extra_tools)
     path.write_text(
@@ -115,6 +119,8 @@ def test_unknown_tool_persists_get_tool_definitions_entry(
         log_path,
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
+        server_key="filesystem",
+        backend_tool_name="read_file",
     )
     _patch_session_log(monkeypatch, log_path)
 
@@ -144,6 +150,8 @@ def test_repeated_deny_does_not_duplicate_type1_entry(
         log_path,
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
+        server_key="filesystem",
+        backend_tool_name="read_file",
     )
     _patch_session_log(monkeypatch, log_path)
 
@@ -195,6 +203,8 @@ def test_validate_returns_exposure_for_unknown_cyt_mcp_tool(
         log_path,
         "filesystem_read_file",
         {"type": "object", "properties": {"path": {"type": "string"}}},
+        server_key="filesystem",
+        backend_tool_name="read_file",
     )
     _patch_session_log(monkeypatch, log_path)
     validation = validate_pre_tool_call(
@@ -231,7 +241,7 @@ def test_get_tool_definitions_entry_uses_catalog_when_present() -> None:
     assert entry["description"] == "from catalog"
 
 
-def test_schema_mismatch_persists_full_type1_from_type2_catalog_with_prefixed_name(
+def test_schema_mismatch_persists_full_type1_from_type2_catalog_with_wire_name(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -242,7 +252,9 @@ def test_schema_mismatch_persists_full_type1_from_type2_catalog_with_prefixed_na
         "required": ["project"],
     }
     catalog_tool = {
-        "name": "index_status",
+        "name": "codebase-memory_index_status",
+        "tool_name": "index_status",
+        "server_key": "codebase-memory",
         "input_schema": schema,
         "description": "Get the indexing status of a project",
         "hash": "placeholder",
@@ -289,8 +301,8 @@ def test_schema_mismatch_persists_full_type1_from_type2_catalog_with_prefixed_na
     entry = tool_entries[0]
     assert entry["full"] is True
     assert entry["catalog"] == "cyt_mcp"
-    assert entry["name"] == "index_status"
-    assert entry["key"] == "tool:cyt_mcp:index_status"
+    assert entry["name"] == "codebase-memory_index_status"
+    assert entry["key"] == "tool:cyt_mcp:codebase-memory_index_status"
     assert entry["input_schema"] == schema
     assert entry["description"] == "Get the indexing status of a project"
     assert entry["source"] == "cyt-client_pre-tool-deny"

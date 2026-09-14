@@ -63,21 +63,6 @@ def _find_tool_in_catalog(
     return None
 
 
-def _resolve_cyt_mcp_tool_name_for_catalog(
-    tool_name: str,
-    catalogs: dict[str, dict[str, Any]],
-) -> str:
-    """Map server-prefixed names (e.g. codebase-memory_index_status) to Type-2 catalog names."""
-    if _find_tool_in_catalog(catalogs, "cyt_mcp", tool_name) is not None:
-        return tool_name
-    if "_" not in tool_name:
-        return tool_name
-    _prefix, _, suffix = tool_name.partition("_")
-    if suffix and _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is not None:
-        return suffix
-    return tool_name
-
-
 @dataclass(frozen=True)
 class PreToolDenyExposure:
     """What to append to the session log after a PreToolUse deny."""
@@ -94,8 +79,6 @@ def _catalog_lookup_name(
     tool_name: str,
     catalogs: dict[str, dict[str, Any]],
 ) -> str:
-    if catalog == "cyt_mcp":
-        return _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
     return tool_name
 
 

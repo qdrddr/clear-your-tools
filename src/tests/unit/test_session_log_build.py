@@ -186,7 +186,9 @@ def test_tool_catalog_excluded_from_verbatim_corpus() -> None:
         "cyt_mcp",
         [
             {
+                "name": "demo_demo_tool",
                 "tool_name": "demo_tool",
+                "server_key": "demo",
                 "input_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
             },
         ],
@@ -203,8 +205,18 @@ def test_build_tool_catalog_partition_hash_stable() -> None:
     )
 
     tools = [
-        {"tool_name": "a_tool", "input_schema": {"type": "object"}},
-        {"tool_name": "b_tool", "input_schema": {"type": "object"}},
+        {
+            "name": "demo_a_tool",
+            "tool_name": "a_tool",
+            "server_key": "demo",
+            "input_schema": {"type": "object"},
+        },
+        {
+            "name": "demo_b_tool",
+            "tool_name": "b_tool",
+            "server_key": "demo",
+            "input_schema": {"type": "object"},
+        },
     ]
     entry = build_tool_catalog_log_entry("cyt_mcp", tools)
     assert entry["kind"] == "tool_catalog"
@@ -255,6 +267,7 @@ def test_emit_tool_catalog_session_log_includes_per_tool_hash() -> None:
         {
             "tool_name": "index_status",
             "name": "codebase-memory_index_status",
+            "server_key": "codebase-memory",
             "input_schema": {
                 "type": "object",
                 "properties": {"project": {"type": "string"}},
@@ -369,7 +382,9 @@ def test_build_verify_session_log_entries_skips_unchanged_catalog_hash() -> None
 
     tools = [
         {
+            "name": "demo_demo_tool",
             "tool_name": "demo_tool",
+            "server_key": "demo",
             "description": "demo",
             "input_schema": {"type": "object", "properties": {"x": {"type": "string"}}},
             "cyt_catalog_source": "cyt_mcp",

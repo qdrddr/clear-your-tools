@@ -10,10 +10,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import ToolResult
 from mcp.types import CallToolRequestParams
 
-from cyt.tool_examples.identity import (
-    resolve_mcp_server_and_tool,
-    resolve_mcp_server_and_tool_from_wire_name,
-)
+from cyt_mcp.tool_identity import resolve_backend_identity
 from cyt_mcp.catalog import catalog_tools_content_hash
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.config_holder import ConfigHolder
@@ -54,14 +51,8 @@ def _resolve_tool_identity(cache: RuntimeToolCache, tool_name: str) -> tuple[str
     for entry in cache.snapshot():
         if str(entry.get("name") or "") != tool_name:
             continue
-        tool = dict(entry)
-        if not tool.get("server_key") and "_" in tool_name:
-            server_key, _, bare_tool = tool_name.partition("_")
-            if server_key and bare_tool:
-                tool["server_key"] = server_key
-                tool["tool_name"] = bare_tool
-        return resolve_mcp_server_and_tool(tool)
-    return resolve_mcp_server_and_tool_from_wire_name(tool_name)
+        return resolve_backend_identity(entry)
+    return "unknown", tool_name.strip() or "unknown"
 
 
 def _input_schema_for_tool(

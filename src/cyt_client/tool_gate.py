@@ -678,51 +678,6 @@ def _normalize_property_aliases(args: dict[str, Any], schema: dict[str, Any]) ->
     return normalized
 
 
-def _cyt_mcp_catalog_tools(catalogs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    entry = catalogs.get("tool_catalog:cyt_mcp")
-    if entry is None:
-        return []
-    tools = entry.get("tools")
-    if not isinstance(tools, list):
-        return []
-    return [tool for tool in tools if isinstance(tool, dict)]
-
-
-def _resolve_cyt_mcp_tool_name_for_catalog(
-    tool_name: str,
-    catalogs: dict[str, dict[str, Any]],
-) -> str:
-    """Map server-prefixed names (e.g. jcodemunch_search_symbols) to Type-2 catalog names."""
-    if _find_tool_in_catalog(catalogs, "cyt_mcp", tool_name) is not None:
-        return tool_name
-    if "_" not in tool_name:
-        return tool_name
-    _, _, suffix = tool_name.partition("_")
-    if not suffix:
-        return tool_name
-
-    bare_matches = [
-        tool
-        for tool in _cyt_mcp_catalog_tools(catalogs)
-        if str(tool.get("name") or "").strip() == suffix
-    ]
-    if len(bare_matches) == 1:
-        return suffix
-    if len(bare_matches) > 1:
-        prefix_matches = [
-            tool
-            for tool in bare_matches
-            if str(tool.get("server_key") or "").strip()
-            and tool_name.startswith(f"{tool['server_key']}_")
-        ]
-        if len(prefix_matches) == 1:
-            return str(prefix_matches[0].get("name") or suffix).strip() or suffix
-        return tool_name
-    if _find_tool_in_catalog(catalogs, "cyt_mcp", suffix) is None:
-        return tool_name
-    return suffix
-
-
 def _find_tool_in_catalog(
     catalogs: dict[str, dict[str, Any]],
     catalog: str,
@@ -754,9 +709,8 @@ def _resolve_catalog_for_mcp_tool(
     tool_name: str,
     catalogs: dict[str, dict[str, Any]],
 ) -> str | None:
-    resolved_name = _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
     for catalog in ("cyt_mcp", "definitions"):
-        lookup_name = resolved_name if catalog == "cyt_mcp" else tool_name
+        lookup_name = tool_name
         if _find_tool_in_catalog(catalogs, catalog, lookup_name) is not None:
             return catalog
     return None
@@ -767,14 +721,19 @@ def _shares_cyt_mcp_proxy_prefix(tool_name: str, catalogs: dict[str, dict[str, A
     if entry is None:
         return False
     tools = entry.get("tools")
-    if not isinstance(tools, list) or "_" not in tool_name:
+    if not isinstance(tools, list):
         return False
-    prefix = tool_name.split("_", 1)[0]
+    requested = str(tool_name or "").strip()
+    if not requested:
+        return False
     for tool in tools:
         if not isinstance(tool, dict):
             continue
-        name = str(tool.get("name") or "")
-        if "_" in name and name.split("_", 1)[0] == prefix:
+        name = str(tool.get("name") or "").strip()
+        if name == requested:
+            return True
+        server_key = str(tool.get("server_key") or "").strip()
+        if server_key and requested.startswith(f"{server_key}_"):
             return True
     return False
 
@@ -888,11 +847,7 @@ def _validate_catalog_tool_pre_tool_call(
     if catalog not in _GATED_CATALOGS:
         return _allow()
 
-    catalog_tool_name = (
-        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
-        if catalog == "cyt_mcp"
-        else tool_name
-    )
+    catalog_tool_name = tool_name
     return _validate_gated_catalog_tool(
         catalog,
         catalog_tool_name,
@@ -1145,11 +1100,7 @@ def extract_gated_tool_use_feedback(payload: dict[str, Any]) -> dict[str, Any] |
     catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
     if catalog is None or catalog not in _GATED_CATALOGS:
         return None
-    catalog_tool_name = (
-        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
-        if catalog == "cyt_mcp"
-        else tool_name
-    )
+    catalog_tool_name = tool_name
     tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
     if tool is None:
         return None
@@ -1225,16 +1176,8 @@ def _resolve_mcp_server_and_tool_name(
     bare = str(tool.get("tool_name") or "").strip()
     if server and bare:
         return server, bare
-    name = str(tool.get("name") or catalog_tool_name or "").strip()
-    if server and name:
-        if name.startswith(f"{server}_"):
-            return server, name[len(server) + 1 :]
-        return server, name
-    if name and "_" in name:
-        head, _, tail = name.partition("_")
-        if head and tail:
-            return head, tail
-    return server or "unknown", bare or name or "unknown"
+    wire = str(tool.get("name") or catalog_tool_name or "").strip()
+    return "unknown", wire or "unknown"
 
 
 def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -1252,11 +1195,7 @@ def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] |
     catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
     if catalog is None or catalog not in _GATED_CATALOGS:
         return None
-    catalog_tool_name = (
-        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
-        if catalog == "cyt_mcp"
-        else tool_name
-    )
+    catalog_tool_name = tool_name
     if _find_tool_in_catalog(catalogs, catalog, catalog_tool_name) is None:
         return None
     return {
@@ -1281,11 +1220,7 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     catalog = _resolve_catalog_for_mcp_tool(tool_name, catalogs)
     if catalog is None or catalog not in _GATED_CATALOGS:
         return None
-    catalog_tool_name = (
-        _resolve_cyt_mcp_tool_name_for_catalog(tool_name, catalogs)
-        if catalog == "cyt_mcp"
-        else tool_name
-    )
+    catalog_tool_name = tool_name
     tool = _find_tool_in_catalog(catalogs, catalog, catalog_tool_name)
     if tool is None:
         return None

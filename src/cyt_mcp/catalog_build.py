@@ -12,6 +12,7 @@ from mcp.types import Tool as McpWireTool
 from cyt_mcp.config import AggregatorConfig
 from cyt_mcp.runtime_cache import RuntimeToolCache
 from cyt_mcp.search import MCP_WIRE_SEARCH_TOOL_NAME, refresh_search_tool_schema
+from cyt_mcp.tool_identity import enrich_tool_identity
 
 
 def mcp_tool_to_catalog_dict(mcp_tool: McpWireTool) -> dict[str, Any]:
@@ -88,6 +89,11 @@ async def refresh_catalog_cache(
         backend_tools,
         deny_entries=deny_entries,
     )
+    if config is not None:
+        server_keys = sorted(config.mcp_servers.keys(), key=len, reverse=True)
+        catalog_entries = [
+            enrich_tool_identity(entry, server_keys) for entry in catalog_entries
+        ]
     cache.replace(catalog_entries, search_index=search_index)
     refresh_search_tool_schema(cache)
     if config is not None:
