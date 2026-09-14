@@ -26,6 +26,148 @@ def test_project_registry_dedupes_by_root(store: ToolExamplesStore, tmp_path: Pa
     assert pid1 == pid2
 
 
+def test_schema_v2_migration_adds_success_count(tmp_path: Path) -> None:
+    db = tmp_path / "legacy_tool_examples.db"
+    conn = __import__("sqlite3").connect(str(db))
+    conn.executescript(
+        """
+        CREATE TABLE tool_example_project (
+            project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            root_path TEXT NOT NULL UNIQUE,
+            created_ms INTEGER NOT NULL,
+            last_seen_ms INTEGER NOT NULL
+        );
+        CREATE TABLE tool_input_schema (
+            schema_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            mcp_server TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            schema_json TEXT NOT NULL,
+            input_json TEXT NOT NULL,
+            schema_hash TEXT NOT NULL,
+            input_hash TEXT NOT NULL,
+            first_seen_ms INTEGER NOT NULL,
+            last_seen_ms INTEGER NOT NULL
+        );
+        CREATE TABLE tool_example (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            schema_id INTEGER NOT NULL,
+            json_path TEXT NOT NULL,
+            value TEXT NOT NULL,
+            value_type TEXT NOT NULL,
+            timestamp_ms INTEGER NOT NULL,
+            UNIQUE(schema_id, json_path, value)
+        );
+        PRAGMA user_version = 1;
+        """,
+    )
+    conn.execute(
+        "INSERT INTO tool_example_project(root_path, created_ms, last_seen_ms) VALUES (?, ?, ?)",
+        (str(tmp_path / "repo"), 1, 1),
+    )
+    conn.execute(
+        "INSERT INTO tool_input_schema("
+        "project_id, mcp_server, tool_name, schema_json, input_json, "
+        "schema_hash, input_hash, first_seen_ms, last_seen_ms"
+        ") VALUES (1, 'srv', 'tool', '{}', '{}', 'h1', 'h2', 1, 1)",
+    )
+    conn.execute(
+        "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
+        "VALUES (1, 'inputSchema.properties.q', '\"legacy\"', 'string', 1)",
+    )
+    conn.commit()
+    conn.close()
+
+    store = ToolExamplesStore.open(str(db))
+    try:
+        rows = store.list_examples_for_path([1], "inputSchema.properties.q")
+        assert len(rows) == 1
+        assert rows[0].success_count == 1
+        with store._lock:
+            version = int(store._conn.execute("PRAGMA user_version").fetchone()[0])
+        assert version == 2
+    finally:
+        store.close()
+
+
+def test_success_count_increments_on_repeat_capture(store: ToolExamplesStore, tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    project_id = store.get_or_create_project(str(root))
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+    args = {"query": "bm25"}
+    schema_id = store.upsert_capture(project_id, "srv", "tool", schema, args)
+    store.upsert_capture(project_id, "srv", "tool", schema, args)
+    rows = store.list_examples_for_path([schema_id], "inputSchema.properties.query")
+    assert len(rows) == 1
+    assert rows[0].success_count == 2
+
+
+def test_list_aggregated_examples_for_path_sums_success_count(
+    store: ToolExamplesStore,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    project_id = store.get_or_create_project(str(root))
+    schema = {"type": "object", "properties": {"project": {"type": "string"}}}
+    sid1 = store.upsert_capture(
+        project_id,
+        "srv",
+        "tool",
+        schema,
+        {"project": "clear-your-tools"},
+    )
+    sid2 = store.upsert_capture(
+        project_id,
+        "srv",
+        "tool",
+        schema,
+        {"project": "clear-your-tools"},
+    )
+    rows = store.list_aggregated_examples_for_path(
+        [sid1, sid2],
+        "inputSchema.properties.project",
+    )
+    assert len(rows) == 1
+    assert rows[0].value == '"clear-your-tools"'
+    assert rows[0].success_count == 2
+
+
+def test_enforce_example_path_limit_keeps_high_usage_values(
+    store: ToolExamplesStore,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    project_id = store.get_or_create_project(str(root))
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+    schema_id = store.upsert_capture(project_id, "srv", "tool", schema, {"query": "seed"})
+    now_ms = int(time.time() * 1000)
+    with store._lock:
+        for idx in range(5):
+            store._conn.execute(
+                "INSERT INTO tool_example("
+                "schema_id, json_path, value, value_type, timestamp_ms, success_count"
+                ") VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    schema_id,
+                    "inputSchema.properties.query",
+                    f'"v{idx}"',
+                    "string",
+                    now_ms + idx,
+                    idx + 1,
+                ),
+            )
+        store._conn.commit()
+    store.enforce_example_path_limit(max_per_path=3, min_per_path=2)
+    rows = store.list_examples_for_path([schema_id], "inputSchema.properties.query", limit=10)
+    values = {row.value for row in rows}
+    assert len(rows) == 3
+    assert '"v0"' not in values
+    assert '"v1"' not in values
+
+
 def test_upsert_capture_dedupes_identical_calls(store: ToolExamplesStore, tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

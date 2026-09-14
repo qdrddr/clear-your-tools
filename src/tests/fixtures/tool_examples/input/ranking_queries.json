@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Queries for RRF + usage + diversity tool example injection regression.",
+  "catalog_tools": "../cyt_mcp_catalog/input/tools.json",
+  "ranking_tools": "ranking_tools.json",
+  "inject": {
+    "max_per_property": 3,
+    "max_value_chars": 120,
+    "full_call_examples": false,
+    "cross_schema_fallback": false,
+    "ranking": {
+      "pipeline": ["bm25"],
+      "rrf_k": 60,
+      "rerank_min_candidates": 3,
+      "llm_min_candidates": 5,
+      "diversity_threshold": 0.6
+    }
+  },
+  "queries": [
+    {
+      "id": "06_city_diversity",
+      "query": "city address lookup",
+      "tool_names": ["geo_lookup"],
+      "tools_source": "ranking"
+    },
+    {
+      "id": "07_usage_weighted_repo",
+      "query": "kubernetes deployment autoscaling pods clear-your-tools repo",
+      "tool_names": ["jcodemunch_search_symbols"],
+      "tools_source": "catalog"
+    }
+  ]
+}

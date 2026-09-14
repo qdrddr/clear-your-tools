@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Minimal tools for RRF ranking and diversity regression (not in the main MCP catalog).",
+  "tools": [
+    {
+      "name": "geo_lookup",
+      "server_key": "geo",
+      "tool_name": "lookup",
+      "description": "Look up geographic locations.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name or city with state."
+          }
+        },
+        "required": ["city"]
+      }
+    }
+  ]
+}

@@ -332,3 +332,189 @@ def test_client_notify_record_enrich_pipeline(
     enriched = enrich_tools_with_examples([tool], "integration project", config)
     desc = enriched[0]["input_schema"]["properties"]["project"]["description"]
     assert "integration-project" in desc
+
+
+def _extract_example_values(description: str) -> list[str]:
+    marker = "Examples:"
+    if marker not in description:
+        return []
+    tail = description.split(marker, 1)[1].strip()
+    if tail.endswith("."):
+        tail = tail[:-1].strip()
+    values: list[str] = []
+    index = 0
+    while index < len(tail):
+        if tail[index] != "'":
+            index += 1
+            continue
+        end = index + 1
+        while end < len(tail) and tail[end] != "'":
+            end += 1
+        values.append(tail[index + 1 : end])
+        index = end + 1
+        while index < len(tail) and tail[index] in ", ":
+            index += 1
+    return values
+
+
+def _ranking_config(db_path: Path, workspace: Path) -> dict:
+    return set_hook_workspace_in_config(
+        {
+            "tools": {
+                "sequence": ["bm25"],
+                "examples": {
+                    "enabled": True,
+                    "database": {"path": str(db_path)},
+                    "inject": {
+                        "max_per_property": 3,
+                        "ranking": {
+                            "pipeline": ["bm25"],
+                            "diversity_threshold": 0.6,
+                        },
+                    },
+                },
+            },
+        },
+        workspace,
+    )
+
+
+def test_repeated_captures_boost_ranking_in_enrich_pipeline(
+    project_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Repeated successful captures should rank higher than one-off values."""
+    db = tmp_path / "tool_examples.db"
+    config = _ranking_config(db, project_root)
+    schema = {
+        "type": "object",
+        "properties": {"repo": {"type": "string", "description": "Repository"}},
+    }
+    record_tool_examples_capture(
+        workspace=project_root,
+        mcp_server="demo",
+        tool_name="search",
+        input_schema=schema,
+        args={"repo": "rare-repo"},
+        config=config,
+    )
+    for _ in range(6):
+        record_tool_examples_capture(
+            workspace=project_root,
+            mcp_server="demo",
+            tool_name="search",
+            input_schema=schema,
+            args={"repo": "popular-repo"},
+            config=config,
+        )
+
+    tool = {
+        "name": "demo_search",
+        "server_key": "demo",
+        "tool_name": "search",
+        "input_schema": schema,
+    }
+    enriched = enrich_tools_with_examples([tool], "search repository demo", config)
+    values = _extract_example_values(
+        enriched[0]["input_schema"]["properties"]["repo"]["description"],
+    )
+    assert values[0] == "popular-repo"
+
+
+def test_retention_keeps_high_usage_values_for_enrich(
+    project_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Path retention should evict low-usage examples before high-usage ones."""
+    from cyt.tool_examples.maintenance import run_tool_examples_maintenance
+
+    db = tmp_path / "tool_examples.db"
+    config = _ranking_config(db, project_root)
+    tools_examples = dict(config["tools"]["examples"])
+    tools_examples["retention"] = {
+        "max_per_path": 3,
+        "min_per_path": 2,
+        "max_captures_per_tool": 50,
+        "min_captures_per_tool": 1,
+        "max_age_days": 365,
+    }
+    config["tools"]["examples"] = tools_examples
+    schema = {
+        "type": "object",
+        "properties": {"city": {"type": "string", "description": "City"}},
+    }
+    store = ToolExamplesStore.open(str(db))
+    try:
+        project_id = store.get_or_create_project(str(project_root))
+        for value, repeat in (
+            ("New York, NY", 5),
+            ("San Francisco, CA", 4),
+            ("Chicago, IL", 3),
+            ("Chicago", 1),
+            ("Chicago, Illinois", 1),
+        ):
+            for _ in range(repeat):
+                store.upsert_capture(project_id, "geo", "lookup", schema, {"city": value})
+    finally:
+        store.close()
+
+    run_tool_examples_maintenance(config)
+
+    tool = {
+        "name": "geo_lookup",
+        "server_key": "geo",
+        "tool_name": "lookup",
+        "input_schema": schema,
+    }
+    enriched = enrich_tools_with_examples([tool], "city address lookup", config)
+    values = _extract_example_values(
+        enriched[0]["input_schema"]["properties"]["city"]["description"],
+    )
+    assert len(values) == 3
+    assert "New York, NY" in values
+    assert "San Francisco, CA" in values
+    chicago_variants = [value for value in values if value.casefold().startswith("chicago")]
+    assert len(chicago_variants) == 1
+
+
+def test_capture_to_enrich_applies_diversity(project_root: Path, tmp_path: Path) -> None:
+    """End-to-end capture and enrich should not inject near-duplicate city variants."""
+    db = tmp_path / "tool_examples.db"
+    config = _ranking_config(db, project_root)
+    schema = {
+        "type": "object",
+        "properties": {"city": {"type": "string", "description": "City name"}},
+    }
+    captures = (
+        ("Chicago, IL", 3),
+        ("New York, NY", 5),
+        ("San Francisco, CA", 4),
+        ("Chicago", 1),
+        ("Chicago, Illinois", 1),
+    )
+    for city, repeat in captures:
+        for _ in range(repeat):
+            record_tool_examples_capture(
+                workspace=project_root,
+                mcp_server="geo",
+                tool_name="lookup",
+                input_schema=schema,
+                args={"city": city},
+                config=config,
+            )
+
+    tool = {
+        "name": "geo_lookup",
+        "server_key": "geo",
+        "tool_name": "lookup",
+        "input_schema": schema,
+    }
+    enriched = enrich_tools_with_examples([tool], "city address lookup", config)
+    values = _extract_example_values(
+        enriched[0]["input_schema"]["properties"]["city"]["description"],
+    )
+    assert len(values) == 3
+    assert "New York, NY" in values
+    assert "San Francisco, CA" in values
+    chicago_variants = [value for value in values if value.casefold().startswith("chicago")]
+    assert len(chicago_variants) == 1

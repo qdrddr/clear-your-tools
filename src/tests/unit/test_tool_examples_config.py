@@ -38,6 +38,9 @@ def test_tool_examples_config_defaults() -> None:
     assert cfg.min_captures_per_tool == 5
     assert cfg.max_age_days == 90
     assert len(cfg.redact_key_patterns) >= 1
+    assert cfg.ranking.pipeline == "inherit"
+    assert cfg.ranking.rrf_k == 60
+    assert cfg.ranking.diversity_threshold == 0.6
 
 
 def test_tool_examples_config_overrides(tmp_path: Path) -> None:

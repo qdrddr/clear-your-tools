@@ -449,6 +449,12 @@ tools:
       full_call_examples: true
       max_full_call_examples: 2
       cross_schema_fallback: false
+      ranking:
+        pipeline: inherit
+        rrf_k: 60
+        rerank_min_candidates: 3
+        llm_min_candidates: 5
+        diversity_threshold: 0.6
     retention:
       max_per_path: 20
       min_per_path: 3

@@ -15,7 +15,7 @@
         "properties": {
           "path": {
             "type": "string",
-            "description": "Path to a HEDL file or directory containing .hedl files. Examples: '/workspace/models/entity.hedl', '/data/schemas/user.hedl', '/tmp/unrelated/config.json'."
+            "description": "Path to a HEDL file or directory containing .hedl files. Examples: '/workspace/models/entity.hedl', '/tmp/unrelated/config.json', '/data/schemas/user.hedl'."
           },
           "recursive": {
             "type": "boolean",
@@ -47,8 +47,8 @@
       "path": "hedl.hedl_read.inputSchema.properties.path",
       "values": [
         "/workspace/models/entity.hedl",
-        "/data/schemas/user.hedl",
-        "/tmp/unrelated/config.json"
+        "/tmp/unrelated/config.json",
+        "/data/schemas/user.hedl"
       ]
     },
     {

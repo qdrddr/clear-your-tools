@@ -11,7 +11,7 @@ from cyt.tiers.config import resolve_project_root_path
 from cyt.tool_examples.config import ToolExamplesConfig, examples_active, tool_examples_config
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
-from cyt.tool_examples.query import rank_by_query
+from cyt.tool_examples.ranking import rank_example_values, rank_full_call_examples
 from cyt.tool_examples.store import ToolCapture, ToolExampleRow, ToolExamplesStore
 
 
@@ -42,6 +42,14 @@ def _collect_property_nodes(
     return nodes
 
 
+def _property_name_from_path(json_path: str) -> str:
+    marker = ".properties."
+    if marker in json_path:
+        tail = json_path.rsplit(marker, 1)[-1]
+        return tail.split(".")[-1]
+    return json_path.rsplit(".", 1)[-1]
+
+
 def _append_examples(description: str, values: list[str], *, max_value_chars: int) -> str:
     if not values:
         return description
@@ -67,22 +75,23 @@ def _rank_example_values(
     rows: list[ToolExampleRow],
     *,
     max_count: int,
+    config: dict[str, Any],
+    cfg: ToolExamplesConfig,
+    property_name: str,
+    property_description: str,
 ) -> list[str]:
     if not rows:
         return []
-    items = [(row.value, row.value, row.timestamp_ms) for row in rows]
-    ranked = rank_by_query(query, items)
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in ranked:
-        value = str(item.item)
-        if value in seen:
-            continue
-        seen.add(value)
-        out.append(value)
-        if len(out) >= max_count:
-            break
-    return out
+    ranked = rank_example_values(
+        query,
+        rows,
+        max_count=max_count,
+        config=config,
+        ranking=cfg.ranking,
+        property_name=property_name,
+        property_description=property_description,
+    )
+    return [item.value for item in ranked]
 
 
 def enrich_tools_with_examples(
@@ -107,6 +116,7 @@ def enrich_tools_with_examples(
                 project_id=project_id,
                 store=store,
                 cfg=cfg,
+                config=config,
             )
             for tool in tools
         ]
@@ -129,23 +139,25 @@ def _append_full_call_examples(
     query: str,
     captures: list[ToolCapture],
     cfg: ToolExamplesConfig,
+    config: dict[str, Any],
 ) -> None:
     if not cfg.full_call_examples:
         return
     call_items = [
-        (
-            capture.input_json,
-            json.dumps(capture.input_json, ensure_ascii=False),
-            capture.last_seen_ms,
-        )
+        (capture.input_json, capture.last_seen_ms)
         for capture in captures
     ]
-    ranked_calls = rank_by_query(query, call_items)[: cfg.max_full_call_examples]
+    ranked_calls = rank_full_call_examples(
+        query,
+        call_items,
+        max_count=cfg.max_full_call_examples,
+        config=config,
+        ranking=cfg.ranking,
+    )
     if not ranked_calls:
         return
     snippets = []
-    for item in ranked_calls:
-        text = json.dumps(item.item, ensure_ascii=False, separators=(",", ":"))
+    for text in ranked_calls:
         if len(text) > cfg.max_value_chars:
             text = text[: cfg.max_value_chars - 3] + "..."
         snippets.append(text)
@@ -161,10 +173,25 @@ def _enrich_schema_properties(
     schema_ids: list[int],
     store: ToolExamplesStore,
     cfg: ToolExamplesConfig,
+    config: dict[str, Any],
 ) -> None:
     for path, spec in _collect_property_nodes(schema):
-        rows = store.list_examples_for_path(schema_ids, path, limit=cfg.max_per_path)
-        values = _rank_example_values(query, rows, max_count=cfg.max_per_property)
+        rows = store.list_aggregated_examples_for_path(
+            schema_ids,
+            path,
+            limit=cfg.max_per_path,
+        )
+        property_name = _property_name_from_path(path)
+        property_description = str(spec.get("description") or "")
+        values = _rank_example_values(
+            query,
+            rows,
+            max_count=cfg.max_per_property,
+            config=config,
+            cfg=cfg,
+            property_name=property_name,
+            property_description=property_description,
+        )
         if not values:
             continue
         current = str(spec.get("description") or "")
@@ -178,6 +205,7 @@ def _enrich_single_tool(
     project_id: int,
     store: ToolExamplesStore,
     cfg: ToolExamplesConfig,
+    config: dict[str, Any],
 ) -> dict[str, Any]:
     out = copy.deepcopy(tool)
     schema = _schema_from_tool(out)
@@ -208,7 +236,8 @@ def _enrich_single_tool(
         schema_ids=schema_ids,
         store=store,
         cfg=cfg,
+        config=config,
     )
-    _append_full_call_examples(out, query=query, captures=captures, cfg=cfg)
+    _append_full_call_examples(out, query=query, captures=captures, cfg=cfg, config=config)
     _write_schema_back_to_tool(out, schema)
     return out

@@ -1,4 +1,4 @@
-"""Build and format BM25-scored tool example injection reports."""
+"""Build and format RRF-scored tool example injection reports."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from cyt.tool_examples.config import tool_examples_config
-from cyt.tool_examples.enrich import _collect_property_nodes, _schema_from_tool
+from cyt.tool_examples.enrich import _collect_property_nodes, _property_name_from_path, _schema_from_tool
 from cyt.tool_examples.hash_utils import content_hash
 from cyt.tool_examples.identity import resolve_mcp_server_and_tool
-from cyt.tool_examples.query import RankedExample, rank_by_query_detailed
+from cyt.tool_examples.ranking import RankedExampleValue, rank_example_values
 from cyt.tool_examples.store import ToolExamplesStore
 
 
@@ -20,7 +20,10 @@ class ScoredExampleLine:
     display_value: str
     bm25_score: float
     recency_bonus: float
+    usage_score: float
+    rrf_score: float
     total_score: float
+    channel_ranks: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -58,28 +61,22 @@ def _flattened_key(server_key: str, tool_name: str, json_path: str) -> str:
 
 
 def _rows_to_scored_lines(
-    ranked: list[RankedExample],
-    *,
-    max_count: int,
+    ranked: list[RankedExampleValue],
 ) -> tuple[ScoredExampleLine, ...]:
-    seen: set[str] = set()
     out: list[ScoredExampleLine] = []
     for row in ranked:
-        value = str(row.item)
-        if value in seen:
-            continue
-        seen.add(value)
         out.append(
             ScoredExampleLine(
-                value=value,
-                display_value=_display_value(value),
+                value=row.value,
+                display_value=_display_value(row.value),
                 bm25_score=row.bm25_score,
                 recency_bonus=row.recency_bonus,
-                total_score=row.total_score,
+                usage_score=row.usage_score,
+                rrf_score=row.rrf_score,
+                total_score=row.rrf_score,
+                channel_ranks=dict(row.channel_ranks),
             ),
         )
-        if len(out) >= max_count:
-            break
     return tuple(out)
 
 
@@ -98,6 +95,11 @@ def build_query_score_report(
         "max_value_chars": cfg.max_value_chars,
         "full_call_examples": cfg.full_call_examples,
         "cross_schema_fallback": cfg.cross_schema_fallback,
+        "ranking": {
+            "pipeline": cfg.ranking.pipeline,
+            "rrf_k": cfg.ranking.rrf_k,
+            "diversity_threshold": cfg.ranking.diversity_threshold,
+        },
     }
     tool_reports: list[ToolScoreReport] = []
     for tool in tools:
@@ -133,13 +135,26 @@ def build_query_score_report(
             continue
         schema_ids = [capture.schema_id for capture in captures]
         property_reports: list[PropertyScoreReport] = []
-        for json_path, _spec in _collect_property_nodes(schema):
-            rows = store.list_examples_for_path(schema_ids, json_path, limit=cfg.max_per_path)
+        for json_path, spec in _collect_property_nodes(schema):
+            rows = store.list_aggregated_examples_for_path(
+                schema_ids,
+                json_path,
+                limit=cfg.max_per_path,
+            )
             if not rows:
                 continue
-            items = [(row.value, row.value, row.timestamp_ms) for row in rows]
-            ranked = rank_by_query_detailed(query, items)
-            examples = _rows_to_scored_lines(ranked, max_count=cfg.max_per_property)
+            property_name = _property_name_from_path(json_path)
+            property_description = str(spec.get("description") or "")
+            ranked = rank_example_values(
+                query,
+                rows,
+                max_count=cfg.max_per_property,
+                config=config,
+                ranking=cfg.ranking,
+                property_name=property_name,
+                property_description=property_description,
+            )
+            examples = _rows_to_scored_lines(ranked)
             if not examples:
                 continue
             property_reports.append(
@@ -192,8 +207,9 @@ def format_query_score_report(report: QueryScoreReport) -> str:
             for example in prop.examples:
                 lines.append(
                     "    "
-                    f"total={example.total_score:.4f} "
+                    f"rrf={example.rrf_score:.4f} "
                     f"bm25={example.bm25_score:.4f} "
+                    f"usage={example.usage_score:.4f} "
                     f"recency={example.recency_bonus:.4f} "
                     f"value={example.display_value!r}",
                 )
@@ -221,7 +237,10 @@ def format_query_score_report_json(report: QueryScoreReport) -> str:
                                 "raw_value": ex.value,
                                 "bm25_score": ex.bm25_score,
                                 "recency_bonus": ex.recency_bonus,
+                                "usage_score": ex.usage_score,
+                                "rrf_score": ex.rrf_score,
                                 "total_score": ex.total_score,
+                                "channel_ranks": ex.channel_ranks,
                             }
                             for ex in prop.examples
                         ],

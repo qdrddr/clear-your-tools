@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "description": "Captures with optional repeat counts for usage-weighted RRF ranking and city diversity regression. repeat defaults to 1.",
+  "captures": [
+    {
+      "path": "geo.lookup.inputSchema.properties.city",
+      "value": "Chicago, IL",
+      "repeat": 3
+    },
+    {
+      "path": "geo.lookup.inputSchema.properties.city",
+      "value": "New York, NY",
+      "repeat": 5
+    },
+    {
+      "path": "geo.lookup.inputSchema.properties.city",
+      "value": "San Francisco, CA",
+      "repeat": 4
+    },
+    {
+      "path": "geo.lookup.inputSchema.properties.city",
+      "value": "Chicago",
+      "repeat": 1
+    },
+    {
+      "path": "geo.lookup.inputSchema.properties.city",
+      "value": "Chicago, Illinois",
+      "repeat": 1
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.repo",
+      "value": "local/clear-your-tools",
+      "repeat": 8
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.repo",
+      "value": "local/demo",
+      "repeat": 2
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.query",
+      "value": "kubernetes deployment autoscaling pods",
+      "repeat": 6
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.query",
+      "value": "docker compose build image",
+      "repeat": 1
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.file_pattern",
+      "value": "charts/**",
+      "repeat": 4
+    },
+    {
+      "path": "jcodemunch.search_symbols.inputSchema.properties.file_pattern",
+      "value": "docker/**",
+      "repeat": 1
+    }
+  ]
+}

@@ -15,7 +15,7 @@
         "properties": {
           "search_query": {
             "type": "string",
-            "description": "Natural language or keyword search query. Examples: 'oauth jwt bearer token validation', 'cypher match callers validateUser', 'session cookie login redirect'."
+            "description": "Natural language or keyword search query. Examples: 'cypher match callers validateUser', 'oauth jwt bearer token validation', 'session cookie login redirect'."
           },
           "task_context": {
             "type": "string",
@@ -81,8 +81,8 @@
     {
       "path": "gitnexus.query.inputSchema.properties.search_query",
       "values": [
-        "oauth jwt bearer token validation",
         "cypher match callers validateUser",
+        "oauth jwt bearer token validation",
         "session cookie login redirect"
       ]
     },

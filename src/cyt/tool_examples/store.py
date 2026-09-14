@@ -13,7 +13,7 @@ from typing import Any
 from cyt.tool_examples.flatten import FlattenedExample, flatten_args
 from cyt.tool_examples.hash_utils import content_hash
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tool_example_project (
@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS tool_example (
     value TEXT NOT NULL,
     value_type TEXT NOT NULL,
     timestamp_ms INTEGER NOT NULL,
+    success_count INTEGER NOT NULL DEFAULT 1,
     UNIQUE(schema_id, json_path, value)
 );
 
@@ -83,6 +84,7 @@ class ToolExampleRow:
     value: str
     value_type: str
     timestamp_ms: int
+    success_count: int = 1
 
 
 class ToolExamplesStore:
@@ -103,6 +105,10 @@ class ToolExamplesStore:
         with self._lock:
             self._conn.close()
 
+    def _table_has_column(self, table: str, column: str) -> bool:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(str(row[1]) == column for row in rows)
+
     def _ensure_schema(self) -> None:
         with self._lock:
             version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
@@ -111,6 +117,11 @@ class ToolExamplesStore:
                 self._conn.commit()
                 return
             self._conn.executescript(_SCHEMA)
+            if version < 2 and self._table_has_column("tool_example", "value"):
+                if not self._table_has_column("tool_example", "success_count"):
+                    self._conn.execute(
+                        "ALTER TABLE tool_example ADD COLUMN success_count INTEGER NOT NULL DEFAULT 1",
+                    )
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
             self._conn.commit()
 
@@ -186,9 +197,12 @@ class ToolExamplesStore:
             pairs = flattened if flattened is not None else flatten_args(args)
             for item in pairs:
                 self._conn.execute(
-                    "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
-                    "VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(schema_id, json_path, value) DO UPDATE SET timestamp_ms = excluded.timestamp_ms",
+                    "INSERT INTO tool_example("
+                    "schema_id, json_path, value, value_type, timestamp_ms, success_count"
+                    ") VALUES (?, ?, ?, ?, ?, 1) "
+                    "ON CONFLICT(schema_id, json_path, value) DO UPDATE SET "
+                    "timestamp_ms = excluded.timestamp_ms, "
+                    "success_count = success_count + 1",
                     (schema_id, item.json_path, item.value, item.value_type, now_ms),
                 )
             self._conn.commit()
@@ -241,23 +255,37 @@ class ToolExamplesStore:
             return []
         placeholders = ",".join("?" for _ in schema_ids)
         query = (
-            f"SELECT schema_id, json_path, value, value_type, timestamp_ms "
+            f"SELECT schema_id, json_path, value, value_type, timestamp_ms, success_count "
             f"FROM tool_example WHERE schema_id IN ({placeholders}) AND json_path = ? "
             f"ORDER BY timestamp_ms DESC LIMIT ?"
         )
         params: list[Any] = [*schema_ids, json_path, limit]
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()
-        return [
-            ToolExampleRow(
-                schema_id=int(row[0]),
-                json_path=str(row[1]),
-                value=str(row[2]),
-                value_type=str(row[3]),
-                timestamp_ms=int(row[4]),
-            )
-            for row in rows
-        ]
+        return [self._row_to_example(row) for row in rows]
+
+    def list_aggregated_examples_for_path(
+        self,
+        schema_ids: list[int],
+        json_path: str,
+        *,
+        limit: int = 20,
+    ) -> list[ToolExampleRow]:
+        """Aggregate distinct values across schema_ids, summing success_count."""
+        if not schema_ids:
+            return []
+        placeholders = ",".join("?" for _ in schema_ids)
+        query = (
+            f"SELECT MIN(schema_id), ?, value, MIN(value_type), "
+            f"MAX(timestamp_ms), SUM(success_count) "
+            f"FROM tool_example WHERE schema_id IN ({placeholders}) AND json_path = ? "
+            f"GROUP BY value "
+            f"ORDER BY SUM(success_count) DESC, MAX(timestamp_ms) DESC LIMIT ?"
+        )
+        params: list[Any] = [json_path, *schema_ids, json_path, limit]
+        with self._lock:
+            rows = self._conn.execute(query, params).fetchall()
+        return [self._row_to_example(row) for row in rows]
 
     def list_examples_for_paths(
         self,
@@ -281,9 +309,12 @@ class ToolExamplesStore:
         with self._lock:
             for item in flattened_pairs:
                 self._conn.execute(
-                    "INSERT INTO tool_example(schema_id, json_path, value, value_type, timestamp_ms) "
-                    "VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(schema_id, json_path, value) DO UPDATE SET timestamp_ms = excluded.timestamp_ms",
+                    "INSERT INTO tool_example("
+                    "schema_id, json_path, value, value_type, timestamp_ms, success_count"
+                    ") VALUES (?, ?, ?, ?, ?, 1) "
+                    "ON CONFLICT(schema_id, json_path, value) DO UPDATE SET "
+                    "timestamp_ms = excluded.timestamp_ms, "
+                    "success_count = success_count + 1",
                     (schema_id, item.json_path, item.value, item.value_type, now_ms),
                 )
             self._conn.commit()
@@ -323,7 +354,7 @@ class ToolExamplesStore:
                 to_delete = total - max(max_per_path, min_per_path)
                 rows = self._conn.execute(
                     "SELECT id FROM tool_example WHERE schema_id = ? AND json_path = ? "
-                    "ORDER BY timestamp_ms ASC LIMIT ?",
+                    "ORDER BY success_count ASC, timestamp_ms ASC LIMIT ?",
                     (schema_id, json_path, to_delete),
                 ).fetchall()
                 for (row_id,) in rows:
@@ -381,6 +412,18 @@ class ToolExamplesStore:
                             (row_id,),
                         )
             self._conn.commit()
+
+    @staticmethod
+    def _row_to_example(row: tuple[Any, ...]) -> ToolExampleRow:
+        success_count = int(row[5]) if len(row) > 5 else 1
+        return ToolExampleRow(
+            schema_id=int(row[0]),
+            json_path=str(row[1]),
+            value=str(row[2]),
+            value_type=str(row[3]),
+            timestamp_ms=int(row[4]),
+            success_count=success_count,
+        )
 
     @staticmethod
     def _row_to_capture(row: tuple[Any, ...]) -> ToolCapture:

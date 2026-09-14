@@ -4,9 +4,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from cyt.hook.workspace_config import set_hook_workspace_in_config
 from cyt.tool_examples.enrich import _append_examples, enrich_tools_with_examples
 from cyt.tool_examples.store import ToolExamplesStore
+
+
+def _extract_example_values(description: str) -> list[str]:
+    marker = "Examples:"
+    if marker not in description:
+        return []
+    tail = description.split(marker, 1)[1].strip()
+    if tail.endswith("."):
+        tail = tail[:-1].strip()
+    values: list[str] = []
+    index = 0
+    while index < len(tail):
+        if tail[index] != "'":
+            index += 1
+            continue
+        end = index + 1
+        while end < len(tail) and tail[end] != "'":
+            end += 1
+        values.append(tail[index + 1 : end])
+        index = end + 1
+        while index < len(tail) and tail[index] in ", ":
+            index += 1
+    return values
 
 
 def _config(db_path: Path, workspace: Path) -> dict:
@@ -212,6 +237,79 @@ def test_enrich_truncates_long_values(tmp_path: Path) -> None:
     desc = enriched[0]["input_schema"]["properties"]["path"]["description"]
     assert "..." in desc
     assert len(desc) < len(long_path) + 30
+
+
+def test_enrich_prefers_diverse_high_usage_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.support.tool_examples_fixtures import install_staggered_capture_clock
+
+    install_staggered_capture_clock(monkeypatch)
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    db = tmp_path / "tool_examples.db"
+    config = set_hook_workspace_in_config(
+        {
+            "tools": {
+                "sequence": ["bm25"],
+                "examples": {
+                    "enabled": True,
+                    "database": {"path": str(db)},
+                    "inject": {
+                        "max_per_property": 3,
+                        "ranking": {"pipeline": ["bm25"], "diversity_threshold": 0.6},
+                    },
+                },
+            },
+        },
+        root,
+    )
+    schema = {"type": "object", "properties": {"city": {"type": "string", "description": "City"}}}
+    store = ToolExamplesStore.open(str(db))
+    try:
+        project_id = store.get_or_create_project(str(root))
+        for _ in range(3):
+            store.upsert_capture(
+                project_id,
+                "geo",
+                "lookup",
+                schema,
+                {"city": "Chicago, IL"},
+            )
+        for _ in range(5):
+            store.upsert_capture(
+                project_id,
+                "geo",
+                "lookup",
+                schema,
+                {"city": "New York, NY"},
+            )
+        store.upsert_capture(project_id, "geo", "lookup", schema, {"city": "Chicago"})
+        store.upsert_capture(project_id, "geo", "lookup", schema, {"city": "Chicago, Illinois"})
+        store.upsert_capture(project_id, "geo", "lookup", schema, {"city": "San Francisco, CA"})
+    finally:
+        store.close()
+
+    tool = {
+        "name": "geo_lookup",
+        "server_key": "geo",
+        "tool_name": "lookup",
+        "input_schema": schema,
+    }
+    enriched = enrich_tools_with_examples([tool], "city address lookup", config)
+    desc = enriched[0]["input_schema"]["properties"]["city"]["description"]
+    values = _extract_example_values(desc)
+    assert len(values) == 3
+    assert "New York, NY" in values
+    assert "San Francisco, CA" in values
+    chicago_variants = [
+        value
+        for value in values
+        if value.casefold().startswith("chicago")
+    ]
+    assert len(chicago_variants) == 1
 
 
 def test_enrich_noop_without_git_project(tmp_path: Path) -> None:

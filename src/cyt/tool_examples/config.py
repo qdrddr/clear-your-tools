@@ -11,6 +11,15 @@ from cyt.config.sections import tools_at
 
 
 @dataclass(frozen=True)
+class ExampleRankingConfig:
+    pipeline: str | tuple[str, ...]
+    rrf_k: int
+    rerank_min_candidates: int
+    llm_min_candidates: int
+    diversity_threshold: float
+
+
+@dataclass(frozen=True)
 class ToolExamplesConfig:
     enabled: bool
     db_path: str
@@ -28,6 +37,7 @@ class ToolExamplesConfig:
     min_captures_per_tool: int
     max_age_days: int
     redact_key_patterns: tuple[re.Pattern[str], ...]
+    ranking: ExampleRankingConfig
 
 
 def _bool(value: object, default: bool) -> bool:
@@ -59,6 +69,31 @@ def tool_examples_db_path(cfg: dict[str, Any]) -> str:
         if isinstance(path, str) and path.strip():
             return str(Path(path).expanduser())
     return str(Path("~/.config/cyt/tool_examples.db").expanduser())
+
+
+def _ranking_config(inject_dict: dict[str, Any]) -> ExampleRankingConfig:
+    ranking_raw = inject_dict.get("ranking")
+    ranking_dict = ranking_raw if isinstance(ranking_raw, dict) else {}
+    pipeline_raw = ranking_dict.get("pipeline", "inherit")
+    if isinstance(pipeline_raw, list) and all(isinstance(item, str) for item in pipeline_raw):
+        pipeline: str | tuple[str, ...] = tuple(str(item) for item in pipeline_raw)
+    elif isinstance(pipeline_raw, str) and pipeline_raw.strip():
+        pipeline = pipeline_raw.strip()
+    else:
+        pipeline = "inherit"
+    return ExampleRankingConfig(
+        pipeline=pipeline,
+        rrf_k=_int(ranking_dict.get("rrf_k"), 60),
+        rerank_min_candidates=_int(ranking_dict.get("rerank_min_candidates"), 3),
+        llm_min_candidates=_int(ranking_dict.get("llm_min_candidates"), 5),
+        diversity_threshold=_float(ranking_dict.get("diversity_threshold"), 0.6),
+    )
+
+
+def _float(value: object, default: float) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
 
 
 def _compile_redact_patterns(raw: object) -> tuple[re.Pattern[str], ...]:
@@ -100,6 +135,7 @@ def tool_examples_config(cfg: dict[str, Any]) -> ToolExamplesConfig:
         min_captures_per_tool=_int(retention_dict.get("min_captures_per_tool"), 5),
         max_age_days=_int(retention_dict.get("max_age_days"), 90),
         redact_key_patterns=_compile_redact_patterns(block.get("redact_key_patterns")),
+        ranking=_ranking_config(inject_dict),
     )
 
 
