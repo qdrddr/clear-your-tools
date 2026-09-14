@@ -51,3 +51,12 @@ def shadow_score(stats: object) -> float:
     if not isinstance(stats, EffectiveStats):
         return 0.0
     return wilson_lower_bound(stats.shadow_hits, stats.shadow_evaluations)
+
+
+def execution_score(stats: object) -> float:
+    """Successful execution rate among recorded attempts (used / attempts)."""
+    from cyt.tiers.models import EffectiveStats
+
+    if not isinstance(stats, EffectiveStats):
+        return 0.0
+    return wilson_lower_bound(stats.used, stats.attempts)

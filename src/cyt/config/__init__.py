@@ -2469,4 +2469,25 @@ def resolve_model(
     raise ValueError(f"Unknown model nick: {model_nick}, kind: {model_kind}, type: {model_type}")
 
 
-__all__ = ["POLICY_CHOICES", "ToolPolicy"]
+def tier_tool_capture_source(config: dict[str, Any] | None = None) -> str:
+    """Return tool-use tier capture source: ``cyt_mcp`` (default) or ``hooks``."""
+    from cyt.tiers.config import tier_tool_capture_source as _tier_tool_capture_source
+
+    cfg = config if config is not None else load_config()
+    return _tier_tool_capture_source(cfg)
+
+
+def tier_tool_capture_via_hooks(config: dict[str, Any] | None = None) -> bool:
+    """True when cyt-client hooks (not cyt-mcp) capture tool-use tier feedback."""
+    from cyt.tiers.config import tier_tool_capture_via_hooks as _tier_tool_capture_via_hooks
+
+    cfg = config if config is not None else load_config()
+    return _tier_tool_capture_via_hooks(cfg)
+
+
+__all__ = [
+    "POLICY_CHOICES",
+    "ToolPolicy",
+    "tier_tool_capture_source",
+    "tier_tool_capture_via_hooks",
+]

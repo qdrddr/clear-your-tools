@@ -23,7 +23,7 @@ from cyt.tiers.entity_origin import (
     resolve_tool_origin_fields,
 )
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
-from cyt.tiers.scores import demand_score, shadow_score, utility_score
+from cyt.tiers.scores import demand_score, execution_score, shadow_score, utility_score
 from cyt.tiers.wake import wake_pressure
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
@@ -91,6 +91,7 @@ def _stats_dict(stats: EffectiveStats) -> dict[str, float | int]:
         "candidates": stats.candidates,
         "injected": stats.injected,
         "used": stats.used,
+        "attempts": stats.attempts,
         "used_without_injection": stats.used_without_injection,
         "optional_used": stats.optional_used,
         "shadow_hits": stats.shadow_hits,
@@ -385,6 +386,7 @@ def entity_status_dict(
         "scores": {
             "demand": demand_score(state.stats),
             "utility": utility_score(state.stats),
+            "execution": execution_score(state.stats),
             "shadow": shadow_score(state.stats),
             "wake_pressure": wake_pressure(state, cfg=cfg),
         },

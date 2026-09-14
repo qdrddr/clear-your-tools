@@ -307,3 +307,34 @@ def config_with_tiers_shadow(base_config: dict) -> dict:
     tools = dict(base_config.get("tools") or {})
     tools["tiers"] = {"mode": "shadow"}
     return {**base_config, "tools": tools}
+
+
+def test_record_tool_attempt_increments_attempts_and_used_on_success(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    tool = {"name": "search", "cyt_catalog_source": "cyt_mcp"}
+    manager.record_tool_attempt(tool, config=config_with_tiers_shadow, success=True)
+    state = manager._states.get(("tool", "cyt_mcp:search"))
+    assert state is not None
+    assert state.stats.attempts == 1.0
+    assert state.stats.used == 1.0
+
+
+def test_record_tool_attempt_failure_increments_attempts_only(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    tool = {"name": "search", "cyt_catalog_source": "cyt_mcp"}
+    manager.record_tool_attempt(tool, config=config_with_tiers_shadow, success=False)
+    state = manager._states.get(("tool", "cyt_mcp:search"))
+    assert state is not None
+    assert state.stats.attempts == 1.0
+    assert state.stats.used == 0.0
+
+
+def test_execution_score_uses_attempts_denominator() -> None:
+    from cyt.tiers.scores import execution_score, utility_score
+
+    stats = EffectiveStats(injected=10.0, used=5.0, attempts=20.0)
+    assert execution_score(stats) < utility_score(stats)

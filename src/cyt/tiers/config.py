@@ -6,7 +6,9 @@ import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+TierToolCaptureSource = Literal["cyt_mcp", "hooks"]
 
 from cyt.config.sections import tools_at
 from cyt.hook.install_scope import CytInstallScope
@@ -275,6 +277,25 @@ def resolve_tier_project(*, workspace: Path | None = None) -> Path | None:
 def resolve_tier_scope(*, workspace: Path | None = None) -> Path | None:
     """Deprecated name for project-root resolution."""
     return resolve_tier_project(workspace=workspace)
+
+
+def tier_tool_capture_source(cfg: dict[str, Any]) -> TierToolCaptureSource:
+    """Return where tool-use tier feedback is captured (default: cyt_mcp)."""
+    block = _tiers_block(cfg, kind="tool")
+    capture = block.get("capture")
+    capture_dict = capture if isinstance(capture, dict) else {}
+    raw = capture_dict.get("source")
+    if isinstance(raw, str):
+        normalized = raw.strip().lower().replace("-", "_")
+        if normalized == "hooks":
+            return "hooks"
+        if normalized in {"cyt_mcp", "cytmcp"}:
+            return "cyt_mcp"
+    return "cyt_mcp"
+
+
+def tier_tool_capture_via_hooks(cfg: dict[str, Any]) -> bool:
+    return tier_tool_capture_source(cfg) == "hooks"
 
 
 def tiers_active(cfg: dict[str, Any], *, kind: str) -> bool:

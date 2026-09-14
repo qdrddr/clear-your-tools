@@ -38,10 +38,11 @@ def record_tools_injected_feedback(
         return
 
 
-def record_tool_used_feedback(
+def record_tool_attempt_feedback(
     *,
     tool_name: str,
     catalog: str | None,
+    success: bool,
     config: dict[str, Any] | None = None,
     args: dict[str, Any] | None = None,
     workspace: Path | None = None,
@@ -79,13 +80,34 @@ def record_tool_used_feedback(
         if not tool_tracked_for_config(tool, cfg):
             return
         optional = optional_used if optional_used is not None else _optional_properties_used(args)
-        get_tier_manager(cfg, workspace=resolved_workspace).record_tool_used(
+        get_tier_manager(cfg, workspace=resolved_workspace).record_tool_attempt(
             tool,
             config=cfg,
+            success=success,
             optional_used=optional,
         )
     except Exception:
         return
+
+
+def record_tool_used_feedback(
+    *,
+    tool_name: str,
+    catalog: str | None,
+    config: dict[str, Any] | None = None,
+    args: dict[str, Any] | None = None,
+    workspace: Path | None = None,
+    optional_used: bool | None = None,
+) -> None:
+    record_tool_attempt_feedback(
+        tool_name=tool_name,
+        catalog=catalog,
+        success=True,
+        config=config,
+        args=args,
+        workspace=workspace,
+        optional_used=optional_used,
+    )
 
 
 def record_skills_injected_feedback(
@@ -202,7 +224,6 @@ def record_skill_used_feedback(
 def _optional_properties_used(args: dict[str, Any] | None) -> bool:
     if not isinstance(args, dict) or not args:
         return False
-    # Heuristic: more than one key or any non-empty optional-looking field.
     if len(args) > 1:
         return True
     for value in args.values():

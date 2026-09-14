@@ -125,6 +125,16 @@ class NoOpTierManager:
     ) -> None:
         return
 
+    def record_tool_attempt(
+        self,
+        tool: dict[str, Any],
+        *,
+        config: dict[str, Any],
+        success: bool,
+        optional_used: bool = False,
+    ) -> None:
+        return
+
     def record_skill_candidates(self, entries: list[Any], config: dict[str, Any]) -> None:
         return
 
@@ -472,18 +482,19 @@ class TierManager:
         self._touch_request(config)
         self._flush_states(cfg)
 
-    def record_tool_used(
+    def record_tool_attempt(
         self,
         tool: dict[str, Any],
         *,
         config: dict[str, Any],
+        success: bool,
         optional_used: bool = False,
     ) -> None:
         if not tiers_active(config, kind="tool"):
             return
         scoped = self._workspace_scoped_config(config)
         self.purge_inactive_tool_sources(config)
-        from cyt.tiers.adapters.tools import tool_tracked_for_config
+        from cyt.tiers.adapters.tools import tool_entity_id, tool_tracked_for_config
 
         cfg = tier_section_config(config, kind="tool")
         if not tool_tracked_for_config(tool, scoped):
@@ -494,16 +505,33 @@ class TierManager:
         state = self._ensure_state(EntityKind.TOOL, entity_id)
         if state is None:
             return
-        state.stats.used += 1.0
-        if entity_id not in self._last_injected_tools:
-            state.stats.used_without_injection += 1.0
-        if optional_used:
-            state.stats.optional_used += 1.0
-            fast_promote_on_optional_use(state, cfg=cfg)
-        else:
-            fast_promote_on_tool_use(state, cfg=cfg)
+        state.stats.attempts += 1.0
+        if success:
+            state.stats.used += 1.0
+            if entity_id not in self._last_injected_tools:
+                state.stats.used_without_injection += 1.0
+            if optional_used:
+                state.stats.optional_used += 1.0
+                fast_promote_on_optional_use(state, cfg=cfg)
+            else:
+                fast_promote_on_tool_use(state, cfg=cfg)
+        state.stats.last_seen_ms = int(time.time() * 1000)
         self._touch_request(config)
         self._flush_states(cfg)
+
+    def record_tool_used(
+        self,
+        tool: dict[str, Any],
+        *,
+        config: dict[str, Any],
+        optional_used: bool = False,
+    ) -> None:
+        self.record_tool_attempt(
+            tool,
+            config=config,
+            success=True,
+            optional_used=optional_used,
+        )
 
     def record_skill_candidates(self, entries: list[Any], config: dict[str, Any]) -> None:
         """Record tier-eligible skills entering BM25 search, not the full registry."""

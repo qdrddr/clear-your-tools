@@ -43,6 +43,7 @@ class EffectiveStats:
     candidates: float = 0.0
     injected: float = 0.0
     used: float = 0.0
+    attempts: float = 0.0
     used_without_injection: float = 0.0
     optional_used: float = 0.0
     shadow_hits: float = 0.0
@@ -57,6 +58,7 @@ class EffectiveStats:
         self.candidates *= factor
         self.injected *= factor
         self.used *= factor
+        self.attempts *= factor
         self.used_without_injection *= factor
         self.optional_used *= factor
         self.shadow_hits *= factor

@@ -15,6 +15,7 @@ from cyt_mcp.tool_list_notify import (
     ToolListChangedMiddleware,
     register_tool_list_changed_middleware,
 )
+from cyt_mcp.tool_use_feedback_middleware import register_tool_use_feedback_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,17 @@ def build_aggregator(
             cache,
             config_holder,
         )
+        from cyt.config import load_config
+        from cyt.tiers.config import tier_tool_capture_source
+
+        cyt_config = load_config()
+        if tier_tool_capture_source(cyt_config) == "cyt_mcp":
+            register_tool_use_feedback_middleware(
+                server,
+                cache,
+                config_holder,
+                config=config,
+            )
     if degraded:
         logger.warning("cyt-mcp: degraded backends: %s", ", ".join(degraded))
     return server, list_changed_middleware

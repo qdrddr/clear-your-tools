@@ -18,7 +18,7 @@ from cyt.tiers.models import (
     TierTransition,
 )
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS tier_project (
@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS entity_stats (
     candidates REAL NOT NULL DEFAULT 0,
     injected REAL NOT NULL DEFAULT 0,
     used REAL NOT NULL DEFAULT 0,
+    attempts REAL NOT NULL DEFAULT 0,
     used_without_injection REAL NOT NULL DEFAULT 0,
     optional_used REAL NOT NULL DEFAULT 0,
     shadow_hits REAL NOT NULL DEFAULT 0,
@@ -118,6 +119,16 @@ class TierStore:
                 return
             if self._table_has_column("entity_tier", "scope_key"):
                 self._migrate_v1_to_v2()
+                version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+            if version < _SCHEMA_VERSION:
+                if not self._table_exists("entity_stats"):
+                    self._conn.executescript(_SCHEMA_V2)
+                elif not self._table_has_column("entity_stats", "attempts"):
+                    self._conn.execute(
+                        "ALTER TABLE entity_stats ADD COLUMN attempts REAL NOT NULL DEFAULT 0",
+                    )
+                self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+                self._conn.commit()
                 return
             self._conn.executescript(_SCHEMA_V2)
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
@@ -326,7 +337,7 @@ class TierStore:
                 (project.project_id,),
             ).fetchall()
             stat_rows = self._conn.execute(
-                "SELECT kind, entity_id, pipeline, candidates, injected, used, "
+                "SELECT kind, entity_id, pipeline, candidates, injected, used, attempts, "
                 "used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
                 "last_seen_ms, requests_since_decay FROM entity_stats WHERE project_id = ?",
                 (project.project_id,),
@@ -340,12 +351,13 @@ class TierStore:
                 candidates=float(row[3]),
                 injected=float(row[4]),
                 used=float(row[5]),
-                used_without_injection=float(row[6]),
-                optional_used=float(row[7]),
-                shadow_hits=float(row[8]),
-                shadow_evaluations=float(row[9]),
-                last_seen_ms=int(row[10]),
-                requests_since_decay=int(row[11]),
+                attempts=float(row[6]),
+                used_without_injection=float(row[7]),
+                optional_used=float(row[8]),
+                shadow_hits=float(row[9]),
+                shadow_evaluations=float(row[10]),
+                last_seen_ms=int(row[11]),
+                requests_since_decay=int(row[12]),
             )
         out: dict[tuple[str, str], EntityTierState] = {}
         for row in tier_rows:
@@ -406,10 +418,11 @@ class TierStore:
             stats = state.stats
             self._conn.execute(
                 "INSERT INTO entity_stats(project_id, kind, entity_id, pipeline, candidates, injected, "
-                "used, used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
-                "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "used, attempts, used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
+                "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id, kind, entity_id, pipeline) DO UPDATE SET "
                 "candidates=excluded.candidates, injected=excluded.injected, used=excluded.used, "
+                "attempts=excluded.attempts, "
                 "used_without_injection=excluded.used_without_injection, "
                 "optional_used=excluded.optional_used, shadow_hits=excluded.shadow_hits, "
                 "shadow_evaluations=excluded.shadow_evaluations, last_seen_ms=excluded.last_seen_ms, "
@@ -422,6 +435,7 @@ class TierStore:
                     stats.candidates,
                     stats.injected,
                     stats.used,
+                    stats.attempts,
                     stats.used_without_injection,
                     stats.optional_used,
                     stats.shadow_hits,

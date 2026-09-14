@@ -459,6 +459,8 @@ tools:
       - "(?i)(password|secret|token|api[_-]?key|authorization)"
   tiers:
     mode: shadow
+    capture:
+      source: cyt_mcp # cyt_mcp | hooks
     # Tier statistics are scoped per git project (toplevel); no global/user bucket.
     database:
       path: ~/.config/cyt/tier_state.db

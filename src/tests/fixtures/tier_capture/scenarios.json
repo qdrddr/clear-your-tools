@@ -1,0 +1,111 @@
+{
+  "tool": {
+    "wire_name": "context-mode_ctx_search",
+    "entity_id": "cyt_mcp:context-mode_ctx_search",
+    "mcp_server": "context-mode",
+    "bare_tool_name": "ctx_search",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "required": ["queries"]
+    }
+  },
+  "config": {
+    "capture_default": "cyt_mcp",
+    "capture_hooks": "hooks"
+  },
+  "meta_tools_not_reported": [
+    "get-tool-definitions",
+    "cyt-mcp_get-tool-definitions",
+    "context-mode__get-tool-definitions"
+  ],
+  "attempt_sequences": [
+    {
+      "id": "failure_only",
+      "steps": [{"success": false}],
+      "expected": {"attempts": 1.0, "used": 0.0}
+    },
+    {
+      "id": "success_only",
+      "steps": [
+        {
+          "success": true,
+          "args": {"queries": ["auth flow"]}
+        }
+      ],
+      "expected": {"attempts": 1.0, "used": 1.0}
+    },
+    {
+      "id": "mixed_two_fail_one_success",
+      "seed_injected": 2.0,
+      "steps": [
+        {"success": false},
+        {"success": false},
+        {
+          "success": true,
+          "args": {"queries": ["tier stats"]}
+        }
+      ],
+      "expected": {
+        "attempts": 3.0,
+        "used": 1.0,
+        "execution_lt_utility": true
+      }
+    }
+  ],
+  "http_payloads": [
+    {
+      "id": "legacy_success_no_success_field",
+      "payload": {
+        "event": "tool_used",
+        "tool_name": "context-mode_ctx_search",
+        "catalog": "cyt_mcp",
+        "args": {"queries": ["legacy hook path"]}
+      },
+      "expected": {"attempts": 1.0, "used": 1.0, "examples_captured": false}
+    },
+    {
+      "id": "cyt_mcp_failed_attempt",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": false,
+        "tool_name": "context-mode_ctx_search",
+        "catalog": "cyt_mcp"
+      },
+      "expected": {"attempts": 1.0, "used": 0.0, "examples_captured": false}
+    },
+    {
+      "id": "cyt_mcp_success_with_examples",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "context-mode_ctx_search",
+        "catalog": "cyt_mcp",
+        "args": {"queries": ["examples fixture"]},
+        "mcp_server": "context-mode",
+        "bare_tool_name": "ctx_search",
+        "input_schema": {"$use_tool_input_schema": true}
+      },
+      "expected": {"attempts": 1.0, "used": 1.0, "examples_captured": true}
+    }
+  ],
+  "integration": [
+    {
+      "id": "live_mixed_attempts_via_http",
+      "payload_ids": ["cyt_mcp_failed_attempt", "cyt_mcp_success_with_examples"],
+      "expected": {"attempts": 2.0, "used": 1.0, "examples_captured": true}
+    },
+    {
+      "id": "legacy_hook_payload_counts_once",
+      "payload_ids": ["legacy_success_no_success_field"],
+      "expected": {"attempts": 1.0, "used": 1.0, "examples_captured": false}
+    }
+  ]
+}

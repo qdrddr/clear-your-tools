@@ -282,7 +282,7 @@ def _tier_feedback_tool_used(
     config: dict[str, Any],
     workspace: Path | None,
 ) -> Response:
-    from cyt.tiers.feedback import record_tool_used_feedback
+    from cyt.tiers.feedback import record_tool_attempt_feedback
 
     tool_name = payload.get("tool_name")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -292,14 +292,38 @@ def _tier_feedback_tool_used(
     args = payload.get("args")
     args_dict = args if isinstance(args, dict) else None
     optional_used = payload.get("optional_used") is True
-    record_tool_used_feedback(
+    success_raw = payload.get("success")
+    success = success_raw is not False
+    record_tool_attempt_feedback(
         tool_name=tool_name.strip(),
         catalog=catalog_str,
+        success=success,
         config=config,
         args=args_dict,
         workspace=workspace,
         optional_used=optional_used,
     )
+    if success and isinstance(args_dict, dict):
+        mcp_server = payload.get("mcp_server")
+        bare_tool = payload.get("bare_tool_name")
+        input_schema = payload.get("input_schema")
+        if (
+            isinstance(mcp_server, str)
+            and mcp_server.strip()
+            and isinstance(bare_tool, str)
+            and bare_tool.strip()
+            and isinstance(input_schema, dict)
+        ):
+            from cyt.tool_examples.record import record_tool_examples_capture
+
+            record_tool_examples_capture(
+                workspace=workspace,
+                mcp_server=mcp_server.strip(),
+                tool_name=bare_tool.strip(),
+                input_schema=input_schema,
+                args=args_dict,
+                config=config,
+            )
     return PlainTextResponse("", status_code=204)
 
 

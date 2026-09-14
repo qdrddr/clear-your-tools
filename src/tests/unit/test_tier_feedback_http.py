@@ -19,6 +19,14 @@ def clear_tier_managers() -> Iterator[None]:
     _managers.clear()
 
 
+@pytest.fixture(autouse=True)
+def _tier_feedback_isolated_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "cyt.tools.master_catalog.get_master_tool_catalog",
+        lambda config, blocking=False: None,
+    )
+
+
 @pytest.fixture
 def project_root(tmp_path: Path) -> Path:
     (tmp_path / ".git").mkdir()
@@ -162,6 +170,100 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
     finally:
         _managers.pop(str(project_root), None)
         manager.close()
+
+
+@pytest.mark.asyncio
+async def test_hook_tier_feedback_records_failed_attempt(project_root: Path, base_config: dict) -> None:
+    from cyt.hook.http_server import hook_tier_feedback
+
+    db_path = project_root / "tier_state.db"
+    config = dict(base_config)
+    tools = dict(config.get("tools") or {})
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
+    config["tools"] = tools
+
+    request = MagicMock()
+    request.client = MagicMock(host="127.0.0.1")
+    request.body = AsyncMock(
+        return_value=json.dumps(
+            {
+                "event": "tool_used",
+                "workspace_root": str(project_root),
+                "tool_name": "search",
+                "catalog": "cyt_mcp",
+                "success": False,
+            },
+        ).encode(),
+    )
+    request.app = MagicMock()
+    request.app.state.cyt_config = config
+
+    with patch("cyt.hook.http_server._is_localhost_request", return_value=True):
+        response = await hook_tier_feedback(request)
+    assert response.status_code == 204
+
+    from cyt.tiers.manager import get_tier_manager
+
+    manager = get_tier_manager(config, workspace=project_root)
+    state = manager._states.get(("tool", "cyt_mcp:search"))
+    assert state is not None
+    assert state.stats.attempts >= 1.0
+    assert state.stats.used == 0.0
+
+
+@pytest.mark.asyncio
+async def test_hook_tier_feedback_records_examples_on_success(
+    project_root: Path,
+    base_config: dict,
+) -> None:
+    from cyt.hook.http_server import hook_tier_feedback
+    from cyt.tool_examples.store import ToolExamplesStore
+
+    db_path = project_root / "tool_examples.db"
+    tier_db = project_root / "tier_state.db"
+    config = dict(base_config)
+    tools = dict(config.get("tools") or {})
+    tools["tiers"] = {"mode": "shadow", "database": {"path": str(tier_db)}}
+    examples = dict(tools.get("examples") or {})
+    examples["enabled"] = True
+    examples["database"] = {"path": str(db_path)}
+    tools["examples"] = examples
+    config["tools"] = tools
+
+    request = MagicMock()
+    request.client = MagicMock(host="127.0.0.1")
+    request.body = AsyncMock(
+        return_value=json.dumps(
+            {
+                "event": "tool_used",
+                "workspace_root": str(project_root),
+                "tool_name": "search",
+                "catalog": "cyt_mcp",
+                "success": True,
+                "args": {"query": "hello"},
+                "mcp_server": "codebase-memory",
+                "bare_tool_name": "search",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        ).encode(),
+    )
+    request.app = MagicMock()
+    request.app.state.cyt_config = config
+
+    with patch("cyt.hook.http_server._is_localhost_request", return_value=True):
+        response = await hook_tier_feedback(request)
+    assert response.status_code == 204
+
+    store = ToolExamplesStore.open(str(db_path))
+    try:
+        project_id = store.get_or_create_project(str(project_root))
+        rows = store.list_captures(project_id, "codebase-memory", "search")
+        assert rows
+    finally:
+        store.close()
 
 
 @pytest.mark.asyncio

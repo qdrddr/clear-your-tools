@@ -241,6 +241,22 @@ def verify_only_mode() -> bool:
     return hallucination_gate_enabled() and not skills_enabled() and not tools_enabled()
 
 
+def tier_tool_capture_via_hooks() -> bool:
+    """Return True when tool-use tier feedback is captured via cyt-client hooks."""
+    config_path = resolve_config_path()
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    raw = _nested_scalar_from_yaml(text, ("tools", "tiers", "capture", "source"))
+    if raw is None:
+        return False
+    normalized = raw.strip().lower().replace("-", "_")
+    return normalized == "hooks"
+
+
 def tool_examples_post_tool_capture_enabled() -> bool:
     """Return whether postToolUse example capture is enabled (defaults: true)."""
     config_path = resolve_config_path()

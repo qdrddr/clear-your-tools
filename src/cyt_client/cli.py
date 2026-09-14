@@ -297,12 +297,14 @@ def _handle_post_tool_capture(payload: dict, *, cursor_output: bool) -> None:
     except Exception as exc:
         _verbose_log(f"cyt-client: failed to record tool examples: {exc}")
     try:
+        from cyt_client.config import tier_tool_capture_via_hooks
         from cyt_client.tool_gate import extract_post_tool_tier_feedback
         from cyt_client.tier_feedback import notify_tool_used_feedback
 
-        tier_feedback = extract_post_tool_tier_feedback(payload)
-        if tier_feedback is not None:
-            notify_tool_used_feedback(payload, **tier_feedback)
+        if tier_tool_capture_via_hooks():
+            tier_feedback = extract_post_tool_tier_feedback(payload)
+            if tier_feedback is not None:
+                notify_tool_used_feedback(payload, **tier_feedback)
     except Exception as exc:
         _verbose_log(f"cyt-client: failed to record post-tool tier feedback: {exc}")
     if cursor_output:
@@ -343,8 +345,10 @@ def _handle_pre_tool(payload: dict, *, cursor_output: bool) -> None:
         infer_harness_agent(payload) or os.environ.get("CYT_LAUNCH_AGENT", "").strip() or "cursor"
     )
     if validation.allowed:
+        from cyt_client.config import tier_tool_capture_via_hooks
+
         feedback = extract_gated_tool_use_feedback(payload)
-        if feedback is not None:
+        if feedback is not None and tier_tool_capture_via_hooks():
             from cyt_client.tier_feedback import notify_tool_used_feedback
 
             notify_tool_used_feedback(payload, **feedback)

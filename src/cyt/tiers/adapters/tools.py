@@ -92,6 +92,7 @@ def tool_entity_has_tier_engagement(stats: EffectiveStats) -> bool:
     return (
         float(getattr(stats, "injected", 0) or 0) > 0
         or float(getattr(stats, "used", 0) or 0) > 0
+        or float(getattr(stats, "attempts", 0) or 0) > 0
         or float(getattr(stats, "used_without_injection", 0) or 0) > 0
         or float(getattr(stats, "optional_used", 0) or 0) > 0
         or float(getattr(stats, "shadow_hits", 0) or 0) > 0
@@ -218,6 +219,7 @@ def _merge_tool_stats(target: EffectiveStats, source: EffectiveStats) -> None:
     target.candidates += source.candidates
     target.injected += source.injected
     target.used += source.used
+    target.attempts += source.attempts
     target.used_without_injection += source.used_without_injection
     target.optional_used += source.optional_used
     target.shadow_hits += source.shadow_hits
