@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from cyt.tools.serialize import format_example_line, format_examples_block, minimize_json_single_quotes
+from cyt.tools.serialize import (
+    canonicalize_json_value,
+    format_example_line,
+    format_examples_block,
+    minimize_json_single_quotes,
+)
 
 
 def test_minimize_json_single_quotes_example() -> None:
@@ -31,6 +36,16 @@ def test_format_examples_block_omits_tag_when_empty() -> None:
     assert format_examples_block([{}, {"source": "docs"}]) == (
         "<examples>\n- {'source':'docs'}\n</examples>"
     )
+
+
+def test_format_example_line_sorts_keys_canonically() -> None:
+    line = format_example_line({"repo": "/tmp", "query": "BM25 ranking score"})
+    assert line == "- {'query':'BM25 ranking score','repo':'/tmp'}"
+
+
+def test_canonicalize_json_value_sorts_nested_object_keys() -> None:
+    value = {"z": {"b": 2, "a": 1}, "a": 1}
+    assert canonicalize_json_value(value) == {"a": 1, "z": {"a": 1, "b": 2}}
 
 
 def test_format_examples_block_uses_single_quotes() -> None:

@@ -5,6 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from cyt.tool_examples.hash_utils import canonical_json
+
+
+def canonicalize_json_value(value: Any) -> Any:
+    """Return a deep copy with object keys in canonical JSON order."""
+    return json.loads(canonical_json(value))
+
 
 def minimize_json_single_quotes(value: object) -> str:
     """Minify JSON, then swap only structural double quotes to single quotes."""
@@ -67,9 +74,9 @@ def _truncate_payload_values(value: Any, max_chars: int) -> Any:
 
 def format_example_line(payload: dict[str, Any], *, max_chars: int | None = None) -> str:
     """Serialize one successful tool-call payload as a dash-prefixed minimized JSON line."""
-    display = payload
+    display = canonicalize_json_value(payload)
     if max_chars is not None and max_chars > 0:
-        display = _truncate_payload_values(payload, max_chars)
+        display = _truncate_payload_values(display, max_chars)
     return f"- {minimize_json_single_quotes(display)}"
 
 

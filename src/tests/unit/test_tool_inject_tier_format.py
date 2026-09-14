@@ -83,7 +83,7 @@ def test_format_tool_item_renders_examples_block() -> None:
     tool["cyt_injection_examples_max_chars"] = 120
     item = format_tool_item(tool)
     assert "<examples>" in item
-    assert "- {'query':'useEffect cleanup pattern','limit':5}" in item
+    assert "- {'limit':5,'query':'useEffect cleanup pattern'}" in item
     assert "</examples>" in item
 
 
