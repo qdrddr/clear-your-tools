@@ -1132,12 +1132,12 @@ def _resolve_mcp_server_and_tool_name(
     tool: dict[str, Any],
     catalog_tool_name: str,
 ) -> tuple[str, str]:
-    server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
-    bare = str(tool.get("tool_name") or "").strip()
-    if server and bare:
-        return server, bare
-    wire = str(tool.get("name") or catalog_tool_name or "").strip()
-    return "unknown", wire or "unknown"
+    from cyt_mcp.tool_identity import resolve_backend_identity
+
+    merged = dict(tool)
+    if not str(merged.get("name") or "").strip():
+        merged["name"] = catalog_tool_name
+    return resolve_backend_identity(merged)
 
 
 def extract_post_tool_tier_feedback(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -1192,6 +1192,10 @@ def extract_post_tool_example_capture(payload: dict[str, Any]) -> dict[str, Any]
     if not ok:
         return None
     mcp_server, bare_tool_name = _resolve_mcp_server_and_tool_name(tool, catalog_tool_name)
+    from cyt.tool_examples.identity import is_valid_tool_example_identity
+
+    if not is_valid_tool_example_identity(mcp_server, bare_tool_name):
+        return None
     return {
         "mcp_server": mcp_server,
         "tool_name": bare_tool_name,

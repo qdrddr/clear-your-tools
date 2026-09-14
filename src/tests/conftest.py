@@ -329,4 +329,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 pytest_plugins = [
     "tests.support.inject_preview_fixtures",
+    "tests.support.tier_ephemeral_guard_fixtures",
+    "tests.support.tool_examples_ephemeral_fixtures",
+    "tests.support.tool_examples_identity_fixtures",
 ]

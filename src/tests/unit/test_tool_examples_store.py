@@ -17,6 +17,35 @@ def store(tmp_path: Path) -> ToolExamplesStore:
     return ToolExamplesStore.open(str(db))
 
 
+def test_purge_ephemeral_tool_example_projects(tmp_path: Path) -> None:
+    db = tmp_path / "tool_examples.db"
+    ephemeral_root = (
+        "/private/var/folders/xx/T/pytest-of-user/test0/test_run_inject_preview_loads_0/repo"
+    )
+    real_root = "/Users/example/projects/clear-your-tools"
+
+    store = ToolExamplesStore(str(db))
+    try:
+        store.get_or_create_project(real_root)
+        store._conn.execute(
+            "INSERT INTO tool_example_project(root_path, created_ms, last_seen_ms) "
+            "VALUES (?, 1, 1)",
+            (ephemeral_root,),
+        )
+        store._conn.commit()
+    finally:
+        store.close()
+
+    reopened = ToolExamplesStore(str(db))
+    try:
+        removed = reopened.purge_ephemeral_projects()
+        assert removed == 1
+        rows = reopened._conn.execute("SELECT root_path FROM tool_example_project").fetchall()
+        assert [str(row[0]) for row in rows] == [real_root]
+    finally:
+        reopened.close()
+
+
 def test_project_registry_dedupes_by_root(store: ToolExamplesStore, tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

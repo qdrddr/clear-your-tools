@@ -43,6 +43,26 @@ def test_record_returns_none_when_disabled(tmp_path: Path) -> None:
     )
 
 
+def test_record_skips_ephemeral_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "not-a-repo"
+    workspace.mkdir()
+    db = tmp_path / "tool_examples.db"
+    config = _config(db, workspace)
+    schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+    assert (
+        record_tool_examples_capture(
+            workspace=workspace,
+            mcp_server="srv",
+            tool_name="search",
+            input_schema=schema,
+            args={"query": "x"},
+            config=config,
+        )
+        is None
+    )
+    assert not db.exists()
+
+
 def test_record_uses_workspace_root_outside_git(tmp_path: Path) -> None:
     workspace = tmp_path / "not-a-repo"
     workspace.mkdir()

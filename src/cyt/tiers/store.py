@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from cyt.common.paths import is_default_user_cyt_db, is_ephemeral_workspace_path
 from cyt.tiers.models import (
     EffectiveStats,
     EntityTierState,
@@ -105,7 +106,10 @@ class TierStore:
 
     @classmethod
     def open(cls, db_path: str) -> TierStore:
-        return cls(db_path)
+        store = cls(db_path)
+        if is_default_user_cyt_db(db_path, "tier_state.db"):
+            store.purge_ephemeral_projects()
+        return store
 
     def close(self) -> None:
         with self._lock:
@@ -461,6 +465,10 @@ class TierStore:
             self._conn.commit()
 
     def upsert_entity_state(self, project: TierProject, state: EntityTierState) -> None:
+        from cyt.tiers.adapters.skills import is_ephemeral_skill_path
+
+        if is_ephemeral_skill_path(state.entity_id):
+            return
         with self._lock:
             self._conn.execute(
                 "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
@@ -544,6 +552,40 @@ class TierStore:
                 (project.project_id, epoch_id, int(time.time() * 1000), json.dumps(payload)),
             )
             self._conn.commit()
+
+    def purge_ephemeral_projects(self) -> int:
+        """Delete tier rows for pytest/macOS temp workspace roots and temp entity ids."""
+        from cyt.tiers.adapters.skills import is_ephemeral_skill_path
+
+        removed_projects = 0
+        with self._lock:
+            project_rows = self._conn.execute(
+                "SELECT project_id, root_path FROM tier_project",
+            ).fetchall()
+            for project_id, root_path in project_rows:
+                if not is_ephemeral_workspace_path(str(root_path)):
+                    continue
+                pid = int(project_id)
+                self._conn.execute("DELETE FROM entity_tier WHERE project_id = ?", (pid,))
+                self._conn.execute("DELETE FROM entity_stats WHERE project_id = ?", (pid,))
+                self._conn.execute("DELETE FROM epoch_state WHERE project_id = ?", (pid,))
+                self._conn.execute("DELETE FROM epoch_log WHERE project_id = ?", (pid,))
+                self._conn.execute("DELETE FROM tier_project WHERE project_id = ?", (pid,))
+                removed_projects += 1
+
+            for table in ("entity_tier", "entity_stats"):
+                rows = self._conn.execute(
+                    f"SELECT project_id, kind, entity_id FROM {table}",
+                ).fetchall()
+                for project_id, kind, entity_id in rows:
+                    if not is_ephemeral_skill_path(str(entity_id)):
+                        continue
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE project_id = ? AND kind = ? AND entity_id = ?",
+                        (int(project_id), str(kind), str(entity_id)),
+                    )
+            self._conn.commit()
+        return removed_projects
 
     def status_summary(self, project: TierProject) -> dict[str, Any]:
         with self._lock:

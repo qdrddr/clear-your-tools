@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from cyt.common.paths import is_ephemeral_workspace_path
 from cyt.hook.workspace_config import hook_workspace_from_config
 from cyt.tiers.config import resolve_project_root_path
 from cyt.tiers.tool_token_materialization import input_schema_from_tool
@@ -60,7 +61,7 @@ def enrich_tools_with_examples(
         return tools
     workspace = hook_workspace_from_config(config)
     project_root = resolve_project_root_path(workspace=workspace)
-    if project_root is None:
+    if project_root is None or is_ephemeral_workspace_path(project_root):
         return tools
     cfg = tool_examples_config(config)
     store = ToolExamplesStore.open(cfg.db_path)

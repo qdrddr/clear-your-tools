@@ -284,9 +284,17 @@ def resolve_project_root_path(*, workspace: Path | None = None) -> Path | None:
 
 def resolve_tier_project(*, workspace: Path | None = None) -> Path | None:
     """Return git repository root for tier scoping, if any."""
+    from cyt.common.paths import is_ephemeral_workspace_path
+
     if workspace is None:
-        return _resolve_git_repo_root(Path.cwd())
-    return resolve_project_root_path(workspace=workspace)
+        root = _resolve_git_repo_root(Path.cwd())
+    else:
+        root = resolve_project_root_path(workspace=workspace)
+    if root is None:
+        return None
+    if is_ephemeral_workspace_path(root):
+        return None
+    return root
 
 
 def resolve_tier_scope(*, workspace: Path | None = None) -> Path | None:

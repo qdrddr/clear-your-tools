@@ -46,3 +46,52 @@ def test_v2_store_migrates_attempts_column(tmp_path: Path) -> None:
         assert loaded[("tool", "cyt_mcp:search")].stats.attempts == 2.0
     finally:
         store.close()
+
+
+def test_open_purges_ephemeral_entity_rows_under_real_project(tmp_path: Path) -> None:
+    db_path = tmp_path / "tier_state.db"
+    ephemeral_id = (
+        "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
+    )
+    store = TierStore(str(db_path))
+    try:
+        project_id = store.get_or_create_project(str(tmp_path))
+        store._conn.execute(
+            "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
+            "tier_since_epoch, wake_lease_until_cycle, sleep_cooldown_until_cycle) "
+            "VALUES (?, 'skill', ?, 2, 2, 1, 0, 0)",
+            (project_id, ephemeral_id),
+        )
+        store._conn.commit()
+    finally:
+        store.close()
+
+    reopened = TierStore.open(str(db_path))
+    try:
+        project = TierProject(project_id=project_id, root_path=tmp_path.resolve())
+        assert reopened.load_entity_states(project) == {}
+    finally:
+        reopened.close()
+
+
+def test_upsert_entity_state_skips_ephemeral_entity_id(tmp_path: Path) -> None:
+    db_path = tmp_path / "tier_state.db"
+    ephemeral_id = (
+        "/private/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/demo/SKILL.md"
+    )
+    store = TierStore.open(str(db_path))
+    try:
+        project_id = store.get_or_create_project(str(tmp_path))
+        project = TierProject(project_id=project_id, root_path=tmp_path.resolve())
+        store.upsert_entity_state(
+            project,
+            EntityTierState(
+                entity_id=ephemeral_id,
+                kind=EntityKind.SKILL,
+                stable_tier=Tier.ACTIVE,
+                effective_tier=Tier.ACTIVE,
+            ),
+        )
+        assert store.load_entity_states(project) == {}
+    finally:
+        store.close()

@@ -4,15 +4,26 @@ from __future__ import annotations
 
 from typing import Any
 
+_INVALID_IDENTITY_MARKERS = frozenset({"", "unknown"})
+
+
+def is_valid_tool_example_identity(mcp_server: str, tool_name: str) -> bool:
+    """True when both backend server and tool names are non-empty and not placeholder values."""
+    server = str(mcp_server or "").strip()
+    bare = str(tool_name or "").strip()
+    return (
+        bool(server)
+        and bool(bare)
+        and server.casefold() not in _INVALID_IDENTITY_MARKERS
+        and bare.casefold() not in _INVALID_IDENTITY_MARKERS
+    )
+
 
 def resolve_mcp_server_and_tool(tool: dict[str, Any]) -> tuple[str, str]:
     """Return backend identity from explicit catalog fields (server_key, tool_name)."""
-    server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
-    bare = str(tool.get("tool_name") or "").strip()
-    if server and bare:
-        return server, bare
-    wire = str(tool.get("name") or "").strip()
-    return "unknown", wire or "unknown"
+    from cyt_mcp.tool_identity import resolve_backend_identity
+
+    return resolve_backend_identity(tool)
 
 
 def resolve_mcp_server_and_tool_from_wire_name(wire_name: str) -> tuple[str, str]:

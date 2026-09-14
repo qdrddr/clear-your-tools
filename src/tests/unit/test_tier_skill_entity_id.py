@@ -41,7 +41,7 @@ def test_ephemeral_skill_paths_use_doc_id_entity() -> None:
     temp_path = "/var/folders/xx/T/pytest-of-user/test0/skills/create-hook.md"
     assert is_ephemeral_skill_path(temp_path)
     real_layout = "/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/create-hook/SKILL.md"
-    assert not is_ephemeral_skill_path(real_layout)
+    assert is_ephemeral_skill_path(real_layout)
     assert canonical_skill_entity_id(temp_path) == ""
     assert resolve_skill_entity_id(temp_path) == ""
     assert resolve_skill_entity_id(temp_path, doc_id="create-hook") == stable_skill_doc_entity_id(

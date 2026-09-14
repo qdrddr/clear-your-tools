@@ -73,3 +73,12 @@ def test_resolve_backend_identity_requires_explicit_fields() -> None:
         "unknown",
         "graphify_query_graph",
     )
+
+
+def test_resolve_backend_identity_infers_bare_name_when_session_log_omits_tool_name() -> None:
+    assert resolve_backend_identity(
+        {"name": "grep", "server_key": "fff"},
+    ) == ("fff", "grep")
+    assert resolve_backend_identity(
+        {"name": "gitnexus_query", "server_key": "gitnexus"},
+    ) == ("gitnexus", "query")

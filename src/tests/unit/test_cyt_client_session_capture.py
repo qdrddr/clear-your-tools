@@ -142,6 +142,45 @@ def test_extract_post_tool_example_capture_success(
     assert capture["args"] == {"project": "demo", "query": "bm25"}
 
 
+def test_extract_post_tool_example_capture_resolves_server_when_tool_name_omitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Session logs omit tool_name when wire name equals bare name; capture must still resolve server."""
+    log_path = tmp_path / "session.jsonl"
+    schema = {"type": "object", "properties": {"pattern": {"type": "string"}}}
+    log_path.write_text(
+        json.dumps(
+            {
+                "kind": "tool_catalog",
+                "key": "tool_catalog:cyt_mcp",
+                "catalog": "cyt_mcp",
+                "hash": "test-hash",
+                "tools": [
+                    {
+                        "name": "grep",
+                        "server_key": "fff",
+                        "input_schema": schema,
+                    },
+                ],
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("cyt_client.tool_gate.session_log_path", lambda _payload: log_path)
+    payload = {
+        "hook_event_name": "postToolUse",
+        "tool_name": "MCP:grep",
+        "tool_input": {"pattern": "auth"},
+        "tool_output": json.dumps({"results": []}),
+    }
+    capture = extract_post_tool_example_capture(payload)
+    assert capture is not None
+    assert capture["mcp_server"] == "fff"
+    assert capture["tool_name"] == "grep"
+
+
 def test_extract_post_tool_example_capture_skips_failed_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

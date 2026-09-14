@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from cyt.common.paths import is_default_user_cyt_db, is_ephemeral_workspace_path
 from cyt.tool_examples.flatten import FlattenedExample, flatten_args
 from cyt.tool_examples.hash_utils import content_hash
+from cyt.tool_examples.identity import is_valid_tool_example_identity
 
 _SCHEMA_VERSION = 2
 
@@ -99,7 +101,11 @@ class ToolExamplesStore:
 
     @classmethod
     def open(cls, db_path: str) -> ToolExamplesStore:
-        return cls(db_path)
+        store = cls(db_path)
+        if is_default_user_cyt_db(db_path, "tool_examples.db"):
+            store.purge_ephemeral_projects()
+            store.purge_invalid_identity_schemas()
+        return store
 
     def close(self) -> None:
         with self._lock:
@@ -124,6 +130,40 @@ class ToolExamplesStore:
                     )
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
             self._conn.commit()
+
+    def purge_ephemeral_projects(self) -> int:
+        """Delete tool-example rows for pytest/macOS temp workspace roots."""
+        removed = 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT project_id, root_path FROM tool_example_project",
+            ).fetchall()
+            for project_id, root_path in rows:
+                if not is_ephemeral_workspace_path(str(root_path)):
+                    continue
+                pid = int(project_id)
+                self._conn.execute(
+                    "DELETE FROM tool_input_schema WHERE project_id = ?",
+                    (pid,),
+                )
+                self._conn.execute(
+                    "DELETE FROM tool_example_project WHERE project_id = ?",
+                    (pid,),
+                )
+                removed += 1
+            self._conn.commit()
+        return removed
+
+    def purge_invalid_identity_schemas(self) -> int:
+        """Delete schema rows with unknown/empty mcp_server or tool_name."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM tool_input_schema "
+                "WHERE trim(mcp_server) = '' OR lower(trim(mcp_server)) = 'unknown' "
+                "OR trim(tool_name) = '' OR lower(trim(tool_name)) = 'unknown'",
+            )
+            self._conn.commit()
+            return int(cur.rowcount)
 
     def get_or_create_project(self, root_path: str) -> int:
         canonical = str(Path(root_path).expanduser().resolve())
@@ -157,6 +197,10 @@ class ToolExamplesStore:
         *,
         flattened: list[FlattenedExample] | None = None,
     ) -> int:
+        if not is_valid_tool_example_identity(mcp_server, tool_name):
+            raise ValueError(
+                f"invalid tool example identity: mcp_server={mcp_server!r}, tool_name={tool_name!r}",
+            )
         now_ms = int(time.time() * 1000)
         schema_hash = content_hash(schema)
         input_hash = content_hash(args)

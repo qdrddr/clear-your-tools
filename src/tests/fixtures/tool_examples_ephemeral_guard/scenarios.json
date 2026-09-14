@@ -1,0 +1,25 @@
+{
+  "ephemeral_workspace_paths": [
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-42/test_run_inject_preview_loads_0/repo",
+    "/var/folders/xx/T/pytest-of-user/test0/repo",
+    "/tmp/pytest-of-user/pytest-1/test_run_inject_preview_loads_0/repo"
+  ],
+  "persistent_workspace_paths": [
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools",
+    "/Users/example/projects/my-app"
+  ],
+  "integration_scenarios": [
+    {
+      "id": "inject_preview_ephemeral_workspace",
+      "description": "inject preview against a pytest workspace must not create tool_example_project rows in the user examples DB."
+    },
+    {
+      "id": "record_and_enrich_ephemeral_workspace",
+      "description": "Direct record/enrich calls on a pytest workspace must not touch the user examples DB."
+    },
+    {
+      "id": "open_purges_legacy_pollution",
+      "description": "Opening the default user tool_examples.db must purge legacy pytest root_path rows from polluted_seed.json."
+    }
+  ]
+}

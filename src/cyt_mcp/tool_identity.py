@@ -63,11 +63,26 @@ def enrich_tool_identity(tool: dict[str, Any], server_keys: list[str]) -> dict[s
     return enriched
 
 
+def _bare_tool_name_from_wire(*, server: str, wire: str) -> str:
+    """Infer backend tool name when session log omitted tool_name (wire == bare)."""
+    text = wire.strip()
+    if not text:
+        return ""
+    prefix = f"{server}_"
+    if text.startswith(prefix):
+        suffix = text[len(prefix) :].strip()
+        if suffix:
+            return suffix
+    return text
+
+
 def resolve_backend_identity(tool: dict[str, Any]) -> tuple[str, str]:
     """Return backend (server_key, tool_name) from explicit catalog fields only."""
     server = str(tool.get("server_key") or tool.get("mcp_server") or "").strip()
     bare = str(tool.get("tool_name") or "").strip()
+    wire = str(tool.get("name") or "").strip()
+    if not bare and server and wire:
+        bare = _bare_tool_name_from_wire(server=server, wire=wire)
     if server and bare:
         return server, bare
-    wire = str(tool.get("name") or "").strip()
     return "unknown", wire or "unknown"

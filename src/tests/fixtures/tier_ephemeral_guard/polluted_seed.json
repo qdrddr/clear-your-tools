@@ -1,0 +1,12 @@
+{
+  "description": "Legacy pollution shape: ephemeral tier_project rows and ephemeral skill entity_ids stored under a real project.",
+  "ephemeral_projects": [
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-1002/test_hook_permissions_changed_0",
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-1002/test_run_skill_read_intercept_1"
+  ],
+  "ephemeral_skill_entity_ids": [
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-1002/test_run_skill_read_intercept_1/.cursor/skills/demo/SKILL.md",
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/tmpjh2fm0zj/skills/create-hook.md"
+  ],
+  "real_project_marker": "clear-your-tools"
+}

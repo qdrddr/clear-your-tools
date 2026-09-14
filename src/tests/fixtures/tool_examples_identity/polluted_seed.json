@@ -1,0 +1,14 @@
+{
+  "description": "Legacy pollution shape: tool_input_schema rows with unknown or empty mcp_server/tool_name.",
+  "invalid_schemas": [
+    {"mcp_server": "unknown", "tool_name": "grep"},
+    {"mcp_server": "unknown", "tool_name": "search"},
+    {"mcp_server": "unknown", "tool_name": "query"},
+    {"mcp_server": "fff", "tool_name": "unknown"},
+    {"mcp_server": "", "tool_name": "context"}
+  ],
+  "valid_schema": {
+    "mcp_server": "gitnexus",
+    "tool_name": "query"
+  }
+}

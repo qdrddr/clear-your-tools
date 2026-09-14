@@ -7,7 +7,38 @@ from pathlib import Path
 
 from cyt.platform.compat import is_windows
 
-__all__ = ["expand_home_path", "shorten_home_path", "user_home"]
+__all__ = [
+    "expand_home_path",
+    "is_default_user_cyt_db",
+    "is_ephemeral_workspace_path",
+    "shorten_home_path",
+    "user_home",
+]
+
+_EPHEMERAL_WORKSPACE_MARKERS = (
+    "/pytest-of-",
+    "/t/pytest-",
+    "/tmp/pytest-",
+    "/temp/pytest-",
+    "/private/var/folders/",
+    "/var/folders/",
+)
+
+
+def is_ephemeral_workspace_path(path: str | Path) -> bool:
+    """True for pytest temp dirs and macOS ``/var/folders`` scratch paths."""
+    text = str(path).replace("\\", "/")
+    return any(marker in text for marker in _EPHEMERAL_WORKSPACE_MARKERS)
+
+
+def is_default_user_cyt_db(db_path: str | Path, filename: str) -> bool:
+    """True when *db_path* resolves to ``~/.config/cyt/<filename>``."""
+    try:
+        resolved = Path(db_path).expanduser().resolve()
+        expected = (user_home() / ".config" / "cyt" / filename).resolve()
+    except OSError:
+        return False
+    return resolved == expected
 
 
 def user_home() -> Path:

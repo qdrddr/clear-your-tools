@@ -244,6 +244,11 @@ async def hook_tool_examples_record(request: Request) -> Response:
             status_code=400,
         )
 
+    from cyt.tool_examples.identity import is_valid_tool_example_identity
+
+    if not is_valid_tool_example_identity(mcp_server.strip(), tool_name.strip()):
+        return PlainTextResponse("", status_code=204)
+
     record_tool_examples_capture(
         workspace=workspace,
         mcp_server=mcp_server.strip(),
@@ -307,12 +312,13 @@ def _tier_feedback_tool_used(
         mcp_server = payload.get("mcp_server")
         bare_tool = payload.get("bare_tool_name")
         input_schema = payload.get("input_schema")
+        from cyt.tool_examples.identity import is_valid_tool_example_identity
+
         if (
             isinstance(mcp_server, str)
-            and mcp_server.strip()
             and isinstance(bare_tool, str)
-            and bare_tool.strip()
             and isinstance(input_schema, dict)
+            and is_valid_tool_example_identity(mcp_server.strip(), bare_tool.strip())
         ):
             from cyt.tool_examples.record import record_tool_examples_capture
 

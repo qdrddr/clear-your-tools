@@ -1,0 +1,75 @@
+{
+  "valid_identities": [
+    {"mcp_server": "fff", "tool_name": "grep"},
+    {"mcp_server": "gitnexus", "tool_name": "query"},
+    {"mcp_server": "codebase-memory-mcp", "tool_name": "search_graph"}
+  ],
+  "invalid_identities": [
+    {"mcp_server": "unknown", "tool_name": "grep"},
+    {"mcp_server": "unknown", "tool_name": "search"},
+    {"mcp_server": "fff", "tool_name": "unknown"},
+    {"mcp_server": "", "tool_name": "query"},
+    {"mcp_server": "gitnexus", "tool_name": ""}
+  ],
+  "session_catalog_tools": [
+    {
+      "id": "wire_equals_bare_legacy_session_log",
+      "catalog_tool": {
+        "name": "grep",
+        "server_key": "fff",
+        "input_schema": {
+          "type": "object",
+          "properties": {"pattern": {"type": "string"}}
+        }
+      },
+      "payload_tool_name": "MCP:grep",
+      "tool_input": {"pattern": "auth"},
+      "expected_mcp_server": "fff",
+      "expected_tool_name": "grep"
+    },
+    {
+      "id": "explicit_server_and_bare",
+      "catalog_tool": {
+        "name": "gitnexus_query",
+        "server_key": "gitnexus",
+        "tool_name": "query",
+        "input_schema": {
+          "type": "object",
+          "properties": {"search_query": {"type": "string"}}
+        }
+      },
+      "payload_tool_name": "MCP:gitnexus_query",
+      "tool_input": {"search_query": "auth flow"},
+      "expected_mcp_server": "gitnexus",
+      "expected_tool_name": "query"
+    },
+    {
+      "id": "wire_only_catalog_rejected",
+      "catalog_tool": {
+        "name": "jcodemunch_search_symbols",
+        "input_schema": {
+          "type": "object",
+          "properties": {"query": {"type": "string"}}
+        }
+      },
+      "payload_tool_name": "MCP:jcodemunch_search_symbols",
+      "tool_input": {"query": "auth"},
+      "expected_mcp_server": null,
+      "expected_tool_name": null
+    }
+  ],
+  "integration_scenarios": [
+    {
+      "id": "post_tool_use_capture_persists_valid_identity",
+      "description": "postToolUse capture must persist mcp_server and tool_name, never unknown."
+    },
+    {
+      "id": "open_purges_invalid_identity_seed",
+      "description": "Opening the default user tool_examples.db must purge polluted_seed invalid rows."
+    },
+    {
+      "id": "record_rejects_invalid_identity",
+      "description": "Direct record calls with unknown identity must not write schema rows."
+    }
+  ]
+}

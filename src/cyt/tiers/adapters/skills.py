@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from cyt.pruners.remote import PrunerSettingsCache
 
-from cyt.common.paths import expand_home_path
+from cyt.common.paths import expand_home_path, is_ephemeral_workspace_path
 from cyt.skills.catalog import SkillEntryRef, doc_id_from_path
 from cyt.skills.frontmatter import skill_name_from_frontmatter
 from cyt.skills.search import MatchedSkill
@@ -38,6 +38,8 @@ def is_ephemeral_skill_path(path: str) -> bool:
     """True for temp dirs, pytest fixtures, and skinny intercept copies."""
     normalized = path.replace("\\", "/").lower()
     if "/.cyt/skinny/" in normalized:
+        return True
+    if is_ephemeral_workspace_path(path):
         return True
     if not any(marker in normalized for marker in _EPHEMERAL_SKILL_MARKERS):
         return False

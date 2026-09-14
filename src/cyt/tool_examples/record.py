@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from cyt.common.paths import is_ephemeral_workspace_path
 from cyt.tiers.config import resolve_project_root_path
 from cyt.tool_examples.config import examples_active, tool_examples_config
 from cyt.tool_examples.flatten import flatten_args
+from cyt.tool_examples.identity import is_valid_tool_example_identity
 from cyt.tool_examples.maintenance import valid_paths_for_capture
 from cyt.tool_examples.store import ToolExamplesStore
 
@@ -23,8 +25,10 @@ def record_tool_examples_capture(
 ) -> int | None:
     if not examples_active(config):
         return None
+    if not is_valid_tool_example_identity(mcp_server, tool_name):
+        return None
     project_root = resolve_project_root_path(workspace=workspace)
-    if project_root is None:
+    if project_root is None or is_ephemeral_workspace_path(project_root):
         return None
     cfg = tool_examples_config(config)
     valid_paths = valid_paths_for_capture(input_schema, args)

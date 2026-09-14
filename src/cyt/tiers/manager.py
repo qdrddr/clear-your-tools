@@ -254,11 +254,25 @@ class TierManager:
         self._cycle_shadow: set[tuple[str, str]] = set()
         self._rebuild_snapshots(mode=TierMode.SHADOW)
 
+    def _reconcile_ephemeral_states(self) -> None:
+        from cyt.tiers.adapters.skills import is_ephemeral_skill_path
+
+        removed: list[tuple[str, str]] = []
+        with self._state_lock:
+            for key, state in list(self._states.items()):
+                if is_ephemeral_skill_path(state.entity_id):
+                    removed.append(key)
+            for kind, entity_id in removed:
+                self._states.pop((kind, entity_id), None)
+        for kind, entity_id in removed:
+            self._store.delete_entity_state(self.project, kind=kind, entity_id=entity_id)
+
     def close(self) -> None:
         self.flush_pending(force=True)
         self._store.close()
 
     def flush_pending(self, *, force: bool = False) -> bool:
+        self._reconcile_ephemeral_states()
         with self._state_lock:
             if not force and not self._pending_flush:
                 return False
@@ -979,8 +993,11 @@ def get_tier_manager(
     with _manager_lock:
         manager = _managers.get(key)
         if manager is None:
-            manager = TierManager(root_path, tier_state_db_path(config))
+            db_path = tier_state_db_path(config)
+            manager = TierManager(root_path, db_path)
             _managers[key] = manager
+        else:
+            manager._reconcile_ephemeral_states()
     if tiers_active(config, kind="tool"):
         from cyt.tiers.flush_scheduler import start_tier_flush_scheduler
 

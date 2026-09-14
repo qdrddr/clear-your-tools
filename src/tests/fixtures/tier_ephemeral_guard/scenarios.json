@@ -1,0 +1,36 @@
+{
+  "ephemeral_workspace_paths": [
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-42/test_hook_permissions_changed_0",
+    "/var/folders/xx/T/pytest-of-user/test0/repo",
+    "/tmp/pytest-of-user/pytest-1/test_run_inject_preview_loads_0/repo"
+  ],
+  "ephemeral_skill_paths": [
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/pytest-1002/test_run_skill_read_intercept_1/.cursor/skills/demo/SKILL.md",
+    "/var/folders/xx/T/pytest-of-user/test0/skills/create-hook.md",
+    "/var/folders/xx/T/pytest-of-user/test0/.cursor/skills/create-hook/SKILL.md",
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/tmpjh2fm0zj/skills/create-hook.md",
+    "/private/var/folders/5h/qvzp0mfx2jd1rsxg4f9z91880000gn/T/pytest-of-user/test0/.agents/skills/create-hook.md"
+  ],
+  "persistent_skill_paths": [
+    "/Users/example/.cursor/skills/create-hook/SKILL.md",
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools/.cursor/skills/demo/SKILL.md"
+  ],
+  "persistent_workspace_paths": [
+    "/Volumes/OWCExpress1M2/Users/dberezenko/git/github.com/qdrddr/clear-your-tools",
+    "/Users/example/projects/my-app"
+  ],
+  "integration_scenarios": [
+    {
+      "id": "permissions_react_ephemeral_workspace",
+      "description": "Hook permissions fan-out must not create tier_project rows for pytest workspaces in the user tier DB."
+    },
+    {
+      "id": "skill_read_intercept_ephemeral_skill",
+      "description": "Agent skill read intercept must not persist pytest skill paths as entity_id in the user tier DB."
+    },
+    {
+      "id": "cached_manager_flush_stale_ephemeral",
+      "description": "A cached TierManager must not re-flush stale ephemeral entity rows into the user tier DB."
+    }
+  ]
+}

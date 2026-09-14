@@ -478,8 +478,7 @@ def _tool_record_core_for_catalog_bundle(
             )
             raise ValueError(msg)
         record["server_key"] = server_key
-        if bare != name:
-            record["tool_name"] = bare
+        record["tool_name"] = bare
     description = tool.get("description")
     if description is not None and str(description).strip():
         record["description"] = str(description).strip()
