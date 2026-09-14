@@ -464,6 +464,7 @@ tools:
     # Tier statistics are scoped per git project (toplevel); no global/user bucket.
     database:
       path: ~/.config/cyt/tier_state.db
+      disk_flush_seconds: 900
     statistics:
       request_half_life: 100
     cache_epoch:

@@ -182,11 +182,25 @@ def _warm_tools_catalog(cfg: dict[str, Any]) -> None:
         logger.warning("tools catalog cache warm skipped: %s", exc)
 
 
+def _warm_tier_statistics(cfg: dict[str, Any]) -> None:
+    try:
+        from cyt.tiers.config import tiers_active
+        from cyt.tiers.flush_scheduler import start_tier_flush_scheduler
+        from cyt.tiers.manager import get_tier_manager
+
+        if tiers_active(cfg, kind="tool"):
+            get_tier_manager(cfg)
+            start_tier_flush_scheduler(cfg)
+    except Exception as exc:
+        logger.warning("tier statistics warm skipped: %s", exc)
+
+
 def warm_caches(config: dict[str, Any] | None = None) -> None:
     """Ensure on-disk indexes exist at startup; no-op when cache is disabled."""
     if _skip_hook_daemon_child_warm():
         return
     cfg = config or load_config()
+    _warm_tier_statistics(cfg)
     if not cache_enabled(cfg):
         return
 

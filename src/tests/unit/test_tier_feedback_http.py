@@ -9,13 +9,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from cyt.tiers.flush_scheduler import reset_tier_flush_scheduler_for_tests
 from cyt.tiers.manager import TierManager, _managers
+
+
+def _sync_tier_database(db_path: Path) -> dict[str, object]:
+    return {"path": str(db_path), "disk_flush_seconds": 0}
 
 
 @pytest.fixture(autouse=True)
 def clear_tier_managers() -> Iterator[None]:
+    reset_tier_flush_scheduler_for_tests()
     _managers.clear()
     yield
+    reset_tier_flush_scheduler_for_tests()
     _managers.clear()
 
 
@@ -40,7 +47,7 @@ async def test_hook_tier_feedback_records_tool_used(project_root: Path, base_con
     db_path = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": _sync_tier_database(db_path)}
     config["tools"] = tools
 
     request = MagicMock()
@@ -85,7 +92,7 @@ async def test_hook_tier_feedback_records_skill_used(project_root: Path, base_co
     entity_id = resolve_skill_entity_id(str(skill_path.resolve()))
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": _sync_tier_database(db_path)}
     config["tools"] = tools
 
     request = MagicMock()
@@ -134,7 +141,7 @@ async def test_hook_tier_feedback_skill_used_respects_last_injected(
     entity_id = resolve_skill_entity_id(resolved_id)
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": _sync_tier_database(db_path)}
     config["tools"] = tools
 
     manager = TierManager(project_root, str(db_path))
@@ -179,7 +186,7 @@ async def test_hook_tier_feedback_records_failed_attempt(project_root: Path, bas
     db_path = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"mode": "shadow", "database": {"path": str(db_path)}}
+    tools["tiers"] = {"mode": "shadow", "database": _sync_tier_database(db_path)}
     config["tools"] = tools
 
     request = MagicMock()
@@ -223,7 +230,7 @@ async def test_hook_tier_feedback_records_examples_on_success(
     tier_db = project_root / "tier_state.db"
     config = dict(base_config)
     tools = dict(config.get("tools") or {})
-    tools["tiers"] = {"mode": "shadow", "database": {"path": str(tier_db)}}
+    tools["tiers"] = {"mode": "shadow", "database": _sync_tier_database(tier_db)}
     examples = dict(tools.get("examples") or {})
     examples["enabled"] = True
     examples["database"] = {"path": str(db_path)}

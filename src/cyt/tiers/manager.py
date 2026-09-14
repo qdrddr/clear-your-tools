@@ -30,6 +30,7 @@ from cyt.tiers.config import (
     TierMode,
     TierSectionConfig,
     resolve_tier_project,
+    tier_disk_flush_seconds,
     tier_section_config,
     tier_state_db_path,
     tiers_active,
@@ -211,13 +212,36 @@ class TierManager:
         self._epoch = self._store.load_epoch_state(self.project)
         self._snapshot_tools: TierSnapshot | None = None
         self._snapshot_skills: TierSnapshot | None = None
+        self._state_lock = threading.RLock()
         self._pending_flush = False
         self._last_injected_tools: set[str] = set()
         self._last_injected_skills: set[str] = set()
         self._rebuild_snapshots(mode=TierMode.SHADOW)
 
     def close(self) -> None:
+        self.flush_pending(force=True)
         self._store.close()
+
+    def flush_pending(self, *, force: bool = False) -> bool:
+        with self._state_lock:
+            if not force and not self._pending_flush:
+                return False
+            states = list(self._states.values())
+            epoch = self._epoch
+            self._pending_flush = False
+        for state in states:
+            self._store.upsert_entity_state(self.project, state)
+        self._store.save_epoch_state(self.project, epoch)
+        return True
+
+    def _mark_dirty(self) -> None:
+        with self._state_lock:
+            self._pending_flush = True
+
+    def _finish_record(self, config: dict[str, Any]) -> None:
+        self._mark_dirty()
+        if tier_disk_flush_seconds(config) <= 0:
+            self.flush_pending(force=True)
 
     def _workspace_scoped_config(self, config: dict[str, Any]) -> dict[str, Any]:
         from cyt.hook.workspace_config import set_hook_workspace_in_config
@@ -398,16 +422,17 @@ class TierManager:
         for state in self._states.values():
             state.stats.decay(half_life=cfg.request_half_life)
 
-    def _touch_request(self, config: dict[str, Any]) -> None:
+    def _touch_request(self, config: dict[str, Any]) -> bool:
+        """Update epoch bookkeeping. Returns True when a sync epoch flush already ran."""
         now_ms = int(time.time() * 1000)
         tool_cfg = tier_section_config(config, kind="tool")
         self._decay_all(tool_cfg)
         self._epoch.last_request_ms = now_ms
         if epoch_boundary(now_ms=now_ms, epoch=self._epoch, cfg=tool_cfg):
             self._run_epoch(config)
-        else:
-            expire_temporary_promotions(self._states, now_ms=now_ms)
-        self._store.save_epoch_state(self.project, self._epoch)
+            return True
+        expire_temporary_promotions(self._states, now_ms=now_ms)
+        return False
 
     def _run_epoch(self, config: dict[str, Any]) -> None:
         cfg = tier_section_config(config, kind="tool")
@@ -431,6 +456,8 @@ class TierManager:
                 )
         self._epoch.epoch_id += 1
         self._epoch.epoch_start_ms = now_ms
+        self._store.save_epoch_state(self.project, self._epoch)
+        self._pending_flush = False
 
     def record_tool_candidates(self, tools: list[dict[str, Any]], config: dict[str, Any]) -> None:
         """Record BM25-eligible exposure (tier pool entering prune), not full catalog."""
@@ -440,19 +467,21 @@ class TierManager:
         self.purge_inactive_tool_sources(config)
         from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
 
-        cfg = tier_section_config(config, kind="tool")
         tracked = filter_tools_for_tier_tracking(tools, scoped)
-        for tool in tracked:
-            entity_id = tool_entity_id(tool)
-            if not entity_id:
-                continue
-            state = self._ensure_state(EntityKind.TOOL, entity_id)
-            if state is None:
-                continue
-            state.stats.candidates += 1.0
-            state.stats.last_seen_ms = int(time.time() * 1000)
-        self._touch_request(config)
-        self._flush_states(cfg)
+        epoch_ran = False
+        with self._state_lock:
+            for tool in tracked:
+                entity_id = tool_entity_id(tool)
+                if not entity_id:
+                    continue
+                state = self._ensure_state(EntityKind.TOOL, entity_id)
+                if state is None:
+                    continue
+                state.stats.candidates += 1.0
+                state.stats.last_seen_ms = int(time.time() * 1000)
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def record_tools_injected(
         self,
@@ -466,21 +495,23 @@ class TierManager:
         self.purge_inactive_tool_sources(config)
         from cyt.tiers.adapters.tools import filter_tools_for_tier_tracking
 
-        cfg = tier_section_config(config, kind="tool")
         injected_ids: set[str] = set()
-        for tool in filter_tools_for_tier_tracking(tools, scoped):
-            entity_id = tool_entity_id(tool)
-            if not entity_id:
-                continue
-            injected_ids.add(entity_id)
-            state = self._ensure_state(EntityKind.TOOL, entity_id)
-            if state is None:
-                continue
-            state.stats.injected += 1.0
-            state.stats.last_seen_ms = int(time.time() * 1000)
-        self._last_injected_tools = injected_ids
-        self._touch_request(config)
-        self._flush_states(cfg)
+        epoch_ran = False
+        with self._state_lock:
+            for tool in filter_tools_for_tier_tracking(tools, scoped):
+                entity_id = tool_entity_id(tool)
+                if not entity_id:
+                    continue
+                injected_ids.add(entity_id)
+                state = self._ensure_state(EntityKind.TOOL, entity_id)
+                if state is None:
+                    continue
+                state.stats.injected += 1.0
+                state.stats.last_seen_ms = int(time.time() * 1000)
+            self._last_injected_tools = injected_ids
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def record_tool_attempt(
         self,
@@ -502,22 +533,25 @@ class TierManager:
         entity_id = tool_entity_id(tool)
         if not entity_id:
             return
-        state = self._ensure_state(EntityKind.TOOL, entity_id)
-        if state is None:
-            return
-        state.stats.attempts += 1.0
-        if success:
-            state.stats.used += 1.0
-            if entity_id not in self._last_injected_tools:
-                state.stats.used_without_injection += 1.0
-            if optional_used:
-                state.stats.optional_used += 1.0
-                fast_promote_on_optional_use(state, cfg=cfg)
-            else:
-                fast_promote_on_tool_use(state, cfg=cfg)
-        state.stats.last_seen_ms = int(time.time() * 1000)
-        self._touch_request(config)
-        self._flush_states(cfg)
+        epoch_ran = False
+        with self._state_lock:
+            state = self._ensure_state(EntityKind.TOOL, entity_id)
+            if state is None:
+                return
+            state.stats.attempts += 1.0
+            if success:
+                state.stats.used += 1.0
+                if entity_id not in self._last_injected_tools:
+                    state.stats.used_without_injection += 1.0
+                if optional_used:
+                    state.stats.optional_used += 1.0
+                    fast_promote_on_optional_use(state, cfg=cfg)
+                else:
+                    fast_promote_on_tool_use(state, cfg=cfg)
+            state.stats.last_seen_ms = int(time.time() * 1000)
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def record_tool_used(
         self,
@@ -537,22 +571,24 @@ class TierManager:
         """Record tier-eligible skills entering BM25 search, not the full registry."""
         if not tiers_active(config, kind="skill"):
             return
-        cfg = tier_section_config(config, kind="skill")
-        for entry in entries:
-            entity_id = skill_entity_id(entry)
-            if not entity_id:
-                continue
-            state = self._ensure_state(
-                EntityKind.SKILL,
-                entity_id,
-                doc_id=getattr(entry, "doc_id", None),
-            )
-            if state is None:
-                continue
-            state.stats.candidates += 1.0
-            state.stats.last_seen_ms = int(time.time() * 1000)
-        self._touch_request(config)
-        self._flush_states(cfg)
+        epoch_ran = False
+        with self._state_lock:
+            for entry in entries:
+                entity_id = skill_entity_id(entry)
+                if not entity_id:
+                    continue
+                state = self._ensure_state(
+                    EntityKind.SKILL,
+                    entity_id,
+                    doc_id=getattr(entry, "doc_id", None),
+                )
+                if state is None:
+                    continue
+                state.stats.candidates += 1.0
+                state.stats.last_seen_ms = int(time.time() * 1000)
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def record_skills_injected(
         self,
@@ -562,52 +598,51 @@ class TierManager:
         """Record skills that survived pruning and were injected into agent context."""
         if not tiers_active(config, kind="skill"):
             return
-        cfg = tier_section_config(config, kind="skill")
         injected: set[str] = set()
-        for match in matches:
-            path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
-            doc_id = getattr(match, "doc_id", None)
-            resolved_doc_id = str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
-            entity_id = tier_entity_id_for_skill(str(path), doc_id=resolved_doc_id)
-            if not entity_id:
-                continue
-            injected.add(entity_id)
-            state = self._ensure_state(
-                EntityKind.SKILL,
-                entity_id,
-                doc_id=resolved_doc_id,
-            )
-            if state is None:
-                continue
-            state.stats.injected += 1.0
-            state.stats.last_seen_ms = int(time.time() * 1000)
-        self._last_injected_skills = injected
-        self._touch_request(config)
-        self._flush_states(cfg)
+        epoch_ran = False
+        with self._state_lock:
+            for match in matches:
+                path = getattr(match, "file_path", None) or getattr(match, "source_path", "")
+                doc_id = getattr(match, "doc_id", None)
+                resolved_doc_id = str(doc_id) if isinstance(doc_id, str) and doc_id.strip() else None
+                entity_id = tier_entity_id_for_skill(str(path), doc_id=resolved_doc_id)
+                if not entity_id:
+                    continue
+                injected.add(entity_id)
+                state = self._ensure_state(
+                    EntityKind.SKILL,
+                    entity_id,
+                    doc_id=resolved_doc_id,
+                )
+                if state is None:
+                    continue
+                state.stats.injected += 1.0
+                state.stats.last_seen_ms = int(time.time() * 1000)
+            self._last_injected_skills = injected
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def record_skill_used(self, entity_id: str, *, config: dict[str, Any]) -> None:
         if not tiers_active(config, kind="skill"):
             return
-        cfg = tier_section_config(config, kind="skill")
         canonical_id = tier_entity_id_for_skill(
             entity_id,
             doc_id=resolve_skill_doc_id(entity_id),
         )
         if not canonical_id:
             return
-        state = self._ensure_state(EntityKind.SKILL, canonical_id)
-        if state is None:
-            return
-        state.stats.used += 1.0
-        if canonical_id not in self._last_injected_skills:
-            state.stats.used_without_injection += 1.0
-        self._touch_request(config)
-        self._flush_states(cfg)
-
-    def _flush_states(self, cfg: TierSectionConfig) -> None:
-        del cfg
-        for state in self._states.values():
-            self._store.upsert_entity_state(self.project, state)
+        epoch_ran = False
+        with self._state_lock:
+            state = self._ensure_state(EntityKind.SKILL, canonical_id)
+            if state is None:
+                return
+            state.stats.used += 1.0
+            if canonical_id not in self._last_injected_skills:
+                state.stats.used_without_injection += 1.0
+            epoch_ran = self._touch_request(config)
+        if not epoch_ran:
+            self._finish_record(config)
 
     def apply_shadow_tool_hits(self, hits: list[tuple[str, float]], config: dict[str, Any]) -> None:
         from cyt.tiers.adapters.tools import tool_entity_tracked_for_config
@@ -622,17 +657,17 @@ class TierManager:
         ]
         if not tracked_hits:
             return
-        transitions = record_shadow_hits(
-            self._states,
-            kind=EntityKind.TOOL,
-            hits=tracked_hits,
-            cfg=cfg,
-            session_id=self._epoch.session_id,
-        )
-        for state in self._states.values():
-            self._store.upsert_entity_state(self.project, state)
+        with self._state_lock:
+            transitions = record_shadow_hits(
+                self._states,
+                kind=EntityKind.TOOL,
+                hits=tracked_hits,
+                cfg=cfg,
+                session_id=self._epoch.session_id,
+            )
         if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("tool shadow transitions: %d", len(transitions))
+        self._finish_record(config)
 
     def status(
         self,
@@ -771,6 +806,16 @@ def _resolve_manager_workspace(
     return resolve_tier_project()
 
 
+def flush_all_tier_managers(*, force: bool = False) -> int:
+    with _manager_lock:
+        managers = list(_managers.values())
+    flushed = 0
+    for manager in managers:
+        if manager.flush_pending(force=force):
+            flushed += 1
+    return flushed
+
+
 def get_tier_manager(
     config: dict[str, Any],
     *,
@@ -785,4 +830,8 @@ def get_tier_manager(
         if manager is None:
             manager = TierManager(root_path, tier_state_db_path(config))
             _managers[key] = manager
-        return manager
+    if tiers_active(config, kind="tool"):
+        from cyt.tiers.flush_scheduler import start_tier_flush_scheduler
+
+        start_tier_flush_scheduler(config)
+    return manager

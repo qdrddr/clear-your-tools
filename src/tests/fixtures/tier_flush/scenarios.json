@@ -1,0 +1,122 @@
+{
+  "tool": {
+    "wire_name": "gitnexus_query",
+    "entity_id": "cyt_mcp:gitnexus_query",
+    "mcp_server": "gitnexus",
+    "bare_tool_name": "query",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "search_query": {"type": "string"}
+      },
+      "required": ["search_query"]
+    }
+  },
+  "config": {
+    "deferred_flush_seconds": 900,
+    "sync_flush_seconds": 0,
+    "scheduler_flush_seconds": 0.05
+  },
+  "seed_states": {
+    "epoch": {
+      "epoch_id": 2,
+      "epoch_start_ms": 1700000000000,
+      "last_request_ms": 1700000001000,
+      "session_id": 7
+    },
+    "tools": {
+      "cyt_mcp:gitnexus_query": {
+        "stable_tier": "ACTIVE",
+        "effective_tier": "ACTIVE",
+        "stats": {
+          "candidates": 4.0,
+          "injected": 2.0,
+          "used": 3.0,
+          "attempts": 5.0
+        }
+      }
+    }
+  },
+  "record_scenarios": [
+    {
+      "id": "deferred_single_success",
+      "disk_flush_seconds": 900,
+      "steps": [{"success": true, "args": {"search_query": "auth flow"}}],
+      "expected": {"attempts": 1.0, "used": 1.0},
+      "persisted_before_flush": false,
+      "persisted_after_flush": true
+    },
+    {
+      "id": "sync_single_success",
+      "disk_flush_seconds": 0,
+      "steps": [{"success": true, "args": {"search_query": "tier stats"}}],
+      "expected": {"attempts": 1.0, "used": 1.0},
+      "persisted_before_flush": true,
+      "persisted_after_flush": true
+    },
+    {
+      "id": "deferred_failure_only",
+      "disk_flush_seconds": 900,
+      "steps": [{"success": false}],
+      "expected": {"attempts": 1.0, "used": 0.0},
+      "persisted_before_flush": false,
+      "persisted_after_flush": true
+    }
+  ],
+  "http_payloads": [
+    {
+      "id": "tool_used_success",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "gitnexus_query",
+        "catalog": "cyt_mcp",
+        "args": {"search_query": "deferred persistence"}
+      },
+      "expected": {"attempts": 1.0, "used": 1.0}
+    },
+    {
+      "id": "tool_used_failure",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": false,
+        "tool_name": "gitnexus_query",
+        "catalog": "cyt_mcp"
+      },
+      "expected": {"attempts": 1.0, "used": 0.0}
+    }
+  ],
+  "integration": [
+    {
+      "id": "startup_reload_seeded_stats",
+      "uses_seed": true,
+      "disk_flush_seconds": 900,
+      "expected": {"attempts": 5.0, "used": 3.0, "injected": 2.0}
+    },
+    {
+      "id": "http_deferred_requires_flush",
+      "payload_id": "tool_used_success",
+      "disk_flush_seconds": 900,
+      "expected": {"attempts": 1.0, "used": 1.0},
+      "persisted_before_flush": false,
+      "persisted_after_flush": true
+    },
+    {
+      "id": "http_sync_persists_immediately",
+      "payload_id": "tool_used_success",
+      "disk_flush_seconds": 0,
+      "expected": {"attempts": 1.0, "used": 1.0},
+      "persisted_before_flush": true,
+      "persisted_after_flush": true
+    },
+    {
+      "id": "warm_loads_seeded_state_with_cache_disabled",
+      "uses_seed": true,
+      "disk_flush_seconds": 900,
+      "disable_cache": true,
+      "expected": {"attempts": 5.0, "used": 3.0}
+    }
+  ]
+}

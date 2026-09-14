@@ -6,12 +6,27 @@ from pathlib import Path
 
 import pytest
 
-from cyt.tiers.config import tier_tool_capture_source, tier_tool_capture_via_hooks
+from cyt.tiers.config import (
+    tier_disk_flush_seconds,
+    tier_tool_capture_source,
+    tier_tool_capture_via_hooks,
+)
 
 
 def test_tier_tool_capture_source_defaults_to_cyt_mcp() -> None:
     assert tier_tool_capture_source({}) == "cyt_mcp"
     assert tier_tool_capture_via_hooks({}) is False
+
+
+def test_tier_disk_flush_seconds_default_when_unconfigured() -> None:
+    assert tier_disk_flush_seconds({}) == 900.0
+
+
+def test_bundled_defaults_include_tier_disk_flush_seconds() -> None:
+    from cyt.config import load_bundled_defaults_yaml
+
+    database = load_bundled_defaults_yaml()["tools"]["tiers"]["database"]
+    assert database["disk_flush_seconds"] == 900
 
 
 def test_cyt_config_exports_capture_helpers() -> None:

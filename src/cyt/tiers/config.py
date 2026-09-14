@@ -186,6 +186,15 @@ def tier_state_db_path(cfg: dict[str, Any]) -> str:
     return str(Path("~/.config/cyt/tier_state.db").expanduser())
 
 
+def tier_disk_flush_seconds(cfg: dict[str, Any]) -> float:
+    """Interval for background tier-stat disk flush; <= 0 means synchronous flush."""
+    block = _tiers_block(cfg, kind="tool")
+    database = block.get("database")
+    if isinstance(database, dict):
+        return _float(database.get("disk_flush_seconds"), 900.0)
+    return 900.0
+
+
 def resolve_git_toplevel(path: Path) -> Path | None:
     """Return git repository root for *path*, or *path* when not inside a repo."""
     try:
