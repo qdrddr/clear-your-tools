@@ -60,7 +60,8 @@ def test_deferred_flush_does_not_write_until_flush(project_root: Path, tmp_path:
 
     manager = TierManager(project_root, str(db_path))
     try:
-        manager.record_tool_attempt(tool, config=config, success=True)
+        # Failed attempts do not create temp promotions, so deferred flush applies.
+        manager.record_tool_attempt(tool, config=config, success=False)
         assert manager._pending_flush is True
         reloaded = TierManager(project_root, str(db_path))
         try:
@@ -72,9 +73,37 @@ def test_deferred_flush_does_not_write_until_flush(project_root: Path, tmp_path:
         try:
             state = persisted._states.get(("tool", "cyt_mcp:search"))
             assert state is not None
-            assert state.stats.used >= 1.0
+            assert state.stats.attempts >= 1.0
+            assert state.stats.used == 0.0
         finally:
             persisted.close()
+    finally:
+        manager.close()
+
+
+def test_temp_promotion_flushes_immediately_with_deferred_disk(
+    project_root: Path,
+    tmp_path: Path,
+) -> None:
+    from cyt.tiers.models import Tier
+
+    db_path = tmp_path / "tier_state.db"
+    config = _tier_config(db_path, disk_flush_seconds=900)
+    tool = {"name": "gitnexus_query", "cyt_catalog_source": "cyt_mcp"}
+
+    manager = TierManager(project_root, str(db_path))
+    try:
+        manager.record_tool_attempt(tool, config=config, success=True)
+        assert manager._pending_flush is False
+        reloaded = TierManager(project_root, str(db_path))
+        try:
+            state = reloaded._states.get(("tool", "cyt_mcp:gitnexus_query"))
+            assert state is not None
+            assert state.stats.used >= 1.0
+            assert state.effective_tier == Tier.HOT
+            assert state.temp_promotion_until_ms is not None
+        finally:
+            reloaded.close()
     finally:
         manager.close()
 

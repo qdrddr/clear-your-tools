@@ -73,7 +73,7 @@ def test_entity_status_dict_temporary_tier_when_effective_above_base() -> None:
         temp_promotion_until_ms=now_ms + 120_000,
         stats=EffectiveStats(candidates=100, injected=50, used=20),
     )
-    detail = entity_status_dict(state, cfg=_cfg(), session_id=3, now_ms=now_ms)
+    detail = entity_status_dict(state, cfg=_cfg(), wake_cycle_id=3, now_ms=now_ms)
     assert detail["base_tier"] == "T2"
     assert detail["effective_tier"] == "T3"
     assert detail["temporary_tier"] == "T3"
@@ -100,7 +100,7 @@ def test_entity_status_dict_attaches_skill_token_count(tmp_path: Path) -> None:
     detail = entity_status_dict(
         state,
         cfg=tier_section_config({"skills": {"tiers": {}}}, kind="skill"),
-        session_id=1,
+        wake_cycle_id=1,
         kind=EntityKind.SKILL,
         config={"skills": {"tiers": {}}},
         workspace_root=tmp_path,
@@ -136,7 +136,7 @@ def test_entity_status_dict_attaches_tool_token_count() -> None:
     detail = entity_status_dict(
         state,
         cfg=_cfg(),
-        session_id=1,
+        wake_cycle_id=1,
         kind=EntityKind.TOOL,
         catalog_tools=catalog,
     )
@@ -151,7 +151,7 @@ def test_entity_status_dict_no_temporary_tier_when_stable() -> None:
         effective_tier=Tier.ACTIVE,
         stats=EffectiveStats(candidates=10, injected=2, used=0),
     )
-    detail = entity_status_dict(state, cfg=_cfg(), session_id=1)
+    detail = entity_status_dict(state, cfg=_cfg(), wake_cycle_id=1)
     assert detail["temporary_tier"] is None
     assert detail["temporary"] is False
     assert "below_min_injections" in detail["hints"]
@@ -175,7 +175,7 @@ def test_skill_status_fields_include_frontmatter_name(tmp_path: Path) -> None:
     detail = entity_status_dict(
         state,
         cfg=_cfg(),
-        session_id=1,
+        wake_cycle_id=1,
         kind=EntityKind.SKILL,
         config=config,
     )
@@ -202,7 +202,7 @@ def test_enrich_tool_detail_adds_loaded_catalog_tools() -> None:
         states,
         kind="tool",
         cfg=cfg,
-        session_id=1,
+        wake_cycle_id=1,
         config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
         tracked_catalog_entity_ids=frozenset(
             {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"},
@@ -215,7 +215,7 @@ def test_enrich_tool_detail_adds_loaded_catalog_tools() -> None:
         config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
         workspace_root=None,
         catalog_tools=catalog,
-        session_id=1,
+        wake_cycle_id=1,
     )
     entity_ids = {row["entity_id"] for items in enriched["by_tier"].values() for row in items}
     assert entity_ids == {"cyt_mcp:alpha_tool", "cyt_mcp:beta_tool"}
@@ -253,7 +253,7 @@ def test_build_kind_detail_hides_catalog_orphans_and_candidate_only_tools() -> N
         states,
         kind="tool",
         cfg=cfg,
-        session_id=1,
+        wake_cycle_id=1,
         config={"tools": {"hook": {"tools_from": ["cyt_mcp"]}}},
         tracked_catalog_entity_ids=frozenset({"cyt_mcp:live_tool", "cyt_mcp:candidate_only"}),
         require_tool_engagement=True,
@@ -285,7 +285,7 @@ def test_build_kind_detail_groups_and_histogram_match() -> None:
             effective_tier=Tier.HOT,
         ),
     }
-    detail = build_kind_detail(states, kind="tool", cfg=cfg, session_id=1)
+    detail = build_kind_detail(states, kind="tool", cfg=cfg, wake_cycle_id=1)
     assert detail["histogram"]["T0"] == 1
     assert detail["histogram"]["T2"] == 1
     assert len(detail["by_tier"]["T0"]) == 1
@@ -309,7 +309,7 @@ def test_enrich_skill_detail_adds_workspace_discovered_skill(tmp_path: Path) -> 
         "skills": {"directories": [".agents/skills"]},
         "agents": isolated_skills_agents_block(),
     }
-    detail = build_kind_detail({}, kind=EntityKind.SKILL, cfg=_cfg(), session_id=1)
+    detail = build_kind_detail({}, kind=EntityKind.SKILL, cfg=_cfg(), wake_cycle_id=1)
     enriched = enrich_skill_detail_with_workspace_discoveries(
         detail,
         states={},
@@ -317,7 +317,7 @@ def test_enrich_skill_detail_adds_workspace_discovered_skill(tmp_path: Path) -> 
         config=config,
         workspace_root=workspace,
         agent="cursor",
-        session_id=1,
+        wake_cycle_id=1,
     )
 
     assert enriched["histogram"]["T0"] == 1
@@ -358,7 +358,7 @@ def test_enrich_skill_detail_skips_tracked_and_outside_workspace(tmp_path: Path)
         "skills": {"directories": [".agents/skills", str(outside)]},
         "agents": isolated_skills_agents_block(),
     }
-    detail = build_kind_detail(states, kind=EntityKind.SKILL, cfg=_cfg(), session_id=1)
+    detail = build_kind_detail(states, kind=EntityKind.SKILL, cfg=_cfg(), wake_cycle_id=1)
     enriched = enrich_skill_detail_with_workspace_discoveries(
         detail,
         states=states,
@@ -366,7 +366,7 @@ def test_enrich_skill_detail_skips_tracked_and_outside_workspace(tmp_path: Path)
         config=config,
         workspace_root=workspace,
         agent="cursor",
-        session_id=1,
+        wake_cycle_id=1,
     )
 
     assert enriched["histogram"]["T2"] == 1

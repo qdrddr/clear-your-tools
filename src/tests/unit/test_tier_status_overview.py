@@ -19,6 +19,7 @@ from cyt.tiers.status_overview import (
     _path_display,
     _short_path,
     build_status_overview,
+    format_duration_compact,
     format_overview_text,
 )
 from cyt.tiers.status_view import (
@@ -152,7 +153,9 @@ def test_build_status_overview_groups_servers(
             "histogram": {"T0": 0, "T1": 0, "T2": 0, "T3": 0, "T4": 0},
         },
         "epoch_id": 1,
-        "session_id": 2,
+        "wake_cycle_id": 2,
+        "epoch_timeout_seconds": 300,
+        "epoch_remaining_seconds": 120,
     }
     overview = build_status_overview(
         status,
@@ -418,7 +421,7 @@ def test_filter_skill_detail_by_path_discovers_disk_only(
         agent="cursor",
         states={},
         cfg=tier_section_config({}, kind="skill"),
-        session_id=0,
+        wake_cycle_id=0,
     )
     names = [
         item.get("name")
@@ -427,3 +430,52 @@ def test_filter_skill_detail_by_path_discovers_disk_only(
         if isinstance(item, dict)
     ]
     assert "disk-only" in names
+
+
+def test_format_duration_compact() -> None:
+    assert format_duration_compact(45) == "45"
+    assert format_duration_compact(60) == "1:00"
+    assert format_duration_compact(154) == "2:34"
+
+
+def test_format_overview_text_includes_epoch_timing() -> None:
+    payload = {
+        "project_id": 1,
+        "root_path": "/tmp/project",
+        "overview": {
+            "epoch": {
+                "epoch_id": 83,
+                "wake_cycle_id": 42,
+                "epoch_timeout_seconds": 300,
+                "epoch_remaining_seconds": 154,
+            },
+            "tiers": {"tools": {"mode": "live"}, "skills": {"mode": "live"}},
+            "tier_statistics": {},
+        },
+    }
+    text = format_overview_text(payload)
+    assert "wake_cycle_id: 42" in text
+    assert "epoch_timeout: 5:00" in text
+    assert "epoch_remaining: 2:34" in text
+    assert "session_id" not in text
+
+
+def test_build_status_overview_includes_epoch_timing_fields() -> None:
+    overview = build_status_overview(
+        {
+            "epoch_id": 1,
+            "wake_cycle_id": 3,
+            "epoch_timeout_seconds": 45,
+            "epoch_remaining_seconds": 12,
+            "tools": {"mode": "shadow"},
+            "skills": {"mode": "shadow"},
+        },
+        config={},
+        workspace_root=Path("/tmp"),
+        agent="cursor",
+    )
+    epoch = overview.get("epoch")
+    assert isinstance(epoch, dict)
+    assert epoch.get("wake_cycle_id") == 3
+    assert epoch.get("epoch_timeout_seconds") == 45
+    assert epoch.get("epoch_remaining_seconds") == 12

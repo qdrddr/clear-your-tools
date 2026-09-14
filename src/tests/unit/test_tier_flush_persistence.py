@@ -68,7 +68,7 @@ def test_seed_tier_flush_db_writes_epoch_and_stats(tmp_path: Path) -> None:
     manager = reload_manager_from_disk(pack)
     try:
         assert manager._epoch.epoch_id == 2
-        assert manager._epoch.session_id == 7
+        assert manager._epoch.wake_cycle_id == 7
     finally:
         manager.close()
 

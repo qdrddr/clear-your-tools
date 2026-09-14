@@ -22,7 +22,7 @@
       "epoch_id": 2,
       "epoch_start_ms": 1700000000000,
       "last_request_ms": 1700000001000,
-      "session_id": 7
+      "wake_cycle_id": 7
     },
     "tools": {
       "cyt_mcp:gitnexus_query": {

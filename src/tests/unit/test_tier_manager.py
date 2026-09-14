@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,12 @@ from cyt.tiers.adapters.tools import (
     tool_entity_id,
 )
 from cyt.tiers.config import tier_section_config
-from cyt.tiers.evaluator import epoch_boundary, evaluate_slow_clock
+from cyt.tiers.evaluator import (
+    epoch_boundary,
+    epoch_remaining_ms,
+    epoch_ttl_ms,
+    evaluate_slow_clock,
+)
 from cyt.tiers.manager import TierManager
 from cyt.tiers.models import EffectiveStats, EntityTierState, EpochState, Tier, TierProject
 from cyt.tiers.store import TierStore
@@ -254,7 +260,7 @@ def test_fast_wake_from_dormant(manager: TierManager, base_config: dict) -> None
         effective_tier=Tier.DORMANT,
         stats=EffectiveStats(used_without_injection=1),
     )
-    transition = evaluate_fast_wake(state, cfg=cfg, session_id=1)
+    transition = evaluate_fast_wake(state, cfg=cfg, wake_cycle_id=1)
     assert transition is not None
     assert state.effective_tier == Tier.COLD
 
@@ -283,6 +289,172 @@ def test_slow_clock_promotion() -> None:
     transitions = evaluate_slow_clock({("tool", "tool:a"): state}, cfg=cfg, epoch=EpochState())
     assert transitions
     assert state.stable_tier == Tier.ACTIVE
+
+
+def test_epoch_crystallizes_successful_tool_use_before_temp_expiry() -> None:
+    from cyt.tiers.evaluator import crystallize_successful_tool_promotions_at_epoch
+
+    future_ms = 9_999_999_999_999
+    state = EntityTierState(
+        entity_id="cyt_mcp:gitnexus_query",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.HOT,
+        overlap_tier=Tier.ACTIVE,
+        temp_promotion_until_ms=future_ms,
+        stats=EffectiveStats(
+            used=3.0,
+            attempts=4.0,
+            injected=5.0,
+            candidates=7.0,
+            epoch_used=1.0,
+            epoch_attempts=1.0,
+        ),
+    )
+    transitions = crystallize_successful_tool_promotions_at_epoch(
+        {("tool", state.entity_id): state},
+        epoch=EpochState(epoch_id=7),
+    )
+    assert state.stable_tier == Tier.HOT
+    assert state.effective_tier == Tier.HOT
+    assert state.temp_promotion_until_ms is None
+    assert state.overlap_tier is None
+    assert transitions
+    assert transitions[0].reason == "slow_promote_epoch_crystallized"
+    assert transitions[0].temporary is False
+
+
+def test_fast_promote_on_tool_use_jumps_cold_tool_to_hot() -> None:
+    from cyt.tiers.wake import fast_promote_on_tool_use
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:codebase-memory_search_graph",
+        kind="tool",
+        stable_tier=Tier.COLD,
+        effective_tier=Tier.COLD,
+        stats=EffectiveStats(used=1.0, attempts=1.0),
+    )
+    transition = fast_promote_on_tool_use(state, cfg=None)
+    assert transition is not None
+    assert state.effective_tier == Tier.HOT
+    assert state.stable_tier == Tier.COLD
+    assert state.temp_promotion_until_ms is not None
+
+
+def test_fast_promote_on_tool_use_does_not_retemp_stable_hot_tools() -> None:
+    from cyt.tiers.wake import fast_promote_on_tool_use
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:gitnexus_query",
+        kind="tool",
+        stable_tier=Tier.HOT,
+        effective_tier=Tier.HOT,
+        stats=EffectiveStats(used=5.0, attempts=5.0),
+    )
+    assert fast_promote_on_tool_use(state, cfg=None) is None
+    assert state.temp_promotion_until_ms is None
+    assert state.overlap_tier is None
+
+
+def test_epoch_crystallizes_despite_poor_lifetime_execution() -> None:
+    from cyt.tiers.evaluator import (
+        crystallize_successful_tool_promotions_at_epoch,
+        evaluate_slow_clock,
+    )
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:codebase-memory_search_graph",
+        kind="tool",
+        stable_tier=Tier.COLD,
+        effective_tier=Tier.ACTIVE,
+        stats=EffectiveStats(
+            used=3.0,
+            attempts=11.0,
+            injected=8.0,
+            candidates=13.0,
+            epoch_used=1.0,
+            epoch_attempts=3.0,
+        ),
+    )
+    key = ("tool", state.entity_id)
+    transitions = crystallize_successful_tool_promotions_at_epoch(
+        {key: state},
+        epoch=EpochState(epoch_id=9),
+    )
+    assert state.stable_tier == Tier.HOT
+    assert transitions[0].reason == "slow_promote_epoch_crystallized"
+    demotions = evaluate_slow_clock({key: state}, cfg=tier_section_config({}, kind="tool"), epoch=EpochState())
+    assert not demotions
+
+
+def test_epoch_success_blocks_demotion_of_stable_hot_tool() -> None:
+    from cyt.tiers.evaluator import evaluate_slow_clock
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:gitnexus_query",
+        kind="tool",
+        stable_tier=Tier.HOT,
+        effective_tier=Tier.HOT,
+        stats=EffectiveStats(
+            injected=8.0,
+            candidates=13.0,
+            used=6.0,
+            attempts=7.0,
+            epoch_used=1.0,
+            epoch_attempts=1.0,
+        ),
+    )
+    cfg = tier_section_config({}, kind="tool")
+    transitions = evaluate_slow_clock({("tool", state.entity_id): state}, cfg=cfg, epoch=EpochState())
+    assert transitions == []
+    assert state.stable_tier == Tier.HOT
+
+
+def test_expire_temporary_promotions_crystallizes_successful_tool_use() -> None:
+    from cyt.tiers.evaluator import expire_temporary_promotions
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:gitnexus_query",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.HOT,
+        overlap_tier=Tier.ACTIVE,
+        temp_promotion_until_ms=1,
+        stats=EffectiveStats(
+            used=3.0,
+            attempts=4.0,
+            injected=5.0,
+            candidates=7.0,
+            epoch_used=1.0,
+            epoch_attempts=1.0,
+        ),
+    )
+    transitions = expire_temporary_promotions({("tool", state.entity_id): state}, now_ms=2)
+    assert state.stable_tier == Tier.HOT
+    assert state.effective_tier == Tier.HOT
+    assert state.temp_promotion_until_ms is None
+    assert transitions
+    assert transitions[0].reason == "slow_promote_temp_crystallized"
+    assert transitions[0].temporary is False
+
+
+def test_expire_temporary_promotions_reverts_unused_tool_temp_promotion() -> None:
+    from cyt.tiers.evaluator import expire_temporary_promotions
+
+    state = EntityTierState(
+        entity_id="cyt_mcp:unused_tool",
+        kind="tool",
+        stable_tier=Tier.ACTIVE,
+        effective_tier=Tier.HOT,
+        overlap_tier=Tier.ACTIVE,
+        temp_promotion_until_ms=1,
+        stats=EffectiveStats(injected=2.0, candidates=7.0),
+    )
+    transitions = expire_temporary_promotions({("tool", state.entity_id): state}, now_ms=2)
+    assert state.stable_tier == Tier.ACTIVE
+    assert state.effective_tier == Tier.ACTIVE
+    assert transitions
+    assert transitions[0].reason == "temp_promotion_expired"
 
 
 def test_slow_clock_demotes_t2_without_injection_when_exposure_high() -> None:
@@ -353,3 +525,63 @@ def test_execution_score_uses_attempts_denominator() -> None:
 
     stats = EffectiveStats(injected=10.0, used=5.0, attempts=20.0)
     assert execution_score(stats) < utility_score(stats)
+
+
+def test_begin_request_cycle_increments_wake_cycle_id(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    initial = manager._epoch.wake_cycle_id
+    manager.begin_request_cycle(config_with_tiers_shadow)
+    assert manager._epoch.wake_cycle_id == initial + 1
+    manager.begin_request_cycle(config_with_tiers_shadow)
+    assert manager._epoch.wake_cycle_id == initial + 1
+    manager.end_request_cycle()
+    manager.begin_request_cycle(config_with_tiers_shadow)
+    assert manager._epoch.wake_cycle_id == initial + 2
+
+
+def test_begin_request_cycle_runs_fast_sleep_for_inactive_t1(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    manager._states[("tool", "cyt_mcp:idle")] = EntityTierState(
+        entity_id="cyt_mcp:idle",
+        kind="tool",
+        stable_tier=Tier.COLD,
+        effective_tier=Tier.COLD,
+    )
+    manager.begin_request_cycle(config_with_tiers_shadow)
+    state = manager._states[("tool", "cyt_mcp:idle")]
+    assert state.effective_tier == Tier.DORMANT
+    manager.end_request_cycle()
+
+
+def test_epoch_remaining_ms_respects_ttl(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    cfg = tier_section_config(config_with_tiers_shadow, kind="tool")
+    now_ms = 1_000_000
+    manager._epoch.epoch_start_ms = now_ms - 60_000
+    remaining = epoch_remaining_ms(now_ms=now_ms, epoch=manager._epoch, cfg=cfg)
+    assert remaining == epoch_ttl_ms(cfg) - 60_000
+    assert remaining > 0
+
+
+def test_status_advances_expired_epoch_for_remaining_display(
+    manager: TierManager,
+    config_with_tiers_shadow: dict,
+) -> None:
+    cfg = tier_section_config(config_with_tiers_shadow, kind="tool")
+    ttl_ms = epoch_ttl_ms(cfg)
+    expired_start = int(time.time() * 1000) - ttl_ms - 60_000
+    manager._epoch.epoch_start_ms = expired_start
+    manager._epoch.last_request_ms = expired_start
+    initial_epoch_id = manager._epoch.epoch_id
+
+    summary = manager.status(config_with_tiers_shadow)
+
+    assert manager._epoch.epoch_id == initial_epoch_id + 1
+    assert summary["epoch_remaining_seconds"] > 0
+    assert summary["epoch_remaining_seconds"] <= ttl_ms // 1000

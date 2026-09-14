@@ -1,0 +1,223 @@
+{
+  "tool": {
+    "wire_name": "gitnexus_query",
+    "entity_id": "cyt_mcp:gitnexus_query",
+    "mcp_server": "gitnexus",
+    "bare_tool_name": "query",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "search_query": {"type": "string"}
+      },
+      "required": ["search_query"]
+    }
+  },
+  "config": {
+    "wake_lease_cycles": 2,
+    "sleep_cooldown_cycles": 3,
+    "prompt_cache_ttl_minutes": 5,
+    "ttl_multiplier": 1.0,
+    "idle_gap_triggers_epoch": true,
+    "disk_flush_seconds": 900
+  },
+  "seed_states": {
+    "epoch": {
+      "epoch_id": 12,
+      "epoch_start_ms": 1700000000000,
+      "last_request_ms": 1700000000500,
+      "wake_cycle_id": 41
+    },
+    "tools": {
+      "cyt_mcp:gitnexus_query": {
+        "stable_tier": "ACTIVE",
+        "effective_tier": "ACTIVE",
+        "stats": {
+          "candidates": 4.0,
+          "injected": 2.0,
+          "used": 3.0,
+          "attempts": 5.0
+        }
+      },
+      "cyt_mcp:idle_tool": {
+        "stable_tier": "COLD",
+        "effective_tier": "COLD",
+        "wake_lease_until_cycle": 0,
+        "sleep_cooldown_until_cycle": 0,
+        "stats": {}
+      },
+      "cyt_mcp:leased_tool": {
+        "stable_tier": "COLD",
+        "effective_tier": "COLD",
+        "wake_lease_until_cycle": 50,
+        "sleep_cooldown_until_cycle": 0,
+        "stats": {}
+      }
+    }
+  },
+  "fixed_now_ms": 1700000060000,
+  "epoch_timing": [
+    {
+      "id": "mid_epoch",
+      "now_ms": 1700000060000,
+      "epoch_start_ms": 1700000000000,
+      "last_request_ms": 1700000000500,
+      "expected_remaining_ms": 240000,
+      "expected_timeout_ms": 300000
+    },
+    {
+      "id": "epoch_expired",
+      "now_ms": 1700000300000,
+      "epoch_start_ms": 1700000000000,
+      "last_request_ms": 1700000000500,
+      "expected_remaining_ms": 0,
+      "expected_timeout_ms": 300000
+    },
+    {
+      "id": "idle_gap_limits_remaining",
+      "now_ms": 1700000060000,
+      "epoch_start_ms": 1700000000000,
+      "last_request_ms": 1699999940000,
+      "expected_remaining_ms": 180000,
+      "expected_timeout_ms": 300000
+    }
+  ],
+  "duration_format": [
+    {"id": "plain_seconds", "seconds": 45, "expected": "45"},
+    {"id": "exact_minute", "seconds": 60, "expected": "1:00"},
+    {"id": "minutes_and_seconds", "seconds": 154, "expected": "2:34"},
+    {"id": "zero_seconds", "seconds": 0, "expected": "0"}
+  ],
+  "fast_wake": [
+    {
+      "id": "direct_use_bypasses_threshold",
+      "wake_cycle_id": 5,
+      "sleep_cooldown_until_cycle": 0,
+      "stats": {"used_without_injection": 1.0},
+      "expected_tier": "COLD",
+      "expect_transition": true
+    },
+    {
+      "id": "blocked_by_sleep_cooldown",
+      "wake_cycle_id": 3,
+      "sleep_cooldown_until_cycle": 5,
+      "stats": {"used_without_injection": 1.0},
+      "expected_tier": "DORMANT",
+      "expect_transition": false
+    },
+    {
+      "id": "shadow_alone_insufficient",
+      "wake_cycle_id": 8,
+      "sleep_cooldown_until_cycle": 0,
+      "stats": {"shadow_hits": 20.0, "shadow_evaluations": 20.0},
+      "expected_tier": "DORMANT",
+      "expect_transition": false
+    }
+  ],
+  "fast_sleep": [
+    {
+      "id": "inactive_no_lease",
+      "wake_cycle_id": 10,
+      "wake_lease_until_cycle": 0,
+      "had_selection": false,
+      "had_use": false,
+      "had_shadow": false,
+      "stats": {},
+      "expected_tier": "DORMANT",
+      "expect_transition": true
+    },
+    {
+      "id": "protected_by_wake_lease",
+      "wake_cycle_id": 10,
+      "wake_lease_until_cycle": 12,
+      "had_selection": false,
+      "had_use": false,
+      "had_shadow": false,
+      "stats": {},
+      "expected_tier": "COLD",
+      "expect_transition": false
+    },
+    {
+      "id": "activity_extends_lease",
+      "wake_cycle_id": 12,
+      "wake_lease_until_cycle": 11,
+      "had_selection": true,
+      "had_use": false,
+      "had_shadow": false,
+      "stats": {},
+      "expected_tier": "COLD",
+      "expect_transition": false,
+      "expected_wake_lease_until_cycle": 14
+    },
+    {
+      "id": "direct_use_prevents_sleep",
+      "wake_cycle_id": 10,
+      "wake_lease_until_cycle": 0,
+      "had_selection": false,
+      "had_use": false,
+      "had_shadow": false,
+      "stats": {"used_without_injection": 1.0},
+      "expected_tier": "COLD",
+      "expect_transition": false
+    }
+  ],
+  "request_cycle": [
+    {
+      "id": "persist_after_increment",
+      "initial_wake_cycle_id": 41,
+      "expected_after_begin": 42,
+      "persisted_to_disk": true
+    },
+    {
+      "id": "sleep_idle_t1_before_increment",
+      "entity_id": "cyt_mcp:idle_tool",
+      "expected_tier_after_begin": "DORMANT"
+    }
+  ],
+  "config_legacy_keys": {
+    "wake": {
+      "lease_sessions": 7,
+      "cooldown_sessions": 4
+    },
+    "expected_wake_lease_cycles": 7,
+    "expected_sleep_cooldown_cycles": 4
+  },
+  "http_payloads": [
+    {
+      "id": "tool_used_success",
+      "payload": {
+        "event": "tool_used",
+        "source": "cyt_mcp",
+        "success": true,
+        "tool_name": "gitnexus_query",
+        "catalog": "cyt_mcp",
+        "args": {"search_query": "wake cycle feedback"}
+      },
+      "expected": {"attempts": 1.0, "used": 1.0}
+    }
+  ],
+  "integration": [
+    {
+      "id": "coordinator_advances_wake_cycle",
+      "initial_wake_cycle_id": 41,
+      "expected_after_prune": 42
+    },
+    {
+      "id": "http_feedback_no_cycle_advance",
+      "initial_wake_cycle_id": 41,
+      "payload_id": "tool_used_success",
+      "expected_wake_cycle_id": 41
+    },
+    {
+      "id": "stats_epoch_fields",
+      "expected_wake_cycle_id": 41,
+      "expected_epoch_id": 12,
+      "expected_timeout_seconds": 300,
+      "expected_remaining_seconds": 240
+    },
+    {
+      "id": "reload_manager_sees_persisted_cycle",
+      "initial_wake_cycle_id": 41,
+      "expected_after_begin": 42
+    }
+  ]
+}

@@ -12,20 +12,63 @@ from cyt.tiers.scores import demand_score, utility_score
 logger = logging.getLogger(__name__)
 
 
+def epoch_ttl_ms(cfg: TierSectionConfig) -> int:
+    ttl_ms = int(cfg.prompt_cache_ttl_minutes * 60 * 1000 * cfg.ttl_multiplier)
+    if ttl_ms <= 0:
+        ttl_ms = 5 * 60 * 1000
+    return ttl_ms
+
+
+def epoch_age_remaining_ms(
+    *,
+    now_ms: int,
+    epoch: EpochState,
+    cfg: TierSectionConfig,
+) -> int:
+    ttl_ms = epoch_ttl_ms(cfg)
+    return max(0, ttl_ms - (now_ms - epoch.epoch_start_ms))
+
+
+def epoch_idle_remaining_ms(
+    *,
+    now_ms: int,
+    epoch: EpochState,
+    cfg: TierSectionConfig,
+) -> int:
+    if not cfg.idle_gap_triggers_epoch:
+        return epoch_ttl_ms(cfg)
+    idle_limit_ms = int(cfg.prompt_cache_ttl_minutes * 60 * 1000)
+    return max(0, idle_limit_ms - (now_ms - epoch.last_request_ms))
+
+
+def epoch_remaining_ms(
+    *,
+    now_ms: int,
+    epoch: EpochState,
+    cfg: TierSectionConfig,
+) -> int:
+    return min(
+        epoch_age_remaining_ms(now_ms=now_ms, epoch=epoch, cfg=cfg),
+        epoch_idle_remaining_ms(now_ms=now_ms, epoch=epoch, cfg=cfg),
+    )
+
+
+def epoch_age_expired(
+    *,
+    now_ms: int,
+    epoch: EpochState,
+    cfg: TierSectionConfig,
+) -> bool:
+    return epoch_age_remaining_ms(now_ms=now_ms, epoch=epoch, cfg=cfg) <= 0
+
+
 def epoch_boundary(
     *,
     now_ms: int,
     epoch: EpochState,
     cfg: TierSectionConfig,
 ) -> bool:
-    ttl_ms = int(cfg.prompt_cache_ttl_minutes * 60 * 1000 * cfg.ttl_multiplier)
-    if ttl_ms <= 0:
-        ttl_ms = 5 * 60 * 1000
-    if cfg.idle_gap_triggers_epoch:
-        idle_ms = now_ms - epoch.last_request_ms
-        if idle_ms >= int(cfg.prompt_cache_ttl_minutes * 60 * 1000):
-            return True
-    return (now_ms - epoch.epoch_start_ms) >= ttl_ms
+    return epoch_remaining_ms(now_ms=now_ms, epoch=epoch, cfg=cfg) <= 0
 
 
 def _min_injections_met(state: EntityTierState, minimum: int) -> bool:
@@ -86,6 +129,10 @@ def _demote_tier(state: EntityTierState, target: Tier, *, reason: str) -> TierTr
     )
 
 
+def _epoch_had_success(state: EntityTierState) -> bool:
+    return state.stats.epoch_used > 0
+
+
 def evaluate_slow_clock(  # noqa: C901
     states: dict[tuple[str, str], EntityTierState],
     *,
@@ -95,6 +142,8 @@ def evaluate_slow_clock(  # noqa: C901
     transitions: list[TierTransition] = []
     for state in states.values():
         if state.effective_tier <= Tier.DORMANT:
+            continue
+        if state.kind == "tool" and _epoch_had_success(state):
             continue
         d = demand_score(state.stats)
         u = utility_score(state.stats)
@@ -171,6 +220,38 @@ def evaluate_slow_clock(  # noqa: C901
     return transitions
 
 
+def crystallize_successful_tool_promotions_at_epoch(
+    states: dict[tuple[str, str], EntityTierState],
+    *,
+    epoch: EpochState,
+) -> list[TierTransition]:
+    """Promote tools with successful use this epoch to stable HOT (recent signal wins)."""
+    transitions: list[TierTransition] = []
+    for state in states.values():
+        if state.kind != "tool" or not _epoch_had_success(state):
+            continue
+        state.temp_promotion_until_ms = None
+        state.overlap_tier = None
+        if state.stable_tier >= Tier.HOT:
+            state.effective_tier = state.stable_tier
+            continue
+        target = max(state.effective_tier, Tier.HOT)
+        old_stable = state.stable_tier
+        state.stable_tier = target
+        state.effective_tier = target
+        transitions.append(
+            TierTransition(
+                kind=state.kind,
+                entity_id=state.entity_id,
+                from_tier=old_stable,
+                to_tier=target,
+                reason="slow_promote_epoch_crystallized",
+                temporary=False,
+            ),
+        )
+    return transitions
+
+
 def expire_temporary_promotions(
     states: dict[tuple[str, str], EntityTierState],
     *,
@@ -183,6 +264,28 @@ def expire_temporary_promotions(
             continue
         if state.effective_tier != state.stable_tier:
             old = state.effective_tier
+            crystallize = (
+                state.kind == "tool"
+                and old > state.stable_tier
+                and state.stats.used > 0
+            )
+            if crystallize:
+                old_stable = state.stable_tier
+                state.stable_tier = old
+                state.effective_tier = old
+                state.overlap_tier = None
+                state.temp_promotion_until_ms = None
+                transitions.append(
+                    TierTransition(
+                        kind=state.kind,
+                        entity_id=state.entity_id,
+                        from_tier=old_stable,
+                        to_tier=old,
+                        reason="slow_promote_temp_crystallized",
+                        temporary=False,
+                    ),
+                )
+                continue
             state.effective_tier = state.stable_tier
             state.overlap_tier = None
             state.temp_promotion_until_ms = None

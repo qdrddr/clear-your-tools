@@ -297,7 +297,9 @@ _FILTERED_JSON_HEADER_KEYS = (
     "root_path",
     "agent",
     "epoch_id",
-    "session_id",
+    "wake_cycle_id",
+    "epoch_timeout_seconds",
+    "epoch_remaining_seconds",
     "epoch_start_ms",
     "last_request_ms",
 )
@@ -554,9 +556,20 @@ def _append_compact_entity_summaries(
 
 
 def _append_verbose_status_header(lines: list[str], payload: dict[str, Any]) -> None:
+    from cyt.tiers.status_overview import format_duration_compact
+
     lines.append(
-        f"epoch_id: {payload.get('epoch_id')} session_id: {payload.get('session_id')}",
+        f"epoch_id: {payload.get('epoch_id')} wake_cycle_id: {payload.get('wake_cycle_id')}",
     )
+    timeout_seconds = payload.get("epoch_timeout_seconds")
+    remaining_seconds = payload.get("epoch_remaining_seconds")
+    if isinstance(timeout_seconds, int) and isinstance(remaining_seconds, int):
+        lines.append(
+            "epoch_timeout: "
+            f"{format_duration_compact(timeout_seconds)}  "
+            "epoch_remaining: "
+            f"{format_duration_compact(remaining_seconds)}",
+        )
     if payload.get("epoch_start_ms"):
         lines.append(
             f"epoch_start_ms: {payload.get('epoch_start_ms')} "

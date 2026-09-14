@@ -252,8 +252,8 @@ def normalize_tool_entity_states(
                 overlap_tier=state.overlap_tier,
                 tier_since_epoch=state.tier_since_epoch,
                 temp_promotion_until_ms=state.temp_promotion_until_ms,
-                wake_lease_until_session=state.wake_lease_until_session,
-                sleep_cooldown_until_session=state.sleep_cooldown_until_session,
+                wake_lease_until_cycle=state.wake_lease_until_cycle,
+                sleep_cooldown_until_cycle=state.sleep_cooldown_until_cycle,
                 pipeline=state.pipeline,
                 stats=EffectiveStats(
                     candidates=state.stats.candidates,

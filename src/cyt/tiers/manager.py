@@ -36,7 +36,15 @@ from cyt.tiers.config import (
     tiers_active,
     tiers_apply,
 )
-from cyt.tiers.evaluator import epoch_boundary, evaluate_slow_clock, expire_temporary_promotions
+from cyt.tiers.evaluator import (
+    crystallize_successful_tool_promotions_at_epoch,
+    epoch_age_expired,
+    epoch_boundary,
+    epoch_remaining_ms,
+    epoch_ttl_ms,
+    evaluate_slow_clock,
+    expire_temporary_promotions,
+)
 from cyt.tiers.models import (
     EntityKind,
     EntityTierState,
@@ -56,7 +64,11 @@ from cyt.tiers.status_detail import (
     effective_tier_for,
 )
 from cyt.tiers.store import TierStore
-from cyt.tiers.wake import fast_promote_on_optional_use, fast_promote_on_tool_use
+from cyt.tiers.wake import (
+    evaluate_fast_sleep,
+    fast_promote_on_optional_use,
+    fast_promote_on_tool_use,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +90,14 @@ class NoOpTierManager:
             epoch_id=0,
             epoch_start_ms=0,
             last_request_ms=0,
-            session_id=0,
+            wake_cycle_id=0,
         )
+
+    def begin_request_cycle(self, config: dict[str, Any]) -> None:
+        return
+
+    def end_request_cycle(self) -> None:
+        return
 
     def close(self) -> None:
         return
@@ -90,7 +108,7 @@ class NoOpTierManager:
             project=None,
             epoch_id=0,
             epoch_start_ms=0,
-            session_id=0,
+            wake_cycle_id=0,
             entities={},
             mode=cfg.mode,
         )
@@ -101,7 +119,7 @@ class NoOpTierManager:
             project=None,
             epoch_id=0,
             epoch_start_ms=0,
-            session_id=0,
+            wake_cycle_id=0,
             entities={},
             mode=cfg.mode,
         )
@@ -181,7 +199,9 @@ class NoOpTierManager:
             "root_path": None,
             "histogram": {},
             "epoch_id": 0,
-            "session_id": 0,
+            "wake_cycle_id": 0,
+            "epoch_timeout_seconds": 0,
+            "epoch_remaining_seconds": 0,
             "epoch_start_ms": 0,
             "last_request_ms": 0,
             "tools": empty_kind,
@@ -228,6 +248,10 @@ class TierManager:
         self._pending_flush = False
         self._last_injected_tools: set[str] = set()
         self._last_injected_skills: set[str] = set()
+        self._request_cycle_open = False
+        self._cycle_selected: set[tuple[str, str]] = set()
+        self._cycle_used: set[tuple[str, str]] = set()
+        self._cycle_shadow: set[tuple[str, str]] = set()
         self._rebuild_snapshots(mode=TierMode.SHADOW)
 
     def close(self) -> None:
@@ -250,9 +274,9 @@ class TierManager:
         with self._state_lock:
             self._pending_flush = True
 
-    def _finish_record(self, config: dict[str, Any]) -> None:
+    def _finish_record(self, config: dict[str, Any], *, sync_flush: bool = False) -> None:
         self._mark_dirty()
-        if tier_disk_flush_seconds(config) <= 0:
+        if sync_flush or tier_disk_flush_seconds(config) <= 0:
             self.flush_pending(force=True)
 
     def _workspace_scoped_config(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -343,7 +367,7 @@ class TierManager:
             project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
-            session_id=self._epoch.session_id,
+            wake_cycle_id=self._epoch.wake_cycle_id,
             entities=entities,
             mode=cfg.mode,
         )
@@ -353,7 +377,7 @@ class TierManager:
             project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
-            session_id=self._epoch.session_id,
+            wake_cycle_id=self._epoch.wake_cycle_id,
             entities={
                 key: EntityTierView(
                     entity_id=state.entity_id,
@@ -371,7 +395,7 @@ class TierManager:
             project=self.project,
             epoch_id=self._epoch.epoch_id,
             epoch_start_ms=self._epoch.epoch_start_ms,
-            session_id=self._epoch.session_id,
+            wake_cycle_id=self._epoch.wake_cycle_id,
             entities={
                 key: EntityTierView(
                     entity_id=state.entity_id,
@@ -434,6 +458,67 @@ class TierManager:
         for state in self._states.values():
             state.stats.decay(half_life=cfg.request_half_life)
 
+    @staticmethod
+    def _touch_stats_request(state: EntityTierState) -> None:
+        state.stats.requests_since_decay += 1
+
+    def _clear_cycle_activity(self) -> None:
+        self._cycle_selected.clear()
+        self._cycle_used.clear()
+        self._cycle_shadow.clear()
+
+    def _mark_cycle_selected(self, kind: str, entity_id: str) -> None:
+        self._cycle_selected.add((kind, entity_id))
+
+    def _mark_cycle_used(self, kind: str, entity_id: str) -> None:
+        self._cycle_used.add((kind, entity_id))
+
+    def _mark_cycle_shadow(self, kind: str, entity_id: str) -> None:
+        self._cycle_shadow.add((kind, entity_id))
+
+    def _evaluate_fast_sleep_all(self, cfg: TierSectionConfig) -> None:
+        wake_cycle_id = self._epoch.wake_cycle_id
+        for key, state in self._states.items():
+            if state.effective_tier != Tier.COLD:
+                continue
+            evaluate_fast_sleep(
+                state,
+                cfg=cfg,
+                wake_cycle_id=wake_cycle_id,
+                had_selection=key in self._cycle_selected,
+                had_use=key in self._cycle_used,
+                had_shadow=key in self._cycle_shadow,
+            )
+
+    def begin_request_cycle(self, config: dict[str, Any]) -> None:
+        if not (tiers_active(config, kind="tool") or tiers_active(config, kind="skill")):
+            return
+        with self._state_lock:
+            if self._request_cycle_open:
+                return
+            cfg = tier_section_config(config, kind="tool")
+            self._evaluate_fast_sleep_all(cfg)
+            self._epoch.wake_cycle_id += 1
+            self._clear_cycle_activity()
+            self._request_cycle_open = True
+            # Persist wake cycle immediately so tiers stats / other processes see it
+            # without waiting for deferred entity-stat flushes.
+            self._store.save_epoch_state(self.project, self._epoch)
+            self._mark_dirty()
+
+    def end_request_cycle(self) -> None:
+        with self._state_lock:
+            self._request_cycle_open = False
+
+    def _advance_epoch_if_age_expired(self, config: dict[str, Any]) -> bool:
+        """Roll slow-clock epoch when age TTL elapsed (ignores idle-gap-only expiry)."""
+        tool_cfg = tier_section_config(config, kind="tool")
+        now_ms = int(time.time() * 1000)
+        if not epoch_age_expired(now_ms=now_ms, epoch=self._epoch, cfg=tool_cfg):
+            return False
+        self._run_epoch(config)
+        return True
+
     def _touch_request(self, config: dict[str, Any]) -> bool:
         """Update epoch bookkeeping. Returns True when a sync epoch flush already ran."""
         now_ms = int(time.time() * 1000)
@@ -450,10 +535,14 @@ class TierManager:
         cfg = tier_section_config(config, kind="tool")
         now_ms = int(time.time() * 1000)
         transitions: list[TierTransition] = []
+        transitions.extend(
+            crystallize_successful_tool_promotions_at_epoch(
+                self._states,
+                epoch=self._epoch,
+            ),
+        )
         transitions.extend(expire_temporary_promotions(self._states, now_ms=now_ms))
         transitions.extend(evaluate_slow_clock(self._states, cfg=cfg, epoch=self._epoch))
-        for state in self._states.values():
-            self._store.upsert_entity_state(self.project, state)
         if transitions:
             self._store.append_epoch_log(
                 self.project,
@@ -466,8 +555,14 @@ class TierManager:
                     self._epoch.epoch_id,
                     len(transitions),
                 )
+        for state in self._states.values():
+            state.stats.epoch_used = 0.0
+            state.stats.epoch_attempts = 0.0
+        for state in self._states.values():
+            self._store.upsert_entity_state(self.project, state)
         self._epoch.epoch_id += 1
         self._epoch.epoch_start_ms = now_ms
+        self._epoch.last_request_ms = now_ms
         self._store.save_epoch_state(self.project, self._epoch)
         self._pending_flush = False
 
@@ -491,7 +586,15 @@ class TierManager:
                     continue
                 state.stats.candidates += 1.0
                 state.stats.last_seen_ms = int(time.time() * 1000)
+                self._mark_cycle_selected(EntityKind.TOOL, entity_id)
             epoch_ran = self._touch_request(config)
+            for tool in tracked:
+                entity_id = tool_entity_id(tool)
+                if not entity_id:
+                    continue
+                state = self._states.get((EntityKind.TOOL, entity_id))
+                if state is not None:
+                    self._touch_stats_request(state)
         if not epoch_ran:
             self._finish_record(config)
 
@@ -520,8 +623,13 @@ class TierManager:
                     continue
                 state.stats.injected += 1.0
                 state.stats.last_seen_ms = int(time.time() * 1000)
+                self._mark_cycle_selected(EntityKind.TOOL, entity_id)
             self._last_injected_tools = injected_ids
             epoch_ran = self._touch_request(config)
+            for entity_id in injected_ids:
+                state = self._states.get((EntityKind.TOOL, entity_id))
+                if state is not None:
+                    self._touch_stats_request(state)
         if not epoch_ran:
             self._finish_record(config)
 
@@ -546,13 +654,17 @@ class TierManager:
         if not entity_id:
             return
         epoch_ran = False
+        sync_flush = False
         with self._state_lock:
             state = self._ensure_state(EntityKind.TOOL, entity_id)
             if state is None:
                 return
             state.stats.attempts += 1.0
+            state.stats.epoch_attempts += 1.0
             if success:
                 state.stats.used += 1.0
+                state.stats.epoch_used += 1.0
+                self._mark_cycle_used(EntityKind.TOOL, entity_id)
                 if entity_id not in self._last_injected_tools:
                     state.stats.used_without_injection += 1.0
                 if optional_used:
@@ -562,8 +674,13 @@ class TierManager:
                     fast_promote_on_tool_use(state, cfg=cfg)
             state.stats.last_seen_ms = int(time.time() * 1000)
             epoch_ran = self._touch_request(config)
+            self._touch_stats_request(state)
+            sync_flush = success and (
+                state.temp_promotion_until_ms is not None
+                or state.effective_tier > state.stable_tier
+            )
         if not epoch_ran:
-            self._finish_record(config)
+            self._finish_record(config, sync_flush=sync_flush)
 
     def record_tool_used(
         self,
@@ -598,6 +715,7 @@ class TierManager:
                     continue
                 state.stats.candidates += 1.0
                 state.stats.last_seen_ms = int(time.time() * 1000)
+                self._mark_cycle_selected(EntityKind.SKILL, entity_id)
             epoch_ran = self._touch_request(config)
         if not epoch_ran:
             self._finish_record(config)
@@ -632,6 +750,7 @@ class TierManager:
                     continue
                 state.stats.injected += 1.0
                 state.stats.last_seen_ms = int(time.time() * 1000)
+                self._mark_cycle_selected(EntityKind.SKILL, entity_id)
             self._last_injected_skills = injected
             epoch_ran = self._touch_request(config)
         if not epoch_ran:
@@ -652,6 +771,7 @@ class TierManager:
             if state is None:
                 return
             state.stats.used += 1.0
+            self._mark_cycle_used(EntityKind.SKILL, canonical_id)
             if canonical_id not in self._last_injected_skills:
                 state.stats.used_without_injection += 1.0
             epoch_ran = self._touch_request(config)
@@ -672,12 +792,14 @@ class TierManager:
         if not tracked_hits:
             return
         with self._state_lock:
+            for entity_id, _score in tracked_hits:
+                self._mark_cycle_shadow(EntityKind.TOOL, entity_id)
             transitions = record_shadow_hits(
                 self._states,
                 kind=EntityKind.TOOL,
                 hits=tracked_hits,
                 cfg=cfg,
-                session_id=self._epoch.session_id,
+                wake_cycle_id=self._epoch.wake_cycle_id,
             )
         if transitions and cfg.mode == TierMode.SHADOW:
             logger.debug("tool shadow transitions: %d", len(transitions))
@@ -690,6 +812,10 @@ class TierManager:
         agent: str | None = None,
         filter_by_permissions: bool = True,
     ) -> dict[str, Any]:
+        if config is not None and tiers_active(config, kind="tool"):
+            with self._state_lock:
+                self._advance_epoch_if_age_expired(config)
+
         now_ms = int(time.time() * 1000)
 
         def effective_fn(state: EntityTierState) -> Tier:
@@ -697,9 +823,17 @@ class TierManager:
 
         summary = self._store.status_summary(self.project)
         summary["epoch_id"] = self._epoch.epoch_id
-        summary["session_id"] = self._epoch.session_id
+        summary["wake_cycle_id"] = self._epoch.wake_cycle_id
         summary["epoch_start_ms"] = self._epoch.epoch_start_ms
         summary["last_request_ms"] = self._epoch.last_request_ms
+        tool_cfg = tier_section_config(config, kind="tool") if config is not None else None
+        if tool_cfg is not None:
+            summary["epoch_timeout_seconds"] = epoch_ttl_ms(tool_cfg) // 1000
+            summary["epoch_remaining_seconds"] = epoch_remaining_ms(
+                now_ms=now_ms,
+                epoch=self._epoch,
+                cfg=tool_cfg,
+            ) // 1000
         summary["histogram"] = build_combined_histogram(
             self._states,
             now_ms=now_ms,
@@ -729,7 +863,7 @@ class TierManager:
                 self._states,
                 kind=EntityKind.TOOL,
                 cfg=tool_cfg,
-                session_id=self._epoch.session_id,
+                wake_cycle_id=self._epoch.wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
                 config=scoped_config,
@@ -744,7 +878,7 @@ class TierManager:
                 config=scoped_config,
                 workspace_root=self.project.root_path,
                 catalog_tools=catalog_tools,
-                session_id=self._epoch.session_id,
+                wake_cycle_id=self._epoch.wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
             )
@@ -763,7 +897,7 @@ class TierManager:
                 self._states,
                 kind=EntityKind.SKILL,
                 cfg=skill_cfg,
-                session_id=self._epoch.session_id,
+                wake_cycle_id=self._epoch.wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
                 config=config,
@@ -776,7 +910,7 @@ class TierManager:
                 config=config,
                 workspace_root=self.project.root_path,
                 agent=resolved_agent,
-                session_id=self._epoch.session_id,
+                wake_cycle_id=self._epoch.wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=effective_fn,
             )

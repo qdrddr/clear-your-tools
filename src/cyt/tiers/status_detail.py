@@ -23,7 +23,13 @@ from cyt.tiers.entity_origin import (
     resolve_tool_origin_fields,
 )
 from cyt.tiers.models import EffectiveStats, EntityKind, EntityTierState, Tier
-from cyt.tiers.scores import demand_score, execution_score, shadow_score, utility_score
+from cyt.tiers.scores import (
+    demand_score,
+    epoch_execution_score,
+    execution_score,
+    shadow_score,
+    utility_score,
+)
 from cyt.tiers.wake import wake_pressure
 
 _TIER_LABELS = tuple(f"T{i}" for i in range(5))
@@ -72,8 +78,8 @@ def config_summary(cfg: TierSectionConfig) -> dict[str, Any]:
         "idle_gap_triggers_epoch": cfg.idle_gap_triggers_epoch,
         "min_injections_before_reconsider": cfg.min_injections_before_reconsider,
         "wake_threshold": cfg.wake_threshold,
-        "wake_lease_sessions": cfg.wake_lease_sessions,
-        "sleep_cooldown_sessions": cfg.sleep_cooldown_sessions,
+        "wake_lease_cycles": cfg.wake_lease_cycles,
+        "sleep_cooldown_cycles": cfg.sleep_cooldown_cycles,
         "emergency_t4_inject_min": cfg.emergency_t4_inject_min,
         "emergency_t4_utility_max": cfg.emergency_t4_utility_max,
         "temp_promotion_turns": cfg.temp_promotion_turns,
@@ -98,6 +104,8 @@ def _stats_dict(stats: EffectiveStats) -> dict[str, float | int]:
         "shadow_evaluations": stats.shadow_evaluations,
         "last_seen_ms": stats.last_seen_ms,
         "requests_since_decay": stats.requests_since_decay,
+        "epoch_used": stats.epoch_used,
+        "epoch_attempts": stats.epoch_attempts,
     }
 
 
@@ -109,7 +117,7 @@ def _transient_placement_hints(
     state: EntityTierState,
     *,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int,
     effective: Tier,
 ) -> list[str]:
@@ -124,10 +132,10 @@ def _transient_placement_hints(
     if state.overlap_tier is not None:
         hints.append("overlap_tier_active")
 
-    if state.wake_lease_until_session > session_id:
+    if state.wake_lease_until_cycle > wake_cycle_id:
         hints.append("wake_lease_active")
 
-    if session_id <= state.sleep_cooldown_until_session:
+    if wake_cycle_id <= state.sleep_cooldown_until_cycle:
         hints.append("sleep_cooldown_active")
 
     return hints
@@ -241,14 +249,14 @@ def _placement_hints(
     state: EntityTierState,
     *,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int,
     effective: Tier,
 ) -> list[str]:
     hints = _transient_placement_hints(
         state,
         cfg=cfg,
-        session_id=session_id,
+        wake_cycle_id=wake_cycle_id,
         now_ms=now_ms,
         effective=effective,
     )
@@ -343,7 +351,7 @@ def entity_status_dict(
     state: EntityTierState,
     *,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int | None = None,
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
     kind: str | None = None,
@@ -378,8 +386,8 @@ def entity_status_dict(
         "temp_promotion_until_ms": state.temp_promotion_until_ms,
         "temp_promotion_expires_in_sec": expires_in_sec,
         "tier_since_epoch": state.tier_since_epoch,
-        "wake_lease_until_session": state.wake_lease_until_session,
-        "sleep_cooldown_until_session": state.sleep_cooldown_until_session,
+        "wake_lease_until_cycle": state.wake_lease_until_cycle,
+        "sleep_cooldown_until_cycle": state.sleep_cooldown_until_cycle,
         "pipeline": state.pipeline,
         "policy": _policy_for_tier(effective),
         "stats": _stats_dict(state.stats),
@@ -387,13 +395,14 @@ def entity_status_dict(
             "demand": demand_score(state.stats),
             "utility": utility_score(state.stats),
             "execution": execution_score(state.stats),
+            "epoch_execution": epoch_execution_score(state.stats),
             "shadow": shadow_score(state.stats),
             "wake_pressure": wake_pressure(state, cfg=cfg),
         },
         "hints": _placement_hints(
             state,
             cfg=cfg,
-            session_id=session_id,
+            wake_cycle_id=wake_cycle_id,
             now_ms=now_ms,
             effective=effective,
         ),
@@ -421,7 +430,7 @@ def build_kind_detail(
     *,
     kind: str,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int | None = None,
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
     config: dict[str, Any] | None = None,
@@ -463,7 +472,7 @@ def build_kind_detail(
             entity_status_dict(
                 state,
                 cfg=cfg,
-                session_id=session_id,
+                wake_cycle_id=wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=resolve_effective,
                 kind=kind,
@@ -783,7 +792,7 @@ def _append_disk_skills_in_path(
     states: dict[tuple[str, str], EntityTierState],
     resolve_effective: Callable[[EntityTierState], Tier],
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int,
     config: dict[str, Any],
     workspace_root: Path | None,
@@ -812,7 +821,7 @@ def _append_disk_skills_in_path(
             entity_status_dict(
                 state,
                 cfg=cfg,
-                session_id=session_id,
+                wake_cycle_id=wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=resolve_effective,
                 kind=EntityKind.SKILL,
@@ -832,7 +841,7 @@ def filter_skill_detail_by_path(
     agent: str,
     states: dict[tuple[str, str], EntityTierState],
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int | None = None,
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
 ) -> dict[str, Any]:
@@ -856,7 +865,7 @@ def filter_skill_detail_by_path(
         states=states,
         resolve_effective=resolve_effective,
         cfg=cfg,
-        session_id=session_id,
+        wake_cycle_id=wake_cycle_id,
         now_ms=now_ms,
         config=config,
         workspace_root=workspace_root,
@@ -895,7 +904,7 @@ def enrich_tool_detail_with_catalog_discoveries(
     config: dict[str, Any],
     workspace_root: Path | None,
     catalog_tools: list[dict[str, Any]] | None,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int | None = None,
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
 ) -> dict[str, Any]:
@@ -940,7 +949,7 @@ def enrich_tool_detail_with_catalog_discoveries(
             entity_status_dict(
                 state,
                 cfg=cfg,
-                session_id=session_id,
+                wake_cycle_id=wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=resolve_effective,
                 kind=EntityKind.TOOL,
@@ -968,7 +977,7 @@ def enrich_skill_detail_with_workspace_discoveries(
     config: dict[str, Any],
     workspace_root: Path | None,
     agent: str,
-    session_id: int,
+    wake_cycle_id: int,
     now_ms: int | None = None,
     effective_tier_fn: Callable[[EntityTierState], Tier] | None = None,
 ) -> dict[str, Any]:
@@ -1010,7 +1019,7 @@ def enrich_skill_detail_with_workspace_discoveries(
             entity_status_dict(
                 dormant,
                 cfg=cfg,
-                session_id=session_id,
+                wake_cycle_id=wake_cycle_id,
                 now_ms=now_ms,
                 effective_tier_fn=resolve_effective,
                 kind=EntityKind.SKILL,

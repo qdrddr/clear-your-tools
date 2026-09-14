@@ -143,7 +143,7 @@ def test_status_detail_includes_attempts_and_execution_score(
         {(EntityKind.TOOL, capture_pack.tool.entity_id): state},
         kind=EntityKind.TOOL,
         cfg=cfg,
-        session_id=1,
+        wake_cycle_id=1,
         config=capture_pack.config,
         tracked_catalog_entity_ids=frozenset({capture_pack.tool.entity_id}),
     )

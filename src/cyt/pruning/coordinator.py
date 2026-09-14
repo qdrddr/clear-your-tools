@@ -467,13 +467,22 @@ def coordinate_skills_tools_prune(
     if not plan:
         return CoordinateResult()
 
-    return run_prune_plan(
-        plan,
-        ctx,
-        tool_sources,
-        for_hook=for_hook,
-        capture_decomposed_catalog=capture_decomposed_catalog,
-        skills_max_tokens=skills_max_tokens,
-        mcp_from_pruned=mcp_from_pruned,
-        phase_timer=phase_timer,
-    )
+    from cyt.tiers.manager import get_tier_manager
+
+    tier_manager = get_tier_manager(config)
+    if not tier_manager.is_noop:
+        tier_manager.begin_request_cycle(config)
+    try:
+        return run_prune_plan(
+            plan,
+            ctx,
+            tool_sources,
+            for_hook=for_hook,
+            capture_decomposed_catalog=capture_decomposed_catalog,
+            skills_max_tokens=skills_max_tokens,
+            mcp_from_pruned=mcp_from_pruned,
+            phase_timer=phase_timer,
+        )
+    finally:
+        if not tier_manager.is_noop:
+            tier_manager.end_request_cycle()

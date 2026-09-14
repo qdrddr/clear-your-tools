@@ -60,3 +60,12 @@ def execution_score(stats: object) -> float:
     if not isinstance(stats, EffectiveStats):
         return 0.0
     return wilson_lower_bound(stats.used, stats.attempts)
+
+
+def epoch_execution_score(stats: object) -> float:
+    """Execution rate within the current epoch only (recent signal, not lifetime)."""
+    from cyt.tiers.models import EffectiveStats
+
+    if not isinstance(stats, EffectiveStats):
+        return 0.0
+    return wilson_lower_bound(stats.epoch_used, stats.epoch_attempts)

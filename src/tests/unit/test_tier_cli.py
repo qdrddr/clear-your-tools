@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -290,7 +291,11 @@ skills:
     list_code = tiers_main(["list", "--workspace", str(tmp_path)])
     list_out = capsys.readouterr().out
     assert list_code == 0
-    assert list_out == stats_out
+
+    def _normalize_epoch_remaining(text: str) -> str:
+        return re.sub(r"epoch_remaining: \S+", "epoch_remaining: <dynamic>", text)
+
+    assert _normalize_epoch_remaining(list_out) == _normalize_epoch_remaining(stats_out)
 
 
 def test_tiers_status_default_human_shows_overview(

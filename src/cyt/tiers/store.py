@@ -18,7 +18,8 @@ from cyt.tiers.models import (
     TierTransition,
 )
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 5
+_BUSY_TIMEOUT_MS = 30_000
 
 _SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS tier_project (
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS epoch_state (
     epoch_id INTEGER NOT NULL,
     epoch_start_ms INTEGER NOT NULL,
     last_request_ms INTEGER NOT NULL,
-    session_id INTEGER NOT NULL
+    wake_cycle_id INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS entity_stats (
@@ -51,6 +52,8 @@ CREATE TABLE IF NOT EXISTS entity_stats (
     shadow_evaluations REAL NOT NULL DEFAULT 0,
     last_seen_ms INTEGER NOT NULL DEFAULT 0,
     requests_since_decay INTEGER NOT NULL DEFAULT 0,
+    epoch_used REAL NOT NULL DEFAULT 0,
+    epoch_attempts REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (project_id, kind, entity_id, pipeline)
 );
 
@@ -63,8 +66,8 @@ CREATE TABLE IF NOT EXISTS entity_tier (
     overlap_tier INTEGER,
     tier_since_epoch INTEGER NOT NULL DEFAULT 0,
     temp_promotion_until_ms INTEGER,
-    wake_lease_until_session INTEGER NOT NULL DEFAULT 0,
-    sleep_cooldown_until_session INTEGER NOT NULL DEFAULT 0,
+    wake_lease_until_cycle INTEGER NOT NULL DEFAULT 0,
+    sleep_cooldown_until_cycle INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (project_id, kind, entity_id)
 );
 
@@ -95,7 +98,9 @@ class TierStore:
         self._lock = threading.RLock()
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=TRUNCATE")
+        self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+        # WAL allows concurrent readers (e.g. tiers stats CLI) while the hook daemon writes.
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._ensure_schema()
 
     @classmethod
@@ -114,8 +119,10 @@ class TierStore:
         with self._lock:
             version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
             if version >= _SCHEMA_VERSION:
-                self._conn.executescript(_SCHEMA_V2)
-                self._conn.commit()
+                migrated = self._migrate_v3_to_v4()
+                migrated = self._migrate_v4_to_v5() or migrated
+                if migrated:
+                    self._conn.commit()
                 return
             if self._table_has_column("entity_tier", "scope_key"):
                 self._migrate_v1_to_v2()
@@ -127,12 +134,63 @@ class TierStore:
                     self._conn.execute(
                         "ALTER TABLE entity_stats ADD COLUMN attempts REAL NOT NULL DEFAULT 0",
                     )
+                if version < 4:
+                    self._migrate_v3_to_v4()
+                if version < 5:
+                    self._migrate_v4_to_v5()
                 self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
                 self._conn.commit()
                 return
             self._conn.executescript(_SCHEMA_V2)
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
             self._conn.commit()
+
+    def _migrate_v3_to_v4(self) -> bool:
+        migrated = False
+        if self._table_exists("epoch_state") and self._table_has_column(
+            "epoch_state",
+            "session_id",
+        ):
+            self._conn.execute(
+                "ALTER TABLE epoch_state RENAME COLUMN session_id TO wake_cycle_id",
+            )
+            migrated = True
+        if self._table_exists("entity_tier") and self._table_has_column(
+            "entity_tier",
+            "wake_lease_until_session",
+        ):
+            self._conn.execute(
+                "ALTER TABLE entity_tier RENAME COLUMN wake_lease_until_session "
+                "TO wake_lease_until_cycle",
+            )
+            self._conn.execute(
+                "ALTER TABLE entity_tier RENAME COLUMN sleep_cooldown_until_session "
+                "TO sleep_cooldown_until_cycle",
+            )
+            migrated = True
+        return migrated
+
+    def _migrate_v4_to_v5(self) -> bool:
+        migrated = False
+        if self._table_exists("entity_stats") and not self._table_has_column(
+            "entity_stats",
+            "epoch_used",
+        ):
+            self._conn.execute(
+                "ALTER TABLE entity_stats ADD COLUMN epoch_used REAL NOT NULL DEFAULT 0",
+            )
+            migrated = True
+        if self._table_exists("entity_stats") and not self._table_has_column(
+            "entity_stats",
+            "epoch_attempts",
+        ):
+            self._conn.execute(
+                "ALTER TABLE entity_stats ADD COLUMN epoch_attempts REAL NOT NULL DEFAULT 0",
+            )
+            migrated = True
+        if migrated:
+            self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+        return migrated
 
     def _migrate_v1_to_v2(self) -> None:  # noqa: C901
         now_ms = int(time.time() * 1000)
@@ -178,11 +236,13 @@ class TierStore:
                 if mapped_project_id is None:
                     continue
                 self._conn.execute(
-                    "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, session_id) "
+                    "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, "
+                    "last_request_ms, wake_cycle_id) "
                     "VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT(project_id) DO UPDATE SET "
                     "epoch_id=excluded.epoch_id, epoch_start_ms=excluded.epoch_start_ms, "
-                    "last_request_ms=excluded.last_request_ms, session_id=excluded.session_id",
+                    "last_request_ms=excluded.last_request_ms, "
+                    "wake_cycle_id=excluded.wake_cycle_id",
                     (mapped_project_id, row[1], row[2], row[3], row[4]),
                 )
 
@@ -197,8 +257,8 @@ class TierStore:
                     continue
                 self._conn.execute(
                     "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
-                    "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
-                    "sleep_cooldown_until_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_cycle, "
+                    "sleep_cooldown_until_cycle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(project_id, kind, entity_id) DO NOTHING",
                     (
                         mapped_project_id,
@@ -296,34 +356,35 @@ class TierStore:
     def load_epoch_state(self, project: TierProject) -> EpochState:
         with self._lock:
             row = self._conn.execute(
-                "SELECT epoch_id, epoch_start_ms, last_request_ms, session_id "
+                "SELECT epoch_id, epoch_start_ms, last_request_ms, wake_cycle_id "
                 "FROM epoch_state WHERE project_id = ?",
                 (project.project_id,),
             ).fetchone()
         if row is None:
             now = int(time.time() * 1000)
-            return EpochState(epoch_id=1, epoch_start_ms=now, last_request_ms=now, session_id=1)
+            return EpochState(epoch_id=1, epoch_start_ms=now, last_request_ms=now, wake_cycle_id=1)
         return EpochState(
             epoch_id=int(row[0]),
             epoch_start_ms=int(row[1]),
             last_request_ms=int(row[2]),
-            session_id=int(row[3]),
+            wake_cycle_id=int(row[3]),
         )
 
     def save_epoch_state(self, project: TierProject, epoch: EpochState) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, session_id) "
+                "INSERT INTO epoch_state(project_id, epoch_id, epoch_start_ms, last_request_ms, "
+                "wake_cycle_id) "
                 "VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id) DO UPDATE SET "
                 "epoch_id=excluded.epoch_id, epoch_start_ms=excluded.epoch_start_ms, "
-                "last_request_ms=excluded.last_request_ms, session_id=excluded.session_id",
+                "last_request_ms=excluded.last_request_ms, wake_cycle_id=excluded.wake_cycle_id",
                 (
                     project.project_id,
                     epoch.epoch_id,
                     epoch.epoch_start_ms,
                     epoch.last_request_ms,
-                    epoch.session_id,
+                    epoch.wake_cycle_id,
                 ),
             )
             self._conn.commit()
@@ -332,14 +393,21 @@ class TierStore:
         with self._lock:
             tier_rows = self._conn.execute(
                 "SELECT kind, entity_id, stable_tier, effective_tier, overlap_tier, "
-                "tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
-                "sleep_cooldown_until_session FROM entity_tier WHERE project_id = ?",
+                "tier_since_epoch, temp_promotion_until_ms, wake_lease_until_cycle, "
+                "sleep_cooldown_until_cycle FROM entity_tier WHERE project_id = ?",
                 (project.project_id,),
             ).fetchall()
-            stat_rows = self._conn.execute(
+            has_epoch_stats = self._table_has_column("entity_stats", "epoch_used")
+            stat_select = (
                 "SELECT kind, entity_id, pipeline, candidates, injected, used, attempts, "
                 "used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
-                "last_seen_ms, requests_since_decay FROM entity_stats WHERE project_id = ?",
+                "last_seen_ms, requests_since_decay"
+            )
+            if has_epoch_stats:
+                stat_select += ", epoch_used, epoch_attempts"
+            stat_select += " FROM entity_stats WHERE project_id = ?"
+            stat_rows = self._conn.execute(
+                stat_select,
                 (project.project_id,),
             ).fetchall()
         stats_by_entity: dict[tuple[str, str], EffectiveStats] = {}
@@ -358,6 +426,8 @@ class TierStore:
                 shadow_evaluations=float(row[10]),
                 last_seen_ms=int(row[11]),
                 requests_since_decay=int(row[12]),
+                epoch_used=float(row[13]) if has_epoch_stats and len(row) > 13 else 0.0,
+                epoch_attempts=float(row[14]) if has_epoch_stats and len(row) > 14 else 0.0,
             )
         out: dict[tuple[str, str], EntityTierState] = {}
         for row in tier_rows:
@@ -371,8 +441,8 @@ class TierStore:
                 overlap_tier=Tier(int(overlap)) if overlap is not None else None,
                 tier_since_epoch=int(row[5]),
                 temp_promotion_until_ms=int(row[6]) if row[6] is not None else None,
-                wake_lease_until_session=int(row[7]),
-                sleep_cooldown_until_session=int(row[8]),
+                wake_lease_until_cycle=int(row[7]),
+                sleep_cooldown_until_cycle=int(row[8]),
                 pipeline=pipeline_by_entity.get(key, "default"),
                 stats=stats_by_entity.get(key, EffectiveStats()),
             )
@@ -394,14 +464,14 @@ class TierStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO entity_tier(project_id, kind, entity_id, stable_tier, effective_tier, "
-                "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_session, "
-                "sleep_cooldown_until_session) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "overlap_tier, tier_since_epoch, temp_promotion_until_ms, wake_lease_until_cycle, "
+                "sleep_cooldown_until_cycle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id, kind, entity_id) DO UPDATE SET "
                 "stable_tier=excluded.stable_tier, effective_tier=excluded.effective_tier, "
                 "overlap_tier=excluded.overlap_tier, tier_since_epoch=excluded.tier_since_epoch, "
                 "temp_promotion_until_ms=excluded.temp_promotion_until_ms, "
-                "wake_lease_until_session=excluded.wake_lease_until_session, "
-                "sleep_cooldown_until_session=excluded.sleep_cooldown_until_session",
+                "wake_lease_until_cycle=excluded.wake_lease_until_cycle, "
+                "sleep_cooldown_until_cycle=excluded.sleep_cooldown_until_cycle",
                 (
                     project.project_id,
                     state.kind,
@@ -411,22 +481,24 @@ class TierStore:
                     int(state.overlap_tier) if state.overlap_tier is not None else None,
                     state.tier_since_epoch,
                     state.temp_promotion_until_ms,
-                    state.wake_lease_until_session,
-                    state.sleep_cooldown_until_session,
+                    state.wake_lease_until_cycle,
+                    state.sleep_cooldown_until_cycle,
                 ),
             )
             stats = state.stats
             self._conn.execute(
                 "INSERT INTO entity_stats(project_id, kind, entity_id, pipeline, candidates, injected, "
                 "used, attempts, used_without_injection, optional_used, shadow_hits, shadow_evaluations, "
-                "last_seen_ms, requests_since_decay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "last_seen_ms, requests_since_decay, epoch_used, epoch_attempts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id, kind, entity_id, pipeline) DO UPDATE SET "
                 "candidates=excluded.candidates, injected=excluded.injected, used=excluded.used, "
                 "attempts=excluded.attempts, "
                 "used_without_injection=excluded.used_without_injection, "
                 "optional_used=excluded.optional_used, shadow_hits=excluded.shadow_hits, "
                 "shadow_evaluations=excluded.shadow_evaluations, last_seen_ms=excluded.last_seen_ms, "
-                "requests_since_decay=excluded.requests_since_decay",
+                "requests_since_decay=excluded.requests_since_decay, "
+                "epoch_used=excluded.epoch_used, epoch_attempts=excluded.epoch_attempts",
                 (
                     project.project_id,
                     state.kind,
@@ -442,6 +514,8 @@ class TierStore:
                     stats.shadow_evaluations,
                     stats.last_seen_ms,
                     stats.requests_since_decay,
+                    stats.epoch_used,
+                    stats.epoch_attempts,
                 ),
             )
             self._conn.commit()

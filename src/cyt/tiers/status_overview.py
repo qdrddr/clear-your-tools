@@ -243,9 +243,11 @@ def build_status_overview(
     return {
         "epoch": {
             "epoch_id": status.get("epoch_id"),
-            "session_id": status.get("session_id"),
+            "wake_cycle_id": status.get("wake_cycle_id"),
             "epoch_start_ms": status.get("epoch_start_ms"),
             "last_request_ms": status.get("last_request_ms"),
+            "epoch_timeout_seconds": status.get("epoch_timeout_seconds"),
+            "epoch_remaining_seconds": status.get("epoch_remaining_seconds"),
         },
         "tiers": {
             "tools": {
@@ -287,6 +289,14 @@ def build_status_overview(
     }
 
 
+def format_duration_compact(seconds: int) -> str:
+    """Format seconds as plain seconds (<60) or compact m:s (>=60)."""
+    if seconds >= 60:
+        minutes, remainder = divmod(seconds, 60)
+        return f"{minutes}:{remainder:02d}"
+    return str(seconds)
+
+
 def _format_table_row(columns: list[str], widths: list[int]) -> str:
     parts: list[str] = []
     for column, width in zip(columns, widths, strict=True):
@@ -300,8 +310,17 @@ def _append_overview_epoch(lines: list[str], overview: dict[str, Any]) -> None:
     if not isinstance(epoch, dict):
         return
     lines.append(
-        f"epoch_id: {epoch.get('epoch_id')}  session_id: {epoch.get('session_id')}",
+        f"epoch_id: {epoch.get('epoch_id')}  wake_cycle_id: {epoch.get('wake_cycle_id')}",
     )
+    timeout_seconds = epoch.get("epoch_timeout_seconds")
+    remaining_seconds = epoch.get("epoch_remaining_seconds")
+    if isinstance(timeout_seconds, int) and isinstance(remaining_seconds, int):
+        lines.append(
+            "epoch_timeout: "
+            f"{format_duration_compact(timeout_seconds)}  "
+            "epoch_remaining: "
+            f"{format_duration_compact(remaining_seconds)}",
+        )
     if epoch.get("last_request_ms"):
         lines.append(
             f"epoch_start_ms: {epoch.get('epoch_start_ms')}  "

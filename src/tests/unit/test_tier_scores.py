@@ -6,6 +6,8 @@ from cyt.tiers.models import EffectiveStats
 from cyt.tiers.scores import (
     decay_factor,
     demand_score,
+    epoch_execution_score,
+    execution_score,
     shadow_score,
     utility_score,
     wilson_lower_bound,
@@ -45,3 +47,8 @@ def test_demand_and_utility_scores() -> None:
     assert demand_score(stats) > 0.3
     assert utility_score(stats) > 0.3
     assert shadow_score(stats) == 0.0
+
+
+def test_epoch_execution_outranks_lifetime_execution() -> None:
+    stats = EffectiveStats(used=3.0, attempts=11.0, epoch_used=1.0, epoch_attempts=1.0)
+    assert epoch_execution_score(stats) > execution_score(stats)

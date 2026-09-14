@@ -63,7 +63,7 @@ def _apply_skill_path_filter_to_status(
     project_root: Path,
     status_agent: str,
     manager: object,
-    session_id: int,
+    wake_cycle_id: int,
 ) -> None:
     from cyt.tiers.config import tier_section_config
     from cyt.tiers.status_detail import (
@@ -85,7 +85,7 @@ def _apply_skill_path_filter_to_status(
         agent=status_agent,
         states=states,
         cfg=skill_cfg,
-        session_id=session_id,
+        wake_cycle_id=wake_cycle_id,
         now_ms=now_ms,
     )
     status_payload["skills"] = filter_skill_detail_by_permissions(
@@ -174,7 +174,7 @@ def run_tiers_status(args: argparse.Namespace) -> int:
             project_root=project_root,
             status_agent=status_agent,
             manager=manager,
-            session_id=int(status.get("session_id") or 0),
+            wake_cycle_id=int(status.get("wake_cycle_id") or 0),
         )
 
     payload = apply_status_view(status_payload, filters)

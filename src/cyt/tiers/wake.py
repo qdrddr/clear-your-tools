@@ -45,13 +45,13 @@ def evaluate_fast_wake(
     state: EntityTierState,
     *,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     query_relevance: float = 0.0,
     sibling_activity: float = 0.0,
 ) -> TierTransition | None:
     if state.effective_tier != Tier.DORMANT:
         return None
-    if session_id <= state.sleep_cooldown_until_session:
+    if wake_cycle_id <= state.sleep_cooldown_until_cycle:
         return None
     pressure = wake_pressure(
         state,
@@ -64,7 +64,7 @@ def evaluate_fast_wake(
     old = state.effective_tier
     state.effective_tier = Tier.COLD
     state.stable_tier = Tier.COLD
-    state.wake_lease_until_session = session_id + cfg.wake_lease_sessions
+    state.wake_lease_until_cycle = wake_cycle_id + cfg.wake_lease_cycles
     logger.debug("wake %s:%s T0→T1 pressure=%.3f", state.kind, state.entity_id, pressure)
     return TierTransition(
         kind=state.kind,
@@ -80,26 +80,26 @@ def evaluate_fast_sleep(
     state: EntityTierState,
     *,
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
     had_selection: bool,
     had_use: bool,
     had_shadow: bool,
 ) -> TierTransition | None:
     if state.effective_tier != Tier.COLD:
         return None
-    if session_id > state.wake_lease_until_session:
+    if wake_cycle_id > state.wake_lease_until_cycle:
         pass
-    elif state.wake_lease_until_session > 0:
+    elif state.wake_lease_until_cycle > 0:
         return None
     if had_use or had_selection or had_shadow or state.stats.used_without_injection > 0:
-        if state.wake_lease_until_session > 0:
-            state.wake_lease_until_session = session_id + cfg.wake_lease_sessions
+        if state.wake_lease_until_cycle > 0:
+            state.wake_lease_until_cycle = wake_cycle_id + cfg.wake_lease_cycles
         return None
     old = state.effective_tier
     state.effective_tier = Tier.DORMANT
     state.stable_tier = Tier.DORMANT
-    state.sleep_cooldown_until_session = session_id + cfg.sleep_cooldown_sessions
-    state.wake_lease_until_session = 0
+    state.sleep_cooldown_until_cycle = wake_cycle_id + cfg.sleep_cooldown_cycles
+    state.wake_lease_until_cycle = 0
     logger.debug("sleep %s:%s T1→T0", state.kind, state.entity_id)
     return TierTransition(
         kind=state.kind,
@@ -119,13 +119,18 @@ def fast_promote_on_tool_use(
     """Tools-only fast signal when the agent invoked the tool (any args)."""
     if state.kind != "tool":
         return None
-    tier = state.effective_tier
     now_ms = int(time.time() * 1000)
-    if tier >= Tier.HOT:
-        if cfg is not None:
-            state.temp_promotion_until_ms = temp_promotion_until_ms(cfg, now_ms=now_ms)
+    if state.stable_tier >= Tier.HOT:
+        state.temp_promotion_until_ms = None
+        state.overlap_tier = None
+        if state.effective_tier < state.stable_tier:
+            state.effective_tier = state.stable_tier
         return None
-    target = Tier.HOT if tier >= Tier.ACTIVE else Tier.ACTIVE
+    tier = state.effective_tier
+    if tier >= Tier.HOT:
+        return None
+    # Successful invocation is a strong signal: bump to temp HOT from T1/T2 (or T0→T2).
+    target = Tier.HOT if tier >= Tier.COLD else Tier.ACTIVE
     old = state.effective_tier
     state.effective_tier = target
     if tier >= Tier.COLD:

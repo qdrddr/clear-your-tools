@@ -484,8 +484,8 @@ tools:
     temp_promotion_turns: 3
     wake:
       threshold: 0.60
-      lease_sessions: 2
-      cooldown_sessions: 2
+      lease_cycles: 2
+      cooldown_cycles: 2
       weights:
         shadow: 0.40
         direct: 0.30
@@ -587,7 +587,7 @@ stats:
 skills:
   enabled: false
   tiers:
-    mode: shadow
+    mode: live # off | live | shadow
     # Tier statistics are scoped per git project (toplevel); client skill reads
     # notify the hook daemon; no global/user bucket.
   selector_soft_budget: 2000

@@ -263,7 +263,7 @@ def seed_tier_flush_db(pack: TierFlushFixturePack, path: Path = SCENARIOS_PATH) 
                     epoch_id=int(epoch_raw.get("epoch_id", 0)),
                     epoch_start_ms=int(epoch_raw.get("epoch_start_ms", 0)),
                     last_request_ms=int(epoch_raw.get("last_request_ms", 0)),
-                    session_id=int(epoch_raw.get("session_id", 0)),
+                    wake_cycle_id=int(epoch_raw.get("wake_cycle_id", epoch_raw.get("session_id", 0))),
                 ),
             )
         tools_raw = seed_raw.get("tools")

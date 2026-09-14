@@ -50,6 +50,9 @@ class EffectiveStats:
     shadow_evaluations: float = 0.0
     last_seen_ms: int = 0
     requests_since_decay: int = 0
+    # Ephemeral counters for the current epoch (reset at epoch boundary; not persisted).
+    epoch_used: float = 0.0
+    epoch_attempts: float = 0.0
 
     def decay(self, *, half_life: float) -> None:
         if self.requests_since_decay <= 0:
@@ -75,8 +78,8 @@ class EntityTierState:
     overlap_tier: Tier | None = None
     tier_since_epoch: int = 0
     temp_promotion_until_ms: int | None = None
-    wake_lease_until_session: int = 0
-    sleep_cooldown_until_session: int = 0
+    wake_lease_until_cycle: int = 0
+    sleep_cooldown_until_cycle: int = 0
     pipeline: str = "default"
     stats: EffectiveStats = field(default_factory=EffectiveStats)
 
@@ -95,7 +98,7 @@ class TierSnapshot:
     project: TierProject | None
     epoch_id: int
     epoch_start_ms: int
-    session_id: int
+    wake_cycle_id: int
     entities: dict[tuple[str, str], EntityTierView] = field(default_factory=dict)
     mode: TierMode = TierMode.SHADOW
 
@@ -147,4 +150,4 @@ class EpochState:
     epoch_id: int = 0
     epoch_start_ms: int = 0
     last_request_ms: int = 0
-    session_id: int = 0
+    wake_cycle_id: int = 0

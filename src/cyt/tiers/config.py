@@ -47,8 +47,8 @@ class TierSectionConfig:
     idle_gap_triggers_epoch: bool
     min_injections_before_reconsider: int
     wake_threshold: float
-    wake_lease_sessions: int
-    sleep_cooldown_sessions: int
+    wake_lease_cycles: int
+    sleep_cooldown_cycles: int
     emergency_t4_inject_min: int
     emergency_t4_utility_max: float
     temp_promotion_turns: int
@@ -159,8 +159,14 @@ def tier_section_config(cfg: dict[str, Any], *, kind: str) -> TierSectionConfig:
             8,
         ),
         wake_threshold=_float(wake_dict.get("threshold"), 0.60),
-        wake_lease_sessions=_int(wake_dict.get("lease_sessions"), 2),
-        sleep_cooldown_sessions=_int(wake_dict.get("cooldown_sessions"), 2),
+        wake_lease_cycles=_int(
+            wake_dict.get("lease_cycles", wake_dict.get("lease_sessions")),
+            2,
+        ),
+        sleep_cooldown_cycles=_int(
+            wake_dict.get("cooldown_cycles", wake_dict.get("cooldown_sessions")),
+            2,
+        ),
         emergency_t4_inject_min=_int(block.get("emergency_t4_inject_min"), 20),
         emergency_t4_utility_max=_float(block.get("emergency_t4_utility_max"), 0.20),
         temp_promotion_turns=_int(block.get("temp_promotion_turns"), 3),

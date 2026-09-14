@@ -64,7 +64,7 @@ def test_enrich_tool_detail_discovers_untracked_catalog_tools(
         states,
         kind=EntityKind.TOOL,
         cfg=cfg,
-        session_id=1,
+        wake_cycle_id=1,
         config=config,
         tracked_catalog_entity_ids=tracked_ids,
     )
@@ -75,7 +75,7 @@ def test_enrich_tool_detail_discovers_untracked_catalog_tools(
         config=config,
         workspace_root=fixture_pack.workspace,
         catalog_tools=fixture_pack.tools,
-        session_id=1,
+        wake_cycle_id=1,
     )
 
     expected = load_scenario().expected
@@ -97,7 +97,7 @@ def test_build_tier_statistics_counts_tool_tokens(
             states,
             kind=EntityKind.TOOL,
             cfg=cfg,
-            session_id=1,
+            wake_cycle_id=1,
             config=config,
             tracked_catalog_entity_ids=tracked_ids,
             catalog_tools=fixture_pack.tools,
@@ -107,7 +107,7 @@ def test_build_tier_statistics_counts_tool_tokens(
         config=config,
         workspace_root=fixture_pack.workspace,
         catalog_tools=fixture_pack.tools,
-        session_id=1,
+        wake_cycle_id=1,
     )
 
     stats = build_tier_statistics(

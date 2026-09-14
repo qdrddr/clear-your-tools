@@ -113,7 +113,7 @@ def record_shadow_hits(
     kind: str,
     hits: list[tuple[str, float]],
     cfg: TierSectionConfig,
-    session_id: int,
+    wake_cycle_id: int,
 ) -> list[Any]:
     from cyt.tiers.models import TierTransition
 
@@ -136,7 +136,7 @@ def record_shadow_hits(
         wake = evaluate_fast_wake(
             state,
             cfg=cfg,
-            session_id=session_id,
+            wake_cycle_id=wake_cycle_id,
             query_relevance=top_score,
         )
         if wake is not None:
